@@ -92,6 +92,7 @@ node bin/switchyard.mjs backend-plan mtplx
 node bin/switchyard.mjs backend-install mtplx
 node bin/switchyard.mjs select
 node bin/switchyard.mjs recipes
+node bin/switchyard.mjs recipe-index
 node bin/switchyard.mjs benchmarks
 node bin/switchyard.mjs benchmarks apple-silicon-qwen36
 node bin/switchyard.mjs plan apple-silicon-qwen36 --model-root ~/Models
@@ -125,7 +126,7 @@ node bin/switchyard.mjs backend-install mtplx --apply --yes
 export PATH="$PWD/data/bin:$PATH"
 ```
 
-Benchmark evidence lives in `benchmarks/community/*.json`. `switchyard benchmarks` validates and ranks all local evidence, while recipe plans attach the best matching result to each model role.
+Benchmark evidence lives in `benchmarks/community/*.json`. `switchyard benchmarks` validates and ranks all local evidence, while recipe plans attach the best matching result to each model role. `switchyard recipe-index` validates `recipes/index.json`, joins indexed recipes to their benchmark evidence, and prints the plan/install/bootstrap commands that a user or CI job can trust.
 
 ## Model IDs
 

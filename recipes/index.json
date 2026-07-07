@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "switchyard-community-recipes",
+  "name": "Switchyard Community Recipe Index",
+  "updatedAt": "2026-07-07T00:00:00Z",
+  "recipes": [
+    {
+      "id": "apple-silicon-qwen36",
+      "path": "apple-silicon-qwen36.json",
+      "name": "Apple Silicon Qwen3.6 MTPLX fast lanes",
+      "summary": "Best observed Qwen3.6 dense and MoE lanes for Apple Silicon using MTPLX.",
+      "tags": [
+        "apple-silicon",
+        "qwen3.6",
+        "mtplx",
+        "long-context",
+        "reasoning"
+      ],
+      "recommendedFor": [
+        "M-series Macs with at least 64 GB unified memory",
+        "agentic coding workloads that need 262K context"
+      ],
+      "source": {
+        "type": "local",
+        "url": "recipes/apple-silicon-qwen36.json"
+      }
+    }
+  ]
+}

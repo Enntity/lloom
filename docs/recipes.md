@@ -36,6 +36,7 @@ Inspect a plan without running it:
 ```zsh
 node bin/switchyard.mjs profile
 node bin/switchyard.mjs select
+node bin/switchyard.mjs recipe-index
 node bin/switchyard.mjs benchmarks apple-silicon-qwen36
 node bin/switchyard.mjs plan apple-silicon-qwen36 --model-root ~/Models
 ```
@@ -57,3 +58,33 @@ node bin/switchyard.mjs install apple-silicon-qwen36 --model-root ~/Models --app
 ```
 
 Real execution records completed steps in `data/install-state.json`. If setup is interrupted, rerunning the command skips completed steps and resumes from the next pending step.
+
+## Community Index
+
+`recipes/index.json` is the local prototype of the future hosted recipe feed. It lists the recipes Switchyard should expose to automatic selection and one-click setup:
+
+- `id`: recipe ID, matching the recipe JSON.
+- `path`: relative path under `recipes/`.
+- `name` and `summary`: display copy for pickers and reports.
+- `tags`: searchable traits such as hardware family, backend, model family, context, or modality.
+- `recommendedFor`: short machine/workload guidance.
+- `source`: where the recipe entry came from.
+
+Validate the index and its attached evidence:
+
+```zsh
+node bin/switchyard.mjs recipe-index
+```
+
+The report checks the index schema, verifies that each listed recipe file loads, validates recipe references against the gateway config and backend catalog, attaches the best benchmark evidence for each model role, and emits `plan`, `install`, and `bootstrap` commands.
+
+Contributor publish flow:
+
+1. Add or update `recipes/<recipe-id>.json`.
+2. Add benchmark evidence under `benchmarks/community/`.
+3. Add the recipe to `recipes/index.json`.
+4. Run `npm run check`.
+5. Run `npm run smoke`.
+6. Run `node bin/switchyard.mjs recipe-index` and confirm `ok: true`.
+
+Switchyard intentionally does not use stale model fallback aliases to make an index pass. Recipe `model` and `gatewayModel` values must be exact advertised IDs.

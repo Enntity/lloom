@@ -6,6 +6,7 @@ Inspect all evidence:
 
 ```zsh
 node bin/switchyard.mjs benchmarks
+node bin/switchyard.mjs recipe-index
 ```
 
 Inspect the evidence attached to one recipe:
@@ -15,7 +16,7 @@ node bin/switchyard.mjs benchmarks apple-silicon-qwen36
 node bin/switchyard.mjs plan apple-silicon-qwen36 --model-root ~/Models
 ```
 
-`plan` and `bootstrap` attach the best matching benchmark to each recipe model role. The gateway does not silently rewrite stale model IDs; benchmark `model` and `gatewayModel` values must match recipe and registry IDs exactly.
+`plan`, `bootstrap`, and `recipe-index` attach the best matching benchmark to each recipe model role. The gateway does not silently rewrite stale model IDs; benchmark `model` and `gatewayModel` values must match recipe and registry IDs exactly.
 
 ## Result Contract
 

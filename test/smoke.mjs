@@ -26,10 +26,15 @@ import {
 import { applyInit, createInitPlan, deriveUserConfig } from "../src/init.mjs";
 import { applyBackend, applyRecipe } from "../src/installer.mjs";
 import { profileMachine, rankRecipes } from "../src/machine-profile.mjs";
+import {
+  buildRecipeIndexReport,
+  loadRecipeIndex,
+  validateRecipeIndex,
+} from "../src/recipe-index.mjs";
 import { loadConfig } from "../src/config.mjs";
 import { runCommand } from "../src/process-control.mjs";
 import { createRegistry } from "../src/registry.mjs";
-import { loadRecipeById, planRecipe } from "../src/recipes.mjs";
+import { loadRecipeById, loadRecipes, planRecipe } from "../src/recipes.mjs";
 import { RuntimeManager } from "../src/runtime-manager.mjs";
 import { createSwitchyardServer } from "../src/server.mjs";
 
@@ -118,6 +123,8 @@ assert.throws(
 );
 
 const recipe = await loadRecipeById("apple-silicon-qwen36");
+const loadedRecipes = await loadRecipes();
+assert.deepEqual(loadedRecipes.map(candidate => candidate.id), ["apple-silicon-qwen36"]);
 const benchmarkEvidence = await loadBenchmarkEvidence();
 assert.equal(benchmarkEvidence.length, 2);
 assert.deepEqual(validateBenchmarkEvidence(benchmarkEvidence), []);
@@ -143,6 +150,34 @@ assert(recipePlan.steps.some(step => step.action === "download-model" &&
   step.model === "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed"));
 assert(recipePlan.steps.some(step => step.command?.join(" ") ===
   "mtplx tune --model /models/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed --retune"));
+
+const recipeIndex = await loadRecipeIndex();
+assert.deepEqual(validateRecipeIndex(recipeIndex), []);
+const duplicateRecipeIndex = structuredClone(recipeIndex);
+duplicateRecipeIndex.recipes.push({
+  ...duplicateRecipeIndex.recipes[0],
+});
+assert(validateRecipeIndex(duplicateRecipeIndex).some(error => error.includes("duplicate recipe index id")));
+const recipeIndexReport = await buildRecipeIndexReport(config, {
+  modelRoot: "/models",
+  backendIds: backendIds(backendCatalog),
+  benchmarkEvidence,
+  benchmarksRoot: "benchmarks/community",
+  benchmarkValidationErrors: [],
+});
+assert.equal(recipeIndexReport.ok, true);
+assert.equal(recipeIndexReport.index.id, "switchyard-community-recipes");
+assert.equal(recipeIndexReport.recipes.length, 1);
+assert.equal(recipeIndexReport.recipes[0].id, "apple-silicon-qwen36");
+assert.equal(recipeIndexReport.recipes[0].ok, true);
+assert.equal(recipeIndexReport.recipes[0].commands.plan,
+  "switchyard plan apple-silicon-qwen36 --model-root /models");
+assert.equal(recipeIndexReport.recipes[0].commands.installApply,
+  "switchyard install apple-silicon-qwen36 --model-root /models --apply --yes");
+assert.equal(
+  recipeIndexReport.recipes[0].models.find(model => model.role === "fastest-35b-a3b")?.benchmark.best.id,
+  "qwen36-35b-a3b-mtplx-speed-fp16-m2max-d1",
+);
 
 const profile = await profileMachine();
 assert.equal(profile.platformId, `${process.platform}-${process.arch}`);

@@ -36,7 +36,7 @@ function configRuntimeIds(config) {
 export async function listRecipeFiles(root = recipesRoot) {
   const entries = await fs.readdir(root, { withFileTypes: true });
   return entries
-    .filter(entry => entry.isFile() && entry.name.endsWith(".json"))
+    .filter(entry => entry.isFile() && entry.name.endsWith(".json") && entry.name !== "index.json")
     .map(entry => path.join(root, entry.name))
     .sort();
 }

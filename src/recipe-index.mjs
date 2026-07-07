@@ -1,0 +1,167 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import {
+  defaultBenchmarksRoot,
+  loadBenchmarkEvidence,
+  validateBenchmarkEvidence,
+} from "./benchmarks.mjs";
+import {
+  loadRecipes,
+  planRecipe,
+  recipesRoot,
+  validateRecipe,
+} from "./recipes.mjs";
+
+export const defaultRecipeIndexPath = path.join(recipesRoot, "index.json");
+
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function asObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function commandString(args) {
+  return args.map(arg => {
+    const text = String(arg);
+    return /^[A-Za-z0-9_./:@=${}~-]+$/.test(text)
+      ? text
+      : `'${text.replaceAll("'", "'\\''")}'`;
+  }).join(" ");
+}
+
+export async function loadRecipeIndex(indexPath = defaultRecipeIndexPath) {
+  const resolvedPath = path.resolve(indexPath);
+  const raw = await fs.readFile(resolvedPath, "utf8");
+  return {
+    ...JSON.parse(raw),
+    filePath: resolvedPath,
+  };
+}
+
+export function validateRecipeIndex(index) {
+  const errors = [];
+  if (index.schemaVersion !== 1) errors.push("recipe index schemaVersion must be 1");
+  if (!index.id) errors.push("recipe index is missing id");
+  if (!index.name) errors.push("recipe index is missing name");
+  if (!Array.isArray(index.recipes)) errors.push("recipe index recipes must be an array");
+
+  const ids = new Set();
+  const paths = new Set();
+  for (const [entryIndex, entry] of asArray(index.recipes).entries()) {
+    const prefix = `recipe index recipes[${entryIndex}]`;
+    if (!entry?.id) errors.push(`${prefix} is missing id`);
+    if (!entry?.path) errors.push(`${prefix} is missing path`);
+    if (!entry?.name) errors.push(`${prefix} is missing name`);
+    if (entry?.path && path.isAbsolute(entry.path)) {
+      errors.push(`${prefix} path must be relative`);
+    }
+    if (entry?.id && ids.has(entry.id)) errors.push(`duplicate recipe index id: ${entry.id}`);
+    if (entry?.path && paths.has(entry.path)) errors.push(`duplicate recipe index path: ${entry.path}`);
+    if (entry?.id) ids.add(entry.id);
+    if (entry?.path) paths.add(entry.path);
+    const source = asObject(entry?.source);
+    if (entry?.source && !source.type) errors.push(`${prefix} source is missing type`);
+  }
+
+  return errors;
+}
+
+export async function buildRecipeIndexReport(config, {
+  indexPath = defaultRecipeIndexPath,
+  recipesRoot: root = recipesRoot,
+  modelRoot = "${SWITCHYARD_MODEL_ROOT}",
+  backendIds,
+  benchmarksRoot = defaultBenchmarksRoot,
+  benchmarkEvidence,
+  benchmarkValidationErrors,
+} = {}) {
+  const index = await loadRecipeIndex(indexPath);
+  const recipes = await loadRecipes(root);
+  const recipeById = new Map(recipes.map(recipe => [recipe.id, recipe]));
+  const evidence = benchmarkEvidence ?? await loadBenchmarkEvidence(benchmarksRoot);
+  const evidenceValidationErrors = benchmarkValidationErrors ?? validateBenchmarkEvidence(evidence);
+  const validationErrors = validateRecipeIndex(index);
+
+  const entries = asArray(index.recipes).map(entry => {
+    const recipe = recipeById.get(entry.id);
+    const expectedPath = entry.path ? path.resolve(root, entry.path) : null;
+    const errors = [];
+
+    if (!recipe) {
+      errors.push(`recipe ${entry.id ?? "(missing)"} is listed in index but no recipe file was loaded`);
+    }
+    if (recipe && expectedPath && path.resolve(recipe.filePath) !== expectedPath) {
+      errors.push(`recipe ${entry.id} path ${entry.path} resolved to ${expectedPath}, loaded ${recipe.filePath}`);
+    }
+
+    const recipeValidationErrors = recipe
+      ? validateRecipe(recipe, config, { backendIds })
+      : [];
+    const plan = recipe
+      ? planRecipe(recipe, config, {
+        modelRoot,
+        backendIds,
+        benchmarkEvidence: evidence,
+        benchmarksRoot,
+        benchmarkValidationErrors: evidenceValidationErrors,
+      })
+      : null;
+    const recipeErrors = [
+      ...errors,
+      ...recipeValidationErrors,
+    ];
+
+    return {
+      id: entry.id ?? null,
+      name: entry.name ?? recipe?.name ?? null,
+      summary: entry.summary ?? recipe?.summary ?? null,
+      path: entry.path ?? null,
+      filePath: expectedPath,
+      recipeFilePath: recipe?.filePath ?? null,
+      tags: asArray(entry.tags),
+      recommendedFor: asArray(entry.recommendedFor),
+      source: entry.source ?? null,
+      present: Boolean(recipe),
+      ok: recipeErrors.length === 0,
+      validationErrors: recipeErrors,
+      platformSupported: plan?.platformSupported ?? false,
+      setupRequired: Boolean(recipe?.setup?.steps?.length),
+      backend: plan?.backend ?? null,
+      requirements: plan?.requirements ?? {},
+      models: plan?.models ?? [],
+      benchmarks: plan?.benchmarks ?? null,
+      commands: recipe ? {
+        plan: commandString(["switchyard", "plan", recipe.id, "--model-root", modelRoot]),
+        installDryRun: commandString(["switchyard", "install", recipe.id, "--model-root", modelRoot]),
+        installApply: commandString(["switchyard", "install", recipe.id, "--model-root", modelRoot, "--apply", "--yes"]),
+        bootstrapDryRun: commandString(["switchyard", "bootstrap", "--recipe", recipe.id, "--model-root", modelRoot]),
+        bootstrapApply: commandString(["switchyard", "bootstrap", "--recipe", recipe.id, "--model-root", modelRoot, "--apply", "--yes"]),
+      } : {},
+    };
+  });
+
+  const entryErrors = entries.flatMap(entry => entry.validationErrors);
+  return {
+    ok: validationErrors.length === 0 &&
+      evidenceValidationErrors.length === 0 &&
+      entryErrors.length === 0,
+    index: {
+      id: index.id ?? null,
+      name: index.name ?? null,
+      schemaVersion: index.schemaVersion ?? null,
+      updatedAt: index.updatedAt ?? null,
+      filePath: index.filePath,
+      count: asArray(index.recipes).length,
+    },
+    recipesRoot: path.resolve(root),
+    validationErrors,
+    benchmarks: {
+      root: benchmarksRoot,
+      count: evidence.length,
+      validationErrors: evidenceValidationErrors,
+    },
+    recipes: entries,
+  };
+}

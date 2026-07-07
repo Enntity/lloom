@@ -21,6 +21,7 @@ import { loadConfig } from "../src/config.mjs";
 import { applyInit, defaultUserConfigPath } from "../src/init.mjs";
 import { applyBackend, applyRecipe } from "../src/installer.mjs";
 import { profileMachine, rankRecipes } from "../src/machine-profile.mjs";
+import { buildRecipeIndexReport } from "../src/recipe-index.mjs";
 import { createRegistry } from "../src/registry.mjs";
 import { loadRecipeById, loadRecipes, planRecipe } from "../src/recipes.mjs";
 import { createSwitchyardServer } from "../src/server.mjs";
@@ -37,6 +38,7 @@ function usage() {
   switchyard benchmarks [recipe-id|all] [--benchmarks-root path]
   switchyard profile [--config path]
   switchyard recipes [--config path]
+  switchyard recipe-index [--index path] [--recipes-root path] [--benchmarks-root path] [--model-root path]
   switchyard select [--config path]
   switchyard plan <recipe-id> [--config path] [--model-root path]
   switchyard install <recipe-id> [--config path] [--model-root path] [--apply --yes]
@@ -273,6 +275,25 @@ async function main() {
         })),
       })),
     }, null, 2));
+    return;
+  }
+
+  if (command === "recipe-index") {
+    const catalog = await loadBackendCatalog();
+    const {
+      evidence: benchmarkEvidence,
+      validationErrors: benchmarkValidationErrors,
+      root: benchmarksRoot,
+    } = await loadBenchmarksForCli(args);
+    console.log(JSON.stringify(await buildRecipeIndexReport(config, {
+      indexPath: argValue(args, "--index"),
+      recipesRoot: argValue(args, "--recipes-root"),
+      modelRoot: argValue(args, "--model-root") ?? "${SWITCHYARD_MODEL_ROOT}",
+      backendIds: backendIds(catalog),
+      benchmarksRoot,
+      benchmarkEvidence,
+      benchmarkValidationErrors,
+    }), null, 2));
     return;
   }
 
