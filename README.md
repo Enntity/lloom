@@ -33,6 +33,7 @@ Default local endpoint:
 curl -sS http://127.0.0.1:8100/health
 curl -sS http://127.0.0.1:8100/v1/models
 curl -sS http://127.0.0.1:8100/gateway/status
+curl -sS 'http://127.0.0.1:8100/gateway/setup/status?runtimes=false'
 ```
 
 First-run setup:
@@ -131,6 +132,7 @@ The same controls are exposed over HTTP for dashboards and external automation:
 
 ```zsh
 curl -sS http://127.0.0.1:8100/gateway/status
+curl -sS 'http://127.0.0.1:8100/gateway/setup/status?runtimes=false'
 curl -sS -X POST http://127.0.0.1:8100/gateway/runtimes/mtplx-qwen36-27b-speed/start
 curl -sS -X POST http://127.0.0.1:8100/gateway/runtimes/mtplx-qwen36-27b-speed/warmup
 curl -sS -X POST http://127.0.0.1:8100/gateway/runtimes/mtplx-qwen36-27b-speed/stop

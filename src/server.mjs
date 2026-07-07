@@ -1,6 +1,7 @@
 import http from "node:http";
 import { createRegistry, UnknownModelError } from "./registry.mjs";
 import { RuntimeManager } from "./runtime-manager.mjs";
+import { createSetupStatus } from "./setup-status.mjs";
 
 const JSON_TYPE = "application/json; charset=utf-8";
 const SSE_TYPE = "text/event-stream; charset=utf-8";
@@ -88,6 +89,20 @@ function copyResponseHeaders(upstream) {
   const contentType = upstream.headers.get("content-type");
   if (contentType) headers["content-type"] = contentType;
   return headers;
+}
+
+function firstQueryParam(searchParams, names) {
+  for (const name of names) {
+    const value = searchParams.get(name);
+    if (value != null && value !== "") return value;
+  }
+  return undefined;
+}
+
+function queryBool(searchParams, names, defaultValue = false) {
+  const value = firstQueryParam(searchParams, names);
+  if (value == null) return defaultValue;
+  return ["1", "true", "yes", "on"].includes(value.toLowerCase());
 }
 
 function sseHeaders(extra = {}) {
@@ -1154,6 +1169,21 @@ export function createSwitchyardServer(config, {
           defaults: config.defaults,
           runtimeManager: await runtimeManager.status(),
         });
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/gateway/setup/status") {
+        const noRuntimes = queryBool(url.searchParams, ["no_runtimes", "no-runtimes"], false);
+        const runtimes = firstQueryParam(url.searchParams, ["runtimes"]);
+        sendJson(res, 200, await createSetupStatus(config, {
+          recipeId: firstQueryParam(url.searchParams, ["recipe", "recipe_id", "recipe-id"]),
+          modelRoot: firstQueryParam(url.searchParams, ["model_root", "model-root"]),
+          clientId: firstQueryParam(url.searchParams, ["client", "client_id", "client-id"]) ?? "all",
+          statePath: firstQueryParam(url.searchParams, ["state", "state_path", "state-path"]),
+          generatedRoot: firstQueryParam(url.searchParams, ["generated_root", "generated-root"]),
+          home: firstQueryParam(url.searchParams, ["home"]),
+          includeRuntimes: runtimes == null ? !noRuntimes : !["0", "false", "no", "off"].includes(runtimes.toLowerCase()),
+        }));
         return;
       }
 

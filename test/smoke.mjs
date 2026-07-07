@@ -885,6 +885,26 @@ if (listened) {
       }),
     });
     assert.equal(staleResponse.status, 404);
+
+    const setupStatusParams = new URLSearchParams({
+      recipe: "apple-silicon-qwen36",
+      model_root: statusModelRoot,
+      client: "omp",
+      home: tempDir,
+      state: setupStatusStatePath,
+      generated_root: setupStatusGeneratedRoot,
+      runtimes: "false",
+    });
+    const setupStatusResponse = await fetch(`http://127.0.0.1:${port}/gateway/setup/status?${setupStatusParams}`);
+    assert.equal(setupStatusResponse.status, 200);
+    const setupStatusJson = await setupStatusResponse.json();
+    assert.equal(setupStatusJson.selectedRecipe.id, "apple-silicon-qwen36");
+    assert.equal(setupStatusJson.integrations.ready, true);
+    assert.equal(setupStatusJson.runtimes, null);
+    assert.equal(
+      setupStatusJson.recipe.steps.find(step => step.id === "download-27b").status,
+      "satisfied",
+    );
   } finally {
     await closeServer(app.server);
   }

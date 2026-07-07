@@ -31,12 +31,15 @@ Switchyard currently fronts these local contracts:
 - `POST /v1/messages`
 - `POST /v1/images/generations`
 - `POST /v1/audio/speech`
+- `GET /gateway/setup/status`
 
 `/v1/responses` is implemented as a bridge over chat-completions backends. It normalizes `input`, `instructions`, `max_output_tokens`, `output_text`, `tools`, `tool_choice`, function-call outputs, and usage fields, and translates chat SSE into Responses-style streaming events including function-call argument deltas.
 
 `/v1/messages` is implemented as an Anthropic Messages bridge over OpenAI-compatible chat-completions backends. It converts Anthropic text, image, `tools`, `tool_choice`, assistant `tool_use`, and user `tool_result` blocks into the matching OpenAI chat shapes, then maps OpenAI text and function-call responses back into Anthropic `text` and `tool_use` content blocks. Streaming function-call chunks are emitted as Anthropic `input_json_delta` events.
 
 `/v1/audio/speech` proxies OpenAI-compatible speech-generation requests to models with `kind: "audio_speech"`. Raw upstream responses are forwarded as bytes so audio containers are not coerced through text decoding.
+
+`/gateway/setup/status` reports first-run and resume readiness for dashboards and automation. It joins recipe/backend plans with installer state, model directories, client integration file matches, and optional keep-warm runtime health.
 
 ## CLI Surface
 
