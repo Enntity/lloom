@@ -97,6 +97,43 @@ export function renderOmpModelsYaml(config, models) {
   return `${lines.join("\n")}\n`;
 }
 
+const ompRoleNames = [
+  "default",
+  "smol",
+  "slow",
+  "plan",
+  "commit",
+  "designer",
+  "advisor",
+  "tiny",
+  "vision",
+  "task",
+];
+
+export function renderOmpConfigYaml(config) {
+  const { providerId, chatModel } = providerSettings(config);
+  const modelRef = `${providerId}/${chatModel}`;
+  const timeoutSeconds = config.clientCatalog?.omp?.streamTimeoutSeconds ?? 1800;
+  const lines = [
+    "modelRoles:",
+  ];
+  for (const role of ompRoleNames) {
+    const value = role === "default" ? `${modelRef}:low` : modelRef;
+    lines.push(`  ${role}: ${yamlScalar(value)}`);
+  }
+  lines.push("defaultThinkingLevel: auto");
+  lines.push("hideThinkingBlock: true");
+  lines.push("startup:");
+  lines.push("  setupWizard: false");
+  lines.push("setupVersion: 1");
+  lines.push("compaction:");
+  lines.push("  strategy: context-full");
+  lines.push("providers:");
+  lines.push(`  streamFirstEventTimeoutSeconds: ${timeoutSeconds}`);
+  lines.push(`  streamIdleTimeoutSeconds: ${timeoutSeconds}`);
+  return `${lines.join("\n")}\n`;
+}
+
 export function renderOpenCodeJson(config, models) {
   const { providerId, providerName, baseUrl, apiKey } = providerSettings(config);
   const opencodeModels = {};
@@ -187,8 +224,9 @@ export function buildIntegrationArtifacts(config, registry, {
   const models = registry.clientModels({ kinds: ["chat"] });
   return [
     {
-      id: "omp",
-      name: "Oh My Pi / OMP",
+      id: "omp-models",
+      clientId: "omp",
+      name: "Oh My Pi / OMP model catalog",
       kind: "native-config",
       generatedPath: path.join(generatedRoot, "omp-models.yml"),
       targetPath: home ? path.join(home, ".omp", "agent", "models.yml") : null,
@@ -196,6 +234,20 @@ export function buildIntegrationArtifacts(config, registry, {
       content: renderOmpModelsYaml(config, models),
       notes: [
         "Native model catalog. Exact advertised model IDs only.",
+      ],
+    },
+    {
+      id: "omp-config",
+      clientId: "omp",
+      name: "Oh My Pi / OMP role config",
+      kind: "native-config",
+      generatedPath: path.join(generatedRoot, "omp-config.yml"),
+      targetPath: home ? path.join(home, ".omp", "agent", "config.yml") : null,
+      mode: "replace",
+      content: renderOmpConfigYaml(config),
+      notes: [
+        `Pins OMP roles to ${config.defaults?.chatModel}.`,
+        "Keeps long local-model stream timeouts aligned with Switchyard defaults.",
       ],
     },
     {
@@ -273,9 +325,17 @@ export function buildIntegrationArtifacts(config, registry, {
   ];
 }
 
-function selectArtifacts(artifacts, clientId = "all") {
+function matchesClient(artifact, clientId) {
+  return artifact.id === clientId || artifact.clientId === clientId || artifact.clientIds?.includes(clientId);
+}
+
+export function selectIntegrationArtifacts(artifacts, clientId = "all") {
   if (clientId === "all") return artifacts;
-  return artifacts.filter(artifact => artifact.id === clientId);
+  return artifacts.filter(artifact => matchesClient(artifact, clientId));
+}
+
+function selectArtifacts(artifacts, clientId = "all") {
+  return selectIntegrationArtifacts(artifacts, clientId);
 }
 
 async function writeFile(filePath, content) {

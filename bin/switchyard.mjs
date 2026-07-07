@@ -16,7 +16,11 @@ import {
   validateBenchmarkEvidence,
 } from "../src/benchmarks.mjs";
 import { applyBootstrap, createBootstrapPlan } from "../src/bootstrap.mjs";
-import { applyIntegrationArtifacts, buildIntegrationArtifacts } from "../src/client-integrations.mjs";
+import {
+  applyIntegrationArtifacts,
+  buildIntegrationArtifacts,
+  selectIntegrationArtifacts,
+} from "../src/client-integrations.mjs";
 import { loadConfig } from "../src/config.mjs";
 import { applyInit, defaultUserConfigPath } from "../src/init.mjs";
 import { applyBackend, applyRecipe } from "../src/installer.mjs";
@@ -364,7 +368,7 @@ async function main() {
     const clientId = positional(args)[1] ?? "all";
     const registry = createRegistry(config);
     const artifacts = buildIntegrationArtifacts(config, registry);
-    const selected = clientId === "all" ? artifacts : artifacts.filter(artifact => artifact.id === clientId);
+    const selected = selectIntegrationArtifacts(artifacts, clientId);
     if (!selected.length) {
       throw new Error(`Unknown integration client ${clientId}`);
     }

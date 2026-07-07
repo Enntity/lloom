@@ -1,0 +1,21 @@
+modelRoles:
+  default: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed:low
+  smol: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed
+  slow: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed
+  plan: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed
+  commit: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed
+  designer: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed
+  advisor: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed
+  tiny: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed
+  vision: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed
+  task: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed
+defaultThinkingLevel: auto
+hideThinkingBlock: true
+startup:
+  setupWizard: false
+setupVersion: 1
+compaction:
+  strategy: context-full
+providers:
+  streamFirstEventTimeoutSeconds: 1800
+  streamIdleTimeoutSeconds: 1800

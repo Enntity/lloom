@@ -11,13 +11,14 @@ npm run generate:clients
 node bin/switchyard.mjs integrations
 ```
 
-Install the generated model catalog:
+Install the generated model catalog and role config:
 
 ```zsh
 cp clients/generated/omp-models.yml ~/.omp/agent/models.yml
+cp clients/generated/omp-config.yml ~/.omp/agent/config.yml
 ```
 
-Point OMP roles at the exact model IDs from that file. For the fastest 27B lane:
+The generated role config points OMP at the exact model IDs from that file. For the fastest 27B lane:
 
 ```yaml
 modelRoles:
@@ -85,4 +86,4 @@ The intended install flow for a client integration is:
 5. `switchyard serve --config ~/.switchyard/config.json` to expose the local OpenAI/Anthropic bridge.
 6. `switchyard integrate <client> --apply --yes` to install the chosen client profile.
 
-The same registry powers `/v1/models`, OMP YAML, and OpenCode JSON, so clients should discover or generate from Switchyard instead of carrying stale model IDs.
+The same registry powers `/v1/models`, OMP YAML, OMP role config, and OpenCode JSON, so clients should discover or generate from Switchyard instead of carrying stale model IDs.

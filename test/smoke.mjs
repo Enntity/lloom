@@ -232,7 +232,7 @@ const initPlan = await createInitPlan(config, {
 assert.equal(initPlan.dryRun, true);
 assert.equal(initPlan.configPath, path.join(tempDir, "config.json"));
 assert.deepEqual(initPlan.keepWarm, ["mtplx-qwen36-27b-speed"]);
-assert.deepEqual(initPlan.integrations.map(integration => integration.id), ["omp"]);
+assert.deepEqual(initPlan.integrations.map(integration => integration.id), ["omp-models", "omp-config"]);
 assert.equal(initPlan.config.runtimes["mtplx-qwen36-27b-speed"].enabled, true);
 assert(initPlan.next.apply.includes("--model-root '/models'"));
 assert(initPlan.next.apply.includes("--client 'omp'"));
@@ -277,6 +277,8 @@ assert.equal(appliedConfig.runtimes["mtplx-qwen36-27b-speed"].enabled, true);
 assert.deepEqual(appliedConfig.keepWarm, ["mtplx-qwen36-27b-speed"]);
 const initGeneratedOmp = await fs.readFile(path.join(tempDir, "generated-applied", "omp-models.yml"), "utf8");
 assert(initGeneratedOmp.includes("Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed"));
+const initGeneratedOmpConfig = await fs.readFile(path.join(tempDir, "generated-applied", "omp-config.yml"), "utf8");
+assert(initGeneratedOmpConfig.includes("default: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed:low"));
 await assert.rejects(
   () => fs.access(path.join(tempDir, "generated-applied", "opencode.json")),
   /ENOENT/,
@@ -547,6 +549,9 @@ const generatedOmp = await fs.readFile(path.join("clients", "examples", "omp-mod
 assert(generatedOmp.includes("Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed"));
 assert(generatedOmp.includes("Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16"));
 assert(!generatedOmp.includes("Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed\n"));
+const generatedOmpConfig = await fs.readFile(path.join("clients", "examples", "omp-config.yml"), "utf8");
+assert(generatedOmpConfig.includes("default: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed:low"));
+assert(!generatedOmpConfig.includes("Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed"));
 
 const generatedRoot = await fs.mkdtemp(path.join(os.tmpdir(), "switchyard-generated-"));
 const integrationArtifacts = buildIntegrationArtifacts(config, registry, {
@@ -555,7 +560,7 @@ const integrationArtifacts = buildIntegrationArtifacts(config, registry, {
 });
 assert.deepEqual(
   integrationArtifacts.map(artifact => artifact.id),
-  ["omp", "opencode", "codex", "claude", "hermes", "zero", "manifest"],
+  ["omp-models", "omp-config", "opencode", "codex", "claude", "hermes", "zero", "manifest"],
 );
 assert(integrationArtifacts.every(artifact =>
   artifact.content.includes("Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed")));
@@ -596,9 +601,13 @@ const integrationApply = await applyIntegrationArtifacts(config, registry, {
   generatedRoot,
 });
 assert.equal(integrationApply.results[0].status, "written");
+assert.equal(integrationApply.results[1].status, "written");
 const tempOmp = await fs.readFile(path.join(tempDir, ".omp", "agent", "models.yml"), "utf8");
 assert(tempOmp.includes("Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed"));
 assert(!tempOmp.includes("Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed\n"));
+const tempOmpConfig = await fs.readFile(path.join(tempDir, ".omp", "agent", "config.yml"), "utf8");
+assert(tempOmpConfig.includes("default: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed:low"));
+assert(!tempOmpConfig.includes("Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed"));
 
 const bootstrapPlan = await createBootstrapPlan(config, {
   recipeId: "apple-silicon-qwen36",
@@ -619,7 +628,7 @@ assert.equal(bootstrapPlan.recipe.validationErrors.length, 0);
 assert.equal(bootstrapPlan.benchmarks.validationErrors.length, 0);
 assert.equal(bootstrapPlan.recipe.models.find(model => model.role === "fastest-27b")?.benchmark.best.id,
   "qwen36-27b-mtplx-speed-m2max-d3");
-assert.deepEqual(bootstrapPlan.integrations.map(integration => integration.id), ["omp"]);
+assert.deepEqual(bootstrapPlan.integrations.map(integration => integration.id), ["omp-models", "omp-config"]);
 assert(bootstrapPlan.next.pathHint.includes("bootstrap-bin"));
 
 const bootstrapDryRun = await applyBootstrap(config, {

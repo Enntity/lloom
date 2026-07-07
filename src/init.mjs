@@ -1,6 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { buildIntegrationArtifacts, writeGeneratedIntegrationArtifacts, applyIntegrationArtifacts } from "./client-integrations.mjs";
+import {
+  applyIntegrationArtifacts,
+  buildIntegrationArtifacts,
+  selectIntegrationArtifacts,
+  writeGeneratedIntegrationArtifacts,
+} from "./client-integrations.mjs";
 import { defaultBackendVariables, getBackend, loadBackendCatalog, planBackend } from "./backend-catalog.mjs";
 import { profileMachine, rankRecipes } from "./machine-profile.mjs";
 import { createRegistry } from "./registry.mjs";
@@ -111,9 +116,7 @@ async function selectRecipe({ recipeId, recipes, profile }) {
 function integrationPlan(config, home, generatedRoot, clientId = "all") {
   const registry = createRegistry(config);
   const artifacts = buildIntegrationArtifacts(config, registry, { home, generatedRoot });
-  const selected = clientId === "all"
-    ? artifacts
-    : artifacts.filter(artifact => artifact.id === clientId);
+  const selected = selectIntegrationArtifacts(artifacts, clientId);
   if (!selected.length) throw new Error(`Unknown integration client ${clientId}`);
   return selected.map(artifact => ({
     id: artifact.id,

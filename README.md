@@ -64,6 +64,7 @@ node bin/switchyard.mjs integrate all
 Outputs:
 
 - `clients/generated/omp-models.yml`
+- `clients/generated/omp-config.yml`
 - `clients/generated/opencode.json`
 - `clients/generated/codex.env`
 - `clients/generated/claude.env`
@@ -81,7 +82,7 @@ The generator reads the gateway registry. If a model ID is stale, remove it from
 node bin/switchyard.mjs integrate omp --apply --yes
 ```
 
-OMP has a native target at `~/.omp/agent/models.yml`. OpenCode, Codex, Claude-compatible, Hermes, and Zero profiles are written as managed Switchyard artifacts under `~/.switchyard/integrations/` until their stable native config contracts are pinned.
+OMP has native targets at `~/.omp/agent/models.yml` and `~/.omp/agent/config.yml`. The model catalog contains exact advertised IDs only, and the role config pins OMP to the fastest 27B default. OpenCode, Codex, Claude-compatible, Hermes, and Zero profiles are written as managed Switchyard artifacts under `~/.switchyard/integrations/` until their stable native config contracts are pinned.
 
 Inspect install recipes:
 

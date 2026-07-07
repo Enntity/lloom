@@ -1,4 +1,9 @@
-import { applyIntegrationArtifacts, buildIntegrationArtifacts, writeGeneratedIntegrationArtifacts } from "./client-integrations.mjs";
+import {
+  applyIntegrationArtifacts,
+  buildIntegrationArtifacts,
+  selectIntegrationArtifacts,
+  writeGeneratedIntegrationArtifacts,
+} from "./client-integrations.mjs";
 import { applyBackend, applyRecipe, defaultInstallStatePath } from "./installer.mjs";
 import { backendIds, defaultBackendVariables, getBackend, loadBackendCatalog, planBackend } from "./backend-catalog.mjs";
 import {
@@ -12,9 +17,7 @@ import { createRegistry } from "./registry.mjs";
 import { loadRecipeById, loadRecipes, planRecipe } from "./recipes.mjs";
 
 function integrationSummary(artifacts, clientId = "all") {
-  const selected = clientId === "all"
-    ? artifacts
-    : artifacts.filter(artifact => artifact.id === clientId);
+  const selected = selectIntegrationArtifacts(artifacts, clientId);
   if (!selected.length) throw new Error(`Unknown integration client ${clientId}`);
   return selected.map(artifact => ({
     id: artifact.id,
