@@ -48,3 +48,11 @@ After backend shim steps run, add `data/bin` to `PATH` before starting managed r
 ```zsh
 export PATH="$PWD/data/bin:$PATH"
 ```
+
+Start and verify the selected keep-warm runtimes from the CLI:
+
+```zsh
+switchyard runtimes
+switchyard keep-warm
+switchyard runtimes
+```

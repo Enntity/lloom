@@ -108,9 +108,20 @@ node bin/switchyard.mjs install apple-silicon-qwen36 --model-root ~/Models --app
 
 Completed real install steps are recorded in `data/install-state.json`, so interrupted setup can resume without rerunning completed steps. Hugging Face model downloads use `hf download` or `huggingface-cli download`; set `SWITCHYARD_HF_BIN=/path/to/hf` when the CLI lives outside `PATH`. If a model destination already has files, Switchyard treats that download step as satisfied.
 
-Runtime management endpoints:
+Runtime management:
 
 ```zsh
+node bin/switchyard.mjs runtimes
+node bin/switchyard.mjs runtime-start mtplx-qwen36-27b-speed
+node bin/switchyard.mjs runtime-warmup mtplx-qwen36-27b-speed
+node bin/switchyard.mjs runtime-stop mtplx-qwen36-27b-speed
+node bin/switchyard.mjs keep-warm
+```
+
+The same controls are exposed over HTTP for dashboards and external automation:
+
+```zsh
+curl -sS http://127.0.0.1:8100/gateway/status
 curl -sS -X POST http://127.0.0.1:8100/gateway/runtimes/mtplx-qwen36-27b-speed/start
 curl -sS -X POST http://127.0.0.1:8100/gateway/runtimes/mtplx-qwen36-27b-speed/warmup
 curl -sS -X POST http://127.0.0.1:8100/gateway/runtimes/mtplx-qwen36-27b-speed/stop

@@ -359,6 +359,38 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
   assert.equal(keepWarmResult[0].reason, "already-healthy");
   const stopResult = await lifecycleManager.stop("synthetic-runtime");
   assert.equal(stopResult.stopped, true);
+
+  const cliConfigPath = path.join(tempDir, "runtime-cli-config.json");
+  await fs.writeFile(cliConfigPath, `${JSON.stringify(lifecycleConfig, null, 2)}\n`, "utf8");
+  const runSwitchyard = async args => runCommand(process.execPath, [
+    path.join(process.cwd(), "bin", "switchyard.mjs"),
+    ...args,
+    "--config",
+    cliConfigPath,
+  ]);
+
+  const cliStatus = JSON.parse((await runSwitchyard(["runtimes", "synthetic-runtime"])).stdout);
+  assert.equal(cliStatus.runtimes["synthetic-runtime"].healthy, false);
+  assert.equal(cliStatus.runtimes["synthetic-runtime"].keepWarm, true);
+
+  const cliStart = JSON.parse((await runSwitchyard(["runtime-start", "synthetic-runtime"])).stdout);
+  assert.equal(cliStart.started, true);
+  assert.equal(cliStart.healthy, true);
+  assert.equal(cliStart.warmup.warmed, true);
+
+  const cliWarmup = JSON.parse((await runSwitchyard(["runtime-warmup", "synthetic-runtime"])).stdout);
+  assert.equal(cliWarmup.warmed, true);
+
+  const cliKeepWarm = JSON.parse((await runSwitchyard(["keep-warm"])).stdout);
+  assert.equal(cliKeepWarm.results[0].runtimeId, "synthetic-runtime");
+  assert.equal(cliKeepWarm.results[0].healthy, true);
+
+  const cliRunningStatus = JSON.parse((await runSwitchyard(["runtimes", "synthetic-runtime"])).stdout);
+  assert.equal(cliRunningStatus.runtimes["synthetic-runtime"].healthy, true);
+  assert.equal(cliRunningStatus.runtimes["synthetic-runtime"].status, "external");
+
+  const cliStop = JSON.parse((await runSwitchyard(["runtime-stop", "synthetic-runtime"])).stdout);
+  assert.equal(cliStop.stopped, true);
 }
 
 const syntheticRecipe = {

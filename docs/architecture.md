@@ -33,6 +33,16 @@ Switchyard currently fronts these local contracts:
 
 `/v1/responses` is implemented as a bridge over chat-completions backends. It normalizes `input`, `instructions`, `max_output_tokens`, `output_text`, and usage fields, and translates chat SSE into Responses-style streaming events.
 
+## CLI Surface
+
+The CLI exposes the same runtime controls without requiring an already-running gateway:
+
+- `switchyard runtimes [runtime-id|all]`
+- `switchyard runtime-start <runtime-id>`
+- `switchyard runtime-warmup <runtime-id>`
+- `switchyard runtime-stop <runtime-id>`
+- `switchyard keep-warm`
+
 ## Runtime Policy
 
 Runtime definitions include command, args, cwd, env, health URL, timeout, port, and warmup request. Model requests automatically ensure the bound runtime only when that runtime is `enabled`; manual admin `start` can force-start any configured runtime for setup and diagnostics.

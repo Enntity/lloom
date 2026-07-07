@@ -28,6 +28,7 @@ import { profileMachine, rankRecipes } from "../src/machine-profile.mjs";
 import { buildRecipeIndexReport } from "../src/recipe-index.mjs";
 import { createRegistry } from "../src/registry.mjs";
 import { loadRecipeById, loadRecipes, planRecipe } from "../src/recipes.mjs";
+import { RuntimeManager } from "../src/runtime-manager.mjs";
 import { createSwitchyardServer } from "../src/server.mjs";
 
 function usage() {
@@ -48,6 +49,11 @@ function usage() {
   switchyard install <recipe-id> [--config path] [--model-root path] [--apply --yes]
   switchyard integrations [client-id|all] [--config path]
   switchyard integrate [client-id|all] [--config path] [--apply --yes]
+  switchyard runtimes [runtime-id|all] [--config path]
+  switchyard runtime-start <runtime-id> [--config path] [--no-warmup] [--no-force]
+  switchyard runtime-warmup <runtime-id> [--config path]
+  switchyard runtime-stop <runtime-id> [--config path]
+  switchyard keep-warm [--config path]
   switchyard doctor [--config path]
 
 Environment:
@@ -82,6 +88,28 @@ async function loadBenchmarksForCli(args) {
     evidence,
     validationErrors,
   };
+}
+
+function runtimeManagerForCli(config) {
+  return new RuntimeManager(config, {
+    captureOutput: false,
+    logger: {
+      error(message) {
+        console.error(message);
+      },
+    },
+  });
+}
+
+function requireRuntimeId(args, command) {
+  const runtimeId = positional(args)[1];
+  if (!runtimeId) {
+    console.error(`Missing runtime id for ${command}`);
+    console.error(usage());
+    process.exitCode = 2;
+    return null;
+  }
+  return runtimeId;
 }
 
 async function main() {
@@ -396,6 +424,63 @@ async function main() {
       dryRun: !apply,
       yes,
     }), null, 2));
+    return;
+  }
+
+  if (command === "runtimes" || command === "runtime-status") {
+    const runtimeId = positional(args)[1] ?? "all";
+    const manager = runtimeManagerForCli(config);
+    const status = await manager.status();
+    const runtimes = runtimeId === "all"
+      ? status.runtimes
+      : { [runtimeId]: status.runtimes[runtimeId] };
+    if (runtimeId !== "all" && !status.runtimes[runtimeId]) {
+      throw new Error(`Unknown runtime ${runtimeId}`);
+    }
+    console.log(JSON.stringify({
+      config: config.sourcePath,
+      defaults: config.defaults,
+      keepWarm: config.keepWarm ?? [],
+      runtimes,
+      events: status.events,
+    }, null, 2));
+    return;
+  }
+
+  if (command === "runtime-start") {
+    const runtimeId = requireRuntimeId(args, command);
+    if (!runtimeId) return;
+    const manager = runtimeManagerForCli(config);
+    console.log(JSON.stringify(await manager.start(runtimeId, {
+      force: !hasFlag(args, "--no-force"),
+      warmup: !hasFlag(args, "--no-warmup"),
+      reason: "cli-start",
+    }), null, 2));
+    return;
+  }
+
+  if (command === "runtime-warmup") {
+    const runtimeId = requireRuntimeId(args, command);
+    if (!runtimeId) return;
+    const manager = runtimeManagerForCli(config);
+    console.log(JSON.stringify(await manager.warmupById(runtimeId), null, 2));
+    return;
+  }
+
+  if (command === "runtime-stop") {
+    const runtimeId = requireRuntimeId(args, command);
+    if (!runtimeId) return;
+    const manager = runtimeManagerForCli(config);
+    console.log(JSON.stringify(await manager.stop(runtimeId), null, 2));
+    return;
+  }
+
+  if (command === "keep-warm") {
+    const manager = runtimeManagerForCli(config);
+    console.log(JSON.stringify({
+      keepWarm: config.keepWarm ?? [],
+      results: await manager.startKeepWarm(),
+    }, null, 2));
     return;
   }
 

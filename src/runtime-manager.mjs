@@ -35,9 +35,10 @@ async function healthOk(url, timeoutMs = 1500) {
 }
 
 export class RuntimeManager {
-  constructor(config, { logger = console } = {}) {
+  constructor(config, { logger = console, captureOutput = true } = {}) {
     this.config = config;
     this.logger = logger;
+    this.captureOutput = captureOutput;
     this.processes = new Map();
     this.state = new Map();
     this.events = [];
@@ -168,7 +169,7 @@ export class RuntimeManager {
         ...process.env,
         ...(runtime.env ?? {}),
       },
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: this.captureOutput ? ["ignore", "pipe", "pipe"] : "ignore",
       detached: true,
     });
     child.unref();
@@ -177,14 +178,16 @@ export class RuntimeManager {
     state.startedAt = nowIso();
     this.record({ runtimeId, event: "start", pid: child.pid, reason, force });
 
-    child.stdout?.on("data", chunk => {
-      const line = String(chunk).trim();
-      if (line) this.record({ runtimeId, event: "stdout", message: line.slice(0, 500) });
-    });
-    child.stderr?.on("data", chunk => {
-      const line = String(chunk).trim();
-      if (line) this.record({ runtimeId, event: "stderr", message: line.slice(0, 500) });
-    });
+    if (this.captureOutput) {
+      child.stdout?.on("data", chunk => {
+        const line = String(chunk).trim();
+        if (line) this.record({ runtimeId, event: "stdout", message: line.slice(0, 500) });
+      });
+      child.stderr?.on("data", chunk => {
+        const line = String(chunk).trim();
+        if (line) this.record({ runtimeId, event: "stderr", message: line.slice(0, 500) });
+      });
+    }
     child.on("error", error => {
       state.status = "failed";
       state.lastError = error?.message ?? String(error);
