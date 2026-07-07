@@ -61,6 +61,6 @@ Recipes should reference backend IDs from `backends/catalog.json`. That keeps mo
 
 Backend install state and recipe install state share `data/install-state.json`, but use separate namespaces. Backend setup handles runtime-family prerequisites such as checks, command shims, and manual install notes; recipe setup handles model artifacts, tuning, and gateway model/runtime mappings.
 
-## Bootstrap Policy
+## Setup Policy
 
-Bootstrap composes backend setup, recipe setup, generated clients, and client integration writes into one audited plan. It does not bypass the lower-level safety gates: dry-run is the default, and real execution requires explicit `--apply --yes`.
+Setup composes initialization, backend setup, recipe setup, generated clients, and client integration writes into one audited plan. It does not bypass the lower-level safety gates: dry-run is the default, and real execution requires explicit `--apply --yes`. Bootstrap remains the lower-level backend/model/client phase for an existing config.

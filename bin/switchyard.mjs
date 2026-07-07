@@ -30,6 +30,7 @@ import { createRegistry } from "../src/registry.mjs";
 import { loadRecipeById, loadRecipes, planRecipe } from "../src/recipes.mjs";
 import { RuntimeManager } from "../src/runtime-manager.mjs";
 import { createSwitchyardServer } from "../src/server.mjs";
+import { applySetup, createSetupPlan } from "../src/setup.mjs";
 
 function usage() {
   return `Usage:
@@ -38,6 +39,7 @@ function usage() {
   switchyard backends [backend-id|all]
   switchyard backend-plan <backend-id>
   switchyard backend-install <backend-id> [--apply --yes] [--step step-id]
+  switchyard setup [--recipe recipe-id] [--config-out path] [--model-root path] [--client client-id|all] [--apply --yes] [--start]
   switchyard init [--recipe recipe-id] [--config-out path] [--model-root path] [--client client-id|all] [--apply --yes] [--integrate]
   switchyard bootstrap [--recipe recipe-id] [--model-root path] [--client client-id|all] [--apply --yes]
   switchyard benchmarks [recipe-id|all] [--benchmarks-root path]
@@ -196,6 +198,35 @@ async function main() {
       ...(onlyStep ? { onlyStep } : {}),
       variables: defaultBackendVariables(process.env),
     }), null, 2));
+    return;
+  }
+
+  if (command === "setup") {
+    const recipeId = argValue(args, "--recipe");
+    const configOut = argValue(args, "--config-out") ?? defaultUserConfigPath();
+    const modelRoot = argValue(args, "--model-root");
+    const clientId = argValue(args, "--client") ?? "all";
+    const statePath = argValue(args, "--state");
+    const apply = hasFlag(args, "--apply");
+    const yes = hasFlag(args, "--yes");
+    const start = hasFlag(args, "--start");
+    const options = {
+      recipeId,
+      configPath: configOut,
+      ...(modelRoot ? { modelRoot } : {}),
+      clientId,
+      backendVariables: defaultBackendVariables(process.env),
+      benchmarksRoot: argValue(args, "--benchmarks-root"),
+      ...(statePath ? { statePath } : {}),
+    };
+    console.log(JSON.stringify(apply
+      ? await applySetup(config, {
+        ...options,
+        dryRun: false,
+        yes,
+        start,
+      })
+      : await createSetupPlan(config, options), null, 2));
     return;
   }
 

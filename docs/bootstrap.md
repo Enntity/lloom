@@ -1,38 +1,40 @@
 # Bootstrap
 
-For most first runs, start with `switchyard init`. It creates a user config, enables the selected recipe runtimes, points model paths at a model root, sets keep-warm, and writes generated client profiles. It does not install backends or download/tune models; `--integrate` only adds live native client file writes such as OMP's model catalog.
+For most first runs, start with `switchyard setup`. It composes config initialization, backend setup, model download/tuning, generated client profiles, and live client integration writes into one guarded dry-run plan.
 
-`switchyard bootstrap` is the heavier setup orchestrator for backend installation, model download/tuning, and client integration planning.
+`switchyard init` and `switchyard bootstrap` remain available as lower-level phases when you want to inspect or run them separately. `init` creates a user config, enables the selected recipe runtimes, points model paths at a model root, sets keep-warm, and writes generated client profiles. `bootstrap` handles backend installation, model download/tuning, and client integration planning for an existing config.
 
-`switchyard bootstrap` is the one-command orchestration layer. It composes the lower-level planners:
+`switchyard setup` composes these lower-level planners:
 
 1. profile the machine
 2. select the best compatible recipe
-3. plan backend setup
-4. plan model download and tuning
-5. plan client integration files
+3. derive and write the user config
+4. plan backend setup
+5. plan model download and tuning
+6. plan client integration files
 
 Dry-run:
 
 ```zsh
-node bin/switchyard.mjs bootstrap
+node bin/switchyard.mjs setup
 ```
 
 Apply after review:
 
 ```zsh
-node bin/switchyard.mjs bootstrap --apply --yes
+node bin/switchyard.mjs setup --apply --yes
 ```
 
 Useful options:
 
 ```zsh
-node bin/switchyard.mjs bootstrap --recipe apple-silicon-qwen36
-node bin/switchyard.mjs bootstrap --client omp
-node bin/switchyard.mjs bootstrap --model-root ~/Models
+node bin/switchyard.mjs setup --recipe apple-silicon-qwen36
+node bin/switchyard.mjs setup --client omp
+node bin/switchyard.mjs setup --model-root ~/Models
+node bin/switchyard.mjs setup --apply --yes --start
 ```
 
-Bootstrap uses the same guarded executors as `backend-install`, `install`, and `integrate`. Real execution writes resumable state to `data/install-state.json`; a repeated run skips completed backend and recipe steps.
+Setup uses the same guarded executors as `backend-install`, `install`, and `integrate`. Real execution writes resumable state to `data/install-state.json`; a repeated run skips completed backend and recipe steps.
 
 Recipe model downloads use the first available Hugging Face CLI in this order:
 

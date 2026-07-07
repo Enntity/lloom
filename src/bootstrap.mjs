@@ -47,6 +47,7 @@ export async function createBootstrapPlan(config, {
   modelRoot,
   clientId = "all",
   home = process.env.HOME,
+  generatedRoot,
   backendVariables = defaultBackendVariables(process.env),
   benchmarksRoot,
 } = {}) {
@@ -58,7 +59,7 @@ export async function createBootstrapPlan(config, {
   if (!backend) throw new Error(`Recipe ${recipe.id} references unknown backend ${recipe.backend?.id}`);
 
   const registry = createRegistry(config);
-  const integrations = integrationSummary(buildIntegrationArtifacts(config, registry, { home }), clientId);
+  const integrations = integrationSummary(buildIntegrationArtifacts(config, registry, { home, generatedRoot }), clientId);
   const selectedModelRoot = modelRoot ?? process.env.SWITCHYARD_MODEL_ROOT ?? "${SWITCHYARD_MODEL_ROOT}";
   const selectedBenchmarksRoot = benchmarksRoot ?? defaultBenchmarksRoot;
   const benchmarkEvidence = await loadBenchmarkEvidence(selectedBenchmarksRoot);
@@ -103,6 +104,7 @@ export async function applyBootstrap(config, {
   yes = false,
   statePath = defaultInstallStatePath,
   home = process.env.HOME,
+  generatedRoot,
   backendVariables = defaultBackendVariables(process.env),
 } = {}) {
   if (!dryRun && !yes) {
@@ -134,10 +136,11 @@ export async function applyBootstrap(config, {
     dryRun,
     yes,
     home,
+    generatedRoot,
   });
   const generatedClients = dryRun
     ? []
-    : await writeGeneratedIntegrationArtifacts(config, registry, { home });
+    : await writeGeneratedIntegrationArtifacts(config, registry, { clientId, home, generatedRoot });
 
   return {
     dryRun,

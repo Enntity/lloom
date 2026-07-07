@@ -79,11 +79,9 @@ The default config allows missing auth for local development. Set `security.allo
 
 The intended install flow for a client integration is:
 
-1. `switchyard init` to preview selected recipe, user config, keep-warm, and generated client profiles.
-2. `switchyard init --apply --yes` to write the user config and generated profiles.
-3. `switchyard bootstrap` to preview backend installation plus model download/tuning.
-4. `switchyard bootstrap --apply --yes` to execute the full setup.
-5. `switchyard serve --config ~/.switchyard/config.json` to expose the local OpenAI/Anthropic bridge.
-6. `switchyard integrate <client> --apply --yes` to install the chosen client profile.
+1. `switchyard setup --client <client>` to preview selected recipe, user config, keep-warm, backend installation, model download/tuning, and client files.
+2. `switchyard setup --client <client> --apply --yes` to write the config, install resumable backend/model steps, and install the chosen client profile.
+3. `switchyard serve --config ~/.switchyard/config.json` to expose the local OpenAI/Anthropic bridge.
+4. `switchyard keep-warm --config ~/.switchyard/config.json` or `switchyard setup --apply --yes --start` when you want the selected keep-warm runtime launched immediately.
 
 The same registry powers `/v1/models`, OMP YAML, OMP role config, and OpenCode JSON, so clients should discover or generate from Switchyard instead of carrying stale model IDs.

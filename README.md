@@ -34,24 +34,26 @@ curl -sS http://127.0.0.1:8100/v1/models
 curl -sS http://127.0.0.1:8100/gateway/status
 ```
 
-First-run local config:
+First-run setup:
+
+```zsh
+node bin/switchyard.mjs setup
+node bin/switchyard.mjs setup --config-out ~/.switchyard/config.json --model-root ~/.switchyard/models --client omp --apply --yes
+SWITCHYARD_CONFIG=~/.switchyard/config.json npm start
+```
+
+`setup` profiles the machine, selects the best recipe, writes a user config, plans backend installation, plans model download/tuning, and installs selected client integration files. It is a dry-run by default; real execution requires `--apply --yes`. Add `--start` when you want setup to start the configured keep-warm runtimes after applying.
+
+Lower-level setup commands remain available when you want to inspect or run a phase separately:
 
 ```zsh
 node bin/switchyard.mjs init
 node bin/switchyard.mjs init --config-out ~/.switchyard/config.json --model-root ~/.switchyard/models --client omp --apply --yes
-SWITCHYARD_CONFIG=~/.switchyard/config.json npm start
-```
-
-`init` profiles the machine, selects the best recipe, enables that recipe's runtimes in a user config, points model paths at your model root, sets the keep-warm runtime, and writes generated client profiles. It is a dry-run by default; `--apply --yes` writes the config and generated profiles. Add `--integrate` when you want it to also write native client files such as `~/.omp/agent/models.yml`.
-
-Full backend/model setup plan:
-
-```zsh
 node bin/switchyard.mjs bootstrap
 node bin/switchyard.mjs bootstrap --apply --yes
 ```
 
-`bootstrap` profiles the machine, selects the best recipe, plans backend setup, plans model download/tuning, and plans client integration writes. It is a dry-run by default.
+`init` only writes local config and generated profiles. `bootstrap` plans and applies backend setup, model download/tuning, and client integration writes for an existing config.
 
 Generate client configs:
 
@@ -149,7 +151,7 @@ Current Apple Silicon headline defaults:
 - Fastest dense 27B: `Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed`
 - Fastest 35B-A3B MoE observed here: `Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16`
 
-Durable route aliases such as `qwen36-27b-fastest` are allowed for scripts and humans, but clients should prefer exact advertised IDs when they need a stable catalog.
+Durable route aliases such as `qwen36-27b-fastest` are allowed for scripts and humans, but `/v1/models` and generated client profiles advertise exact model IDs only.
 
 ## Architecture
 

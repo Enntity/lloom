@@ -37,6 +37,7 @@ import { createRegistry } from "../src/registry.mjs";
 import { loadRecipeById, loadRecipes, planRecipe } from "../src/recipes.mjs";
 import { RuntimeManager } from "../src/runtime-manager.mjs";
 import { createSwitchyardServer } from "../src/server.mjs";
+import { applySetup, createSetupPlan } from "../src/setup.mjs";
 
 function listen(server, host = "127.0.0.1", port = 0) {
   return new Promise((resolve, reject) => {
@@ -107,6 +108,8 @@ const models = registry.openAIModels().map(model => model.id);
 assert(models.includes("Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed"));
 assert(models.includes("Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16"));
 assert(!models.includes("Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed"));
+assert(!models.includes("qwen36-27b-fastest"));
+assert(!models.includes("qwen36-35b-fastest"));
 
 const clientModels = registry.clientModels({ kinds: ["chat"] }).map(model => model.id);
 assert.deepEqual(clientModels, [
@@ -694,6 +697,78 @@ await assert.rejects(
   /Refusing to bootstrap/,
 );
 
+const setupBackendVariables = {
+  shimDir: path.join(tempDir, "setup-bin"),
+  backendRoot: path.join(tempDir, "setup-backends"),
+  installRoot: path.join(tempDir, "setup-install"),
+  repoParent: path.dirname(process.cwd()),
+  modelRoot: "/models",
+};
+const setupPlan = await createSetupPlan(config, {
+  recipeId: "apple-silicon-qwen36",
+  configPath: path.join(tempDir, "setup-config.json"),
+  modelRoot: "/models",
+  clientId: "omp",
+  home: tempDir,
+  generatedRoot: path.join(tempDir, "setup-generated"),
+  backendVariables: setupBackendVariables,
+});
+assert.equal(setupPlan.dryRun, true);
+assert.equal(setupPlan.configPath, path.join(tempDir, "setup-config.json"));
+assert.equal(setupPlan.selectedRecipe.id, "apple-silicon-qwen36");
+assert.deepEqual(setupPlan.keepWarm, ["mtplx-qwen36-27b-speed"]);
+assert.equal(setupPlan.phases.init.config.runtimes["mtplx-qwen36-27b-speed"].enabled, true);
+assert.equal(setupPlan.phases.bootstrap.recipe.validationErrors.length, 0);
+assert(setupPlan.phases.bootstrap.integrations.every(integration =>
+  integration.generatedPath.startsWith(path.join(tempDir, "setup-generated"))));
+assert(setupPlan.next.apply.includes("switchyard setup"));
+assert(setupPlan.next.applyAndStart.includes("--start"));
+
+const setupDryRun = await applySetup(config, {
+  recipeId: "apple-silicon-qwen36",
+  configPath: path.join(tempDir, "setup-apply-config.json"),
+  modelRoot: "/models",
+  clientId: "omp",
+  dryRun: true,
+  home: tempDir,
+  generatedRoot: path.join(tempDir, "setup-apply-generated"),
+  backendVariables: setupBackendVariables,
+});
+assert.equal(setupDryRun.dryRun, true);
+assert.equal(setupDryRun.phases.bootstrap.backend.id, "mtplx");
+assert(setupDryRun.phases.bootstrap.integrations.every(integration =>
+  integration.generatedPath.startsWith(path.join(tempDir, "setup-apply-generated"))));
+
+await assert.rejects(
+  () => applySetup(config, {
+    recipeId: "apple-silicon-qwen36",
+    configPath: path.join(tempDir, "setup-refuse-config.json"),
+    modelRoot: "/models",
+    clientId: "omp",
+    dryRun: false,
+    home: tempDir,
+    backendVariables: setupBackendVariables,
+  }),
+  /Refusing to run setup/,
+);
+
+const setupCli = await runCommand(process.execPath, [
+  path.join(process.cwd(), "bin", "switchyard.mjs"),
+  "setup",
+  "--recipe",
+  "apple-silicon-qwen36",
+  "--config-out",
+  path.join(tempDir, "setup-cli-config.json"),
+  "--model-root",
+  "/models",
+  "--client",
+  "omp",
+]);
+const setupCliJson = JSON.parse(setupCli.stdout);
+assert.equal(setupCliJson.selectedRecipe.id, "apple-silicon-qwen36");
+assert.equal(setupCliJson.phases.init.configPath, path.join(tempDir, "setup-cli-config.json"));
+assert.equal(setupCliJson.phases.bootstrap.recipe.validationErrors.length, 0);
+
 const testConfig = structuredClone(config);
 testConfig.server = {
   host: "127.0.0.1",
@@ -713,7 +788,10 @@ if (listened) {
     assert.equal(modelsResponse.status, 200);
     const modelsJson = await modelsResponse.json();
     assert(modelsJson.data.some(model => model.id === "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed"));
+    assert(modelsJson.data.some(model => model.id === "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16"));
     assert(!modelsJson.data.some(model => model.id === "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed"));
+    assert(!modelsJson.data.some(model => model.id === "qwen36-27b-fastest"));
+    assert(!modelsJson.data.some(model => model.id === "qwen36-35b-fastest"));
 
     const staleResponse = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
       method: "POST",

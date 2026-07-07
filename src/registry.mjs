@@ -109,7 +109,7 @@ export function createRegistry(config) {
 
   function openAIModels() {
     const now = Math.floor(Date.now() / 1000);
-    return catalogModels({ includeAliases: true, advertisedOnly: true }).map(model => ({
+    return catalogModels({ includeAliases: false, advertisedOnly: true }).map(model => ({
       id: model.id,
       object: "model",
       created: now,
