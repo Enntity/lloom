@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node bin/switchyard.mjs serve",
-    "check": "node --check bin/switchyard.mjs && node --check src/backend-catalog.mjs && node --check src/benchmarks.mjs && node --check src/bootstrap.mjs && node --check src/client-integrations.mjs && node --check src/config.mjs && node --check src/installer.mjs && node --check src/machine-profile.mjs && node --check src/registry.mjs && node --check src/recipes.mjs && node --check src/runtime-manager.mjs && node --check src/server.mjs && node --check src/process-control.mjs && node --check scripts/generate-client-configs.mjs && node --check test/smoke.mjs",
+    "check": "node --check bin/switchyard.mjs && node --check src/backend-catalog.mjs && node --check src/benchmarks.mjs && node --check src/bootstrap.mjs && node --check src/client-integrations.mjs && node --check src/config.mjs && node --check src/init.mjs && node --check src/installer.mjs && node --check src/machine-profile.mjs && node --check src/registry.mjs && node --check src/recipes.mjs && node --check src/runtime-manager.mjs && node --check src/server.mjs && node --check src/process-control.mjs && node --check scripts/generate-client-configs.mjs && node --check test/smoke.mjs",
     "generate:clients": "node scripts/generate-client-configs.mjs",
     "smoke": "node test/smoke.mjs"
   },

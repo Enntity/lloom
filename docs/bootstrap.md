@@ -1,5 +1,9 @@
 # Bootstrap
 
+For most first runs, start with `switchyard init`. It creates a user config, enables the selected recipe runtimes, points model paths at a model root, sets keep-warm, and writes generated client profiles. It does not install backends or download/tune models; `--integrate` only adds live native client file writes such as OMP's model catalog.
+
+`switchyard bootstrap` is the heavier setup orchestrator for backend installation, model download/tuning, and client integration planning.
+
 `switchyard bootstrap` is the one-command orchestration layer. It composes the lower-level planners:
 
 1. profile the machine

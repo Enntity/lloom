@@ -34,7 +34,17 @@ curl -sS http://127.0.0.1:8100/v1/models
 curl -sS http://127.0.0.1:8100/gateway/status
 ```
 
-One-command setup plan:
+First-run local config:
+
+```zsh
+node bin/switchyard.mjs init
+node bin/switchyard.mjs init --config-out ~/.switchyard/config.json --model-root ~/.switchyard/models --client omp --apply --yes
+SWITCHYARD_CONFIG=~/.switchyard/config.json npm start
+```
+
+`init` profiles the machine, selects the best recipe, enables that recipe's runtimes in a user config, points model paths at your model root, sets the keep-warm runtime, and writes generated client profiles. It is a dry-run by default; `--apply --yes` writes the config and generated profiles. Add `--integrate` when you want it to also write native client files such as `~/.omp/agent/models.yml`.
+
+Full backend/model setup plan:
 
 ```zsh
 node bin/switchyard.mjs bootstrap

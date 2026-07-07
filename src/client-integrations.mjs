@@ -283,8 +283,14 @@ async function writeFile(filePath, content) {
   await fs.writeFile(filePath, content);
 }
 
-export async function writeGeneratedIntegrationArtifacts(config, registry, options = {}) {
-  const artifacts = buildIntegrationArtifacts(config, registry, options);
+export async function writeGeneratedIntegrationArtifacts(config, registry, {
+  clientId = "all",
+  ...options
+} = {}) {
+  const artifacts = selectArtifacts(buildIntegrationArtifacts(config, registry, options), clientId);
+  if (!artifacts.length) {
+    throw new Error(`Unknown integration client ${clientId}`);
+  }
   for (const artifact of artifacts) {
     await writeFile(artifact.generatedPath, artifact.content);
   }

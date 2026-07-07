@@ -23,6 +23,7 @@ import {
   buildIntegrationArtifacts,
   writeGeneratedIntegrationArtifacts,
 } from "../src/client-integrations.mjs";
+import { applyInit, createInitPlan, deriveUserConfig } from "../src/init.mjs";
 import { applyBackend, applyRecipe } from "../src/installer.mjs";
 import { profileMachine, rankRecipes } from "../src/machine-profile.mjs";
 import { loadConfig } from "../src/config.mjs";
@@ -168,6 +169,84 @@ await assert.rejects(
 
 const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "switchyard-installer-"));
 const statePath = path.join(tempDir, "state.json");
+
+const derivedConfig = deriveUserConfig(config, recipe, {
+  modelRoot: "/models",
+});
+assert.equal(derivedConfig.sourcePath, undefined);
+assert.equal(derivedConfig.runtimes["mtplx-qwen36-27b-speed"].enabled, true);
+assert.equal(derivedConfig.runtimes["mtplx-qwen36-27b-speed"].args.at(2),
+  "/models/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed");
+assert.deepEqual(derivedConfig.keepWarm, ["mtplx-qwen36-27b-speed"]);
+
+const initPlan = await createInitPlan(config, {
+  recipeId: "apple-silicon-qwen36",
+  configPath: path.join(tempDir, "config.json"),
+  modelRoot: "/models",
+  home: tempDir,
+  generatedRoot: path.join(tempDir, "generated"),
+  clientId: "omp",
+  backendVariables: {
+    shimDir: path.join(tempDir, "init-bin"),
+    backendRoot: path.join(tempDir, "backends"),
+    installRoot: path.join(tempDir, "install"),
+    repoParent: path.dirname(process.cwd()),
+    modelRoot: "/models",
+  },
+});
+assert.equal(initPlan.dryRun, true);
+assert.equal(initPlan.configPath, path.join(tempDir, "config.json"));
+assert.deepEqual(initPlan.keepWarm, ["mtplx-qwen36-27b-speed"]);
+assert.deepEqual(initPlan.integrations.map(integration => integration.id), ["omp"]);
+assert.equal(initPlan.config.runtimes["mtplx-qwen36-27b-speed"].enabled, true);
+assert(initPlan.next.apply.includes("--model-root '/models'"));
+assert(initPlan.next.apply.includes("--client 'omp'"));
+
+const initPlanWithDefaultModelRoot = await createInitPlan(config, {
+  recipeId: "apple-silicon-qwen36",
+  home: tempDir,
+  generatedRoot: path.join(tempDir, "generated-default-root"),
+  clientId: "omp",
+});
+assert.equal(initPlanWithDefaultModelRoot.configPath, path.join(tempDir, ".switchyard", "config.json"));
+assert.equal(initPlanWithDefaultModelRoot.modelRoot, path.join(tempDir, ".switchyard", "models"));
+assert.equal(
+  initPlanWithDefaultModelRoot.config.runtimes["mtplx-qwen36-27b-speed"].args.at(2),
+  path.join(tempDir, ".switchyard", "models", "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed"),
+);
+
+await assert.rejects(
+  () => applyInit(config, {
+    dryRun: false,
+    configPath: path.join(tempDir, "refuse-config.json"),
+    modelRoot: "/models",
+    home: tempDir,
+    generatedRoot: path.join(tempDir, "generated-refuse"),
+  }),
+  /Refusing to initialize Switchyard/,
+);
+
+const initApply = await applyInit(config, {
+  dryRun: false,
+  yes: true,
+  recipeId: "apple-silicon-qwen36",
+  configPath: path.join(tempDir, "applied-config.json"),
+  modelRoot: "/models",
+  home: tempDir,
+  generatedRoot: path.join(tempDir, "generated-applied"),
+  clientId: "omp",
+});
+assert.equal(initApply.dryRun, false);
+const appliedConfig = JSON.parse(await fs.readFile(path.join(tempDir, "applied-config.json"), "utf8"));
+assert.equal(appliedConfig.runtimes["mtplx-qwen36-27b-speed"].enabled, true);
+assert.deepEqual(appliedConfig.keepWarm, ["mtplx-qwen36-27b-speed"]);
+const initGeneratedOmp = await fs.readFile(path.join(tempDir, "generated-applied", "omp-models.yml"), "utf8");
+assert(initGeneratedOmp.includes("Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed"));
+await assert.rejects(
+  () => fs.access(path.join(tempDir, "generated-applied", "opencode.json")),
+  /ENOENT/,
+);
+assert.equal(initApply.written.integrations.results[0].status, "not-applied");
 
 const runtimePort = await allocatePort();
 if (runtimePort) {

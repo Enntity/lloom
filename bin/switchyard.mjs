@@ -18,6 +18,7 @@ import {
 import { applyBootstrap, createBootstrapPlan } from "../src/bootstrap.mjs";
 import { applyIntegrationArtifacts, buildIntegrationArtifacts } from "../src/client-integrations.mjs";
 import { loadConfig } from "../src/config.mjs";
+import { applyInit, defaultUserConfigPath } from "../src/init.mjs";
 import { applyBackend, applyRecipe } from "../src/installer.mjs";
 import { profileMachine, rankRecipes } from "../src/machine-profile.mjs";
 import { createRegistry } from "../src/registry.mjs";
@@ -31,6 +32,7 @@ function usage() {
   switchyard backends [backend-id|all]
   switchyard backend-plan <backend-id>
   switchyard backend-install <backend-id> [--apply --yes] [--step step-id]
+  switchyard init [--recipe recipe-id] [--config-out path] [--model-root path] [--client client-id|all] [--apply --yes] [--integrate]
   switchyard bootstrap [--recipe recipe-id] [--model-root path] [--client client-id|all] [--apply --yes]
   switchyard benchmarks [recipe-id|all] [--benchmarks-root path]
   switchyard profile [--config path]
@@ -159,6 +161,27 @@ async function main() {
       ...(statePath ? { statePath } : {}),
       ...(onlyStep ? { onlyStep } : {}),
       variables: defaultBackendVariables(process.env),
+    }), null, 2));
+    return;
+  }
+
+  if (command === "init") {
+    const recipeId = argValue(args, "--recipe");
+    const configOut = argValue(args, "--config-out") ?? defaultUserConfigPath();
+    const modelRoot = argValue(args, "--model-root");
+    const clientId = argValue(args, "--client") ?? "all";
+    const apply = hasFlag(args, "--apply");
+    const yes = hasFlag(args, "--yes");
+    const integrate = hasFlag(args, "--integrate");
+    console.log(JSON.stringify(await applyInit(config, {
+      recipeId,
+      configPath: configOut,
+      ...(modelRoot ? { modelRoot } : {}),
+      clientId,
+      dryRun: !apply,
+      yes,
+      integrate,
+      backendVariables: defaultBackendVariables(process.env),
     }), null, 2));
     return;
   }
