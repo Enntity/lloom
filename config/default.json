@@ -1,0 +1,259 @@
+{
+  "name": "Switchyard",
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8100
+  },
+  "security": {
+    "allowMissingAuth": true,
+    "apiKeys": [
+      "sk-switchyard-local"
+    ]
+  },
+  "defaults": {
+    "chatModel": "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+    "imageModel": "black-forest-labs/FLUX.1-schnell"
+  },
+  "providers": {
+    "local-llm": {
+      "name": "Switchyard Local",
+      "baseUrl": "http://127.0.0.1:8100/v1",
+      "apiKey": "sk-switchyard-local"
+    }
+  },
+  "backends": {
+    "mtplx-27b": {
+      "type": "openai",
+      "baseUrl": "http://127.0.0.1:8201/v1",
+      "apiKey": "sk-local-llm",
+      "timeoutMs": 1800000
+    },
+    "mtplx-35b-a3b": {
+      "type": "openai",
+      "baseUrl": "http://127.0.0.1:8202/v1",
+      "apiKey": "sk-local-llm",
+      "timeoutMs": 1800000
+    },
+    "flux-schnell": {
+      "type": "openai",
+      "baseUrl": "http://127.0.0.1:8210/v1",
+      "apiKey": "sk-local-llm",
+      "timeoutMs": 1800000
+    }
+  },
+  "models": [
+    {
+      "id": "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+      "name": "Qwen3.6 27B MTPLX Speed",
+      "backend": "mtplx-27b",
+      "runtime": "mtplx-qwen36-27b-speed",
+      "upstreamModel": "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+      "kind": "chat",
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ],
+      "capabilities": [
+        "chat",
+        "tools",
+        "reasoning",
+        "long-context",
+        "mtp"
+      ],
+      "reasoning": true,
+      "supportsTools": true,
+      "contextWindow": 262144,
+      "maxOutputTokens": 32768,
+      "advertise": true,
+      "tags": [
+        "apple-silicon",
+        "qwen3.6",
+        "dense",
+        "fastest-27b"
+      ]
+    },
+    {
+      "id": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
+      "name": "Qwen3.6 35B-A3B MTPLX Speed FP16",
+      "backend": "mtplx-35b-a3b",
+      "runtime": "mtplx-qwen36-35b-a3b-speed-fp16",
+      "upstreamModel": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
+      "kind": "chat",
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ],
+      "capabilities": [
+        "chat",
+        "tools",
+        "reasoning",
+        "long-context",
+        "mtp",
+        "moe"
+      ],
+      "reasoning": true,
+      "supportsTools": true,
+      "contextWindow": 262144,
+      "maxOutputTokens": 32768,
+      "advertise": true,
+      "tags": [
+        "apple-silicon",
+        "qwen3.6",
+        "moe",
+        "fastest-35b"
+      ]
+    },
+    {
+      "id": "black-forest-labs/FLUX.1-schnell",
+      "name": "FLUX.1 Schnell",
+      "backend": "flux-schnell",
+      "runtime": "flux-schnell",
+      "upstreamModel": "black-forest-labs/FLUX.1-schnell",
+      "kind": "image",
+      "input": [
+        "text"
+      ],
+      "output": [
+        "image"
+      ],
+      "capabilities": [
+        "image-generation"
+      ],
+      "contextWindow": 4096,
+      "maxOutputTokens": 0,
+      "advertise": true,
+      "tags": [
+        "image",
+        "flux",
+        "fast"
+      ]
+    }
+  ],
+  "aliases": {
+    "qwen36-27b-fastest": {
+      "target": "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+      "advertise": true,
+      "description": "Fastest observed dense Qwen3.6 27B route on Apple Silicon."
+    },
+    "qwen36-dense-fastest": {
+      "target": "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+      "advertise": true,
+      "description": "Dense Qwen3.6 fast lane."
+    },
+    "qwen36-35b-fastest": {
+      "target": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
+      "advertise": true,
+      "description": "Fastest observed Qwen3.6 35B-A3B route on Apple Silicon."
+    },
+    "qwen36-moe-fastest": {
+      "target": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
+      "advertise": true,
+      "description": "MoE Qwen3.6 fast lane."
+    },
+    "flux-schnell": {
+      "target": "black-forest-labs/FLUX.1-schnell",
+      "advertise": true,
+      "description": "Default local image-generation route."
+    }
+  },
+  "runtimes": {
+    "mtplx-qwen36-27b-speed": {
+      "enabled": false,
+      "command": "mtplx",
+      "args": [
+        "serve",
+        "--model",
+        "${SWITCHYARD_MTPLX_MODEL_ROOT}/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8201",
+        "--turbo",
+        "--draft-depth",
+        "3"
+      ],
+      "port": 8201,
+      "healthUrl": "http://127.0.0.1:8201/health",
+      "startupTimeoutMs": 900000,
+      "warmup": {
+        "url": "http://127.0.0.1:8201/v1/chat/completions",
+        "method": "POST",
+        "body": {
+          "model": "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Reply with OK."
+            }
+          ],
+          "max_tokens": 2,
+          "stream": false
+        }
+      }
+    },
+    "mtplx-qwen36-35b-a3b-speed-fp16": {
+      "enabled": false,
+      "command": "mtplx",
+      "args": [
+        "serve",
+        "--model",
+        "${SWITCHYARD_MTPLX_MODEL_ROOT}/Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8202",
+        "--draft-depth",
+        "1"
+      ],
+      "port": 8202,
+      "healthUrl": "http://127.0.0.1:8202/health",
+      "startupTimeoutMs": 900000,
+      "warmup": {
+        "url": "http://127.0.0.1:8202/v1/chat/completions",
+        "method": "POST",
+        "body": {
+          "model": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Reply with OK."
+            }
+          ],
+          "max_tokens": 2,
+          "stream": false
+        }
+      }
+    },
+    "flux-schnell": {
+      "enabled": false,
+      "command": "python",
+      "args": [
+        "-m",
+        "switchyard_flux_server"
+      ],
+      "port": 8210,
+      "healthUrl": "http://127.0.0.1:8210/health",
+      "startupTimeoutMs": 900000
+    }
+  },
+  "keepWarm": [
+    "mtplx-qwen36-27b-speed"
+  ],
+  "clientCatalog": {
+    "providerId": "local-llm",
+    "providerName": "Switchyard Local",
+    "modelOrder": [
+      "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+      "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
+      "qwen36-27b-fastest",
+      "qwen36-35b-fastest",
+      "black-forest-labs/FLUX.1-schnell"
+    ]
+  }
+}

@@ -1,0 +1,753 @@
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
+import {
+  backendIds,
+  getBackend,
+  loadBackendCatalog,
+  planBackend,
+  planBackendCatalog,
+  validateBackendCatalog,
+} from "../src/backend-catalog.mjs";
+import {
+  benchmarkOverview,
+  loadBenchmarkEvidence,
+  summarizeBenchmarksForRecipe,
+  validateBenchmarkEvidence,
+} from "../src/benchmarks.mjs";
+import { applyBootstrap, createBootstrapPlan } from "../src/bootstrap.mjs";
+import {
+  applyIntegrationArtifacts,
+  buildIntegrationArtifacts,
+  writeGeneratedIntegrationArtifacts,
+} from "../src/client-integrations.mjs";
+import { applyBackend, applyRecipe } from "../src/installer.mjs";
+import { profileMachine, rankRecipes } from "../src/machine-profile.mjs";
+import { loadConfig } from "../src/config.mjs";
+import { runCommand } from "../src/process-control.mjs";
+import { createRegistry } from "../src/registry.mjs";
+import { loadRecipeById, planRecipe } from "../src/recipes.mjs";
+import { RuntimeManager } from "../src/runtime-manager.mjs";
+import { createSwitchyardServer } from "../src/server.mjs";
+
+function listen(server, host = "127.0.0.1", port = 0) {
+  return new Promise((resolve, reject) => {
+    const onError = error => reject(error);
+    server.once("error", onError);
+    server.listen(port, host, () => {
+      server.off("error", onError);
+      resolve(server);
+    });
+  });
+}
+
+async function tryListen(server, host = "127.0.0.1", port = 0) {
+  try {
+    await listen(server, host, port);
+    return true;
+  } catch (error) {
+    if (!["EPERM", "EACCES"].includes(error?.code)) throw error;
+    console.warn(`skipping HTTP listener smoke: ${error.code}`);
+    return false;
+  }
+}
+
+async function allocatePort() {
+  const server = http.createServer((_req, res) => {
+    res.writeHead(204);
+    res.end();
+  });
+  const listened = await tryListen(server);
+  if (!listened) return null;
+  const { port } = server.address();
+  await closeServer(server);
+  return port;
+}
+
+function closeServer(server) {
+  return new Promise(resolve => {
+    server.close(() => resolve());
+  });
+}
+
+async function readJsonBody(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  const raw = Buffer.concat(chunks).toString("utf8");
+  return raw ? JSON.parse(raw) : {};
+}
+
+const config = await loadConfig();
+const registry = createRegistry(config);
+const backendCatalog = await loadBackendCatalog();
+assert.deepEqual(validateBackendCatalog(backendCatalog), []);
+assert(backendCatalog.backends.length >= 6);
+assert(backendIds(backendCatalog).has("mtplx"));
+assert(backendIds(backendCatalog).has("llama-cpp"));
+assert(backendIds(backendCatalog).has("ollama"));
+const mtplxBackend = getBackend(backendCatalog, "mtplx");
+assert(mtplxBackend);
+const mtplxPlan = await planBackend(mtplxBackend, { checkCommands: false });
+assert.equal(mtplxPlan.id, "mtplx");
+assert.equal(mtplxPlan.platform, `${process.platform}-${process.arch}`);
+assert(mtplxPlan.features.includes("mtp"));
+assert(mtplxPlan.steps.some(step => step.action === "link-command"));
+const allBackendPlans = await planBackendCatalog(backendCatalog, { checkCommands: false });
+assert(allBackendPlans.some(plan => plan.id === "vllm"));
+
+const models = registry.openAIModels().map(model => model.id);
+assert(models.includes("Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed"));
+assert(models.includes("Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16"));
+assert(!models.includes("Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed"));
+
+const clientModels = registry.clientModels({ kinds: ["chat"] }).map(model => model.id);
+assert.deepEqual(clientModels, [
+  "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+  "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
+]);
+
+const resolved27b = registry.resolve("qwen36-27b-fastest");
+assert.equal(resolved27b.model.id, "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed");
+
+assert.throws(
+  () => registry.resolve("Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed"),
+  /unknown local model/,
+);
+
+const recipe = await loadRecipeById("apple-silicon-qwen36");
+const benchmarkEvidence = await loadBenchmarkEvidence();
+assert.equal(benchmarkEvidence.length, 2);
+assert.deepEqual(validateBenchmarkEvidence(benchmarkEvidence), []);
+const benchmarkRanking = benchmarkOverview(benchmarkEvidence);
+assert.equal(benchmarkRanking[0].model, "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16");
+assert.equal(benchmarkRanking[1].model, "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed");
+const benchmarkSummary = summarizeBenchmarksForRecipe(recipe, benchmarkEvidence);
+assert.equal(benchmarkSummary.length, 2);
+assert.equal(benchmarkSummary.find(summary => summary.role === "fastest-27b")?.best?.metrics.generationTokPerSec, 25.47);
+assert.equal(benchmarkSummary.find(summary => summary.role === "fastest-35b-a3b")?.best?.metrics.generationTokPerSec, 68.58);
+const recipePlan = planRecipe(recipe, config, {
+  modelRoot: "/models",
+  backendIds: backendIds(backendCatalog),
+  benchmarkEvidence,
+  benchmarksRoot: "benchmarks/community",
+  benchmarkValidationErrors: [],
+});
+assert.equal(recipePlan.platform, `${process.platform}-${process.arch}`);
+assert.deepEqual(recipePlan.validationErrors, []);
+assert.equal(recipePlan.benchmarks.validationErrors.length, 0);
+assert.equal(recipePlan.models.find(model => model.role === "fastest-27b")?.benchmark.best.metrics.generationTokPerSec, 25.47);
+assert(recipePlan.steps.some(step => step.action === "download-model" &&
+  step.model === "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed"));
+assert(recipePlan.steps.some(step => step.command?.join(" ") ===
+  "mtplx tune --model /models/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed --retune"));
+
+const profile = await profileMachine();
+assert.equal(profile.platformId, `${process.platform}-${process.arch}`);
+assert(profile.totalMemoryGb > 0);
+const rankedRecipes = await rankRecipes([recipe], profile, { checkCommands: false });
+assert.equal(rankedRecipes[0].recipeId, "apple-silicon-qwen36");
+
+const installDryRun = await applyRecipe(recipe, config, {
+  dryRun: true,
+  modelRoot: "/models",
+  statePath: path.join(os.tmpdir(), `switchyard-dry-run-${process.pid}.json`),
+});
+assert.equal(installDryRun.dryRun, true);
+assert(installDryRun.results.every(step => step.status === "planned"));
+
+await assert.rejects(
+  () => applyRecipe(recipe, config, {
+    dryRun: false,
+    modelRoot: "/models",
+    statePath: path.join(os.tmpdir(), `switchyard-refuse-${process.pid}.json`),
+  }),
+  /Refusing to execute recipe/,
+);
+
+const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "switchyard-installer-"));
+const statePath = path.join(tempDir, "state.json");
+
+const runtimePort = await allocatePort();
+if (runtimePort) {
+  const runtimeScript = path.join(tempDir, "synthetic-runtime.mjs");
+  await fs.writeFile(runtimeScript, `
+import http from "node:http";
+
+const port = Number(process.argv[2]);
+const server = http.createServer(async (req, res) => {
+  if (req.url === "/health") {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+  if (req.method === "POST" && req.url === "/v1/chat/completions") {
+    for await (const _ of req) {}
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({
+      id: "chatcmpl_synthetic",
+      object: "chat.completion",
+      choices: [{
+        index: 0,
+        message: { role: "assistant", content: "ok" },
+        finish_reason: "stop"
+      }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }
+    }));
+    return;
+  }
+  res.writeHead(404, { "content-type": "application/json" });
+  res.end(JSON.stringify({ error: "not found" }));
+});
+
+server.listen(port, "127.0.0.1");
+process.on("SIGTERM", () => server.close(() => process.exit(0)));
+`, "utf8");
+  const lifecycleConfig = {
+    keepWarm: ["synthetic-runtime"],
+    runtimes: {
+      "synthetic-runtime": {
+        enabled: true,
+        command: process.execPath,
+        args: [runtimeScript, String(runtimePort)],
+        port: runtimePort,
+        healthUrl: `http://127.0.0.1:${runtimePort}/health`,
+        startupTimeoutMs: 5000,
+        warmup: {
+          url: `http://127.0.0.1:${runtimePort}/v1/chat/completions`,
+          body: {
+            model: "synthetic",
+            messages: [{ role: "user", content: "warm up" }],
+            max_tokens: 1,
+          },
+        },
+      },
+    },
+  };
+  const lifecycleManager = new RuntimeManager(lifecycleConfig, {
+    logger: { error() {} },
+  });
+  const startResult = await lifecycleManager.ensure("synthetic-runtime");
+  assert.equal(startResult.started, true);
+  assert.equal(startResult.healthy, true);
+  assert.equal(startResult.warmup.warmed, true);
+  const lifecycleStatus = await lifecycleManager.status();
+  assert.equal(lifecycleStatus.runtimes["synthetic-runtime"].status, "running");
+  assert.equal(lifecycleStatus.runtimes["synthetic-runtime"].healthy, true);
+  assert.equal(lifecycleStatus.runtimes["synthetic-runtime"].keepWarm, true);
+  assert.equal(lifecycleStatus.runtimes["synthetic-runtime"].lastWarmup.warmed, true);
+  const warmupAgain = await lifecycleManager.warmupById("synthetic-runtime");
+  assert.equal(warmupAgain.warmed, true);
+  const keepWarmResult = await lifecycleManager.startKeepWarm();
+  assert.equal(keepWarmResult[0].reason, "already-healthy");
+  const stopResult = await lifecycleManager.stop("synthetic-runtime");
+  assert.equal(stopResult.stopped, true);
+}
+
+const syntheticRecipe = {
+  id: "synthetic",
+  name: "Synthetic",
+  backend: {
+    id: "test",
+  },
+  models: [
+    {
+      role: "test",
+      model: "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+      gatewayModel: "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+      runtime: "mtplx-qwen36-27b-speed",
+    },
+  ],
+  setup: {
+    steps: [
+      {
+        id: "true",
+        action: "command",
+        command: "/usr/bin/true",
+      },
+    ],
+  },
+};
+const applied = await applyRecipe(syntheticRecipe, config, {
+  dryRun: false,
+  yes: true,
+  statePath,
+});
+assert.equal(applied.results[0].status, "completed");
+const appliedAgain = await applyRecipe(syntheticRecipe, config, {
+  dryRun: false,
+  yes: true,
+  statePath,
+});
+assert.equal(appliedAgain.results[0].status, "skipped");
+
+const syntheticBin = path.join(tempDir, "synthetic-backend");
+await fs.writeFile(syntheticBin, "#!/bin/sh\necho synthetic-ok\n", { mode: 0o755 });
+await fs.chmod(syntheticBin, 0o755);
+const syntheticBackend = {
+  id: "synthetic-backend",
+  name: "Synthetic Backend",
+  kind: "openai-compatible-server",
+  platforms: [`${process.platform}-${process.arch}`],
+  features: ["chat"],
+  commands: ["synthetic-backend"],
+  setup: [
+    {
+      id: "link-synthetic",
+      title: "Link synthetic backend",
+      action: "link-command",
+      commandName: "synthetic-backend",
+      sourceCandidates: [syntheticBin],
+    },
+  ],
+};
+const backendStatePath = path.join(tempDir, "backend-state.json");
+const backendDryRun = await applyBackend(syntheticBackend, {
+  dryRun: true,
+  statePath: backendStatePath,
+  variables: {
+    shimDir: path.join(tempDir, "bin"),
+  },
+});
+assert.equal(backendDryRun.results[0].status, "planned");
+await assert.rejects(
+  () => applyBackend(syntheticBackend, {
+    dryRun: false,
+    statePath: backendStatePath,
+    variables: {
+      shimDir: path.join(tempDir, "bin"),
+    },
+  }),
+  /Refusing to modify backend setup/,
+);
+const backendApplied = await applyBackend(syntheticBackend, {
+  dryRun: false,
+  yes: true,
+  statePath: backendStatePath,
+  variables: {
+    shimDir: path.join(tempDir, "bin"),
+  },
+});
+assert.equal(backendApplied.results[0].status, "completed");
+const shimPath = path.join(tempDir, "bin", "synthetic-backend");
+const shimResult = await runCommand(shimPath, [], { allowFailure: true });
+assert.equal(shimResult.code, 0);
+assert.equal(shimResult.stdout.trim(), "synthetic-ok");
+const backendAppliedAgain = await applyBackend(syntheticBackend, {
+  dryRun: false,
+  yes: true,
+  statePath: backendStatePath,
+  variables: {
+    shimDir: path.join(tempDir, "bin"),
+  },
+});
+assert.equal(backendAppliedAgain.results[0].status, "skipped");
+
+const generatedOmp = await fs.readFile(path.join("clients", "examples", "omp-models.yml"), "utf8");
+assert(generatedOmp.includes("Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed"));
+assert(generatedOmp.includes("Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16"));
+assert(!generatedOmp.includes("Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed\n"));
+
+const generatedRoot = await fs.mkdtemp(path.join(os.tmpdir(), "switchyard-generated-"));
+const integrationArtifacts = buildIntegrationArtifacts(config, registry, {
+  home: tempDir,
+  generatedRoot,
+});
+assert.deepEqual(
+  integrationArtifacts.map(artifact => artifact.id),
+  ["omp", "opencode", "codex", "claude", "hermes", "zero", "manifest"],
+);
+assert(integrationArtifacts.every(artifact =>
+  artifact.content.includes("Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed")));
+assert(integrationArtifacts.every(artifact =>
+  !artifact.content.includes("Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed\n")));
+
+await writeGeneratedIntegrationArtifacts(config, registry, {
+  home: tempDir,
+  generatedRoot,
+});
+const generatedCodex = await fs.readFile(path.join(generatedRoot, "codex.env"), "utf8");
+assert(generatedCodex.includes("OPENAI_BASE_URL"));
+assert(generatedCodex.includes("OPENAI_MODEL='Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed'"));
+
+const integrationDryRun = await applyIntegrationArtifacts(config, registry, {
+  clientId: "all",
+  dryRun: true,
+  home: tempDir,
+  generatedRoot,
+});
+assert(integrationDryRun.results.every(result => result.status === "planned"));
+
+await assert.rejects(
+  () => applyIntegrationArtifacts(config, registry, {
+    clientId: "omp",
+    dryRun: false,
+    home: tempDir,
+    generatedRoot,
+  }),
+  /Refusing to modify client integration files/,
+);
+
+const integrationApply = await applyIntegrationArtifacts(config, registry, {
+  clientId: "omp",
+  dryRun: false,
+  yes: true,
+  home: tempDir,
+  generatedRoot,
+});
+assert.equal(integrationApply.results[0].status, "written");
+const tempOmp = await fs.readFile(path.join(tempDir, ".omp", "agent", "models.yml"), "utf8");
+assert(tempOmp.includes("Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed"));
+assert(!tempOmp.includes("Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed\n"));
+
+const bootstrapPlan = await createBootstrapPlan(config, {
+  recipeId: "apple-silicon-qwen36",
+  modelRoot: "/models",
+  clientId: "omp",
+  home: tempDir,
+  backendVariables: {
+    shimDir: path.join(tempDir, "bootstrap-bin"),
+    backendRoot: path.join(tempDir, "backends"),
+    installRoot: path.join(tempDir, "install"),
+    repoParent: path.dirname(process.cwd()),
+    modelRoot: "/models",
+  },
+});
+assert.equal(bootstrapPlan.selectedRecipe.id, "apple-silicon-qwen36");
+assert.equal(bootstrapPlan.backend.id, "mtplx");
+assert.equal(bootstrapPlan.recipe.validationErrors.length, 0);
+assert.equal(bootstrapPlan.benchmarks.validationErrors.length, 0);
+assert.equal(bootstrapPlan.recipe.models.find(model => model.role === "fastest-27b")?.benchmark.best.id,
+  "qwen36-27b-mtplx-speed-m2max-d3");
+assert.deepEqual(bootstrapPlan.integrations.map(integration => integration.id), ["omp"]);
+assert(bootstrapPlan.next.pathHint.includes("bootstrap-bin"));
+
+const bootstrapDryRun = await applyBootstrap(config, {
+  recipeId: "apple-silicon-qwen36",
+  modelRoot: "/models",
+  clientId: "omp",
+  dryRun: true,
+  statePath: path.join(tempDir, "bootstrap-state.json"),
+  home: tempDir,
+  backendVariables: {
+    shimDir: path.join(tempDir, "bootstrap-bin"),
+    backendRoot: path.join(tempDir, "backends"),
+    installRoot: path.join(tempDir, "install"),
+    repoParent: path.dirname(process.cwd()),
+    modelRoot: "/models",
+  },
+});
+assert.equal(bootstrapDryRun.dryRun, true);
+assert(bootstrapDryRun.backend.results.every(result => result.status === "planned"));
+assert(bootstrapDryRun.recipe.results.every(result => result.status === "planned"));
+assert(bootstrapDryRun.integrations.results.every(result => result.status === "planned"));
+await assert.rejects(
+  () => applyBootstrap(config, {
+    recipeId: "apple-silicon-qwen36",
+    modelRoot: "/models",
+    clientId: "omp",
+    dryRun: false,
+    statePath: path.join(tempDir, "bootstrap-refuse-state.json"),
+    home: tempDir,
+  }),
+  /Refusing to bootstrap/,
+);
+
+const testConfig = structuredClone(config);
+testConfig.server = {
+  host: "127.0.0.1",
+  port: 0,
+};
+const app = createSwitchyardServer(testConfig, {
+  logger: {
+    error() {},
+  },
+});
+const listened = await tryListen(app.server);
+
+if (listened) {
+  const { port } = app.server.address();
+  try {
+    const modelsResponse = await fetch(`http://127.0.0.1:${port}/v1/models`);
+    assert.equal(modelsResponse.status, 200);
+    const modelsJson = await modelsResponse.json();
+    assert(modelsJson.data.some(model => model.id === "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed"));
+    assert(!modelsJson.data.some(model => model.id === "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed"));
+
+    const staleResponse = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed",
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    });
+    assert.equal(staleResponse.status, 404);
+  } finally {
+    await closeServer(app.server);
+  }
+}
+
+const adminRuntimePort = await allocatePort();
+if (adminRuntimePort) {
+  const adminRuntimeScript = path.join(tempDir, "synthetic-admin-runtime.mjs");
+  await fs.writeFile(adminRuntimeScript, `
+import http from "node:http";
+
+const port = Number(process.argv[2]);
+const server = http.createServer(async (req, res) => {
+  if (req.url === "/health") {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+  if (req.method === "POST" && req.url === "/v1/chat/completions") {
+    for await (const _ of req) {}
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({
+      id: "chatcmpl_admin",
+      object: "chat.completion",
+      choices: [{
+        index: 0,
+        message: { role: "assistant", content: "ok" },
+        finish_reason: "stop"
+      }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }
+    }));
+    return;
+  }
+  res.writeHead(404, { "content-type": "application/json" });
+  res.end(JSON.stringify({ error: "not found" }));
+});
+
+server.listen(port, "127.0.0.1");
+process.on("SIGTERM", () => server.close(() => process.exit(0)));
+`, "utf8");
+  const adminConfig = structuredClone(config);
+  adminConfig.server = {
+    host: "127.0.0.1",
+    port: 0,
+  };
+  adminConfig.runtimes = {
+    "synthetic-admin-runtime": {
+      enabled: false,
+      command: process.execPath,
+      args: [adminRuntimeScript, String(adminRuntimePort)],
+      port: adminRuntimePort,
+      healthUrl: `http://127.0.0.1:${adminRuntimePort}/health`,
+      startupTimeoutMs: 5000,
+      warmup: {
+        url: `http://127.0.0.1:${adminRuntimePort}/v1/chat/completions`,
+        body: {
+          model: "synthetic",
+          messages: [{ role: "user", content: "warm up" }],
+          max_tokens: 1,
+        },
+      },
+    },
+  };
+  adminConfig.keepWarm = ["synthetic-admin-runtime"];
+  const adminApp = createSwitchyardServer(adminConfig, {
+    logger: { error() {} },
+  });
+  const adminListened = await tryListen(adminApp.server);
+  if (adminListened) {
+    const { port } = adminApp.server.address();
+    try {
+      const startResponse = await fetch(`http://127.0.0.1:${port}/gateway/runtimes/synthetic-admin-runtime/start`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ warmup: true }),
+      });
+      assert.equal(startResponse.status, 200);
+      const startJson = await startResponse.json();
+      assert.equal(startJson.started, true);
+      assert.equal(startJson.warmup.warmed, true);
+
+      const warmupResponse = await fetch(`http://127.0.0.1:${port}/gateway/runtimes/synthetic-admin-runtime/warmup`, {
+        method: "POST",
+      });
+      assert.equal(warmupResponse.status, 200);
+      const warmupJson = await warmupResponse.json();
+      assert.equal(warmupJson.warmed, true);
+
+      const statusResponse = await fetch(`http://127.0.0.1:${port}/gateway/status`);
+      assert.equal(statusResponse.status, 200);
+      const statusJson = await statusResponse.json();
+      assert.equal(statusJson.runtimeManager.runtimes["synthetic-admin-runtime"].healthy, true);
+      assert.equal(statusJson.runtimeManager.runtimes["synthetic-admin-runtime"].keepWarm, true);
+
+      const stopResponse = await fetch(`http://127.0.0.1:${port}/gateway/runtimes/synthetic-admin-runtime/stop`, {
+        method: "POST",
+      });
+      assert.equal(stopResponse.status, 200);
+      const stopJson = await stopResponse.json();
+      assert.equal(stopJson.stopped, true);
+    } finally {
+      await closeServer(adminApp.server);
+    }
+  }
+}
+
+const mockUpstream = http.createServer(async (req, res) => {
+  if (req.method !== "POST" || req.url !== "/v1/chat/completions") {
+    res.writeHead(404, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "not found" }));
+    return;
+  }
+  const body = await readJsonBody(req);
+  assert.equal(body.model, "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed");
+  if (body.stream !== true) {
+    assert(Array.isArray(body.messages));
+    res.writeHead(200, {
+      "content-type": "application/json",
+    });
+    res.end(JSON.stringify({
+      id: "chatcmpl_mock",
+      object: "chat.completion",
+      created: 1,
+      choices: [{
+        index: 0,
+        message: {
+          role: "assistant",
+          content: "hello",
+        },
+        finish_reason: "stop",
+      }],
+      usage: {
+        prompt_tokens: 7,
+        completion_tokens: 2,
+        total_tokens: 9,
+      },
+    }));
+    return;
+  }
+  res.writeHead(200, {
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-cache",
+  });
+  res.write(`data: ${JSON.stringify({
+    choices: [{ delta: { content: "hel" }, finish_reason: null }],
+  })}\n\n`);
+  res.write(`data: ${JSON.stringify({
+    choices: [{ delta: { content: "lo" }, finish_reason: "stop" }],
+  })}\n\n`);
+  res.write(`data: ${JSON.stringify({
+    choices: [],
+    usage: {
+      prompt_tokens: 11,
+      completion_tokens: 2,
+      total_tokens: 13,
+    },
+  })}\n\n`);
+  res.write("data: [DONE]\n\n");
+  res.end();
+});
+
+const mockListened = await tryListen(mockUpstream);
+if (mockListened) {
+  const mockPort = mockUpstream.address().port;
+  const streamConfig = structuredClone(config);
+  streamConfig.server = {
+    host: "127.0.0.1",
+    port: 0,
+  };
+  streamConfig.backends["mtplx-27b"] = {
+    ...streamConfig.backends["mtplx-27b"],
+    baseUrl: `http://127.0.0.1:${mockPort}/v1`,
+  };
+  const streamApp = createSwitchyardServer(streamConfig, {
+    logger: {
+      error() {},
+    },
+  });
+  const streamListened = await tryListen(streamApp.server);
+  if (streamListened) {
+    const { port } = streamApp.server.address();
+    try {
+      const responsesResponse = await fetch(`http://127.0.0.1:${port}/v1/responses`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+          instructions: "Be terse.",
+          input: "say hello",
+          max_output_tokens: 8,
+        }),
+      });
+      assert.equal(responsesResponse.status, 200);
+      const responsesJson = await responsesResponse.json();
+      assert.equal(responsesJson.object, "response");
+      assert.equal(responsesJson.output_text, "hello");
+      assert.equal(responsesJson.usage.input_tokens, 7);
+      assert.equal(responsesJson.usage.output_tokens, 2);
+
+      const responsesStreamResponse = await fetch(`http://127.0.0.1:${port}/v1/responses`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+          input: [{
+            role: "user",
+            content: [{
+              type: "input_text",
+              text: "say hello",
+            }],
+          }],
+          max_output_tokens: 8,
+          stream: true,
+        }),
+      });
+      assert.equal(responsesStreamResponse.status, 200);
+      assert.match(responsesStreamResponse.headers.get("content-type") ?? "", /text\/event-stream/);
+      const responsesStreamText = await responsesStreamResponse.text();
+      assert(responsesStreamText.includes("event: response.created"));
+      assert(responsesStreamText.includes("event: response.output_text.delta"));
+      assert(responsesStreamText.includes('"delta":"hel"'));
+      assert(responsesStreamText.includes('"delta":"lo"'));
+      assert(responsesStreamText.includes("event: response.completed"));
+      assert(responsesStreamText.includes('"input_tokens":11'));
+
+      const response = await fetch(`http://127.0.0.1:${port}/v1/messages`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+          max_tokens: 8,
+          stream: true,
+          messages: [
+            {
+              role: "user",
+              content: "say hello",
+            },
+          ],
+        }),
+      });
+      assert.equal(response.status, 200);
+      assert.match(response.headers.get("content-type") ?? "", /text\/event-stream/);
+      const streamText = await response.text();
+      assert(streamText.includes("event: message_start"));
+      assert(streamText.includes("event: content_block_delta"));
+      assert(streamText.includes('"text":"hel"'));
+      assert(streamText.includes('"text":"lo"'));
+      assert(streamText.includes('"input_tokens":11'));
+      assert(streamText.includes("event: message_stop"));
+    } finally {
+      await closeServer(streamApp.server);
+      await closeServer(mockUpstream);
+    }
+  } else {
+    await closeServer(mockUpstream);
+  }
+}
+
+console.log("smoke ok");

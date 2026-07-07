@@ -1,0 +1,341 @@
+{
+  "schemaVersion": 1,
+  "backends": [
+    {
+      "id": "mtplx",
+      "name": "MTPLX",
+      "kind": "openai-compatible-server",
+      "description": "MLX-native MTP runtime for fast Qwen/Gemma style models on Apple Silicon.",
+      "platforms": [
+        "darwin-arm64"
+      ],
+      "features": [
+        "chat",
+        "streaming",
+        "usage",
+        "tools",
+        "reasoning",
+        "mtp",
+        "mlx"
+      ],
+      "commands": [
+        "mtplx"
+      ],
+      "setup": [
+        {
+          "id": "check-mtplx",
+          "title": "Check MTPLX CLI",
+          "action": "check-command",
+          "command": "mtplx",
+          "args": [
+            "--version"
+          ]
+        },
+        {
+          "id": "install-python-env",
+          "title": "Install MTPLX into a Python environment",
+          "action": "manual",
+          "description": "Create or reuse a Python environment and install MTPLX from its published package or repository release."
+        },
+        {
+          "id": "link-mtplx",
+          "title": "Expose MTPLX through Switchyard shims",
+          "action": "link-command",
+          "commandName": "mtplx",
+          "sourceCandidates": [
+            "${SWITCHYARD_MTPLX_BIN}",
+            "${backendRoot}/mtplx/venv/bin/mtplx",
+            "${installRoot}/mtplx/venv/bin/mtplx",
+            "${repoParent}/mtplx/venv/bin/mtplx"
+          ]
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health",
+        "chatPath": "/v1/chat/completions"
+      }
+    },
+    {
+      "id": "mlx-lm",
+      "name": "MLX LM",
+      "kind": "openai-compatible-server",
+      "description": "Apple MLX reference runtime for text-generation and multimodal MLX models.",
+      "platforms": [
+        "darwin-arm64"
+      ],
+      "features": [
+        "chat",
+        "streaming",
+        "mlx",
+        "vision"
+      ],
+      "commands": [
+        "mlx_lm.server"
+      ],
+      "setup": [
+        {
+          "id": "check-mlx-lm",
+          "title": "Check MLX LM server",
+          "action": "check-command",
+          "command": "mlx_lm.server",
+          "args": [
+            "--help"
+          ]
+        },
+        {
+          "id": "install-mlx-lm",
+          "title": "Install MLX LM",
+          "action": "command",
+          "command": "python3",
+          "args": [
+            "-m",
+            "pip",
+            "install",
+            "mlx-lm"
+          ]
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/v1/models",
+        "chatPath": "/v1/chat/completions"
+      }
+    },
+    {
+      "id": "llama-cpp",
+      "name": "llama.cpp",
+      "kind": "openai-compatible-server",
+      "description": "Portable GGUF runtime with Metal/CUDA/CPU backends and long-context server support.",
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-x64",
+        "linux-arm64"
+      ],
+      "features": [
+        "chat",
+        "streaming",
+        "usage",
+        "tools",
+        "gguf",
+        "long-context"
+      ],
+      "commands": [
+        "llama-server"
+      ],
+      "setup": [
+        {
+          "id": "check-llama-server",
+          "title": "Check llama-server",
+          "action": "check-command",
+          "command": "llama-server",
+          "args": [
+            "--version"
+          ]
+        },
+        {
+          "id": "install-llama-cpp",
+          "title": "Install llama.cpp",
+          "action": "manual",
+          "description": "Install a local llama.cpp build appropriate for the machine accelerator, then expose llama-server on PATH."
+        },
+        {
+          "id": "link-llama-server",
+          "title": "Expose llama-server through Switchyard shims",
+          "action": "link-command",
+          "commandName": "llama-server",
+          "sourceCandidates": [
+            "${SWITCHYARD_LLAMA_SERVER_BIN}",
+            "${backendRoot}/llama.cpp/build/bin/llama-server",
+            "${backendRoot}/llama.cpp/build-https/bin/llama-server",
+            "${installRoot}/llama.cpp/build/bin/llama-server",
+            "${repoParent}/llama.cpp/build/bin/llama-server",
+            "${repoParent}/llama.cpp/build-https/bin/llama-server"
+          ]
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health",
+        "chatPath": "/v1/chat/completions"
+      }
+    },
+    {
+      "id": "ollama",
+      "name": "Ollama",
+      "kind": "openai-compatible-server",
+      "description": "Popular local model manager and server with broad model catalog support.",
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-x64",
+        "linux-arm64"
+      ],
+      "features": [
+        "chat",
+        "streaming",
+        "model-management"
+      ],
+      "commands": [
+        "ollama"
+      ],
+      "setup": [
+        {
+          "id": "check-ollama",
+          "title": "Check Ollama",
+          "action": "check-command",
+          "command": "ollama",
+          "args": [
+            "--version"
+          ]
+        },
+        {
+          "id": "install-ollama",
+          "title": "Install Ollama",
+          "action": "manual",
+          "description": "Install Ollama using the native desktop/package installer for the platform."
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/api/tags",
+        "chatPath": "/v1/chat/completions"
+      }
+    },
+    {
+      "id": "optiq",
+      "name": "OptiQ MLX",
+      "kind": "openai-compatible-server",
+      "description": "MLX community OptiQ quant runtime family for high-throughput Apple Silicon inference.",
+      "platforms": [
+        "darwin-arm64"
+      ],
+      "features": [
+        "chat",
+        "streaming",
+        "usage",
+        "vision",
+        "mlx",
+        "quantized"
+      ],
+      "commands": [
+        "python3"
+      ],
+      "setup": [
+        {
+          "id": "check-python",
+          "title": "Check Python",
+          "action": "check-command",
+          "command": "python3",
+          "args": [
+            "--version"
+          ]
+        },
+        {
+          "id": "install-optiq-runtime",
+          "title": "Install OptiQ runtime",
+          "action": "manual",
+          "description": "Install the OptiQ server package or local runtime script matching the selected OptiQ model recipe."
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health",
+        "chatPath": "/v1/chat/completions"
+      }
+    },
+    {
+      "id": "stable-diffusion-cpp",
+      "name": "stable-diffusion.cpp",
+      "kind": "image-server",
+      "description": "Local C/C++ image generation runtime for Flux and Stable Diffusion style models.",
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-x64",
+        "linux-arm64"
+      ],
+      "features": [
+        "image-generation",
+        "flux",
+        "stable-diffusion"
+      ],
+      "commands": [
+        "sd"
+      ],
+      "setup": [
+        {
+          "id": "check-sd",
+          "title": "Check stable-diffusion.cpp executable",
+          "action": "check-command",
+          "command": "sd",
+          "args": [
+            "--help"
+          ]
+        },
+        {
+          "id": "install-stable-diffusion-cpp",
+          "title": "Install stable-diffusion.cpp",
+          "action": "manual",
+          "description": "Install or build stable-diffusion.cpp with the accelerator backend appropriate for this machine."
+        }
+      ],
+      "server": {
+        "protocol": "openai-images",
+        "healthPath": "/health",
+        "imagePath": "/v1/images/generations"
+      }
+    },
+    {
+      "id": "vllm",
+      "name": "vLLM",
+      "kind": "openai-compatible-server",
+      "description": "High-throughput CUDA-first inference server used widely on NVIDIA systems.",
+      "platforms": [
+        "linux-x64",
+        "linux-arm64"
+      ],
+      "features": [
+        "chat",
+        "streaming",
+        "usage",
+        "tools",
+        "batching",
+        "speculative-decoding",
+        "cuda"
+      ],
+      "commands": [
+        "vllm"
+      ],
+      "setup": [
+        {
+          "id": "check-vllm",
+          "title": "Check vLLM",
+          "action": "check-command",
+          "command": "vllm",
+          "args": [
+            "--version"
+          ]
+        },
+        {
+          "id": "install-vllm",
+          "title": "Install vLLM",
+          "action": "command",
+          "command": "python3",
+          "args": [
+            "-m",
+            "pip",
+            "install",
+            "vllm"
+          ]
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health",
+        "chatPath": "/v1/chat/completions"
+      }
+    }
+  ]
+}

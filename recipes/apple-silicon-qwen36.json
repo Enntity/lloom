@@ -1,0 +1,119 @@
+{
+  "id": "apple-silicon-qwen36",
+  "name": "Apple Silicon Qwen3.6 MTPLX fast lanes",
+  "version": 1,
+  "summary": "Best observed Qwen3.6 dense and MoE lanes for Apple Silicon using MTPLX.",
+  "hardware": {
+    "family": "Apple Silicon",
+    "testedMachine": "MacBook Pro M2 Max 96 GB",
+    "notes": [
+      "Retune MTP depth per machine.",
+      "Pin fans and avoid GUI load when collecting publishable benchmark numbers."
+    ]
+  },
+  "requirements": {
+    "platforms": [
+      "darwin-arm64"
+    ],
+    "memoryGb": 64,
+    "diskGb": 90,
+    "commands": [
+      "mtplx"
+    ]
+  },
+  "backend": {
+    "id": "mtplx",
+    "name": "MTPLX",
+    "type": "openai-compatible-server",
+    "features": [
+      "mlx",
+      "mtp",
+      "openai-chat",
+      "streaming"
+    ]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-mtplx",
+        "title": "Check MTPLX CLI",
+        "action": "check-command",
+        "command": "mtplx",
+        "args": [
+          "--version"
+        ]
+      },
+      {
+        "id": "download-27b",
+        "title": "Download Qwen3.6 27B Speed",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed"
+      },
+      {
+        "id": "tune-27b",
+        "title": "Autotune Qwen3.6 27B Speed",
+        "action": "command",
+        "command": "mtplx",
+        "args": [
+          "tune",
+          "--model",
+          "${modelRoot}/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+          "--retune"
+        ]
+      },
+      {
+        "id": "download-35b-a3b",
+        "title": "Download Qwen3.6 35B-A3B Speed FP16",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16"
+      },
+      {
+        "id": "tune-35b-a3b",
+        "title": "Autotune Qwen3.6 35B-A3B Speed FP16",
+        "action": "command",
+        "command": "mtplx",
+        "args": [
+          "tune",
+          "--model",
+          "${modelRoot}/Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
+          "--retune"
+        ]
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "fastest-27b",
+      "model": "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+      "gatewayModel": "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+      "runtime": "mtplx-qwen36-27b-speed",
+      "backend": "MTPLX 2.x",
+      "settings": {
+        "turbo": true,
+        "draftDepth": 3,
+        "contextWindow": 262144
+      },
+      "observed": {
+        "generationTokPerSec": 25.47,
+        "notes": "Direct warmed MTPLX benchmark on the local M2 Max 96 GB box."
+      }
+    },
+    {
+      "role": "fastest-35b-a3b",
+      "model": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
+      "gatewayModel": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
+      "runtime": "mtplx-qwen36-35b-a3b-speed-fp16",
+      "backend": "MTPLX 2.x",
+      "settings": {
+        "draftDepth": 1,
+        "contextWindow": 262144
+      },
+      "observed": {
+        "generationTokPerSec": 68.58,
+        "notes": "Direct warmed MTPLX benchmark on the local M2 Max 96 GB box."
+      }
+    }
+  ]
+}

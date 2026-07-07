@@ -1,0 +1,36 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "local-llm": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Switchyard Local",
+      "options": {
+        "baseURL": "http://127.0.0.1:8100/v1",
+        "apiKey": "sk-switchyard-local",
+        "timeout": false,
+        "headerTimeout": false
+      },
+      "models": {
+        "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed": {
+          "name": "Qwen3.6 27B MTPLX Speed",
+          "tool_call": true,
+          "temperature": true,
+          "limit": {
+            "context": 262144,
+            "output": 32768
+          }
+        },
+        "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16": {
+          "name": "Qwen3.6 35B-A3B MTPLX Speed FP16",
+          "tool_call": true,
+          "temperature": true,
+          "limit": {
+            "context": 262144,
+            "output": 32768
+          }
+        }
+      }
+    }
+  },
+  "model": "local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed"
+}

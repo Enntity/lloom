@@ -1,0 +1,50 @@
+providers:
+  local-llm:
+    baseUrl: http://127.0.0.1:8100/v1
+    api: openai-completions
+    apiKey: sk-switchyard-local
+    auth: apiKey
+    compat:
+      supportsStore: false
+      supportsDeveloperRole: false
+      supportsReasoningEffort: false
+      supportsUsageInStreaming: false
+      maxTokensField: max_tokens
+      supportsStrictMode: false
+      toolStrictMode: none
+      thinkingFormat: qwen-chat-template
+    models:
+      - id: Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed
+        name: Qwen3.6 27B MTPLX Speed
+        reasoning: true
+        thinking:
+          mode: effort
+          efforts: [minimal, low]
+          defaultLevel: low
+          supportsDisplay: true
+        input: [text, image]
+        supportsTools: true
+        contextWindow: 262144
+        maxTokens: 32768
+        cost:
+          input: 0
+          output: 0
+          cacheRead: 0
+          cacheWrite: 0
+      - id: Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16
+        name: Qwen3.6 35B-A3B MTPLX Speed FP16
+        reasoning: true
+        thinking:
+          mode: effort
+          efforts: [minimal, low]
+          defaultLevel: low
+          supportsDisplay: true
+        input: [text, image]
+        supportsTools: true
+        contextWindow: 262144
+        maxTokens: 32768
+        cost:
+          input: 0
+          output: 0
+          cacheRead: 0
+          cacheWrite: 0

@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "id": "apple-silicon-qwen36-m2max-local",
+  "name": "Apple Silicon Qwen3.6 MTPLX local evidence",
+  "source": "local-switchyard-prototype",
+  "submittedAt": "2026-07-07T00:00:00Z",
+  "results": [
+    {
+      "id": "qwen36-27b-mtplx-speed-m2max-d3",
+      "recipeId": "apple-silicon-qwen36",
+      "backendId": "mtplx",
+      "model": "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+      "gatewayModel": "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+      "machine": {
+        "platformId": "darwin-arm64",
+        "chip": "Apple M2 Max",
+        "memoryGb": 96
+      },
+      "settings": {
+        "turbo": true,
+        "draftDepth": 3,
+        "contextWindow": 262144
+      },
+      "metrics": {
+        "generationTokPerSec": 25.47,
+        "contextWindow": 262144
+      },
+      "notes": "Direct warmed MTPLX benchmark on the local M2 Max 96 GB machine."
+    },
+    {
+      "id": "qwen36-35b-a3b-mtplx-speed-fp16-m2max-d1",
+      "recipeId": "apple-silicon-qwen36",
+      "backendId": "mtplx",
+      "model": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
+      "gatewayModel": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
+      "machine": {
+        "platformId": "darwin-arm64",
+        "chip": "Apple M2 Max",
+        "memoryGb": 96
+      },
+      "settings": {
+        "draftDepth": 1,
+        "contextWindow": 262144
+      },
+      "metrics": {
+        "generationTokPerSec": 68.58,
+        "contextWindow": 262144
+      },
+      "notes": "Direct warmed MTPLX benchmark on the local M2 Max 96 GB machine."
+    }
+  ]
+}
