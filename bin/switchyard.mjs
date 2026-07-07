@@ -31,6 +31,7 @@ import { loadRecipeById, loadRecipes, planRecipe } from "../src/recipes.mjs";
 import { RuntimeManager } from "../src/runtime-manager.mjs";
 import { createSwitchyardServer } from "../src/server.mjs";
 import { applySetup, createSetupPlan } from "../src/setup.mjs";
+import { createSetupStatus } from "../src/setup-status.mjs";
 
 function usage() {
   return `Usage:
@@ -42,6 +43,7 @@ function usage() {
   switchyard setup [--recipe recipe-id] [--config-out path] [--model-root path] [--client client-id|all] [--apply --yes] [--start]
   switchyard init [--recipe recipe-id] [--config-out path] [--model-root path] [--client client-id|all] [--apply --yes] [--integrate]
   switchyard bootstrap [--recipe recipe-id] [--model-root path] [--client client-id|all] [--apply --yes]
+  switchyard setup-status [--recipe recipe-id] [--model-root path] [--client client-id|all] [--state path] [--home path] [--no-runtimes]
   switchyard benchmarks [recipe-id|all] [--benchmarks-root path]
   switchyard profile [--config path]
   switchyard recipes [--config path]
@@ -277,6 +279,26 @@ async function main() {
         ...(statePath ? { statePath } : {}),
         backendVariables: defaultBackendVariables(process.env),
       }), null, 2));
+    return;
+  }
+
+  if (command === "setup-status" || command === "status") {
+    const recipeId = argValue(args, "--recipe");
+    const modelRoot = argValue(args, "--model-root");
+    const clientId = argValue(args, "--client") ?? "all";
+    const statePath = argValue(args, "--state");
+    const generatedRoot = argValue(args, "--generated-root");
+    const home = argValue(args, "--home") ?? process.env.HOME;
+    console.log(JSON.stringify(await createSetupStatus(config, {
+      recipeId,
+      modelRoot,
+      clientId,
+      generatedRoot,
+      home,
+      includeRuntimes: !hasFlag(args, "--no-runtimes"),
+      backendVariables: defaultBackendVariables(process.env),
+      ...(statePath ? { statePath } : {}),
+    }), null, 2));
     return;
   }
 

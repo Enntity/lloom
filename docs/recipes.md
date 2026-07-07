@@ -59,6 +59,14 @@ node bin/switchyard.mjs install apple-silicon-qwen36 --model-root ~/Models --app
 
 Real execution records completed steps in `data/install-state.json`. If setup is interrupted, rerunning the command skips completed steps and resumes from the next pending step.
 
+Inspect current install state and seeded model folders:
+
+```zsh
+node bin/switchyard.mjs setup-status --recipe apple-silicon-qwen36 --model-root ~/Models --no-runtimes
+```
+
+The report compares the selected recipe plan to installer state, checks whether model destinations are already populated, and verifies whether selected client integration files match the generated registry.
+
 `download-model` steps currently support Hugging Face artifacts. Switchyard resolves `SWITCHYARD_HF_BIN`, `HF_HUB_CLI`, `hf`, then `huggingface-cli`, and runs:
 
 ```zsh

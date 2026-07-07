@@ -17,6 +17,7 @@ Dry-run:
 
 ```zsh
 node bin/switchyard.mjs setup
+node bin/switchyard.mjs setup-status --no-runtimes
 ```
 
 Apply after review:
@@ -35,6 +36,15 @@ node bin/switchyard.mjs setup --apply --yes --start
 ```
 
 Setup uses the same guarded executors as `backend-install`, `install`, and `integrate`. Real execution writes resumable state to `data/install-state.json`; a repeated run skips completed backend and recipe steps.
+
+Check what remains after an interrupted run:
+
+```zsh
+node bin/switchyard.mjs setup-status --state data/install-state.json --no-runtimes
+node bin/switchyard.mjs setup-status --client omp
+```
+
+The status report joins the selected recipe plan with installer state, populated model directories, generated/native client config matches, and optional keep-warm runtime health. `ok: true` means the selected recipe and backend are valid for the machine; `complete: true` means setup, model artifacts, client files, and included runtime health are all satisfied.
 
 Recipe model downloads use the first available Hugging Face CLI in this order:
 

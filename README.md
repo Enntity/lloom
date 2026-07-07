@@ -39,11 +39,14 @@ First-run setup:
 
 ```zsh
 node bin/switchyard.mjs setup
+node bin/switchyard.mjs setup-status --no-runtimes
 node bin/switchyard.mjs setup --config-out ~/.switchyard/config.json --model-root ~/.switchyard/models --client omp --apply --yes
 SWITCHYARD_CONFIG=~/.switchyard/config.json npm start
 ```
 
 `setup` profiles the machine, selects the best recipe, writes a user config, plans backend installation, plans model download/tuning, and installs selected client integration files. It is a dry-run by default; real execution requires `--apply --yes`. Add `--start` when you want setup to start the configured keep-warm runtimes after applying.
+
+`setup-status` reads the same recipe plan plus `data/install-state.json`, model directories, generated/native client files, and optional runtime health. Use `--no-runtimes` when you want a fast filesystem-only readiness report.
 
 Lower-level setup commands remain available when you want to inspect or run a phase separately:
 
@@ -101,6 +104,7 @@ node bin/switchyard.mjs benchmarks
 node bin/switchyard.mjs benchmarks apple-silicon-qwen36
 node bin/switchyard.mjs plan apple-silicon-qwen36 --model-root ~/Models
 node bin/switchyard.mjs install apple-silicon-qwen36 --model-root ~/Models
+node bin/switchyard.mjs setup-status --recipe apple-silicon-qwen36 --model-root ~/Models --no-runtimes
 ```
 
 Recipe selection distinguishes `selectable` from `runnable`: a recipe can be the best match for the machine even if setup still needs to install or expose a backend command. Plans are intentionally explicit: Switchyard reports checks, downloads, tuning commands, model mappings, and platform requirements before executing anything. `install` is a dry-run by default. Real execution requires both `--apply` and `--yes`:
@@ -110,6 +114,8 @@ node bin/switchyard.mjs install apple-silicon-qwen36 --model-root ~/Models --app
 ```
 
 Completed real install steps are recorded in `data/install-state.json`, so interrupted setup can resume without rerunning completed steps. Hugging Face model downloads use `hf download` or `huggingface-cli download`; set `SWITCHYARD_HF_BIN=/path/to/hf` when the CLI lives outside `PATH`. If a model destination already has files, Switchyard treats that download step as satisfied.
+
+`setup-status` reports whether backend steps, recipe steps, model folders, selected client integration files, and keep-warm runtimes are current. It distinguishes valid configuration from complete installation so automation can decide whether to run setup, install missing models, rewrite client files, or start keep-warm.
 
 Runtime management:
 

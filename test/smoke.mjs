@@ -38,6 +38,7 @@ import { loadRecipeById, loadRecipes, planRecipe } from "../src/recipes.mjs";
 import { RuntimeManager } from "../src/runtime-manager.mjs";
 import { createSwitchyardServer } from "../src/server.mjs";
 import { applySetup, createSetupPlan } from "../src/setup.mjs";
+import { createSetupStatus } from "../src/setup-status.mjs";
 
 function listen(server, host = "127.0.0.1", port = 0) {
   return new Promise((resolve, reject) => {
@@ -630,6 +631,44 @@ await assert.rejects(
   /Refusing to modify client integration files/,
 );
 
+const statusModelRoot = path.join(tempDir, "status-models");
+await fs.mkdir(
+  path.join(statusModelRoot, "Youssofal", "Qwen3.6-27B-MTPLX-Optimized-Speed"),
+  { recursive: true },
+);
+await fs.writeFile(
+  path.join(statusModelRoot, "Youssofal", "Qwen3.6-27B-MTPLX-Optimized-Speed", "config.json"),
+  "{}\n",
+  "utf8",
+);
+const setupStatusStatePath = path.join(tempDir, "setup-status-state.json");
+const setupStatusGeneratedRoot = path.join(tempDir, "setup-status-generated");
+const setupStatusBeforeIntegration = await createSetupStatus(config, {
+  recipeId: "apple-silicon-qwen36",
+  modelRoot: statusModelRoot,
+  clientId: "omp",
+  home: tempDir,
+  generatedRoot: setupStatusGeneratedRoot,
+  statePath: setupStatusStatePath,
+  includeRuntimes: false,
+});
+assert.equal(setupStatusBeforeIntegration.ok, true);
+assert.equal(setupStatusBeforeIntegration.complete, false);
+assert.equal(setupStatusBeforeIntegration.integrations.ready, false);
+assert.equal(setupStatusBeforeIntegration.runtimes, null);
+assert.equal(
+  setupStatusBeforeIntegration.recipe.steps.find(step => step.id === "download-27b").status,
+  "satisfied",
+);
+assert.equal(
+  setupStatusBeforeIntegration.recipe.models.find(model => model.role === "fastest-27b").destination.populated,
+  true,
+);
+assert.equal(
+  setupStatusBeforeIntegration.recipe.models.find(model => model.role === "fastest-35b-a3b").destination.status,
+  "missing",
+);
+
 const integrationApply = await applyIntegrationArtifacts(config, registry, {
   clientId: "omp",
   dryRun: false,
@@ -645,6 +684,46 @@ assert(!tempOmp.includes("Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed\n"));
 const tempOmpConfig = await fs.readFile(path.join(tempDir, ".omp", "agent", "config.yml"), "utf8");
 assert(tempOmpConfig.includes("default: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed:low"));
 assert(!tempOmpConfig.includes("Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed"));
+
+const setupStatusAfterIntegration = await createSetupStatus(config, {
+  recipeId: "apple-silicon-qwen36",
+  modelRoot: statusModelRoot,
+  clientId: "omp",
+  home: tempDir,
+  generatedRoot: setupStatusGeneratedRoot,
+  statePath: setupStatusStatePath,
+  includeRuntimes: false,
+});
+assert.equal(setupStatusAfterIntegration.integrations.ready, true);
+assert(setupStatusAfterIntegration.integrations.data.every(integration => integration.current));
+assert.equal(setupStatusAfterIntegration.next.backendInstall, "switchyard backend-install mtplx --apply --yes");
+assert(setupStatusAfterIntegration.next.setup.includes("--client 'omp'"));
+
+const setupStatusCli = await runCommand(process.execPath, [
+  path.join(process.cwd(), "bin", "switchyard.mjs"),
+  "setup-status",
+  "--recipe",
+  "apple-silicon-qwen36",
+  "--model-root",
+  statusModelRoot,
+  "--client",
+  "omp",
+  "--home",
+  tempDir,
+  "--state",
+  setupStatusStatePath,
+  "--generated-root",
+  setupStatusGeneratedRoot,
+  "--no-runtimes",
+]);
+const setupStatusCliJson = JSON.parse(setupStatusCli.stdout);
+assert.equal(setupStatusCliJson.selectedRecipe.id, "apple-silicon-qwen36");
+assert.equal(setupStatusCliJson.integrations.ready, true);
+assert.equal(setupStatusCliJson.runtimes, null);
+assert.equal(
+  setupStatusCliJson.recipe.steps.find(step => step.id === "download-27b").status,
+  "satisfied",
+);
 
 const bootstrapPlan = await createBootstrapPlan(config, {
   recipeId: "apple-silicon-qwen36",
