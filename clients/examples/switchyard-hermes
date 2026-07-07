@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+switchyard_home="${SWITCHYARD_HOME:-$HOME/.switchyard}"
+profile="$switchyard_home/integrations/hermes.env"
+if [ ! -f "$profile" ]; then
+  echo "Switchyard profile missing: $profile" >&2
+  echo "Run: switchyard integrate hermes --apply --yes" >&2
+  exit 1
+fi
+. "$profile"
+exec "${SWITCHYARD_HERMES_BIN:-hermes}" "$@"

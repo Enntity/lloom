@@ -46,14 +46,18 @@ The managed profile goes under `~/.switchyard/integrations/opencode.json`.
 
 ## Codex, Claude, Hermes, and Zero
 
-Switchyard emits managed environment profiles:
+Switchyard emits managed environment profiles and launcher scripts:
 
 - `clients/generated/codex.env`
+- `clients/generated/switchyard-codex`
 - `clients/generated/claude.env`
+- `clients/generated/switchyard-claude`
 - `clients/generated/hermes.env`
+- `clients/generated/switchyard-hermes`
 - `clients/generated/zero.env`
+- `clients/generated/switchyard-zero`
 
-Apply them to `~/.switchyard/integrations/`:
+Apply them to `~/.switchyard/integrations/` and `~/.switchyard/bin/`:
 
 ```zsh
 node bin/switchyard.mjs integrate codex --apply --yes
@@ -62,7 +66,15 @@ node bin/switchyard.mjs integrate hermes --apply --yes
 node bin/switchyard.mjs integrate zero --apply --yes
 ```
 
-These profiles export `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL`; the Claude-compatible profile also exports Anthropic-compatible variables. Native file writes for those clients should be added only when their current config contracts are pinned by tests.
+These profiles export `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL`; the Claude-compatible profile also exports Anthropic-compatible variables. The launchers source the matching profile and then execute `codex`, `claude`, `hermes`, or `zero`.
+
+```zsh
+export PATH="$HOME/.switchyard/bin:$PATH"
+switchyard-codex --help
+switchyard-claude --help
+```
+
+Use `SWITCHYARD_CODEX_BIN`, `SWITCHYARD_CLAUDE_BIN`, `SWITCHYARD_HERMES_BIN`, or `SWITCHYARD_ZERO_BIN` when the actual binary name or path differs. Native file writes for those clients should be added only when their current config contracts are pinned by tests.
 
 ## Other Clients
 

@@ -74,9 +74,13 @@ Outputs:
 - `clients/generated/omp-config.yml`
 - `clients/generated/opencode.json`
 - `clients/generated/codex.env`
+- `clients/generated/switchyard-codex`
 - `clients/generated/claude.env`
+- `clients/generated/switchyard-claude`
 - `clients/generated/hermes.env`
+- `clients/generated/switchyard-hermes`
 - `clients/generated/zero.env`
+- `clients/generated/switchyard-zero`
 - `clients/generated/switchyard-integrations.json`
 
 Committed examples live in `clients/examples/`; generated files are ignored so local machine-specific config changes do not become source churn.
@@ -90,6 +94,8 @@ node bin/switchyard.mjs integrate omp --apply --yes
 ```
 
 OMP has native targets at `~/.omp/agent/models.yml` and `~/.omp/agent/config.yml`. The model catalog contains exact advertised IDs only, and the role config pins OMP to the fastest 27B default. OpenCode, Codex, Claude-compatible, Hermes, and Zero profiles are written as managed Switchyard artifacts under `~/.switchyard/integrations/` until their stable native config contracts are pinned.
+
+Codex, Claude-compatible, Hermes, and Zero integrations also install launchers under `~/.switchyard/bin/` so you can run `switchyard-codex`, `switchyard-claude`, `switchyard-hermes`, or `switchyard-zero` with the managed environment loaded. Add that directory to `PATH` after integration.
 
 Inspect install recipes:
 

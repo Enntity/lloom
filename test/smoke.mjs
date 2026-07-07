@@ -740,10 +740,24 @@ const integrationArtifacts = buildIntegrationArtifacts(config, registry, {
 });
 assert.deepEqual(
   integrationArtifacts.map(artifact => artifact.id),
-  ["omp-models", "omp-config", "opencode", "codex", "claude", "hermes", "zero", "manifest"],
+  [
+    "omp-models",
+    "omp-config",
+    "opencode",
+    "codex",
+    "switchyard-codex",
+    "claude",
+    "switchyard-claude",
+    "hermes",
+    "switchyard-hermes",
+    "zero",
+    "switchyard-zero",
+    "manifest",
+  ],
 );
-assert(integrationArtifacts.every(artifact =>
-  artifact.content.includes("Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed")));
+assert(integrationArtifacts
+  .filter(artifact => artifact.kind !== "launcher-script")
+  .every(artifact => artifact.content.includes("Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed")));
 assert(integrationArtifacts.every(artifact =>
   !artifact.content.includes("Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed\n")));
 
@@ -754,6 +768,9 @@ await writeGeneratedIntegrationArtifacts(config, registry, {
 const generatedCodex = await fs.readFile(path.join(generatedRoot, "codex.env"), "utf8");
 assert(generatedCodex.includes("OPENAI_BASE_URL"));
 assert(generatedCodex.includes("OPENAI_MODEL='Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed'"));
+const generatedCodexLauncher = await fs.readFile(path.join(generatedRoot, "switchyard-codex"), "utf8");
+assert(generatedCodexLauncher.includes("switchyard integrate codex --apply --yes"));
+assert.equal((await fs.stat(path.join(generatedRoot, "switchyard-codex"))).mode & 0o111, 0o111);
 
 const integrationDryRun = await applyIntegrationArtifacts(config, registry, {
   clientId: "all",
@@ -772,6 +789,18 @@ await assert.rejects(
   }),
   /Refusing to modify client integration files/,
 );
+
+const codexIntegrationApply = await applyIntegrationArtifacts(config, registry, {
+  clientId: "codex",
+  dryRun: false,
+  yes: true,
+  home: tempDir,
+  generatedRoot,
+});
+assert.deepEqual(codexIntegrationApply.results.map(result => result.id), ["codex", "switchyard-codex"]);
+const installedCodexLauncher = path.join(tempDir, ".switchyard", "bin", "switchyard-codex");
+assert.equal((await fs.stat(installedCodexLauncher)).mode & 0o111, 0o111);
+assert((await fs.readFile(installedCodexLauncher, "utf8")).includes("SWITCHYARD_CODEX_BIN"));
 
 const statusModelRoot = path.join(tempDir, "status-models");
 await fs.mkdir(

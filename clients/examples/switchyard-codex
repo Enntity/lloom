@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+switchyard_home="${SWITCHYARD_HOME:-$HOME/.switchyard}"
+profile="$switchyard_home/integrations/codex.env"
+if [ ! -f "$profile" ]; then
+  echo "Switchyard profile missing: $profile" >&2
+  echo "Run: switchyard integrate codex --apply --yes" >&2
+  exit 1
+fi
+. "$profile"
+exec "${SWITCHYARD_CODEX_BIN:-codex}" "$@"

@@ -189,6 +189,26 @@ function renderEnvProfile(config, clientId, {
   return `${lines.join("\n")}\n`;
 }
 
+function renderLauncherScript({
+  clientId,
+  profileFileName,
+  binaryName,
+  binaryEnv,
+}) {
+  return `#!/bin/sh
+set -eu
+switchyard_home="\${SWITCHYARD_HOME:-$HOME/.switchyard}"
+profile="$switchyard_home/integrations/${profileFileName}"
+if [ ! -f "$profile" ]; then
+  echo "Switchyard profile missing: $profile" >&2
+  echo "Run: switchyard integrate ${clientId} --apply --yes" >&2
+  exit 1
+fi
+. "$profile"
+exec "\${${binaryEnv}:-${binaryName}}" "$@"
+`;
+}
+
 function renderIntegrationManifest(config, models) {
   const settings = providerSettings(config);
   return jsonString({
@@ -215,6 +235,33 @@ function renderIntegrationManifest(config, models) {
 
 function managedTarget(home, fileName) {
   return home ? path.join(home, ".switchyard", "integrations", fileName) : null;
+}
+
+function managedBinTarget(home, fileName) {
+  return home ? path.join(home, ".switchyard", "bin", fileName) : null;
+}
+
+function launcherArtifact({ id, name, clientId, generatedRoot, home, profileFileName, binaryName, binaryEnv }) {
+  return {
+    id,
+    clientId,
+    name,
+    kind: "launcher-script",
+    generatedPath: path.join(generatedRoot, id),
+    targetPath: managedBinTarget(home, id),
+    mode: "managed-launcher",
+    executable: true,
+    content: renderLauncherScript({
+      clientId,
+      profileFileName,
+      binaryName,
+      binaryEnv,
+    }),
+    notes: [
+      `Runs ${binaryName} with the Switchyard-managed ${profileFileName} environment profile.`,
+      "Add ~/.switchyard/bin to PATH or run this script directly.",
+    ],
+  };
 }
 
 export function buildIntegrationArtifacts(config, registry, {
@@ -274,6 +321,16 @@ export function buildIntegrationArtifacts(config, registry, {
         "OpenAI-compatible environment profile for clients that can target a custom OpenAI base URL.",
       ],
     },
+    launcherArtifact({
+      id: "switchyard-codex",
+      name: "Codex launcher",
+      clientId: "codex",
+      generatedRoot,
+      home,
+      profileFileName: "codex.env",
+      binaryName: "codex",
+      binaryEnv: "SWITCHYARD_CODEX_BIN",
+    }),
     {
       id: "claude",
       name: "Claude-compatible clients",
@@ -286,6 +343,16 @@ export function buildIntegrationArtifacts(config, registry, {
         "Anthropic-compatible environment profile for clients that can target a custom Anthropic base URL.",
       ],
     },
+    launcherArtifact({
+      id: "switchyard-claude",
+      name: "Claude launcher",
+      clientId: "claude",
+      generatedRoot,
+      home,
+      profileFileName: "claude.env",
+      binaryName: "claude",
+      binaryEnv: "SWITCHYARD_CLAUDE_BIN",
+    }),
     {
       id: "hermes",
       name: "Hermes",
@@ -298,6 +365,16 @@ export function buildIntegrationArtifacts(config, registry, {
         "OpenAI-compatible profile. Native Hermes config writes should be added when its stable config contract is pinned.",
       ],
     },
+    launcherArtifact({
+      id: "switchyard-hermes",
+      name: "Hermes launcher",
+      clientId: "hermes",
+      generatedRoot,
+      home,
+      profileFileName: "hermes.env",
+      binaryName: "hermes",
+      binaryEnv: "SWITCHYARD_HERMES_BIN",
+    }),
     {
       id: "zero",
       name: "Zero",
@@ -310,6 +387,16 @@ export function buildIntegrationArtifacts(config, registry, {
         "OpenAI-compatible profile. Native Zero config writes should be added when its stable config contract is pinned.",
       ],
     },
+    launcherArtifact({
+      id: "switchyard-zero",
+      name: "Zero launcher",
+      clientId: "zero",
+      generatedRoot,
+      home,
+      profileFileName: "zero.env",
+      binaryName: "zero",
+      binaryEnv: "SWITCHYARD_ZERO_BIN",
+    }),
     {
       id: "manifest",
       name: "Switchyard Integration Manifest",
@@ -338,9 +425,12 @@ function selectArtifacts(artifacts, clientId = "all") {
   return selectIntegrationArtifacts(artifacts, clientId);
 }
 
-async function writeFile(filePath, content) {
+async function writeFile(filePath, content, {
+  executable = false,
+} = {}) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, content);
+  if (executable) await fs.chmod(filePath, 0o755);
 }
 
 export async function writeGeneratedIntegrationArtifacts(config, registry, {
@@ -352,7 +442,9 @@ export async function writeGeneratedIntegrationArtifacts(config, registry, {
     throw new Error(`Unknown integration client ${clientId}`);
   }
   for (const artifact of artifacts) {
-    await writeFile(artifact.generatedPath, artifact.content);
+    await writeFile(artifact.generatedPath, artifact.content, {
+      executable: artifact.executable === true,
+    });
   }
   return artifacts.map(artifact => ({
     id: artifact.id,
@@ -386,6 +478,7 @@ export async function applyIntegrationArtifacts(config, registry, {
       name: artifact.name,
       kind: artifact.kind,
       mode: artifact.mode,
+      executable: artifact.executable === true,
       generatedPath: artifact.generatedPath,
       targetPath,
       notes: artifact.notes,
@@ -397,7 +490,9 @@ export async function applyIntegrationArtifacts(config, registry, {
       });
       continue;
     }
-    await writeFile(targetPath, artifact.content);
+    await writeFile(targetPath, artifact.content, {
+      executable: artifact.executable === true,
+    });
     results.push({
       ...result,
       status: "written",
