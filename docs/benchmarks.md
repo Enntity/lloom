@@ -18,6 +18,14 @@ node bin/switchyard.mjs plan apple-silicon-qwen36 --model-root ~/Models
 
 `plan`, `bootstrap`, and `recipe-index` attach the best matching benchmark to each recipe model role. The gateway does not silently rewrite stale model IDs; benchmark `model` and `gatewayModel` values must match recipe and registry IDs exactly.
 
+Recipe packs can carry benchmark suites alongside recipes:
+
+```zsh
+node bin/switchyard.mjs recipe-import ./qwen-next-pack.json
+```
+
+The import plan validates attached suites before writing them under `benchmarks/community/`.
+
 ## Result Contract
 
 A suite file should include:

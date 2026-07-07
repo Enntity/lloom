@@ -94,6 +94,41 @@ node bin/switchyard.mjs recipe-index
 
 The report checks the index schema, verifies that each listed recipe file loads, validates recipe references against the gateway config and backend catalog, attaches the best benchmark evidence for each model role, and emits `plan`, `install`, and `bootstrap` commands.
 
+## Recipe Packs
+
+Community packs bundle one or more recipes, index entries, and benchmark suites into a single importable JSON file:
+
+```zsh
+node bin/switchyard.mjs recipe-import ./qwen-next-pack.json
+node bin/switchyard.mjs recipe-import ./qwen-next-pack.json --apply --yes
+```
+
+Dry-run is the default. Apply writes recipe files under `recipes/`, merges entries into `recipes/index.json`, and writes attached benchmark suites under `benchmarks/community/`.
+
+Minimal pack shape:
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "example-pack",
+  "name": "Example Pack",
+  "recipes": [
+    {
+      "index": {
+        "id": "example-recipe",
+        "path": "example-recipe.json",
+        "name": "Example Recipe",
+        "summary": "What this recipe is best for."
+      },
+      "recipe": {},
+      "benchmarks": []
+    }
+  ]
+}
+```
+
+`recipe-import` also accepts HTTP(S) URLs, so a hosted community feed can offer direct one-command imports while keeping the same guarded validation path.
+
 Contributor publish flow:
 
 1. Add or update `recipes/<recipe-id>.json`.

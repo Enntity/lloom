@@ -26,6 +26,7 @@ import {
 import { applyInit, createInitPlan, deriveUserConfig } from "../src/init.mjs";
 import { applyBackend, applyRecipe, readInstallState } from "../src/installer.mjs";
 import { profileMachine, rankRecipes } from "../src/machine-profile.mjs";
+import { applyRecipePack, createRecipePackPlan } from "../src/recipe-pack.mjs";
 import {
   buildRecipeIndexReport,
   loadRecipeIndex,
@@ -210,6 +211,147 @@ await assert.rejects(
 
 const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "switchyard-installer-"));
 const statePath = path.join(tempDir, "state.json");
+
+const packRecipesRoot = path.join(tempDir, "pack-recipes");
+const packBenchmarksRoot = path.join(tempDir, "pack-benchmarks");
+const packIndexPath = path.join(packRecipesRoot, "index.json");
+const packPath = path.join(tempDir, "synthetic-recipe-pack.json");
+const packedRecipe = {
+  id: "synthetic-pack",
+  name: "Synthetic Pack",
+  version: 1,
+  summary: "Synthetic importable recipe pack.",
+  requirements: {
+    platforms: [`${process.platform}-${process.arch}`],
+  },
+  backend: {
+    id: "mtplx",
+  },
+  setup: {
+    steps: [
+      {
+        id: "noop",
+        action: "command",
+        command: "/usr/bin/true",
+      },
+    ],
+  },
+  models: [
+    {
+      role: "default",
+      model: "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+      gatewayModel: "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+      runtime: "mtplx-qwen36-27b-speed",
+    },
+  ],
+};
+const packedBenchmarkSuite = {
+  schemaVersion: 1,
+  id: "synthetic-pack-benchmarks",
+  name: "Synthetic Pack Benchmarks",
+  submittedAt: "2026-07-07T00:00:00Z",
+  source: {
+    type: "local-test",
+  },
+  results: [
+    {
+      id: "synthetic-pack-d1",
+      recipeId: "synthetic-pack",
+      backendId: "mtplx",
+      model: "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+      gatewayModel: "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+      machine: {
+        platformId: `${process.platform}-${process.arch}`,
+      },
+      metrics: {
+        generationTokPerSec: 12.34,
+        contextWindow: 262144,
+      },
+    },
+  ],
+};
+await fs.writeFile(packPath, `${JSON.stringify({
+  schemaVersion: 1,
+  id: "synthetic-pack-bundle",
+  name: "Synthetic Pack Bundle",
+  updatedAt: "2026-07-07T00:00:00Z",
+  recipes: [
+    {
+      index: {
+        id: "synthetic-pack",
+        path: "synthetic-pack.json",
+        name: "Synthetic Pack",
+        summary: "Synthetic importable recipe pack.",
+        tags: ["synthetic", "test"],
+        recommendedFor: ["smoke tests"],
+        source: {
+          type: "recipe-pack",
+          url: "synthetic-recipe-pack.json",
+        },
+      },
+      recipe: packedRecipe,
+      benchmarks: [packedBenchmarkSuite],
+    },
+  ],
+}, null, 2)}\n`, "utf8");
+const packPlan = await createRecipePackPlan(packPath, config, {
+  indexPath: packIndexPath,
+  recipesRoot: packRecipesRoot,
+  benchmarksRoot: packBenchmarksRoot,
+});
+assert.equal(packPlan.ok, true);
+assert.equal(packPlan.pack.recipeCount, 1);
+assert.equal(packPlan.writableActions, undefined);
+assert.equal(packPlan.actions.find(action => action.type === "recipe").status, "create");
+assert.equal(packPlan.actions.find(action => action.type === "benchmark").status, "create");
+await assert.rejects(
+  () => applyRecipePack(packPath, config, {
+    dryRun: false,
+    indexPath: packIndexPath,
+    recipesRoot: packRecipesRoot,
+    benchmarksRoot: packBenchmarksRoot,
+  }),
+  /Refusing to import recipe pack/,
+);
+const packCliPlan = JSON.parse((await runCommand(process.execPath, [
+  path.join(process.cwd(), "bin", "switchyard.mjs"),
+  "recipe-import",
+  packPath,
+  "--index",
+  packIndexPath,
+  "--recipes-root",
+  packRecipesRoot,
+  "--benchmarks-root",
+  packBenchmarksRoot,
+])).stdout);
+assert.equal(packCliPlan.ok, true);
+assert.equal(packCliPlan.writableActions, undefined);
+assert.equal(packCliPlan.actions.find(action => action.type === "index").status, "create");
+const packApplied = await applyRecipePack(packPath, config, {
+  dryRun: false,
+  yes: true,
+  indexPath: packIndexPath,
+  recipesRoot: packRecipesRoot,
+  benchmarksRoot: packBenchmarksRoot,
+});
+assert.equal(packApplied.dryRun, false);
+assert.equal(packApplied.results.filter(result => result.status === "written").length, 3);
+const importedRecipe = JSON.parse(await fs.readFile(path.join(packRecipesRoot, "synthetic-pack.json"), "utf8"));
+assert.equal(importedRecipe.id, "synthetic-pack");
+const importedIndex = JSON.parse(await fs.readFile(packIndexPath, "utf8"));
+assert.equal(importedIndex.recipes[0].id, "synthetic-pack");
+const importedBenchmark = JSON.parse(await fs.readFile(path.join(packBenchmarksRoot, "synthetic-pack-benchmarks.json"), "utf8"));
+assert.equal(importedBenchmark.results[0].id, "synthetic-pack-d1");
+const importedReport = await buildRecipeIndexReport(config, {
+  indexPath: packIndexPath,
+  recipesRoot: packRecipesRoot,
+  benchmarksRoot: packBenchmarksRoot,
+  modelRoot: "/models",
+  backendIds: backendIds(backendCatalog),
+});
+assert.equal(importedReport.ok, true);
+assert.equal(importedReport.recipes[0].id, "synthetic-pack");
+assert.equal(importedReport.recipes[0].benchmarks.models[0].best.metrics.generationTokPerSec, 12.34);
 
 const derivedConfig = deriveUserConfig(config, recipe, {
   modelRoot: "/models",

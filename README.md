@@ -101,6 +101,7 @@ node bin/switchyard.mjs backend-install mtplx
 node bin/switchyard.mjs select
 node bin/switchyard.mjs recipes
 node bin/switchyard.mjs recipe-index
+node bin/switchyard.mjs recipe-import ./my-recipe-pack.json
 node bin/switchyard.mjs benchmarks
 node bin/switchyard.mjs benchmarks apple-silicon-qwen36
 node bin/switchyard.mjs plan apple-silicon-qwen36 --model-root ~/Models
@@ -151,6 +152,15 @@ export PATH="$PWD/data/bin:$PATH"
 
 Benchmark evidence lives in `benchmarks/community/*.json`. `switchyard benchmarks` validates and ranks all local evidence, while recipe plans attach the best matching result to each model role. `switchyard recipe-index` validates `recipes/index.json`, joins indexed recipes to their benchmark evidence, and prints the plan/install/bootstrap commands that a user or CI job can trust.
 
+Community recipe packs can be previewed and imported without hand-editing the local index:
+
+```zsh
+node bin/switchyard.mjs recipe-import ./qwen-next-pack.json
+node bin/switchyard.mjs recipe-import ./qwen-next-pack.json --apply --yes
+```
+
+Recipe import writes the recipe JSON, merges the index entry, and stores attached benchmark suites. It accepts local files today and HTTP(S) pack URLs for hosted recipe feeds.
+
 ## Model IDs
 
 The registry is the source of truth. `/v1/models`, OMP YAML, and OpenCode JSON are all derived from `models[]` in `config/default.json`.
@@ -183,6 +193,6 @@ flowchart LR
 - Responses API parity for reasoning blocks and multimodal output items
 - Richer backend installers for MTPLX, MLX, llama.cpp, Ollama, and image/audio runtimes
 - Machine profiler and automatic recipe selection
-- Community recipe index and signed benchmark submissions
+- Signed community recipe packs and benchmark submissions
 - Per-model memory admission, eviction, and warmup policy
 - Vision, speech, transcription, and richer multimodal output parity across supported backends
