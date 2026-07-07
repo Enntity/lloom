@@ -105,7 +105,7 @@ Recipe selection distinguishes `selectable` from `runnable`: a recipe can be the
 node bin/switchyard.mjs install apple-silicon-qwen36 --model-root ~/Models --apply --yes
 ```
 
-Completed real install steps are recorded in `data/install-state.json`, so interrupted setup can resume without rerunning completed steps.
+Completed real install steps are recorded in `data/install-state.json`, so interrupted setup can resume without rerunning completed steps. Hugging Face model downloads use `hf download` or `huggingface-cli download`; set `SWITCHYARD_HF_BIN=/path/to/hf` when the CLI lives outside `PATH`. If a model destination already has files, Switchyard treats that download step as satisfied.
 
 Runtime management endpoints:
 

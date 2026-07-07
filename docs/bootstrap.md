@@ -34,6 +34,15 @@ node bin/switchyard.mjs bootstrap --model-root ~/Models
 
 Bootstrap uses the same guarded executors as `backend-install`, `install`, and `integrate`. Real execution writes resumable state to `data/install-state.json`; a repeated run skips completed backend and recipe steps.
 
+Recipe model downloads use the first available Hugging Face CLI in this order:
+
+1. `SWITCHYARD_HF_BIN`
+2. `HF_HUB_CLI`
+3. `hf`
+4. `huggingface-cli`
+
+Install `huggingface_hub[cli]` or point `SWITCHYARD_HF_BIN` at a managed environment before applying recipes that contain `download-model` steps. If the target model directory is already populated, Switchyard marks the step satisfied without invoking the CLI.
+
 After backend shim steps run, add `data/bin` to `PATH` before starting managed runtimes:
 
 ```zsh

@@ -24,7 +24,7 @@ import {
   writeGeneratedIntegrationArtifacts,
 } from "../src/client-integrations.mjs";
 import { applyInit, createInitPlan, deriveUserConfig } from "../src/init.mjs";
-import { applyBackend, applyRecipe } from "../src/installer.mjs";
+import { applyBackend, applyRecipe, readInstallState } from "../src/installer.mjs";
 import { profileMachine, rankRecipes } from "../src/machine-profile.mjs";
 import {
   buildRecipeIndexReport,
@@ -395,6 +395,91 @@ const appliedAgain = await applyRecipe(syntheticRecipe, config, {
   statePath,
 });
 assert.equal(appliedAgain.results[0].status, "skipped");
+
+const hfShim = path.join(tempDir, "hf");
+const hfLogPath = path.join(tempDir, "hf.log");
+await fs.writeFile(hfShim, `#!/bin/sh
+echo "$@" >> ${JSON.stringify(hfLogPath)}
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--local-dir" ]; then
+    shift
+    mkdir -p "$1"
+    echo downloaded > "$1/config.json"
+  fi
+  shift
+done
+`, { mode: 0o755 });
+await fs.chmod(hfShim, 0o755);
+const previousHfBin = process.env.SWITCHYARD_HF_BIN;
+process.env.SWITCHYARD_HF_BIN = hfShim;
+try {
+  const downloadRecipe = {
+    id: "synthetic-download",
+    name: "Synthetic Download",
+    backend: {
+      id: "test",
+    },
+    models: [
+      {
+        role: "test",
+        model: "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+        gatewayModel: "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+        runtime: "mtplx-qwen36-27b-speed",
+      },
+    ],
+    setup: {
+      steps: [
+        {
+          id: "download",
+          action: "download-model",
+          provider: "huggingface",
+          model: "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+        },
+      ],
+    },
+  };
+  const downloadModelRoot = path.join(tempDir, "download-models");
+  const downloadStatePath = path.join(tempDir, "download-state.json");
+  const downloadDryRun = await applyRecipe(downloadRecipe, config, {
+    dryRun: true,
+    yes: false,
+    modelRoot: downloadModelRoot,
+    statePath: downloadStatePath,
+  });
+  assert.equal(downloadDryRun.results[0].status, "planned");
+  assert.equal(downloadDryRun.results[0].command[0], hfShim);
+  const downloadApplied = await applyRecipe(downloadRecipe, config, {
+    dryRun: false,
+    yes: true,
+    modelRoot: downloadModelRoot,
+    statePath: downloadStatePath,
+  });
+  assert.equal(downloadApplied.results[0].status, "completed");
+  assert.equal(downloadApplied.results[0].command[0], hfShim);
+  assert.equal(
+    await fs.readFile(path.join(downloadModelRoot, "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed", "config.json"), "utf8"),
+    "downloaded\n",
+  );
+
+  process.env.SWITCHYARD_HF_BIN = path.join(tempDir, "missing-hf");
+  const existingStatePath = path.join(tempDir, "download-existing-state.json");
+  const existingApplied = await applyRecipe(downloadRecipe, config, {
+    dryRun: false,
+    yes: true,
+    modelRoot: downloadModelRoot,
+    statePath: existingStatePath,
+  });
+  assert.equal(existingApplied.results[0].status, "skipped");
+  assert.equal(existingApplied.results[0].reason, "destination-populated");
+  const existingState = await readInstallState(existingStatePath);
+  assert.equal(existingState.recipes["synthetic-download"].steps.download.status, "completed");
+} finally {
+  if (previousHfBin == null) {
+    delete process.env.SWITCHYARD_HF_BIN;
+  } else {
+    process.env.SWITCHYARD_HF_BIN = previousHfBin;
+  }
+}
 
 const syntheticBin = path.join(tempDir, "synthetic-backend");
 await fs.writeFile(syntheticBin, "#!/bin/sh\necho synthetic-ok\n", { mode: 0o755 });

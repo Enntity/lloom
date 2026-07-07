@@ -1,3 +1,4 @@
+import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { planBackend } from "./backend-catalog.mjs";
@@ -11,6 +12,24 @@ async function pathExists(filePath) {
   try {
     await fs.access(filePath);
     return true;
+  } catch {
+    return false;
+  }
+}
+
+async function pathExecutable(filePath) {
+  try {
+    await fs.access(filePath, fsConstants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function directoryHasEntries(dirPath) {
+  try {
+    const entries = await fs.readdir(dirPath);
+    return entries.length > 0;
   } catch {
     return false;
   }
@@ -54,18 +73,45 @@ function backendState(state, backendId) {
   return state.backends[backendId];
 }
 
-function stepCommand(step) {
+function huggingFaceCommandCandidates(step) {
+  const configured = process.env.SWITCHYARD_HF_BIN || process.env.HF_HUB_CLI;
+  return [
+    configured,
+    "hf",
+    "huggingface-cli",
+  ].filter(Boolean).map(command => [
+    command,
+    "download",
+    step.model,
+    "--local-dir",
+    step.destination,
+  ]);
+}
+
+async function commandAvailable(command) {
+  if (command.includes("/") || path.isAbsolute(command)) {
+    return pathExecutable(command);
+  }
+  const result = await runCommand("/usr/bin/which", [command], { allowFailure: true });
+  return result.code === 0 && Boolean(result.stdout.trim());
+}
+
+async function resolveHuggingFaceDownloadCommand(step) {
+  for (const candidate of huggingFaceCommandCandidates(step)) {
+    if (await commandAvailable(candidate[0])) return candidate;
+  }
+  return null;
+}
+
+function stepCommand(step, {
+  preferConfigured = true,
+} = {}) {
   if (step.action === "download-model") {
     if (step.provider !== "huggingface") {
       throw new Error(`Unsupported download provider ${step.provider}`);
     }
-    return [
-      "huggingface-cli",
-      "download",
-      step.model,
-      "--local-dir",
-      step.destination,
-    ];
+    const candidates = huggingFaceCommandCandidates(step);
+    return preferConfigured ? candidates[0] : candidates.at(-1);
   }
   if (Array.isArray(step.command)) return step.command;
   return null;
@@ -102,6 +148,31 @@ async function writeCommandShim({ source, target }) {
   };
 }
 
+async function executeDownloadModel(step) {
+  if (await directoryHasEntries(step.destination)) {
+    return {
+      ok: true,
+      status: "skipped",
+      reason: "destination-populated",
+      command: stepCommand(step),
+      stdout: `model destination already has files: ${step.destination}`,
+      stderr: "",
+    };
+  }
+
+  const command = await resolveHuggingFaceDownloadCommand(step);
+  if (!command) {
+    return {
+      ok: false,
+      status: "failed",
+      command: stepCommand(step),
+      stdout: "",
+      stderr: "No Hugging Face download CLI found. Install `huggingface_hub[cli]` or set SWITCHYARD_HF_BIN.",
+    };
+  }
+  return executeCommand(command);
+}
+
 async function executePlannedStep(step) {
   if (step.action === "manual") {
     return {
@@ -120,11 +191,15 @@ async function executePlannedStep(step) {
       link: step.link,
     };
   }
+  if (step.action === "download-model") {
+    return executeDownloadModel(step);
+  }
   const command = stepCommand(step);
   if (!command) {
     return {
       ok: false,
       status: "failed",
+      stdout: "",
       stderr: `Unsupported setup action ${step.action}`,
     };
   }
@@ -188,19 +263,22 @@ export async function applyRecipe(recipe, config, {
     const execution = await executePlannedStep(step);
     const completedAt = nowIso();
     const status = execution.status ?? (execution.ok ? "completed" : "failed");
+    const executedCommand = execution.command ?? command;
     currentRecipeState.steps[step.id] = {
-      status,
+      status: status === "skipped" && execution.reason === "destination-populated" ? "completed" : status,
       startedAt,
       completedAt,
-      command,
+      command: executedCommand,
       code: execution.code,
-      stdoutTail: execution.stdout.slice(-4000),
-      stderrTail: execution.stderr.slice(-4000),
+      stdoutTail: String(execution.stdout ?? "").slice(-4000),
+      stderrTail: String(execution.stderr ?? "").slice(-4000),
+      reason: execution.reason,
     };
     await writeInstallState(state, statePath);
     results.push({
       ...step,
-      command,
+      command: executedCommand,
+      reason: execution.reason,
       status,
       code: execution.code,
       stdout: execution.stdout,

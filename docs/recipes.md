@@ -59,6 +59,14 @@ node bin/switchyard.mjs install apple-silicon-qwen36 --model-root ~/Models --app
 
 Real execution records completed steps in `data/install-state.json`. If setup is interrupted, rerunning the command skips completed steps and resumes from the next pending step.
 
+`download-model` steps currently support Hugging Face artifacts. Switchyard resolves `SWITCHYARD_HF_BIN`, `HF_HUB_CLI`, `hf`, then `huggingface-cli`, and runs:
+
+```zsh
+hf download <model-id> --local-dir <model-root>/<model-id>
+```
+
+Existing populated destination directories are treated as already downloaded, which lets users seed model artifacts manually or resume after external downloads.
+
 ## Community Index
 
 `recipes/index.json` is the local prototype of the future hosted recipe feed. It lists the recipes Switchyard should expose to automatic selection and one-click setup:

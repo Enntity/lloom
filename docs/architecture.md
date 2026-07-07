@@ -43,7 +43,7 @@ Memory admission and eviction policies should be added as independent modules so
 
 ## Recipe Policy
 
-Recipes describe how a backend/model lane becomes runnable: prerequisites, downloads, tuning, runtime mapping, and benchmark evidence. The planner is pure and read-only. The eventual installer should consume the same plan, write durable state, and never invent model IDs outside the registry.
+Recipes describe how a backend/model lane becomes runnable: prerequisites, downloads, tuning, runtime mapping, and benchmark evidence. The planner is pure and read-only. The guarded installer consumes the same plan, writes durable state, and never invents model IDs outside the registry.
 
 Recipes should reference backend IDs from `backends/catalog.json`. That keeps model-specific recipes small while preserving a common adapter vocabulary for MTPLX, MLX, llama.cpp, Ollama, OptiQ, image backends, and CUDA-first servers such as vLLM.
 
