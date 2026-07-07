@@ -8,7 +8,7 @@ The goal is simple: install one bridge, let it pick and keep warm the best model
 
 - OpenAI-compatible model catalog at `GET /v1/models`
 - OpenAI-compatible chat proxy at `POST /v1/chat/completions`
-- OpenAI-compatible Responses bridge at `POST /v1/responses`
+- OpenAI-compatible Responses bridge at `POST /v1/responses`, including function-call output items and streaming argument deltas
 - OpenAI-compatible image generation proxy at `POST /v1/images/generations`
 - Anthropic Messages bridge at `POST /v1/messages`, including tool-use and streaming deltas
 - Runtime manager for local process start, health checks, stop, warmup, and keep-warm bootstrapping
@@ -169,7 +169,7 @@ flowchart LR
 
 - Recipe apply rollback and richer progress UI
 - Reasoning-block parity across OpenAI Responses and Anthropic Messages streams
-- Responses API parity for tools, reasoning blocks, and multimodal output items
+- Responses API parity for reasoning blocks and multimodal output items
 - Richer backend installers for MTPLX, MLX, llama.cpp, Ollama, and image/audio runtimes
 - Machine profiler and automatic recipe selection
 - Community recipe index and signed benchmark submissions

@@ -1069,6 +1069,113 @@ if (mockListened) {
       assert(responsesStreamText.includes("event: response.completed"));
       assert(responsesStreamText.includes('"input_tokens":11'));
 
+      const responsesToolResponse = await fetch(`http://127.0.0.1:${port}/v1/responses`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+          input: "weather please",
+          max_output_tokens: 32,
+          tools: [{
+            type: "function",
+            name: "get_weather",
+            description: "Get local weather.",
+            parameters: {
+              type: "object",
+              properties: {
+                city: { type: "string" },
+              },
+              required: ["city"],
+            },
+          }],
+          tool_choice: {
+            type: "function",
+            name: "get_weather",
+          },
+        }),
+      });
+      assert.equal(responsesToolResponse.status, 200);
+      const responsesToolJson = await responsesToolResponse.json();
+      assert.equal(responsesToolJson.output_text, "");
+      assert.deepEqual(responsesToolJson.output, [{
+        id: "call_weather",
+        type: "function_call",
+        status: "completed",
+        call_id: "call_weather",
+        name: "get_weather",
+        arguments: "{\"city\":\"Phoenix\"}",
+      }]);
+      assert.equal(responsesToolJson.usage.input_tokens, 17);
+
+      const responsesToolResultResponse = await fetch(`http://127.0.0.1:${port}/v1/responses`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+          input: [
+            {
+              type: "function_call",
+              call_id: "call_weather",
+              name: "get_weather",
+              arguments: "{\"city\":\"Phoenix\"}",
+            },
+            {
+              type: "function_call_output",
+              call_id: "call_weather",
+              output: "sunny",
+            },
+          ],
+          max_output_tokens: 32,
+        }),
+      });
+      assert.equal(responsesToolResultResponse.status, 200);
+      const responsesToolResultJson = await responsesToolResultResponse.json();
+      assert.equal(responsesToolResultJson.output_text, "It is sunny.");
+      assert.equal(responsesToolResultJson.usage.input_tokens, 19);
+
+      const responsesToolStreamResponse = await fetch(`http://127.0.0.1:${port}/v1/responses`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+          input: "weather please",
+          max_output_tokens: 32,
+          stream: true,
+          tools: [{
+            type: "function",
+            name: "get_weather",
+            parameters: {
+              type: "object",
+              properties: {
+                city: { type: "string" },
+              },
+            },
+          }],
+          tool_choice: {
+            type: "function",
+            name: "get_weather",
+          },
+        }),
+      });
+      assert.equal(responsesToolStreamResponse.status, 200);
+      assert.match(responsesToolStreamResponse.headers.get("content-type") ?? "", /text\/event-stream/);
+      const responsesToolStreamText = await responsesToolStreamResponse.text();
+      assert(responsesToolStreamText.includes("event: response.output_item.added"));
+      assert(responsesToolStreamText.includes('"type":"function_call"'));
+      assert(responsesToolStreamText.includes('"name":"get_weather"'));
+      assert(responsesToolStreamText.includes("event: response.function_call_arguments.delta"));
+      assert(responsesToolStreamText.includes('"delta":"{\\"city\\""'));
+      assert(responsesToolStreamText.includes('"delta":":\\"Phoenix\\"}"'));
+      assert(responsesToolStreamText.includes("event: response.function_call_arguments.done"));
+      assert(responsesToolStreamText.includes('"arguments":"{\\"city\\":\\"Phoenix\\"}"'));
+      assert(responsesToolStreamText.includes('"input_tokens":17'));
+
       const response = await fetch(`http://127.0.0.1:${port}/v1/messages`, {
         method: "POST",
         headers: {

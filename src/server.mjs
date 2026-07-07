@@ -173,6 +173,29 @@ function responsesInputToMessages(body) {
       continue;
     }
     if (!item || typeof item !== "object") continue;
+    if (item.type === "function_call") {
+      messages.push({
+        role: "assistant",
+        content: null,
+        tool_calls: [{
+          id: item.call_id ?? item.id,
+          type: "function",
+          function: {
+            name: item.name,
+            arguments: item.arguments ?? "{}",
+          },
+        }],
+      });
+      continue;
+    }
+    if (item.type === "function_call_output") {
+      messages.push({
+        role: "tool",
+        tool_call_id: item.call_id,
+        content: typeof item.output === "string" ? item.output : JSON.stringify(item.output ?? ""),
+      });
+      continue;
+    }
     if (item.type && item.type !== "message") {
       messages.push({
         role: "user",
@@ -189,6 +212,40 @@ function responsesInputToMessages(body) {
   return messages;
 }
 
+function responsesToolsToOpenAI(tools) {
+  if (!Array.isArray(tools) || !tools.length) return undefined;
+  const converted = tools
+    .filter(tool => tool?.function?.name || (tool?.type === "function" && tool.name))
+    .map(tool => {
+      if (tool.function?.name) return tool;
+      return {
+        type: "function",
+        function: {
+          name: tool.name,
+          ...(tool.description ? { description: tool.description } : {}),
+          parameters: tool.parameters ?? {
+            type: "object",
+            properties: {},
+          },
+        },
+      };
+    });
+  return converted.length ? converted : undefined;
+}
+
+function responsesToolChoiceToOpenAI(toolChoice) {
+  if (!toolChoice || typeof toolChoice === "string") return toolChoice;
+  if (toolChoice.type === "function" && toolChoice.name) {
+    return {
+      type: "function",
+      function: {
+        name: toolChoice.name,
+      },
+    };
+  }
+  return toolChoice;
+}
+
 function responsesToOpenAIChat(body, resolvedModel) {
   return {
     model: resolvedModel.model.upstreamModel,
@@ -198,16 +255,13 @@ function responsesToOpenAIChat(body, resolvedModel) {
     top_p: body.top_p,
     stream: body.stream === true,
     stream_options: body.stream === true ? { include_usage: true } : undefined,
-    tools: body.tools,
-    tool_choice: body.tool_choice,
+    tools: responsesToolsToOpenAI(body.tools),
+    tool_choice: responsesToolChoiceToOpenAI(body.tool_choice),
   };
 }
 
-function openAIToResponses(responseJson, requestedModel) {
-  const choice = responseJson.choices?.[0] ?? {};
-  const text = openAIChoiceText(choice);
-  const responseId = responseJson.id?.startsWith("resp_") ? responseJson.id : `resp_${responseJson.id ?? Date.now()}`;
-  const outputItem = {
+function responseOutputTextItem(responseId, text) {
+  return {
     id: `msg_${responseId}`,
     type: "message",
     status: "completed",
@@ -218,13 +272,36 @@ function openAIToResponses(responseJson, requestedModel) {
       annotations: [],
     }] : [],
   };
+}
+
+function responseFunctionCallItems(toolCalls = []) {
+  return toolCalls
+    .filter(toolCall => toolCall?.function?.name)
+    .map(toolCall => ({
+      id: toolCall.id ?? `fc_${Date.now()}`,
+      type: "function_call",
+      status: "completed",
+      call_id: toolCall.id ?? `call_${Date.now()}`,
+      name: toolCall.function.name,
+      arguments: toolCall.function.arguments ?? "{}",
+    }));
+}
+
+function openAIToResponses(responseJson, requestedModel) {
+  const choice = responseJson.choices?.[0] ?? {};
+  const text = openAIChoiceText(choice);
+  const responseId = responseJson.id?.startsWith("resp_") ? responseJson.id : `resp_${responseJson.id ?? Date.now()}`;
+  const output = [
+    ...(text ? [responseOutputTextItem(responseId, text)] : []),
+    ...responseFunctionCallItems(choice.message?.tool_calls),
+  ];
   return {
     id: responseId,
     object: "response",
     created_at: responseJson.created ?? Math.floor(Date.now() / 1000),
     status: "completed",
     model: requestedModel,
-    output: [outputItem],
+    output,
     output_text: text,
     parallel_tool_calls: true,
     usage: responseUsageFromOpenAI(responseJson.usage),
@@ -673,7 +750,6 @@ async function streamResponsesFromOpenAI(res, upstream, requestedModel) {
   res.writeHead(200, sseHeaders());
 
   const responseId = `resp_${Date.now()}`;
-  const outputItemId = `msg_${responseId}`;
   const createdAt = Math.floor(Date.now() / 1000);
   const responseBase = {
     id: responseId,
@@ -693,32 +769,76 @@ async function streamResponsesFromOpenAI(res, upstream, requestedModel) {
     type: "response.in_progress",
     response: responseBase,
   });
-  writeSse(res, "response.output_item.added", {
-    type: "response.output_item.added",
-    output_index: 0,
-    item: {
-      id: outputItemId,
-      type: "message",
-      status: "in_progress",
-      role: "assistant",
-      content: [],
-    },
-  });
-  writeSse(res, "response.content_part.added", {
-    type: "response.content_part.added",
-    item_id: outputItemId,
-    output_index: 0,
-    content_index: 0,
-    part: {
-      type: "output_text",
-      text: "",
-      annotations: [],
-    },
-  });
 
   let fullText = "";
   let usage = responseUsageFromOpenAI();
   let stopReason = "stop";
+  let nextOutputIndex = 0;
+  let textItem = null;
+  const toolItems = new Map();
+
+  function startTextItem() {
+    if (textItem) return textItem;
+    textItem = {
+      id: `msg_${responseId}`,
+      outputIndex: nextOutputIndex++,
+    };
+    writeSse(res, "response.output_item.added", {
+      type: "response.output_item.added",
+      output_index: textItem.outputIndex,
+      item: {
+        id: textItem.id,
+        type: "message",
+        status: "in_progress",
+        role: "assistant",
+        content: [],
+      },
+    });
+    writeSse(res, "response.content_part.added", {
+      type: "response.content_part.added",
+      item_id: textItem.id,
+      output_index: textItem.outputIndex,
+      content_index: 0,
+      part: {
+        type: "output_text",
+        text: "",
+        annotations: [],
+      },
+    });
+    return textItem;
+  }
+
+  function startToolItem(toolCall) {
+    const index = toolCall.index ?? 0;
+    let item = toolItems.get(index);
+    if (item) {
+      if (!item.name && toolCall.function?.name) item.name = toolCall.function.name;
+      if (!item.callId && toolCall.id) item.callId = toolCall.id;
+      return item;
+    }
+    item = {
+      id: toolCall.id ?? `fc_${responseId}_${index}`,
+      callId: toolCall.id ?? `call_${responseId}_${index}`,
+      name: toolCall.function?.name ?? "",
+      arguments: "",
+      outputIndex: nextOutputIndex++,
+    };
+    toolItems.set(index, item);
+    writeSse(res, "response.output_item.added", {
+      type: "response.output_item.added",
+      output_index: item.outputIndex,
+      item: {
+        id: item.id,
+        type: "function_call",
+        status: "in_progress",
+        call_id: item.callId,
+        name: item.name,
+        arguments: "",
+      },
+    });
+    return item;
+  }
+
   for await (const event of readSseEvents(upstream.body)) {
     if (event.data === "[DONE]") break;
     let chunk;
@@ -732,69 +852,101 @@ async function streamResponsesFromOpenAI(res, upstream, requestedModel) {
     }
     const choice = chunk.choices?.[0];
     if (choice?.finish_reason) stopReason = choice.finish_reason;
+    for (const toolCall of choice?.delta?.tool_calls ?? []) {
+      const item = startToolItem(toolCall);
+      const partial = toolCall.function?.arguments ?? "";
+      if (toolCall.function?.name && !item.name) item.name = toolCall.function.name;
+      if (partial) {
+        item.arguments += partial;
+        writeSse(res, "response.function_call_arguments.delta", {
+          type: "response.function_call_arguments.delta",
+          item_id: item.id,
+          output_index: item.outputIndex,
+          delta: partial,
+        });
+      }
+    }
     const text = openAIChunkText(chunk);
     if (text) {
+      const item = startTextItem();
       fullText += text;
       writeSse(res, "response.output_text.delta", {
         type: "response.output_text.delta",
-        item_id: outputItemId,
-        output_index: 0,
+        item_id: item.id,
+        output_index: item.outputIndex,
         content_index: 0,
         delta: text,
       });
     }
   }
 
-  writeSse(res, "response.output_text.done", {
-    type: "response.output_text.done",
-    item_id: outputItemId,
-    output_index: 0,
-    content_index: 0,
-    text: fullText,
-  });
-  writeSse(res, "response.content_part.done", {
-    type: "response.content_part.done",
-    item_id: outputItemId,
-    output_index: 0,
-    content_index: 0,
-    part: {
-      type: "output_text",
-      text: fullText,
-      annotations: [],
-    },
-  });
-  writeSse(res, "response.output_item.done", {
-    type: "response.output_item.done",
-    output_index: 0,
-    item: {
-      id: outputItemId,
+  const output = [];
+  if (textItem) {
+    const item = {
+      id: textItem.id,
       type: "message",
       status: "completed",
       role: "assistant",
-      content: [{
+      content: fullText ? [{
         type: "output_text",
         text: fullText,
         annotations: [],
-      }],
-    },
-  });
+      }] : [],
+    };
+    writeSse(res, "response.output_text.done", {
+      type: "response.output_text.done",
+      item_id: textItem.id,
+      output_index: textItem.outputIndex,
+      content_index: 0,
+      text: fullText,
+    });
+    writeSse(res, "response.content_part.done", {
+      type: "response.content_part.done",
+      item_id: textItem.id,
+      output_index: textItem.outputIndex,
+      content_index: 0,
+      part: {
+        type: "output_text",
+        text: fullText,
+        annotations: [],
+      },
+    });
+    writeSse(res, "response.output_item.done", {
+      type: "response.output_item.done",
+      output_index: textItem.outputIndex,
+      item,
+    });
+    output.push(item);
+  }
+  for (const item of [...toolItems.values()].sort((a, b) => a.outputIndex - b.outputIndex)) {
+    const completed = {
+      id: item.id,
+      type: "function_call",
+      status: "completed",
+      call_id: item.callId,
+      name: item.name,
+      arguments: item.arguments || "{}",
+    };
+    writeSse(res, "response.function_call_arguments.done", {
+      type: "response.function_call_arguments.done",
+      item_id: item.id,
+      output_index: item.outputIndex,
+      arguments: completed.arguments,
+    });
+    writeSse(res, "response.output_item.done", {
+      type: "response.output_item.done",
+      output_index: item.outputIndex,
+      item: completed,
+    });
+    output.push(completed);
+  }
   writeSse(res, "response.completed", {
     type: "response.completed",
     response: {
       ...responseBase,
       status: "completed",
       output_text: fullText,
-      output: [{
-        id: outputItemId,
-        type: "message",
-        status: "completed",
-        role: "assistant",
-        content: [{
-          type: "output_text",
-          text: fullText,
-          annotations: [],
-        }],
-      }],
+      output,
       usage,
       incomplete_details: stopReason === "length" ? { reason: "max_output_tokens" } : null,
     },
