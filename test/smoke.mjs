@@ -107,9 +107,11 @@ assert(allBackendPlans.some(plan => plan.id === "vllm"));
 const models = registry.openAIModels().map(model => model.id);
 assert(models.includes("Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed"));
 assert(models.includes("Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16"));
+assert(models.includes("mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-4bit"));
 assert(!models.includes("Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed"));
 assert(!models.includes("qwen36-27b-fastest"));
 assert(!models.includes("qwen36-35b-fastest"));
+assert(!models.includes("qwen3-tts"));
 
 const clientModels = registry.clientModels({ kinds: ["chat"] }).map(model => model.id);
 assert.deepEqual(clientModels, [
@@ -908,6 +910,85 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
       await closeServer(adminApp.server);
     }
   }
+}
+
+const speechUpstream = http.createServer(async (req, res) => {
+  if (req.method !== "POST" || req.url !== "/v1/audio/speech") {
+    res.writeHead(404, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "not found" }));
+    return;
+  }
+  const body = await readJsonBody(req);
+  assert.equal(body.model, "upstream-speech-model");
+  assert.equal(body.input, "Say hello.");
+  assert.equal(body.voice, "alloy");
+  res.writeHead(200, {
+    "content-type": "audio/wav",
+  });
+  res.end(Buffer.from("RIFFswitchyard-audio"));
+});
+
+const speechListened = await tryListen(speechUpstream);
+if (speechListened) {
+  const speechPort = speechUpstream.address().port;
+  const speechConfig = structuredClone(config);
+  speechConfig.server = {
+    host: "127.0.0.1",
+    port: 0,
+  };
+  speechConfig.defaults.speechModel = "synthetic-speech";
+  speechConfig.backends["synthetic-speech"] = {
+    type: "openai",
+    baseUrl: `http://127.0.0.1:${speechPort}/v1`,
+    apiKey: "sk-test",
+  };
+  speechConfig.models.push({
+    id: "synthetic-speech",
+    name: "Synthetic Speech",
+    backend: "synthetic-speech",
+    upstreamModel: "upstream-speech-model",
+    kind: "audio_speech",
+    input: ["text"],
+    output: ["audio"],
+    capabilities: ["audio-speech"],
+    advertise: true,
+  });
+  const speechApp = createSwitchyardServer(speechConfig, {
+    logger: { error() {} },
+  });
+  const speechGatewayListened = await tryListen(speechApp.server);
+  if (speechGatewayListened) {
+    const { port } = speechApp.server.address();
+    try {
+      const speechResponse = await fetch(`http://127.0.0.1:${port}/v1/audio/speech`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          input: "Say hello.",
+          voice: "alloy",
+          response_format: "wav",
+        }),
+      });
+      assert.equal(speechResponse.status, 200);
+      assert.equal(speechResponse.headers.get("content-type"), "audio/wav");
+      assert.equal(Buffer.from(await speechResponse.arrayBuffer()).toString("utf8"), "RIFFswitchyard-audio");
+
+      const wrongKindResponse = await fetch(`http://127.0.0.1:${port}/v1/audio/speech`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: config.defaults.chatModel,
+          input: "Say hello.",
+        }),
+      });
+      assert.equal(wrongKindResponse.status, 400);
+      const wrongKindJson = await wrongKindResponse.json();
+      assert.equal(wrongKindJson.error.code, "wrong_model_kind");
+    } finally {
+      await closeServer(speechApp.server);
+    }
+  }
+  await closeServer(speechUpstream);
 }
 
 const mockUpstream = http.createServer(async (req, res) => {

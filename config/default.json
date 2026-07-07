@@ -12,7 +12,8 @@
   },
   "defaults": {
     "chatModel": "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
-    "imageModel": "black-forest-labs/FLUX.1-schnell"
+    "imageModel": "black-forest-labs/FLUX.1-schnell",
+    "speechModel": "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-4bit"
   },
   "providers": {
     "local-llm": {
@@ -37,6 +38,12 @@
     "flux-schnell": {
       "type": "openai",
       "baseUrl": "http://127.0.0.1:8210/v1",
+      "apiKey": "sk-local-llm",
+      "timeoutMs": 1800000
+    },
+    "qwen3-tts": {
+      "type": "openai",
+      "baseUrl": "http://127.0.0.1:8220/v1",
       "apiKey": "sk-local-llm",
       "timeoutMs": 1800000
     }
@@ -133,6 +140,32 @@
         "flux",
         "fast"
       ]
+    },
+    {
+      "id": "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-4bit",
+      "name": "Qwen3 TTS 0.6B Custom Voice 4bit",
+      "backend": "qwen3-tts",
+      "runtime": "qwen3-tts-mlx",
+      "upstreamModel": "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-4bit",
+      "kind": "audio_speech",
+      "input": [
+        "text"
+      ],
+      "output": [
+        "audio"
+      ],
+      "capabilities": [
+        "audio-speech",
+        "tts"
+      ],
+      "contextWindow": 4096,
+      "maxOutputTokens": 4096,
+      "advertise": true,
+      "tags": [
+        "audio",
+        "tts",
+        "qwen3"
+      ]
     }
   ],
   "aliases": {
@@ -160,6 +193,11 @@
       "target": "black-forest-labs/FLUX.1-schnell",
       "advertise": true,
       "description": "Default local image-generation route."
+    },
+    "qwen3-tts": {
+      "target": "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-4bit",
+      "advertise": true,
+      "description": "Default local text-to-speech route."
     }
   },
   "runtimes": {
@@ -239,6 +277,17 @@
       ],
       "port": 8210,
       "healthUrl": "http://127.0.0.1:8210/health",
+      "startupTimeoutMs": 900000
+    },
+    "qwen3-tts-mlx": {
+      "enabled": false,
+      "command": "python",
+      "args": [
+        "-m",
+        "switchyard_qwen3_tts_server"
+      ],
+      "port": 8220,
+      "healthUrl": "http://127.0.0.1:8220/health",
       "startupTimeoutMs": 900000
     }
   },

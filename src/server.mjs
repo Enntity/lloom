@@ -541,10 +541,10 @@ async function proxyUpstreamStream(res, upstream) {
 }
 
 async function proxyRawResponse(res, upstream) {
-  const text = await upstream.text();
+  const body = Buffer.from(await upstream.arrayBuffer());
   setCors(res);
   res.writeHead(upstream.status, copyResponseHeaders(upstream));
-  res.end(text);
+  res.end(body);
 }
 
 function parseSseBlock(block) {
@@ -1010,6 +1010,35 @@ export function createSwitchyardServer(config, {
     await proxyRawResponse(res, upstream);
   }
 
+  async function handleOpenAISpeech(req, res) {
+    const body = await readJson(req);
+    const modelId = body.model ?? config.defaults?.speechModel;
+    if (!modelId) {
+      sendJson(res, 400, errorBody("speech request requires model", {
+        code: "missing_model",
+      }));
+      return;
+    }
+    const resolved = registry.resolve(modelId);
+    if ((resolved.model.kind ?? "chat") !== "audio_speech") {
+      sendJson(res, 400, errorBody(`model ${resolved.requestedId} is not a speech model`, {
+        code: "wrong_model_kind",
+        model: resolved.requestedId,
+      }));
+      return;
+    }
+    await runtimeManager.ensure(resolved.model.runtime);
+    const upstream = await fetchUpstream({
+      backend: resolved.backend,
+      path: "/v1/audio/speech",
+      body: {
+        ...body,
+        model: resolved.model.upstreamModel,
+      },
+    });
+    await proxyRawResponse(res, upstream);
+  }
+
   async function handleOpenAIResponses(req, res) {
     const body = await readJson(req);
     const resolved = registry.resolve(body.model ?? config.defaults?.chatModel);
@@ -1158,6 +1187,11 @@ export function createSwitchyardServer(config, {
 
       if (req.method === "POST" && url.pathname === "/v1/images/generations") {
         await handleOpenAIImages(req, res);
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/v1/audio/speech") {
+        await handleOpenAISpeech(req, res);
         return;
       }
 
