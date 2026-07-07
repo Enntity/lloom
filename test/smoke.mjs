@@ -840,8 +840,122 @@ const mockUpstream = http.createServer(async (req, res) => {
   }
   const body = await readJsonBody(req);
   assert.equal(body.model, "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed");
+  if (body.tools) {
+    assert.equal(body.tools[0].type, "function");
+    assert.equal(body.tools[0].function.name, "get_weather");
+    assert.equal(body.tools[0].function.parameters.type, "object");
+    assert.equal(body.tool_choice.type, "function");
+    assert.equal(body.tool_choice.function.name, "get_weather");
+    if (body.stream === true) {
+      res.writeHead(200, {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-cache",
+      });
+      res.write(`data: ${JSON.stringify({
+        choices: [{
+          delta: {
+            tool_calls: [{
+              index: 0,
+              id: "call_weather",
+              type: "function",
+              function: {
+                name: "get_weather",
+                arguments: "{\"city\"",
+              },
+            }],
+          },
+          finish_reason: null,
+        }],
+      })}\n\n`);
+      res.write(`data: ${JSON.stringify({
+        choices: [{
+          delta: {
+            tool_calls: [{
+              index: 0,
+              function: {
+                arguments: ":\"Phoenix\"}",
+              },
+            }],
+          },
+          finish_reason: "tool_calls",
+        }],
+      })}\n\n`);
+      res.write(`data: ${JSON.stringify({
+        choices: [],
+        usage: {
+          prompt_tokens: 17,
+          completion_tokens: 4,
+          total_tokens: 21,
+        },
+      })}\n\n`);
+      res.write("data: [DONE]\n\n");
+      res.end();
+      return;
+    }
+    res.writeHead(200, {
+      "content-type": "application/json",
+    });
+    res.end(JSON.stringify({
+      id: "chatcmpl_tool",
+      object: "chat.completion",
+      created: 1,
+      choices: [{
+        index: 0,
+        message: {
+          role: "assistant",
+          content: "",
+          tool_calls: [{
+            id: "call_weather",
+            type: "function",
+            function: {
+              name: "get_weather",
+              arguments: "{\"city\":\"Phoenix\"}",
+            },
+          }],
+        },
+        finish_reason: "tool_calls",
+      }],
+      usage: {
+        prompt_tokens: 17,
+        completion_tokens: 4,
+        total_tokens: 21,
+      },
+    }));
+    return;
+  }
   if (body.stream !== true) {
     assert(Array.isArray(body.messages));
+    const toolResultMessage = body.messages.find(message => message.role === "tool");
+    if (toolResultMessage) {
+      const assistantToolMessage = body.messages.find(message => message.role === "assistant" && message.tool_calls);
+      assert.equal(assistantToolMessage.tool_calls[0].id, "call_weather");
+      assert.equal(assistantToolMessage.tool_calls[0].function.name, "get_weather");
+      assert.equal(assistantToolMessage.tool_calls[0].function.arguments, "{\"city\":\"Phoenix\"}");
+      assert.equal(toolResultMessage.tool_call_id, "call_weather");
+      assert.equal(toolResultMessage.content, "sunny");
+      res.writeHead(200, {
+        "content-type": "application/json",
+      });
+      res.end(JSON.stringify({
+        id: "chatcmpl_tool_result",
+        object: "chat.completion",
+        created: 1,
+        choices: [{
+          index: 0,
+          message: {
+            role: "assistant",
+            content: "It is sunny.",
+          },
+          finish_reason: "stop",
+        }],
+        usage: {
+          prompt_tokens: 19,
+          completion_tokens: 4,
+          total_tokens: 23,
+        },
+      }));
+      return;
+    }
     res.writeHead(200, {
       "content-type": "application/json",
     });
@@ -981,6 +1095,129 @@ if (mockListened) {
       assert(streamText.includes('"text":"lo"'));
       assert(streamText.includes('"input_tokens":11'));
       assert(streamText.includes("event: message_stop"));
+
+      const toolResponse = await fetch(`http://127.0.0.1:${port}/v1/messages`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+          max_tokens: 32,
+          tools: [{
+            name: "get_weather",
+            description: "Get local weather.",
+            input_schema: {
+              type: "object",
+              properties: {
+                city: { type: "string" },
+              },
+              required: ["city"],
+            },
+          }],
+          tool_choice: {
+            type: "tool",
+            name: "get_weather",
+          },
+          messages: [
+            {
+              role: "user",
+              content: "weather please",
+            },
+          ],
+        }),
+      });
+      assert.equal(toolResponse.status, 200);
+      const toolJson = await toolResponse.json();
+      assert.equal(toolJson.stop_reason, "tool_use");
+      assert.equal(toolJson.usage.input_tokens, 17);
+      assert.equal(toolJson.usage.output_tokens, 4);
+      assert.deepEqual(toolJson.content, [{
+        type: "tool_use",
+        id: "call_weather",
+        name: "get_weather",
+        input: {
+          city: "Phoenix",
+        },
+      }]);
+
+      const toolResultResponse = await fetch(`http://127.0.0.1:${port}/v1/messages`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+          max_tokens: 32,
+          messages: [
+            {
+              role: "assistant",
+              content: [{
+                type: "tool_use",
+                id: "call_weather",
+                name: "get_weather",
+                input: {
+                  city: "Phoenix",
+                },
+              }],
+            },
+            {
+              role: "user",
+              content: [{
+                type: "tool_result",
+                tool_use_id: "call_weather",
+                content: "sunny",
+              }],
+            },
+          ],
+        }),
+      });
+      assert.equal(toolResultResponse.status, 200);
+      const toolResultJson = await toolResultResponse.json();
+      assert.equal(toolResultJson.content[0].text, "It is sunny.");
+      assert.equal(toolResultJson.usage.input_tokens, 19);
+
+      const toolStreamResponse = await fetch(`http://127.0.0.1:${port}/v1/messages`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+          max_tokens: 32,
+          stream: true,
+          tools: [{
+            name: "get_weather",
+            input_schema: {
+              type: "object",
+              properties: {
+                city: { type: "string" },
+              },
+            },
+          }],
+          tool_choice: {
+            type: "tool",
+            name: "get_weather",
+          },
+          messages: [
+            {
+              role: "user",
+              content: "weather please",
+            },
+          ],
+        }),
+      });
+      assert.equal(toolStreamResponse.status, 200);
+      assert.match(toolStreamResponse.headers.get("content-type") ?? "", /text\/event-stream/);
+      const toolStreamText = await toolStreamResponse.text();
+      assert(toolStreamText.includes("event: content_block_start"));
+      assert(toolStreamText.includes('"type":"tool_use"'));
+      assert(toolStreamText.includes('"name":"get_weather"'));
+      assert(toolStreamText.includes('"type":"input_json_delta"'));
+      assert(toolStreamText.includes('"partial_json":"{\\"city\\""'));
+      assert(toolStreamText.includes('"partial_json":":\\"Phoenix\\"}"'));
+      assert(toolStreamText.includes('"stop_reason":"tool_use"'));
+      assert(toolStreamText.includes('"input_tokens":17'));
     } finally {
       await closeServer(streamApp.server);
       await closeServer(mockUpstream);

@@ -33,6 +33,8 @@ Switchyard currently fronts these local contracts:
 
 `/v1/responses` is implemented as a bridge over chat-completions backends. It normalizes `input`, `instructions`, `max_output_tokens`, `output_text`, and usage fields, and translates chat SSE into Responses-style streaming events.
 
+`/v1/messages` is implemented as an Anthropic Messages bridge over OpenAI-compatible chat-completions backends. It converts Anthropic text, image, `tools`, `tool_choice`, assistant `tool_use`, and user `tool_result` blocks into the matching OpenAI chat shapes, then maps OpenAI text and function-call responses back into Anthropic `text` and `tool_use` content blocks. Streaming function-call chunks are emitted as Anthropic `input_json_delta` events.
+
 ## CLI Surface
 
 The CLI exposes the same runtime controls without requiring an already-running gateway:
