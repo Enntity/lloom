@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { backendIds as catalogBackendIds, loadBackendCatalog } from "./backend-catalog.mjs";
@@ -16,6 +17,18 @@ function asArray(value) {
 
 function jsonString(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value)
+      .filter(([, entryValue]) => entryValue !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries.map(([key, entryValue]) =>
+      `${JSON.stringify(key)}:${canonicalJson(entryValue)}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
 }
 
 function isUrl(value) {
@@ -160,9 +173,126 @@ function validatePackEntry(entry, config, backendIds) {
 
 export async function loadRecipePack(source) {
   const loaded = await readJsonSource(source);
+  const pack = { ...loaded.json };
+  Object.defineProperty(pack, "source", {
+    value: loaded.source,
+    enumerable: false,
+  });
+  return pack;
+}
+
+export function recipePackSigningPayload(pack) {
+  const payload = {
+    ...pack,
+  };
+  delete payload.signatures;
+  delete payload.source;
+  return Buffer.from(canonicalJson(payload), "utf8");
+}
+
+export function createRecipePackSignature(pack, {
+  keyId,
+  privateKey,
+  publicKey,
+} = {}) {
+  if (!keyId) throw new Error("keyId is required");
+  if (!privateKey) throw new Error("privateKey is required");
   return {
-    ...loaded.json,
-    source: loaded.source,
+    keyId,
+    algorithm: "ed25519",
+    ...(publicKey ? { publicKey } : {}),
+    signature: crypto.sign(null, recipePackSigningPayload(pack), privateKey).toString("base64"),
+  };
+}
+
+async function trustedKeyEntry(spec) {
+  if (!spec) return null;
+  if (typeof spec === "object") {
+    if (!spec.keyId || !spec.publicKey) throw new Error("trusted key objects require keyId and publicKey");
+    return {
+      keyId: spec.keyId,
+      publicKey: spec.publicKey,
+    };
+  }
+  const text = String(spec);
+  const splitAt = text.indexOf("=");
+  if (splitAt === -1) throw new Error(`trusted key must use key-id=public-key-file: ${text}`);
+  const keyId = text.slice(0, splitAt);
+  let value = text.slice(splitAt + 1);
+  if (!keyId || !value) throw new Error(`trusted key must use key-id=public-key-file: ${text}`);
+  if (value.startsWith("@")) value = value.slice(1);
+  const publicKey = value.includes("-----BEGIN")
+    ? value
+    : await fs.readFile(path.resolve(value), "utf8");
+  return {
+    keyId,
+    publicKey,
+  };
+}
+
+export async function loadTrustedKeys(specs = []) {
+  const keys = [];
+  for (const spec of asArray(specs)) {
+    const entry = await trustedKeyEntry(spec);
+    if (entry) keys.push(entry);
+  }
+  return keys;
+}
+
+function verifySignature(signature, payload, trustedKeyById) {
+  const keyId = signature?.keyId ?? null;
+  const algorithm = signature?.algorithm ?? null;
+  const trustedPublicKey = keyId ? trustedKeyById.get(keyId) : null;
+  const publicKey = trustedPublicKey ?? signature?.publicKey;
+  const result = {
+    keyId,
+    algorithm,
+    verified: false,
+    trusted: Boolean(trustedPublicKey),
+  };
+  if (!keyId) return { ...result, error: "signature is missing keyId" };
+  if (algorithm !== "ed25519") return { ...result, error: `unsupported signature algorithm ${algorithm ?? "(missing)"}` };
+  if (!signature?.signature) return { ...result, error: "signature is missing signature" };
+  if (!publicKey) return { ...result, error: `no public key available for ${keyId}` };
+  try {
+    const verified = crypto.verify(null, payload, publicKey, Buffer.from(signature.signature, "base64"));
+    return {
+      ...result,
+      verified,
+      error: verified ? undefined : "signature verification failed",
+    };
+  } catch (error) {
+    return {
+      ...result,
+      error: error?.message ?? String(error),
+    };
+  }
+}
+
+function verifyRecipePackSignatures(pack, {
+  trustedKeys = [],
+  requireSignature = false,
+} = {}) {
+  const trustedKeyById = new Map(asArray(trustedKeys).map(key => [key.keyId, key.publicKey]));
+  const signatures = asArray(pack.signatures);
+  const results = signatures.map(signature =>
+    verifySignature(signature, recipePackSigningPayload(pack), trustedKeyById));
+  const verified = results.some(result => result.verified);
+  const trusted = results.some(result => result.verified && result.trusted);
+  const trustRequired = trustedKeyById.size > 0;
+  const errors = [];
+  if (requireSignature && !signatures.length) errors.push("recipe pack requires a signature");
+  if (signatures.length && !verified) errors.push("recipe pack has signatures but none verified");
+  if (trustRequired && !trusted) errors.push("recipe pack is not signed by a trusted key");
+  return {
+    required: requireSignature,
+    trustRequired,
+    signed: signatures.length > 0,
+    verified,
+    trusted,
+    accepted: trustRequired ? trusted : (requireSignature ? verified : true),
+    signatures: results,
+    validationErrors: errors,
   };
 }
 
@@ -170,12 +300,20 @@ async function buildRecipePackPlan(source, config, {
   indexPath = defaultRecipeIndexPath,
   recipesRoot = defaultRecipesRoot,
   benchmarksRoot = defaultBenchmarksRoot,
+  trustedKeys = [],
+  requireSignature = false,
 } = {}) {
   const pack = typeof source === "string" ? await loadRecipePack(source) : source;
+  const normalizedTrustedKeys = await loadTrustedKeys(trustedKeys);
+  const signature = verifyRecipePackSignatures(pack, {
+    trustedKeys: normalizedTrustedKeys,
+    requireSignature,
+  });
   const catalog = await loadBackendCatalog();
   const knownBackendIds = catalogBackendIds(catalog);
   const index = await existingIndex(indexPath);
   const validationErrors = [];
+  validationErrors.push(...signature.validationErrors);
   if (pack.schemaVersion !== 1) validationErrors.push("recipe pack schemaVersion must be 1");
   if (!pack.id) validationErrors.push("recipe pack is missing id");
   if (!Array.isArray(pack.recipes)) validationErrors.push("recipe pack recipes must be an array");
@@ -244,6 +382,7 @@ async function buildRecipePackPlan(source, config, {
       recipeCount: asArray(pack.recipes).length,
       benchmarkCount: benchmarkActions.length,
     },
+    signature,
     roots: {
       indexPath: path.resolve(indexPath),
       recipesRoot: path.resolve(recipesRoot),

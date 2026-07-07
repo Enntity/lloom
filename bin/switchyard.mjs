@@ -25,7 +25,7 @@ import { loadConfig } from "../src/config.mjs";
 import { applyInit, defaultUserConfigPath } from "../src/init.mjs";
 import { applyBackend, applyRecipe } from "../src/installer.mjs";
 import { profileMachine, rankRecipes } from "../src/machine-profile.mjs";
-import { applyRecipePack, createRecipePackPlan } from "../src/recipe-pack.mjs";
+import { applyRecipePack, createRecipePackPlan, loadTrustedKeys } from "../src/recipe-pack.mjs";
 import { buildRecipeIndexReport } from "../src/recipe-index.mjs";
 import { createRegistry } from "../src/registry.mjs";
 import { loadRecipeById, loadRecipes, planRecipe } from "../src/recipes.mjs";
@@ -49,7 +49,7 @@ function usage() {
   switchyard profile [--config path]
   switchyard recipes [--config path]
   switchyard recipe-index [--index path] [--recipes-root path] [--benchmarks-root path] [--model-root path]
-  switchyard recipe-import <pack-file-or-url> [--index path] [--recipes-root path] [--benchmarks-root path] [--apply --yes]
+  switchyard recipe-import <pack-file-or-url> [--index path] [--recipes-root path] [--benchmarks-root path] [--trusted-key key-id=pubkey.pem] [--require-signature] [--apply --yes]
   switchyard select [--config path]
   switchyard plan <recipe-id> [--config path] [--model-root path]
   switchyard install <recipe-id> [--config path] [--model-root path] [--apply --yes]
@@ -75,6 +75,14 @@ function argValue(args, name) {
 
 function hasFlag(args, name) {
   return args.includes(name);
+}
+
+function argValues(args, name) {
+  const values = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === name && args[index + 1]) values.push(args[index + 1]);
+  }
+  return values;
 }
 
 function positional(args) {
@@ -394,10 +402,13 @@ async function main() {
     }
     const apply = hasFlag(args, "--apply");
     const yes = hasFlag(args, "--yes");
+    const trustedKeys = await loadTrustedKeys(argValues(args, "--trusted-key"));
     const options = {
       indexPath: argValue(args, "--index"),
       recipesRoot: argValue(args, "--recipes-root"),
       benchmarksRoot: argValue(args, "--benchmarks-root"),
+      requireSignature: hasFlag(args, "--require-signature"),
+      trustedKeys,
     };
     console.log(JSON.stringify(apply
       ? await applyRecipePack(source, config, {

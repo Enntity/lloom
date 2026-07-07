@@ -162,10 +162,11 @@ Community recipe packs can be previewed and imported without hand-editing the lo
 
 ```zsh
 node bin/switchyard.mjs recipe-import ./qwen-next-pack.json
+node bin/switchyard.mjs recipe-import ./qwen-next-pack.json --trusted-key publisher=./publisher.pub --require-signature
 node bin/switchyard.mjs recipe-import ./qwen-next-pack.json --apply --yes
 ```
 
-Recipe import writes the recipe JSON, merges the index entry, and stores attached benchmark suites. It accepts local files today and HTTP(S) pack URLs for hosted recipe feeds.
+Recipe import writes the recipe JSON, merges the index entry, and stores attached benchmark suites. It accepts local files today and HTTP(S) pack URLs for hosted recipe feeds. Signed packs can be verified with Ed25519 public keys before import.
 
 ## Model IDs
 
@@ -199,6 +200,6 @@ flowchart LR
 - Responses API parity for reasoning blocks and multimodal output items
 - Richer backend installers for MTPLX, MLX, llama.cpp, Ollama, and image/audio runtimes
 - Machine profiler and automatic recipe selection
-- Signed community recipe packs and benchmark submissions
+- Signed benchmark submissions and hosted recipe feeds
 - Per-model memory admission, eviction, and warmup policy
 - Vision, speech, transcription, and richer multimodal output parity across supported backends

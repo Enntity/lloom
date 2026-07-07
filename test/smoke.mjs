@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { generateKeyPairSync } from "node:crypto";
 import fs from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
@@ -26,7 +27,7 @@ import {
 import { applyInit, createInitPlan, deriveUserConfig } from "../src/init.mjs";
 import { applyBackend, applyRecipe, readInstallState } from "../src/installer.mjs";
 import { profileMachine, rankRecipes } from "../src/machine-profile.mjs";
-import { applyRecipePack, createRecipePackPlan } from "../src/recipe-pack.mjs";
+import { applyRecipePack, createRecipePackSignature, createRecipePackPlan } from "../src/recipe-pack.mjs";
 import {
   buildRecipeIndexReport,
   loadRecipeIndex,
@@ -216,6 +217,9 @@ const packRecipesRoot = path.join(tempDir, "pack-recipes");
 const packBenchmarksRoot = path.join(tempDir, "pack-benchmarks");
 const packIndexPath = path.join(packRecipesRoot, "index.json");
 const packPath = path.join(tempDir, "synthetic-recipe-pack.json");
+const signedPackPath = path.join(tempDir, "synthetic-signed-recipe-pack.json");
+const tamperedPackPath = path.join(tempDir, "synthetic-tampered-recipe-pack.json");
+const trustedPublicKeyPath = path.join(tempDir, "synthetic-pack-public.pem");
 const packedRecipe = {
   id: "synthetic-pack",
   name: "Synthetic Pack",
@@ -270,7 +274,7 @@ const packedBenchmarkSuite = {
     },
   ],
 };
-await fs.writeFile(packPath, `${JSON.stringify({
+const packDocument = {
   schemaVersion: 1,
   id: "synthetic-pack-bundle",
   name: "Synthetic Pack Bundle",
@@ -293,7 +297,8 @@ await fs.writeFile(packPath, `${JSON.stringify({
       benchmarks: [packedBenchmarkSuite],
     },
   ],
-}, null, 2)}\n`, "utf8");
+};
+await fs.writeFile(packPath, `${JSON.stringify(packDocument, null, 2)}\n`, "utf8");
 const packPlan = await createRecipePackPlan(packPath, config, {
   indexPath: packIndexPath,
   recipesRoot: packRecipesRoot,
@@ -301,9 +306,18 @@ const packPlan = await createRecipePackPlan(packPath, config, {
 });
 assert.equal(packPlan.ok, true);
 assert.equal(packPlan.pack.recipeCount, 1);
+assert.equal(packPlan.signature.signed, false);
 assert.equal(packPlan.writableActions, undefined);
 assert.equal(packPlan.actions.find(action => action.type === "recipe").status, "create");
 assert.equal(packPlan.actions.find(action => action.type === "benchmark").status, "create");
+const unsignedRequiredPlan = await createRecipePackPlan(packPath, config, {
+  indexPath: packIndexPath,
+  recipesRoot: packRecipesRoot,
+  benchmarksRoot: packBenchmarksRoot,
+  requireSignature: true,
+});
+assert.equal(unsignedRequiredPlan.ok, false);
+assert(unsignedRequiredPlan.validationErrors.some(error => error.includes("requires a signature")));
 await assert.rejects(
   () => applyRecipePack(packPath, config, {
     dryRun: false,
@@ -327,6 +341,70 @@ const packCliPlan = JSON.parse((await runCommand(process.execPath, [
 assert.equal(packCliPlan.ok, true);
 assert.equal(packCliPlan.writableActions, undefined);
 assert.equal(packCliPlan.actions.find(action => action.type === "index").status, "create");
+const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+const publicKeyPem = publicKey.export({ type: "spki", format: "pem" });
+const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" });
+await fs.writeFile(trustedPublicKeyPath, publicKeyPem, "utf8");
+const signedPackDocument = structuredClone(packDocument);
+signedPackDocument.signatures = [
+  createRecipePackSignature(signedPackDocument, {
+    keyId: "synthetic-test",
+    privateKey: privateKeyPem,
+    publicKey: publicKeyPem,
+  }),
+];
+await fs.writeFile(signedPackPath, `${JSON.stringify(signedPackDocument, null, 2)}\n`, "utf8");
+const signedPlan = await createRecipePackPlan(signedPackPath, config, {
+  indexPath: packIndexPath,
+  recipesRoot: packRecipesRoot,
+  benchmarksRoot: packBenchmarksRoot,
+  requireSignature: true,
+  trustedKeys: [{ keyId: "synthetic-test", publicKey: publicKeyPem }],
+});
+assert.equal(signedPlan.ok, true);
+assert.equal(signedPlan.signature.signed, true);
+assert.equal(signedPlan.signature.verified, true);
+assert.equal(signedPlan.signature.trusted, true);
+const signedCliPlan = JSON.parse((await runCommand(process.execPath, [
+  path.join(process.cwd(), "bin", "switchyard.mjs"),
+  "recipe-import",
+  signedPackPath,
+  "--index",
+  packIndexPath,
+  "--recipes-root",
+  packRecipesRoot,
+  "--benchmarks-root",
+  packBenchmarksRoot,
+  "--trusted-key",
+  `synthetic-test=${trustedPublicKeyPath}`,
+  "--require-signature",
+])).stdout);
+assert.equal(signedCliPlan.ok, true);
+assert.equal(signedCliPlan.signature.trusted, true);
+const tamperedPackDocument = structuredClone(signedPackDocument);
+tamperedPackDocument.recipes[0].recipe.name = "Tampered Pack";
+await fs.writeFile(tamperedPackPath, `${JSON.stringify(tamperedPackDocument, null, 2)}\n`, "utf8");
+const tamperedPlan = await createRecipePackPlan(tamperedPackPath, config, {
+  indexPath: packIndexPath,
+  recipesRoot: packRecipesRoot,
+  benchmarksRoot: packBenchmarksRoot,
+  requireSignature: true,
+  trustedKeys: [{ keyId: "synthetic-test", publicKey: publicKeyPem }],
+});
+assert.equal(tamperedPlan.ok, false);
+assert(tamperedPlan.validationErrors.some(error => error.includes("none verified")));
+await assert.rejects(
+  () => applyRecipePack(tamperedPackPath, config, {
+    dryRun: false,
+    yes: true,
+    indexPath: packIndexPath,
+    recipesRoot: packRecipesRoot,
+    benchmarksRoot: packBenchmarksRoot,
+    requireSignature: true,
+    trustedKeys: [{ keyId: "synthetic-test", publicKey: publicKeyPem }],
+  }),
+  /Recipe pack is invalid/,
+);
 const packApplied = await applyRecipePack(packPath, config, {
   dryRun: false,
   yes: true,

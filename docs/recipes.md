@@ -100,10 +100,13 @@ Community packs bundle one or more recipes, index entries, and benchmark suites 
 
 ```zsh
 node bin/switchyard.mjs recipe-import ./qwen-next-pack.json
+node bin/switchyard.mjs recipe-import ./qwen-next-pack.json --trusted-key publisher=./publisher.pub --require-signature
 node bin/switchyard.mjs recipe-import ./qwen-next-pack.json --apply --yes
 ```
 
 Dry-run is the default. Apply writes recipe files under `recipes/`, merges entries into `recipes/index.json`, and writes attached benchmark suites under `benchmarks/community/`.
+
+Signed packs use Ed25519 signatures over a canonical form of the pack without the `signatures` field. Import reports signature status in dry-runs. Passing `--require-signature` rejects unsigned packs; passing one or more `--trusted-key key-id=pubkey.pem` flags also requires a verified signature from one of those trusted key IDs.
 
 Minimal pack shape:
 
@@ -112,6 +115,13 @@ Minimal pack shape:
   "schemaVersion": 1,
   "id": "example-pack",
   "name": "Example Pack",
+  "signatures": [
+    {
+      "keyId": "publisher",
+      "algorithm": "ed25519",
+      "signature": "base64-signature"
+    }
+  ],
   "recipes": [
     {
       "index": {
