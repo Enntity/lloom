@@ -11,6 +11,7 @@ function compactRuntime(runtime) {
   return {
     enabled: runtime.enabled === true,
     keepWarm: runtime.keepWarm === true,
+    maxConcurrency: runtimeMaxConcurrency(runtime),
     command: runtime.command,
     args: runtime.args,
     cwd: runtime.cwd,
@@ -34,6 +35,11 @@ async function healthOk(url, timeoutMs = 1500) {
   }
 }
 
+function runtimeMaxConcurrency(runtime) {
+  const value = Number(runtime?.maxConcurrency ?? 1);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 1;
+}
+
 export class RuntimeManager {
   constructor(config, { logger = console, captureOutput = true } = {}) {
     this.config = config;
@@ -41,6 +47,7 @@ export class RuntimeManager {
     this.captureOutput = captureOutput;
     this.processes = new Map();
     this.state = new Map();
+    this.queues = new Map();
     this.events = [];
   }
 
@@ -50,6 +57,8 @@ export class RuntimeManager {
         status: "idle",
         starts: 0,
         stops: 0,
+        activeRequests: 0,
+        queuedRequests: 0,
         startedAt: null,
         stoppedAt: null,
         lastWarmup: null,
@@ -85,6 +94,11 @@ export class RuntimeManager {
     return Boolean(child?.pid && child.exitCode == null && child.signalCode == null);
   }
 
+  queueFor(runtimeId) {
+    if (!this.queues.has(runtimeId)) this.queues.set(runtimeId, []);
+    return this.queues.get(runtimeId);
+  }
+
   async status() {
     const runtimes = {};
     const keepWarm = new Set(this.keepWarmRuntimeIds());
@@ -106,6 +120,8 @@ export class RuntimeManager {
         keepWarm: keepWarm.has(runtimeId),
         starts: state.starts,
         stops: state.stops,
+        activeRequests: state.activeRequests,
+        queuedRequests: state.queuedRequests,
         startedAt: state.startedAt,
         stoppedAt: state.stoppedAt,
         lastWarmup: state.lastWarmup,
@@ -116,6 +132,43 @@ export class RuntimeManager {
       runtimes,
       events: this.events,
     };
+  }
+
+  async withSlot(runtimeId, fn) {
+    const release = await this.acquireSlot(runtimeId);
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  }
+
+  acquireSlot(runtimeId) {
+    if (!runtimeId) return () => {};
+    const runtime = this.getRuntime(runtimeId);
+    if (!runtime) return () => {};
+    const state = this.stateFor(runtimeId);
+    const maxConcurrency = runtimeMaxConcurrency(runtime);
+    if (state.activeRequests < maxConcurrency) {
+      state.activeRequests += 1;
+      return () => this.releaseSlot(runtimeId);
+    }
+    const queue = this.queueFor(runtimeId);
+    state.queuedRequests = queue.length + 1;
+    return new Promise(resolve => {
+      queue.push(resolve);
+    });
+  }
+
+  releaseSlot(runtimeId) {
+    const state = this.stateFor(runtimeId);
+    state.activeRequests = Math.max(0, state.activeRequests - 1);
+    const queue = this.queueFor(runtimeId);
+    const next = queue.shift();
+    state.queuedRequests = queue.length;
+    if (!next) return;
+    state.activeRequests += 1;
+    next(() => this.releaseSlot(runtimeId));
   }
 
   async ensure(runtimeId) {

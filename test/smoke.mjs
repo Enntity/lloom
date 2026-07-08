@@ -82,6 +82,12 @@ function closeServer(server) {
   });
 }
 
+function wait(ms) {
+  return new Promise(resolve => {
+    setTimeout(resolve, ms);
+  });
+}
+
 async function readJsonBody(req) {
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
@@ -585,6 +591,46 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
   assert.equal(keepWarmResult[0].reason, "already-healthy");
   const stopResult = await lifecycleManager.stop("synthetic-runtime");
   assert.equal(stopResult.stopped, true);
+
+  const limiterManager = new RuntimeManager({
+    runtimes: {
+      limited: {
+        maxConcurrency: 1,
+      },
+    },
+  }, {
+    logger: { error() {} },
+  });
+  let active = 0;
+  let maxActive = 0;
+  const order = [];
+  const jobs = [1, 2, 3].map(index => limiterManager.withSlot("limited", async () => {
+    active += 1;
+    maxActive = Math.max(maxActive, active);
+    order.push(`start-${index}`);
+    await wait(20);
+    order.push(`end-${index}`);
+    active -= 1;
+    return index;
+  }));
+  await wait(1);
+  const limiterStatus = await limiterManager.status();
+  assert.equal(limiterStatus.runtimes.limited.maxConcurrency, 1);
+  assert.equal(limiterStatus.runtimes.limited.activeRequests, 1);
+  assert.equal(limiterStatus.runtimes.limited.queuedRequests, 2);
+  assert.deepEqual(await Promise.all(jobs), [1, 2, 3]);
+  assert.equal(maxActive, 1);
+  assert.deepEqual(order, [
+    "start-1",
+    "end-1",
+    "start-2",
+    "end-2",
+    "start-3",
+    "end-3",
+  ]);
+  const limiterDoneStatus = await limiterManager.status();
+  assert.equal(limiterDoneStatus.runtimes.limited.activeRequests, 0);
+  assert.equal(limiterDoneStatus.runtimes.limited.queuedRequests, 0);
 
   const cliConfigPath = path.join(tempDir, "runtime-cli-config.json");
   await fs.writeFile(cliConfigPath, `${JSON.stringify(lifecycleConfig, null, 2)}\n`, "utf8");

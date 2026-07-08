@@ -13,9 +13,10 @@ The gateway never guesses a stale model ID. If a client asks for an unknown mode
 
 1. Authenticate if local auth is enabled.
 2. Resolve `body.model` through the registry.
-3. Start or verify the configured runtime if the model has one.
-4. Forward the request to the backend using the model's `upstreamModel`.
-5. Return the upstream stream or response body with gateway-safe headers.
+3. Acquire a concurrency slot for the model's runtime if the model has one.
+4. Start or verify the configured runtime if the model has one.
+5. Forward the request to the backend using the model's `upstreamModel`.
+6. Return the upstream stream or response body with gateway-safe headers.
 
 ## API Surface
 
@@ -64,7 +65,11 @@ The CLI exposes the same runtime controls without requiring an already-running g
 
 ## Runtime Policy
 
-Runtime definitions include command, args, cwd, env, health URL, timeout, port, and warmup request. Model requests automatically ensure the bound runtime only when that runtime is `enabled`; manual admin `start` can force-start any configured runtime for setup and diagnostics.
+Runtime definitions include command, args, cwd, env, health URL, timeout, port, warmup request, and `maxConcurrency`. Model-facing routes acquire a runtime slot before contacting upstream. This lets MTPLX and other optimized text lanes run high concurrency while image, audio, or memory-heavy runtimes serialize with `maxConcurrency: 1`.
+
+`/gateway/status` reports `maxConcurrency`, `activeRequests`, and `queuedRequests` for each runtime so dashboards can distinguish a slow backend from local gateway queueing.
+
+Model requests automatically ensure the bound runtime only when that runtime is `enabled`; manual admin `start` can force-start any configured runtime for setup and diagnostics.
 
 `keepWarm` runtime IDs are started in the background after the gateway begins listening, but only when those runtimes are also `enabled`. This keeps the default config safe while allowing a completed recipe to opt into real prewarming.
 

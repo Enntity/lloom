@@ -219,6 +219,7 @@
       "port": 8201,
       "healthUrl": "http://127.0.0.1:8201/health",
       "startupTimeoutMs": 900000,
+      "maxConcurrency": 10,
       "warmup": {
         "url": "http://127.0.0.1:8201/v1/chat/completions",
         "method": "POST",
@@ -252,6 +253,7 @@
       "port": 8202,
       "healthUrl": "http://127.0.0.1:8202/health",
       "startupTimeoutMs": 900000,
+      "maxConcurrency": 10,
       "warmup": {
         "url": "http://127.0.0.1:8202/v1/chat/completions",
         "method": "POST",
@@ -277,7 +279,8 @@
       ],
       "port": 8210,
       "healthUrl": "http://127.0.0.1:8210/health",
-      "startupTimeoutMs": 900000
+      "startupTimeoutMs": 900000,
+      "maxConcurrency": 1
     },
     "qwen3-tts-mlx": {
       "enabled": false,
@@ -288,7 +291,8 @@
       ],
       "port": 8220,
       "healthUrl": "http://127.0.0.1:8220/health",
-      "startupTimeoutMs": 900000
+      "startupTimeoutMs": 900000,
+      "maxConcurrency": 1
     }
   },
   "keepWarm": [

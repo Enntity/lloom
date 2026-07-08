@@ -1297,7 +1297,7 @@ export function createSwitchyardServer(config, {
   async function recordModelRequest({ route, resolved, stream }, fn) {
     const started = Date.now();
     try {
-      const result = await fn();
+      const result = await runtimeManager.withSlot(resolved.model.runtime, fn);
       const status = result?.status ?? 200;
       metrics.record({
         route,

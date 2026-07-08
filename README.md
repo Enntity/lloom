@@ -14,7 +14,7 @@ The goal is simple: install one bridge, let it pick and keep warm the best model
 - OpenAI-compatible speech generation proxy at `POST /v1/audio/speech`
 - OpenAI-compatible audio transcription proxy at `POST /v1/audio/transcriptions`
 - Anthropic Messages bridge at `POST /v1/messages`, including tool-use and streaming deltas
-- Runtime manager for local process start, health checks, stop, warmup, and keep-warm bootstrapping
+- Runtime manager for local process start, health checks, stop, warmup, keep-warm bootstrapping, and per-runtime concurrency slots
 - In-memory per-model and per-route metrics at `GET /gateway/metrics`
 - Backend catalog for MTPLX, MLX LM, llama.cpp, Ollama, OptiQ, stable-diffusion.cpp, and vLLM
 - Community benchmark evidence files that rank model/backend recipes for a machine class
@@ -153,6 +153,8 @@ curl -sS -X POST http://127.0.0.1:8100/gateway/runtimes/mtplx-qwen36-27b-speed/s
 
 Requests through chat/image/message APIs call the runtime manager automatically. Manual `start` is allowed for configured runtimes even when `enabled` is false; automatic model-request startup and keep-warm bootstrapping require `enabled: true`.
 
+Runtime definitions can set `maxConcurrency`. Model requests acquire a runtime slot before contacting the upstream backend, so optimized text lanes can run multiple concurrent agent streams while image and audio runtimes can stay serial. `/gateway/status` reports `maxConcurrency`, `activeRequests`, and `queuedRequests` for each runtime.
+
 Backend plans are read-only readiness reports. They show supported platforms, expected commands, server protocol paths, and setup steps for each runtime family. Recipes reference backend IDs from the catalog so community recipes can share a common backend vocabulary.
 
 Backend installs are dry-runs by default. Real execution requires `--apply --yes` and writes resumable state to `data/install-state.json`. Link steps can create local command shims in `data/bin`, so a backend installed beside Switchyard can be exposed without a global install:
@@ -207,5 +209,5 @@ flowchart LR
 - Richer backend installers for MTPLX, MLX, llama.cpp, Ollama, and image/audio runtimes
 - Machine profiler and automatic recipe selection
 - Signed benchmark submissions and hosted recipe feeds
-- Per-model memory admission, eviction, and warmup policy
+- Per-model memory admission and eviction policy
 - Vision and richer multimodal output parity across supported backends
