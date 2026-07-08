@@ -1,5 +1,5 @@
 {
-  "name": "Switchyard",
+  "name": "LLooM",
   "server": {
     "host": "127.0.0.1",
     "port": 8100
@@ -7,7 +7,7 @@
   "security": {
     "allowMissingAuth": true,
     "apiKeys": [
-      "sk-switchyard-local"
+      "sk-lloom-local"
     ]
   },
   "defaults": {
@@ -17,9 +17,9 @@
   },
   "providers": {
     "local-llm": {
-      "name": "Switchyard Local",
+      "name": "LLooM Local",
       "baseUrl": "http://127.0.0.1:8100/v1",
-      "apiKey": "sk-switchyard-local"
+      "apiKey": "sk-lloom-local"
     }
   },
   "backends": {
@@ -207,7 +207,7 @@
       "args": [
         "serve",
         "--model",
-        "${SWITCHYARD_MTPLX_MODEL_ROOT}/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+        "${LLOOM_MTPLX_MODEL_ROOT}/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
         "--host",
         "127.0.0.1",
         "--port",
@@ -242,7 +242,7 @@
       "args": [
         "serve",
         "--model",
-        "${SWITCHYARD_MTPLX_MODEL_ROOT}/Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
+        "${LLOOM_MTPLX_MODEL_ROOT}/Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
         "--host",
         "127.0.0.1",
         "--port",
@@ -275,7 +275,7 @@
       "command": "python",
       "args": [
         "-m",
-        "switchyard_flux_server"
+        "lloom_flux_server"
       ],
       "port": 8210,
       "healthUrl": "http://127.0.0.1:8210/health",
@@ -287,7 +287,7 @@
       "command": "python",
       "args": [
         "-m",
-        "switchyard_qwen3_tts_server"
+        "lloom_qwen3_tts_server"
       ],
       "port": 8220,
       "healthUrl": "http://127.0.0.1:8220/health",
@@ -300,7 +300,7 @@
   ],
   "clientCatalog": {
     "providerId": "local-llm",
-    "providerName": "Switchyard Local",
+    "providerName": "LLooM Local",
     "modelOrder": [
       "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
       "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",

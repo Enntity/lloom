@@ -22,7 +22,7 @@ function stripRuntimeFields(config) {
 }
 
 function defaultHome(home = process.env.HOME) {
-  return home ? path.join(home, ".switchyard") : path.resolve(".switchyard");
+  return home ? path.join(home, ".lloom") : path.resolve(".lloom");
 }
 
 export function defaultUserConfigPath(home = process.env.HOME) {
@@ -65,7 +65,7 @@ function initCommand({
   apply = false,
   integrate = false,
 } = {}) {
-  const args = ["switchyard", "init"];
+  const args = ["lloom", "init"];
   if (recipeId) args.push("--recipe", shellArg(recipeId));
   if (configPath) args.push("--config-out", shellArg(configPath));
   if (modelRoot) args.push("--model-root", shellArg(modelRoot));
@@ -191,8 +191,8 @@ export async function createInitPlan(config, {
         apply: true,
         integrate: true,
       }),
-      bootstrap: `switchyard bootstrap --config ${shellArg(effectiveConfigPath)} --apply --yes`,
-      serve: `switchyard serve --config ${shellArg(effectiveConfigPath)}`,
+      bootstrap: `lloom bootstrap --config ${shellArg(effectiveConfigPath)} --apply --yes`,
+      serve: `lloom serve --config ${shellArg(effectiveConfigPath)}`,
       pathHint: `export PATH="${backendVariables.shimDir}:$PATH"`,
     },
     config: userConfig,
@@ -211,7 +211,7 @@ export async function applyInit(config, {
   ...options
 } = {}) {
   if (!dryRun && !yes) {
-    throw new Error("Refusing to initialize Switchyard without yes=true. Re-run with --yes after reviewing the dry-run plan.");
+    throw new Error("Refusing to initialize LLooM without yes=true. Re-run with --yes after reviewing the dry-run plan.");
   }
   const plan = await createInitPlan(config, options);
   if (dryRun) return plan;

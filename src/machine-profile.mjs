@@ -44,7 +44,7 @@ export async function profileMachine({
     totalMemoryGb,
     logicalCpus,
     isAppleSilicon,
-    modelRoot: env.SWITCHYARD_MODEL_ROOT ?? env.SWITCHYARD_MTPLX_MODEL_ROOT ?? "",
+    modelRoot: env.LLOOM_MODEL_ROOT ?? env.LLOOM_MTPLX_MODEL_ROOT ?? "",
   };
 }
 

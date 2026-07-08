@@ -38,7 +38,7 @@ import { runCommand } from "../src/process-control.mjs";
 import { createRegistry } from "../src/registry.mjs";
 import { loadRecipeById, loadRecipes, planRecipe } from "../src/recipes.mjs";
 import { RuntimeManager } from "../src/runtime-manager.mjs";
-import { createSwitchyardServer } from "../src/server.mjs";
+import { createLloomServer } from "../src/server.mjs";
 import { applySetup, createSetupPlan } from "../src/setup.mjs";
 import { createSetupStatus } from "../src/setup-status.mjs";
 
@@ -180,14 +180,14 @@ const recipeIndexReport = await buildRecipeIndexReport(config, {
   benchmarkValidationErrors: [],
 });
 assert.equal(recipeIndexReport.ok, true);
-assert.equal(recipeIndexReport.index.id, "switchyard-community-recipes");
+assert.equal(recipeIndexReport.index.id, "lloom-community-recipes");
 assert.equal(recipeIndexReport.recipes.length, 1);
 assert.equal(recipeIndexReport.recipes[0].id, "apple-silicon-qwen36");
 assert.equal(recipeIndexReport.recipes[0].ok, true);
 assert.equal(recipeIndexReport.recipes[0].commands.plan,
-  "switchyard plan apple-silicon-qwen36 --model-root /models");
+  "lloom plan apple-silicon-qwen36 --model-root /models");
 assert.equal(recipeIndexReport.recipes[0].commands.installApply,
-  "switchyard install apple-silicon-qwen36 --model-root /models --apply --yes");
+  "lloom install apple-silicon-qwen36 --model-root /models --apply --yes");
 assert.equal(
   recipeIndexReport.recipes[0].models.find(model => model.role === "fastest-35b-a3b")?.benchmark.best.id,
   "qwen36-35b-a3b-mtplx-speed-fp16-m2max-d1",
@@ -202,7 +202,7 @@ assert.equal(rankedRecipes[0].recipeId, "apple-silicon-qwen36");
 const installDryRun = await applyRecipe(recipe, config, {
   dryRun: true,
   modelRoot: "/models",
-  statePath: path.join(os.tmpdir(), `switchyard-dry-run-${process.pid}.json`),
+  statePath: path.join(os.tmpdir(), `lloom-dry-run-${process.pid}.json`),
 });
 assert.equal(installDryRun.dryRun, true);
 assert(installDryRun.results.every(step => step.status === "planned"));
@@ -211,12 +211,12 @@ await assert.rejects(
   () => applyRecipe(recipe, config, {
     dryRun: false,
     modelRoot: "/models",
-    statePath: path.join(os.tmpdir(), `switchyard-refuse-${process.pid}.json`),
+    statePath: path.join(os.tmpdir(), `lloom-refuse-${process.pid}.json`),
   }),
   /Refusing to execute recipe/,
 );
 
-const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "switchyard-installer-"));
+const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "lloom-installer-"));
 const statePath = path.join(tempDir, "state.json");
 
 const packRecipesRoot = path.join(tempDir, "pack-recipes");
@@ -334,7 +334,7 @@ await assert.rejects(
   /Refusing to import recipe pack/,
 );
 const packCliPlan = JSON.parse((await runCommand(process.execPath, [
-  path.join(process.cwd(), "bin", "switchyard.mjs"),
+  path.join(process.cwd(), "bin", "lloom.mjs"),
   "recipe-import",
   packPath,
   "--index",
@@ -372,7 +372,7 @@ assert.equal(signedPlan.signature.signed, true);
 assert.equal(signedPlan.signature.verified, true);
 assert.equal(signedPlan.signature.trusted, true);
 const signedCliPlan = JSON.parse((await runCommand(process.execPath, [
-  path.join(process.cwd(), "bin", "switchyard.mjs"),
+  path.join(process.cwd(), "bin", "lloom.mjs"),
   "recipe-import",
   signedPackPath,
   "--index",
@@ -475,11 +475,11 @@ const initPlanWithDefaultModelRoot = await createInitPlan(config, {
   generatedRoot: path.join(tempDir, "generated-default-root"),
   clientId: "omp",
 });
-assert.equal(initPlanWithDefaultModelRoot.configPath, path.join(tempDir, ".switchyard", "config.json"));
-assert.equal(initPlanWithDefaultModelRoot.modelRoot, path.join(tempDir, ".switchyard", "models"));
+assert.equal(initPlanWithDefaultModelRoot.configPath, path.join(tempDir, ".lloom", "config.json"));
+assert.equal(initPlanWithDefaultModelRoot.modelRoot, path.join(tempDir, ".lloom", "models"));
 assert.equal(
   initPlanWithDefaultModelRoot.config.runtimes["mtplx-qwen36-27b-speed"].args.at(2),
-  path.join(tempDir, ".switchyard", "models", "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed"),
+  path.join(tempDir, ".lloom", "models", "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed"),
 );
 
 await assert.rejects(
@@ -490,7 +490,7 @@ await assert.rejects(
     home: tempDir,
     generatedRoot: path.join(tempDir, "generated-refuse"),
   }),
-  /Refusing to initialize Switchyard/,
+  /Refusing to initialize LLooM/,
 );
 
 const initApply = await applyInit(config, {
@@ -634,34 +634,34 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
 
   const cliConfigPath = path.join(tempDir, "runtime-cli-config.json");
   await fs.writeFile(cliConfigPath, `${JSON.stringify(lifecycleConfig, null, 2)}\n`, "utf8");
-  const runSwitchyard = async args => runCommand(process.execPath, [
-    path.join(process.cwd(), "bin", "switchyard.mjs"),
+  const runLLooM = async args => runCommand(process.execPath, [
+    path.join(process.cwd(), "bin", "lloom.mjs"),
     ...args,
     "--config",
     cliConfigPath,
   ]);
 
-  const cliStatus = JSON.parse((await runSwitchyard(["runtimes", "synthetic-runtime"])).stdout);
+  const cliStatus = JSON.parse((await runLLooM(["runtimes", "synthetic-runtime"])).stdout);
   assert.equal(cliStatus.runtimes["synthetic-runtime"].healthy, false);
   assert.equal(cliStatus.runtimes["synthetic-runtime"].keepWarm, true);
 
-  const cliStart = JSON.parse((await runSwitchyard(["runtime-start", "synthetic-runtime"])).stdout);
+  const cliStart = JSON.parse((await runLLooM(["runtime-start", "synthetic-runtime"])).stdout);
   assert.equal(cliStart.started, true);
   assert.equal(cliStart.healthy, true);
   assert.equal(cliStart.warmup.warmed, true);
 
-  const cliWarmup = JSON.parse((await runSwitchyard(["runtime-warmup", "synthetic-runtime"])).stdout);
+  const cliWarmup = JSON.parse((await runLLooM(["runtime-warmup", "synthetic-runtime"])).stdout);
   assert.equal(cliWarmup.warmed, true);
 
-  const cliKeepWarm = JSON.parse((await runSwitchyard(["keep-warm"])).stdout);
+  const cliKeepWarm = JSON.parse((await runLLooM(["keep-warm"])).stdout);
   assert.equal(cliKeepWarm.results[0].runtimeId, "synthetic-runtime");
   assert.equal(cliKeepWarm.results[0].healthy, true);
 
-  const cliRunningStatus = JSON.parse((await runSwitchyard(["runtimes", "synthetic-runtime"])).stdout);
+  const cliRunningStatus = JSON.parse((await runLLooM(["runtimes", "synthetic-runtime"])).stdout);
   assert.equal(cliRunningStatus.runtimes["synthetic-runtime"].healthy, true);
   assert.equal(cliRunningStatus.runtimes["synthetic-runtime"].status, "external");
 
-  const cliStop = JSON.parse((await runSwitchyard(["runtime-stop", "synthetic-runtime"])).stdout);
+  const cliStop = JSON.parse((await runLLooM(["runtime-stop", "synthetic-runtime"])).stdout);
   assert.equal(cliStop.stopped, true);
 }
 
@@ -716,8 +716,8 @@ while [ "$#" -gt 0 ]; do
 done
 `, { mode: 0o755 });
 await fs.chmod(hfShim, 0o755);
-const previousHfBin = process.env.SWITCHYARD_HF_BIN;
-process.env.SWITCHYARD_HF_BIN = hfShim;
+const previousHfBin = process.env.LLOOM_HF_BIN;
+process.env.LLOOM_HF_BIN = hfShim;
 try {
   const downloadRecipe = {
     id: "synthetic-download",
@@ -767,7 +767,7 @@ try {
     "downloaded\n",
   );
 
-  process.env.SWITCHYARD_HF_BIN = path.join(tempDir, "missing-hf");
+  process.env.LLOOM_HF_BIN = path.join(tempDir, "missing-hf");
   const existingStatePath = path.join(tempDir, "download-existing-state.json");
   const existingApplied = await applyRecipe(downloadRecipe, config, {
     dryRun: false,
@@ -781,9 +781,9 @@ try {
   assert.equal(existingState.recipes["synthetic-download"].steps.download.status, "completed");
 } finally {
   if (previousHfBin == null) {
-    delete process.env.SWITCHYARD_HF_BIN;
+    delete process.env.LLOOM_HF_BIN;
   } else {
-    process.env.SWITCHYARD_HF_BIN = previousHfBin;
+    process.env.LLOOM_HF_BIN = previousHfBin;
   }
 }
 
@@ -857,7 +857,7 @@ const generatedOmpConfig = await fs.readFile(path.join("clients", "examples", "o
 assert(generatedOmpConfig.includes("default: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed:low"));
 assert(!generatedOmpConfig.includes("Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed"));
 
-const generatedRoot = await fs.mkdtemp(path.join(os.tmpdir(), "switchyard-generated-"));
+const generatedRoot = await fs.mkdtemp(path.join(os.tmpdir(), "lloom-generated-"));
 const integrationArtifacts = buildIntegrationArtifacts(config, registry, {
   home: tempDir,
   generatedRoot,
@@ -869,13 +869,13 @@ assert.deepEqual(
     "omp-config",
     "opencode",
     "codex",
-    "switchyard-codex",
+    "lloom-codex",
     "claude",
-    "switchyard-claude",
+    "lloom-claude",
     "hermes",
-    "switchyard-hermes",
+    "lloom-hermes",
     "zero",
-    "switchyard-zero",
+    "lloom-zero",
     "manifest",
   ],
 );
@@ -892,9 +892,9 @@ await writeGeneratedIntegrationArtifacts(config, registry, {
 const generatedCodex = await fs.readFile(path.join(generatedRoot, "codex.env"), "utf8");
 assert(generatedCodex.includes("OPENAI_BASE_URL"));
 assert(generatedCodex.includes("OPENAI_MODEL='Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed'"));
-const generatedCodexLauncher = await fs.readFile(path.join(generatedRoot, "switchyard-codex"), "utf8");
-assert(generatedCodexLauncher.includes("switchyard integrate codex --apply --yes"));
-assert.equal((await fs.stat(path.join(generatedRoot, "switchyard-codex"))).mode & 0o111, 0o111);
+const generatedCodexLauncher = await fs.readFile(path.join(generatedRoot, "lloom-codex"), "utf8");
+assert(generatedCodexLauncher.includes("lloom integrate codex --apply --yes"));
+assert.equal((await fs.stat(path.join(generatedRoot, "lloom-codex"))).mode & 0o111, 0o111);
 
 const integrationDryRun = await applyIntegrationArtifacts(config, registry, {
   clientId: "all",
@@ -921,10 +921,10 @@ const codexIntegrationApply = await applyIntegrationArtifacts(config, registry, 
   home: tempDir,
   generatedRoot,
 });
-assert.deepEqual(codexIntegrationApply.results.map(result => result.id), ["codex", "switchyard-codex"]);
-const installedCodexLauncher = path.join(tempDir, ".switchyard", "bin", "switchyard-codex");
+assert.deepEqual(codexIntegrationApply.results.map(result => result.id), ["codex", "lloom-codex"]);
+const installedCodexLauncher = path.join(tempDir, ".lloom", "bin", "lloom-codex");
 assert.equal((await fs.stat(installedCodexLauncher)).mode & 0o111, 0o111);
-assert((await fs.readFile(installedCodexLauncher, "utf8")).includes("SWITCHYARD_CODEX_BIN"));
+assert((await fs.readFile(installedCodexLauncher, "utf8")).includes("LLOOM_CODEX_BIN"));
 
 const statusModelRoot = path.join(tempDir, "status-models");
 await fs.mkdir(
@@ -991,11 +991,11 @@ const setupStatusAfterIntegration = await createSetupStatus(config, {
 });
 assert.equal(setupStatusAfterIntegration.integrations.ready, true);
 assert(setupStatusAfterIntegration.integrations.data.every(integration => integration.current));
-assert.equal(setupStatusAfterIntegration.next.backendInstall, "switchyard backend-install mtplx --apply --yes");
+assert.equal(setupStatusAfterIntegration.next.backendInstall, "lloom backend-install mtplx --apply --yes");
 assert(setupStatusAfterIntegration.next.setup.includes("--client 'omp'"));
 
 const setupStatusCli = await runCommand(process.execPath, [
-  path.join(process.cwd(), "bin", "switchyard.mjs"),
+  path.join(process.cwd(), "bin", "lloom.mjs"),
   "setup-status",
   "--recipe",
   "apple-silicon-qwen36",
@@ -1097,7 +1097,7 @@ assert.equal(setupPlan.phases.init.config.runtimes["mtplx-qwen36-27b-speed"].ena
 assert.equal(setupPlan.phases.bootstrap.recipe.validationErrors.length, 0);
 assert(setupPlan.phases.bootstrap.integrations.every(integration =>
   integration.generatedPath.startsWith(path.join(tempDir, "setup-generated"))));
-assert(setupPlan.next.apply.includes("switchyard setup"));
+assert(setupPlan.next.apply.includes("lloom setup"));
 assert(setupPlan.next.applyAndStart.includes("--start"));
 
 const setupDryRun = await applySetup(config, {
@@ -1129,7 +1129,7 @@ await assert.rejects(
 );
 
 const setupCli = await runCommand(process.execPath, [
-  path.join(process.cwd(), "bin", "switchyard.mjs"),
+  path.join(process.cwd(), "bin", "lloom.mjs"),
   "setup",
   "--recipe",
   "apple-silicon-qwen36",
@@ -1150,7 +1150,7 @@ testConfig.server = {
   host: "127.0.0.1",
   port: 0,
 };
-const app = createSwitchyardServer(testConfig, {
+const app = createLloomServer(testConfig, {
   logger: {
     error() {},
   },
@@ -1264,7 +1264,7 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
     },
   };
   adminConfig.keepWarm = ["synthetic-admin-runtime"];
-  const adminApp = createSwitchyardServer(adminConfig, {
+  const adminApp = createLloomServer(adminConfig, {
     logger: { error() {} },
   });
   const adminListened = await tryListen(adminApp.server);
@@ -1319,7 +1319,7 @@ const speechUpstream = http.createServer(async (req, res) => {
   res.writeHead(200, {
     "content-type": "audio/wav",
   });
-  res.end(Buffer.from("RIFFswitchyard-audio"));
+  res.end(Buffer.from("RIFFlloom-audio"));
 });
 
 const speechListened = await tryListen(speechUpstream);
@@ -1347,7 +1347,7 @@ if (speechListened) {
     capabilities: ["audio-speech"],
     advertise: true,
   });
-  const speechApp = createSwitchyardServer(speechConfig, {
+  const speechApp = createLloomServer(speechConfig, {
     logger: { error() {} },
   });
   const speechGatewayListened = await tryListen(speechApp.server);
@@ -1365,7 +1365,7 @@ if (speechListened) {
       });
       assert.equal(speechResponse.status, 200);
       assert.equal(speechResponse.headers.get("content-type"), "audio/wav");
-      assert.equal(Buffer.from(await speechResponse.arrayBuffer()).toString("utf8"), "RIFFswitchyard-audio");
+      assert.equal(Buffer.from(await speechResponse.arrayBuffer()).toString("utf8"), "RIFFlloom-audio");
 
       const wrongKindResponse = await fetch(`http://127.0.0.1:${port}/v1/audio/speech`, {
         method: "POST",
@@ -1444,7 +1444,7 @@ if (embeddingListened) {
     capabilities: ["embeddings"],
     advertise: true,
   });
-  const embeddingApp = createSwitchyardServer(embeddingConfig, {
+  const embeddingApp = createLloomServer(embeddingConfig, {
     logger: { error() {} },
   });
   const embeddingGatewayListened = await tryListen(embeddingApp.server);
@@ -1540,7 +1540,7 @@ if (transcriptionListened) {
     capabilities: ["audio-transcription"],
     advertise: true,
   });
-  const transcriptionApp = createSwitchyardServer(transcriptionConfig, {
+  const transcriptionApp = createLloomServer(transcriptionConfig, {
     logger: { error() {} },
   });
   const transcriptionGatewayListened = await tryListen(transcriptionApp.server);
@@ -1791,7 +1791,7 @@ if (mockListened) {
     ...streamConfig.backends["mtplx-27b"],
     baseUrl: `http://127.0.0.1:${mockPort}/v1`,
   };
-  const streamApp = createSwitchyardServer(streamConfig, {
+  const streamApp = createLloomServer(streamConfig, {
     logger: {
       error() {},
     },

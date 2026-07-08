@@ -27,11 +27,11 @@ export function providerSettings(config) {
   const providerId = config.clientCatalog?.providerId ?? "local-llm";
   const provider = config.providers?.[providerId] ?? {};
   const baseUrl = provider.baseUrl ?? `http://${config.server.host}:${config.server.port}/v1`;
-  const apiKey = provider.apiKey ?? "sk-switchyard-local";
+  const apiKey = provider.apiKey ?? "sk-lloom-local";
   const chatModel = config.defaults?.chatModel;
   return {
     providerId,
-    providerName: config.clientCatalog?.providerName ?? provider.name ?? "Switchyard Local",
+    providerName: config.clientCatalog?.providerName ?? provider.name ?? "LLooM Local",
     baseUrl,
     anthropicBaseUrl: baseUrl.replace(/\/v1$/, "/v1"),
     apiKey,
@@ -173,10 +173,10 @@ function renderEnvProfile(config, clientId, {
 } = {}) {
   const { baseUrl, apiKey, chatModel } = providerSettings(config);
   const lines = [
-    `# Switchyard managed profile for ${clientId}`,
-    `export SWITCHYARD_BASE_URL=${shellQuote(baseUrl)}`,
-    `export SWITCHYARD_API_KEY=${shellQuote(apiKey)}`,
-    `export SWITCHYARD_MODEL=${shellQuote(chatModel)}`,
+    `# LLooM managed profile for ${clientId}`,
+    `export LLOOM_BASE_URL=${shellQuote(baseUrl)}`,
+    `export LLOOM_API_KEY=${shellQuote(apiKey)}`,
+    `export LLOOM_MODEL=${shellQuote(chatModel)}`,
     `export OPENAI_BASE_URL=${shellQuote(baseUrl)}`,
     `export OPENAI_API_KEY=${shellQuote(apiKey)}`,
     `export OPENAI_MODEL=${shellQuote(chatModel)}`,
@@ -197,11 +197,11 @@ function renderLauncherScript({
 }) {
   return `#!/bin/sh
 set -eu
-switchyard_home="\${SWITCHYARD_HOME:-$HOME/.switchyard}"
-profile="$switchyard_home/integrations/${profileFileName}"
+lloom_home="\${LLOOM_HOME:-$HOME/.lloom}"
+profile="$lloom_home/integrations/${profileFileName}"
 if [ ! -f "$profile" ]; then
-  echo "Switchyard profile missing: $profile" >&2
-  echo "Run: switchyard integrate ${clientId} --apply --yes" >&2
+  echo "LLooM profile missing: $profile" >&2
+  echo "Run: lloom integrate ${clientId} --apply --yes" >&2
   exit 1
 fi
 . "$profile"
@@ -234,11 +234,11 @@ function renderIntegrationManifest(config, models) {
 }
 
 function managedTarget(home, fileName) {
-  return home ? path.join(home, ".switchyard", "integrations", fileName) : null;
+  return home ? path.join(home, ".lloom", "integrations", fileName) : null;
 }
 
 function managedBinTarget(home, fileName) {
-  return home ? path.join(home, ".switchyard", "bin", fileName) : null;
+  return home ? path.join(home, ".lloom", "bin", fileName) : null;
 }
 
 function launcherArtifact({ id, name, clientId, generatedRoot, home, profileFileName, binaryName, binaryEnv }) {
@@ -258,8 +258,8 @@ function launcherArtifact({ id, name, clientId, generatedRoot, home, profileFile
       binaryEnv,
     }),
     notes: [
-      `Runs ${binaryName} with the Switchyard-managed ${profileFileName} environment profile.`,
-      "Add ~/.switchyard/bin to PATH or run this script directly.",
+      `Runs ${binaryName} with the LLooM-managed ${profileFileName} environment profile.`,
+      "Add ~/.lloom/bin to PATH or run this script directly.",
     ],
   };
 }
@@ -294,7 +294,7 @@ export function buildIntegrationArtifacts(config, registry, {
       content: renderOmpConfigYaml(config),
       notes: [
         `Pins OMP roles to ${config.defaults?.chatModel}.`,
-        "Keeps long local-model stream timeouts aligned with Switchyard defaults.",
+        "Keeps long local-model stream timeouts aligned with LLooM defaults.",
       ],
     },
     {
@@ -322,14 +322,14 @@ export function buildIntegrationArtifacts(config, registry, {
       ],
     },
     launcherArtifact({
-      id: "switchyard-codex",
+      id: "lloom-codex",
       name: "Codex launcher",
       clientId: "codex",
       generatedRoot,
       home,
       profileFileName: "codex.env",
       binaryName: "codex",
-      binaryEnv: "SWITCHYARD_CODEX_BIN",
+      binaryEnv: "LLOOM_CODEX_BIN",
     }),
     {
       id: "claude",
@@ -344,14 +344,14 @@ export function buildIntegrationArtifacts(config, registry, {
       ],
     },
     launcherArtifact({
-      id: "switchyard-claude",
+      id: "lloom-claude",
       name: "Claude launcher",
       clientId: "claude",
       generatedRoot,
       home,
       profileFileName: "claude.env",
       binaryName: "claude",
-      binaryEnv: "SWITCHYARD_CLAUDE_BIN",
+      binaryEnv: "LLOOM_CLAUDE_BIN",
     }),
     {
       id: "hermes",
@@ -366,14 +366,14 @@ export function buildIntegrationArtifacts(config, registry, {
       ],
     },
     launcherArtifact({
-      id: "switchyard-hermes",
+      id: "lloom-hermes",
       name: "Hermes launcher",
       clientId: "hermes",
       generatedRoot,
       home,
       profileFileName: "hermes.env",
       binaryName: "hermes",
-      binaryEnv: "SWITCHYARD_HERMES_BIN",
+      binaryEnv: "LLOOM_HERMES_BIN",
     }),
     {
       id: "zero",
@@ -388,25 +388,25 @@ export function buildIntegrationArtifacts(config, registry, {
       ],
     },
     launcherArtifact({
-      id: "switchyard-zero",
+      id: "lloom-zero",
       name: "Zero launcher",
       clientId: "zero",
       generatedRoot,
       home,
       profileFileName: "zero.env",
       binaryName: "zero",
-      binaryEnv: "SWITCHYARD_ZERO_BIN",
+      binaryEnv: "LLOOM_ZERO_BIN",
     }),
     {
       id: "manifest",
-      name: "Switchyard Integration Manifest",
+      name: "LLooM Integration Manifest",
       kind: "manifest",
-      generatedPath: path.join(generatedRoot, "switchyard-integrations.json"),
-      targetPath: managedTarget(home, "switchyard-integrations.json"),
+      generatedPath: path.join(generatedRoot, "lloom-integrations.json"),
+      targetPath: managedTarget(home, "lloom-integrations.json"),
       mode: "managed-profile",
       content: renderIntegrationManifest(config, models),
       notes: [
-        "Machine-readable integration manifest for tools that want to discover Switchyard directly.",
+        "Machine-readable integration manifest for tools that want to discover LLooM directly.",
       ],
     },
   ];

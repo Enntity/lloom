@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "apple-silicon-qwen36-m2max-local",
   "name": "Apple Silicon Qwen3.6 MTPLX local evidence",
-  "source": "local-switchyard-prototype",
+  "source": "local-lloom-prototype",
   "submittedAt": "2026-07-07T00:00:00Z",
   "results": [
     {

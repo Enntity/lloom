@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+lloom_home="${LLOOM_HOME:-$HOME/.lloom}"
+profile="$lloom_home/integrations/hermes.env"
+if [ ! -f "$profile" ]; then
+  echo "LLooM profile missing: $profile" >&2
+  echo "Run: lloom integrate hermes --apply --yes" >&2
+  exit 1
+fi
+. "$profile"
+exec "${LLOOM_HERMES_BIN:-hermes}" "$@"

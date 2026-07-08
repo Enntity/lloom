@@ -34,11 +34,11 @@ Recipes are JSON documents with these top-level sections:
 Inspect a plan without running it:
 
 ```zsh
-node bin/switchyard.mjs profile
-node bin/switchyard.mjs select
-node bin/switchyard.mjs recipe-index
-node bin/switchyard.mjs benchmarks apple-silicon-qwen36
-node bin/switchyard.mjs plan apple-silicon-qwen36 --model-root ~/Models
+node bin/lloom.mjs profile
+node bin/lloom.mjs select
+node bin/lloom.mjs recipe-index
+node bin/lloom.mjs benchmarks apple-silicon-qwen36
+node bin/lloom.mjs plan apple-silicon-qwen36 --model-root ~/Models
 ```
 
 `selectable` means the recipe fits the machine platform and memory. `runnable` means the required backend commands are already visible on `PATH`. A selectable recipe with `setupRequired: true` is still a valid choice for automatic setup.
@@ -48,13 +48,13 @@ When benchmark evidence exists for the recipe, `plan` attaches the best matching
 Run a safe dry-run install:
 
 ```zsh
-node bin/switchyard.mjs install apple-silicon-qwen36 --model-root ~/Models
+node bin/lloom.mjs install apple-silicon-qwen36 --model-root ~/Models
 ```
 
 Execute the same plan only after review:
 
 ```zsh
-node bin/switchyard.mjs install apple-silicon-qwen36 --model-root ~/Models --apply --yes
+node bin/lloom.mjs install apple-silicon-qwen36 --model-root ~/Models --apply --yes
 ```
 
 Real execution records completed steps in `data/install-state.json`. If setup is interrupted, rerunning the command skips completed steps and resumes from the next pending step.
@@ -62,12 +62,12 @@ Real execution records completed steps in `data/install-state.json`. If setup is
 Inspect current install state and seeded model folders:
 
 ```zsh
-node bin/switchyard.mjs setup-status --recipe apple-silicon-qwen36 --model-root ~/Models --no-runtimes
+node bin/lloom.mjs setup-status --recipe apple-silicon-qwen36 --model-root ~/Models --no-runtimes
 ```
 
 The report compares the selected recipe plan to installer state, checks whether model destinations are already populated, and verifies whether selected client integration files match the generated registry.
 
-`download-model` steps currently support Hugging Face artifacts. Switchyard resolves `SWITCHYARD_HF_BIN`, `HF_HUB_CLI`, `hf`, then `huggingface-cli`, and runs:
+`download-model` steps currently support Hugging Face artifacts. LLooM resolves `LLOOM_HF_BIN`, `HF_HUB_CLI`, `hf`, then `huggingface-cli`, and runs:
 
 ```zsh
 hf download <model-id> --local-dir <model-root>/<model-id>
@@ -77,7 +77,7 @@ Existing populated destination directories are treated as already downloaded, wh
 
 ## Community Index
 
-`recipes/index.json` is the local prototype of the future hosted recipe feed. It lists the recipes Switchyard should expose to automatic selection and one-click setup:
+`recipes/index.json` is the local prototype of the future hosted recipe feed. It lists the recipes LLooM should expose to automatic selection and one-click setup:
 
 - `id`: recipe ID, matching the recipe JSON.
 - `path`: relative path under `recipes/`.
@@ -89,7 +89,7 @@ Existing populated destination directories are treated as already downloaded, wh
 Validate the index and its attached evidence:
 
 ```zsh
-node bin/switchyard.mjs recipe-index
+node bin/lloom.mjs recipe-index
 ```
 
 The report checks the index schema, verifies that each listed recipe file loads, validates recipe references against the gateway config and backend catalog, attaches the best benchmark evidence for each model role, and emits `plan`, `install`, and `bootstrap` commands.
@@ -99,9 +99,9 @@ The report checks the index schema, verifies that each listed recipe file loads,
 Community packs bundle one or more recipes, index entries, and benchmark suites into a single importable JSON file:
 
 ```zsh
-node bin/switchyard.mjs recipe-import ./qwen-next-pack.json
-node bin/switchyard.mjs recipe-import ./qwen-next-pack.json --trusted-key publisher=./publisher.pub --require-signature
-node bin/switchyard.mjs recipe-import ./qwen-next-pack.json --apply --yes
+node bin/lloom.mjs recipe-import ./qwen-next-pack.json
+node bin/lloom.mjs recipe-import ./qwen-next-pack.json --trusted-key publisher=./publisher.pub --require-signature
+node bin/lloom.mjs recipe-import ./qwen-next-pack.json --apply --yes
 ```
 
 Dry-run is the default. Apply writes recipe files under `recipes/`, merges entries into `recipes/index.json`, and writes attached benchmark suites under `benchmarks/community/`.
@@ -146,6 +146,6 @@ Contributor publish flow:
 3. Add the recipe to `recipes/index.json`.
 4. Run `npm run check`.
 5. Run `npm run smoke`.
-6. Run `node bin/switchyard.mjs recipe-index` and confirm `ok: true`.
+6. Run `node bin/lloom.mjs recipe-index` and confirm `ok: true`.
 
-Switchyard intentionally does not use stale model fallback aliases to make an index pass. Recipe `model` and `gatewayModel` values must be exact advertised IDs.
+LLooM intentionally does not use stale model fallback aliases to make an index pass. Recipe `model` and `gatewayModel` values must be exact advertised IDs.

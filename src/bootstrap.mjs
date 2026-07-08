@@ -60,7 +60,7 @@ export async function createBootstrapPlan(config, {
 
   const registry = createRegistry(config);
   const integrations = integrationSummary(buildIntegrationArtifacts(config, registry, { home, generatedRoot }), clientId);
-  const selectedModelRoot = modelRoot ?? process.env.SWITCHYARD_MODEL_ROOT ?? "${SWITCHYARD_MODEL_ROOT}";
+  const selectedModelRoot = modelRoot ?? process.env.LLOOM_MODEL_ROOT ?? "${LLOOM_MODEL_ROOT}";
   const selectedBenchmarksRoot = benchmarksRoot ?? defaultBenchmarksRoot;
   const benchmarkEvidence = await loadBenchmarkEvidence(selectedBenchmarksRoot);
   const benchmarkErrors = validateBenchmarkEvidence(benchmarkEvidence);
@@ -90,7 +90,7 @@ export async function createBootstrapPlan(config, {
     },
     integrations,
     next: {
-      serve: `switchyard serve --config ${config.sourcePath}`,
+      serve: `lloom serve --config ${config.sourcePath}`,
       pathHint: `export PATH="${backendVariables.shimDir}:$PATH"`,
     },
   };
@@ -155,7 +155,7 @@ export async function applyBootstrap(config, {
     integrations: integrationResult,
     generatedClients,
     next: {
-      serve: `switchyard serve --config ${config.sourcePath}`,
+      serve: `lloom serve --config ${config.sourcePath}`,
       pathHint: `export PATH="${backendVariables.shimDir}:$PATH"`,
     },
   };

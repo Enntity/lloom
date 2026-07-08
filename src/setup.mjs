@@ -15,7 +15,7 @@ function setupCommand({
   apply = false,
   start = false,
 } = {}) {
-  const args = ["switchyard", "setup"];
+  const args = ["lloom", "setup"];
   if (recipeId) args.push("--recipe", shellArg(recipeId));
   if (configPath) args.push("--config-out", shellArg(configPath));
   if (modelRoot) args.push("--model-root", shellArg(modelRoot));
@@ -88,7 +88,7 @@ export async function createSetupPlan(config, {
         apply: true,
         start: true,
       }),
-      serve: `switchyard serve --config ${shellArg(init.configPath)}`,
+      serve: `lloom serve --config ${shellArg(init.configPath)}`,
       pathHint: `export PATH="${backendVariables.shimDir}:$PATH"`,
     },
   };

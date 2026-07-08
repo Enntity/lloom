@@ -31,8 +31,8 @@ function shellArg(value) {
 function modelRootFor(config, modelRoot) {
   return modelRoot
     ?? config.paths?.modelRoot
-    ?? process.env.SWITCHYARD_MODEL_ROOT
-    ?? process.env.SWITCHYARD_MTPLX_MODEL_ROOT
+    ?? process.env.LLOOM_MODEL_ROOT
+    ?? process.env.LLOOM_MTPLX_MODEL_ROOT
     ?? path.join(repoRoot, "models");
 }
 
@@ -236,23 +236,23 @@ function nextCommands({
     configPath ? `--config ${shellArg(configPath)}` : null,
   ];
   return {
-    review: commandLine("switchyard setup-status", common),
-    setup: commandLine("switchyard setup", [
+    review: commandLine("lloom setup-status", common),
+    setup: commandLine("lloom setup", [
       recipeId ? `--recipe ${shellArg(recipeId)}` : null,
       modelRoot ? `--model-root ${shellArg(modelRoot)}` : null,
       includeClient && clientId && clientId !== "all" ? `--client ${shellArg(clientId)}` : null,
       "--apply --yes",
     ]),
-    backendInstall: `switchyard backend-install ${backendId ?? "<selected-backend-id>"} --apply --yes`,
-    recipeInstall: commandLine(`switchyard install ${recipeId ?? "<selected-recipe-id>"}`, [
+    backendInstall: `lloom backend-install ${backendId ?? "<selected-backend-id>"} --apply --yes`,
+    recipeInstall: commandLine(`lloom install ${recipeId ?? "<selected-recipe-id>"}`, [
       modelRoot ? `--model-root ${shellArg(modelRoot)}` : null,
       "--apply --yes",
     ]),
-    integrate: commandLine("switchyard integrate", [
+    integrate: commandLine("lloom integrate", [
       clientId ?? "all",
       "--apply --yes",
     ]),
-    keepWarm: "switchyard keep-warm",
+    keepWarm: "lloom keep-warm",
   };
 }
 

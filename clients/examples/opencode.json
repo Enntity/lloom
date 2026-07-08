@@ -3,10 +3,10 @@
   "provider": {
     "local-llm": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "Switchyard Local",
+      "name": "LLooM Local",
       "options": {
         "baseURL": "http://127.0.0.1:8100/v1",
-        "apiKey": "sk-switchyard-local",
+        "apiKey": "sk-lloom-local",
         "timeout": false,
         "headerTimeout": false
       },

@@ -113,7 +113,7 @@ export function createRegistry(config) {
       id: model.id,
       object: "model",
       created: now,
-      owned_by: "switchyard",
+      owned_by: "lloom",
       metadata: {
         name: model.name ?? model.id,
         kind: model.kind ?? "chat",

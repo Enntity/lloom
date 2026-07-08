@@ -95,7 +95,7 @@ export function validateRecipe(recipe, config, {
 }
 
 export function planRecipe(recipe, config, {
-  modelRoot = "${SWITCHYARD_MODEL_ROOT}",
+  modelRoot = "${LLOOM_MODEL_ROOT}",
   platform = process.platform,
   arch = process.arch,
   backendIds,

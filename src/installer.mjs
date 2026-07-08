@@ -74,7 +74,7 @@ function backendState(state, backendId) {
 }
 
 function huggingFaceCommandCandidates(step) {
-  const configured = process.env.SWITCHYARD_HF_BIN || process.env.HF_HUB_CLI;
+  const configured = process.env.LLOOM_HF_BIN || process.env.HF_HUB_CLI;
   return [
     configured,
     "hf",
@@ -167,7 +167,7 @@ async function executeDownloadModel(step) {
       status: "failed",
       command: stepCommand(step),
       stdout: "",
-      stderr: "No Hugging Face download CLI found. Install `huggingface_hub[cli]` or set SWITCHYARD_HF_BIN.",
+      stderr: "No Hugging Face download CLI found. Install `huggingface_hub[cli]` or set LLOOM_HF_BIN.",
     };
   }
   return executeCommand(command);
@@ -213,7 +213,7 @@ async function executePlannedStep(step) {
 export async function applyRecipe(recipe, config, {
   dryRun = true,
   yes = false,
-  modelRoot = process.env.SWITCHYARD_MODEL_ROOT ?? process.env.SWITCHYARD_MTPLX_MODEL_ROOT ?? path.join(repoRoot, "models"),
+  modelRoot = process.env.LLOOM_MODEL_ROOT ?? process.env.LLOOM_MTPLX_MODEL_ROOT ?? path.join(repoRoot, "models"),
   statePath = defaultInstallStatePath,
   onlyStep,
 } = {}) {

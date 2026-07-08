@@ -39,11 +39,11 @@
         },
         {
           "id": "link-mtplx",
-          "title": "Expose MTPLX through Switchyard shims",
+          "title": "Expose MTPLX through LLooM shims",
           "action": "link-command",
           "commandName": "mtplx",
           "sourceCandidates": [
-            "${SWITCHYARD_MTPLX_BIN}",
+            "${LLOOM_MTPLX_BIN}",
             "${backendRoot}/mtplx/venv/bin/mtplx",
             "${installRoot}/mtplx/venv/bin/mtplx",
             "${repoParent}/mtplx/venv/bin/mtplx"
@@ -142,11 +142,11 @@
         },
         {
           "id": "link-llama-server",
-          "title": "Expose llama-server through Switchyard shims",
+          "title": "Expose llama-server through LLooM shims",
           "action": "link-command",
           "commandName": "llama-server",
           "sourceCandidates": [
-            "${SWITCHYARD_LLAMA_SERVER_BIN}",
+            "${LLOOM_LLAMA_SERVER_BIN}",
             "${backendRoot}/llama.cpp/build/bin/llama-server",
             "${backendRoot}/llama.cpp/build-https/bin/llama-server",
             "${installRoot}/llama.cpp/build/bin/llama-server",

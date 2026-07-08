@@ -1,6 +1,6 @@
 # Architecture
 
-Switchyard keeps three contracts separate:
+LLooM keeps three contracts separate:
 
 1. Backend catalog: runtime-family metadata, setup checks, protocol paths, and feature flags.
 2. Registry: model IDs, aliases, capability metadata, context limits, and backend bindings.
@@ -20,7 +20,7 @@ The gateway never guesses a stale model ID. If a client asks for an unknown mode
 
 ## API Surface
 
-Switchyard currently fronts these local contracts:
+LLooM currently fronts these local contracts:
 
 - `GET /v1/models`
 - `GET /gateway/status`
@@ -57,11 +57,11 @@ Switchyard currently fronts these local contracts:
 
 The CLI exposes the same runtime controls without requiring an already-running gateway:
 
-- `switchyard runtimes [runtime-id|all]`
-- `switchyard runtime-start <runtime-id>`
-- `switchyard runtime-warmup <runtime-id>`
-- `switchyard runtime-stop <runtime-id>`
-- `switchyard keep-warm`
+- `lloom runtimes [runtime-id|all]`
+- `lloom runtime-start <runtime-id>`
+- `lloom runtime-warmup <runtime-id>`
+- `lloom runtime-stop <runtime-id>`
+- `lloom keep-warm`
 
 ## Runtime Policy
 

@@ -48,11 +48,11 @@ function validateConfig(config, sourcePath) {
   }
 
   if (errors.length) {
-    throw new Error(`Invalid Switchyard config ${sourcePath}:\n${errors.map(error => `- ${error}`).join("\n")}`);
+    throw new Error(`Invalid LLooM config ${sourcePath}:\n${errors.map(error => `- ${error}`).join("\n")}`);
   }
 }
 
-export async function loadConfig(configPath = process.env.SWITCHYARD_CONFIG || defaultConfigPath, {
+export async function loadConfig(configPath = process.env.LLOOM_CONFIG || defaultConfigPath, {
   env = process.env,
 } = {}) {
   const resolvedPath = path.resolve(configPath);
@@ -88,7 +88,7 @@ export async function loadConfig(configPath = process.env.SWITCHYARD_CONFIG || d
     models: Array.isArray(expanded.models) ? expanded.models : [],
     clientCatalog: {
       providerId: "local-llm",
-      providerName: "Switchyard Local",
+      providerName: "LLooM Local",
       includeAliases: false,
       modelOrder: [],
       ...asObject(expanded.clientCatalog),

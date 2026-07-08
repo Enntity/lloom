@@ -30,40 +30,40 @@ import { buildRecipeIndexReport } from "../src/recipe-index.mjs";
 import { createRegistry } from "../src/registry.mjs";
 import { loadRecipeById, loadRecipes, planRecipe } from "../src/recipes.mjs";
 import { RuntimeManager } from "../src/runtime-manager.mjs";
-import { createSwitchyardServer } from "../src/server.mjs";
+import { createLloomServer } from "../src/server.mjs";
 import { applySetup, createSetupPlan } from "../src/setup.mjs";
 import { createSetupStatus } from "../src/setup-status.mjs";
 
 function usage() {
   return `Usage:
-  switchyard serve [--config path]
-  switchyard models [--config path]
-  switchyard backends [backend-id|all]
-  switchyard backend-plan <backend-id>
-  switchyard backend-install <backend-id> [--apply --yes] [--step step-id]
-  switchyard setup [--recipe recipe-id] [--config-out path] [--model-root path] [--client client-id|all] [--apply --yes] [--start]
-  switchyard init [--recipe recipe-id] [--config-out path] [--model-root path] [--client client-id|all] [--apply --yes] [--integrate]
-  switchyard bootstrap [--recipe recipe-id] [--model-root path] [--client client-id|all] [--apply --yes]
-  switchyard setup-status [--recipe recipe-id] [--model-root path] [--client client-id|all] [--state path] [--home path] [--no-runtimes]
-  switchyard benchmarks [recipe-id|all] [--benchmarks-root path]
-  switchyard profile [--config path]
-  switchyard recipes [--config path]
-  switchyard recipe-index [--index path] [--recipes-root path] [--benchmarks-root path] [--model-root path]
-  switchyard recipe-import <pack-file-or-url> [--index path] [--recipes-root path] [--benchmarks-root path] [--trusted-key key-id=pubkey.pem] [--require-signature] [--apply --yes]
-  switchyard select [--config path]
-  switchyard plan <recipe-id> [--config path] [--model-root path]
-  switchyard install <recipe-id> [--config path] [--model-root path] [--apply --yes]
-  switchyard integrations [client-id|all] [--config path]
-  switchyard integrate [client-id|all] [--config path] [--apply --yes]
-  switchyard runtimes [runtime-id|all] [--config path]
-  switchyard runtime-start <runtime-id> [--config path] [--no-warmup] [--no-force]
-  switchyard runtime-warmup <runtime-id> [--config path]
-  switchyard runtime-stop <runtime-id> [--config path]
-  switchyard keep-warm [--config path]
-  switchyard doctor [--config path]
+  lloom serve [--config path]
+  lloom models [--config path]
+  lloom backends [backend-id|all]
+  lloom backend-plan <backend-id>
+  lloom backend-install <backend-id> [--apply --yes] [--step step-id]
+  lloom setup [--recipe recipe-id] [--config-out path] [--model-root path] [--client client-id|all] [--apply --yes] [--start]
+  lloom init [--recipe recipe-id] [--config-out path] [--model-root path] [--client client-id|all] [--apply --yes] [--integrate]
+  lloom bootstrap [--recipe recipe-id] [--model-root path] [--client client-id|all] [--apply --yes]
+  lloom setup-status [--recipe recipe-id] [--model-root path] [--client client-id|all] [--state path] [--home path] [--no-runtimes]
+  lloom benchmarks [recipe-id|all] [--benchmarks-root path]
+  lloom profile [--config path]
+  lloom recipes [--config path]
+  lloom recipe-index [--index path] [--recipes-root path] [--benchmarks-root path] [--model-root path]
+  lloom recipe-import <pack-file-or-url> [--index path] [--recipes-root path] [--benchmarks-root path] [--trusted-key key-id=pubkey.pem] [--require-signature] [--apply --yes]
+  lloom select [--config path]
+  lloom plan <recipe-id> [--config path] [--model-root path]
+  lloom install <recipe-id> [--config path] [--model-root path] [--apply --yes]
+  lloom integrations [client-id|all] [--config path]
+  lloom integrate [client-id|all] [--config path] [--apply --yes]
+  lloom runtimes [runtime-id|all] [--config path]
+  lloom runtime-start <runtime-id> [--config path] [--no-warmup] [--no-force]
+  lloom runtime-warmup <runtime-id> [--config path]
+  lloom runtime-stop <runtime-id> [--config path]
+  lloom keep-warm [--config path]
+  lloom doctor [--config path]
 
 Environment:
-  SWITCHYARD_CONFIG  Path to config JSON
+  LLOOM_CONFIG  Path to config JSON
 `;
 }
 
@@ -129,13 +129,13 @@ function requireRuntimeId(args, command) {
 async function main() {
   const args = process.argv.slice(2);
   const command = args[0] ?? "serve";
-  const configPath = argValue(args, "--config") ?? process.env.SWITCHYARD_CONFIG;
+  const configPath = argValue(args, "--config") ?? process.env.LLOOM_CONFIG;
   const config = await loadConfig(configPath);
 
   if (command === "serve") {
-    const app = createSwitchyardServer(config);
+    const app = createLloomServer(config);
     await app.listen();
-    console.log(`Switchyard listening on http://${config.server.host}:${config.server.port}`);
+    console.log(`LLooM listening on http://${config.server.host}:${config.server.port}`);
     return;
   }
 
@@ -383,7 +383,7 @@ async function main() {
     console.log(JSON.stringify(await buildRecipeIndexReport(config, {
       indexPath: argValue(args, "--index"),
       recipesRoot: argValue(args, "--recipes-root"),
-      modelRoot: argValue(args, "--model-root") ?? "${SWITCHYARD_MODEL_ROOT}",
+      modelRoot: argValue(args, "--model-root") ?? "${LLOOM_MODEL_ROOT}",
       backendIds: backendIds(catalog),
       benchmarksRoot,
       benchmarkEvidence,
@@ -442,7 +442,7 @@ async function main() {
     }
     const recipe = await loadRecipeById(recipeId);
     const catalog = await loadBackendCatalog();
-    const modelRoot = argValue(args, "--model-root") ?? "${SWITCHYARD_MODEL_ROOT}";
+    const modelRoot = argValue(args, "--model-root") ?? "${LLOOM_MODEL_ROOT}";
     const {
       evidence: benchmarkEvidence,
       validationErrors: benchmarkValidationErrors,
@@ -467,7 +467,7 @@ async function main() {
       return;
     }
     const recipe = await loadRecipeById(recipeId);
-    const modelRoot = argValue(args, "--model-root") ?? process.env.SWITCHYARD_MODEL_ROOT;
+    const modelRoot = argValue(args, "--model-root") ?? process.env.LLOOM_MODEL_ROOT;
     const statePath = argValue(args, "--state");
     const onlyStep = argValue(args, "--step");
     const apply = hasFlag(args, "--apply");

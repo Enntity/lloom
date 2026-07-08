@@ -1,19 +1,19 @@
 # Benchmarks
 
-Switchyard recipes are meant to be evidence-backed. Benchmark files under `benchmarks/community/` are the local prototype of the future community index: each file can contain a suite with one or more measured model/backend results.
+LLooM recipes are meant to be evidence-backed. Benchmark files under `benchmarks/community/` are the local prototype of the future community index: each file can contain a suite with one or more measured model/backend results.
 
 Inspect all evidence:
 
 ```zsh
-node bin/switchyard.mjs benchmarks
-node bin/switchyard.mjs recipe-index
+node bin/lloom.mjs benchmarks
+node bin/lloom.mjs recipe-index
 ```
 
 Inspect the evidence attached to one recipe:
 
 ```zsh
-node bin/switchyard.mjs benchmarks apple-silicon-qwen36
-node bin/switchyard.mjs plan apple-silicon-qwen36 --model-root ~/Models
+node bin/lloom.mjs benchmarks apple-silicon-qwen36
+node bin/lloom.mjs plan apple-silicon-qwen36 --model-root ~/Models
 ```
 
 `plan`, `bootstrap`, and `recipe-index` attach the best matching benchmark to each recipe model role. The gateway does not silently rewrite stale model IDs; benchmark `model` and `gatewayModel` values must match recipe and registry IDs exactly.
@@ -21,7 +21,7 @@ node bin/switchyard.mjs plan apple-silicon-qwen36 --model-root ~/Models
 Recipe packs can carry benchmark suites alongside recipes:
 
 ```zsh
-node bin/switchyard.mjs recipe-import ./qwen-next-pack.json
+node bin/lloom.mjs recipe-import ./qwen-next-pack.json
 ```
 
 The import plan validates attached suites before writing them under `benchmarks/community/`.

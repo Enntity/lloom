@@ -101,8 +101,8 @@ async function existingIndex(indexPath) {
     if (error?.code !== "ENOENT") throw error;
     return {
       schemaVersion: 1,
-      id: "switchyard-community-recipes",
-      name: "Switchyard Community Recipe Index",
+      id: "lloom-community-recipes",
+      name: "LLooM Community Recipe Index",
       recipes: [],
       filePath: path.resolve(indexPath),
     };

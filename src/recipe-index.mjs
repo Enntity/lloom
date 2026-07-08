@@ -71,7 +71,7 @@ export function validateRecipeIndex(index) {
 export async function buildRecipeIndexReport(config, {
   indexPath = defaultRecipeIndexPath,
   recipesRoot: root = recipesRoot,
-  modelRoot = "${SWITCHYARD_MODEL_ROOT}",
+  modelRoot = "${LLOOM_MODEL_ROOT}",
   backendIds,
   benchmarksRoot = defaultBenchmarksRoot,
   benchmarkEvidence,
@@ -133,11 +133,11 @@ export async function buildRecipeIndexReport(config, {
       models: plan?.models ?? [],
       benchmarks: plan?.benchmarks ?? null,
       commands: recipe ? {
-        plan: commandString(["switchyard", "plan", recipe.id, "--model-root", modelRoot]),
-        installDryRun: commandString(["switchyard", "install", recipe.id, "--model-root", modelRoot]),
-        installApply: commandString(["switchyard", "install", recipe.id, "--model-root", modelRoot, "--apply", "--yes"]),
-        bootstrapDryRun: commandString(["switchyard", "bootstrap", "--recipe", recipe.id, "--model-root", modelRoot]),
-        bootstrapApply: commandString(["switchyard", "bootstrap", "--recipe", recipe.id, "--model-root", modelRoot, "--apply", "--yes"]),
+        plan: commandString(["lloom", "plan", recipe.id, "--model-root", modelRoot]),
+        installDryRun: commandString(["lloom", "install", recipe.id, "--model-root", modelRoot]),
+        installApply: commandString(["lloom", "install", recipe.id, "--model-root", modelRoot, "--apply", "--yes"]),
+        bootstrapDryRun: commandString(["lloom", "bootstrap", "--recipe", recipe.id, "--model-root", modelRoot]),
+        bootstrapApply: commandString(["lloom", "bootstrap", "--recipe", recipe.id, "--model-root", modelRoot, "--apply", "--yes"]),
       } : {},
     };
   });

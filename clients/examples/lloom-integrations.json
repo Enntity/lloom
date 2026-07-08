@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "provider": {
     "id": "local-llm",
-    "name": "Switchyard Local",
+    "name": "LLooM Local",
     "baseUrl": "http://127.0.0.1:8100/v1",
-    "apiKey": "sk-switchyard-local",
+    "apiKey": "sk-lloom-local",
     "defaultModel": "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed"
   },
   "models": [

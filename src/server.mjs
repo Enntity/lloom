@@ -1356,7 +1356,7 @@ async function streamResponsesFromOpenAI(res, upstream, requestedModel, { signal
   };
 }
 
-export function createSwitchyardServer(config, {
+export function createLloomServer(config, {
   logger = console,
   runtimeManager = new RuntimeManager(config, { logger }),
 } = {}) {
@@ -1769,7 +1769,7 @@ export function createSwitchyardServer(config, {
       }
 
       if (req.method === "GET" && url.pathname === "/health") {
-        sendJson(res, 200, { ok: true, name: config.name ?? "Switchyard" });
+        sendJson(res, 200, { ok: true, name: config.name ?? "LLooM" });
         return;
       }
 

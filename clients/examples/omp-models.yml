@@ -2,7 +2,7 @@ providers:
   local-llm:
     baseUrl: http://127.0.0.1:8100/v1
     api: openai-completions
-    apiKey: sk-switchyard-local
+    apiKey: sk-lloom-local
     auth: apiKey
     compat:
       supportsStore: false

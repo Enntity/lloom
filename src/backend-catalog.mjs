@@ -173,11 +173,11 @@ export function defaultBackendVariables(env = process.env) {
   return {
     repoRoot,
     repoParent: path.resolve(repoRoot, ".."),
-    installRoot: env.SWITCHYARD_INSTALL_ROOT ?? path.join(repoRoot, "data/backends"),
-    backendRoot: env.SWITCHYARD_BACKEND_ROOT ?? path.resolve(repoRoot, ".."),
-    modelRoot: env.SWITCHYARD_MODEL_ROOT ?? path.join(repoRoot, "models"),
-    shimDir: env.SWITCHYARD_SHIM_DIR ?? defaultShimDir,
-    SWITCHYARD_MTPLX_BIN: env.SWITCHYARD_MTPLX_BIN ?? "",
-    SWITCHYARD_LLAMA_SERVER_BIN: env.SWITCHYARD_LLAMA_SERVER_BIN ?? "",
+    installRoot: env.LLOOM_INSTALL_ROOT ?? path.join(repoRoot, "data/backends"),
+    backendRoot: env.LLOOM_BACKEND_ROOT ?? path.resolve(repoRoot, ".."),
+    modelRoot: env.LLOOM_MODEL_ROOT ?? path.join(repoRoot, "models"),
+    shimDir: env.LLOOM_SHIM_DIR ?? defaultShimDir,
+    LLOOM_MTPLX_BIN: env.LLOOM_MTPLX_BIN ?? "",
+    LLOOM_LLAMA_SERVER_BIN: env.LLOOM_LLAMA_SERVER_BIN ?? "",
   };
 }
