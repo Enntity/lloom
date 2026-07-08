@@ -76,6 +76,7 @@ export async function loadConfig(configPath = process.env.SWITCHYARD_CONFIG || d
       chatModel: undefined,
       imageModel: undefined,
       speechModel: undefined,
+      transcriptionModel: undefined,
       ...asObject(expanded.defaults),
     },
     providers: asObject(expanded.providers),

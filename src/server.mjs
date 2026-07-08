@@ -56,6 +56,17 @@ async function readBody(req, { limitBytes = 64 * 1024 * 1024 } = {}) {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+async function readBodyBuffer(req, { limitBytes = 512 * 1024 * 1024 } = {}) {
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of req) {
+    total += chunk.length;
+    if (total > limitBytes) throw new Error(`request body exceeds ${limitBytes} bytes`);
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
 async function readJson(req) {
   const raw = await readBody(req);
   if (!raw.trim()) return {};
@@ -89,6 +100,91 @@ function copyResponseHeaders(upstream) {
   const contentType = upstream.headers.get("content-type");
   if (contentType) headers["content-type"] = contentType;
   return headers;
+}
+
+function contentType(req) {
+  return String(req.headers["content-type"] ?? "");
+}
+
+function parseMultipartBoundary(type) {
+  const match = String(type).match(/(?:^|;)\s*boundary=(?:"([^"]+)"|([^;]+))/i);
+  return match?.[1] ?? match?.[2]?.trim() ?? null;
+}
+
+function multipartPartName(headers) {
+  const match = String(headers).match(/content-disposition:[^\r\n]*\bname="([^"]+)"/i);
+  return match?.[1] ?? null;
+}
+
+function bufferEndsWith(buffer, suffix) {
+  return buffer.length >= suffix.length && buffer.subarray(buffer.length - suffix.length).equals(suffix);
+}
+
+function parseMultipartBody(buffer, boundary) {
+  const delimiter = Buffer.from(`--${boundary}`);
+  const separator = Buffer.from("\r\n\r\n");
+  const trailingLineBreak = Buffer.from("\r\n");
+  const parts = [];
+  let cursor = buffer.indexOf(delimiter);
+
+  while (cursor !== -1) {
+    let partStart = cursor + delimiter.length;
+    if (buffer.subarray(partStart, partStart + 2).toString("utf8") === "--") break;
+    if (buffer.subarray(partStart, partStart + 2).equals(trailingLineBreak)) partStart += 2;
+    const next = buffer.indexOf(delimiter, partStart);
+    if (next === -1) break;
+    let part = buffer.subarray(partStart, next);
+    if (bufferEndsWith(part, trailingLineBreak)) part = part.subarray(0, part.length - 2);
+    const headerEnd = part.indexOf(separator);
+    if (headerEnd !== -1) {
+      const headers = part.subarray(0, headerEnd).toString("utf8");
+      const content = part.subarray(headerEnd + separator.length);
+      parts.push({
+        headers,
+        name: multipartPartName(headers),
+        content,
+      });
+    }
+    cursor = next;
+  }
+
+  return parts;
+}
+
+function renderMultipartBody(parts, boundary) {
+  const chunks = [];
+  for (const part of parts) {
+    chunks.push(Buffer.from(`--${boundary}\r\n${part.headers}\r\n\r\n`, "utf8"));
+    chunks.push(Buffer.isBuffer(part.content) ? part.content : Buffer.from(String(part.content), "utf8"));
+    chunks.push(Buffer.from("\r\n", "utf8"));
+  }
+  chunks.push(Buffer.from(`--${boundary}--\r\n`, "utf8"));
+  return Buffer.concat(chunks);
+}
+
+function multipartTextField(buffer, contentTypeValue, fieldName) {
+  const boundary = parseMultipartBoundary(contentTypeValue);
+  if (!boundary) return null;
+  const part = parseMultipartBody(buffer, boundary).find(candidate => candidate.name === fieldName);
+  return part ? part.content.toString("utf8").trim() : null;
+}
+
+function multipartWithTextField(buffer, contentTypeValue, fieldName, value) {
+  const boundary = parseMultipartBoundary(contentTypeValue);
+  if (!boundary) throw new Error("multipart request is missing boundary");
+  const parts = parseMultipartBody(buffer, boundary);
+  if (!parts.length) throw new Error("multipart request contains no parseable parts");
+  const existing = parts.find(part => part.name === fieldName);
+  if (existing) {
+    existing.content = Buffer.from(String(value), "utf8");
+  } else {
+    parts.unshift({
+      headers: `Content-Disposition: form-data; name="${fieldName}"`,
+      name: fieldName,
+      content: Buffer.from(String(value), "utf8"),
+    });
+  }
+  return renderMultipartBody(parts, boundary);
 }
 
 function firstQueryParam(searchParams, names) {
@@ -535,6 +631,22 @@ async function fetchUpstream({ backend, path, body, headers = {} }) {
       method: "POST",
       headers: backendHeaders(backend, headers),
       body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchRawUpstream({ backend, path, body, headers = {} }) {
+  const controller = new AbortController();
+  const timeoutMs = backend.timeoutMs ?? 1800000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(upstreamUrl(backend, path), {
+      method: "POST",
+      headers: backendHeaders(backend, headers),
+      body,
       signal: controller.signal,
     });
   } finally {
@@ -1054,6 +1166,83 @@ export function createSwitchyardServer(config, {
     await proxyRawResponse(res, upstream);
   }
 
+  function resolveTranscriptionModel(modelId) {
+    if (!modelId) {
+      return {
+        error: errorBody("transcription request requires model", {
+          code: "missing_model",
+        }),
+      };
+    }
+    const resolved = registry.resolve(modelId);
+    if ((resolved.model.kind ?? "chat") !== "audio_transcription") {
+      return {
+        error: errorBody(`model ${resolved.requestedId} is not a transcription model`, {
+          code: "wrong_model_kind",
+          model: resolved.requestedId,
+        }),
+      };
+    }
+    return { resolved };
+  }
+
+  async function handleOpenAITranscription(req, res) {
+    const type = contentType(req);
+    if (/^application\/json\b/i.test(type)) {
+      const body = await readJson(req);
+      const { resolved, error } = resolveTranscriptionModel(body.model ?? config.defaults?.transcriptionModel);
+      if (error) {
+        sendJson(res, 400, error);
+        return;
+      }
+      await runtimeManager.ensure(resolved.model.runtime);
+      const upstream = await fetchUpstream({
+        backend: resolved.backend,
+        path: "/v1/audio/transcriptions",
+        body: {
+          ...body,
+          model: resolved.model.upstreamModel,
+        },
+      });
+      await proxyRawResponse(res, upstream);
+      return;
+    }
+
+    if (!/^multipart\/form-data\b/i.test(type)) {
+      sendJson(res, 415, errorBody("transcription request must use multipart/form-data or application/json", {
+        code: "unsupported_content_type",
+      }));
+      return;
+    }
+
+    const raw = await readBodyBuffer(req);
+    const modelId = multipartTextField(raw, type, "model") ?? config.defaults?.transcriptionModel;
+    const { resolved, error } = resolveTranscriptionModel(modelId);
+    if (error) {
+      sendJson(res, 400, error);
+      return;
+    }
+    await runtimeManager.ensure(resolved.model.runtime);
+    let upstreamBody;
+    try {
+      upstreamBody = multipartWithTextField(raw, type, "model", resolved.model.upstreamModel);
+    } catch (error) {
+      sendJson(res, 400, errorBody(error?.message ?? "invalid multipart request", {
+        code: "invalid_multipart",
+      }));
+      return;
+    }
+    const upstream = await fetchRawUpstream({
+      backend: resolved.backend,
+      path: "/v1/audio/transcriptions",
+      body: upstreamBody,
+      headers: {
+        "content-type": type,
+      },
+    });
+    await proxyRawResponse(res, upstream);
+  }
+
   async function handleOpenAIResponses(req, res) {
     const body = await readJson(req);
     const resolved = registry.resolve(body.model ?? config.defaults?.chatModel);
@@ -1222,6 +1411,11 @@ export function createSwitchyardServer(config, {
 
       if (req.method === "POST" && url.pathname === "/v1/audio/speech") {
         await handleOpenAISpeech(req, res);
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/v1/audio/transcriptions") {
+        await handleOpenAITranscription(req, res);
         return;
       }
 

@@ -1339,6 +1339,99 @@ if (speechListened) {
   await closeServer(speechUpstream);
 }
 
+const transcriptionUpstream = http.createServer(async (req, res) => {
+  if (req.method !== "POST" || req.url !== "/v1/audio/transcriptions") {
+    res.writeHead(404, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "not found" }));
+    return;
+  }
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  const raw = Buffer.concat(chunks).toString("utf8");
+  assert.match(req.headers["content-type"], /^multipart\/form-data; boundary=/);
+  assert(raw.includes('name="model"'));
+  assert(raw.includes("upstream-transcription-model"));
+  assert(!raw.includes("synthetic-transcription"));
+  assert(raw.includes('name="file"'));
+  assert(raw.includes("synthetic audio"));
+  res.writeHead(200, {
+    "content-type": "application/json",
+  });
+  res.end(JSON.stringify({
+    text: "synthetic transcript",
+  }));
+});
+
+const transcriptionListened = await tryListen(transcriptionUpstream);
+if (transcriptionListened) {
+  const transcriptionPort = transcriptionUpstream.address().port;
+  const transcriptionConfig = structuredClone(config);
+  transcriptionConfig.server = {
+    host: "127.0.0.1",
+    port: 0,
+  };
+  transcriptionConfig.defaults.transcriptionModel = "synthetic-transcription";
+  transcriptionConfig.backends["synthetic-transcription"] = {
+    type: "openai",
+    baseUrl: `http://127.0.0.1:${transcriptionPort}/v1`,
+    apiKey: "sk-test",
+  };
+  transcriptionConfig.models.push({
+    id: "synthetic-transcription",
+    name: "Synthetic Transcription",
+    backend: "synthetic-transcription",
+    upstreamModel: "upstream-transcription-model",
+    kind: "audio_transcription",
+    input: ["audio"],
+    output: ["text"],
+    capabilities: ["audio-transcription"],
+    advertise: true,
+  });
+  const transcriptionApp = createSwitchyardServer(transcriptionConfig, {
+    logger: { error() {} },
+  });
+  const transcriptionGatewayListened = await tryListen(transcriptionApp.server);
+  if (transcriptionGatewayListened) {
+    const { port } = transcriptionApp.server.address();
+    try {
+      const form = new FormData();
+      form.set("model", "synthetic-transcription");
+      form.set("file", new Blob(["synthetic audio"], { type: "audio/wav" }), "sample.wav");
+      const transcriptionResponse = await fetch(`http://127.0.0.1:${port}/v1/audio/transcriptions`, {
+        method: "POST",
+        body: form,
+      });
+      assert.equal(transcriptionResponse.status, 200);
+      const transcriptionJson = await transcriptionResponse.json();
+      assert.equal(transcriptionJson.text, "synthetic transcript");
+
+      const defaultForm = new FormData();
+      defaultForm.set("file", new Blob(["synthetic audio"], { type: "audio/wav" }), "sample.wav");
+      const defaultResponse = await fetch(`http://127.0.0.1:${port}/v1/audio/transcriptions`, {
+        method: "POST",
+        body: defaultForm,
+      });
+      assert.equal(defaultResponse.status, 200);
+      assert.equal((await defaultResponse.json()).text, "synthetic transcript");
+
+      const wrongKindResponse = await fetch(`http://127.0.0.1:${port}/v1/audio/transcriptions`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: config.defaults.chatModel,
+          file: "ignored",
+        }),
+      });
+      assert.equal(wrongKindResponse.status, 400);
+      const wrongKindJson = await wrongKindResponse.json();
+      assert.equal(wrongKindJson.error.code, "wrong_model_kind");
+    } finally {
+      await closeServer(transcriptionApp.server);
+    }
+  }
+  await closeServer(transcriptionUpstream);
+}
+
 const mockUpstream = http.createServer(async (req, res) => {
   if (req.method !== "POST" || req.url !== "/v1/chat/completions") {
     res.writeHead(404, { "content-type": "application/json" });
