@@ -234,6 +234,134 @@ function responseUsageFromOpenAI(usage = {}) {
   };
 }
 
+function metricUsageFromOpenAI(usage) {
+  if (!usage || typeof usage !== "object") return null;
+  const hasInput = usage.prompt_tokens != null || usage.input_tokens != null;
+  const hasOutput = usage.completion_tokens != null || usage.output_tokens != null;
+  const hasTotal = usage.total_tokens != null;
+  if (!hasInput && !hasOutput && !hasTotal) return null;
+  const inputTokens = Number(usage.prompt_tokens ?? usage.input_tokens ?? 0);
+  const outputTokens = Number(usage.completion_tokens ?? usage.output_tokens ?? 0);
+  return {
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    total_tokens: Number(usage.total_tokens ?? inputTokens + outputTokens),
+  };
+}
+
+function usageFromJsonText(text) {
+  if (!text?.trim()) return null;
+  try {
+    return metricUsageFromOpenAI(JSON.parse(text).usage);
+  } catch {
+    return null;
+  }
+}
+
+function usageFromJsonBuffer(buffer, headers = {}) {
+  const contentTypeValue = String(headers["content-type"] ?? "");
+  if (!/json/i.test(contentTypeValue)) return null;
+  return usageFromJsonText(buffer.toString("utf8"));
+}
+
+function createMetricsStore({ maxRecent = 200 } = {}) {
+  const recent = [];
+  const totals = emptyMetricBucket("all");
+  const models = new Map();
+  const routes = new Map();
+
+  function bucketFor(map, key) {
+    if (!map.has(key)) map.set(key, emptyMetricBucket(key));
+    return map.get(key);
+  }
+
+  function apply(bucket, entry) {
+    bucket.requests += 1;
+    if (!entry.ok) bucket.errors += 1;
+    if (entry.stream) bucket.streams += 1;
+    bucket.durationMs += entry.durationMs;
+    bucket.responseBytes += entry.responseBytes ?? 0;
+    bucket.inputTokens += entry.usage?.input_tokens ?? 0;
+    bucket.outputTokens += entry.usage?.output_tokens ?? 0;
+    bucket.totalTokens += entry.usage?.total_tokens ?? 0;
+    bucket.last = {
+      at: entry.at,
+      status: entry.status,
+      ok: entry.ok,
+      durationMs: entry.durationMs,
+      error: entry.error,
+    };
+  }
+
+  return {
+    record(raw) {
+      const entry = {
+        at: new Date().toISOString(),
+        route: raw.route,
+        model: raw.model,
+        requestedModel: raw.requestedModel,
+        upstreamModel: raw.upstreamModel,
+        kind: raw.kind,
+        backend: raw.backend,
+        runtime: raw.runtime,
+        status: raw.status ?? 0,
+        ok: raw.ok === true,
+        stream: raw.stream === true,
+        durationMs: raw.durationMs ?? 0,
+        responseBytes: raw.responseBytes ?? 0,
+        usage: raw.usage ?? null,
+        error: raw.error,
+      };
+      recent.push(entry);
+      if (recent.length > maxRecent) recent.shift();
+      apply(totals, entry);
+      if (entry.model) apply(bucketFor(models, entry.model), entry);
+      if (entry.route) apply(bucketFor(routes, entry.route), entry);
+    },
+    snapshot({ model } = {}) {
+      const selectedModel = model ? models.get(model) ?? null : null;
+      return {
+        object: "gateway.metrics",
+        generatedAt: new Date().toISOString(),
+        totals: finalizeMetricBucket(totals),
+        models: model
+          ? (selectedModel ? [finalizeMetricBucket(selectedModel)] : [])
+          : [...models.values()].map(finalizeMetricBucket).sort((a, b) => a.id.localeCompare(b.id)),
+        routes: [...routes.values()].map(finalizeMetricBucket).sort((a, b) => a.id.localeCompare(b.id)),
+        recent: recent
+          .filter(entry => !model || entry.model === model)
+          .slice(-50),
+      };
+    },
+  };
+}
+
+function emptyMetricBucket(id) {
+  return {
+    id,
+    requests: 0,
+    errors: 0,
+    streams: 0,
+    durationMs: 0,
+    responseBytes: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    last: null,
+  };
+}
+
+function finalizeMetricBucket(bucket) {
+  const durationSeconds = bucket.durationMs / 1000;
+  return {
+    ...bucket,
+    avgDurationMs: bucket.requests ? Number((bucket.durationMs / bucket.requests).toFixed(2)) : 0,
+    outputTokensPerSecond: durationSeconds > 0
+      ? Number((bucket.outputTokens / durationSeconds).toFixed(2))
+      : 0,
+  };
+}
+
 function responsesContentPartToOpenAI(part) {
   if (typeof part === "string") return { type: "text", text: part };
   if (!part || typeof part !== "object") return { type: "text", text: String(part ?? "") };
@@ -659,19 +787,78 @@ async function proxyUpstreamStream(res, upstream) {
   res.writeHead(upstream.status, copyResponseHeaders(upstream));
   if (!upstream.body) {
     res.end();
-    return;
+    return {
+      status: upstream.status,
+      stream: true,
+      responseBytes: 0,
+      usage: null,
+    };
   }
+  const decoder = new TextDecoder();
+  let pending = "";
+  let responseBytes = 0;
+  let usage = null;
+
+  function scan(buffer, final = false) {
+    let cursor = 0;
+    let splitAt;
+    while ((splitAt = buffer.slice(cursor).search(/\r?\n\r?\n/)) !== -1) {
+      const absolute = cursor + splitAt;
+      const block = buffer.slice(cursor, absolute);
+      const match = buffer.slice(absolute).match(/^\r?\n\r?\n/);
+      cursor = absolute + (match?.[0].length ?? 2);
+      const event = parseSseBlock(block);
+      if (event.data && event.data !== "[DONE]") {
+        try {
+          usage = metricUsageFromOpenAI(JSON.parse(event.data).usage) ?? usage;
+        } catch {
+          // Ignore non-JSON SSE payloads in pass-through streams.
+        }
+      }
+    }
+    const rest = buffer.slice(cursor);
+    if (final && rest.trim()) {
+      const event = parseSseBlock(rest);
+      if (event.data && event.data !== "[DONE]") {
+        try {
+          usage = metricUsageFromOpenAI(JSON.parse(event.data).usage) ?? usage;
+        } catch {
+          // Ignore non-JSON SSE payloads in pass-through streams.
+        }
+      }
+      return "";
+    }
+    return rest;
+  }
+
   for await (const chunk of upstream.body) {
-    res.write(Buffer.from(chunk));
+    const buffer = Buffer.from(chunk);
+    responseBytes += buffer.length;
+    pending = scan(pending + decoder.decode(buffer, { stream: true }));
+    res.write(buffer);
   }
+  scan(pending + decoder.decode(), true);
   res.end();
+  return {
+    status: upstream.status,
+    stream: true,
+    responseBytes,
+    usage,
+  };
 }
 
 async function proxyRawResponse(res, upstream) {
   const body = Buffer.from(await upstream.arrayBuffer());
+  const headers = copyResponseHeaders(upstream);
   setCors(res);
-  res.writeHead(upstream.status, copyResponseHeaders(upstream));
+  res.writeHead(upstream.status, headers);
   res.end(body);
+  return {
+    status: upstream.status,
+    stream: false,
+    responseBytes: body.length,
+    usage: usageFromJsonBuffer(body, headers),
+  };
 }
 
 function parseSseBlock(block) {
@@ -870,6 +1057,15 @@ async function streamAnthropicFromOpenAI(res, upstream, requestedModel) {
     type: "message_stop",
   });
   res.end();
+  return {
+    status: 200,
+    stream: true,
+    usage: {
+      input_tokens: usage.input_tokens,
+      output_tokens: usage.output_tokens,
+      total_tokens: usage.input_tokens + usage.output_tokens,
+    },
+  };
 }
 
 async function streamResponsesFromOpenAI(res, upstream, requestedModel) {
@@ -1080,6 +1276,15 @@ async function streamResponsesFromOpenAI(res, upstream, requestedModel) {
   });
   res.write("data: [DONE]\n\n");
   res.end();
+  return {
+    status: 200,
+    stream: true,
+    usage: {
+      input_tokens: usage.input_tokens,
+      output_tokens: usage.output_tokens,
+      total_tokens: usage.total_tokens,
+    },
+  };
 }
 
 export function createSwitchyardServer(config, {
@@ -1087,6 +1292,47 @@ export function createSwitchyardServer(config, {
   runtimeManager = new RuntimeManager(config, { logger }),
 } = {}) {
   const registry = createRegistry(config);
+  const metrics = createMetricsStore();
+
+  async function recordModelRequest({ route, resolved, stream }, fn) {
+    const started = Date.now();
+    try {
+      const result = await fn();
+      const status = result?.status ?? 200;
+      metrics.record({
+        route,
+        model: resolved.model.id,
+        requestedModel: resolved.requestedId,
+        upstreamModel: resolved.model.upstreamModel,
+        kind: resolved.model.kind ?? "chat",
+        backend: resolved.model.backend,
+        runtime: resolved.model.runtime,
+        status,
+        ok: status >= 200 && status < 400,
+        stream: result?.stream ?? stream,
+        durationMs: Date.now() - started,
+        responseBytes: result?.responseBytes ?? 0,
+        usage: result?.usage ?? null,
+      });
+      return result;
+    } catch (error) {
+      metrics.record({
+        route,
+        model: resolved.model.id,
+        requestedModel: resolved.requestedId,
+        upstreamModel: resolved.model.upstreamModel,
+        kind: resolved.model.kind ?? "chat",
+        backend: resolved.model.backend,
+        runtime: resolved.model.runtime,
+        status: 0,
+        ok: false,
+        stream,
+        durationMs: Date.now() - started,
+        error: error?.message ?? String(error),
+      });
+      throw error;
+    }
+  }
 
   async function handleOpenAIChat(req, res) {
     const body = await readJson(req);
@@ -1098,20 +1344,24 @@ export function createSwitchyardServer(config, {
       }));
       return;
     }
-    await runtimeManager.ensure(resolved.model.runtime);
-    const upstream = await fetchUpstream({
-      backend: resolved.backend,
-      path: "/v1/chat/completions",
-      body: {
-        ...body,
-        model: resolved.model.upstreamModel,
-      },
+    await recordModelRequest({
+      route: "/v1/chat/completions",
+      resolved,
+      stream: body.stream === true,
+    }, async () => {
+      await runtimeManager.ensure(resolved.model.runtime);
+      const upstream = await fetchUpstream({
+        backend: resolved.backend,
+        path: "/v1/chat/completions",
+        body: {
+          ...body,
+          model: resolved.model.upstreamModel,
+        },
+      });
+      return body.stream === true
+        ? proxyUpstreamStream(res, upstream)
+        : proxyRawResponse(res, upstream);
     });
-    if (body.stream === true) {
-      await proxyUpstreamStream(res, upstream);
-    } else {
-      await proxyRawResponse(res, upstream);
-    }
   }
 
   async function handleOpenAIImages(req, res) {
@@ -1125,16 +1375,22 @@ export function createSwitchyardServer(config, {
       }));
       return;
     }
-    await runtimeManager.ensure(resolved.model.runtime);
-    const upstream = await fetchUpstream({
-      backend: resolved.backend,
-      path: "/v1/images/generations",
-      body: {
-        ...body,
-        model: resolved.model.upstreamModel,
-      },
+    await recordModelRequest({
+      route: "/v1/images/generations",
+      resolved,
+      stream: false,
+    }, async () => {
+      await runtimeManager.ensure(resolved.model.runtime);
+      const upstream = await fetchUpstream({
+        backend: resolved.backend,
+        path: "/v1/images/generations",
+        body: {
+          ...body,
+          model: resolved.model.upstreamModel,
+        },
+      });
+      return proxyRawResponse(res, upstream);
     });
-    await proxyRawResponse(res, upstream);
   }
 
   async function handleOpenAIEmbeddings(req, res) {
@@ -1154,16 +1410,22 @@ export function createSwitchyardServer(config, {
       }));
       return;
     }
-    await runtimeManager.ensure(resolved.model.runtime);
-    const upstream = await fetchUpstream({
-      backend: resolved.backend,
-      path: "/v1/embeddings",
-      body: {
-        ...body,
-        model: resolved.model.upstreamModel,
-      },
+    await recordModelRequest({
+      route: "/v1/embeddings",
+      resolved,
+      stream: false,
+    }, async () => {
+      await runtimeManager.ensure(resolved.model.runtime);
+      const upstream = await fetchUpstream({
+        backend: resolved.backend,
+        path: "/v1/embeddings",
+        body: {
+          ...body,
+          model: resolved.model.upstreamModel,
+        },
+      });
+      return proxyRawResponse(res, upstream);
     });
-    await proxyRawResponse(res, upstream);
   }
 
   async function handleOpenAISpeech(req, res) {
@@ -1183,16 +1445,22 @@ export function createSwitchyardServer(config, {
       }));
       return;
     }
-    await runtimeManager.ensure(resolved.model.runtime);
-    const upstream = await fetchUpstream({
-      backend: resolved.backend,
-      path: "/v1/audio/speech",
-      body: {
-        ...body,
-        model: resolved.model.upstreamModel,
-      },
+    await recordModelRequest({
+      route: "/v1/audio/speech",
+      resolved,
+      stream: false,
+    }, async () => {
+      await runtimeManager.ensure(resolved.model.runtime);
+      const upstream = await fetchUpstream({
+        backend: resolved.backend,
+        path: "/v1/audio/speech",
+        body: {
+          ...body,
+          model: resolved.model.upstreamModel,
+        },
+      });
+      return proxyRawResponse(res, upstream);
     });
-    await proxyRawResponse(res, upstream);
   }
 
   function resolveTranscriptionModel(modelId) {
@@ -1224,16 +1492,22 @@ export function createSwitchyardServer(config, {
         sendJson(res, 400, error);
         return;
       }
-      await runtimeManager.ensure(resolved.model.runtime);
-      const upstream = await fetchUpstream({
-        backend: resolved.backend,
-        path: "/v1/audio/transcriptions",
-        body: {
-          ...body,
-          model: resolved.model.upstreamModel,
-        },
+      await recordModelRequest({
+        route: "/v1/audio/transcriptions",
+        resolved,
+        stream: false,
+      }, async () => {
+        await runtimeManager.ensure(resolved.model.runtime);
+        const upstream = await fetchUpstream({
+          backend: resolved.backend,
+          path: "/v1/audio/transcriptions",
+          body: {
+            ...body,
+            model: resolved.model.upstreamModel,
+          },
+        });
+        return proxyRawResponse(res, upstream);
       });
-      await proxyRawResponse(res, upstream);
       return;
     }
 
@@ -1251,7 +1525,6 @@ export function createSwitchyardServer(config, {
       sendJson(res, 400, error);
       return;
     }
-    await runtimeManager.ensure(resolved.model.runtime);
     let upstreamBody;
     try {
       upstreamBody = multipartWithTextField(raw, type, "model", resolved.model.upstreamModel);
@@ -1261,15 +1534,22 @@ export function createSwitchyardServer(config, {
       }));
       return;
     }
-    const upstream = await fetchRawUpstream({
-      backend: resolved.backend,
-      path: "/v1/audio/transcriptions",
-      body: upstreamBody,
-      headers: {
-        "content-type": type,
-      },
+    await recordModelRequest({
+      route: "/v1/audio/transcriptions",
+      resolved,
+      stream: false,
+    }, async () => {
+      await runtimeManager.ensure(resolved.model.runtime);
+      const upstream = await fetchRawUpstream({
+        backend: resolved.backend,
+        path: "/v1/audio/transcriptions",
+        body: upstreamBody,
+        headers: {
+          "content-type": type,
+        },
+      });
+      return proxyRawResponse(res, upstream);
     });
-    await proxyRawResponse(res, upstream);
   }
 
   async function handleOpenAIResponses(req, res) {
@@ -1282,56 +1562,83 @@ export function createSwitchyardServer(config, {
       }));
       return;
     }
-    await runtimeManager.ensure(resolved.model.runtime);
-    const upstream = await fetchUpstream({
-      backend: resolved.backend,
-      path: "/v1/chat/completions",
-      body: responsesToOpenAIChat(body, resolved),
-    });
-    if (body.stream === true) {
-      if (!upstream.ok) {
-        await proxyRawResponse(res, upstream);
-        return;
+    await recordModelRequest({
+      route: "/v1/responses",
+      resolved,
+      stream: body.stream === true,
+    }, async () => {
+      await runtimeManager.ensure(resolved.model.runtime);
+      const upstream = await fetchUpstream({
+        backend: resolved.backend,
+        path: "/v1/chat/completions",
+        body: responsesToOpenAIChat(body, resolved),
+      });
+      if (body.stream === true) {
+        if (!upstream.ok) return proxyRawResponse(res, upstream);
+        return streamResponsesFromOpenAI(res, upstream, resolved.requestedId);
       }
-      await streamResponsesFromOpenAI(res, upstream, resolved.requestedId);
-      return;
-    }
-    const text = await upstream.text();
-    if (!upstream.ok) {
-      setCors(res);
-      res.writeHead(upstream.status, copyResponseHeaders(upstream));
-      res.end(text);
-      return;
-    }
-    sendJson(res, 200, openAIToResponses(JSON.parse(text), resolved.requestedId));
+      const text = await upstream.text();
+      if (!upstream.ok) {
+        setCors(res);
+        res.writeHead(upstream.status, copyResponseHeaders(upstream));
+        res.end(text);
+        return {
+          status: upstream.status,
+          stream: false,
+          responseBytes: Buffer.byteLength(text),
+          usage: usageFromJsonText(text),
+        };
+      }
+      const responseJson = JSON.parse(text);
+      sendJson(res, 200, openAIToResponses(responseJson, resolved.requestedId));
+      return {
+        status: 200,
+        stream: false,
+        responseBytes: Buffer.byteLength(text),
+        usage: metricUsageFromOpenAI(responseJson.usage),
+      };
+    });
   }
 
   async function handleAnthropicMessages(req, res) {
     const body = await readJson(req);
     const resolved = registry.resolve(body.model ?? config.defaults?.chatModel);
-    await runtimeManager.ensure(resolved.model.runtime);
-    const upstream = await fetchUpstream({
-      backend: resolved.backend,
-      path: "/v1/chat/completions",
-      body: anthropicMessagesToOpenAI(body, resolved),
-    });
-    if (body.stream === true) {
-      if (!upstream.ok) {
-        await proxyRawResponse(res, upstream);
-        return;
+    await recordModelRequest({
+      route: "/v1/messages",
+      resolved,
+      stream: body.stream === true,
+    }, async () => {
+      await runtimeManager.ensure(resolved.model.runtime);
+      const upstream = await fetchUpstream({
+        backend: resolved.backend,
+        path: "/v1/chat/completions",
+        body: anthropicMessagesToOpenAI(body, resolved),
+      });
+      if (body.stream === true) {
+        if (!upstream.ok) return proxyRawResponse(res, upstream);
+        return streamAnthropicFromOpenAI(res, upstream, resolved.requestedId);
       }
-      await streamAnthropicFromOpenAI(res, upstream, resolved.requestedId);
-      return;
-    }
-    const text = await upstream.text();
-    if (!upstream.ok) {
-      setCors(res);
-      res.writeHead(upstream.status, copyResponseHeaders(upstream));
-      res.end(text);
-      return;
-    }
-    const responseJson = JSON.parse(text);
-    sendJson(res, 200, openAIToAnthropic(responseJson, resolved.requestedId));
+      const text = await upstream.text();
+      if (!upstream.ok) {
+        setCors(res);
+        res.writeHead(upstream.status, copyResponseHeaders(upstream));
+        res.end(text);
+        return {
+          status: upstream.status,
+          stream: false,
+          responseBytes: Buffer.byteLength(text),
+          usage: usageFromJsonText(text),
+        };
+      }
+      const responseJson = JSON.parse(text);
+      sendJson(res, 200, openAIToAnthropic(responseJson, resolved.requestedId));
+      return {
+        status: 200,
+        stream: false,
+        responseBytes: Buffer.byteLength(text),
+        usage: metricUsageFromOpenAI(responseJson.usage),
+      };
+    });
   }
 
   async function handleRequest(req, res) {
@@ -1387,6 +1694,21 @@ export function createSwitchyardServer(config, {
           defaults: config.defaults,
           runtimeManager: await runtimeManager.status(),
         });
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/gateway/metrics") {
+        sendJson(res, 200, metrics.snapshot({
+          model: firstQueryParam(url.searchParams, ["model"]),
+        }));
+        return;
+      }
+
+      const metricsModelMatch = url.pathname.match(/^\/gateway\/metrics\/models\/(.+)$/);
+      if (req.method === "GET" && metricsModelMatch) {
+        sendJson(res, 200, metrics.snapshot({
+          model: decodeURIComponent(metricsModelMatch[1]),
+        }));
         return;
       }
 
@@ -1496,6 +1818,7 @@ export function createSwitchyardServer(config, {
     server,
     registry,
     runtimeManager,
+    metrics,
     listen() {
       return new Promise((resolve, reject) => {
         const onError = error => {

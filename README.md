@@ -15,6 +15,7 @@ The goal is simple: install one bridge, let it pick and keep warm the best model
 - OpenAI-compatible audio transcription proxy at `POST /v1/audio/transcriptions`
 - Anthropic Messages bridge at `POST /v1/messages`, including tool-use and streaming deltas
 - Runtime manager for local process start, health checks, stop, warmup, and keep-warm bootstrapping
+- In-memory per-model and per-route metrics at `GET /gateway/metrics`
 - Backend catalog for MTPLX, MLX LM, llama.cpp, Ollama, OptiQ, stable-diffusion.cpp, and vLLM
 - Community benchmark evidence files that rank model/backend recipes for a machine class
 - Generated OMP and OpenCode config from the same model registry the gateway advertises
@@ -35,6 +36,7 @@ Default local endpoint:
 curl -sS http://127.0.0.1:8100/health
 curl -sS http://127.0.0.1:8100/v1/models
 curl -sS http://127.0.0.1:8100/gateway/status
+curl -sS http://127.0.0.1:8100/gateway/metrics
 curl -sS 'http://127.0.0.1:8100/gateway/setup/status?runtimes=false'
 ```
 
@@ -141,6 +143,8 @@ The same controls are exposed over HTTP for dashboards and external automation:
 
 ```zsh
 curl -sS http://127.0.0.1:8100/gateway/status
+curl -sS http://127.0.0.1:8100/gateway/metrics
+curl -sS 'http://127.0.0.1:8100/gateway/metrics?model=Youssofal%2FQwen3.6-27B-MTPLX-Optimized-Speed'
 curl -sS 'http://127.0.0.1:8100/gateway/setup/status?runtimes=false'
 curl -sS -X POST http://127.0.0.1:8100/gateway/runtimes/mtplx-qwen36-27b-speed/start
 curl -sS -X POST http://127.0.0.1:8100/gateway/runtimes/mtplx-qwen36-27b-speed/warmup

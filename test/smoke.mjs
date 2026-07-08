@@ -2032,6 +2032,26 @@ if (mockListened) {
       assert(toolStreamText.includes('"partial_json":":\\"Phoenix\\"}"'));
       assert(toolStreamText.includes('"stop_reason":"tool_use"'));
       assert(toolStreamText.includes('"input_tokens":17'));
+
+      const metricsResponse = await fetch(`http://127.0.0.1:${port}/gateway/metrics`);
+      assert.equal(metricsResponse.status, 200);
+      const metricsJson = await metricsResponse.json();
+      const modelMetrics = metricsJson.models.find(model => model.id === "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed");
+      assert(modelMetrics);
+      assert(modelMetrics.requests >= 9);
+      assert(modelMetrics.inputTokens >= 135);
+      assert(modelMetrics.outputTokens >= 26);
+      assert(metricsJson.routes.some(route => route.id === "/v1/responses" && route.requests >= 5));
+      assert(metricsJson.routes.some(route => route.id === "/v1/messages" && route.requests >= 4));
+      assert(metricsJson.recent.some(entry => entry.stream === true && entry.usage?.input_tokens === 17));
+
+      const singleModelMetricsResponse = await fetch(
+        `http://127.0.0.1:${port}/gateway/metrics?model=${encodeURIComponent("Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed")}`,
+      );
+      assert.equal(singleModelMetricsResponse.status, 200);
+      const singleModelMetricsJson = await singleModelMetricsResponse.json();
+      assert.equal(singleModelMetricsJson.models.length, 1);
+      assert.equal(singleModelMetricsJson.models[0].id, "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed");
     } finally {
       await closeServer(streamApp.server);
       await closeServer(mockUpstream);

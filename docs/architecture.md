@@ -23,6 +23,9 @@ Switchyard currently fronts these local contracts:
 
 - `GET /v1/models`
 - `GET /gateway/status`
+- `GET /gateway/metrics`
+- `GET /gateway/metrics?model=<model-id>`
+- `GET /gateway/metrics/models/:model-id`
 - `POST /gateway/runtimes/:id/start`
 - `POST /gateway/runtimes/:id/warmup`
 - `POST /gateway/runtimes/:id/stop`
@@ -46,6 +49,8 @@ Switchyard currently fronts these local contracts:
 `/v1/audio/transcriptions` proxies OpenAI-compatible transcription requests to models with `kind: "audio_transcription"`. Multipart form-data bodies are forwarded as bytes while the `model` part is rewritten to the selected upstream model ID, including when the gateway default transcription model is used.
 
 `/gateway/setup/status` reports first-run and resume readiness for dashboards and automation. It joins recipe/backend plans with installer state, model directories, client integration file matches, and optional keep-warm runtime health.
+
+`/gateway/metrics` is an in-memory operational feed for dashboards, local tuning, and recipe evidence gathering. Model-facing routes record requested model ID, resolved model ID, upstream model ID, kind, backend, runtime, status, stream flag, duration, response bytes, and normalized usage when the upstream reports it. The endpoint aggregates totals by model and route while retaining a bounded recent-request window; it is intentionally process-local so fresh benchmark submissions still come from explicit recipe/benchmark artifacts.
 
 ## CLI Surface
 
