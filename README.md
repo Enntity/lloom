@@ -9,6 +9,7 @@ The goal is simple: install one bridge, let it pick and keep warm the best model
 - OpenAI-compatible model catalog at `GET /v1/models`
 - OpenAI-compatible chat proxy at `POST /v1/chat/completions`
 - OpenAI-compatible Responses bridge at `POST /v1/responses`, including function-call output items and streaming argument deltas
+- OpenAI-compatible embeddings proxy at `POST /v1/embeddings`
 - OpenAI-compatible image generation proxy at `POST /v1/images/generations`
 - OpenAI-compatible speech generation proxy at `POST /v1/audio/speech`
 - OpenAI-compatible audio transcription proxy at `POST /v1/audio/transcriptions`

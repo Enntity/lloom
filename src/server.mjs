@@ -1137,6 +1137,35 @@ export function createSwitchyardServer(config, {
     await proxyRawResponse(res, upstream);
   }
 
+  async function handleOpenAIEmbeddings(req, res) {
+    const body = await readJson(req);
+    const modelId = body.model ?? config.defaults?.embeddingModel;
+    if (!modelId) {
+      sendJson(res, 400, errorBody("embedding request requires model", {
+        code: "missing_model",
+      }));
+      return;
+    }
+    const resolved = registry.resolve(modelId);
+    if ((resolved.model.kind ?? "chat") !== "embedding") {
+      sendJson(res, 400, errorBody(`model ${resolved.requestedId} is not an embedding model`, {
+        code: "wrong_model_kind",
+        model: resolved.requestedId,
+      }));
+      return;
+    }
+    await runtimeManager.ensure(resolved.model.runtime);
+    const upstream = await fetchUpstream({
+      backend: resolved.backend,
+      path: "/v1/embeddings",
+      body: {
+        ...body,
+        model: resolved.model.upstreamModel,
+      },
+    });
+    await proxyRawResponse(res, upstream);
+  }
+
   async function handleOpenAISpeech(req, res) {
     const body = await readJson(req);
     const modelId = body.model ?? config.defaults?.speechModel;
@@ -1406,6 +1435,11 @@ export function createSwitchyardServer(config, {
 
       if (req.method === "POST" && url.pathname === "/v1/images/generations") {
         await handleOpenAIImages(req, res);
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/v1/embeddings") {
+        await handleOpenAIEmbeddings(req, res);
         return;
       }
 

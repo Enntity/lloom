@@ -1339,6 +1339,113 @@ if (speechListened) {
   await closeServer(speechUpstream);
 }
 
+const embeddingUpstream = http.createServer(async (req, res) => {
+  if (req.method !== "POST" || req.url !== "/v1/embeddings") {
+    res.writeHead(404, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "not found" }));
+    return;
+  }
+  const body = await readJsonBody(req);
+  assert.equal(body.model, "upstream-embedding-model");
+  assert.deepEqual(body.input, ["hello", "world"]);
+  res.writeHead(200, {
+    "content-type": "application/json",
+  });
+  res.end(JSON.stringify({
+    object: "list",
+    data: [
+      {
+        object: "embedding",
+        index: 0,
+        embedding: [0.1, 0.2],
+      },
+      {
+        object: "embedding",
+        index: 1,
+        embedding: [0.3, 0.4],
+      },
+    ],
+    model: "upstream-embedding-model",
+    usage: {
+      prompt_tokens: 2,
+      total_tokens: 2,
+    },
+  }));
+});
+
+const embeddingListened = await tryListen(embeddingUpstream);
+if (embeddingListened) {
+  const embeddingPort = embeddingUpstream.address().port;
+  const embeddingConfig = structuredClone(config);
+  embeddingConfig.server = {
+    host: "127.0.0.1",
+    port: 0,
+  };
+  embeddingConfig.defaults.embeddingModel = "synthetic-embedding";
+  embeddingConfig.backends["synthetic-embedding"] = {
+    type: "openai",
+    baseUrl: `http://127.0.0.1:${embeddingPort}/v1`,
+    apiKey: "sk-test",
+  };
+  embeddingConfig.models.push({
+    id: "synthetic-embedding",
+    name: "Synthetic Embedding",
+    backend: "synthetic-embedding",
+    upstreamModel: "upstream-embedding-model",
+    kind: "embedding",
+    input: ["text"],
+    output: ["embedding"],
+    capabilities: ["embeddings"],
+    advertise: true,
+  });
+  const embeddingApp = createSwitchyardServer(embeddingConfig, {
+    logger: { error() {} },
+  });
+  const embeddingGatewayListened = await tryListen(embeddingApp.server);
+  if (embeddingGatewayListened) {
+    const { port } = embeddingApp.server.address();
+    try {
+      const embeddingResponse = await fetch(`http://127.0.0.1:${port}/v1/embeddings`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: "synthetic-embedding",
+          input: ["hello", "world"],
+        }),
+      });
+      assert.equal(embeddingResponse.status, 200);
+      const embeddingJson = await embeddingResponse.json();
+      assert.equal(embeddingJson.data.length, 2);
+      assert.deepEqual(embeddingJson.data[0].embedding, [0.1, 0.2]);
+
+      const defaultEmbeddingResponse = await fetch(`http://127.0.0.1:${port}/v1/embeddings`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          input: ["hello", "world"],
+        }),
+      });
+      assert.equal(defaultEmbeddingResponse.status, 200);
+      assert.equal((await defaultEmbeddingResponse.json()).usage.total_tokens, 2);
+
+      const wrongKindResponse = await fetch(`http://127.0.0.1:${port}/v1/embeddings`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: config.defaults.chatModel,
+          input: "hello",
+        }),
+      });
+      assert.equal(wrongKindResponse.status, 400);
+      const wrongKindJson = await wrongKindResponse.json();
+      assert.equal(wrongKindJson.error.code, "wrong_model_kind");
+    } finally {
+      await closeServer(embeddingApp.server);
+    }
+  }
+  await closeServer(embeddingUpstream);
+}
+
 const transcriptionUpstream = http.createServer(async (req, res) => {
   if (req.method !== "POST" || req.url !== "/v1/audio/transcriptions") {
     res.writeHead(404, { "content-type": "application/json" });
