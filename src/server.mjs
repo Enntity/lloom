@@ -25,7 +25,8 @@ function sendJson(res, status, value, headers = {}) {
   res.end(`${JSON.stringify(value, null, 2)}\n`);
 }
 
-function writeSse(res, event, data) {
+function writeSse(res, event, data, { signal } = {}) {
+  throwIfClientClosed(signal, res);
   if (event) res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
@@ -43,6 +44,69 @@ function errorBody(message, {
       model,
     },
   };
+}
+
+class ClientClosedError extends Error {
+  constructor(message = "client closed before upstream response completed") {
+    super(message);
+    this.name = "ClientClosedError";
+    this.statusCode = 499;
+    this.code = "client_closed";
+  }
+}
+
+function isClientClosedError(error) {
+  return error instanceof ClientClosedError
+    || error?.name === "ClientClosedError"
+    || error?.code === "client_closed";
+}
+
+function clientClosedStatus(error) {
+  return isClientClosedError(error) ? 499 : 0;
+}
+
+function createClientCloseTracker(req, res) {
+  const controller = new AbortController();
+  let closed = false;
+  const markClosed = () => {
+    if (closed || res.writableEnded) return;
+    closed = true;
+    controller.abort(new ClientClosedError());
+  };
+  req.on("aborted", markClosed);
+  res.on("close", markClosed);
+  if (req.aborted || (res.destroyed && !res.writableEnded)) markClosed();
+  return {
+    signal: controller.signal,
+    get closed() {
+      return closed;
+    },
+    dispose() {
+      req.off("aborted", markClosed);
+      res.off("close", markClosed);
+    },
+  };
+}
+
+function upstreamSignal(parentSignal, timeoutMs) {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return parentSignal
+    ? AbortSignal.any([parentSignal, timeout])
+    : timeout;
+}
+
+function normalizeAbortError(error, signal, timeoutMs) {
+  if (!signal?.aborted) return error;
+  if (isClientClosedError(signal.reason)) return signal.reason;
+  if (signal.reason?.name === "TimeoutError") {
+    return new Error(`upstream request timed out after ${timeoutMs}ms`);
+  }
+  return error;
+}
+
+function throwIfClientClosed(signal, res) {
+  if (signal?.aborted && isClientClosedError(signal.reason)) throw signal.reason;
+  if (res?.destroyed && !res.writableEnded) throw new ClientClosedError();
 }
 
 async function readBody(req, { limitBytes = 64 * 1024 * 1024 } = {}) {
@@ -750,42 +814,42 @@ function openAIToAnthropic(responseJson, requestedModel) {
   };
 }
 
-async function fetchUpstream({ backend, path, body, headers = {} }) {
-  const controller = new AbortController();
+async function fetchUpstream({ backend, path, body, headers = {}, signal }) {
   const timeoutMs = backend.timeoutMs ?? 1800000;
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const fetchSignal = upstreamSignal(signal, timeoutMs);
   try {
     return await fetch(upstreamUrl(backend, path), {
       method: "POST",
       headers: backendHeaders(backend, headers),
       body: JSON.stringify(body),
-      signal: controller.signal,
+      signal: fetchSignal,
     });
-  } finally {
-    clearTimeout(timer);
+  } catch (error) {
+    throw normalizeAbortError(error, fetchSignal, timeoutMs);
   }
 }
 
-async function fetchRawUpstream({ backend, path, body, headers = {} }) {
-  const controller = new AbortController();
+async function fetchRawUpstream({ backend, path, body, headers = {}, signal }) {
   const timeoutMs = backend.timeoutMs ?? 1800000;
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const fetchSignal = upstreamSignal(signal, timeoutMs);
   try {
     return await fetch(upstreamUrl(backend, path), {
       method: "POST",
       headers: backendHeaders(backend, headers),
       body,
-      signal: controller.signal,
+      signal: fetchSignal,
     });
-  } finally {
-    clearTimeout(timer);
+  } catch (error) {
+    throw normalizeAbortError(error, fetchSignal, timeoutMs);
   }
 }
 
-async function proxyUpstreamStream(res, upstream) {
+async function proxyUpstreamStream(res, upstream, { signal } = {}) {
+  throwIfClientClosed(signal, res);
   setCors(res);
   res.writeHead(upstream.status, copyResponseHeaders(upstream));
   if (!upstream.body) {
+    throwIfClientClosed(signal, res);
     res.end();
     return {
       status: upstream.status,
@@ -832,11 +896,13 @@ async function proxyUpstreamStream(res, upstream) {
   }
 
   for await (const chunk of upstream.body) {
+    throwIfClientClosed(signal, res);
     const buffer = Buffer.from(chunk);
     responseBytes += buffer.length;
     pending = scan(pending + decoder.decode(buffer, { stream: true }));
     res.write(buffer);
   }
+  throwIfClientClosed(signal, res);
   scan(pending + decoder.decode(), true);
   res.end();
   return {
@@ -847,8 +913,9 @@ async function proxyUpstreamStream(res, upstream) {
   };
 }
 
-async function proxyRawResponse(res, upstream) {
+async function proxyRawResponse(res, upstream, { signal } = {}) {
   const body = Buffer.from(await upstream.arrayBuffer());
+  throwIfClientClosed(signal, res);
   const headers = copyResponseHeaders(upstream);
   setCors(res);
   res.writeHead(upstream.status, headers);
@@ -908,7 +975,8 @@ function openAIChunkText(chunk) {
   return "";
 }
 
-async function streamAnthropicFromOpenAI(res, upstream, requestedModel) {
+async function streamAnthropicFromOpenAI(res, upstream, requestedModel, { signal } = {}) {
+  throwIfClientClosed(signal, res);
   setCors(res);
   res.writeHead(200, sseHeaders());
 
@@ -1068,7 +1136,8 @@ async function streamAnthropicFromOpenAI(res, upstream, requestedModel) {
   };
 }
 
-async function streamResponsesFromOpenAI(res, upstream, requestedModel) {
+async function streamResponsesFromOpenAI(res, upstream, requestedModel, { signal } = {}) {
+  throwIfClientClosed(signal, res);
   setCors(res);
   res.writeHead(200, sseHeaders());
 
@@ -1294,10 +1363,13 @@ export function createSwitchyardServer(config, {
   const registry = createRegistry(config);
   const metrics = createMetricsStore();
 
-  async function recordModelRequest({ route, resolved, stream }, fn) {
+  async function recordModelRequest({ route, resolved, stream, req, res }, fn) {
     const started = Date.now();
+    const client = createClientCloseTracker(req, res);
     try {
-      const result = await runtimeManager.withSlot(resolved.model.runtime, fn);
+      const result = await runtimeManager.withSlot(resolved.model.runtime, () => fn({
+        signal: client.signal,
+      }));
       const status = result?.status ?? 200;
       metrics.record({
         route,
@@ -1316,6 +1388,7 @@ export function createSwitchyardServer(config, {
       });
       return result;
     } catch (error) {
+      const status = client.closed ? 499 : clientClosedStatus(error);
       metrics.record({
         route,
         model: resolved.model.id,
@@ -1324,13 +1397,23 @@ export function createSwitchyardServer(config, {
         kind: resolved.model.kind ?? "chat",
         backend: resolved.model.backend,
         runtime: resolved.model.runtime,
-        status: 0,
+        status,
         ok: false,
         stream,
         durationMs: Date.now() - started,
         error: error?.message ?? String(error),
       });
+      if (status === 499) {
+        return {
+          status,
+          stream,
+          responseBytes: 0,
+          usage: null,
+        };
+      }
       throw error;
+    } finally {
+      client.dispose();
     }
   }
 
@@ -1348,19 +1431,22 @@ export function createSwitchyardServer(config, {
       route: "/v1/chat/completions",
       resolved,
       stream: body.stream === true,
-    }, async () => {
+      req,
+      res,
+    }, async ({ signal }) => {
       await runtimeManager.ensure(resolved.model.runtime);
       const upstream = await fetchUpstream({
         backend: resolved.backend,
         path: "/v1/chat/completions",
+        signal,
         body: {
           ...body,
           model: resolved.model.upstreamModel,
         },
       });
       return body.stream === true
-        ? proxyUpstreamStream(res, upstream)
-        : proxyRawResponse(res, upstream);
+        ? proxyUpstreamStream(res, upstream, { signal })
+        : proxyRawResponse(res, upstream, { signal });
     });
   }
 
@@ -1379,17 +1465,20 @@ export function createSwitchyardServer(config, {
       route: "/v1/images/generations",
       resolved,
       stream: false,
-    }, async () => {
+      req,
+      res,
+    }, async ({ signal }) => {
       await runtimeManager.ensure(resolved.model.runtime);
       const upstream = await fetchUpstream({
         backend: resolved.backend,
         path: "/v1/images/generations",
+        signal,
         body: {
           ...body,
           model: resolved.model.upstreamModel,
         },
       });
-      return proxyRawResponse(res, upstream);
+      return proxyRawResponse(res, upstream, { signal });
     });
   }
 
@@ -1414,17 +1503,20 @@ export function createSwitchyardServer(config, {
       route: "/v1/embeddings",
       resolved,
       stream: false,
-    }, async () => {
+      req,
+      res,
+    }, async ({ signal }) => {
       await runtimeManager.ensure(resolved.model.runtime);
       const upstream = await fetchUpstream({
         backend: resolved.backend,
         path: "/v1/embeddings",
+        signal,
         body: {
           ...body,
           model: resolved.model.upstreamModel,
         },
       });
-      return proxyRawResponse(res, upstream);
+      return proxyRawResponse(res, upstream, { signal });
     });
   }
 
@@ -1449,17 +1541,20 @@ export function createSwitchyardServer(config, {
       route: "/v1/audio/speech",
       resolved,
       stream: false,
-    }, async () => {
+      req,
+      res,
+    }, async ({ signal }) => {
       await runtimeManager.ensure(resolved.model.runtime);
       const upstream = await fetchUpstream({
         backend: resolved.backend,
         path: "/v1/audio/speech",
+        signal,
         body: {
           ...body,
           model: resolved.model.upstreamModel,
         },
       });
-      return proxyRawResponse(res, upstream);
+      return proxyRawResponse(res, upstream, { signal });
     });
   }
 
@@ -1496,17 +1591,20 @@ export function createSwitchyardServer(config, {
         route: "/v1/audio/transcriptions",
         resolved,
         stream: false,
-      }, async () => {
+        req,
+        res,
+      }, async ({ signal }) => {
         await runtimeManager.ensure(resolved.model.runtime);
         const upstream = await fetchUpstream({
           backend: resolved.backend,
           path: "/v1/audio/transcriptions",
+          signal,
           body: {
             ...body,
             model: resolved.model.upstreamModel,
           },
         });
-        return proxyRawResponse(res, upstream);
+        return proxyRawResponse(res, upstream, { signal });
       });
       return;
     }
@@ -1538,17 +1636,20 @@ export function createSwitchyardServer(config, {
       route: "/v1/audio/transcriptions",
       resolved,
       stream: false,
-    }, async () => {
+      req,
+      res,
+    }, async ({ signal }) => {
       await runtimeManager.ensure(resolved.model.runtime);
       const upstream = await fetchRawUpstream({
         backend: resolved.backend,
         path: "/v1/audio/transcriptions",
         body: upstreamBody,
+        signal,
         headers: {
           "content-type": type,
         },
       });
-      return proxyRawResponse(res, upstream);
+      return proxyRawResponse(res, upstream, { signal });
     });
   }
 
@@ -1566,18 +1667,22 @@ export function createSwitchyardServer(config, {
       route: "/v1/responses",
       resolved,
       stream: body.stream === true,
-    }, async () => {
+      req,
+      res,
+    }, async ({ signal }) => {
       await runtimeManager.ensure(resolved.model.runtime);
       const upstream = await fetchUpstream({
         backend: resolved.backend,
         path: "/v1/chat/completions",
+        signal,
         body: responsesToOpenAIChat(body, resolved),
       });
       if (body.stream === true) {
-        if (!upstream.ok) return proxyRawResponse(res, upstream);
-        return streamResponsesFromOpenAI(res, upstream, resolved.requestedId);
+        if (!upstream.ok) return proxyRawResponse(res, upstream, { signal });
+        return streamResponsesFromOpenAI(res, upstream, resolved.requestedId, { signal });
       }
       const text = await upstream.text();
+      throwIfClientClosed(signal, res);
       if (!upstream.ok) {
         setCors(res);
         res.writeHead(upstream.status, copyResponseHeaders(upstream));
@@ -1607,18 +1712,22 @@ export function createSwitchyardServer(config, {
       route: "/v1/messages",
       resolved,
       stream: body.stream === true,
-    }, async () => {
+      req,
+      res,
+    }, async ({ signal }) => {
       await runtimeManager.ensure(resolved.model.runtime);
       const upstream = await fetchUpstream({
         backend: resolved.backend,
         path: "/v1/chat/completions",
+        signal,
         body: anthropicMessagesToOpenAI(body, resolved),
       });
       if (body.stream === true) {
-        if (!upstream.ok) return proxyRawResponse(res, upstream);
-        return streamAnthropicFromOpenAI(res, upstream, resolved.requestedId);
+        if (!upstream.ok) return proxyRawResponse(res, upstream, { signal });
+        return streamAnthropicFromOpenAI(res, upstream, resolved.requestedId, { signal });
       }
       const text = await upstream.text();
+      throwIfClientClosed(signal, res);
       if (!upstream.ok) {
         setCors(res);
         res.writeHead(upstream.status, copyResponseHeaders(upstream));
@@ -1789,6 +1898,9 @@ export function createSwitchyardServer(config, {
         code: "not_found",
       }));
     } catch (error) {
+      if (isClientClosedError(error) || req.aborted || (res.destroyed && !res.writableEnded)) {
+        return;
+      }
       if (error instanceof UnknownModelError) {
         sendJson(res, error.statusCode, errorBody(error.message, {
           code: error.code,
@@ -1806,6 +1918,9 @@ export function createSwitchyardServer(config, {
 
   const server = http.createServer((req, res) => {
     handleRequest(req, res).catch(error => {
+      if (isClientClosedError(error) || req.aborted || (res.destroyed && !res.writableEnded)) {
+        return;
+      }
       logger.error?.(error);
       sendJson(res, 500, errorBody(error?.message ?? String(error), {
         type: "server_error",

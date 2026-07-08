@@ -51,7 +51,7 @@ Switchyard currently fronts these local contracts:
 
 `/gateway/setup/status` reports first-run and resume readiness for dashboards and automation. It joins recipe/backend plans with installer state, model directories, client integration file matches, and optional keep-warm runtime health.
 
-`/gateway/metrics` is an in-memory operational feed for dashboards, local tuning, and recipe evidence gathering. Model-facing routes record requested model ID, resolved model ID, upstream model ID, kind, backend, runtime, status, stream flag, duration, response bytes, and normalized usage when the upstream reports it. The endpoint aggregates totals by model and route while retaining a bounded recent-request window; it is intentionally process-local so fresh benchmark submissions still come from explicit recipe/benchmark artifacts.
+`/gateway/metrics` is an in-memory operational feed for dashboards, local tuning, and recipe evidence gathering. Model-facing routes record requested model ID, resolved model ID, upstream model ID, kind, backend, runtime, status, stream flag, duration, response bytes, and normalized usage when the upstream reports it. Client disconnects before completion are recorded as status `499` so local timeouts do not look like backend crashes. The endpoint aggregates totals by model and route while retaining a bounded recent-request window; it is intentionally process-local so fresh benchmark submissions still come from explicit recipe/benchmark artifacts.
 
 ## CLI Surface
 

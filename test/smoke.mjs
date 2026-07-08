@@ -1593,6 +1593,31 @@ const mockUpstream = http.createServer(async (req, res) => {
   }
   const body = await readJsonBody(req);
   assert.equal(body.model, "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed");
+  if (body.messages?.some(message => message.content === "abort-before-upstream-response")) {
+    await wait(250);
+    res.writeHead(200, {
+      "content-type": "application/json",
+    });
+    res.end(JSON.stringify({
+      id: "chatcmpl_abort",
+      object: "chat.completion",
+      created: 1,
+      choices: [{
+        index: 0,
+        message: {
+          role: "assistant",
+          content: "late",
+        },
+        finish_reason: "stop",
+      }],
+      usage: {
+        prompt_tokens: 3,
+        completion_tokens: 1,
+        total_tokens: 4,
+      },
+    }));
+    return;
+  }
   if (body.tools) {
     assert.equal(body.tools[0].type, "function");
     assert.equal(body.tools[0].function.name, "get_weather");
@@ -2079,6 +2104,30 @@ if (mockListened) {
       assert(toolStreamText.includes('"stop_reason":"tool_use"'));
       assert(toolStreamText.includes('"input_tokens":17'));
 
+      const abortBody = JSON.stringify({
+        model: "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+        messages: [{
+          role: "user",
+          content: "abort-before-upstream-response",
+        }],
+        max_tokens: 8,
+      });
+      const abortRequest = http.request({
+        host: "127.0.0.1",
+        port,
+        method: "POST",
+        path: "/v1/chat/completions",
+        headers: {
+          "content-type": "application/json",
+          "content-length": Buffer.byteLength(abortBody),
+        },
+      });
+      abortRequest.on("error", () => {});
+      abortRequest.end(abortBody);
+      await wait(25);
+      abortRequest.destroy();
+      await wait(350);
+
       const metricsResponse = await fetch(`http://127.0.0.1:${port}/gateway/metrics`);
       assert.equal(metricsResponse.status, 200);
       const metricsJson = await metricsResponse.json();
@@ -2090,6 +2139,8 @@ if (mockListened) {
       assert(metricsJson.routes.some(route => route.id === "/v1/responses" && route.requests >= 5));
       assert(metricsJson.routes.some(route => route.id === "/v1/messages" && route.requests >= 4));
       assert(metricsJson.recent.some(entry => entry.stream === true && entry.usage?.input_tokens === 17));
+      assert(metricsJson.recent.some(entry => entry.status === 499 && entry.error === "client closed before upstream response completed"));
+      assert(metricsJson.routes.some(route => route.id === "/v1/chat/completions" && route.last?.status === 499));
 
       const singleModelMetricsResponse = await fetch(
         `http://127.0.0.1:${port}/gateway/metrics?model=${encodeURIComponent("Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed")}`,
