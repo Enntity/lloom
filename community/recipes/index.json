@@ -16,6 +16,40 @@
   },
   "recipes": [
     {
+      "id": "apple-silicon-qwen36-35b-a3b-optiq",
+      "path": "apple-silicon-qwen36-35b-a3b-optiq.json",
+      "name": "Apple Silicon Qwen3.6 35B-A3B OptiQ (official)",
+      "summary": "Official-faithful Qwen3.6-35B-A3B via mlx-community OptiQ mixed 4/8-bit + mlx_lm.server (no MTPLX Speed fork).",
+      "tags": [
+        "apple-silicon",
+        "qwen3.6",
+        "moe",
+        "optiq",
+        "mlx",
+        "official",
+        "agentic-coding",
+        "coding-agent",
+        "reasoning",
+        "long-context"
+      ],
+      "recommendedFor": [
+        "M-series Macs with at least 48 GB unified memory",
+        "agentic chat/coding that should match stock Qwen3.6 behavior",
+        "users who hit thought-loops or memory thrash on MTPLX Speed FP16"
+      ],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "tools",
+        "reasoning",
+        "long-context"
+      ],
+      "source": {
+        "type": "lloom-host-seed",
+        "url": "community/recipes/apple-silicon-qwen36-35b-a3b-optiq.json"
+      }
+    },
+    {
       "id": "apple-silicon-qwen36-35b-a3b-mtplx",
       "path": "apple-silicon-qwen36-35b-a3b-mtplx.json",
       "name": "Apple Silicon Qwen3.6 35B-A3B MTPLX",

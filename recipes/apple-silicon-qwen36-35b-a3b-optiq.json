@@ -1,0 +1,177 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "apple-silicon-qwen36-35b-a3b-optiq",
+  "name": "Apple Silicon Qwen3.6 35B-A3B OptiQ (official)",
+  "version": 1,
+  "summary": "Official-faithful Qwen/Qwen3.6-35B-A3B via mlx-community OptiQ mixed-precision 4/8-bit quant + mlx_lm.server. No MTPLX Speed fork \u2014 closer to stock model behavior, lighter RAM than FP16 MTP.",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe metadata license"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "official Qwen base + mlx-community OptiQ quant"
+  },
+  "links": [
+    {
+      "rel": "upstream-model",
+      "href": "https://huggingface.co/Qwen/Qwen3.6-35B-A3B",
+      "mediaType": "text/html"
+    },
+    {
+      "rel": "quant",
+      "href": "https://huggingface.co/mlx-community/Qwen3.6-35B-A3B-OptiQ-4bit",
+      "mediaType": "text/html"
+    }
+  ],
+  "keywords": [
+    "agentic-coding",
+    "coding-agent",
+    "local-first",
+    "qwen3.6",
+    "apple-silicon",
+    "official",
+    "optiq",
+    "mlx"
+  ],
+  "capabilities": [
+    "chat",
+    "streaming",
+    "usage",
+    "tools",
+    "reasoning",
+    "moe",
+    "long-context"
+  ],
+  "hardware": {
+    "family": "Apple Silicon",
+    "testedMachine": "MacBook Pro M2 Max 96 GB",
+    "notes": [
+      "True to original Qwen3.6-35B-A3B (not Youssofal MTPLX Speed).",
+      "OptiQ keeps sensitive layers at 8-bit \u2014 better fidelity than uniform 4-bit at similar size (~25 GB).",
+      "Prefer 32k\u201364k context on 96 GB machines so KV does not thrash the OS."
+    ]
+  },
+  "requirements": {
+    "platforms": [
+      "darwin-arm64"
+    ],
+    "memoryGb": 48,
+    "diskGb": 35,
+    "commands": [
+      "python3",
+      "hf"
+    ],
+    "accelerators": [
+      "apple-gpu"
+    ]
+  },
+  "backend": {
+    "id": "mlx-lm",
+    "name": "MLX LM",
+    "type": "openai-compatible-server",
+    "features": [
+      "mlx",
+      "openai-chat",
+      "streaming"
+    ]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-python",
+        "title": "Check Python",
+        "action": "check-command",
+        "command": "python3",
+        "args": [
+          "--version"
+        ]
+      },
+      {
+        "id": "install-mlx-lm",
+        "title": "Install MLX LM",
+        "action": "command",
+        "command": "python3",
+        "args": [
+          "-m",
+          "pip",
+          "install",
+          "-U",
+          "mlx-lm"
+        ]
+      },
+      {
+        "id": "download-35b-optiq",
+        "title": "Download official Qwen3.6-35B-A3B OptiQ-4bit (MLX)",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "mlx-community/Qwen3.6-35B-A3B-OptiQ-4bit"
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "default",
+      "model": "mlx-community/Qwen3.6-35B-A3B-OptiQ-4bit",
+      "gatewayModel": "mlx-community/Qwen3.6-35B-A3B-OptiQ-4bit",
+      "runtime": "mlx-lm-qwen36-35b-a3b-optiq",
+      "backendConfig": "mlx-lm-qwen36-35b-optiq",
+      "backend": "MLX LM",
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "usage",
+        "tools",
+        "reasoning",
+        "moe",
+        "long-context"
+      ],
+      "settings": {
+        "contextWindow": 65536,
+        "maxOutputTokens": 8192,
+        "maxActiveRequests": 1,
+        "memoryGb": 40,
+        "sessionCache": false,
+        "runtime": {
+          "command": "mlx_lm.server",
+          "args": [
+            "--model",
+            "${modelPath}",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "${port}",
+            "--max-tokens",
+            "8192",
+            "--temp",
+            "0.7",
+            "--top-p",
+            "0.8",
+            "--top-k",
+            "20",
+            "--chat-template-args",
+            "{\"enable_thinking\":true}",
+            "--prompt-cache-bytes",
+            "8000000000",
+            "--prefill-step-size",
+            "512"
+          ],
+          "healthPath": "/v1/models",
+          "warmupPath": "/v1/chat/completions"
+        }
+      },
+      "observed": {
+        "notes": "Official Qwen3.6-35B-A3B via OptiQ mixed 4/8-bit MLX quant. enable_thinking=true by default so tool/agent routing works; set chat_template_kwargs.enable_thinking=false or reasoning_effort=none to disable."
+      }
+    }
+  ]
+}

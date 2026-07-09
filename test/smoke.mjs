@@ -748,7 +748,7 @@ assert.equal(recipe.schemaVersion, 1);
 const loadedRecipes = await loadRecipes();
 assert.deepEqual(
   loadedRecipes.map((candidate) => candidate.id),
-  ['apple-silicon-qwen36']
+  ['apple-silicon-qwen36-35b-a3b-optiq', 'apple-silicon-qwen36']
 );
 const benchmarkEvidence = await loadBenchmarkEvidence();
 assert.equal(benchmarkEvidence.length, 2);
@@ -835,16 +835,18 @@ const recipeIndexReport = await buildRecipeIndexReport(config, {
 });
 assert.equal(recipeIndexReport.ok, true);
 assert.equal(recipeIndexReport.index.id, 'lloom-community-recipes');
-assert.equal(recipeIndexReport.recipes.length, 1);
-assert.equal(recipeIndexReport.recipes[0].id, 'apple-silicon-qwen36');
-assert.equal(recipeIndexReport.recipes[0].ok, true);
-assert.equal(recipeIndexReport.recipes[0].commands.plan, 'lloom plan apple-silicon-qwen36 --model-root /models');
+assert.equal(recipeIndexReport.recipes.length, 2);
+const indexedQwen36Recipe = recipeIndexReport.recipes.find(
+  (candidate) => candidate.id === 'apple-silicon-qwen36'
+);
+assert.equal(indexedQwen36Recipe.ok, true);
+assert.equal(indexedQwen36Recipe.commands.plan, 'lloom plan apple-silicon-qwen36 --model-root /models');
 assert.equal(
-  recipeIndexReport.recipes[0].commands.installApply,
+  indexedQwen36Recipe.commands.installApply,
   'lloom install apple-silicon-qwen36 --model-root /models --apply --yes'
 );
 assert.equal(
-  recipeIndexReport.recipes[0].models.find((model) => model.role === 'fastest-35b-a3b')?.benchmark.best.id,
+  indexedQwen36Recipe.models.find((model) => model.role === 'fastest-35b-a3b')?.benchmark.best.id,
   'qwen36-35b-a3b-mtplx-speed-fp16-m2max-d1'
 );
 const libraryCli = await runCommand(process.execPath, [
@@ -855,8 +857,8 @@ const libraryCli = await runCommand(process.execPath, [
 ]);
 const libraryJson = JSON.parse(libraryCli.stdout);
 assert.equal(libraryJson.index.id, 'lloom-community-recipes');
-assert.equal(libraryJson.selected.recipeId, 'apple-silicon-qwen36');
-assert.equal(libraryJson.recipes[0].id, 'apple-silicon-qwen36');
+assert.equal(libraryJson.selected.recipeId, 'apple-silicon-qwen36-35b-a3b-optiq');
+assert.equal(libraryJson.recipes[0].id, 'apple-silicon-qwen36-35b-a3b-optiq');
 const addModelCli = await runCommand(process.execPath, [
   path.join(process.cwd(), 'bin', 'lloom.mjs'),
   'add-model',

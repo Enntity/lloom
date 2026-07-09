@@ -184,6 +184,9 @@ function sessionCacheArgs(runtimeId, runtime) {
   if (!cache) return [];
 
   const kind = sessionCacheKind(cache, runtime);
+  // Recipes may explicitly disable caching for runtimes such as mlx-lm that
+  // have no session-cache adapter or command-line flags.
+  if (!kind && (cache.enabled === false || cache.mode === 'off')) return [];
   if (kind === 'mtplx-ssd-session' || kind === 'mtplx') {
     return mtplxSessionCacheArgs(runtimeId, runtime, cache);
   }
