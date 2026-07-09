@@ -631,8 +631,17 @@ assert.deepEqual(vllmImportPlan.config.runtimes['vllm-qwen-qwen3-8b'].args, [
   '8500',
   '--served-model-name',
   'Qwen/Qwen3-8B',
+  '--tensor-parallel-size',
+  '1',
   '--max-model-len',
-  '65536'
+  '65536',
+  '--max-num-seqs',
+  '4',
+  '--gpu-memory-utilization',
+  '0.85',
+  '--enable-chunked-prefill',
+  '--enable-prefix-caching',
+  '--trust-remote-code'
 ]);
 assert(vllmImportPlan.config.models.find((model) => model.id === 'Qwen/Qwen3-8B').capabilities.includes('batching'));
 assert.equal(vllmImportPlan.next.setupBackend, "lloom backend-install 'vllm' --apply --yes");
@@ -653,7 +662,16 @@ assert.deepEqual(sglangImportPlan.config.runtimes['sglang-qwen-qwen3-8b'].args, 
   '--host',
   '127.0.0.1',
   '--port',
-  '8501'
+  '8501',
+  '--served-model-name',
+  'Qwen/Qwen3-8B',
+  '--tp',
+  '1',
+  '--context-length',
+  '65536',
+  '--mem-fraction-static',
+  '0.85',
+  '--trust-remote-code'
 ]);
 assert(sglangImportPlan.config.models.find((model) => model.id === 'Qwen/Qwen3-8B').capabilities.includes('rocm'));
 assert.equal(sglangImportPlan.next.setupBackend, "lloom backend-install 'sglang' --apply --yes");
@@ -1743,7 +1761,16 @@ assert.deepEqual(portableSglangConfig.runtimes['sglang-portable-community-chat']
   '--host',
   '127.0.0.1',
   '--port',
-  '8201'
+  '8201',
+  '--served-model-name',
+  'Example/Portable-SGLang-Chat',
+  '--tp',
+  '1',
+  '--context-length',
+  '65536',
+  '--mem-fraction-static',
+  '0.85',
+  '--trust-remote-code'
 ]);
 assert.equal(
   portableSglangConfig.runtimes['sglang-portable-community-chat'].warmup.url,
