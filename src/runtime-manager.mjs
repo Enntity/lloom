@@ -409,12 +409,17 @@ export class RuntimeManager {
     state.lastError = null;
     const args = effectiveRuntimeArgs(runtimeId, runtime);
     await prepareRuntimeFilesystem(runtime);
-    // Pipe stderr always so Metal/backend aborts leave a trail in gateway events.
-    // stdout only when captureOutput is enabled (can be noisy).
+    // Gateway managers capture both streams so backend aborts leave a trail.
+    // CLI managers disable capture so their detached runtime does not keep the
+    // short-lived command process open through an inherited pipe.
     const child = spawn(runtime.command, args, {
       cwd: runtime.cwd,
       env: runtimeEnvironment(this.config, runtime),
-      stdio: ['ignore', this.captureOutput ? 'pipe' : 'ignore', 'pipe'],
+      stdio: [
+        'ignore',
+        this.captureOutput ? 'pipe' : 'ignore',
+        this.captureOutput ? 'pipe' : 'ignore'
+      ],
       detached: true
     });
     child.unref();
