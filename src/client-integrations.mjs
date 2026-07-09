@@ -476,9 +476,7 @@ export function buildIntegrationArtifacts(
   registry,
   { home = process.env.HOME, generatedRoot = defaultGeneratedRootFor(home) } = {}
 ) {
-  const models = registry.clientModels({
-    kinds: ['chat', 'audio_speech', 'audio_transcription', 'image', 'embedding']
-  });
+  const models = registry.clientModels({ kinds: ['chat'] });
   return [
     {
       id: 'omp-models',

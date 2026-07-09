@@ -4633,7 +4633,7 @@ if (listened) {
       try {
         assert.equal(autoHostPlan.ok, true);
         assert(autoHostPlan.host.autoStarted.pid);
-        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, 3);
+        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, 6);
         assert.equal(autoHostPlan.plans[0].recommendation.id, 'apple-silicon-qwen36-35b-a3b-mtplx-pack');
         assert.equal(autoHostPlan.plans[0].plan.roots.recipesRoot, autoHostRecipesRoot);
         assert.equal(autoHostPlan.plans[0].plan.roots.benchmarksRoot, autoHostBenchmarksRoot);
@@ -4653,10 +4653,10 @@ if (listened) {
     assert.equal(libraryResponse.status, 200);
     const libraryPlanJson = await libraryResponse.json();
     assert.equal(libraryPlanJson.index.id, 'lloom-community-recipes');
-    assert.equal(libraryPlanJson.selected.recipeId, 'apple-silicon-qwen36');
+    assert.equal(libraryPlanJson.selected.recipeId, 'apple-silicon-qwen36-35b-a3b-optiq');
     assert.equal(
       libraryPlanJson.recipes[0].commands.installApply,
-      'lloom install apple-silicon-qwen36 --model-root /models --apply --yes'
+      'lloom install apple-silicon-qwen36-35b-a3b-optiq --model-root /models --apply --yes'
     );
 
     const backendsResponse = await fetch(`http://127.0.0.1:${port}/gateway/backends`);
