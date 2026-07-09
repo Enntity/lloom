@@ -52,6 +52,13 @@ import { applyRuntimePolicyPlan, createRuntimePolicyPlan } from '../src/runtime-
 import { createLloomServer } from '../src/server.mjs';
 import { applySetup, createSetupPlan } from '../src/setup.mjs';
 import { createSetupStatus } from '../src/setup-status.mjs';
+import {
+  defaultVoicesRoot,
+  getVoiceProfile,
+  installVoiceProfile,
+  listVoiceProfiles,
+  removeVoiceProfile
+} from '../src/voice-profiles.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 
@@ -64,6 +71,10 @@ const COMMAND_REGISTRY = [
   { name: 'integrate', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'integrations', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'add-model', aliases: ['model-add'], tier: 'primary', needsInstalledConfig: true },
+  { name: 'voices', aliases: ['voice-list'], tier: 'primary', needsInstalledConfig: false },
+  { name: 'voice-install', aliases: ['install-voice'], tier: 'primary', needsInstalledConfig: false },
+  { name: 'voice-show', aliases: [], tier: 'primary', needsInstalledConfig: false },
+  { name: 'voice-remove', aliases: ['voice-rm'], tier: 'primary', needsInstalledConfig: false },
   { name: 'setup', aliases: [], tier: 'advanced', needsInstalledConfig: true },
   { name: 'init', aliases: [], tier: 'advanced', needsInstalledConfig: false },
   { name: 'bootstrap', aliases: [], tier: 'advanced', needsInstalledConfig: true },
@@ -123,6 +134,8 @@ Primary commands:
   lloom models                     List gateway model IDs
   lloom integrate <client|all>     Write client configs (omp, opencode, codex, …)
   lloom add-model <ref>            Import an ad hoc model (dry-run; add --apply --yes)
+  lloom voices                     List installed named voices (clone profiles)
+  lloom voice-install <id>         Install a named voice from a reference clip
 
 Also useful:
   lloom up --json                  Full machine-readable plan
@@ -163,6 +176,13 @@ Models and clients:
   lloom add-model <hf-url|repo-id|local-path|ollama:tag|lmstudio:id|openai:url#model> [--backend id] [--keep-warm] [--default] [--apply --yes]
   lloom integrations [client-id|all] [--home path] [--generated-root path]
   lloom integrate [client-id|all] [--home path] [--generated-root path] [--apply --yes]
+
+Named voices (TTS clone profiles under ~/.lloom/voices/<id>):
+  lloom voices
+  lloom voice-show <id>
+  lloom voice-install <id> --ref <audio> --ref-text <transcript> [--model id] [--name str] [--temperature n] [--apply --yes] [--force]
+  lloom voice-remove <id> --yes
+  # Then: POST /v1/audio/speech { "voice": "<id>", "input": "Hello" }
 
 Recipes, community, and benchmarks:
   lloom recipes
@@ -1613,6 +1633,120 @@ async function main() {
         )
       );
     },
+    voices: async ({ args, config: _config, command: _command }) => {
+      const voicesRoot = argValue(args, '--voices-root') ?? defaultVoicesRoot();
+      const profiles = await listVoiceProfiles({ voicesRoot });
+      const report = {
+        object: 'list',
+        voicesRoot,
+        count: profiles.length,
+        data: profiles.map((profile) => ({
+          id: profile.id,
+          name: profile.name,
+          kind: profile.kind,
+          model: profile.model,
+          refAudioPath: profile.refAudioPath,
+          defaults: profile.defaults,
+          tags: profile.tags
+        }))
+      };
+      if (wantsJson(args)) {
+        console.log(JSON.stringify(report, null, 2));
+        return;
+      }
+      if (!profiles.length) {
+        console.log(`No installed voices in ${voicesRoot}`);
+        console.log('Install one: lloom voice-install <id> --ref <audio> --ref-text <transcript> --apply --yes');
+        return;
+      }
+      console.log(`LLooM voices (${profiles.length}) — ${voicesRoot}`);
+      for (const profile of profiles) {
+        console.log(`  ${profile.id}  (${profile.kind})  model=${profile.model}`);
+      }
+      console.log('Use: POST /v1/audio/speech {"voice":"<id>","input":"..."}');
+    },
+    'voice-show': async ({ args, config: _config, command: _command }) => {
+      const voiceId = positional(args)[1];
+      if (!voiceId) {
+        console.error('Missing voice id');
+        console.error('Usage: lloom voice-show <id>');
+        process.exitCode = 2;
+        return;
+      }
+      const voicesRoot = argValue(args, '--voices-root') ?? defaultVoicesRoot();
+      const profile = await getVoiceProfile(voiceId, { voicesRoot });
+      if (!profile) {
+        console.error(`Voice not found: ${voiceId}`);
+        process.exitCode = 1;
+        return;
+      }
+      console.log(JSON.stringify(profile, null, 2));
+    },
+    'voice-install': async ({ args, config: _config, command: _command }) => {
+      const voiceId = positional(args)[1];
+      if (!voiceId) {
+        console.error('Missing voice id');
+        console.error(
+          'Usage: lloom voice-install <id> --ref <audio> --ref-text <transcript> [--model id] [--apply --yes]'
+        );
+        process.exitCode = 2;
+        return;
+      }
+      const apply = hasFlag(args, '--apply') || wantsGo(args);
+      const yes = hasFlag(args, '--yes') || wantsGo(args);
+      const temperature = argValue(args, '--temperature');
+      const topP = argValue(args, '--top-p');
+      const topK = argValue(args, '--top-k');
+      const repetitionPenalty = argValue(args, '--repetition-penalty');
+      const defaults = {};
+      if (temperature != null) defaults.temperature = Number(temperature);
+      if (topP != null) defaults.top_p = Number(topP);
+      if (topK != null) defaults.top_k = Number(topK);
+      if (repetitionPenalty != null) defaults.repetition_penalty = Number(repetitionPenalty);
+      try {
+        const result = await installVoiceProfile({
+          id: voiceId,
+          name: argValue(args, '--name'),
+          ref: argValue(args, '--ref'),
+          refText: argValue(args, '--ref-text') ?? argValue(args, '--refText'),
+          model:
+            argValue(args, '--model') ?? 'mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit',
+          description: argValue(args, '--description'),
+          tags: argValue(args, '--tags')?.split(',').map((t) => t.trim()).filter(Boolean),
+          defaults,
+          voicesRoot: argValue(args, '--voices-root') ?? defaultVoicesRoot(),
+          force: hasFlag(args, '--force'),
+          apply,
+          yes,
+          dryRun: !apply
+        });
+        console.log(JSON.stringify(result, null, 2));
+        if (!apply) {
+          console.error('Dry-run only. Re-run with --apply --yes to install.');
+        }
+      } catch (error) {
+        console.error(error?.message ?? String(error));
+        process.exitCode = 1;
+      }
+    },
+    'voice-remove': async ({ args, config: _config, command: _command }) => {
+      const voiceId = positional(args)[1];
+      if (!voiceId) {
+        console.error('Missing voice id');
+        process.exitCode = 2;
+        return;
+      }
+      if (!hasFlag(args, '--yes')) {
+        console.error('Refusing to remove without --yes');
+        process.exitCode = 2;
+        return;
+      }
+      const result = await removeVoiceProfile(voiceId, {
+        voicesRoot: argValue(args, '--voices-root') ?? defaultVoicesRoot(),
+        yes: true
+      });
+      console.log(JSON.stringify(result, null, 2));
+    },
     select: async ({ args, config, command: _command }) => {
       const profile = await profileMachine();
       const recipes = await loadRecipes();
@@ -1865,6 +1999,9 @@ async function main() {
   handlers['model-add'] = handlers['add-model'];
   handlers['runtime-status'] = handlers['runtimes'];
   handlers['runtime-policy'] = handlers['runtime-plan'];
+  handlers['voice-list'] = handlers['voices'];
+  handlers['install-voice'] = handlers['voice-install'];
+  handlers['voice-rm'] = handlers['voice-remove'];
 
   const handler = handlers[command];
   if (!handler) {

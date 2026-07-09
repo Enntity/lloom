@@ -204,6 +204,16 @@ export function inferBackend(reference, { backend, platform = process.platform, 
   if (text.includes('sglang')) {
     return { backend: 'sglang', confidence: 'medium', reason: 'SGLang model reference' };
   }
+  if (
+    text.includes('tts') ||
+    text.includes('whisper') ||
+    text.includes('asr') ||
+    text.includes('parakeet') ||
+    text.includes('kokoro') ||
+    text.includes('speech')
+  ) {
+    return { backend: 'mlx-audio', confidence: 'high', reason: 'audio TTS/STT model naming' };
+  }
   if (text.includes('mlx-community/') || text.includes('mlx') || text.includes('-4bit') || text.includes('-8bit')) {
     return { backend: 'mlx-lm', confidence: 'medium', reason: 'MLX-style model naming' };
   }
@@ -353,6 +363,19 @@ function runtimeForBackend({ backend, runtimeId, modelPath, port, modelId, conte
     };
   }
 
+  if (backend === 'mlx-audio') {
+    return {
+      enabled: true,
+      command: 'lloom-audio-server',
+      args: ['--host', '127.0.0.1', '--port', String(port)],
+      port,
+      healthUrl: urlWithPort(port, '/health'),
+      startupTimeoutMs: 900000,
+      maxConcurrency: 1,
+      memoryGb: 6
+    };
+  }
+
   if (backend === 'llama-cpp') {
     return {
       enabled: true,
@@ -457,7 +480,32 @@ function runtimeForBackend({ backend, runtimeId, modelPath, port, modelId, conte
   throw new Error(`add-model does not know how to start backend ${backend}`);
 }
 
+function inferAudioKind(reference) {
+  const text = [reference.repoId, reference.filePath, reference.localPath, reference.modelId]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  if (
+    text.includes('whisper') ||
+    text.includes('asr') ||
+    text.includes('parakeet') ||
+    text.includes('transcri') ||
+    text.includes('stt')
+  ) {
+    return 'audio_transcription';
+  }
+  if (text.includes('tts') || text.includes('kokoro') || text.includes('speech')) {
+    return 'audio_speech';
+  }
+  return null;
+}
+
 function modelCapabilitiesForBackend(backend, reference) {
+  if (backend === 'mlx-audio') {
+    const kind = inferAudioKind(reference);
+    if (kind === 'audio_transcription') return ['audio-transcription', 'stt', 'mlx'];
+    return ['audio-speech', 'tts', 'mlx'];
+  }
   const capabilities = ['chat', 'streaming'];
   if (['openai-compatible', 'lm-studio'].includes(backend)) capabilities.push('usage', 'tools');
   if (['mtplx', 'llama-cpp'].includes(backend)) capabilities.push('usage', 'tools', 'long-context');
@@ -584,16 +632,21 @@ export function createModelImportPlan(
     timeoutMs: 1800000
   };
   if (runtime) nextConfig.runtimes[runtimeId] = runtime;
+  const capabilities = modelCapabilitiesForBackend(backendId, reference);
+  const audioKind = backendId === 'mlx-audio' ? inferAudioKind(reference) : null;
+  const kind = audioKind ?? 'chat';
+  const input = kind === 'audio_transcription' ? ['audio'] : ['text'];
+  const output = kind === 'audio_speech' ? ['audio'] : ['text'];
   nextConfig.models.push({
     id: resolvedModelId,
     name: name ?? resolvedModelId.split('/').at(-1),
     backend: backendConfigId,
     ...(runtime ? { runtime: runtimeId } : {}),
     upstreamModel: resolvedModelId,
-    kind: 'chat',
-    input: ['text'],
-    output: ['text'],
-    capabilities: modelCapabilitiesForBackend(backendId, reference),
+    kind,
+    input,
+    output,
+    capabilities,
     contextWindow: selectedContextWindow,
     maxOutputTokens: selectedMaxOutputTokens,
     advertise: true,
@@ -607,7 +660,9 @@ export function createModelImportPlan(
   }
   if (setDefault) {
     nextConfig.defaults ??= {};
-    nextConfig.defaults.chatModel = resolvedModelId;
+    if (kind === 'audio_speech') nextConfig.defaults.speechModel = resolvedModelId;
+    else if (kind === 'audio_transcription') nextConfig.defaults.transcriptionModel = resolvedModelId;
+    else nextConfig.defaults.chatModel = resolvedModelId;
   }
 
   return {

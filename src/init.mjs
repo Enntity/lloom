@@ -134,6 +134,7 @@ function recipeModelKind(recipeModel) {
   const capabilities = new Set(asArray(recipeModel.capabilities));
   if (capabilities.has('image-generation')) return 'image';
   if (capabilities.has('audio-speech') || capabilities.has('tts')) return 'audio_speech';
+  if (capabilities.has('audio-transcription') || capabilities.has('stt')) return 'audio_transcription';
   if (capabilities.has('embedding')) return 'embedding';
   return 'chat';
 }
@@ -150,6 +151,7 @@ function recipeModelOutput(recipeModel) {
   const capabilities = new Set(asArray(recipeModel.capabilities));
   if (capabilities.has('image-generation')) return ['image'];
   if (capabilities.has('audio-speech') || capabilities.has('tts')) return ['audio'];
+  if (capabilities.has('audio-transcription') || capabilities.has('stt')) return ['text'];
   return ['text'];
 }
 

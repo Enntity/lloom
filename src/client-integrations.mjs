@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { defaultLloomHome, repoRoot } from './config.mjs';
+import { modelDiscoveryMetadata } from './tts-catalog.mjs';
 
 export const repoGeneratedRoot = path.join(repoRoot, 'clients/generated');
 export const repoExamplesRoot = path.join(repoRoot, 'clients/examples');
@@ -8,6 +9,7 @@ export function defaultGeneratedRootFor(home = process.env.HOME) {
   return path.join(defaultLloomHome({ ...process.env, ...(home ? { HOME: home } : {}) }), 'generated');
 }
 export const defaultGeneratedRoot = defaultGeneratedRootFor();
+
 export const CLIENT_INTEGRATIONS_SCHEMA = 'https://lloom.dev/schemas/client-integrations.v1.schema.json';
 export const CLIENT_INTEGRATIONS_MEDIA_TYPE = 'application/vnd.lloom.client-integrations+json;version=1';
 export const CLIENT_INTEGRATIONS_PROFILE = 'https://lloom.dev/profiles/interchange/v1';
@@ -217,7 +219,11 @@ function gatewayEndpoints(baseUrl) {
     images: `${root}/images/generations`,
     embeddings: `${root}/embeddings`,
     speech: `${root}/audio/speech`,
-    transcriptions: `${root}/audio/transcriptions`
+    speechSchema: `${root}/audio/speech/schema`,
+    voices: `${root}/audio/voices`,
+    speechCatalog: `${root}/audio/speech/models`,
+    transcriptions: `${root}/audio/transcriptions`,
+    transcriptionSchema: `${root}/audio/transcriptions/schema`
   };
 }
 
@@ -333,17 +339,25 @@ export function buildClientIntegrationManifest(config, models) {
       defaultModel: settings.chatModel
     },
     clients: clientProfiles(),
-    models: models.map((model) => ({
-      id: model.id,
-      name: model.name ?? model.id,
-      input: model.input ?? ['text'],
-      output: model.output ?? ['text'],
-      capabilities: model.capabilities ?? [],
-      supportsTools: model.supportsTools === true,
-      reasoning: model.reasoning === true,
-      contextWindow: model.contextWindow,
-      maxOutputTokens: model.maxOutputTokens
-    }))
+    models: models.map((model) => {
+      const discovery = modelDiscoveryMetadata(model);
+      return {
+        id: model.id,
+        name: model.name ?? model.id,
+        kind: discovery.kind,
+        input: discovery.input,
+        output: discovery.output,
+        capabilities: discovery.capabilities,
+        supportsTools: model.supportsTools === true,
+        reasoning: model.reasoning === true,
+        contextWindow: model.contextWindow,
+        maxOutputTokens: model.maxOutputTokens,
+        ...(discovery.tts ? { tts: discovery.tts } : {}),
+        ...(discovery.stt ? { stt: discovery.stt } : {}),
+        ...(discovery.speech ? { speech: discovery.speech } : {}),
+        ...(discovery.transcription ? { transcription: discovery.transcription } : {})
+      };
+    })
   };
 }
 
@@ -462,7 +476,9 @@ export function buildIntegrationArtifacts(
   registry,
   { home = process.env.HOME, generatedRoot = defaultGeneratedRootFor(home) } = {}
 ) {
-  const models = registry.clientModels({ kinds: ['chat'] });
+  const models = registry.clientModels({
+    kinds: ['chat', 'audio_speech', 'audio_transcription', 'image', 'embedding']
+  });
   return [
     {
       id: 'omp-models',

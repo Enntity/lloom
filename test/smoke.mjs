@@ -303,7 +303,7 @@ for (const schemaId of schemaIds) {
 const registryConfig = structuredClone(config);
 registryConfig.runtimes['mtplx-qwen36-27b-speed'].enabled = true;
 registryConfig.runtimes['mtplx-qwen36-35b-a3b-speed-fp16'].enabled = true;
-registryConfig.runtimes['qwen3-tts-mlx'].enabled = true;
+registryConfig.runtimes['mlx-audio'].enabled = true;
 const registry = createRegistry(registryConfig);
 const integrationManifest = buildClientIntegrationManifest(registryConfig, registry.clientModels({ kinds: ['chat'] }));
 assert.deepEqual(validateClientIntegrationManifest(integrationManifest), []);
@@ -5555,7 +5555,9 @@ const speechUpstream = http.createServer(async (req, res) => {
   const body = await readJsonBody(req);
   assert.equal(body.model, 'upstream-speech-model');
   assert.equal(body.input, 'Say hello.');
-  assert.equal(body.voice, 'alloy');
+  // OpenAI voice aliases are normalized for Qwen CustomVoice backends.
+  assert.equal(body.voice, 'serena');
+  assert.equal(body.response_format, 'wav');
   res.writeHead(200, {
     'content-type': 'audio/wav'
   });
@@ -5619,11 +5621,96 @@ if (speechListened) {
       assert.equal(wrongKindResponse.status, 400);
       const wrongKindJson = await wrongKindResponse.json();
       assert.equal(wrongKindJson.error.code, 'wrong_model_kind');
+
+      const catalogResponse = await fetch(`http://127.0.0.1:${port}/v1/audio/speech/models`);
+      assert.equal(catalogResponse.status, 200);
+      const catalogJson = await catalogResponse.json();
+      assert.equal(catalogJson.object, 'speech.catalog');
+      assert.ok(catalogJson.models.some((model) => model.id === 'synthetic-speech'));
+
+      const voicesResponse = await fetch(
+        `http://127.0.0.1:${port}/v1/audio/voices?model=synthetic-speech`
+      );
+      assert.equal(voicesResponse.status, 200);
+      const voicesJson = await voicesResponse.json();
+      assert.equal(voicesJson.object, 'list');
+
+      const schemaResponse = await fetch(
+        `http://127.0.0.1:${port}/v1/audio/speech/schema?model=synthetic-speech`
+      );
+      assert.equal(schemaResponse.status, 200);
+      const schemaJson = await schemaResponse.json();
+      assert.equal(schemaJson.object, 'speech.schema');
+      assert.ok(schemaJson.params?.input?.required);
     } finally {
       await closeServer(speechApp.server);
     }
   }
   await closeServer(speechUpstream);
+}
+
+// instructions → instruct normalization for upstream speech backends
+{
+  const instructUpstream = http.createServer(async (req, res) => {
+    if (req.method !== 'POST' || req.url !== '/v1/audio/speech') {
+      res.writeHead(404, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: 'not found' }));
+      return;
+    }
+    const body = await readJsonBody(req);
+    assert.equal(body.model, 'upstream-instruct-model');
+    assert.equal(body.instructions, 'Cheerful tone');
+    assert.equal(body.instruct, 'Cheerful tone');
+    assert.equal(body.voice, 'serena'); // alloy alias
+    res.writeHead(200, { 'content-type': 'audio/wav' });
+    res.end(Buffer.from('RIFFinstruct'));
+  });
+  const instructListened = await tryListen(instructUpstream);
+  if (instructListened) {
+    const instructPort = instructUpstream.address().port;
+    const instructConfig = structuredClone(config);
+    instructConfig.server = { host: '127.0.0.1', port: 0 };
+    instructConfig.defaults.speechModel = 'instruct-speech';
+    instructConfig.backends['instruct-speech'] = {
+      type: 'openai',
+      baseUrl: `http://127.0.0.1:${instructPort}/v1`,
+      apiKey: 'sk-test'
+    };
+    instructConfig.models.push({
+      id: 'instruct-speech',
+      name: 'Instruct Speech',
+      backend: 'instruct-speech',
+      upstreamModel: 'upstream-instruct-model',
+      kind: 'audio_speech',
+      input: ['text'],
+      output: ['audio'],
+      capabilities: ['audio-speech', 'tts', 'tts-custom-voice'],
+      tts: { family: 'qwen3-tts', mode: 'custom_voice' },
+      advertise: true
+    });
+    const instructApp = createLloomServer(instructConfig, { logger: { error() {} } });
+    const instructGatewayListened = await tryListen(instructApp.server);
+    if (instructGatewayListened) {
+      const { port } = instructApp.server.address();
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}/v1/audio/speech`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            input: 'Hello',
+            voice: 'alloy',
+            instructions: 'Cheerful tone',
+            response_format: 'wav'
+          })
+        });
+        assert.equal(response.status, 200);
+        assert.equal(Buffer.from(await response.arrayBuffer()).toString('utf8'), 'RIFFinstruct');
+      } finally {
+        await closeServer(instructApp.server);
+      }
+    }
+    await closeServer(instructUpstream);
+  }
 }
 
 const embeddingUpstream = http.createServer(async (req, res) => {

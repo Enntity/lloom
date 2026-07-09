@@ -99,6 +99,37 @@
       }
     },
     {
+      "id": "mlx-audio",
+      "name": "MLX Audio",
+      "kind": "openai-compatible-server",
+      "description": "Apple MLX OpenAI-compatible TTS and STT server (Qwen3-TTS, Whisper, and related models).",
+      "platforms": ["darwin-arm64"],
+      "features": ["audio-speech", "tts", "audio-transcription", "stt", "mlx"],
+      "commands": ["lloom-audio-server"],
+      "setup": [
+        {
+          "id": "check-lloom-audio-server",
+          "title": "Check LLooM audio server shim",
+          "action": "check-command",
+          "command": "lloom-audio-server",
+          "args": ["--help"]
+        },
+        {
+          "id": "install-mlx-audio",
+          "title": "Install mlx-audio backend",
+          "action": "command",
+          "command": "bash",
+          "args": ["${repoRoot}/backends/mlx-audio/install.sh"]
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health",
+        "speechPath": "/v1/audio/speech",
+        "transcriptionPath": "/v1/audio/transcriptions"
+      }
+    },
+    {
       "id": "llama-cpp",
       "name": "llama.cpp",
       "kind": "openai-compatible-server",

@@ -1,3 +1,13 @@
+import {
+  buildSpeechModelsSummary,
+  listVoicesForModel,
+  modelDiscoveryMetadata,
+  resolveSttDescriptor,
+  resolveTtsDescriptor,
+  speechSchemaForModel,
+  transcriptionSchemaForModel
+} from './tts-catalog.mjs';
+
 export class UnknownModelError extends Error {
   constructor(modelId) {
     super(`unknown local model: ${modelId}`);
@@ -141,27 +151,99 @@ export function createRegistry(config) {
       object: 'model',
       created: now,
       owned_by: 'lloom',
-      metadata: {
-        name: model.name ?? model.id,
-        kind: model.kind ?? 'chat',
-        input: model.input ?? ['text'],
-        output: model.output ?? ['text'],
-        capabilities: model.capabilities ?? [],
-        contextWindow: model.contextWindow,
-        maxOutputTokens: model.maxOutputTokens,
-        aliasTarget: model.aliasTarget
-      }
+      metadata: modelDiscoveryMetadata(model)
     }));
+  }
+
+  function resolveSpeechModel(modelId = config.defaults?.speechModel) {
+    const resolved = resolve(modelId ?? config.defaults?.speechModel);
+    if ((resolved.model.kind ?? 'chat') !== 'audio_speech') {
+      const error = new Error(`model ${resolved.requestedId} is not a speech model`);
+      error.statusCode = 400;
+      error.code = 'wrong_model_kind';
+      error.modelId = resolved.requestedId;
+      throw error;
+    }
+    return {
+      ...resolved,
+      tts: resolveTtsDescriptor(resolved.model)
+    };
+  }
+
+  function resolveTranscriptionModel(modelId = config.defaults?.transcriptionModel) {
+    const resolved = resolve(modelId ?? config.defaults?.transcriptionModel);
+    if ((resolved.model.kind ?? 'chat') !== 'audio_transcription') {
+      const error = new Error(`model ${resolved.requestedId} is not a transcription model`);
+      error.statusCode = 400;
+      error.code = 'wrong_model_kind';
+      error.modelId = resolved.requestedId;
+      throw error;
+    }
+    return {
+      ...resolved,
+      stt: resolveSttDescriptor(resolved.model)
+    };
+  }
+
+  function speechCatalog({ voiceProfiles = [] } = {}) {
+    const models = catalogModels({
+      includeAliases: true,
+      kinds: ['audio_speech'],
+      advertisedOnly: true
+    });
+    return {
+      object: 'speech.catalog',
+      defaultModel: config.defaults?.speechModel ?? null,
+      endpoints: {
+        speech: '/v1/audio/speech',
+        voices: '/v1/audio/voices',
+        schema: '/v1/audio/speech/schema',
+        models: '/v1/models'
+      },
+      models: buildSpeechModelsSummary(models),
+      voices: voiceProfiles.map((profile) => ({
+        id: profile.id,
+        name: profile.name,
+        source: 'profile',
+        mode: profile.kind,
+        model: profile.model,
+        speechExample: {
+          voice: profile.id,
+          input: 'Hello from a named LLooM voice.'
+        }
+      }))
+    };
+  }
+
+  function voices(modelId) {
+    const resolved = resolveSpeechModel(modelId);
+    return listVoicesForModel(resolved.model);
+  }
+
+  function speechSchema(modelId) {
+    const resolved = resolveSpeechModel(modelId);
+    return speechSchemaForModel(resolved.model);
+  }
+
+  function transcriptionSchema(modelId) {
+    const resolved = resolveTranscriptionModel(modelId);
+    return transcriptionSchemaForModel(resolved.model);
   }
 
   return {
     config,
     resolve,
+    resolveSpeechModel,
+    resolveTranscriptionModel,
     directModels,
     aliasModels,
     catalogModels,
     clientModels,
-    openAIModels
+    openAIModels,
+    speechCatalog,
+    voices,
+    speechSchema,
+    transcriptionSchema
   };
 }
 

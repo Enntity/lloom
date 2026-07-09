@@ -6,6 +6,8 @@ node_modules/
 !.env.example
 *.log
 *.out
+__pycache__/
+*.pyc
 clients/generated/*
 !clients/generated/.gitkeep
 data/

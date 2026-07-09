@@ -67,7 +67,8 @@
   "defaults": {
     "chatModel": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
     "imageModel": "black-forest-labs/FLUX.1-schnell",
-    "speechModel": "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-4bit"
+    "speechModel": "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-4bit",
+    "transcriptionModel": "mlx-community/whisper-large-v3-turbo-asr-fp16"
   },
   "providers": {
     "local-llm": {
@@ -95,7 +96,7 @@
       "apiKey": "sk-local-llm",
       "timeoutMs": 1800000
     },
-    "qwen3-tts": {
+    "mlx-audio": {
       "type": "openai",
       "baseUrl": "http://127.0.0.1:8220/v1",
       "apiKey": "sk-local-llm",
@@ -199,8 +200,8 @@
     {
       "id": "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-4bit",
       "name": "Qwen3 TTS 0.6B Custom Voice 4bit",
-      "backend": "qwen3-tts",
-      "runtime": "qwen3-tts-mlx",
+      "backend": "mlx-audio",
+      "runtime": "mlx-audio",
       "upstreamModel": "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-4bit",
       "kind": "audio_speech",
       "input": [
@@ -211,15 +212,118 @@
       ],
       "capabilities": [
         "audio-speech",
-        "tts"
+        "tts",
+        "tts-custom-voice",
+        "tts-style-instruct",
+        "qwen3-tts"
       ],
+      "tts": {
+        "family": "qwen3-tts",
+        "mode": "custom_voice"
+      },
       "contextWindow": 4096,
       "maxOutputTokens": 4096,
       "advertise": true,
       "tags": [
         "audio",
         "tts",
-        "qwen3"
+        "qwen3",
+        "custom-voice"
+      ]
+    },
+    {
+      "id": "mlx-community/Qwen3-TTS-12Hz-1.7B-VoiceDesign-4bit",
+      "name": "Qwen3 TTS 1.7B Voice Design 4bit",
+      "backend": "mlx-audio",
+      "runtime": "mlx-audio",
+      "upstreamModel": "mlx-community/Qwen3-TTS-12Hz-1.7B-VoiceDesign-4bit",
+      "kind": "audio_speech",
+      "input": [
+        "text"
+      ],
+      "output": [
+        "audio"
+      ],
+      "capabilities": [
+        "audio-speech",
+        "tts",
+        "tts-voice-design",
+        "qwen3-tts"
+      ],
+      "tts": {
+        "family": "qwen3-tts",
+        "mode": "voice_design"
+      },
+      "contextWindow": 4096,
+      "maxOutputTokens": 4096,
+      "advertise": true,
+      "tags": [
+        "audio",
+        "tts",
+        "qwen3",
+        "voice-design"
+      ]
+    },
+    {
+      "id": "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit",
+      "name": "Qwen3 TTS 0.6B Base (voice clone) 4bit",
+      "backend": "mlx-audio",
+      "runtime": "mlx-audio",
+      "upstreamModel": "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit",
+      "kind": "audio_speech",
+      "input": [
+        "text"
+      ],
+      "output": [
+        "audio"
+      ],
+      "capabilities": [
+        "audio-speech",
+        "tts",
+        "tts-voice-clone",
+        "qwen3-tts"
+      ],
+      "tts": {
+        "family": "qwen3-tts",
+        "mode": "voice_clone"
+      },
+      "contextWindow": 4096,
+      "maxOutputTokens": 4096,
+      "advertise": true,
+      "tags": [
+        "audio",
+        "tts",
+        "qwen3",
+        "voice-clone"
+      ]
+    },
+    {
+      "id": "mlx-community/whisper-large-v3-turbo-asr-fp16",
+      "name": "Whisper Large v3 Turbo ASR fp16",
+      "backend": "mlx-audio",
+      "runtime": "mlx-audio",
+      "upstreamModel": "mlx-community/whisper-large-v3-turbo-asr-fp16",
+      "kind": "audio_transcription",
+      "input": [
+        "audio"
+      ],
+      "output": [
+        "text"
+      ],
+      "capabilities": [
+        "audio-transcription",
+        "stt"
+      ],
+      "stt": {
+        "family": "whisper"
+      },
+      "contextWindow": 4096,
+      "maxOutputTokens": 4096,
+      "advertise": true,
+      "tags": [
+        "audio",
+        "stt",
+        "whisper"
       ]
     }
   ],
@@ -252,7 +356,27 @@
     "qwen3-tts": {
       "target": "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-4bit",
       "advertise": true,
-      "description": "Default local text-to-speech route."
+      "description": "Default local TTS (CustomVoice presets)."
+    },
+    "qwen3-tts-custom": {
+      "target": "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-4bit",
+      "advertise": true,
+      "description": "Qwen3-TTS CustomVoice — built-in speakers + style instructions."
+    },
+    "qwen3-tts-design": {
+      "target": "mlx-community/Qwen3-TTS-12Hz-1.7B-VoiceDesign-4bit",
+      "advertise": true,
+      "description": "Qwen3-TTS VoiceDesign — describe a voice in natural language."
+    },
+    "qwen3-tts-clone": {
+      "target": "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit",
+      "advertise": true,
+      "description": "Qwen3-TTS Base — zero-shot clone from ref_audio + ref_text."
+    },
+    "whisper-stt": {
+      "target": "mlx-community/whisper-large-v3-turbo-asr-fp16",
+      "advertise": true,
+      "description": "Default local speech-to-text route."
     }
   },
   "runtimes": {
@@ -403,17 +527,19 @@
       },
       "maxConcurrency": 1
     },
-    "qwen3-tts-mlx": {
+    "mlx-audio": {
       "enabled": false,
-      "command": "python",
+      "command": "lloom-audio-server",
       "args": [
-        "-m",
-        "lloom_qwen3_tts_server"
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8220"
       ],
       "port": 8220,
       "healthUrl": "http://127.0.0.1:8220/health",
       "startupTimeoutMs": 900000,
-      "memoryGb": 4,
+      "memoryGb": 6,
       "policy": {
         "priority": 40,
         "evictable": true

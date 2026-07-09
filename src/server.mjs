@@ -38,6 +38,13 @@ import { applySetup, createSetupPlan } from './setup.mjs';
 import { createSetupStatus } from './setup-status.mjs';
 import { renderDashboardPage } from './dashboard.mjs';
 import { applyBackend } from './installer.mjs';
+import { normalizeSpeechRequestBody } from './tts-catalog.mjs';
+import {
+  defaultVoicesRoot,
+  listVoiceProfiles,
+  listVoicesDiscovery,
+  resolveSpeechVoice
+} from './voice-profiles.mjs';
 import {
   anthropicMessagesToOpenAI,
   encodeSseBlock,
@@ -1388,38 +1395,72 @@ export function createLloomServer(
     );
   }
 
-  async function handleOpenAISpeech(req, res) {
-    const body = await readJson(req);
+  function resolveSpeechModelOrError(modelId) {
+    try {
+      return { resolved: registry.resolveSpeechModel(modelId) };
+    } catch (error) {
+      if (error?.code === 'wrong_model_kind') {
+        return {
+          error: errorBody(error.message, {
+            code: 'wrong_model_kind',
+            model: error.modelId
+          })
+        };
+      }
+      if (error instanceof UnknownModelError || error?.code === 'unknown_model') {
+        return {
+          error: errorBody(error.message, {
+            code: 'unknown_model',
+            model: error.modelId
+          })
+        };
+      }
+      throw error;
+    }
+  }
+
+  function voicesRoot() {
+    return (
+      config.paths?.voicesRoot ??
+      process.env.LLOOM_VOICES_ROOT ??
+      defaultVoicesRoot(process.env)
+    );
+  }
+
+  async function expandSpeechBody(body) {
+    return resolveSpeechVoice(body, { voicesRoot: voicesRoot() });
+  }
+
+  async function proxySpeechJson(req, res, body, { profile = null } = {}) {
     const modelId = body.model ?? config.defaults?.speechModel;
     if (!modelId) {
       sendJson(
         res,
         400,
-        errorBody('speech request requires model', {
+        errorBody('speech request requires model (or an installed voice profile)', {
           code: 'missing_model'
         })
       );
       return;
     }
-    const resolved = registry.resolve(modelId);
-    if ((resolved.model.kind ?? 'chat') !== 'audio_speech') {
-      sendJson(
-        res,
-        400,
-        errorBody(`model ${resolved.requestedId} is not a speech model`, {
-          code: 'wrong_model_kind',
-          model: resolved.requestedId
-        })
-      );
+    const { resolved, error } = resolveSpeechModelOrError(modelId);
+    if (error) {
+      sendJson(res, error.error?.code === 'unknown_model' ? 404 : 400, error);
       return;
     }
+    const normalized = normalizeSpeechRequestBody(body, {
+      upstreamModel: resolved.model.upstreamModel
+    });
+    // Keep named profile id in voice for logging; clone backends ignore unknown speakers.
+    if (profile?.id) normalized.voice = profile.id;
     await recordModelRequest(
       {
         route: '/v1/audio/speech',
         resolved,
         stream: false,
         req,
-        res
+        res,
+        voiceProfile: profile?.id ?? null
       },
       async ({ signal, timing }) => {
         await ensureRuntime(resolved.model.runtime);
@@ -1427,14 +1468,199 @@ export function createLloomServer(
           backend: resolved.backend,
           path: '/v1/audio/speech',
           signal,
-          body: {
-            ...body,
-            model: resolved.model.upstreamModel
-          }
+          body: normalized
         });
         return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
       }
     );
+  }
+
+  async function handleOpenAISpeech(req, res) {
+    const type = contentType(req);
+
+    // Multipart: may be raw clone upload OR named voice profile (+ optional overrides).
+    if (/^multipart\/form-data\b/i.test(type)) {
+      const raw = await readBodyBuffer(req);
+      const fields = {
+        model: multipartTextField(raw, type, 'model'),
+        voice: multipartTextField(raw, type, 'voice'),
+        input: multipartTextField(raw, type, 'input') ?? multipartTextField(raw, type, 'text'),
+        instructions:
+          multipartTextField(raw, type, 'instructions') ?? multipartTextField(raw, type, 'instruct'),
+        instruct: multipartTextField(raw, type, 'instruct'),
+        ref_text: multipartTextField(raw, type, 'ref_text') ?? multipartTextField(raw, type, 'refText'),
+        language: multipartTextField(raw, type, 'language') ?? multipartTextField(raw, type, 'lang_code'),
+        temperature: multipartTextField(raw, type, 'temperature'),
+        top_p: multipartTextField(raw, type, 'top_p'),
+        top_k: multipartTextField(raw, type, 'top_k'),
+        repetition_penalty: multipartTextField(raw, type, 'repetition_penalty'),
+        response_format: multipartTextField(raw, type, 'response_format')
+      };
+      const expanded = await expandSpeechBody(fields);
+      // Named profile: expand to JSON clone request (ref on disk) so clients only send voice+input.
+      if (expanded.applied) {
+        await proxySpeechJson(req, res, expanded.body, { profile: expanded.profile });
+        return;
+      }
+
+      const modelId = fields.model ?? config.defaults?.speechModel;
+      const { resolved, error } = resolveSpeechModelOrError(modelId);
+      if (error) {
+        sendJson(res, error.error?.code === 'unknown_model' ? 404 : 400, error);
+        return;
+      }
+      let upstreamBody;
+      try {
+        upstreamBody = multipartWithTextField(raw, type, 'model', resolved.model.upstreamModel);
+        const instruct =
+          multipartTextField(upstreamBody, type, 'instruct') ??
+          multipartTextField(upstreamBody, type, 'instructions');
+        if (instruct != null) {
+          upstreamBody = multipartWithTextField(upstreamBody, type, 'instruct', instruct);
+          upstreamBody = multipartWithTextField(upstreamBody, type, 'instructions', instruct);
+        }
+      } catch (multipartError) {
+        sendJson(
+          res,
+          400,
+          errorBody(multipartError?.message ?? 'invalid multipart request', {
+            code: 'invalid_multipart'
+          })
+        );
+        return;
+      }
+      await recordModelRequest(
+        {
+          route: '/v1/audio/speech',
+          resolved,
+          stream: false,
+          req,
+          res
+        },
+        async ({ signal, timing }) => {
+          await ensureRuntime(resolved.model.runtime);
+          const upstream = await fetchRawUpstream({
+            backend: resolved.backend,
+            path: '/v1/audio/speech',
+            body: upstreamBody,
+            signal,
+            headers: {
+              'content-type': type
+            }
+          });
+          return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
+        }
+      );
+      return;
+    }
+
+    if (!/^application\/json\b/i.test(type) && type) {
+      sendJson(
+        res,
+        415,
+        errorBody('speech request must use application/json or multipart/form-data', {
+          code: 'unsupported_content_type'
+        })
+      );
+      return;
+    }
+
+    const body = await readJson(req);
+    const expanded = await expandSpeechBody(body);
+    await proxySpeechJson(req, res, expanded.body, { profile: expanded.profile });
+  }
+
+  async function handleSpeechVoices(req, res, url) {
+    const modelId = firstQueryParam(url.searchParams, ['model', 'model_id', 'model-id']);
+    const profiles = await listVoiceProfiles({ voicesRoot: voicesRoot() });
+
+    let modelVoices = null;
+    if (modelId) {
+      try {
+        modelVoices = registry.voices(modelId);
+      } catch {
+        modelVoices = null;
+      }
+    } else {
+      // Default speech model built-ins (CustomVoice list) plus all profiles.
+      const defaultSpeech = config.defaults?.speechModel;
+      if (defaultSpeech) {
+        try {
+          modelVoices = registry.voices(defaultSpeech);
+        } catch {
+          modelVoices = null;
+        }
+      }
+    }
+
+    sendJson(
+      res,
+      200,
+      listVoicesDiscovery({
+        profiles,
+        modelVoices,
+        modelId: modelId ?? config.defaults?.speechModel ?? null
+      })
+    );
+  }
+
+  function handleSpeechSchema(req, res, url) {
+    const modelId =
+      firstQueryParam(url.searchParams, ['model', 'model_id', 'model-id']) ??
+      config.defaults?.speechModel;
+    if (!modelId) {
+      sendJson(
+        res,
+        400,
+        errorBody('speech schema request requires model', {
+          code: 'missing_model'
+        })
+      );
+      return;
+    }
+    const { resolved, error } = resolveSpeechModelOrError(modelId);
+    if (error) {
+      sendJson(res, error.error?.code === 'unknown_model' ? 404 : 400, error);
+      return;
+    }
+    sendJson(res, 200, registry.speechSchema(resolved.requestedId));
+  }
+
+  function handleTranscriptionSchema(req, res, url) {
+    const modelId =
+      firstQueryParam(url.searchParams, ['model', 'model_id', 'model-id']) ??
+      config.defaults?.transcriptionModel;
+    if (!modelId) {
+      sendJson(
+        res,
+        400,
+        errorBody('transcription schema request requires model', {
+          code: 'missing_model'
+        })
+      );
+      return;
+    }
+    try {
+      sendJson(res, 200, registry.transcriptionSchema(modelId));
+    } catch (error) {
+      if (error?.code === 'wrong_model_kind' || error instanceof UnknownModelError) {
+        sendJson(
+          res,
+          error instanceof UnknownModelError ? 404 : 400,
+          errorBody(error.message, {
+            code: error.code ?? 'unknown_model',
+            model: error.modelId
+          })
+        );
+        return;
+      }
+      throw error;
+    }
+  }
+
+  async function handleSpeechCatalog(_req, res) {
+    const profiles = await listVoiceProfiles({ voicesRoot: voicesRoot() });
+    sendJson(res, 200, registry.speechCatalog({ voiceProfiles: profiles }));
   }
 
   function resolveTranscriptionModel(modelId) {
@@ -1776,7 +2002,12 @@ export function createLloomServer(
       }
 
       if (req.method === 'GET' && (url.pathname === '/gateway/integrations' || url.pathname === '/v1/integrations')) {
-        const manifest = buildClientIntegrationManifest(config, registry.clientModels({ kinds: ['chat'] }));
+        const manifest = buildClientIntegrationManifest(
+          config,
+          registry.clientModels({
+            kinds: ['chat', 'audio_speech', 'audio_transcription', 'image', 'embedding']
+          })
+        );
         const validationErrors = validateClientIntegrationManifest(manifest);
         if (validationErrors.length) {
           sendJson(
@@ -2216,6 +2447,38 @@ export function createLloomServer(
 
       if (req.method === 'POST' && url.pathname === '/v1/embeddings') {
         await handleOpenAIEmbeddings(req, res);
+        return;
+      }
+
+      if (req.method === 'GET' && (url.pathname === '/v1/audio/voices' || url.pathname === '/gateway/audio/voices')) {
+        await handleSpeechVoices(req, res, url);
+        return;
+      }
+
+      if (
+        req.method === 'GET' &&
+        (url.pathname === '/v1/audio/speech/schema' || url.pathname === '/gateway/audio/speech/schema')
+      ) {
+        handleSpeechSchema(req, res, url);
+        return;
+      }
+
+      if (
+        req.method === 'GET' &&
+        (url.pathname === '/v1/audio/speech/models' ||
+          url.pathname === '/v1/audio/models' ||
+          url.pathname === '/gateway/audio/speech/models')
+      ) {
+        await handleSpeechCatalog(req, res);
+        return;
+      }
+
+      if (
+        req.method === 'GET' &&
+        (url.pathname === '/v1/audio/transcriptions/schema' ||
+          url.pathname === '/gateway/audio/transcriptions/schema')
+      ) {
+        handleTranscriptionSchema(req, res, url);
         return;
       }
 

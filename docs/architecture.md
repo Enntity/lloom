@@ -81,9 +81,32 @@ LLooM currently fronts these local contracts:
 
 `/v1/embeddings` proxies OpenAI-compatible embedding requests to models with `kind: "embedding"`, rewrites the selected gateway model to the upstream model ID, and preserves upstream usage fields.
 
-`/v1/audio/speech` proxies OpenAI-compatible speech-generation requests to models with `kind: "audio_speech"`. Raw upstream responses are forwarded as bytes so audio containers are not coerced through text decoding.
+`/v1/audio/speech` proxies OpenAI-compatible speech-generation requests to models with `kind: "audio_speech"`. Raw upstream responses are forwarded as bytes so audio containers are not coerced through text decoding. JSON bodies accept OpenAI fields plus Qwen extensions (`instructions`/`instruct`, `ref_audio`, `ref_text`, `language`/`lang_code`); `instructions` is mirrored to `instruct` for mlx-audio. Multipart form-data is also accepted so clients can upload `ref_audio` for voice cloning.
 
-`/v1/audio/transcriptions` proxies OpenAI-compatible transcription requests to models with `kind: "audio_transcription"`. Multipart form-data bodies are forwarded as bytes while the `model` part is rewritten to the selected upstream model ID, including when the gateway default transcription model is used.
+Speech discovery (no inference required):
+
+- `GET /v1/audio/speech/models` — catalog of speech models with mode/family/capability summary
+- `GET /v1/audio/voices?model=` — voices + OpenAI voice aliases for CustomVoice models
+- `GET /v1/audio/speech/schema?model=` — parameter schema, examples, and content types for a model
+- `GET /v1/models` metadata includes `tts` / `stt` / `speech` / `transcription` discovery blocks
+
+`/v1/audio/transcriptions` proxies OpenAI-compatible transcription requests to models with `kind: "audio_transcription"`. Multipart form-data bodies are forwarded as bytes while the `model` part is rewritten to the selected upstream model ID, including when the gateway default transcription model is used. `GET /v1/audio/transcriptions/schema?model=` exposes STT parameters.
+
+Qwen3-TTS is modeled as three advertised model IDs (CustomVoice, VoiceDesign, Base/clone). Clients pick a model from the catalog, then call the same OpenAI speech endpoint with the params that model's schema advertises.
+
+### Named voice profiles
+
+Installed under `~/.lloom/voices/<id>/` (`profile.json` + `reference.wav`). These are first-class OpenAI `voice` values for ICL clone recipes:
+
+```bash
+lloom voice-install jinx --ref ./clip.wav --ref-text "exact transcript" --apply --yes
+lloom voices
+# Client:
+curl -X POST http://127.0.0.1:8100/v1/audio/speech \
+  -d '{"voice":"jinx","input":"Hello"}'
+```
+
+The gateway expands `voice: "jinx"` into the profile model, on-disk `ref_audio`, `ref_text`, and default sampling knobs. `GET /v1/audio/voices` lists model speakers and installed profiles together.
 
 `/gateway/onboarding/plan` is the first-run product surface. It composes setup planning and doctor verification into one install-from-zero report with stages for machine inspection, config, backend, model artifacts, agent clients, optional keep-warm runtime startup, and verification. `lloom onboard` and `lloom up` return the same contract.
 
