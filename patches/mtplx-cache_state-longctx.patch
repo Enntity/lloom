@@ -1,0 +1,76 @@
+--- /Volumes/JMac External/LLM/mtplx/venv/lib/python3.11/site-packages/mtplx/cache_state.py.bak-lloom-longctx	2026-07-08 20:53:22
++++ /Volumes/JMac External/LLM/mtplx/venv/lib/python3.11/site-packages/mtplx/cache_state.py	2026-07-08 20:53:51
+@@ -1403,7 +1403,16 @@
+                 sliding_window=int(sliding_window),
+             )
+             return None
+-        if mask is not None and mask != "causal":
++        # LLooM long-ctx fix: never bail solely because the caller passed a
++        # materialised attention mask. Array/bool masks are the common path
++        # for Qwen hybrid prefill; rejecting them forced dense full-KV SDPA
++        # which trips the macOS GPU watchdog at ~65k+ keys (MLX #3302 /
++        # kIOGPUCommandBufferCallbackErrorImpactingInteractivity).
++        # Position-based causal masking below is correct for standard prefill.
++        use_causal = mask is None or mask == "causal" or mask is not None
++        if mask is not None and mask != "causal" and _env_truthy(
++            "MTPLX_LARGE_Q_SPLIT_REQUIRE_CAUSAL_STRING"
++        ):
+             self._record_paged_bailout(
+                 "unsupported_mask",
+                 impl="large_q_split_sdpa",
+@@ -1489,7 +1498,10 @@
+                     ) * float(scale)
+                 else:
+                     scores = mx.matmul(q, k.transpose(0, 1, 3, 2)) * float(scale)
+-                if mask == "causal":
++                # Always use position-based causal masking on this long-ctx path.
++                # (Previously only when mask == "causal"; array masks skipped
++                # masking and still risked watchdog via other routes.)
++                if use_causal or True:
+                     key_positions = mx.arange(k_start, k_end)
+                     allowed = q_positions[:, None] >= key_positions[None, :]
+                     valid = mx.any(allowed, axis=-1, keepdims=True)
+@@ -2080,6 +2092,43 @@
+                     query_heads=int(queries.shape[1]),
+                     kv_heads=int(self._shape[0]) if self._shape is not None else 0,
+                 )
++            # LLooM long-ctx fix: once the KV span is large, never dispatch a
++            # single dense SDPA over the full dequantised K/V. That single
++            # steel_attention command exceeds the ~5s macOS GPU watchdog and
++            # aborts via mlx::core::gpu::check_error (MLX #3302). Prefer the
++            # partitioned / large-q chunked path for any long offset, not only
++            # when q_len > max_q_len.
++            # Only force chunking when q_len is large enough that MLX uses
++            # steel_attention (full SDPA, qL>8). Decode/vector path (qL<=8) is
++            # already 2-pass safe and must stay fast.
++            long_ctx_threshold = max(
++                1,
++                _env_int(
++                    "MTPLX_LONG_CTX_CHUNKED_ATTN_THRESHOLD",
++                    max(partition_threshold, 8192),
++                ),
++            )
++            steel_q_threshold = max(1, _env_int("MTPLX_STEEL_ATTN_Q_THRESHOLD", 8))
++            if (
++                partitioned_enabled
++                and int(self.offset) >= long_ctx_threshold
++                and q_len > steel_q_threshold
++            ):
++                split = run_partitioned_paged(force_fp32_paged=False)
++                if split is not None:
++                    return split
++                split_out = self._large_q_split_sdpa_fallback(
++                    queries,
++                    scale=scale,
++                    sliding_window=int(sliding_window),
++                    mask=mask,
++                )
++                if split_out is not None:
++                    self.paged_attention_calls += 1
++                    self.kv_quant_attention_calls += 1
++                    self.attention_time_s += time.perf_counter() - started
++                    return split_out
++                return bailout("long_ctx_chunked_attn_failed")
+             if q_len > max_q_len and partitioned_enabled and int(self.offset) >= partition_threshold:
+                 return run_partitioned_paged(force_fp32_paged=False)
+             out = scaled_dot_product_attention(

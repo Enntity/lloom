@@ -72,11 +72,39 @@ function runtimeAdapter(runtime) {
   return null;
 }
 
+/**
+ * Default env for MTPLX long-context stability on Apple Silicon.
+ *
+ * Root cause: macOS GPU watchdog (~5s) kills a process when a single Metal
+ * command buffer runs steel_attention over ~65k+ keys (MLX #3302 →
+ * mlx::core::gpu::check_error SIGABRT). With paged-kv q4, MTPLX could fall
+ * through to dense full-KV SDPA. Pair these env defaults with the site-package
+ * patch in patches/mtplx-longctx-gpu-watchdog.md.
+ *
+ * AGX_RELAX_CDM_CTXSTORE_TIMEOUT relaxes residual watchdog kills past ~95k.
+ * Runtime-specific env overrides these keys.
+ */
+const MTPLX_LONG_CONTEXT_ENV_DEFAULTS = {
+  MTPLX_VLLM_METAL_PAGED_LARGE_Q_CHUNK_SIZE: '512',
+  MTPLX_VLLM_METAL_PAGED_LARGE_Q_KV_CHUNK_SIZE: '512',
+  MTPLX_LONG_CTX_CHUNKED_ATTN_THRESHOLD: '4096',
+  MTPLX_PREFILL_CHUNK_SIZE: '512',
+  MTPLX_PREFILL_CHUNK_SIZE_DENSE: '512',
+  MTPLX_PREFILL_CHUNK_SIZE_REPAGE: '512',
+  AGX_RELAX_CDM_CTXSTORE_TIMEOUT: '1'
+};
+
 function runtimeEnvironment(config, runtime) {
   const shimDir = config?.paths?.shimDir ?? defaultShimDirFor();
+  const adapter = runtimeAdapter(runtime);
+  const longCtxDefaults =
+    adapter === 'mtplx' || commandName(runtime?.command).toLowerCase() === 'mtplx'
+      ? MTPLX_LONG_CONTEXT_ENV_DEFAULTS
+      : {};
   return {
     ...process.env,
     PATH: `${shimDir}${process.env.PATH ? `:${process.env.PATH}` : ''}`,
+    ...longCtxDefaults,
     ...(runtime.env ?? {})
   };
 }

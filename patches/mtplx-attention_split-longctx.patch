@@ -1,0 +1,54 @@
+--- /Volumes/JMac External/LLM/mtplx/venv/lib/python3.11/site-packages/mtplx/attention_split.py.bak-lloom-longctx	2026-07-08 20:53:22
++++ /Volumes/JMac External/LLM/mtplx/venv/lib/python3.11/site-packages/mtplx/attention_split.py	2026-07-08 20:53:51
+@@ -297,15 +297,42 @@
+                         "Sustained long-context paged attention attempted dense "
+                         "cache.state fallback after the partition threshold"
+                     )
+-                keys, values = cache.state
+-                output = scaled_dot_product_attention(
+-                    queries,
+-                    keys,
+-                    values,
+-                    cache=cache,
+-                    scale=self.scale,
+-                    mask=mask,
+-                )
++                # LLooM long-ctx fix: prefer chunked large-q SDPA over materialising
++                # full K/V + single steel_attention (GPU watchdog kill ~65k+).
++                offset = int(getattr(cache, "offset", 0) or 0)
++                long_thresh = 8192
++                try:
++                    import os as _os
++                    long_thresh = int(
++                        _os.environ.get("MTPLX_LONG_CTX_CHUNKED_ATTN_THRESHOLD", "8192")
++                        or "8192"
++                    )
++                except Exception:
++                    pass
++                q_len = int(queries.shape[2]) if hasattr(queries, "shape") else 0
++                if (
++                    offset >= long_thresh
++                    and q_len > 8
++                    and hasattr(cache, "_large_q_split_sdpa_fallback")
++                ):
++                    chunked = cache._large_q_split_sdpa_fallback(
++                        queries,
++                        scale=self.scale,
++                        sliding_window=int(getattr(cache, "sliding_window", -1) or -1),
++                        mask=mask,
++                    )
++                    if chunked is not None:
++                        output = chunked
++                if output is None:
++                    keys, values = cache.state
++                    output = scaled_dot_product_attention(
++                        queries,
++                        keys,
++                        values,
++                        cache=cache,
++                        scale=self.scale,
++                        mask=mask,
++                    )
+         elif should_use_gqa_packed:
+             from .kernels.sdpa_gqa_packed import sdpa_gqa_packed_tail
+ 
