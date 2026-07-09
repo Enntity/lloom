@@ -1,0 +1,175 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe-pack.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "example-apple-silicon-27b-pack",
+  "name": "Example Apple Silicon 27B Pack",
+  "summary": "Self-contained example recipe pack with index metadata, one recipe, and benchmark evidence.",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe and benchmark metadata license"
+  },
+  "publisher": {
+    "id": "example-lab",
+    "name": "Example Lab",
+    "url": "https://example.com"
+  },
+  "createdAt": "2026-07-07T00:00:00Z",
+  "updatedAt": "2026-07-07T00:00:00Z",
+  "provenance": {
+    "createdBy": "example-lab",
+    "generatedBy": "lloom examples"
+  },
+  "links": [
+    {
+      "rel": "describedby",
+      "href": "https://lloom.dev/docs/interchange"
+    }
+  ],
+  "dependencies": [
+    {
+      "kind": "backend",
+      "id": "mtplx",
+      "version": ">=2.0.0"
+    },
+    {
+      "kind": "model",
+      "id": "example/example-27b-agent"
+    }
+  ],
+  "recipes": [
+    {
+      "index": {
+        "id": "example-apple-silicon-27b",
+        "path": "example-apple-silicon-27b.json",
+        "name": "Example Apple Silicon 27B Agent Recipe",
+        "summary": "Example recipe showing the portable LLooM v1 fields for a local agentic coding model.",
+        "tags": ["apple-silicon", "agentic-coding", "long-context"],
+        "recommendedFor": ["Apple Silicon machines with at least 48 GB unified memory"],
+        "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "tools", "reasoning", "long-context"],
+        "source": {
+          "type": "recipe-pack",
+          "url": "https://example.com/lloom/packs/example-apple-silicon-27b.json"
+        }
+      },
+      "recipe": {
+        "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+        "schemaVersion": 1,
+        "profile": "https://lloom.dev/profiles/interchange/v1",
+        "id": "example-apple-silicon-27b",
+        "name": "Example Apple Silicon 27B Agent Recipe",
+        "version": 1,
+        "summary": "Example recipe showing the portable LLooM v1 fields for a local agentic coding model.",
+        "license": {
+          "id": "MIT",
+          "name": "Recipe metadata license"
+        },
+        "publisher": {
+          "id": "example-lab",
+          "name": "Example Lab",
+          "url": "https://example.com"
+        },
+        "provenance": {
+          "createdBy": "example-lab",
+          "generatedBy": "lloom recipe authoring guide",
+          "createdAt": "2026-07-07T00:00:00Z"
+        },
+        "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "tools", "reasoning", "long-context"],
+        "requirements": {
+          "platforms": ["darwin-arm64"],
+          "memoryGb": 48,
+          "commands": ["mtplx"],
+          "accelerators": ["apple-gpu"]
+        },
+        "backend": {
+          "id": "mtplx",
+          "version": ">=2.0.0",
+          "protocol": "openai-chat-completions"
+        },
+        "models": [
+          {
+            "role": "default",
+            "model": "example/example-27b-agent",
+            "gatewayModel": "example/example-27b-agent",
+            "runtime": "example-27b-agent",
+            "capabilities": ["chat", "streaming", "tools", "reasoning", "long-context"],
+            "settings": {
+              "contextWindow": 262144,
+              "draftDepth": 2
+            }
+          }
+        ]
+      },
+      "benchmarks": [
+        {
+          "$schema": "https://lloom.dev/schemas/benchmark-suite.v1.schema.json",
+          "schemaVersion": 1,
+          "profile": "https://lloom.dev/profiles/interchange/v1",
+          "id": "example-apple-silicon-27b-benchmarks",
+          "name": "Example Apple Silicon 27B Benchmarks",
+          "summary": "Example benchmark suite showing method and workload metadata.",
+          "license": {
+            "id": "MIT",
+            "name": "Benchmark metadata license"
+          },
+          "publisher": {
+            "id": "example-lab",
+            "name": "Example Lab",
+            "url": "https://example.com"
+          },
+          "source": {
+            "type": "community-submission",
+            "url": "https://example.com/lloom/benchmarks/example-apple-silicon-27b"
+          },
+          "submittedAt": "2026-07-07T00:00:00Z",
+          "provenance": {
+            "createdBy": "example-lab",
+            "generatedBy": "lloom benchmark harness",
+            "generatorVersion": "1.0.0"
+          },
+          "methodology": {
+            "harness": "lloom-bench",
+            "harnessVersion": "1.0.0",
+            "promptCorpus": "agentic-coding-smoke-v1",
+            "warmupRuns": 1,
+            "measurementRuns": 5,
+            "streaming": true
+          },
+          "results": [
+            {
+              "id": "example-27b-agent-m2max-d2",
+              "recipeId": "example-apple-silicon-27b",
+              "backendId": "mtplx",
+              "model": "example/example-27b-agent",
+              "gatewayModel": "example/example-27b-agent",
+              "machine": {
+                "platformId": "darwin-arm64",
+                "chip": "Apple M2 Max",
+                "memoryGb": 96,
+                "accelerators": ["apple-gpu"]
+              },
+              "settings": {
+                "contextWindow": 262144,
+                "draftDepth": 2
+              },
+              "workload": {
+                "type": "interactive-generation",
+                "promptTokens": 4096,
+                "outputTokens": 128,
+                "contextDepth": 4096,
+                "concurrency": 1
+              },
+              "metrics": {
+                "generationTokPerSec": 42.5,
+                "prefillTokPerSec": 980.0,
+                "timeToFirstTokenMs": 850,
+                "contextWindow": 262144,
+                "peakMemoryGb": 38.4
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,8 +1,39 @@
 {
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "apple-silicon-qwen36",
   "name": "Apple Silicon Qwen3.6 MTPLX fast lanes",
   "version": 1,
   "summary": "Best observed Qwen3.6 dense and MoE lanes for Apple Silicon using MTPLX.",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe metadata license"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "local benchmark evidence"
+  },
+  "links": [
+    {
+      "rel": "benchmark",
+      "href": "../benchmarks/community/apple-silicon-qwen36-m2max.json",
+      "mediaType": "application/vnd.lloom.benchmark-suite+json;version=1"
+    }
+  ],
+  "keywords": ["agentic-coding", "coding-agent", "local-first", "qwen3.6", "apple-silicon", "long-context"],
+  "capabilities": [
+    "chat",
+    "responses",
+    "anthropic-messages",
+    "streaming",
+    "usage",
+    "tools",
+    "reasoning",
+    "mtp",
+    "long-context"
+  ],
   "hardware": {
     "family": "Apple Silicon",
     "testedMachine": "MacBook Pro M2 Max 96 GB",
@@ -12,25 +43,17 @@
     ]
   },
   "requirements": {
-    "platforms": [
-      "darwin-arm64"
-    ],
+    "platforms": ["darwin-arm64"],
     "memoryGb": 64,
     "diskGb": 90,
-    "commands": [
-      "mtplx"
-    ]
+    "commands": ["mtplx"],
+    "accelerators": ["apple-gpu"]
   },
   "backend": {
     "id": "mtplx",
     "name": "MTPLX",
     "type": "openai-compatible-server",
-    "features": [
-      "mlx",
-      "mtp",
-      "openai-chat",
-      "streaming"
-    ]
+    "features": ["mlx", "mtp", "openai-chat", "streaming"]
   },
   "setup": {
     "steps": [
@@ -39,9 +62,7 @@
         "title": "Check MTPLX CLI",
         "action": "check-command",
         "command": "mtplx",
-        "args": [
-          "--version"
-        ]
+        "args": ["--version"]
       },
       {
         "id": "download-27b",
@@ -54,13 +75,9 @@
         "id": "tune-27b",
         "title": "Autotune Qwen3.6 27B Speed",
         "action": "command",
+        "skipIfPathExists": "${modelRoot}/Youssofal--Qwen3.6-27B-MTPLX-Optimized-Speed/mtplx_runtime.json",
         "command": "mtplx",
-        "args": [
-          "tune",
-          "--model",
-          "${modelRoot}/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
-          "--retune"
-        ]
+        "args": ["tune", "--model", "${modelRoot}/Youssofal--Qwen3.6-27B-MTPLX-Optimized-Speed", "--retune"]
       },
       {
         "id": "download-35b-a3b",
@@ -73,13 +90,9 @@
         "id": "tune-35b-a3b",
         "title": "Autotune Qwen3.6 35B-A3B Speed FP16",
         "action": "command",
+        "skipIfPathExists": "${modelRoot}/Youssofal--Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16/mtplx_runtime.json",
         "command": "mtplx",
-        "args": [
-          "tune",
-          "--model",
-          "${modelRoot}/Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
-          "--retune"
-        ]
+        "args": ["tune", "--model", "${modelRoot}/Youssofal--Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16", "--retune"]
       }
     ]
   },
@@ -90,6 +103,7 @@
       "gatewayModel": "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
       "runtime": "mtplx-qwen36-27b-speed",
       "backend": "MTPLX 2.x",
+      "capabilities": ["chat", "streaming", "usage", "tools", "reasoning", "mtp", "long-context"],
       "settings": {
         "turbo": true,
         "draftDepth": 3,
@@ -106,6 +120,7 @@
       "gatewayModel": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
       "runtime": "mtplx-qwen36-35b-a3b-speed-fp16",
       "backend": "MTPLX 2.x",
+      "capabilities": ["chat", "streaming", "usage", "tools", "reasoning", "mtp", "long-context"],
       "settings": {
         "draftDepth": 1,
         "contextWindow": 262144

@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lloom.dev/schemas/recipe-pack-submission-response.v1.schema.json",
+  "title": "LLooM Recipe Pack Submission Response v1",
+  "description": "Portable receipt returned by LLooM-compatible recipe-pack submission endpoints.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schemaVersion",
+    "id",
+    "accepted",
+    "persisted",
+    "count",
+    "submittedAt",
+    "validationErrors",
+    "submissions"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "https://lloom.dev/schemas/recipe-pack-submission-response.v1.schema.json"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "profile": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/profile"
+    },
+    "id": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/id"
+    },
+    "accepted": {
+      "type": "boolean"
+    },
+    "persisted": {
+      "type": "boolean"
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "submittedAt": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/dateTime"
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "service": {
+          "type": "string"
+        },
+        "endpoint": {
+          "type": "string"
+        }
+      }
+    },
+    "validationErrors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "submissions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/submission"
+      }
+    },
+    "message": {
+      "type": "string"
+    }
+  },
+  "patternProperties": {
+    "^x-": true
+  },
+  "$defs": {
+    "submission": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "status"],
+      "properties": {
+        "id": {
+          "type": ["string", "null"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["validated", "persisted", "queued", "rejected"]
+        },
+        "recipeCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "benchmarkCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fileName": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

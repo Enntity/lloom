@@ -1,63 +1,73 @@
-import { spawn } from "node:child_process";
-import { setTimeout as delay } from "node:timers/promises";
+import { spawn } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
 
-const LSOF = process.platform === "darwin" ? "/usr/sbin/lsof" : "lsof";
+const LSOF = process.platform === 'darwin' ? '/usr/sbin/lsof' : 'lsof';
 
-export function runCommand(command, args, { allowFailure = false } = {}) {
+export function runCommand(command, args, { allowFailure = false, env = process.env, stdio = 'pipe' } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", chunk => {
-      stdout += chunk;
+    const streamOutput = stdio === 'inherit';
+    const child = spawn(command, args, {
+      stdio: streamOutput ? ['ignore', 'inherit', 'inherit'] : ['ignore', 'pipe', 'pipe'],
+      env
     });
-    child.stderr.on("data", chunk => {
-      stderr += chunk;
-    });
-    child.on("error", error => {
+    let stdout = '';
+    let stderr = '';
+    if (!streamOutput) {
+      child.stdout.on('data', (chunk) => {
+        stdout += chunk;
+      });
+      child.stderr.on('data', (chunk) => {
+        stderr += chunk;
+      });
+    }
+    child.on('error', (error) => {
       if (allowFailure) {
         resolve({ code: null, stdout, stderr: stderr || error.message });
       } else {
         reject(error);
       }
     });
-    child.on("close", code => {
+    child.on('close', (code) => {
       if (code === 0 || allowFailure) {
         resolve({ code, stdout, stderr });
       } else {
-        reject(new Error(`${command} ${args.join(" ")} exited ${code}: ${stderr || stdout}`));
+        reject(new Error(`${command} ${args.join(' ')} exited ${code}: ${stderr || stdout}`));
       }
     });
   });
 }
 
 export function parsePids(text) {
-  return [...new Set(String(text || "")
-    .split(/\s+/)
-    .map(value => Number(value))
-    .filter(value => Number.isInteger(value) && value > 0))];
+  return [
+    ...new Set(
+      String(text || '')
+        .split(/\s+/)
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value > 0)
+    )
+  ];
 }
 
 export async function findPortListenerPids(port) {
   if (!port) return [];
-  const result = await runCommand(LSOF, [`-nP`, `-tiTCP:${port}`, "-sTCP:LISTEN"], {
-    allowFailure: true,
+  const result = await runCommand(LSOF, [`-nP`, `-tiTCP:${port}`, '-sTCP:LISTEN'], {
+    allowFailure: true
   });
   if (result.code !== 0 && !result.stdout) return [];
   return parsePids(result.stdout);
 }
 
 export async function listProcessRows() {
-  const result = await runCommand("/bin/ps", ["-axo", "pid=,ppid=,command="]);
+  const result = await runCommand('/bin/ps', ['-axo', 'pid=,ppid=,command=']);
   return result.stdout
-    .split("\n")
-    .map(line => {
+    .split('\n')
+    .map((line) => {
       const match = line.match(/^\s*([0-9]+)\s+([0-9]+)\s+(.*)$/);
       if (!match) return null;
       return {
         pid: Number(match[1]),
         ppid: Number(match[2]),
-        command: match[3],
+        command: match[3]
       };
     })
     .filter(Boolean);
@@ -75,7 +85,7 @@ export function expandProcessTree(rootPids, rows) {
       }
     }
   }
-  return [...all].filter(pid => pid !== process.pid);
+  return [...all].filter((pid) => pid !== process.pid);
 }
 
 function processAlive(pid) {
@@ -105,7 +115,7 @@ function signalPids(pids, signal) {
       process.kill(pid, signal);
       signaled.push(pid);
     } catch (error) {
-      if (error?.code !== "ESRCH") {
+      if (error?.code !== 'ESRCH') {
         failed.push({ pid, error: error?.message || String(error) });
       }
     }
@@ -113,11 +123,8 @@ function signalPids(pids, signal) {
   return { signaled, failed };
 }
 
-export async function terminateProcessTree(rootPids, {
-  termTimeoutMs = 2000,
-  killTimeoutMs = 1000,
-} = {}) {
-  const roots = parsePids(Array.isArray(rootPids) ? rootPids.join("\n") : rootPids);
+export async function terminateProcessTree(rootPids, { termTimeoutMs = 2000, killTimeoutMs = 1000 } = {}) {
+  const roots = parsePids(Array.isArray(rootPids) ? rootPids.join('\n') : rootPids);
   if (!roots.length) {
     return { roots: [], pids: [], terminated: [], killed: [], survivors: [], failed: [] };
   }
@@ -128,12 +135,12 @@ export async function terminateProcessTree(rootPids, {
     return { roots, pids: [], terminated: [], killed: [], survivors: [], failed: [] };
   }
 
-  const term = signalPids(pids, "SIGTERM");
+  const term = signalPids(pids, 'SIGTERM');
   let survivors = await waitForGone(pids, termTimeoutMs);
   let killed = [];
   let killFailed = [];
   if (survivors.length) {
-    const kill = signalPids(survivors, "SIGKILL");
+    const kill = signalPids(survivors, 'SIGKILL');
     killed = kill.signaled;
     killFailed = kill.failed;
     survivors = await waitForGone(survivors, killTimeoutMs);
@@ -145,7 +152,7 @@ export async function terminateProcessTree(rootPids, {
     terminated: term.signaled,
     killed,
     survivors,
-    failed: [...term.failed, ...killFailed],
+    failed: [...term.failed, ...killFailed]
   };
 }
 
@@ -156,6 +163,6 @@ export async function cleanupPortListener(port, options = {}) {
   }
   return {
     port,
-    ...(await terminateProcessTree(roots, options)),
+    ...(await terminateProcessTree(roots, options))
   };
 }

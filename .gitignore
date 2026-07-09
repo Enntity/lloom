@@ -1,10 +1,15 @@
 node_modules/
+.lloom/
 .DS_Store
 .env
 .env.*
 !.env.example
 *.log
+*.out
 clients/generated/*
 !clients/generated/.gitkeep
 data/
+logs/
 tmp/
+community/keys/*private*.pem
+community/submissions/

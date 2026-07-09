@@ -1,0 +1,175 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-qwen36-27b-nvfp4-vllm",
+  "name": "Linux NVIDIA Qwen3.6 27B NVFP4 vLLM",
+  "version": 1,
+  "summary": "CUDA/NVIDIA Qwen3.6 27B NVFP4 lane using vLLM with long context, prefix caching, tool calls, Qwen reasoning, and MTP speculative decoding.",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe metadata license"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "public NVIDIA Developer Forum recipe and benchmark evidence"
+  },
+  "links": [
+    {
+      "rel": "benchmark",
+      "href": "../benchmarks/linux-nvidia-qwen36-vllm.json",
+      "mediaType": "application/vnd.lloom.benchmark-suite+json;version=1"
+    },
+    {
+      "rel": "source",
+      "href": "https://forums.developer.nvidia.com/t/benchmark-report-qwen-qwen3-6-27b-vs-nvidia-qwen3-6-27b-nvfp4/375094",
+      "mediaType": "text/html"
+    }
+  ],
+  "keywords": [
+    "agentic-coding",
+    "coding-agent",
+    "local-first",
+    "qwen3.6",
+    "nvidia",
+    "cuda",
+    "vllm",
+    "nvfp4",
+    "long-context"
+  ],
+  "capabilities": [
+    "chat",
+    "responses",
+    "anthropic-messages",
+    "streaming",
+    "usage",
+    "tools",
+    "reasoning",
+    "mtp",
+    "batching",
+    "long-context"
+  ],
+  "hardware": {
+    "family": "Linux NVIDIA CUDA",
+    "testedMachine": "DGX Spark / GB10 class NVIDIA system",
+    "notes": [
+      "Prefer this lane for CUDA machines with enough memory for NVFP4 Qwen3.6 27B and long-context KV cache.",
+      "Recipe settings are conservative package seeds; community hosts should publish hardware-specific variants as benchmark evidence grows."
+    ]
+  },
+  "requirements": {
+    "platforms": ["linux-x64", "linux-arm64"],
+    "memoryGb": 96,
+    "diskGb": 40,
+    "commands": ["vllm"],
+    "accelerators": ["cuda", "nvidia-gpu"]
+  },
+  "backend": {
+    "id": "vllm",
+    "name": "vLLM",
+    "type": "openai-compatible-server",
+    "features": ["cuda", "openai-chat", "streaming", "tools", "batching", "mtp"]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-vllm",
+        "title": "Check vLLM CLI",
+        "action": "check-command",
+        "command": "vllm",
+        "args": ["--version"]
+      },
+      {
+        "id": "download-qwen36-27b-nvfp4",
+        "title": "Download Qwen3.6 27B NVFP4",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "nvidia/Qwen3.6-27B-NVFP4"
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "default",
+      "model": "nvidia/Qwen3.6-27B-NVFP4",
+      "gatewayModel": "nvidia/Qwen3.6-27B-NVFP4",
+      "runtime": "vllm-qwen36-27b-nvfp4",
+      "backendConfig": "vllm-qwen36-27b-nvfp4",
+      "backend": "vLLM CUDA",
+      "input": ["text"],
+      "output": ["text"],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "usage",
+        "tools",
+        "reasoning",
+        "mtp",
+        "batching",
+        "long-context"
+      ],
+      "settings": {
+        "contextWindow": 262144,
+        "maxOutputTokens": 32768,
+        "maxActiveRequests": 8,
+        "memoryGb": 96,
+        "runtime": {
+          "command": "vllm",
+          "args": [
+            "serve",
+            "${modelPath}",
+            "-O3",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "${port}",
+            "--served-model-name",
+            "${modelId}",
+            "--tensor-parallel-size",
+            "1",
+            "--trust-remote-code",
+            "--quantization",
+            "modelopt",
+            "--kv-cache-dtype",
+            "fp8",
+            "--attention-backend",
+            "flashinfer",
+            "--gpu-memory-utilization",
+            "0.70",
+            "--max-model-len",
+            "262144",
+            "--max-num-seqs",
+            "4",
+            "--max-num-batched-tokens",
+            "8192",
+            "--enable-chunked-prefill",
+            "--async-scheduling",
+            "--enable-prefix-caching",
+            "--speculative-config",
+            "{\"method\":\"mtp\",\"num_speculative_tokens\":3}",
+            "--load-format",
+            "fastsafetensors",
+            "--reasoning-parser",
+            "qwen3",
+            "--tool-call-parser",
+            "qwen3_xml",
+            "--enable-auto-tool-choice"
+          ],
+          "adapter": "vllm",
+          "baseUrlPath": "/v1",
+          "healthPath": "/health",
+          "warmupPath": "/v1/chat/completions"
+        }
+      },
+      "observed": {
+        "generationTokPerSec": 98.1,
+        "prefillTokPerSec": 1798,
+        "timeToFirstTokenMs": 11801,
+        "notes": "Public forum llama-benchy result for pp2048 tg128 @ d4096 c4 on a DGX Spark / GB10 class setup."
+      }
+    }
+  ]
+}

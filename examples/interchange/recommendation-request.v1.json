@@ -1,0 +1,37 @@
+{
+  "$schema": "https://lloom.dev/schemas/recommendation-request.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "recommend-apple-silicon-agentic-coding",
+  "name": "Apple Silicon agentic coding recommendation request",
+  "machineProfile": {
+    "$schema": "https://lloom.dev/schemas/machine-profile.v1.schema.json",
+    "schemaVersion": 1,
+    "profile": "https://lloom.dev/profiles/interchange/v1",
+    "id": "darwin-arm64-96gb",
+    "platform": "darwin",
+    "arch": "arm64",
+    "platformId": "darwin-arm64",
+    "cpuBrand": "Apple Silicon",
+    "totalMemoryGb": 96,
+    "accelerators": ["apple-gpu", "metal"],
+    "devices": [
+      {
+        "id": "apple-gpu",
+        "kind": "gpu",
+        "vendor": "apple",
+        "name": "Apple GPU",
+        "backend": "metal",
+        "accelerators": ["apple-gpu", "metal"]
+      }
+    ]
+  },
+  "request": {
+    "filters": {
+      "workloads": ["agentic-coding"],
+      "capabilities": ["tools", "reasoning", "long-context"],
+      "tags": ["coding-agent"]
+    }
+  },
+  "limit": 1
+}

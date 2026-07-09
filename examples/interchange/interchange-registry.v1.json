@@ -1,0 +1,392 @@
+{
+  "$schema": "https://lloom.dev/schemas/interchange-registry.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "lloom-interchange-v1",
+  "name": "LLooM Interchange Registry v1",
+  "summary": "Machine-readable registry for LLooM v1 interchange schemas, media types, endpoints, and extension policy.",
+  "license": "CC-BY-4.0",
+  "publisher": {
+    "id": "lloom",
+    "name": "LLooM Project",
+    "url": "https://lloom.dev"
+  },
+  "updatedAt": "2026-07-07T00:00:00.000Z",
+  "provenance": {
+    "generatedBy": "lloom",
+    "source": "src/interchange.mjs"
+  },
+  "links": [
+    {
+      "rel": "describedby",
+      "href": "https://lloom.dev/docs/interchange",
+      "mediaType": "text/markdown"
+    },
+    {
+      "rel": "profile",
+      "href": "https://lloom.dev/profiles/interchange/v1",
+      "mediaType": "text/markdown"
+    },
+    {
+      "rel": "extension-policy",
+      "href": "https://lloom.dev/profiles/extensions/v1",
+      "mediaType": "text/markdown"
+    },
+    {
+      "rel": "schemas",
+      "href": "https://lloom.dev/schemas/"
+    }
+  ],
+  "conformance": {
+    "profile": "https://lloom.dev/profiles/interchange/v1",
+    "specVersion": "1.0.0",
+    "schemaFamily": "https://lloom.dev/schemas/",
+    "extensionPrefix": "x-",
+    "extensionPolicy": "https://lloom.dev/profiles/extensions/v1",
+    "canonicalization": "lloom-canonical-json-v1",
+    "signatureAlgorithm": "ed25519",
+    "status": "draft-stable-v1",
+    "conformanceLevels": ["parse", "validate", "publish"],
+    "defaultConformanceLevel": "validate",
+    "contentNegotiation": "Prefer registered application/vnd.lloom.*+json media types with version=1; application/json is tolerated for local development.",
+    "compatibility": {
+      "additiveFields": "minor-compatible",
+      "removalOrMeaningChange": "major-version-only",
+      "extensions": "x-* fields are preserved by conforming consumers",
+      "errorResponses": "error-response.v1 is safe for any non-2xx response from public LLooM interchange endpoints",
+      "validationReports": "validation-report.v1 is the stable automation contract for validator and CI output"
+    }
+  },
+  "documents": [
+    {
+      "kind": "interchangeRegistry",
+      "name": "Interchange Registry",
+      "description": "Machine-readable registry of LLooM v1 schemas, media types, endpoints, and extension policy.",
+      "conformanceLevel": "publish",
+      "schema": "https://lloom.dev/schemas/interchange-registry.v1.schema.json",
+      "mediaType": "application/vnd.lloom.interchange-registry+json;version=1",
+      "status": "draft-stable",
+      "since": "0.1.0",
+      "compatibility": "minor-compatible-within-schemaVersion-1"
+    },
+    {
+      "kind": "backendCatalog",
+      "name": "Backend Catalog",
+      "description": "Runtime-family metadata that recipes can target.",
+      "schema": "https://lloom.dev/schemas/backend-catalog.v1.schema.json",
+      "mediaType": "application/vnd.lloom.backend-catalog+json;version=1",
+      "status": "draft-stable",
+      "since": "0.1.0",
+      "compatibility": "minor-compatible-within-schemaVersion-1",
+      "conformanceLevel": "validate"
+    },
+    {
+      "kind": "clientIntegrations",
+      "name": "Client Integrations",
+      "description": "Discovery metadata for local gateway clients and generated integration artifacts.",
+      "schema": "https://lloom.dev/schemas/client-integrations.v1.schema.json",
+      "mediaType": "application/vnd.lloom.client-integrations+json;version=1",
+      "status": "draft-stable",
+      "since": "0.1.0",
+      "compatibility": "minor-compatible-within-schemaVersion-1",
+      "conformanceLevel": "validate"
+    },
+    {
+      "kind": "machineProfile",
+      "name": "Machine Profile",
+      "description": "Portable hardware profile used for recipe matching.",
+      "schema": "https://lloom.dev/schemas/machine-profile.v1.schema.json",
+      "mediaType": "application/vnd.lloom.machine-profile+json;version=1",
+      "status": "draft-stable",
+      "since": "0.1.0",
+      "compatibility": "minor-compatible-within-schemaVersion-1",
+      "conformanceLevel": "validate"
+    },
+    {
+      "kind": "recommendationRequest",
+      "name": "Recommendation Request",
+      "description": "Hosted recommendation request containing a machine profile and optional workload/capability intent.",
+      "schema": "https://lloom.dev/schemas/recommendation-request.v1.schema.json",
+      "mediaType": "application/vnd.lloom.recommendation-request+json;version=1",
+      "status": "draft-stable",
+      "since": "0.1.0",
+      "compatibility": "minor-compatible-within-schemaVersion-1",
+      "conformanceLevel": "validate"
+    },
+    {
+      "kind": "recommendationResponse",
+      "name": "Recommendation Response",
+      "description": "Hosted recommendation response for a submitted machine profile.",
+      "schema": "https://lloom.dev/schemas/recommendation-response.v1.schema.json",
+      "mediaType": "application/vnd.lloom.recommendation-response+json;version=1",
+      "status": "draft-stable",
+      "since": "0.1.0",
+      "compatibility": "minor-compatible-within-schemaVersion-1",
+      "conformanceLevel": "validate"
+    },
+    {
+      "kind": "recipe",
+      "name": "Recipe",
+      "description": "One portable backend/model setup recipe.",
+      "schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+      "mediaType": "application/vnd.lloom.recipe+json;version=1",
+      "status": "draft-stable",
+      "since": "0.1.0",
+      "compatibility": "minor-compatible-within-schemaVersion-1",
+      "conformanceLevel": "validate"
+    },
+    {
+      "kind": "recipeIndex",
+      "name": "Recipe Index",
+      "description": "Searchable list of recipe entries.",
+      "schema": "https://lloom.dev/schemas/recipe-index.v1.schema.json",
+      "mediaType": "application/vnd.lloom.recipe-index+json;version=1",
+      "status": "draft-stable",
+      "since": "0.1.0",
+      "compatibility": "minor-compatible-within-schemaVersion-1",
+      "conformanceLevel": "validate"
+    },
+    {
+      "kind": "benchmarkSuite",
+      "name": "Benchmark Suite",
+      "description": "Measured model/backend evidence with methodology and workload metadata.",
+      "schema": "https://lloom.dev/schemas/benchmark-suite.v1.schema.json",
+      "mediaType": "application/vnd.lloom.benchmark-suite+json;version=1",
+      "status": "draft-stable",
+      "since": "0.1.0",
+      "compatibility": "minor-compatible-within-schemaVersion-1",
+      "conformanceLevel": "validate"
+    },
+    {
+      "kind": "benchmarkSubmissionResponse",
+      "name": "Benchmark Submission Response",
+      "description": "Portable receipt returned by benchmark submission endpoints.",
+      "schema": "https://lloom.dev/schemas/benchmark-submission-response.v1.schema.json",
+      "mediaType": "application/vnd.lloom.benchmark-submission-response+json;version=1",
+      "status": "draft-stable",
+      "since": "0.1.0",
+      "compatibility": "minor-compatible-within-schemaVersion-1",
+      "conformanceLevel": "validate"
+    },
+    {
+      "kind": "recipePack",
+      "name": "Recipe Pack",
+      "description": "Bundle containing recipe index metadata, recipes, benchmark suites, and optional signatures.",
+      "schema": "https://lloom.dev/schemas/recipe-pack.v1.schema.json",
+      "mediaType": "application/vnd.lloom.recipe-pack+json;version=1",
+      "status": "draft-stable",
+      "since": "0.1.0",
+      "compatibility": "minor-compatible-within-schemaVersion-1",
+      "conformanceLevel": "validate"
+    },
+    {
+      "kind": "recipePackSubmissionResponse",
+      "name": "Recipe Pack Submission Response",
+      "description": "Portable receipt returned by recipe-pack submission endpoints.",
+      "schema": "https://lloom.dev/schemas/recipe-pack-submission-response.v1.schema.json",
+      "mediaType": "application/vnd.lloom.recipe-pack-submission-response+json;version=1",
+      "status": "draft-stable",
+      "since": "0.1.0",
+      "compatibility": "minor-compatible-within-schemaVersion-1",
+      "conformanceLevel": "validate"
+    },
+    {
+      "kind": "signingKeys",
+      "name": "Signing Keys",
+      "description": "Public Ed25519 keys used to verify LLooM recipe-pack and recommendation-feed signatures.",
+      "conformanceLevel": "publish",
+      "schema": "https://lloom.dev/schemas/signing-keys.v1.schema.json",
+      "mediaType": "application/vnd.lloom.signing-keys+json;version=1",
+      "status": "draft-stable",
+      "since": "0.1.0",
+      "compatibility": "minor-compatible-within-schemaVersion-1"
+    },
+    {
+      "kind": "errorResponse",
+      "name": "Error Response",
+      "description": "Portable non-2xx error body for LLooM-compatible public endpoints.",
+      "conformanceLevel": "validate",
+      "schema": "https://lloom.dev/schemas/error-response.v1.schema.json",
+      "mediaType": "application/vnd.lloom.error-response+json;version=1",
+      "status": "draft-stable",
+      "since": "0.1.0",
+      "compatibility": "minor-compatible-within-schemaVersion-1"
+    },
+    {
+      "kind": "validationReport",
+      "name": "Validation Report",
+      "description": "Portable conformance result returned by LLooM-compatible validators and CI checks.",
+      "conformanceLevel": "publish",
+      "schema": "https://lloom.dev/schemas/validation-report.v1.schema.json",
+      "mediaType": "application/vnd.lloom.validation-report+json;version=1",
+      "status": "draft-stable",
+      "since": "0.1.0",
+      "compatibility": "minor-compatible-within-schemaVersion-1"
+    }
+  ],
+  "endpoints": [
+    {
+      "method": "GET",
+      "path": "/v1/interchange",
+      "responseKind": "interchangeRegistry",
+      "successStatus": 200,
+      "description": "Discover the LLooM v1 interchange registry.",
+      "responseMediaType": "application/vnd.lloom.interchange-registry+json;version=1",
+      "responseSchema": "https://lloom.dev/schemas/interchange-registry.v1.schema.json",
+      "errorKind": "errorResponse",
+      "errorMediaType": "application/vnd.lloom.error-response+json;version=1",
+      "errorSchema": "https://lloom.dev/schemas/error-response.v1.schema.json"
+    },
+    {
+      "method": "GET",
+      "path": "/.well-known/lloom-interchange",
+      "responseKind": "interchangeRegistry",
+      "successStatus": 200,
+      "description": "Well-known discovery alias for the LLooM v1 interchange registry.",
+      "responseMediaType": "application/vnd.lloom.interchange-registry+json;version=1",
+      "responseSchema": "https://lloom.dev/schemas/interchange-registry.v1.schema.json",
+      "errorKind": "errorResponse",
+      "errorMediaType": "application/vnd.lloom.error-response+json;version=1",
+      "errorSchema": "https://lloom.dev/schemas/error-response.v1.schema.json"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/backends/catalog",
+      "responseKind": "backendCatalog",
+      "successStatus": 200,
+      "description": "Fetch the portable backend catalog with setup actions, server contracts, and supported platforms.",
+      "responseMediaType": "application/vnd.lloom.backend-catalog+json;version=1",
+      "responseSchema": "https://lloom.dev/schemas/backend-catalog.v1.schema.json",
+      "errorKind": "errorResponse",
+      "errorMediaType": "application/vnd.lloom.error-response+json;version=1",
+      "errorSchema": "https://lloom.dev/schemas/error-response.v1.schema.json"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/backends",
+      "successStatus": 200,
+      "description": "Fetch a lightweight searchable backend-family index from this host.",
+      "x-responseKind": "backendSummaryList",
+      "errorKind": "errorResponse",
+      "errorMediaType": "application/vnd.lloom.error-response+json;version=1",
+      "errorSchema": "https://lloom.dev/schemas/error-response.v1.schema.json"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/keys",
+      "responseKind": "signingKeys",
+      "successStatus": 200,
+      "description": "Fetch active public signing keys for recipe-pack and recommendation-feed verification.",
+      "responseMediaType": "application/vnd.lloom.signing-keys+json;version=1",
+      "responseSchema": "https://lloom.dev/schemas/signing-keys.v1.schema.json",
+      "errorKind": "errorResponse",
+      "errorMediaType": "application/vnd.lloom.error-response+json;version=1",
+      "errorSchema": "https://lloom.dev/schemas/error-response.v1.schema.json"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/recipes",
+      "successStatus": 200,
+      "description": "Search recipe metadata available from this host.",
+      "queryParameters": ["q", "query", "tag", "capability", "platform"],
+      "x-responseKind": "recipeSearchResults",
+      "errorKind": "errorResponse",
+      "errorMediaType": "application/vnd.lloom.error-response+json;version=1",
+      "errorSchema": "https://lloom.dev/schemas/error-response.v1.schema.json"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/leaderboard",
+      "successStatus": 200,
+      "description": "Fetch machine- and workload-filterable benchmark leaderboard rows.",
+      "queryParameters": ["recipe", "recipe_id", "backend", "backend_id", "model", "platform", "workload"],
+      "x-responseKind": "leaderboard",
+      "errorKind": "errorResponse",
+      "errorMediaType": "application/vnd.lloom.error-response+json;version=1",
+      "errorSchema": "https://lloom.dev/schemas/error-response.v1.schema.json"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/recipe-packs/:id",
+      "responseKind": "recipePack",
+      "successStatus": 200,
+      "description": "Fetch one recipe pack by stable ID.",
+      "responseMediaType": "application/vnd.lloom.recipe-pack+json;version=1",
+      "responseSchema": "https://lloom.dev/schemas/recipe-pack.v1.schema.json",
+      "errorKind": "errorResponse",
+      "errorMediaType": "application/vnd.lloom.error-response+json;version=1",
+      "errorSchema": "https://lloom.dev/schemas/error-response.v1.schema.json"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/recipe-packs/recommended",
+      "responseKind": "recommendationResponse",
+      "successStatus": 200,
+      "description": "Recommend recipe packs for a submitted or query-derived machine profile and optional workload/capability intent.",
+      "queryParameters": [
+        "platform",
+        "platform_id",
+        "arch",
+        "memory_gb",
+        "cpu",
+        "workload",
+        "capability",
+        "tag",
+        "limit"
+      ],
+      "responseMediaType": "application/vnd.lloom.recommendation-response+json;version=1",
+      "responseSchema": "https://lloom.dev/schemas/recommendation-response.v1.schema.json",
+      "errorKind": "errorResponse",
+      "errorMediaType": "application/vnd.lloom.error-response+json;version=1",
+      "errorSchema": "https://lloom.dev/schemas/error-response.v1.schema.json"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/recipe-packs/recommended",
+      "requestKind": "recommendationRequest",
+      "responseKind": "recommendationResponse",
+      "successStatus": 200,
+      "idempotent": true,
+      "description": "Recommend recipe packs for a full machine-profile request document and optional workload/capability intent.",
+      "requestMediaType": "application/vnd.lloom.recommendation-request+json;version=1",
+      "requestSchema": "https://lloom.dev/schemas/recommendation-request.v1.schema.json",
+      "responseMediaType": "application/vnd.lloom.recommendation-response+json;version=1",
+      "responseSchema": "https://lloom.dev/schemas/recommendation-response.v1.schema.json",
+      "errorKind": "errorResponse",
+      "errorMediaType": "application/vnd.lloom.error-response+json;version=1",
+      "errorSchema": "https://lloom.dev/schemas/error-response.v1.schema.json"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/recipe-packs",
+      "requestKind": "recipePack",
+      "responseKind": "recipePackSubmissionResponse",
+      "successStatus": 202,
+      "idempotent": false,
+      "description": "Submit a recipe pack for validation, moderation, signing, or publication.",
+      "requestMediaType": "application/vnd.lloom.recipe-pack+json;version=1",
+      "requestSchema": "https://lloom.dev/schemas/recipe-pack.v1.schema.json",
+      "responseMediaType": "application/vnd.lloom.recipe-pack-submission-response+json;version=1",
+      "responseSchema": "https://lloom.dev/schemas/recipe-pack-submission-response.v1.schema.json",
+      "errorKind": "errorResponse",
+      "errorMediaType": "application/vnd.lloom.error-response+json;version=1",
+      "errorSchema": "https://lloom.dev/schemas/error-response.v1.schema.json"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/benchmarks",
+      "requestKind": "benchmarkSuite",
+      "responseKind": "benchmarkSubmissionResponse",
+      "successStatus": 202,
+      "idempotent": false,
+      "description": "Submit benchmark evidence for validation, moderation, and leaderboard consideration.",
+      "requestMediaType": "application/vnd.lloom.benchmark-suite+json;version=1",
+      "requestSchema": "https://lloom.dev/schemas/benchmark-suite.v1.schema.json",
+      "responseMediaType": "application/vnd.lloom.benchmark-submission-response+json;version=1",
+      "responseSchema": "https://lloom.dev/schemas/benchmark-submission-response.v1.schema.json",
+      "errorKind": "errorResponse",
+      "errorMediaType": "application/vnd.lloom.error-response+json;version=1",
+      "errorSchema": "https://lloom.dev/schemas/error-response.v1.schema.json"
+    }
+  ]
+}

@@ -1,41 +1,53 @@
 {
+  "$schema": "https://lloom.dev/schemas/backend-catalog.v1.schema.json",
   "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "lloom-backends",
+  "name": "LLooM Backend Catalog",
+  "summary": "Portable runtime backend families that LLooM recipes can target.",
+  "license": {
+    "id": "MIT",
+    "name": "Backend metadata license"
+  },
+  "updatedAt": "2026-07-07T00:00:00Z",
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated"
+  },
   "backends": [
     {
       "id": "mtplx",
       "name": "MTPLX",
       "kind": "openai-compatible-server",
       "description": "MLX-native MTP runtime for fast Qwen/Gemma style models on Apple Silicon.",
-      "platforms": [
-        "darwin-arm64"
-      ],
-      "features": [
-        "chat",
-        "streaming",
-        "usage",
-        "tools",
-        "reasoning",
-        "mtp",
-        "mlx"
-      ],
-      "commands": [
-        "mtplx"
-      ],
+      "platforms": ["darwin-arm64"],
+      "features": ["chat", "streaming", "usage", "tools", "reasoning", "mtp", "mlx"],
+      "commands": ["mtplx"],
       "setup": [
         {
           "id": "check-mtplx",
           "title": "Check MTPLX CLI",
           "action": "check-command",
           "command": "mtplx",
-          "args": [
-            "--version"
-          ]
+          "args": ["--version"]
         },
         {
           "id": "install-python-env",
           "title": "Install MTPLX into a Python environment",
-          "action": "manual",
-          "description": "Create or reuse a Python environment and install MTPLX from its published package or repository release."
+          "action": "python-venv",
+          "description": "Create a LLooM-managed Python environment for MTPLX.",
+          "skipIfExecutableExists": ["${LLOOM_MTPLX_BIN}"],
+          "path": "${installRoot}/mtplx/venv"
+        },
+        {
+          "id": "install-mtplx",
+          "title": "Install MTPLX package",
+          "action": "pip-install",
+          "description": "Install the published MTPLX package into the LLooM-managed environment.",
+          "skipIfExecutableExists": ["${LLOOM_MTPLX_BIN}", "${installRoot}/mtplx/venv/bin/mtplx"],
+          "venv": "${installRoot}/mtplx/venv",
+          "args": ["--upgrade"],
+          "packages": ["pip", "mtplx"]
         },
         {
           "id": "link-mtplx",
@@ -61,39 +73,23 @@
       "name": "MLX LM",
       "kind": "openai-compatible-server",
       "description": "Apple MLX reference runtime for text-generation and multimodal MLX models.",
-      "platforms": [
-        "darwin-arm64"
-      ],
-      "features": [
-        "chat",
-        "streaming",
-        "mlx",
-        "vision"
-      ],
-      "commands": [
-        "mlx_lm.server"
-      ],
+      "platforms": ["darwin-arm64"],
+      "features": ["chat", "streaming", "mlx", "vision"],
+      "commands": ["mlx_lm.server"],
       "setup": [
         {
           "id": "check-mlx-lm",
           "title": "Check MLX LM server",
           "action": "check-command",
           "command": "mlx_lm.server",
-          "args": [
-            "--help"
-          ]
+          "args": ["--help"]
         },
         {
           "id": "install-mlx-lm",
           "title": "Install MLX LM",
           "action": "command",
           "command": "python3",
-          "args": [
-            "-m",
-            "pip",
-            "install",
-            "mlx-lm"
-          ]
+          "args": ["-m", "pip", "install", "mlx-lm"]
         }
       ],
       "server": {
@@ -107,38 +103,44 @@
       "name": "llama.cpp",
       "kind": "openai-compatible-server",
       "description": "Portable GGUF runtime with Metal/CUDA/CPU backends and long-context server support.",
-      "platforms": [
-        "darwin-arm64",
-        "darwin-x64",
-        "linux-x64",
-        "linux-arm64"
-      ],
-      "features": [
-        "chat",
-        "streaming",
-        "usage",
-        "tools",
-        "gguf",
-        "long-context"
-      ],
-      "commands": [
-        "llama-server"
-      ],
+      "platforms": ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"],
+      "features": ["chat", "streaming", "usage", "tools", "gguf", "long-context"],
+      "commands": ["llama-server"],
       "setup": [
         {
           "id": "check-llama-server",
           "title": "Check llama-server",
           "action": "check-command",
           "command": "llama-server",
-          "args": [
-            "--version"
-          ]
+          "args": ["--version"]
         },
         {
           "id": "install-llama-cpp",
-          "title": "Install llama.cpp",
-          "action": "manual",
-          "description": "Install a local llama.cpp build appropriate for the machine accelerator, then expose llama-server on PATH."
+          "title": "Clone llama.cpp",
+          "action": "git-clone",
+          "description": "Clone llama.cpp into the LLooM backend install root if it is not already present.",
+          "repo": "https://github.com/ggml-org/llama.cpp.git",
+          "destination": "${installRoot}/llama.cpp",
+          "depth": 1
+        },
+        {
+          "id": "configure-llama-cpp",
+          "title": "Configure llama.cpp",
+          "action": "cmake-configure",
+          "description": "Generate the llama.cpp CMake build tree.",
+          "source": "${installRoot}/llama.cpp",
+          "build": "${installRoot}/llama.cpp/build",
+          "skipIfExecutableExists": ["${installRoot}/llama.cpp/build/bin/llama-server"],
+          "args": ["-DCMAKE_BUILD_TYPE=Release"]
+        },
+        {
+          "id": "build-llama-cpp",
+          "title": "Build llama-server",
+          "action": "cmake-build",
+          "description": "Build llama-server for the current machine.",
+          "build": "${installRoot}/llama.cpp/build",
+          "skipIfExecutableExists": ["${installRoot}/llama.cpp/build/bin/llama-server"],
+          "args": ["--config", "Release", "--parallel"]
         },
         {
           "id": "link-llama-server",
@@ -147,9 +149,12 @@
           "commandName": "llama-server",
           "sourceCandidates": [
             "${LLOOM_LLAMA_SERVER_BIN}",
+            "${backendRoot}/llama.cpp/build-metal/bin/llama-server",
             "${backendRoot}/llama.cpp/build/bin/llama-server",
             "${backendRoot}/llama.cpp/build-https/bin/llama-server",
+            "${installRoot}/llama.cpp/build-metal/bin/llama-server",
             "${installRoot}/llama.cpp/build/bin/llama-server",
+            "${repoParent}/llama.cpp/build-metal/bin/llama-server",
             "${repoParent}/llama.cpp/build/bin/llama-server",
             "${repoParent}/llama.cpp/build-https/bin/llama-server"
           ]
@@ -166,35 +171,32 @@
       "name": "Ollama",
       "kind": "openai-compatible-server",
       "description": "Popular local model manager and server with broad model catalog support.",
-      "platforms": [
-        "darwin-arm64",
-        "darwin-x64",
-        "linux-x64",
-        "linux-arm64"
-      ],
-      "features": [
-        "chat",
-        "streaming",
-        "model-management"
-      ],
-      "commands": [
-        "ollama"
-      ],
+      "platforms": ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"],
+      "features": ["chat", "streaming", "model-management"],
+      "commands": ["ollama"],
       "setup": [
         {
           "id": "check-ollama",
           "title": "Check Ollama",
           "action": "check-command",
           "command": "ollama",
-          "args": [
-            "--version"
-          ]
+          "args": ["--version"]
         },
         {
           "id": "install-ollama",
           "title": "Install Ollama",
+          "action": "brew-install",
+          "description": "Install Ollama through Homebrew on macOS.",
+          "platforms": ["darwin-arm64", "darwin-x64"],
+          "package": "ollama",
+          "skipIfCommandAvailable": "ollama"
+        },
+        {
+          "id": "install-ollama-linux",
+          "title": "Install Ollama on Linux",
           "action": "manual",
-          "description": "Install Ollama using the native desktop/package installer for the platform."
+          "description": "Install Ollama using the official Linux installer, then re-run this plan so LLooM can verify the `ollama` command.",
+          "platforms": ["linux-x64", "linux-arm64"]
         }
       ],
       "server": {
@@ -204,33 +206,64 @@
       }
     },
     {
+      "id": "openai-compatible",
+      "name": "OpenAI-compatible server",
+      "kind": "openai-compatible-server",
+      "description": "Generic bridge for any local or LAN server that already exposes OpenAI-compatible chat endpoints.",
+      "platforms": ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "win32-x64"],
+      "features": ["chat", "streaming", "usage", "tools", "external-server"],
+      "commands": [],
+      "setup": [
+        {
+          "id": "start-openai-compatible-server",
+          "title": "Start the OpenAI-compatible server",
+          "action": "manual",
+          "description": "Start the external server and make sure its /v1/chat/completions endpoint is reachable before routing traffic through LLooM."
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/v1/models",
+        "chatPath": "/v1/chat/completions"
+      }
+    },
+    {
+      "id": "lm-studio",
+      "name": "LM Studio",
+      "kind": "openai-compatible-server",
+      "description": "LM Studio local server bridge using its OpenAI-compatible endpoint, usually http://127.0.0.1:1234/v1.",
+      "platforms": ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "win32-x64"],
+      "features": ["chat", "streaming", "usage", "tools", "vision", "external-server", "desktop-app"],
+      "commands": [],
+      "setup": [
+        {
+          "id": "start-lm-studio-server",
+          "title": "Start the LM Studio local server",
+          "action": "manual",
+          "description": "Open LM Studio, load a model, enable the local server, and confirm it is listening on http://127.0.0.1:1234/v1 or the port selected in the LLooM model import plan."
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/v1/models",
+        "chatPath": "/v1/chat/completions"
+      }
+    },
+    {
       "id": "optiq",
       "name": "OptiQ MLX",
       "kind": "openai-compatible-server",
       "description": "MLX community OptiQ quant runtime family for high-throughput Apple Silicon inference.",
-      "platforms": [
-        "darwin-arm64"
-      ],
-      "features": [
-        "chat",
-        "streaming",
-        "usage",
-        "vision",
-        "mlx",
-        "quantized"
-      ],
-      "commands": [
-        "python3"
-      ],
+      "platforms": ["darwin-arm64"],
+      "features": ["chat", "streaming", "usage", "vision", "mlx", "quantized"],
+      "commands": ["python3"],
       "setup": [
         {
           "id": "check-python",
           "title": "Check Python",
           "action": "check-command",
           "command": "python3",
-          "args": [
-            "--version"
-          ]
+          "args": ["--version"]
         },
         {
           "id": "install-optiq-runtime",
@@ -250,35 +283,55 @@
       "name": "stable-diffusion.cpp",
       "kind": "image-server",
       "description": "Local C/C++ image generation runtime for Flux and Stable Diffusion style models.",
-      "platforms": [
-        "darwin-arm64",
-        "darwin-x64",
-        "linux-x64",
-        "linux-arm64"
-      ],
-      "features": [
-        "image-generation",
-        "flux",
-        "stable-diffusion"
-      ],
-      "commands": [
-        "sd"
-      ],
+      "platforms": ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"],
+      "features": ["image-generation", "flux", "stable-diffusion"],
+      "commands": ["sd"],
       "setup": [
         {
           "id": "check-sd",
           "title": "Check stable-diffusion.cpp executable",
           "action": "check-command",
           "command": "sd",
-          "args": [
-            "--help"
-          ]
+          "args": ["--help"]
         },
         {
           "id": "install-stable-diffusion-cpp",
           "title": "Install stable-diffusion.cpp",
-          "action": "manual",
-          "description": "Install or build stable-diffusion.cpp with the accelerator backend appropriate for this machine."
+          "action": "git-clone",
+          "description": "Clone stable-diffusion.cpp into the LLooM backend install root if it is not already present.",
+          "repo": "https://github.com/leejet/stable-diffusion.cpp.git",
+          "destination": "${installRoot}/stable-diffusion.cpp",
+          "depth": 1
+        },
+        {
+          "id": "configure-stable-diffusion-cpp",
+          "title": "Configure stable-diffusion.cpp",
+          "action": "cmake-configure",
+          "description": "Generate the stable-diffusion.cpp CMake build tree.",
+          "source": "${installRoot}/stable-diffusion.cpp",
+          "build": "${installRoot}/stable-diffusion.cpp/build",
+          "skipIfExecutableExists": ["${installRoot}/stable-diffusion.cpp/build/bin/sd-cli"],
+          "args": ["-DCMAKE_BUILD_TYPE=Release"]
+        },
+        {
+          "id": "build-stable-diffusion-cpp",
+          "title": "Build stable-diffusion.cpp",
+          "action": "cmake-build",
+          "description": "Build the stable-diffusion.cpp CLI/server binaries for the current machine.",
+          "build": "${installRoot}/stable-diffusion.cpp/build",
+          "skipIfExecutableExists": ["${installRoot}/stable-diffusion.cpp/build/bin/sd-cli"],
+          "args": ["--config", "Release", "--parallel"]
+        },
+        {
+          "id": "link-stable-diffusion-cpp",
+          "title": "Expose stable-diffusion.cpp through LLooM shims",
+          "action": "link-command",
+          "commandName": "sd",
+          "sourceCandidates": [
+            "${backendRoot}/stable-diffusion.cpp/build/bin/sd-cli",
+            "${installRoot}/stable-diffusion.cpp/build/bin/sd-cli",
+            "${repoParent}/stable-diffusion.cpp/build/bin/sd-cli"
+          ]
         }
       ],
       "server": {
@@ -292,10 +345,60 @@
       "name": "vLLM",
       "kind": "openai-compatible-server",
       "description": "High-throughput CUDA-first inference server used widely on NVIDIA systems.",
-      "platforms": [
-        "linux-x64",
-        "linux-arm64"
+      "platforms": ["linux-x64", "linux-arm64"],
+      "features": ["chat", "streaming", "usage", "tools", "batching", "speculative-decoding", "cuda"],
+      "commands": ["vllm"],
+      "setup": [
+        {
+          "id": "check-vllm",
+          "title": "Check vLLM",
+          "action": "check-command",
+          "command": "vllm",
+          "args": ["--version"]
+        },
+        {
+          "id": "install-vllm",
+          "title": "Create vLLM Python environment",
+          "action": "python-venv",
+          "description": "Create a LLooM-managed Python environment for vLLM instead of modifying the user's global Python.",
+          "skipIfExecutableExists": ["${LLOOM_VLLM_BIN}", "${installRoot}/vllm/venv/bin/vllm"],
+          "path": "${installRoot}/vllm/venv"
+        },
+        {
+          "id": "install-vllm-package",
+          "title": "Install vLLM package",
+          "action": "pip-install",
+          "description": "Install the published vLLM package into the LLooM-managed Python environment.",
+          "skipIfExecutableExists": ["${LLOOM_VLLM_BIN}", "${installRoot}/vllm/venv/bin/vllm"],
+          "venv": "${installRoot}/vllm/venv",
+          "args": ["--upgrade"],
+          "packages": ["pip", "vllm"]
+        },
+        {
+          "id": "link-vllm",
+          "title": "Expose vLLM through LLooM shims",
+          "action": "link-command",
+          "commandName": "vllm",
+          "sourceCandidates": [
+            "${LLOOM_VLLM_BIN}",
+            "${backendRoot}/vllm/venv/bin/vllm",
+            "${installRoot}/vllm/venv/bin/vllm",
+            "${repoParent}/vllm/venv/bin/vllm"
+          ]
+        }
       ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health",
+        "chatPath": "/v1/chat/completions"
+      }
+    },
+    {
+      "id": "sglang",
+      "name": "SGLang",
+      "kind": "openai-compatible-server",
+      "description": "High-throughput OpenAI-compatible serving framework for large language and multimodal models, common on NVIDIA and AMD GPU systems.",
+      "platforms": ["linux-x64", "linux-arm64"],
       "features": [
         "chat",
         "streaming",
@@ -303,31 +406,48 @@
         "tools",
         "batching",
         "speculative-decoding",
-        "cuda"
+        "prefix-cache",
+        "vision",
+        "cuda",
+        "rocm"
       ],
-      "commands": [
-        "vllm"
-      ],
+      "commands": ["sglang-python"],
       "setup": [
         {
-          "id": "check-vllm",
-          "title": "Check vLLM",
+          "id": "check-sglang",
+          "title": "Check SGLang launcher",
           "action": "check-command",
-          "command": "vllm",
-          "args": [
-            "--version"
-          ]
+          "command": "sglang-python",
+          "args": ["-m", "sglang.launch_server", "--help"]
         },
         {
-          "id": "install-vllm",
-          "title": "Install vLLM",
-          "action": "command",
-          "command": "python3",
-          "args": [
-            "-m",
-            "pip",
-            "install",
-            "vllm"
+          "id": "install-sglang",
+          "title": "Create SGLang Python environment",
+          "action": "python-venv",
+          "description": "Create a LLooM-managed Python environment for SGLang instead of modifying the user's global Python.",
+          "skipIfExecutableExists": ["${LLOOM_SGLANG_PYTHON}", "${installRoot}/sglang/venv/bin/python"],
+          "path": "${installRoot}/sglang/venv"
+        },
+        {
+          "id": "install-sglang-package",
+          "title": "Install SGLang package",
+          "action": "pip-install",
+          "description": "Install the published SGLang package into the LLooM-managed Python environment.",
+          "skipIfExecutableExists": ["${LLOOM_SGLANG_PYTHON}", "${installRoot}/sglang/venv/bin/python"],
+          "venv": "${installRoot}/sglang/venv",
+          "args": ["--upgrade"],
+          "packages": ["pip", "sglang"]
+        },
+        {
+          "id": "link-sglang-python",
+          "title": "Expose SGLang Python through LLooM shims",
+          "action": "link-command",
+          "commandName": "sglang-python",
+          "sourceCandidates": [
+            "${LLOOM_SGLANG_PYTHON}",
+            "${backendRoot}/sglang/venv/bin/python",
+            "${installRoot}/sglang/venv/bin/python",
+            "${repoParent}/sglang/venv/bin/python"
           ]
         }
       ],

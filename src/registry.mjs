@@ -1,9 +1,9 @@
 export class UnknownModelError extends Error {
   constructor(modelId) {
     super(`unknown local model: ${modelId}`);
-    this.name = "UnknownModelError";
+    this.name = 'UnknownModelError';
     this.statusCode = 404;
-    this.code = "unknown_model";
+    this.code = 'unknown_model';
     this.modelId = modelId;
   }
 }
@@ -16,17 +16,26 @@ function advertised(value) {
   return value?.advertise !== false;
 }
 
+function runtimeEnabled(config, model) {
+  if (!model?.runtime) return true;
+  return config.runtimes?.[model.runtime]?.enabled !== false;
+}
+
+function publiclyAvailable(config, model, { requireRuntimeEnabled = true } = {}) {
+  return advertised(model) && (!requireRuntimeEnabled || runtimeEnabled(config, model));
+}
+
 function normalizeAlias(aliasId, alias) {
-  if (typeof alias === "string") {
+  if (typeof alias === 'string') {
     return {
       id: aliasId,
       target: alias,
-      advertise: true,
+      advertise: true
     };
   }
   return {
     id: aliasId,
-    ...alias,
+    ...alias
   };
 }
 
@@ -42,7 +51,7 @@ export function createRegistry(config) {
     modelMap.set(model.id, {
       advertise: true,
       ...model,
-      upstreamModel: model.upstreamModel ?? model.id,
+      upstreamModel: model.upstreamModel ?? model.id
     });
   }
 
@@ -52,12 +61,13 @@ export function createRegistry(config) {
 
   function resolve(modelId = config.defaults?.chatModel) {
     const requestedId = modelId || config.defaults?.chatModel;
-    if (!requestedId) throw new UnknownModelError("(missing)");
+    if (!requestedId) throw new UnknownModelError('(missing)');
 
     const alias = aliasMap.get(requestedId);
     const targetId = alias?.target ?? requestedId;
     const model = modelMap.get(targetId);
     if (!model) throw new UnknownModelError(requestedId);
+    if (!runtimeEnabled(config, model)) throw new UnknownModelError(requestedId);
     const backend = config.backends?.[model.backend];
     if (!backend) throw new Error(`model ${model.id} references missing backend ${model.backend}`);
     return {
@@ -66,64 +76,81 @@ export function createRegistry(config) {
       alias: alias ? clone(alias) : null,
       model: clone(model),
       backend: clone(backend),
-      runtime: model.runtime ? clone(config.runtimes?.[model.runtime] ?? null) : null,
+      runtime: model.runtime ? clone(config.runtimes?.[model.runtime] ?? null) : null
     };
   }
 
-  function directModels({ kinds, advertisedOnly = true } = {}) {
+  function directModels({ kinds, advertisedOnly = true, requireRuntimeEnabled = true } = {}) {
     let models = [...modelMap.values()];
-    if (advertisedOnly) models = models.filter(advertised);
-    if (kinds?.length) models = models.filter(model => kinds.includes(model.kind ?? "chat"));
-    return models.map(model => clone(model));
+    if (advertisedOnly)
+      models = models.filter((model) =>
+        publiclyAvailable(config, model, {
+          requireRuntimeEnabled
+        })
+      );
+    if (kinds?.length) models = models.filter((model) => kinds.includes(model.kind ?? 'chat'));
+    return models.map((model) => clone(model));
   }
 
-  function aliasModels({ kinds, advertisedOnly = true } = {}) {
+  function aliasModels({ kinds, advertisedOnly = true, requireRuntimeEnabled = true } = {}) {
     const entries = [];
     for (const alias of aliasMap.values()) {
       if (advertisedOnly && !advertised(alias)) continue;
       const target = modelMap.get(alias.target);
       if (!target) continue;
-      if (kinds?.length && !kinds.includes(target.kind ?? "chat")) continue;
+      if (
+        advertisedOnly &&
+        !publiclyAvailable(config, target, {
+          requireRuntimeEnabled
+        })
+      )
+        continue;
+      if (kinds?.length && !kinds.includes(target.kind ?? 'chat')) continue;
       entries.push({
         ...clone(target),
         id: alias.id,
         alias: true,
         aliasTarget: alias.target,
         name: alias.name ?? target.name ?? alias.id,
-        description: alias.description,
+        description: alias.description
       });
     }
     return entries;
   }
 
-  function catalogModels({ includeAliases = true, kinds, advertisedOnly = true } = {}) {
-    const models = directModels({ kinds, advertisedOnly });
-    if (includeAliases) models.push(...aliasModels({ kinds, advertisedOnly }));
+  function catalogModels({ includeAliases = true, kinds, advertisedOnly = true, requireRuntimeEnabled = true } = {}) {
+    const models = directModels({ kinds, advertisedOnly, requireRuntimeEnabled });
+    if (includeAliases) models.push(...aliasModels({ kinds, advertisedOnly, requireRuntimeEnabled }));
     return sortForCatalog(models, config.clientCatalog?.modelOrder ?? []);
   }
 
-  function clientModels({ kinds = ["chat"] } = {}) {
+  function clientModels({ kinds = ['chat'] } = {}) {
     const includeAliases = config.clientCatalog?.includeAliases === true;
-    return catalogModels({ includeAliases, kinds, advertisedOnly: true });
+    return catalogModels({
+      includeAliases,
+      kinds,
+      advertisedOnly: true,
+      requireRuntimeEnabled: false
+    });
   }
 
   function openAIModels() {
     const now = Math.floor(Date.now() / 1000);
-    return catalogModels({ includeAliases: false, advertisedOnly: true }).map(model => ({
+    return catalogModels({ includeAliases: false, advertisedOnly: true }).map((model) => ({
       id: model.id,
-      object: "model",
+      object: 'model',
       created: now,
-      owned_by: "lloom",
+      owned_by: 'lloom',
       metadata: {
         name: model.name ?? model.id,
-        kind: model.kind ?? "chat",
-        input: model.input ?? ["text"],
-        output: model.output ?? ["text"],
+        kind: model.kind ?? 'chat',
+        input: model.input ?? ['text'],
+        output: model.output ?? ['text'],
         capabilities: model.capabilities ?? [],
         contextWindow: model.contextWindow,
         maxOutputTokens: model.maxOutputTokens,
-        aliasTarget: model.aliasTarget,
-      },
+        aliasTarget: model.aliasTarget
+      }
     }));
   }
 
@@ -134,7 +161,7 @@ export function createRegistry(config) {
     aliasModels,
     catalogModels,
     clientModels,
-    openAIModels,
+    openAIModels
   };
 }
 

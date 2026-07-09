@@ -1,0 +1,87 @@
+{
+  "$schema": "https://lloom.dev/schemas/benchmark-suite.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-qwen36-vllm-seed",
+  "name": "Linux NVIDIA Qwen3.6 vLLM seed evidence",
+  "summary": "Public DGX Spark / GB10 class vLLM measurements used by the local development LLooM host for CUDA recommendation coverage.",
+  "license": {
+    "id": "MIT",
+    "name": "Benchmark metadata license"
+  },
+  "source": {
+    "type": "public-forum",
+    "name": "NVIDIA Developer Forums",
+    "url": "https://forums.developer.nvidia.com/t/benchmark-report-qwen-qwen3-6-27b-vs-nvidia-qwen3-6-27b-nvfp4/375094"
+  },
+  "submittedAt": "2026-07-08T00:00:00Z",
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "public forum benchmark excerpt"
+  },
+  "methodology": {
+    "harness": "llama-benchy",
+    "harnessVersion": "0.3.9.dev1+gb220b7c9c",
+    "promptCorpus": "pp2048 tg128 @ d4096 c4",
+    "warmupRuns": 0,
+    "measurementRuns": 1,
+    "streaming": true
+  },
+  "results": [
+    {
+      "id": "qwen36-27b-nvfp4-vllm-dgx-spark-c4-seed",
+      "recipeId": "linux-nvidia-qwen36-27b-nvfp4-vllm",
+      "backendId": "vllm",
+      "model": "nvidia/Qwen3.6-27B-NVFP4",
+      "gatewayModel": "nvidia/Qwen3.6-27B-NVFP4",
+      "machine": {
+        "platformId": "linux-arm64",
+        "chip": "NVIDIA DGX Spark / GB10",
+        "memoryGb": 128,
+        "accelerators": ["cuda", "nvidia-gpu", "blackwell"],
+        "devices": [
+          {
+            "id": "cuda:0",
+            "kind": "gpu",
+            "vendor": "nvidia",
+            "name": "GB10 Blackwell GPU",
+            "backend": "cuda",
+            "accelerators": ["cuda", "nvidia-gpu", "blackwell"]
+          }
+        ]
+      },
+      "settings": {
+        "quantization": "modelopt",
+        "kvCacheDtype": "fp8",
+        "attentionBackend": "flashinfer",
+        "contextWindow": 262144,
+        "maxNumSeqs": 4,
+        "maxNumBatchedTokens": 16384,
+        "speculative": {
+          "method": "dflash",
+          "numSpeculativeTokens": 10
+        },
+        "toolCallParser": "qwen3_coder",
+        "reasoningParser": "qwen3"
+      },
+      "workload": {
+        "type": "interactive-generation",
+        "category": "agentic-coding",
+        "tags": ["agentic-coding", "coding-agent", "long-context", "cuda"],
+        "concurrency": 4,
+        "promptTokens": 2048,
+        "outputTokens": 128,
+        "contextDepth": 4096
+      },
+      "metrics": {
+        "generationTokPerSec": 98.1,
+        "prefillTokPerSec": 1798,
+        "timeToFirstTokenMs": 11801,
+        "contextWindow": 262144
+      },
+      "notes": "Public forum report for pp2048 tg128 @ d4096 c4; recipe launch settings should be retuned per CUDA machine."
+    }
+  ],
+  "fileName": "linux-nvidia-qwen36-vllm.json"
+}

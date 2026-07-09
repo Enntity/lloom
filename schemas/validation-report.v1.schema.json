@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lloom.dev/schemas/validation-report.v1.schema.json",
+  "title": "LLooM Validation Report v1",
+  "description": "Portable conformance and validation result for LLooM-compatible interchange documents.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schemaVersion",
+    "id",
+    "profile",
+    "validatedAt",
+    "ok",
+    "kind",
+    "schema",
+    "mediaType",
+    "conformance",
+    "conformanceWarnings",
+    "validationErrors"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "https://lloom.dev/schemas/validation-report.v1.schema.json"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "profile": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/profile"
+    },
+    "id": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/id"
+    },
+    "source": {
+      "type": ["string", "null"],
+      "description": "Optional file path, URL, or producer-specific source label for the validated document."
+    },
+    "validatedAt": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/dateTime"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "kind": {
+      "type": ["string", "null"],
+      "description": "Detected LLooM interchange document kind, or null when detection failed."
+    },
+    "schema": {
+      "type": ["string", "null"],
+      "description": "Canonical schema ID for the detected document kind, or null when detection failed."
+    },
+    "mediaType": {
+      "type": ["string", "null"],
+      "description": "Recommended media type for the detected document kind, or null when detection failed."
+    },
+    "conformance": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "profile",
+        "schemaFamily",
+        "extensionPrefix",
+        "extensionPolicy",
+        "canonicalization",
+        "signatureAlgorithm"
+      ],
+      "properties": {
+        "profile": {
+          "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/profile"
+        },
+        "schemaFamily": {
+          "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/uri"
+        },
+        "extensionPrefix": {
+          "const": "x-"
+        },
+        "extensionPolicy": {
+          "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/uri"
+        },
+        "canonicalization": {
+          "const": "lloom-canonical-json-v1"
+        },
+        "signatureAlgorithm": {
+          "const": "ed25519"
+        },
+        "status": {
+          "type": "string"
+        },
+        "specVersion": {
+          "type": "string"
+        },
+        "conformanceLevels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "defaultConformanceLevel": {
+          "type": "string"
+        }
+      }
+    },
+    "conformanceLevel": {
+      "type": "string"
+    },
+    "conformanceWarnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "validationErrors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "pack": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    }
+  },
+  "patternProperties": {
+    "^x-": true
+  }
+}

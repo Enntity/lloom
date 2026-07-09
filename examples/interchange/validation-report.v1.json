@@ -1,0 +1,27 @@
+{
+  "$schema": "https://lloom.dev/schemas/validation-report.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "validation-2026-07-07T00-00-00-000Z",
+  "source": "examples/interchange/recipe.v1.json",
+  "validatedAt": "2026-07-07T00:00:00.000Z",
+  "ok": true,
+  "kind": "recipe",
+  "schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "mediaType": "application/vnd.lloom.recipe+json;version=1",
+  "conformance": {
+    "profile": "https://lloom.dev/profiles/interchange/v1",
+    "specVersion": "1.0.0",
+    "schemaFamily": "https://lloom.dev/schemas/",
+    "extensionPrefix": "x-",
+    "extensionPolicy": "https://lloom.dev/profiles/extensions/v1",
+    "canonicalization": "lloom-canonical-json-v1",
+    "signatureAlgorithm": "ed25519",
+    "status": "draft-stable-v1",
+    "conformanceLevels": ["parse", "validate", "publish"],
+    "defaultConformanceLevel": "validate"
+  },
+  "conformanceLevel": "validate",
+  "conformanceWarnings": [],
+  "validationErrors": []
+}

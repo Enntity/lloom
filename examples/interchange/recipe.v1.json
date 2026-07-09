@@ -1,0 +1,115 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "example-apple-silicon-27b",
+  "name": "Example Apple Silicon 27B Agent Recipe",
+  "version": 1,
+  "summary": "Example recipe showing the portable LLooM v1 fields for a local agentic coding model.",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe metadata license"
+  },
+  "publisher": {
+    "id": "example-lab",
+    "name": "Example Lab",
+    "url": "https://example.com"
+  },
+  "provenance": {
+    "createdBy": "example-lab",
+    "generatedBy": "lloom recipe authoring guide",
+    "createdAt": "2026-07-07T00:00:00Z"
+  },
+  "links": [
+    {
+      "rel": "model-card",
+      "href": "https://huggingface.co/example/example-27b-agent"
+    }
+  ],
+  "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "tools", "reasoning", "long-context"],
+  "requirements": {
+    "platforms": ["darwin-arm64"],
+    "memoryGb": 48,
+    "diskGb": 45,
+    "commands": ["mtplx"],
+    "accelerators": ["apple-gpu"]
+  },
+  "backend": {
+    "id": "mtplx",
+    "version": ">=2.0.0",
+    "protocol": "openai-chat-completions"
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "download-model",
+        "title": "Download model weights",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "example/example-27b-agent"
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "default",
+      "name": "Example 27B Agent",
+      "model": "example/example-27b-agent",
+      "gatewayModel": "example/example-27b-agent",
+      "runtime": "example-27b-agent",
+      "backendConfig": "mtplx-example-27b-agent",
+      "input": ["text", "image"],
+      "output": ["text"],
+      "capabilities": ["chat", "streaming", "usage", "tools", "reasoning", "vision", "mtp", "long-context"],
+      "settings": {
+        "profile": "turbo",
+        "contextWindow": 262144,
+        "maxOutputTokens": 32768,
+        "draftDepth": 2,
+        "maxActiveRequests": 8,
+        "memoryGb": 42,
+        "reasoning": "auto",
+        "preserveThinking": "auto",
+        "batchingPreset": "agent",
+        "runtime": {
+          "command": "mtplx",
+          "args": [
+            "serve",
+            "--model",
+            "${modelPath}",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "${port}",
+            "--model-id",
+            "${modelId}",
+            "--profile",
+            "turbo",
+            "--depth",
+            "2",
+            "--context-window",
+            "262144",
+            "--max-tokens",
+            "32768",
+            "--max-active-requests",
+            "8"
+          ],
+          "adapter": "mtplx",
+          "baseUrlPath": "/v1",
+          "healthPath": "/health",
+          "warmupPath": "/v1/chat/completions"
+        },
+        "sessionCacheMode": "on",
+        "sessionCacheMaxSize": "100GB",
+        "sessionCacheMinPrefixTokens": 512
+      },
+      "observed": {
+        "generationTokPerSec": 42.5,
+        "firstContentMs": 950,
+        "decodeTokensPerSecond": 44.1,
+        "contextWindow": 262144,
+        "notes": "Example numbers; publish benchmark-suite.v1 for ranking evidence."
+      }
+    }
+  ]
+}

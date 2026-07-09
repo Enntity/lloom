@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+config="${OPENCODE_CONFIG:-$HOME/.config/opencode/opencode.json}"
+if [ ! -f "$config" ]; then
+  echo "OpenCode config missing: $config" >&2
+  echo "Run: lloom integrate opencode --apply --yes" >&2
+  exit 1
+fi
+exec "${LLOOM_OPENCODE_BIN:-opencode}" --model "${LLOOM_OPENCODE_MODEL:-local-llm/Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16}" "$@"

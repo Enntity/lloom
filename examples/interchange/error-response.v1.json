@@ -1,0 +1,18 @@
+{
+  "$schema": "https://lloom.dev/schemas/error-response.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "error-2026-07-07T00-00-00-000Z",
+  "occurredAt": "2026-07-07T00:00:00.000Z",
+  "host": {
+    "service": "lloom-host",
+    "endpoint": "/v1/recipe-packs/example"
+  },
+  "error": {
+    "code": "not_found",
+    "message": "unknown recipe pack example",
+    "type": "https://lloom.dev/problems/not_found",
+    "status": 404,
+    "title": "Resource Not Found"
+  }
+}

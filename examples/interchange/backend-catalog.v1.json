@@ -1,0 +1,53 @@
+{
+  "$schema": "https://lloom.dev/schemas/backend-catalog.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "example-backends",
+  "name": "Example Backend Catalog",
+  "summary": "Minimal backend catalog showing a portable runtime-family entry.",
+  "license": {
+    "id": "MIT",
+    "name": "Backend metadata license"
+  },
+  "publisher": {
+    "id": "example-lab",
+    "name": "Example Lab",
+    "url": "https://example.com"
+  },
+  "updatedAt": "2026-07-07T00:00:00Z",
+  "provenance": {
+    "createdBy": "example-lab",
+    "generatedBy": "lloom examples"
+  },
+  "backends": [
+    {
+      "id": "example-openai-runtime",
+      "name": "Example OpenAI Runtime",
+      "kind": "openai-compatible-server",
+      "description": "Example OpenAI-compatible server backend.",
+      "platforms": ["darwin-arm64", "linux-x64"],
+      "features": ["chat", "streaming", "usage", "tools"],
+      "commands": ["example-runtime"],
+      "setup": [
+        {
+          "id": "check-example-runtime",
+          "title": "Check example runtime",
+          "action": "check-command",
+          "command": "example-runtime",
+          "args": ["--version"]
+        },
+        {
+          "id": "install-example-runtime",
+          "title": "Install example runtime",
+          "action": "manual",
+          "description": "Install the runtime using the vendor-supported package for this platform."
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health",
+        "chatPath": "/v1/chat/completions"
+      }
+    }
+  ]
+}

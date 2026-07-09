@@ -1,0 +1,32 @@
+{
+  "$schema": "https://lloom.dev/schemas/machine-profile.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "darwin-arm64-96gb",
+  "platform": "darwin",
+  "arch": "arm64",
+  "platformId": "darwin-arm64",
+  "cpuBrand": "Apple M2 Max",
+  "totalMemoryGb": 96,
+  "logicalCpus": 12,
+  "accelerators": ["apple-gpu", "apple-neural-engine", "metal", "ane"],
+  "devices": [
+    {
+      "id": "apple-gpu",
+      "kind": "gpu",
+      "vendor": "apple",
+      "name": "Apple GPU",
+      "backend": "metal",
+      "accelerators": ["apple-gpu", "metal"]
+    },
+    {
+      "id": "apple-neural-engine",
+      "kind": "npu",
+      "vendor": "apple",
+      "name": "Apple Neural Engine",
+      "backend": "ane",
+      "accelerators": ["apple-neural-engine", "ane"]
+    }
+  ],
+  "isAppleSilicon": true
+}

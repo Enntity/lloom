@@ -1,0 +1,385 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "title": "LLooM Recipe v1",
+  "description": "Portable setup intent for one or more local model runtimes exposed through a LLooM-compatible gateway.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "id", "name", "backend", "models"],
+  "properties": {
+    "$schema": {
+      "const": "https://lloom.dev/schemas/recipe.v1.schema.json"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "profile": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/profile"
+    },
+    "id": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/id"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "summary": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "license": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/license"
+    },
+    "publisher": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/publisher"
+    },
+    "createdAt": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/dateTime"
+    },
+    "updatedAt": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/dateTime"
+    },
+    "provenance": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/provenance"
+    },
+    "links": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/links"
+    },
+    "keywords": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "capabilities": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/capabilities"
+    },
+    "hardware": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Human-readable hardware notes for the recipe's intended or tested machine class."
+    },
+    "requirements": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "platforms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "memoryGb": {
+          "type": "number",
+          "minimum": 0
+        },
+        "diskGb": {
+          "type": "number",
+          "minimum": 0
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "accelerators": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "backend": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string"
+        },
+        "protocol": {
+          "type": "string"
+        }
+      }
+    },
+    "setup": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "action"],
+            "additionalProperties": true,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string"
+              },
+              "action": {
+                "type": "string",
+                "enum": ["check-command", "command", "download-model", "manual"]
+              },
+              "command": {
+                "type": "string"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "model": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              },
+              "skipIfPathExists": {
+                "type": "string",
+                "description": "Template path that marks the step complete when it already exists."
+              }
+            }
+          }
+        }
+      }
+    },
+    "models": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["role", "model"],
+        "additionalProperties": true,
+        "properties": {
+          "role": {
+            "type": "string",
+            "minLength": 1
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "gatewayModel": {
+            "type": "string"
+          },
+          "runtime": {
+            "type": "string",
+            "minLength": 1
+          },
+          "backendConfig": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Optional stable backend config ID to create or reuse in the local gateway config."
+          },
+          "input": {
+            "type": "array",
+            "items": {
+              "enum": ["text", "image", "audio", "video"]
+            },
+            "uniqueItems": true
+          },
+          "output": {
+            "type": "array",
+            "items": {
+              "enum": ["text", "image", "audio", "embedding", "scores"]
+            },
+            "uniqueItems": true
+          },
+          "settings": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Portable runtime knobs consumed by LLooM when materializing local config from a recipe.",
+            "properties": {
+              "modelPath": {
+                "type": "string",
+                "description": "Explicit local model path or template. If absent, LLooM derives one from modelRoot and model."
+              },
+              "baseUrl": {
+                "type": "string",
+                "description": "Explicit OpenAI-compatible backend base URL for externally managed runtimes."
+              },
+              "apiKey": {
+                "type": "string"
+              },
+              "timeoutMs": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "profile": {
+                "type": "string",
+                "description": "Backend profile such as turbo, sustained, or balanced."
+              },
+              "draftDepth": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "contextWindow": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "maxOutputTokens": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "maxActiveRequests": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "memoryGb": {
+                "type": "number",
+                "minimum": 0
+              },
+              "startupTimeoutMs": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "priority": {
+                "type": "integer"
+              },
+              "evictable": {
+                "type": "boolean"
+              },
+              "reasoning": {
+                "oneOf": [{ "type": "boolean" }, { "type": "string" }]
+              },
+              "preserveThinking": {
+                "oneOf": [{ "type": "boolean" }, { "type": "string" }]
+              },
+              "batchingPreset": {
+                "type": "string"
+              },
+              "statsFooter": {
+                "type": "boolean"
+              },
+              "runtime": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "Optional explicit local runtime launcher. When present, LLooM templates command, args, env, health, warmup, and session-cache fields while materializing config.",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "args": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "cwd": {
+                    "type": "string"
+                  },
+                  "env": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "adapter": {
+                    "type": "string",
+                    "description": "Runtime adapter hint for backend-specific features such as session-cache flag injection."
+                  },
+                  "baseUrlPath": {
+                    "type": "string",
+                    "description": "Path suffix used for the generated backend base URL when baseUrl is not explicitly set."
+                  },
+                  "healthPath": {
+                    "type": "string"
+                  },
+                  "healthUrl": {
+                    "type": "string"
+                  },
+                  "warmupPath": {
+                    "type": "string"
+                  },
+                  "warmup": {
+                    "oneOf": [{ "type": "boolean" }, { "type": "object", "additionalProperties": true }]
+                  },
+                  "sessionCache": {
+                    "oneOf": [{ "type": "boolean" }, { "type": "object", "additionalProperties": true }]
+                  },
+                  "sessionCacheKind": {
+                    "type": "string"
+                  }
+                }
+              },
+              "sessionCache": {
+                "oneOf": [{ "type": "boolean" }, { "type": "object", "additionalProperties": true }]
+              },
+              "sessionCacheMode": {
+                "enum": ["off", "on", "write-only"]
+              },
+              "sessionCacheMaxSize": {
+                "type": "string"
+              },
+              "sessionCacheMinPrefixTokens": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "observed": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Lightweight observed performance summary. Full evidence should be published in benchmark-suite.v1.",
+            "properties": {
+              "generationTokPerSec": {
+                "type": "number",
+                "minimum": 0
+              },
+              "prefillTokPerSec": {
+                "type": "number",
+                "minimum": 0
+              },
+              "firstContentMs": {
+                "type": "number",
+                "minimum": 0
+              },
+              "decodeTokensPerSecond": {
+                "type": "number",
+                "minimum": 0
+              },
+              "contextWindow": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "notes": {
+                "type": "string"
+              }
+            }
+          },
+          "capabilities": {
+            "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/capabilities"
+          }
+        }
+      }
+    }
+  },
+  "patternProperties": {
+    "^x-": true
+  }
+}

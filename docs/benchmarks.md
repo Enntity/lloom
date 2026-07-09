@@ -5,15 +5,15 @@ LLooM recipes are meant to be evidence-backed. Benchmark files under `benchmarks
 Inspect all evidence:
 
 ```zsh
-node bin/lloom.mjs benchmarks
-node bin/lloom.mjs recipe-index
+lloom benchmarks
+lloom recipe-index
 ```
 
 Inspect the evidence attached to one recipe:
 
 ```zsh
-node bin/lloom.mjs benchmarks apple-silicon-qwen36
-node bin/lloom.mjs plan apple-silicon-qwen36 --model-root ~/Models
+lloom benchmarks apple-silicon-qwen36
+lloom plan apple-silicon-qwen36 --model-root ~/Models
 ```
 
 `plan`, `bootstrap`, and `recipe-index` attach the best matching benchmark to each recipe model role. The gateway does not silently rewrite stale model IDs; benchmark `model` and `gatewayModel` values must match recipe and registry IDs exactly.
@@ -21,7 +21,7 @@ node bin/lloom.mjs plan apple-silicon-qwen36 --model-root ~/Models
 Recipe packs can carry benchmark suites alongside recipes:
 
 ```zsh
-node bin/lloom.mjs recipe-import ./qwen-next-pack.json
+lloom recipe-import ./qwen-next-pack.json
 ```
 
 The import plan validates attached suites before writing them under `benchmarks/community/`.
@@ -49,5 +49,7 @@ Each result should include:
 - `metrics.generationTokPerSec`: interactive generation speed.
 - `metrics.prefillTokPerSec`: prompt-processing speed, when measured.
 - `metrics.contextWindow`: validated context window.
+- `metrics.firstContentMs`: first streamed content latency, when captured from gateway metrics.
+- `metrics.decodeTokensPerSecond`: decode speed after first content, when captured from gateway metrics.
 
-The current score favors interactive generation first, then prefill and context size. That is intentionally simple while the community format is young; recipe authors should still include raw metrics and settings so rankings can improve without losing evidence.
+The current score favors interactive generation first, then prefill and context size. That is intentionally simple while the community format is young; recipe authors should still include raw metrics and settings so rankings can improve without losing evidence. The gateway's `/gateway/metrics` feed is useful for local evidence collection because it separates first-content latency from decode throughput before a formal benchmark suite is submitted.

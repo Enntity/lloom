@@ -1,0 +1,24 @@
+{
+  "$schema": "https://lloom.dev/schemas/benchmark-submission-response.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "benchmark-submission-2026-07-07T00-00-00Z",
+  "accepted": true,
+  "persisted": true,
+  "count": 1,
+  "submittedAt": "2026-07-07T00:00:00Z",
+  "host": {
+    "service": "lloom-host",
+    "endpoint": "/v1/benchmarks"
+  },
+  "validationErrors": [],
+  "submissions": [
+    {
+      "id": "example-apple-silicon-27b-benchmarks",
+      "status": "persisted",
+      "fileName": "example-apple-silicon-27b-benchmarks.json",
+      "url": "https://lloom.host/v1/benchmarks/example-apple-silicon-27b-benchmarks"
+    }
+  ],
+  "message": "benchmark submission accepted and persisted for review"
+}

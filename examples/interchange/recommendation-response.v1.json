@@ -1,0 +1,141 @@
+{
+  "$schema": "https://lloom.dev/schemas/recommendation-response.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "example-recommendations",
+  "name": "Example LLooM Recommendations",
+  "summary": "Example host response recommending a recipe pack for a machine profile.",
+  "license": "MIT",
+  "publisher": {
+    "id": "lloom",
+    "name": "LLooM Project"
+  },
+  "provenance": {
+    "generatedBy": "lloom-host example",
+    "source": "example benchmark leaderboard"
+  },
+  "machineProfile": {
+    "$schema": "https://lloom.dev/schemas/machine-profile.v1.schema.json",
+    "schemaVersion": 1,
+    "profile": "https://lloom.dev/profiles/interchange/v1",
+    "id": "darwin-arm64-96gb",
+    "platform": "darwin",
+    "arch": "arm64",
+    "platformId": "darwin-arm64",
+    "cpuBrand": "Apple M2 Max",
+    "totalMemoryGb": 96,
+    "logicalCpus": 12,
+    "accelerators": ["apple-gpu", "apple-neural-engine", "metal", "ane"],
+    "devices": [
+      {
+        "id": "apple-gpu",
+        "kind": "gpu",
+        "vendor": "apple",
+        "name": "Apple GPU",
+        "backend": "metal",
+        "accelerators": ["apple-gpu", "metal"]
+      },
+      {
+        "id": "apple-neural-engine",
+        "kind": "npu",
+        "vendor": "apple",
+        "name": "Apple Neural Engine",
+        "backend": "ane",
+        "accelerators": ["apple-neural-engine", "ane"]
+      }
+    ],
+    "isAppleSilicon": true
+  },
+  "recommendationCount": 1,
+  "request": {
+    "filters": {
+      "workloads": ["agentic-coding"],
+      "capabilities": ["tools", "reasoning", "long-context"],
+      "tags": ["coding-agent"]
+    }
+  },
+  "recommendations": [
+    {
+      "id": "apple-silicon-qwen36-pack",
+      "recipeId": "apple-silicon-qwen36",
+      "summary": "Best observed Qwen3.6 dense and MoE lanes for Apple Silicon.",
+      "score": 172.58,
+      "request": {
+        "workloads": ["agentic-coding"],
+        "capabilities": ["tools", "reasoning", "long-context"],
+        "tags": ["coding-agent"]
+      },
+      "evaluation": {
+        "selectable": true,
+        "runnable": true,
+        "reason": "Matches darwin-arm64, memory requirement, and published benchmark evidence.",
+        "selection": {
+          "totalScore": 68673.62,
+          "compatibilityScore": 91,
+          "benchmarkScore": 68582.62,
+          "filters": {
+            "workloads": ["agentic-coding"],
+            "capabilities": ["tools", "reasoning", "long-context"],
+            "tags": ["coding-agent"]
+          },
+          "ranking": "requested workload/capability/tag filters, then machine-matched benchmarkScore desc, compatibilityScore desc, recipe name asc"
+        }
+      },
+      "benchmark": {
+        "id": "qwen36-35b-a3b-mtplx-speed-fp16-m2max-d1-seed",
+        "suiteId": "apple-silicon-qwen36-m2max-seed",
+        "source": "local-lloom-prototype",
+        "submittedAt": "2026-07-08T00:00:00Z",
+        "backendId": "mtplx",
+        "model": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
+        "gatewayModel": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
+        "machine": {
+          "platformId": "darwin-arm64",
+          "chip": "Apple M2 Max",
+          "memoryGb": 96,
+          "accelerators": ["apple-gpu", "metal"],
+          "devices": [
+            {
+              "id": "apple-gpu",
+              "kind": "gpu",
+              "vendor": "apple",
+              "name": "Apple GPU",
+              "backend": "metal",
+              "accelerators": ["apple-gpu", "metal"]
+            }
+          ]
+        },
+        "workload": {
+          "type": "interactive-generation",
+          "category": "agentic-coding",
+          "tags": ["agentic-coding", "coding-agent", "long-context"],
+          "concurrency": 1
+        },
+        "settings": {
+          "profile": "sustained",
+          "draftDepth": 1,
+          "contextWindow": 262144
+        },
+        "metrics": {
+          "generationTokPerSec": 68.58,
+          "contextWindow": 262144
+        },
+        "score": 68582.62,
+        "machineMatch": {
+          "score": 11100,
+          "platformMatched": true,
+          "acceleratorOverlap": ["apple-gpu", "metal"],
+          "memoryDeltaGb": 0
+        }
+      },
+      "pack": {
+        "$schema": "https://lloom.dev/schemas/recipe-pack.v1.schema.json",
+        "schemaVersion": 1,
+        "profile": "https://lloom.dev/profiles/interchange/v1",
+        "id": "apple-silicon-qwen36-pack",
+        "name": "Apple Silicon Qwen3.6 Pack",
+        "recipes": []
+      }
+    }
+  ]
+}

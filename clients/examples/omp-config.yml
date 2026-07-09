@@ -1,14 +1,14 @@
 modelRoles:
-  default: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed:low
-  smol: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed
-  slow: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed
-  plan: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed
-  commit: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed
-  designer: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed
-  advisor: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed
-  tiny: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed
-  vision: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed
-  task: local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed
+  default: local-llm/Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16:low
+  smol: local-llm/Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16
+  slow: local-llm/Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16
+  plan: local-llm/Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16
+  commit: local-llm/Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16
+  designer: local-llm/Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16
+  advisor: local-llm/Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16
+  tiny: local-llm/Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16
+  vision: local-llm/Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16
+  task: local-llm/Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16
 defaultThinkingLevel: auto
 hideThinkingBlock: true
 startup:

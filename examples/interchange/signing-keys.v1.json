@@ -1,0 +1,25 @@
+{
+  "$schema": "https://lloom.dev/schemas/signing-keys.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "lloom-example-signing-keys",
+  "name": "LLooM Example Signing Keys",
+  "updatedAt": "2026-07-08T00:00:00.000Z",
+  "publisher": {
+    "id": "lloom",
+    "name": "LLooM Project",
+    "url": "https://lloom.dev"
+  },
+  "provenance": {
+    "generatedBy": "lloom",
+    "source": "examples/interchange/signing-keys.v1.json"
+  },
+  "data": [
+    {
+      "keyId": "lloom-dev-seed",
+      "algorithm": "ed25519",
+      "status": "active",
+      "publicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAFBvyNclvp+PQnJuEtaPbQBa/Zol4u38xcXwCVnJmmgI=\n-----END PUBLIC KEY-----\n"
+    }
+  ]
+}

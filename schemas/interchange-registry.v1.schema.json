@@ -1,0 +1,227 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lloom.dev/schemas/interchange-registry.v1.schema.json",
+  "title": "LLooM Interchange Registry v1",
+  "description": "Machine-readable registry of LLooM v1 interchange schemas, media types, endpoint contracts, and extension policy.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "id", "name", "conformance", "documents", "endpoints"],
+  "properties": {
+    "$schema": {
+      "const": "https://lloom.dev/schemas/interchange-registry.v1.schema.json"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "profile": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/profile"
+    },
+    "id": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/id"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "summary": {
+      "type": "string"
+    },
+    "license": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/license"
+    },
+    "updatedAt": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/dateTime"
+    },
+    "createdAt": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/dateTime"
+    },
+    "publisher": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/publisher"
+    },
+    "provenance": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/provenance"
+    },
+    "links": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/links"
+    },
+    "conformance": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "profile",
+        "schemaFamily",
+        "extensionPrefix",
+        "extensionPolicy",
+        "canonicalization",
+        "signatureAlgorithm"
+      ],
+      "properties": {
+        "profile": {
+          "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/profile"
+        },
+        "schemaFamily": {
+          "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/uri"
+        },
+        "extensionPrefix": {
+          "const": "x-"
+        },
+        "extensionPolicy": {
+          "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/uri"
+        },
+        "canonicalization": {
+          "const": "lloom-canonical-json-v1"
+        },
+        "signatureAlgorithm": {
+          "const": "ed25519"
+        },
+        "status": {
+          "type": "string"
+        },
+        "specVersion": {
+          "type": "string"
+        },
+        "conformanceLevels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "defaultConformanceLevel": {
+          "type": "string"
+        },
+        "contentNegotiation": {
+          "type": "string"
+        },
+        "compatibility": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "documents": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/document"
+      }
+    },
+    "endpoints": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/endpoint"
+      }
+    }
+  },
+  "patternProperties": {
+    "^x-": true
+  },
+  "$defs": {
+    "document": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["kind", "name", "schema", "mediaType", "status"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "schema": {
+          "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/uri"
+        },
+        "mediaType": {
+          "type": "string",
+          "pattern": "^application/vnd\\.lloom\\.[a-z0-9.-]+\\+json;version=1$"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["draft", "draft-stable", "stable", "deprecated"]
+        },
+        "since": {
+          "type": "string"
+        },
+        "compatibility": {
+          "type": "string"
+        },
+        "conformanceLevel": {
+          "type": "string"
+        }
+      },
+      "patternProperties": {
+        "^x-": true
+      }
+    },
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["method", "path"],
+      "properties": {
+        "method": {
+          "type": "string",
+          "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "successStatus": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 399
+        },
+        "idempotent": {
+          "type": "boolean"
+        },
+        "queryParameters": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "requestKind": {
+          "type": "string"
+        },
+        "requestSchema": {
+          "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/uri"
+        },
+        "requestMediaType": {
+          "type": "string"
+        },
+        "responseKind": {
+          "type": "string"
+        },
+        "responseSchema": {
+          "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/uri"
+        },
+        "responseMediaType": {
+          "type": "string"
+        },
+        "errorKind": {
+          "type": "string"
+        },
+        "errorSchema": {
+          "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/uri"
+        },
+        "errorMediaType": {
+          "type": "string"
+        }
+      },
+      "patternProperties": {
+        "^x-": true
+      }
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "responses-incomplete",
+  "requestedModel": "gw",
+  "responseId": "resp_len",
+  "createdAt": 2,
+  "chunks": [
+    {
+      "id": "chatcmpl_test",
+      "object": "chat.completion.chunk",
+      "choices": [
+        {
+          "index": 0,
+          "delta": { "content": "partial" },
+          "finish_reason": "length"
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "incomplete": true,
+    "incompleteReason": "max_output_tokens",
+    "fullText": "partial"
+  }
+}

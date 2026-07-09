@@ -1,0 +1,26 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe-pack-submission-response.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "recipe-pack-submission-2026-07-07T00-00-00Z",
+  "accepted": true,
+  "persisted": true,
+  "count": 1,
+  "submittedAt": "2026-07-07T00:00:00Z",
+  "host": {
+    "service": "lloom-host",
+    "endpoint": "/v1/recipe-packs"
+  },
+  "validationErrors": [],
+  "submissions": [
+    {
+      "id": "example-apple-silicon-27b-pack",
+      "status": "persisted",
+      "recipeCount": 1,
+      "benchmarkCount": 1,
+      "fileName": "example-apple-silicon-27b-pack.json",
+      "url": "https://lloom.host/v1/recipe-packs/example-apple-silicon-27b-pack"
+    }
+  ],
+  "message": "recipe pack accepted and persisted for review"
+}

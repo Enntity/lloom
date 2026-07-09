@@ -1,0 +1,412 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lloom.dev/schemas/backend-catalog.v1.schema.json",
+  "title": "LLooM Backend Catalog v1",
+  "description": "Portable catalog of local runtime backend families that recipes can target.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "id", "name", "backends"],
+  "properties": {
+    "$schema": {
+      "const": "https://lloom.dev/schemas/backend-catalog.v1.schema.json"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "profile": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/profile"
+    },
+    "id": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/id"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "summary": {
+      "type": "string"
+    },
+    "license": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/license"
+    },
+    "publisher": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/publisher"
+    },
+    "createdAt": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/dateTime"
+    },
+    "updatedAt": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/dateTime"
+    },
+    "provenance": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/provenance"
+    },
+    "links": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/links"
+    },
+    "backends": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/backend"
+      }
+    }
+  },
+  "patternProperties": {
+    "^x-": true
+  },
+  "$defs": {
+    "backend": {
+      "type": "object",
+      "required": ["id", "name", "kind"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/id"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "openai-compatible-server",
+            "image-server",
+            "audio-server",
+            "embedding-server",
+            "rerank-server",
+            "model-manager",
+            "tooling"
+          ]
+        },
+        "description": {
+          "type": "string"
+        },
+        "platforms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "setup": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/setupStep"
+          }
+        },
+        "server": {
+          "$ref": "#/$defs/server"
+        }
+      },
+      "patternProperties": {
+        "^x-": true
+      }
+    },
+    "setupStep": {
+      "type": "object",
+      "required": ["id", "action"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "check-command",
+            "command",
+            "manual",
+            "link-command",
+            "python-venv",
+            "pip-install",
+            "git-clone",
+            "cmake-configure",
+            "cmake-build",
+            "brew-install"
+          ]
+        },
+        "platforms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "command": {
+          "type": "string"
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "commandName": {
+          "type": "string"
+        },
+        "sourceCandidates": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "path": {
+          "type": "string"
+        },
+        "venv": {
+          "type": "string"
+        },
+        "python": {
+          "type": "string"
+        },
+        "package": {
+          "type": "string"
+        },
+        "packages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "repo": {
+          "type": "string"
+        },
+        "destination": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "depth": {
+          "type": ["integer", "string"]
+        },
+        "source": {
+          "type": "string"
+        },
+        "build": {
+          "type": "string"
+        },
+        "skipIfCommandAvailable": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "skipIfExecutableExists": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "skipIfPathExists": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "enum": ["check-command", "command"]
+              }
+            },
+            "required": ["action"]
+          },
+          "then": {
+            "required": ["command"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "link-command"
+              }
+            },
+            "required": ["action"]
+          },
+          "then": {
+            "required": ["commandName"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "python-venv"
+              }
+            },
+            "required": ["action"]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": ["path"]
+              },
+              {
+                "required": ["venv"]
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "pip-install"
+              }
+            },
+            "required": ["action"]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": ["package"]
+              },
+              {
+                "required": ["packages"]
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "git-clone"
+              }
+            },
+            "required": ["action"]
+          },
+          "then": {
+            "required": ["repo", "destination"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "cmake-configure"
+              }
+            },
+            "required": ["action"]
+          },
+          "then": {
+            "required": ["source", "build"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "cmake-build"
+              }
+            },
+            "required": ["action"]
+          },
+          "then": {
+            "required": ["build"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "brew-install"
+              }
+            },
+            "required": ["action"]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": ["package"]
+              },
+              {
+                "required": ["packages"]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "server": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["protocol"],
+      "properties": {
+        "protocol": {
+          "type": "string"
+        },
+        "healthPath": {
+          "type": "string"
+        },
+        "chatPath": {
+          "type": "string"
+        },
+        "responsesPath": {
+          "type": "string"
+        },
+        "embeddingsPath": {
+          "type": "string"
+        },
+        "imagePath": {
+          "type": "string"
+        },
+        "speechPath": {
+          "type": "string"
+        },
+        "transcriptionPath": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,158 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "apple-silicon-qwen36-35b-a3b-mtplx",
+  "name": "Apple Silicon Qwen3.6 35B-A3B MTPLX",
+  "version": 1,
+  "summary": "High-memory Apple Silicon Qwen3.6 MoE lane using MTPLX with 262K context.",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe metadata license"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "local benchmark evidence"
+  },
+  "links": [
+    {
+      "rel": "benchmark",
+      "href": "../benchmarks/apple-silicon-qwen36-m2max.json",
+      "mediaType": "application/vnd.lloom.benchmark-suite+json;version=1"
+    }
+  ],
+  "keywords": ["agentic-coding", "coding-agent", "local-first", "qwen3.6", "apple-silicon", "long-context"],
+  "capabilities": [
+    "chat",
+    "responses",
+    "anthropic-messages",
+    "streaming",
+    "usage",
+    "tools",
+    "reasoning",
+    "vision",
+    "mtp",
+    "moe",
+    "long-context"
+  ],
+  "hardware": {
+    "family": "Apple Silicon",
+    "testedMachine": "MacBook Pro M2 Max 96 GB",
+    "notes": [
+      "Prefer this lane when unified memory is high enough for the model plus KV/session cache.",
+      "Retune MTP depth per machine."
+    ]
+  },
+  "requirements": {
+    "platforms": ["darwin-arm64"],
+    "memoryGb": 80,
+    "diskGb": 55,
+    "commands": ["mtplx"],
+    "accelerators": ["apple-gpu"]
+  },
+  "backend": {
+    "id": "mtplx",
+    "name": "MTPLX",
+    "type": "openai-compatible-server",
+    "features": ["mlx", "mtp", "openai-chat", "streaming"]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-mtplx",
+        "title": "Check MTPLX CLI",
+        "action": "check-command",
+        "command": "mtplx",
+        "args": ["--version"]
+      },
+      {
+        "id": "download-35b-a3b",
+        "title": "Download Qwen3.6 35B-A3B Speed FP16",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16"
+      },
+      {
+        "id": "tune-35b-a3b",
+        "title": "Autotune Qwen3.6 35B-A3B Speed FP16",
+        "action": "command",
+        "skipIfPathExists": "${modelRoot}/Youssofal--Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16/mtplx_runtime.json",
+        "command": "mtplx",
+        "args": ["tune", "--model", "${modelRoot}/Youssofal--Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16", "--retune"]
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "default",
+      "model": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
+      "gatewayModel": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
+      "runtime": "mtplx-qwen36-35b-a3b-speed-fp16",
+      "backendConfig": "mtplx-35b-a3b",
+      "backend": "MTPLX 2.x",
+      "input": ["text", "image"],
+      "output": ["text"],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "usage",
+        "tools",
+        "reasoning",
+        "vision",
+        "mtp",
+        "moe",
+        "long-context"
+      ],
+      "settings": {
+        "profile": "sustained",
+        "draftDepth": 1,
+        "contextWindow": 262144,
+        "maxOutputTokens": 32768,
+        "maxActiveRequests": 10,
+        "sessionCache": true,
+        "runtime": {
+          "command": "mtplx",
+          "args": [
+            "serve",
+            "--model",
+            "${modelPath}",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "${port}",
+            "--model-id",
+            "${modelId}",
+            "--profile",
+            "sustained",
+            "--depth",
+            "1",
+            "--context-window",
+            "262144",
+            "--max-tokens",
+            "32768",
+            "--reasoning",
+            "auto",
+            "--preserve-thinking",
+            "auto",
+            "--batching-preset",
+            "agent",
+            "--max-active-requests",
+            "10",
+            "--no-stats-footer"
+          ],
+          "adapter": "mtplx",
+          "baseUrlPath": "/v1",
+          "healthPath": "/health",
+          "warmupPath": "/v1/chat/completions"
+        }
+      },
+      "observed": {
+        "generationTokPerSec": 68.58,
+        "notes": "Direct warmed MTPLX benchmark on the local M2 Max 96 GB box."
+      }
+    }
+  ]
+}

@@ -4,14 +4,60 @@
     "host": "127.0.0.1",
     "port": 8100
   },
+  "ports": {
+    "gateway": 8100,
+    "backends": {
+      "start": 8201,
+      "end": 8299
+    }
+  },
   "security": {
     "allowMissingAuth": true,
-    "apiKeys": [
-      "sk-lloom-local"
-    ]
+    "allowRemoteAdmin": false,
+    "allowWildcardCors": false,
+    "allowNonLoopbackBind": false,
+    "apiKeys": ["sk-lloom-local"],
+    "adminApiKeys": []
+  },
+  "logging": {
+    "requestLog": false,
+    "requestLogPath": null
+  },
+  "runtimePolicy": {
+    "enabled": true,
+    "autoEvict": false,
+    "reserveMemoryGb": 12,
+    "protectActiveRequests": true,
+    "protectKeepWarm": false
+  },
+  "community": {
+    "hostUrl": "http://127.0.0.1:8110",
+    "recipeFeedPath": "/v1/recipe-packs/recommended",
+    "signingKeysPath": "/v1/keys",
+    "trustHostKeys": true,
+    "leaderboardPath": "/v1/leaderboard",
+    "submissionPath": "/v1/benchmarks",
+    "recipePackSubmissionPath": "/v1/recipe-packs",
+    "requireSignedPacks": true,
+    "autoStartLocalHost": true,
+    "localHostStartupTimeoutMs": 5000,
+    "workloads": ["agentic-coding"],
+    "capabilities": ["tools", "reasoning", "long-context"],
+    "tags": [],
+    "trustedKeys": []
+  },
+  "communityHost": {
+    "indexPath": "community/recipes/index.json",
+    "recipesRoot": "community/recipes",
+    "benchmarksRoot": "community/benchmarks",
+    "backendCatalogPath": "backends/catalog.json",
+    "publisher": "lloom-dev-host",
+    "keyId": "lloom-dev-seed",
+    "privateKeyPath": "community/keys/lloom-dev-signing-private.pem",
+    "publicKeyPath": "community/keys/lloom-dev-signing-public.pem"
   },
   "defaults": {
-    "chatModel": "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+    "chatModel": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
     "imageModel": "black-forest-labs/FLUX.1-schnell",
     "speechModel": "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-4bit"
   },
@@ -56,31 +102,15 @@
       "runtime": "mtplx-qwen36-27b-speed",
       "upstreamModel": "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
       "kind": "chat",
-      "input": [
-        "text",
-        "image"
-      ],
-      "output": [
-        "text"
-      ],
-      "capabilities": [
-        "chat",
-        "tools",
-        "reasoning",
-        "long-context",
-        "mtp"
-      ],
+      "input": ["text", "image"],
+      "output": ["text"],
+      "capabilities": ["chat", "tools", "reasoning", "long-context", "mtp"],
       "reasoning": true,
       "supportsTools": true,
       "contextWindow": 262144,
       "maxOutputTokens": 32768,
       "advertise": true,
-      "tags": [
-        "apple-silicon",
-        "qwen3.6",
-        "dense",
-        "fastest-27b"
-      ]
+      "tags": ["apple-silicon", "qwen3.6", "dense", "fastest-27b"]
     },
     {
       "id": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
@@ -89,32 +119,15 @@
       "runtime": "mtplx-qwen36-35b-a3b-speed-fp16",
       "upstreamModel": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
       "kind": "chat",
-      "input": [
-        "text",
-        "image"
-      ],
-      "output": [
-        "text"
-      ],
-      "capabilities": [
-        "chat",
-        "tools",
-        "reasoning",
-        "long-context",
-        "mtp",
-        "moe"
-      ],
+      "input": ["text", "image"],
+      "output": ["text"],
+      "capabilities": ["chat", "tools", "reasoning", "long-context", "mtp", "moe"],
       "reasoning": true,
       "supportsTools": true,
       "contextWindow": 262144,
       "maxOutputTokens": 32768,
       "advertise": true,
-      "tags": [
-        "apple-silicon",
-        "qwen3.6",
-        "moe",
-        "fastest-35b"
-      ]
+      "tags": ["apple-silicon", "qwen3.6", "moe", "fastest-35b"]
     },
     {
       "id": "black-forest-labs/FLUX.1-schnell",
@@ -123,23 +136,13 @@
       "runtime": "flux-schnell",
       "upstreamModel": "black-forest-labs/FLUX.1-schnell",
       "kind": "image",
-      "input": [
-        "text"
-      ],
-      "output": [
-        "image"
-      ],
-      "capabilities": [
-        "image-generation"
-      ],
+      "input": ["text"],
+      "output": ["image"],
+      "capabilities": ["image-generation"],
       "contextWindow": 4096,
       "maxOutputTokens": 0,
       "advertise": true,
-      "tags": [
-        "image",
-        "flux",
-        "fast"
-      ]
+      "tags": ["image", "flux", "fast"]
     },
     {
       "id": "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-4bit",
@@ -148,24 +151,13 @@
       "runtime": "qwen3-tts-mlx",
       "upstreamModel": "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-4bit",
       "kind": "audio_speech",
-      "input": [
-        "text"
-      ],
-      "output": [
-        "audio"
-      ],
-      "capabilities": [
-        "audio-speech",
-        "tts"
-      ],
+      "input": ["text"],
+      "output": ["audio"],
+      "capabilities": ["audio-speech", "tts"],
       "contextWindow": 4096,
       "maxOutputTokens": 4096,
       "advertise": true,
-      "tags": [
-        "audio",
-        "tts",
-        "qwen3"
-      ]
+      "tags": ["audio", "tts", "qwen3"]
     }
   ],
   "aliases": {
@@ -207,19 +199,47 @@
       "args": [
         "serve",
         "--model",
-        "${LLOOM_MTPLX_MODEL_ROOT}/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+        "${LLOOM_MTPLX_MODEL_ROOT}/Youssofal--Qwen3.6-27B-MTPLX-Optimized-Speed",
         "--host",
         "127.0.0.1",
         "--port",
         "8201",
-        "--turbo",
-        "--draft-depth",
-        "3"
+        "--model-id",
+        "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+        "--profile",
+        "turbo",
+        "--depth",
+        "3",
+        "--context-window",
+        "262144",
+        "--max-tokens",
+        "32768",
+        "--reasoning",
+        "auto",
+        "--preserve-thinking",
+        "auto",
+        "--batching-preset",
+        "agent",
+        "--max-active-requests",
+        "10",
+        "--no-stats-footer"
       ],
+      "sessionCache": {
+        "kind": "mtplx-ssd-session",
+        "mode": "on",
+        "dir": "${LLOOM_SESSION_CACHE_ROOT}/mtplx-qwen36-27b-speed",
+        "maxSize": "100GB",
+        "minPrefixTokens": 512
+      },
       "port": 8201,
       "healthUrl": "http://127.0.0.1:8201/health",
       "startupTimeoutMs": 900000,
+      "memoryGb": 32,
       "maxConcurrency": 10,
+      "policy": {
+        "priority": 100,
+        "evictable": true
+      },
       "warmup": {
         "url": "http://127.0.0.1:8201/v1/chat/completions",
         "method": "POST",
@@ -242,18 +262,47 @@
       "args": [
         "serve",
         "--model",
-        "${LLOOM_MTPLX_MODEL_ROOT}/Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
+        "${LLOOM_MTPLX_MODEL_ROOT}/Youssofal--Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
         "--host",
         "127.0.0.1",
         "--port",
         "8202",
-        "--draft-depth",
-        "1"
+        "--model-id",
+        "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
+        "--profile",
+        "sustained",
+        "--depth",
+        "1",
+        "--context-window",
+        "262144",
+        "--max-tokens",
+        "32768",
+        "--reasoning",
+        "auto",
+        "--preserve-thinking",
+        "auto",
+        "--batching-preset",
+        "agent",
+        "--max-active-requests",
+        "10",
+        "--no-stats-footer"
       ],
+      "sessionCache": {
+        "kind": "mtplx-ssd-session",
+        "mode": "on",
+        "dir": "${LLOOM_SESSION_CACHE_ROOT}/mtplx-qwen36-35b-a3b-speed-fp16",
+        "maxSize": "100GB",
+        "minPrefixTokens": 512
+      },
       "port": 8202,
       "healthUrl": "http://127.0.0.1:8202/health",
       "startupTimeoutMs": 900000,
+      "memoryGb": 72,
       "maxConcurrency": 10,
+      "policy": {
+        "priority": 80,
+        "evictable": true
+      },
       "warmup": {
         "url": "http://127.0.0.1:8202/v1/chat/completions",
         "method": "POST",
@@ -273,39 +322,41 @@
     "flux-schnell": {
       "enabled": false,
       "command": "python",
-      "args": [
-        "-m",
-        "lloom_flux_server"
-      ],
+      "args": ["-m", "lloom_flux_server"],
       "port": 8210,
       "healthUrl": "http://127.0.0.1:8210/health",
       "startupTimeoutMs": 900000,
+      "memoryGb": 12,
+      "policy": {
+        "priority": 20,
+        "evictable": true
+      },
       "maxConcurrency": 1
     },
     "qwen3-tts-mlx": {
       "enabled": false,
       "command": "python",
-      "args": [
-        "-m",
-        "lloom_qwen3_tts_server"
-      ],
+      "args": ["-m", "lloom_qwen3_tts_server"],
       "port": 8220,
       "healthUrl": "http://127.0.0.1:8220/health",
       "startupTimeoutMs": 900000,
+      "memoryGb": 4,
+      "policy": {
+        "priority": 40,
+        "evictable": true
+      },
       "maxConcurrency": 1
     }
   },
-  "keepWarm": [
-    "mtplx-qwen36-27b-speed"
-  ],
+  "keepWarm": ["mtplx-qwen36-35b-a3b-speed-fp16"],
   "clientCatalog": {
     "providerId": "local-llm",
     "providerName": "LLooM Local",
     "modelOrder": [
-      "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
       "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
-      "qwen36-27b-fastest",
+      "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
       "qwen36-35b-fastest",
+      "qwen36-27b-fastest",
       "black-forest-labs/FLUX.1-schnell"
     ]
   }

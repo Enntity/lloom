@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lloom.dev/schemas/error-response.v1.schema.json",
+  "title": "LLooM Error Response v1",
+  "description": "Portable non-2xx error response for LLooM-compatible public interchange endpoints.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "id", "error"],
+  "properties": {
+    "$schema": {
+      "const": "https://lloom.dev/schemas/error-response.v1.schema.json"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "profile": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/profile"
+    },
+    "id": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/id"
+    },
+    "occurredAt": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/dateTime"
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "service": {
+          "type": "string"
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable problem type URI or implementation-specific error category."
+        },
+        "title": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "status": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 599
+        },
+        "validationErrors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "retryAfterSeconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "docs": {
+          "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/uri"
+        }
+      },
+      "patternProperties": {
+        "^x-": true
+      }
+    }
+  },
+  "patternProperties": {
+    "^x-": true
+  }
+}

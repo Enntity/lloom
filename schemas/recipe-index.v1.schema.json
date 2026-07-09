@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lloom.dev/schemas/recipe-index.v1.schema.json",
+  "title": "LLooM Recipe Index v1",
+  "description": "Searchable recipe listing for a LLooM-compatible recipe catalog or local recipe library.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "id", "name", "recipes"],
+  "properties": {
+    "$schema": {
+      "const": "https://lloom.dev/schemas/recipe-index.v1.schema.json"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "profile": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/profile"
+    },
+    "id": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/id"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "summary": {
+      "type": "string"
+    },
+    "license": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/license"
+    },
+    "publisher": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/publisher"
+    },
+    "createdAt": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/dateTime"
+    },
+    "updatedAt": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/dateTime"
+    },
+    "provenance": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/provenance"
+    },
+    "links": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/links"
+    },
+    "keywords": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "recipes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "path", "name"],
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "allOf": [
+              {
+                "not": {
+                  "pattern": "^/"
+                }
+              },
+              {
+                "not": {
+                  "pattern": "(^|/)\\.\\.(/|$)"
+                }
+              }
+            ]
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "summary": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "recommendedFor": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "capabilities": {
+            "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/capabilities"
+          },
+          "source": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "minLength": 1
+              },
+              "url": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "patternProperties": {
+          "^x-": true
+        }
+      }
+    }
+  },
+  "patternProperties": {
+    "^x-": true
+  }
+}

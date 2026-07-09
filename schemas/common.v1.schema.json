@@ -1,0 +1,242 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lloom.dev/schemas/common.v1.schema.json",
+  "title": "LLooM Common Interchange Definitions v1",
+  "description": "Shared JSON Schema definitions used by the LLooM v1 interchange profile.",
+  "type": "object",
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "uri": {
+      "type": "string",
+      "format": "uri"
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "profile": {
+      "const": "https://lloom.dev/profiles/interchange/v1"
+    },
+    "spdxExpression": {
+      "type": "string",
+      "minLength": 1,
+      "description": "An SPDX license expression such as MIT, Apache-2.0, or CC-BY-4.0."
+    },
+    "license": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/spdxExpression"
+        },
+        {
+          "type": "object",
+          "required": ["id"],
+          "additionalProperties": true,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/spdxExpression"
+            },
+            "name": {
+              "type": "string"
+            },
+            "url": {
+              "$ref": "#/$defs/uri"
+            }
+          }
+        }
+      ]
+    },
+    "publisher": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "object",
+          "required": ["id", "name"],
+          "additionalProperties": true,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "url": {
+              "$ref": "#/$defs/uri"
+            },
+            "contact": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "link": {
+      "type": "object",
+      "required": ["rel", "href"],
+      "additionalProperties": true,
+      "properties": {
+        "rel": {
+          "type": "string",
+          "minLength": 1
+        },
+        "href": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mediaType": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "integrity": {
+          "type": "string",
+          "description": "Optional Subresource Integrity style digest, for example sha256-..."
+        }
+      }
+    },
+    "links": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/link"
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "createdBy": {
+          "type": "string"
+        },
+        "generatedBy": {
+          "type": "string"
+        },
+        "generatorVersion": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "sourceCommit": {
+          "type": "string"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/dateTime"
+        }
+      }
+    },
+    "capability": {
+      "type": "string",
+      "enum": [
+        "chat",
+        "text-generation",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "usage",
+        "tools",
+        "tool-choice",
+        "structured-output",
+        "reasoning",
+        "reasoning-signatures",
+        "vision",
+        "image-generation",
+        "image-editing",
+        "embeddings",
+        "reranking",
+        "audio-input",
+        "audio-output",
+        "audio-speech",
+        "tts",
+        "mtp",
+        "moe",
+        "speculative-decoding",
+        "batching",
+        "kv-cache-persistence",
+        "long-context"
+      ]
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/capability"
+      },
+      "uniqueItems": true
+    },
+    "computeDevice": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "description": "Device class, for example gpu, npu, or cpu."
+        },
+        "vendor": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "backend": {
+          "type": "string",
+          "description": "Execution backend exposed by the device, for example metal, cuda, rocm, or ane."
+        },
+        "memoryGb": {
+          "type": "number",
+          "minimum": 0
+        },
+        "computeCapability": {
+          "type": "string"
+        },
+        "accelerators": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "machine": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["platformId"],
+      "properties": {
+        "platformId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "chip": {
+          "type": "string"
+        },
+        "memoryGb": {
+          "type": "number",
+          "minimum": 0
+        },
+        "accelerators": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "devices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/computeDevice"
+          }
+        }
+      }
+    }
+  }
+}

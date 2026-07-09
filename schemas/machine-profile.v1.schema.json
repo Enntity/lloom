@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lloom.dev/schemas/machine-profile.v1.schema.json",
+  "title": "LLooM Machine Profile v1",
+  "description": "Portable hardware profile used to match a machine to local model/backend recipes.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "id", "platform", "arch", "platformId"],
+  "properties": {
+    "$schema": {
+      "const": "https://lloom.dev/schemas/machine-profile.v1.schema.json"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "profile": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/profile"
+    },
+    "id": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/id"
+    },
+    "platform": {
+      "type": "string",
+      "minLength": 1
+    },
+    "arch": {
+      "type": "string",
+      "minLength": 1
+    },
+    "platformId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cpuBrand": {
+      "type": "string"
+    },
+    "totalMemoryGb": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Total system memory in GiB when known. Detected local profiles should include this; public recommendation queries may omit it and receive unknown-memory compatibility results."
+    },
+    "logicalCpus": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "accelerators": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "devices": {
+      "type": "array",
+      "description": "Structured local compute devices that can influence recipe matching.",
+      "items": {
+        "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/computeDevice"
+      }
+    },
+    "isAppleSilicon": {
+      "type": "boolean"
+    }
+  },
+  "patternProperties": {
+    "^x-": true
+  }
+}

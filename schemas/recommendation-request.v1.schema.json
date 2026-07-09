@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lloom.dev/schemas/recommendation-request.v1.schema.json",
+  "title": "LLooM Recommendation Request v1",
+  "description": "Portable host request asking for recipe-pack recommendations for a machine profile and optional workload intent.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "id", "machineProfile"],
+  "properties": {
+    "$schema": {
+      "const": "https://lloom.dev/schemas/recommendation-request.v1.schema.json"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "profile": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/profile"
+    },
+    "id": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/id"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "machineProfile": {
+      "$ref": "https://lloom.dev/schemas/machine-profile.v1.schema.json"
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "request": {
+      "$ref": "#/$defs/recommendationIntent"
+    }
+  },
+  "patternProperties": {
+    "^x-": true
+  },
+  "$defs": {
+    "recommendationIntent": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "filters": {
+          "$ref": "#/$defs/recommendationFilters"
+        },
+        "workloads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
+      },
+      "patternProperties": {
+        "^x-": true
+      }
+    },
+    "recommendationFilters": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "workloads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
+      },
+      "patternProperties": {
+        "^x-": true
+      }
+    }
+  }
+}

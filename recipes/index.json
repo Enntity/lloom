@@ -1,24 +1,39 @@
 {
+  "$schema": "https://lloom.dev/schemas/recipe-index.v1.schema.json",
   "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "lloom-community-recipes",
   "name": "LLooM Community Recipe Index",
-  "updatedAt": "2026-07-07T00:00:00Z",
+  "summary": "Local LLooM community recipe catalog.",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe metadata license"
+  },
+  "updatedAt": "2026-07-08T08:00:04.728Z",
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated"
+  },
   "recipes": [
     {
       "id": "apple-silicon-qwen36",
       "path": "apple-silicon-qwen36.json",
       "name": "Apple Silicon Qwen3.6 MTPLX fast lanes",
       "summary": "Best observed Qwen3.6 dense and MoE lanes for Apple Silicon using MTPLX.",
-      "tags": [
-        "apple-silicon",
-        "qwen3.6",
-        "mtplx",
-        "long-context",
-        "reasoning"
-      ],
+      "tags": ["apple-silicon", "qwen3.6", "mtplx", "agentic-coding", "coding-agent", "long-context", "reasoning"],
       "recommendedFor": [
         "M-series Macs with at least 64 GB unified memory",
         "agentic coding workloads that need 262K context"
+      ],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "tools",
+        "reasoning",
+        "mtp",
+        "long-context"
       ],
       "source": {
         "type": "local",

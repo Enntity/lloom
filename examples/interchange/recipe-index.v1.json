@@ -1,0 +1,37 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe-index.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "example-recipes",
+  "name": "Example Recipe Catalog",
+  "summary": "Minimal recipe index suitable for static hosting or a community host feed.",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe metadata license"
+  },
+  "publisher": {
+    "id": "example-lab",
+    "name": "Example Lab",
+    "url": "https://example.com"
+  },
+  "updatedAt": "2026-07-07T00:00:00Z",
+  "provenance": {
+    "createdBy": "example-lab",
+    "generatedBy": "lloom examples"
+  },
+  "recipes": [
+    {
+      "id": "example-apple-silicon-27b",
+      "path": "example-apple-silicon-27b.json",
+      "name": "Example Apple Silicon 27B Agent Recipe",
+      "summary": "Example recipe showing the portable LLooM v1 fields for a local agentic coding model.",
+      "tags": ["apple-silicon", "agentic-coding", "long-context"],
+      "recommendedFor": ["Apple Silicon machines with at least 48 GB unified memory"],
+      "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "tools", "reasoning", "long-context"],
+      "source": {
+        "type": "recipe-pack",
+        "url": "https://example.com/lloom/packs/example-apple-silicon-27b.json"
+      }
+    }
+  ]
+}

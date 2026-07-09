@@ -1,0 +1,158 @@
+{
+  "$schema": "https://lloom.dev/schemas/client-integrations.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "lloom-example-integrations",
+  "name": "LLooM Example Client Integrations",
+  "summary": "Example discovery document for tools that want to connect to a local LLooM gateway.",
+  "license": "MIT",
+  "publisher": {
+    "id": "lloom",
+    "name": "LLooM Project"
+  },
+  "provenance": {
+    "generatedBy": "lloom example",
+    "createdAt": "2026-07-07T00:00:00Z"
+  },
+  "links": [
+    {
+      "rel": "describedby",
+      "href": "https://lloom.dev/docs/interchange",
+      "mediaType": "text/markdown"
+    }
+  ],
+  "provider": {
+    "id": "local-llm",
+    "name": "LLooM Local",
+    "gatewayUrl": "http://127.0.0.1:8100",
+    "baseUrl": "http://127.0.0.1:8100/v1",
+    "openAIBaseUrl": "http://127.0.0.1:8100/v1",
+    "anthropicBaseUrl": "http://127.0.0.1:8100",
+    "apiKey": "sk-lloom-local",
+    "auth": {
+      "type": "bearer",
+      "header": "authorization",
+      "apiKeyEnv": "LLOOM_API_KEY"
+    },
+    "protocols": ["openai-chat-completions", "openai-responses", "anthropic-messages"],
+    "features": {
+      "streaming": true,
+      "usage": true,
+      "streamingUsage": true,
+      "tools": true,
+      "reasoning": true
+    },
+    "endpoints": {
+      "models": "http://127.0.0.1:8100/v1/models",
+      "chatCompletions": "http://127.0.0.1:8100/v1/chat/completions",
+      "responses": "http://127.0.0.1:8100/v1/responses",
+      "anthropicMessages": "http://127.0.0.1:8100/v1/messages",
+      "images": "http://127.0.0.1:8100/v1/images/generations",
+      "embeddings": "http://127.0.0.1:8100/v1/embeddings",
+      "speech": "http://127.0.0.1:8100/v1/audio/speech",
+      "transcriptions": "http://127.0.0.1:8100/v1/audio/transcriptions"
+    },
+    "defaultModel": "example/qwen3.6-27b-fast"
+  },
+  "clients": [
+    {
+      "id": "omp",
+      "name": "Oh My Pi / OMP",
+      "kind": "native-config",
+      "protocols": ["openai-chat-completions"],
+      "artifacts": [
+        {
+          "id": "omp-models",
+          "kind": "native-config",
+          "mode": "replace"
+        },
+        {
+          "id": "omp-config",
+          "kind": "native-config",
+          "mode": "replace"
+        }
+      ],
+      "notes": ["Use exact LLooM model IDs and long streaming timeouts for local prefill."]
+    },
+    {
+      "id": "opencode",
+      "name": "OpenCode",
+      "kind": "native-config",
+      "protocols": ["openai-chat-completions"],
+      "artifacts": [
+        {
+          "id": "opencode",
+          "kind": "native-config",
+          "mode": "replace"
+        },
+        {
+          "id": "lloom-opencode",
+          "kind": "launcher-script",
+          "mode": "managed-launcher",
+          "executable": true
+        }
+      ]
+    },
+    {
+      "id": "codex",
+      "name": "Codex-compatible clients",
+      "kind": "env-profile",
+      "protocols": ["openai-chat-completions", "openai-responses"],
+      "artifacts": [
+        {
+          "id": "codex",
+          "kind": "env-profile",
+          "mode": "managed-profile"
+        },
+        {
+          "id": "lloom-codex",
+          "kind": "launcher-script",
+          "mode": "managed-launcher",
+          "executable": true
+        }
+      ]
+    },
+    {
+      "id": "claude",
+      "name": "Claude-compatible clients",
+      "kind": "env-profile",
+      "protocols": ["anthropic-messages"],
+      "artifacts": [
+        {
+          "id": "claude",
+          "kind": "env-profile",
+          "mode": "managed-profile"
+        },
+        {
+          "id": "lloom-claude",
+          "kind": "launcher-script",
+          "mode": "managed-launcher",
+          "executable": true
+        }
+      ]
+    }
+  ],
+  "models": [
+    {
+      "id": "example/qwen3.6-27b-fast",
+      "name": "Example Qwen3.6 27B Fast",
+      "input": ["text", "image"],
+      "output": ["text"],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "usage",
+        "tools",
+        "reasoning",
+        "mtp",
+        "long-context"
+      ],
+      "supportsTools": true,
+      "reasoning": true,
+      "contextWindow": 262144,
+      "maxOutputTokens": 32768
+    }
+  ]
+}

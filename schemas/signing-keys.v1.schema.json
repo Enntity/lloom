@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lloom.dev/schemas/signing-keys.v1.schema.json",
+  "title": "LLooM Signing Keys v1",
+  "description": "Public signing-key discovery document for LLooM recipe-pack and recommendation feeds.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "id", "data"],
+  "properties": {
+    "$schema": {
+      "const": "https://lloom.dev/schemas/signing-keys.v1.schema.json"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "profile": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/profile"
+    },
+    "id": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/id"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "summary": {
+      "type": "string"
+    },
+    "updatedAt": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/dateTime"
+    },
+    "publisher": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/publisher"
+    },
+    "provenance": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/provenance"
+    },
+    "links": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/links"
+    },
+    "data": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/signingKey"
+      }
+    }
+  },
+  "patternProperties": {
+    "^x-": true
+  },
+  "$defs": {
+    "signingKey": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["keyId", "algorithm", "publicKey"],
+      "properties": {
+        "keyId": {
+          "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/id"
+        },
+        "algorithm": {
+          "type": "string",
+          "enum": ["ed25519"]
+        },
+        "publicKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "notBefore": {
+          "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/dateTime"
+        },
+        "notAfter": {
+          "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/dateTime"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "retiring", "retired", "revoked"]
+        },
+        "ephemeral": {
+          "type": "boolean"
+        }
+      },
+      "patternProperties": {
+        "^x-": true
+      }
+    }
+  }
+}

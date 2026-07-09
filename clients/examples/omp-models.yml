@@ -8,14 +8,14 @@ providers:
       supportsStore: false
       supportsDeveloperRole: false
       supportsReasoningEffort: false
-      supportsUsageInStreaming: false
+      supportsUsageInStreaming: true
       maxTokensField: max_tokens
       supportsStrictMode: false
       toolStrictMode: none
       thinkingFormat: qwen-chat-template
     models:
-      - id: Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed
-        name: Qwen3.6 27B MTPLX Speed
+      - id: Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16
+        name: Qwen3.6 35B-A3B MTPLX Speed FP16
         reasoning: true
         thinking:
           mode: effort
@@ -31,8 +31,8 @@ providers:
           output: 0
           cacheRead: 0
           cacheWrite: 0
-      - id: Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16
-        name: Qwen3.6 35B-A3B MTPLX Speed FP16
+      - id: Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed
+        name: Qwen3.6 27B MTPLX Speed
         reasoning: true
         thinking:
           mode: effort

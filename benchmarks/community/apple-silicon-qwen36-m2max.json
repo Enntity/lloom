@@ -1,9 +1,28 @@
 {
+  "$schema": "https://lloom.dev/schemas/benchmark-suite.v1.schema.json",
   "schemaVersion": 1,
-  "id": "apple-silicon-qwen36-m2max-local",
-  "name": "Apple Silicon Qwen3.6 MTPLX local evidence",
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "apple-silicon-qwen36-m2max-seed",
+  "name": "Apple Silicon Qwen3.6 MTPLX seed evidence",
+  "summary": "Direct warmed MTPLX measurements used by the local development LLooM host.",
+  "license": {
+    "id": "MIT",
+    "name": "Benchmark metadata license"
+  },
   "source": "local-lloom-prototype",
-  "submittedAt": "2026-07-07T00:00:00Z",
+  "submittedAt": "2026-07-08T00:00:00Z",
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "local command-line benchmark runs"
+  },
+  "methodology": {
+    "harness": "lloom local benchmark",
+    "harnessVersion": "prototype",
+    "warmupRuns": 1,
+    "measurementRuns": 3,
+    "streaming": true
+  },
   "results": [
     {
       "id": "qwen36-27b-mtplx-speed-m2max-d3",
@@ -17,9 +36,21 @@
         "memoryGb": 96
       },
       "settings": {
-        "turbo": true,
+        "profile": "turbo",
         "draftDepth": 3,
-        "contextWindow": 262144
+        "contextWindow": 262144,
+        "maxActiveRequests": 10
+      },
+      "workload": {
+        "type": "interactive-generation",
+        "category": "agentic-coding",
+        "tags": [
+          "agentic-coding",
+          "coding-agent",
+          "long-context"
+        ],
+        "concurrency": 1,
+        "contextDepth": 0
       },
       "metrics": {
         "generationTokPerSec": 25.47,
@@ -39,8 +70,21 @@
         "memoryGb": 96
       },
       "settings": {
+        "profile": "sustained",
         "draftDepth": 1,
-        "contextWindow": 262144
+        "contextWindow": 262144,
+        "maxActiveRequests": 10
+      },
+      "workload": {
+        "type": "interactive-generation",
+        "category": "agentic-coding",
+        "tags": [
+          "agentic-coding",
+          "coding-agent",
+          "long-context"
+        ],
+        "concurrency": 1,
+        "contextDepth": 0
       },
       "metrics": {
         "generationTokPerSec": 68.58,
@@ -48,5 +92,6 @@
       },
       "notes": "Direct warmed MTPLX benchmark on the local M2 Max 96 GB machine."
     }
-  ]
+  ],
+  "fileName": "apple-silicon-qwen36-m2max.json"
 }

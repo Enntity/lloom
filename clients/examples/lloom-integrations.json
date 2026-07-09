@@ -1,38 +1,191 @@
 {
+  "$schema": "https://lloom.dev/schemas/client-integrations.v1.schema.json",
   "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "lloom-local-integrations",
+  "name": "LLooM Local Client Integrations",
+  "summary": "Discovery document for clients connecting to this LLooM gateway.",
+  "license": "MIT",
+  "provenance": {
+    "generatedBy": "lloom"
+  },
   "provider": {
     "id": "local-llm",
     "name": "LLooM Local",
+    "gatewayUrl": "http://127.0.0.1:8100",
     "baseUrl": "http://127.0.0.1:8100/v1",
+    "openAIBaseUrl": "http://127.0.0.1:8100/v1",
+    "anthropicBaseUrl": "http://127.0.0.1:8100",
     "apiKey": "sk-lloom-local",
-    "defaultModel": "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed"
+    "auth": {
+      "type": "bearer",
+      "header": "authorization",
+      "apiKeyEnv": "LLOOM_API_KEY"
+    },
+    "protocols": ["openai-chat-completions", "openai-responses", "anthropic-messages"],
+    "features": {
+      "streaming": true,
+      "usage": true,
+      "streamingUsage": true,
+      "tools": true,
+      "reasoning": true
+    },
+    "endpoints": {
+      "models": "http://127.0.0.1:8100/v1/models",
+      "chatCompletions": "http://127.0.0.1:8100/v1/chat/completions",
+      "responses": "http://127.0.0.1:8100/v1/responses",
+      "anthropicMessages": "http://127.0.0.1:8100/v1/messages",
+      "images": "http://127.0.0.1:8100/v1/images/generations",
+      "embeddings": "http://127.0.0.1:8100/v1/embeddings",
+      "speech": "http://127.0.0.1:8100/v1/audio/speech",
+      "transcriptions": "http://127.0.0.1:8100/v1/audio/transcriptions"
+    },
+    "defaultModel": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16"
   },
+  "clients": [
+    {
+      "id": "omp",
+      "name": "Oh My Pi / OMP",
+      "kind": "native-config",
+      "protocols": ["openai-chat-completions"],
+      "artifacts": [
+        {
+          "id": "omp-models",
+          "kind": "native-config",
+          "mode": "replace"
+        },
+        {
+          "id": "omp-config",
+          "kind": "native-config",
+          "mode": "replace"
+        }
+      ],
+      "notes": ["Uses exact LLooM model IDs and long local-model streaming timeouts."]
+    },
+    {
+      "id": "opencode",
+      "name": "OpenCode",
+      "kind": "native-config",
+      "protocols": ["openai-chat-completions"],
+      "artifacts": [
+        {
+          "id": "opencode",
+          "kind": "native-config",
+          "mode": "replace"
+        },
+        {
+          "id": "lloom-opencode",
+          "kind": "launcher-script",
+          "mode": "managed-launcher",
+          "executable": true
+        }
+      ],
+      "notes": [
+        "Native OpenCode provider config with client-side timeouts disabled.",
+        "Launcher pins OpenCode to the LLooM default model."
+      ]
+    },
+    {
+      "id": "codex",
+      "name": "Codex-compatible clients",
+      "kind": "env-profile",
+      "protocols": ["openai-chat-completions", "openai-responses"],
+      "artifacts": [
+        {
+          "id": "codex",
+          "kind": "env-profile",
+          "mode": "managed-profile"
+        },
+        {
+          "id": "lloom-codex",
+          "kind": "launcher-script",
+          "mode": "managed-launcher",
+          "executable": true
+        }
+      ],
+      "notes": ["Exports OPENAI_BASE_URL, OPENAI_API_KEY, and OPENAI_MODEL."]
+    },
+    {
+      "id": "claude",
+      "name": "Claude-compatible clients",
+      "kind": "env-profile",
+      "protocols": ["anthropic-messages"],
+      "artifacts": [
+        {
+          "id": "claude",
+          "kind": "env-profile",
+          "mode": "managed-profile"
+        },
+        {
+          "id": "lloom-claude",
+          "kind": "launcher-script",
+          "mode": "managed-launcher",
+          "executable": true
+        }
+      ],
+      "notes": ["Exports Anthropic-compatible variables backed by LLooM's /v1/messages bridge."]
+    },
+    {
+      "id": "hermes",
+      "name": "Hermes",
+      "kind": "env-profile",
+      "protocols": ["openai-chat-completions"],
+      "artifacts": [
+        {
+          "id": "hermes",
+          "kind": "env-profile",
+          "mode": "managed-profile"
+        },
+        {
+          "id": "lloom-hermes",
+          "kind": "launcher-script",
+          "mode": "managed-launcher",
+          "executable": true
+        }
+      ],
+      "notes": [
+        "Uses the OpenAI-compatible environment profile until Hermes publishes a stable native config contract."
+      ]
+    },
+    {
+      "id": "zero",
+      "name": "Zero",
+      "kind": "env-profile",
+      "protocols": ["openai-chat-completions"],
+      "artifacts": [
+        {
+          "id": "zero",
+          "kind": "env-profile",
+          "mode": "managed-profile"
+        },
+        {
+          "id": "lloom-zero",
+          "kind": "launcher-script",
+          "mode": "managed-launcher",
+          "executable": true
+        }
+      ],
+      "notes": ["Uses the OpenAI-compatible environment profile until Zero publishes a stable native config contract."]
+    }
+  ],
   "models": [
     {
-      "id": "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
-      "name": "Qwen3.6 27B MTPLX Speed",
-      "input": [
-        "text",
-        "image"
-      ],
-      "output": [
-        "text"
-      ],
+      "id": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
+      "name": "Qwen3.6 35B-A3B MTPLX Speed FP16",
+      "input": ["text", "image"],
+      "output": ["text"],
+      "capabilities": ["chat", "tools", "reasoning", "long-context", "mtp", "moe"],
       "supportsTools": true,
       "reasoning": true,
       "contextWindow": 262144,
       "maxOutputTokens": 32768
     },
     {
-      "id": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
-      "name": "Qwen3.6 35B-A3B MTPLX Speed FP16",
-      "input": [
-        "text",
-        "image"
-      ],
-      "output": [
-        "text"
-      ],
+      "id": "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
+      "name": "Qwen3.6 27B MTPLX Speed",
+      "input": ["text", "image"],
+      "output": ["text"],
+      "capabilities": ["chat", "tools", "reasoning", "long-context", "mtp"],
       "supportsTools": true,
       "reasoning": true,
       "contextWindow": 262144,

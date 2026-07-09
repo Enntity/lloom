@@ -11,8 +11,8 @@
         "headerTimeout": false
       },
       "models": {
-        "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed": {
-          "name": "Qwen3.6 27B MTPLX Speed",
+        "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16": {
+          "name": "Qwen3.6 35B-A3B MTPLX Speed FP16",
           "tool_call": true,
           "temperature": true,
           "limit": {
@@ -20,8 +20,8 @@
             "output": 32768
           }
         },
-        "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16": {
-          "name": "Qwen3.6 35B-A3B MTPLX Speed FP16",
+        "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed": {
+          "name": "Qwen3.6 27B MTPLX Speed",
           "tool_call": true,
           "temperature": true,
           "limit": {
@@ -32,5 +32,5 @@
       }
     }
   },
-  "model": "local-llm/Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed"
+  "model": "local-llm/Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16"
 }

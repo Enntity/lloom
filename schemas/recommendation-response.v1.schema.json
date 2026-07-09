@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lloom.dev/schemas/recommendation-response.v1.schema.json",
+  "title": "LLooM Recommendation Response v1",
+  "description": "Portable host response recommending recipe packs for a machine profile.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "id", "name", "machineProfile", "recommendations"],
+  "properties": {
+    "$schema": {
+      "const": "https://lloom.dev/schemas/recommendation-response.v1.schema.json"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "profile": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/profile"
+    },
+    "id": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/id"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "summary": {
+      "type": "string"
+    },
+    "license": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/license"
+    },
+    "publisher": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/publisher"
+    },
+    "createdAt": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/dateTime"
+    },
+    "updatedAt": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/dateTime"
+    },
+    "provenance": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/provenance"
+    },
+    "links": {
+      "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/links"
+    },
+    "machineProfile": {
+      "$ref": "https://lloom.dev/schemas/machine-profile.v1.schema.json"
+    },
+    "recommendationCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "request": {
+      "$ref": "#/$defs/recommendationRequest"
+    },
+    "recommendations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/recommendation"
+      }
+    }
+  },
+  "patternProperties": {
+    "^x-": true
+  },
+  "$defs": {
+    "recommendation": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "recipeId"],
+      "properties": {
+        "id": {
+          "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/id"
+        },
+        "recipeId": {
+          "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/id"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "score": {
+          "type": "number"
+        },
+        "request": {
+          "$ref": "#/$defs/recommendationRequest"
+        },
+        "evaluation": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "benchmark": {
+          "type": ["object", "null"],
+          "additionalProperties": true,
+          "description": "Best machine-matched benchmark evidence used by the host to rank this recommendation.",
+          "properties": {
+            "machineMatch": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "score": {
+                  "type": "number"
+                },
+                "platformMatched": {
+                  "type": "boolean"
+                },
+                "platformMismatched": {
+                  "type": "boolean"
+                },
+                "acceleratorOverlap": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "uniqueItems": true
+                },
+                "memoryDeltaGb": {
+                  "type": ["number", "null"]
+                }
+              }
+            }
+          }
+        },
+        "url": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "href": {
+          "type": "string"
+        },
+        "pack": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "anyOf": [
+        {
+          "required": ["pack"]
+        },
+        {
+          "required": ["url"]
+        },
+        {
+          "required": ["source"]
+        },
+        {
+          "required": ["href"]
+        }
+      ],
+      "patternProperties": {
+        "^x-": true
+      }
+    },
+    "recommendationRequest": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "filters": {
+          "$ref": "#/$defs/recommendationFilters"
+        },
+        "workloads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "recommendationFilters": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "workloads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}
