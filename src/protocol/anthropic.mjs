@@ -6,6 +6,10 @@ import {
   openAIChoiceReasoningSignature,
   anthropicUsageFromOpenAI
 } from './text.mjs';
+import {
+  normalizeOpenAIChatCompletionBody,
+  normalizeOpenAIChatRequestBody
+} from './reasoning-normalize.mjs';
 
 export function anthropicStopReason(choice) {
   const reason = choice?.finish_reason;
@@ -181,7 +185,7 @@ export function anthropicMessagesToOpenAI(body, resolvedModel) {
   for (const message of body.messages ?? []) {
     messages.push(...anthropicMessageToOpenAIMessages(message));
   }
-  return {
+  const chatBody = {
     model: resolvedModel.model.upstreamModel,
     messages,
     max_tokens: body.max_tokens,
@@ -193,6 +197,8 @@ export function anthropicMessagesToOpenAI(body, resolvedModel) {
     tool_choice: anthropicToolChoiceToOpenAI(body.tool_choice),
     ...(body.thinking ? { reasoning: body.thinking } : {})
   };
+  // Normalize think tags / reasoning_content before upstream (OpenAI-shaped).
+  return normalizeOpenAIChatRequestBody(chatBody);
 }
 
 export function openAIToolCallsToAnthropic(toolCalls = []) {
@@ -207,7 +213,8 @@ export function openAIToolCallsToAnthropic(toolCalls = []) {
 }
 
 export function openAIToAnthropic(responseJson, requestedModel) {
-  const choice = responseJson.choices?.[0] ?? {};
+  const normalized = normalizeOpenAIChatCompletionBody(responseJson) ?? responseJson;
+  const choice = normalized.choices?.[0] ?? {};
   const text = openAIChoiceText(choice);
   const reasoningText = openAIChoiceReasoning(choice);
   const reasoningSignature = openAIChoiceReasoningSignature(choice);
@@ -226,13 +233,13 @@ export function openAIToAnthropic(responseJson, requestedModel) {
     ...toolUse
   ];
   return {
-    id: responseJson.id ?? `msg_${Date.now()}`,
+    id: normalized.id ?? `msg_${Date.now()}`,
     type: 'message',
     role: 'assistant',
     model: requestedModel,
     content,
     stop_reason: anthropicStopReason(choice),
     stop_sequence: null,
-    usage: anthropicUsageFromOpenAI(responseJson.usage)
+    usage: anthropicUsageFromOpenAI(normalized.usage)
   };
 }

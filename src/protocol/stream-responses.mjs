@@ -14,6 +14,7 @@ import {
   responseUsageFromOpenAI
 } from './text.mjs';
 import { readSseEvents } from './sse.mjs';
+import { normalizeOpenAIChatCompletionChunk } from './reasoning-normalize.mjs';
 
 export function createResponsesStreamTranslator(
   requestedModel,
@@ -359,7 +360,7 @@ export async function translateResponsesStreamFromOpenAIBody(body, requestedMode
     if (event.data === '[DONE]') break;
     let chunk;
     try {
-      chunk = JSON.parse(event.data);
+      chunk = normalizeOpenAIChatCompletionChunk(JSON.parse(event.data));
     } catch {
       continue;
     }
@@ -401,7 +402,7 @@ export async function streamResponsesFromOpenAI(
     if (event.data === '[DONE]') break;
     let chunk;
     try {
-      chunk = JSON.parse(event.data);
+      chunk = normalizeOpenAIChatCompletionChunk(JSON.parse(event.data));
     } catch {
       continue;
     }

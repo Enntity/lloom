@@ -42,6 +42,9 @@ import {
   anthropicMessagesToOpenAI,
   encodeSseBlock,
   metricUsageFromOpenAI,
+  normalizeOpenAIChatCompletionBody,
+  normalizeOpenAIChatCompletionChunk,
+  normalizeOpenAIChatRequestBody,
   openAIStreamChunkHasContent,
   openAIToAnthropic,
   openAIToResponses,
@@ -748,7 +751,15 @@ async function proxyOpenAIChatResponse(res, upstream, requestedModel, { signal, 
   let usage = usageFromJsonBuffer(body, headers);
   if (upstream.ok && String(headers['content-type'] ?? '').includes('json')) {
     const rewritten = rewriteJsonModelText(body.toString('utf8'), requestedModel);
-    if (rewritten.rewritten) {
+    let value = rewritten.value;
+    if (value && typeof value === 'object') {
+      value = normalizeOpenAIChatCompletionBody(value);
+    }
+    if (value && typeof value === 'object') {
+      const text = `${JSON.stringify(value)}\n`;
+      output = Buffer.from(text);
+      usage = metricUsageFromOpenAI(value.usage) ?? usage;
+    } else if (rewritten.rewritten) {
       const text = `${rewritten.text}\n`;
       output = Buffer.from(text);
       usage = metricUsageFromOpenAI(rewritten.value?.usage) ?? usage;
@@ -789,15 +800,21 @@ async function proxyOpenAIChatStream(res, upstream, requestedModel, { signal, ti
     let output = '';
     if (event.data && event.data !== '[DONE]') {
       const rewritten = rewriteJsonModelText(event.data, requestedModel);
-      if (rewritten.value?.usage) {
-        usage = metricUsageFromOpenAI(rewritten.value.usage) ?? usage;
+      let value = rewritten.value;
+      if (value && typeof value === 'object') {
+        value = normalizeOpenAIChatCompletionChunk(value);
       }
-      if (openAIStreamChunkHasContent(rewritten.value)) {
+      if (value?.usage) {
+        usage = metricUsageFromOpenAI(value.usage) ?? usage;
+      }
+      if (openAIStreamChunkHasContent(value)) {
         markFirstContent(timing);
       }
+      const dataText =
+        value && typeof value === 'object' ? JSON.stringify(value) : rewritten.text;
       output = encodeSseBlock({
         ...event,
-        data: rewritten.text
+        data: dataText
       });
     } else {
       output = encodeSseBlock(event);
@@ -1251,12 +1268,14 @@ export function createLloomServer(
       },
       async ({ signal, timing }) => {
         await ensureRuntime(resolved.model.runtime);
+        // Normalize history so reasoning_content is OpenAI-shaped before MTPLX render.
+        const normalizedRequest = normalizeOpenAIChatRequestBody(body);
         const upstream = await fetchUpstream({
           backend: resolved.backend,
           path: '/v1/chat/completions',
           signal,
           body: {
-            ...body,
+            ...normalizedRequest,
             model: resolved.model.upstreamModel
           }
         });

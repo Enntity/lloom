@@ -12,6 +12,7 @@ import {
   openAIStreamChunkHasContent
 } from './text.mjs';
 import { readSseEvents } from './sse.mjs';
+import { normalizeOpenAIChatCompletionChunk } from './reasoning-normalize.mjs';
 
 export function createAnthropicStreamTranslator(requestedModel, { messageId = `msg_${Date.now()}` } = {}) {
   const events = [];
@@ -236,7 +237,7 @@ export async function translateAnthropicStreamFromOpenAIBody(body, requestedMode
     if (event.data === '[DONE]') break;
     let chunk;
     try {
-      chunk = JSON.parse(event.data);
+      chunk = normalizeOpenAIChatCompletionChunk(JSON.parse(event.data));
     } catch {
       continue;
     }
@@ -277,7 +278,7 @@ export async function streamAnthropicFromOpenAI(
     if (event.data === '[DONE]') break;
     let chunk;
     try {
-      chunk = JSON.parse(event.data);
+      chunk = normalizeOpenAIChatCompletionChunk(JSON.parse(event.data));
     } catch {
       continue;
     }

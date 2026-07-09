@@ -8,6 +8,10 @@ import {
   responseIncompleteDetails,
   responseStatusFromFinishReason
 } from './text.mjs';
+import {
+  normalizeOpenAIChatCompletionBody,
+  normalizeOpenAIChatRequestBody
+} from './reasoning-normalize.mjs';
 
 export function responsesContentPartToOpenAI(part) {
   if (typeof part === 'string') return { type: 'text', text: part };
@@ -59,21 +63,49 @@ export function responsesInputToMessages(body) {
       continue;
     }
     if (!item || typeof item !== 'object') continue;
+    // OpenAI Responses reasoning item → chat reasoning_content (for multi-turn tool loops)
+    if (item.type === 'reasoning') {
+      const text = Array.isArray(item.content)
+        ? item.content
+            .map((part) => part?.text ?? part?.reasoning_text ?? '')
+            .filter(Boolean)
+            .join('\n')
+        : item.text ?? item.reasoning_content ?? '';
+      if (text) {
+        const last = messages.at(-1);
+        if (last?.role === 'assistant') {
+          last.reasoning_content = [last.reasoning_content, text].filter(Boolean).join('\n\n');
+        } else {
+          messages.push({
+            role: 'assistant',
+            content: null,
+            reasoning_content: String(text)
+          });
+        }
+      }
+      continue;
+    }
     if (item.type === 'function_call') {
-      messages.push({
-        role: 'assistant',
-        content: null,
-        tool_calls: [
-          {
-            id: item.call_id ?? item.id,
-            type: 'function',
-            function: {
-              name: item.name,
-              arguments: item.arguments ?? '{}'
-            }
-          }
-        ]
-      });
+      const last = messages.at(-1);
+      const toolCall = {
+        id: item.call_id ?? item.id,
+        type: 'function',
+        function: {
+          name: item.name,
+          arguments: item.arguments ?? '{}'
+        }
+      };
+      // Attach to prior assistant (with reasoning) when possible
+      if (last?.role === 'assistant' && (last.tool_calls || last.reasoning_content || last.content == null)) {
+        last.tool_calls = [...(last.tool_calls ?? []), toolCall];
+        if (last.content === undefined) last.content = null;
+      } else {
+        messages.push({
+          role: 'assistant',
+          content: null,
+          tool_calls: [toolCall]
+        });
+      }
       continue;
     }
     if (item.type === 'function_call_output') {
@@ -93,7 +125,17 @@ export function responsesInputToMessages(body) {
     }
     const role = item.role === 'assistant' || item.role === 'system' ? item.role : 'user';
     const content = Array.isArray(item.content) ? item.content.map(responsesContentPartToOpenAI) : (item.content ?? '');
-    messages.push({ role, content });
+    const message = { role, content };
+    // Pass through OpenAI-compatible reasoning fields if a client put them on input messages
+    if (role === 'assistant') {
+      if (typeof item.reasoning_content === 'string' && item.reasoning_content) {
+        message.reasoning_content = item.reasoning_content;
+      }
+      if (Array.isArray(item.tool_calls) && item.tool_calls.length) {
+        message.tool_calls = item.tool_calls;
+      }
+    }
+    messages.push(message);
   }
   return messages;
 }
@@ -133,7 +175,10 @@ export function responsesToolChoiceToOpenAI(toolChoice) {
 }
 
 export function responsesToOpenAIChat(body, resolvedModel) {
-  return {
+  const effort =
+    body.reasoning_effort ??
+    (body.reasoning && typeof body.reasoning === 'object' ? body.reasoning.effort : undefined);
+  const chatBody = {
     model: resolvedModel.model.upstreamModel,
     messages: responsesInputToMessages(body),
     max_tokens: body.max_output_tokens ?? body.max_tokens,
@@ -144,8 +189,10 @@ export function responsesToOpenAIChat(body, resolvedModel) {
     tools: responsesToolsToOpenAI(body.tools),
     tool_choice: responsesToolChoiceToOpenAI(body.tool_choice),
     ...(body.reasoning ? { reasoning: body.reasoning } : {}),
-    ...(body.reasoning_effort ? { reasoning_effort: body.reasoning_effort } : {})
+    ...(effort ? { reasoning_effort: effort } : {})
   };
+  // Ensure history reasoning_content is clean OpenAI-shaped before upstream.
+  return normalizeOpenAIChatRequestBody(chatBody);
 }
 
 export function responseOutputTextItem(responseId, text) {
@@ -206,11 +253,14 @@ export function responseFunctionCallItems(toolCalls = []) {
 }
 
 export function openAIToResponses(responseJson, requestedModel) {
-  const choice = responseJson.choices?.[0] ?? {};
+  const normalized = normalizeOpenAIChatCompletionBody(responseJson) ?? responseJson;
+  const choice = normalized.choices?.[0] ?? {};
   const text = openAIChoiceText(choice);
   const reasoningText = openAIChoiceReasoning(choice);
   const reasoningSummary = openAIChoiceReasoningSummary(choice);
-  const responseId = responseJson.id?.startsWith('resp_') ? responseJson.id : `resp_${responseJson.id ?? Date.now()}`;
+  const responseId = normalized.id?.startsWith('resp_')
+    ? normalized.id
+    : `resp_${normalized.id ?? Date.now()}`;
   const status = responseStatusFromFinishReason(choice.finish_reason);
   const output = [
     ...(reasoningText || reasoningSummary
@@ -222,15 +272,15 @@ export function openAIToResponses(responseJson, requestedModel) {
   return {
     id: responseId,
     object: 'response',
-    created_at: responseJson.created ?? Math.floor(Date.now() / 1000),
+    created_at: normalized.created ?? Math.floor(Date.now() / 1000),
     status,
     model: requestedModel,
     output,
     output_text: text,
     parallel_tool_calls: true,
-    usage: responseUsageFromOpenAI(responseJson.usage),
+    usage: responseUsageFromOpenAI(normalized.usage),
     error: null,
     incomplete_details: responseIncompleteDetails(choice.finish_reason),
-    metadata: responseJson.metadata ?? {}
+    metadata: normalized.metadata ?? {}
   };
 }
