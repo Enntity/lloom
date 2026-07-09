@@ -16,7 +16,9 @@
     "allowRemoteAdmin": false,
     "allowWildcardCors": false,
     "allowNonLoopbackBind": false,
-    "apiKeys": ["sk-lloom-local"],
+    "apiKeys": [
+      "sk-lloom-local"
+    ],
     "adminApiKeys": []
   },
   "logging": {
@@ -41,8 +43,14 @@
     "requireSignedPacks": true,
     "autoStartLocalHost": true,
     "localHostStartupTimeoutMs": 5000,
-    "workloads": ["agentic-coding"],
-    "capabilities": ["tools", "reasoning", "long-context"],
+    "workloads": [
+      "agentic-coding"
+    ],
+    "capabilities": [
+      "tools",
+      "reasoning",
+      "long-context"
+    ],
     "tags": [],
     "trustedKeys": []
   },
@@ -102,15 +110,31 @@
       "runtime": "mtplx-qwen36-27b-speed",
       "upstreamModel": "Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed",
       "kind": "chat",
-      "input": ["text", "image"],
-      "output": ["text"],
-      "capabilities": ["chat", "tools", "reasoning", "long-context", "mtp"],
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ],
+      "capabilities": [
+        "chat",
+        "tools",
+        "reasoning",
+        "long-context",
+        "mtp"
+      ],
       "reasoning": true,
       "supportsTools": true,
       "contextWindow": 262144,
       "maxOutputTokens": 32768,
       "advertise": true,
-      "tags": ["apple-silicon", "qwen3.6", "dense", "fastest-27b"]
+      "tags": [
+        "apple-silicon",
+        "qwen3.6",
+        "dense",
+        "fastest-27b"
+      ]
     },
     {
       "id": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
@@ -119,15 +143,33 @@
       "runtime": "mtplx-qwen36-35b-a3b-speed-fp16",
       "upstreamModel": "Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
       "kind": "chat",
-      "input": ["text", "image"],
-      "output": ["text"],
-      "capabilities": ["chat", "tools", "reasoning", "long-context", "mtp", "moe"],
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ],
+      "capabilities": [
+        "chat",
+        "tools",
+        "reasoning",
+        "long-context",
+        "mtp",
+        "moe"
+      ],
       "reasoning": true,
       "supportsTools": true,
       "contextWindow": 262144,
       "maxOutputTokens": 32768,
       "advertise": true,
-      "tags": ["apple-silicon", "qwen3.6", "moe", "fastest-35b"]
+      "tags": [
+        "apple-silicon",
+        "qwen3.6",
+        "moe",
+        "fastest-35b"
+      ],
+      "maxPromptTokens": 120000
     },
     {
       "id": "black-forest-labs/FLUX.1-schnell",
@@ -136,13 +178,23 @@
       "runtime": "flux-schnell",
       "upstreamModel": "black-forest-labs/FLUX.1-schnell",
       "kind": "image",
-      "input": ["text"],
-      "output": ["image"],
-      "capabilities": ["image-generation"],
+      "input": [
+        "text"
+      ],
+      "output": [
+        "image"
+      ],
+      "capabilities": [
+        "image-generation"
+      ],
       "contextWindow": 4096,
       "maxOutputTokens": 0,
       "advertise": true,
-      "tags": ["image", "flux", "fast"]
+      "tags": [
+        "image",
+        "flux",
+        "fast"
+      ]
     },
     {
       "id": "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-4bit",
@@ -151,13 +203,24 @@
       "runtime": "qwen3-tts-mlx",
       "upstreamModel": "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-4bit",
       "kind": "audio_speech",
-      "input": ["text"],
-      "output": ["audio"],
-      "capabilities": ["audio-speech", "tts"],
+      "input": [
+        "text"
+      ],
+      "output": [
+        "audio"
+      ],
+      "capabilities": [
+        "audio-speech",
+        "tts"
+      ],
       "contextWindow": 4096,
       "maxOutputTokens": 4096,
       "advertise": true,
-      "tags": ["audio", "tts", "qwen3"]
+      "tags": [
+        "audio",
+        "tts",
+        "qwen3"
+      ]
     }
   ],
   "aliases": {
@@ -221,7 +284,9 @@
         "--batching-preset",
         "agent",
         "--max-active-requests",
-        "10",
+        "1",
+        "--paged-kv-quantization",
+        "q8",
         "--no-stats-footer"
       ],
       "sessionCache": {
@@ -235,7 +300,7 @@
       "healthUrl": "http://127.0.0.1:8201/health",
       "startupTimeoutMs": 900000,
       "memoryGb": 32,
-      "maxConcurrency": 10,
+      "maxConcurrency": 1,
       "policy": {
         "priority": 100,
         "evictable": true
@@ -284,7 +349,9 @@
         "--batching-preset",
         "agent",
         "--max-active-requests",
-        "10",
+        "1",
+        "--paged-kv-quantization",
+        "q8",
         "--no-stats-footer"
       ],
       "sessionCache": {
@@ -298,7 +365,7 @@
       "healthUrl": "http://127.0.0.1:8202/health",
       "startupTimeoutMs": 900000,
       "memoryGb": 72,
-      "maxConcurrency": 10,
+      "maxConcurrency": 1,
       "policy": {
         "priority": 80,
         "evictable": true
@@ -322,7 +389,10 @@
     "flux-schnell": {
       "enabled": false,
       "command": "python",
-      "args": ["-m", "lloom_flux_server"],
+      "args": [
+        "-m",
+        "lloom_flux_server"
+      ],
       "port": 8210,
       "healthUrl": "http://127.0.0.1:8210/health",
       "startupTimeoutMs": 900000,
@@ -336,7 +406,10 @@
     "qwen3-tts-mlx": {
       "enabled": false,
       "command": "python",
-      "args": ["-m", "lloom_qwen3_tts_server"],
+      "args": [
+        "-m",
+        "lloom_qwen3_tts_server"
+      ],
       "port": 8220,
       "healthUrl": "http://127.0.0.1:8220/health",
       "startupTimeoutMs": 900000,
@@ -348,7 +421,9 @@
       "maxConcurrency": 1
     }
   },
-  "keepWarm": ["mtplx-qwen36-35b-a3b-speed-fp16"],
+  "keepWarm": [
+    "mtplx-qwen36-35b-a3b-speed-fp16"
+  ],
   "clientCatalog": {
     "providerId": "local-llm",
     "providerName": "LLooM Local",

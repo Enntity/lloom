@@ -196,7 +196,8 @@ export class RuntimeManager {
         startedAt: null,
         stoppedAt: null,
         lastWarmup: null,
-        lastError: null
+        lastError: null,
+        lastStderr: null
       });
     }
     return this.state.get(runtimeId);
@@ -377,10 +378,12 @@ export class RuntimeManager {
     state.lastError = null;
     const args = effectiveRuntimeArgs(runtimeId, runtime);
     await prepareRuntimeFilesystem(runtime);
+    // Pipe stderr always so Metal/backend aborts leave a trail in gateway events.
+    // stdout only when captureOutput is enabled (can be noisy).
     const child = spawn(runtime.command, args, {
       cwd: runtime.cwd,
       env: runtimeEnvironment(this.config, runtime),
-      stdio: this.captureOutput ? ['ignore', 'pipe', 'pipe'] : 'ignore',
+      stdio: ['ignore', this.captureOutput ? 'pipe' : 'ignore', 'pipe'],
       detached: true
     });
     child.unref();
@@ -394,11 +397,14 @@ export class RuntimeManager {
         const line = String(chunk).trim();
         if (line) this.record({ runtimeId, event: 'stdout', message: line.slice(0, 500) });
       });
-      child.stderr?.on('data', (chunk) => {
-        const line = String(chunk).trim();
-        if (line) this.record({ runtimeId, event: 'stderr', message: line.slice(0, 500) });
-      });
     }
+    child.stderr?.on('data', (chunk) => {
+      const line = String(chunk).trim();
+      if (!line) return;
+      this.record({ runtimeId, event: 'stderr', message: line.slice(0, 800) });
+      // Keep last stderr snippet for doctor/status after Metal abort etc.
+      state.lastStderr = line.slice(0, 800);
+    });
     child.on('error', (error) => {
       state.status = 'failed';
       state.lastError = error?.message ?? String(error);
@@ -408,8 +414,17 @@ export class RuntimeManager {
       const expectedStop = state.status === 'stopping' || ['SIGTERM', 'SIGKILL'].includes(signal);
       state.status = code === 0 || expectedStop ? 'stopped' : 'failed';
       state.stoppedAt = nowIso();
-      state.lastError = state.status === 'stopped' ? null : `process exited code=${code} signal=${signal ?? ''}`.trim();
-      this.record({ runtimeId, event: 'exit', code, signal });
+      const base = state.status === 'stopped' ? null : `process exited code=${code} signal=${signal ?? ''}`.trim();
+      state.lastError = base
+        ? state.lastStderr
+          ? `${base}; stderr=${state.lastStderr}`
+          : base
+        : null;
+      this.record({ runtimeId, event: 'exit', code, signal, lastError: state.lastError });
+      // Drop dead handle so the next ensure()/start can relaunch.
+      if (this.processes.get(runtimeId) === child) {
+        this.processes.delete(runtimeId);
+      }
     });
 
     const result = await this.waitForHealth(runtimeId, runtime, child);

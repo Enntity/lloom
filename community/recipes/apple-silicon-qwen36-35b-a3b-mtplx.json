@@ -22,7 +22,14 @@
       "mediaType": "application/vnd.lloom.benchmark-suite+json;version=1"
     }
   ],
-  "keywords": ["agentic-coding", "coding-agent", "local-first", "qwen3.6", "apple-silicon", "long-context"],
+  "keywords": [
+    "agentic-coding",
+    "coding-agent",
+    "local-first",
+    "qwen3.6",
+    "apple-silicon",
+    "long-context"
+  ],
   "capabilities": [
     "chat",
     "responses",
@@ -45,17 +52,28 @@
     ]
   },
   "requirements": {
-    "platforms": ["darwin-arm64"],
+    "platforms": [
+      "darwin-arm64"
+    ],
     "memoryGb": 80,
     "diskGb": 55,
-    "commands": ["mtplx"],
-    "accelerators": ["apple-gpu"]
+    "commands": [
+      "mtplx"
+    ],
+    "accelerators": [
+      "apple-gpu"
+    ]
   },
   "backend": {
     "id": "mtplx",
     "name": "MTPLX",
     "type": "openai-compatible-server",
-    "features": ["mlx", "mtp", "openai-chat", "streaming"]
+    "features": [
+      "mlx",
+      "mtp",
+      "openai-chat",
+      "streaming"
+    ]
   },
   "setup": {
     "steps": [
@@ -64,7 +82,9 @@
         "title": "Check MTPLX CLI",
         "action": "check-command",
         "command": "mtplx",
-        "args": ["--version"]
+        "args": [
+          "--version"
+        ]
       },
       {
         "id": "download-35b-a3b",
@@ -79,7 +99,12 @@
         "action": "command",
         "skipIfPathExists": "${modelRoot}/Youssofal--Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16/mtplx_runtime.json",
         "command": "mtplx",
-        "args": ["tune", "--model", "${modelRoot}/Youssofal--Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16", "--retune"]
+        "args": [
+          "tune",
+          "--model",
+          "${modelRoot}/Youssofal--Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16",
+          "--retune"
+        ]
       }
     ]
   },
@@ -91,8 +116,13 @@
       "runtime": "mtplx-qwen36-35b-a3b-speed-fp16",
       "backendConfig": "mtplx-35b-a3b",
       "backend": "MTPLX 2.x",
-      "input": ["text", "image"],
-      "output": ["text"],
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ],
       "capabilities": [
         "chat",
         "responses",
@@ -111,7 +141,7 @@
         "draftDepth": 1,
         "contextWindow": 262144,
         "maxOutputTokens": 32768,
-        "maxActiveRequests": 10,
+        "maxActiveRequests": 1,
         "sessionCache": true,
         "runtime": {
           "command": "mtplx",
@@ -140,14 +170,17 @@
             "--batching-preset",
             "agent",
             "--max-active-requests",
-            "10",
+            "1",
+            "--paged-kv-quantization",
+            "q8",
             "--no-stats-footer"
           ],
           "adapter": "mtplx",
           "baseUrlPath": "/v1",
           "healthPath": "/health",
           "warmupPath": "/v1/chat/completions"
-        }
+        },
+        "pagedKvQuantization": "q8"
       },
       "observed": {
         "generationTokPerSec": 68.58,

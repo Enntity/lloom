@@ -44,7 +44,7 @@
     "generate:clients": "node scripts/generate-client-configs.mjs",
     "interchange:check": "node scripts/check-interchange.mjs",
     "package:check": "node scripts/check-package.mjs",
-    "test:unit": "node test/protocol.test.mjs && node test/protocol-stream.test.mjs && node test/security.test.mjs && node test/runtime-policy.test.mjs && node test/interchange.test.mjs",
+    "test:unit": "node test/protocol.test.mjs && node test/protocol-stream.test.mjs && node test/security.test.mjs && node test/runtime-policy.test.mjs && node test/interchange.test.mjs && node test/server-resilience.test.mjs",
     "test": "npm run test:unit && npm run smoke",
     "smoke": "node test/smoke.mjs",
     "lint": "eslint 'src/**/*.mjs' 'bin/**/*.mjs' 'scripts/**/*.mjs' 'test/**/*.mjs'",

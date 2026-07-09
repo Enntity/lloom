@@ -64,34 +64,174 @@ function stripTrailingSlash(value) {
 }
 
 function setCors(res, config = {}) {
+  if (res.headersSent || res.writableEnded || res.destroyed) return;
   const headers = corsHeaders(config);
   for (const [key, value] of Object.entries(headers)) {
     res.setHeader(key, value);
   }
 }
 
+function canWriteHead(res) {
+  return Boolean(res) && !res.headersSent && !res.writableEnded && !res.destroyed;
+}
+
+function canWriteBody(res) {
+  return Boolean(res) && !res.writableEnded && !res.destroyed;
+}
+
 function sendJson(res, status, value, headers = {}, config = {}) {
+  if (!canWriteHead(res)) {
+    // Stream already opened (or client gone). Best-effort close without throwing.
+    if (canWriteBody(res)) {
+      try {
+        res.end();
+      } catch {
+        // ignore
+      }
+    }
+    return false;
+  }
   setCors(res, config);
   res.writeHead(status, {
     'content-type': JSON_TYPE,
     ...headers
   });
   res.end(`${JSON.stringify(value, null, 2)}\n`);
+  return true;
 }
 
 function sendHtml(res, status, html, headers = {}, config = {}) {
+  if (!canWriteHead(res)) {
+    if (canWriteBody(res)) {
+      try {
+        res.end();
+      } catch {
+        // ignore
+      }
+    }
+    return false;
+  }
   setCors(res, config);
   res.writeHead(status, {
     'content-type': 'text/html; charset=utf-8',
     ...headers
   });
   res.end(html);
+  return true;
 }
 
 function writeSse(res, event, data, { signal } = {}) {
   throwIfClientClosed(signal, res);
+  if (!canWriteBody(res)) throw new ClientClosedError();
   if (event) res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+/** End an in-flight SSE/JSON response without throwing if headers already went out. */
+function endResponseWithError(res, error, { stream = false, config = {}, status = 500 } = {}) {
+  const message = error?.message ?? String(error);
+  const code = error?.code ?? 'server_error';
+  const type = error?.type ?? (status === 400 ? 'invalid_request_error' : 'server_error');
+  if (!canWriteBody(res)) return false;
+  try {
+    if (!res.headersSent) {
+      return sendJson(res, status, errorBody(message, { type, code, model: error?.model }), {}, config);
+    }
+    if (stream) {
+      // OpenAI-style stream error chunk, then DONE.
+      res.write(
+        `data: ${JSON.stringify({
+          error: { message, type, code }
+        })}\n\n`
+      );
+      res.write('data: [DONE]\n\n');
+    }
+    res.end();
+    return true;
+  } catch {
+    try {
+      res.destroy(error instanceof Error ? error : undefined);
+    } catch {
+      // ignore
+    }
+    return false;
+  }
+}
+
+function estimateMessageTokens(value) {
+  if (value == null) return 0;
+  if (typeof value === 'string') return Math.ceil(value.length / 3.5);
+  if (Array.isArray(value)) return value.reduce((sum, item) => sum + estimateMessageTokens(item), 0);
+  if (typeof value === 'object') {
+    if (typeof value.text === 'string') return estimateMessageTokens(value.text);
+    if (typeof value.content === 'string' || Array.isArray(value.content)) {
+      return estimateMessageTokens(value.content);
+    }
+    if (typeof value.input === 'string' || Array.isArray(value.input)) {
+      return estimateMessageTokens(value.input);
+    }
+    return Math.ceil(JSON.stringify(value).length / 3.5);
+  }
+  return Math.ceil(String(value).length / 3.5);
+}
+
+function estimateRequestPromptTokens(body = {}) {
+  const parts = [
+    body.messages,
+    body.input,
+    body.instructions,
+    body.system,
+    body.prompt
+  ];
+  return parts.reduce((sum, part) => sum + estimateMessageTokens(part), 0);
+}
+
+class PromptTooLargeError extends Error {
+  constructor(message, { estimatedTokens, limit, modelId } = {}) {
+    super(message);
+    this.name = 'PromptTooLargeError';
+    this.statusCode = 400;
+    this.code = 'prompt_too_large';
+    this.type = 'invalid_request_error';
+    this.estimatedTokens = estimatedTokens;
+    this.limit = limit;
+    this.model = modelId;
+  }
+}
+
+function assertPromptWithinBudget(resolved, body, { logger } = {}) {
+  const model = resolved?.model ?? {};
+  const hardLimit =
+    numberOrNull(model.maxPromptTokens) ??
+    numberOrNull(model.safeContextWindow) ??
+    numberOrNull(model.contextWindow);
+  if (!hardLimit || hardLimit <= 0) return null;
+  const estimated = estimateRequestPromptTokens(body);
+  // Soft warn at 80%; hard reject at 98% of configured budget (token estimate is approximate).
+  if (estimated >= hardLimit * 0.8) {
+    logger?.warn?.(
+      `prompt size estimate ${estimated} tokens approaching limit ${hardLimit} for ${resolved.requestedId}`
+    );
+  }
+  if (estimated > hardLimit * 0.98) {
+    throw new PromptTooLargeError(
+      `estimated prompt size ${estimated} tokens exceeds model budget ${hardLimit} for ${resolved.requestedId}. ` +
+        `Reduce context or raise model.maxPromptTokens / contextWindow after ensuring backend memory headroom ` +
+        `(Apple Silicon MTPLX: prefer --paged-kv-quantization q8 and max-active-requests 1).`,
+      {
+        estimatedTokens: estimated,
+        limit: hardLimit,
+        modelId: resolved.requestedId
+      }
+    );
+  }
+  return { estimated, limit: hardLimit };
+}
+
+function numberOrNull(value) {
+  if (value == null || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function errorBody(message, { type = 'invalid_request_error', code = 'error', model } = {}) {
@@ -1019,7 +1159,11 @@ export function createLloomServer(
       });
       return result;
     } catch (error) {
-      const status = client.closed ? 499 : clientClosedStatus(error);
+      const status = client.closed
+        ? 499
+        : clientClosedStatus(error) ||
+          (error instanceof PromptTooLargeError ? error.statusCode : 0) ||
+          502;
       metrics.record({
         route,
         model: resolved.model.id,
@@ -1035,12 +1179,29 @@ export function createLloomServer(
         firstContentMs: timing.firstContentMs,
         error: error?.message ?? String(error)
       });
-      if (status === 499) {
+      if (status === 499 || isClientClosedError(error)) {
+        endResponseWithError(res, error, { stream, config, status: 499 });
         return {
-          status,
+          status: 499,
           stream,
           responseBytes: 0,
           usage: null
+        };
+      }
+      // Upstream death mid-stream (Metal abort, connection reset): finish SSE/JSON without
+      // rethrowing into the outer handler (which would try writeHead again and crash Node).
+      if (res.headersSent || stream) {
+        endResponseWithError(res, error, {
+          stream: true,
+          config,
+          status: error instanceof PromptTooLargeError ? 400 : 502
+        });
+        return {
+          status: error instanceof PromptTooLargeError ? 400 : 502,
+          stream: true,
+          responseBytes: 0,
+          usage: null,
+          error: error?.message ?? String(error)
         };
       }
       throw error;
@@ -1063,6 +1224,23 @@ export function createLloomServer(
       );
       return;
     }
+    try {
+      assertPromptWithinBudget(resolved, body, { logger });
+    } catch (error) {
+      if (error instanceof PromptTooLargeError) {
+        sendJson(
+          res,
+          error.statusCode,
+          errorBody(error.message, {
+            type: error.type,
+            code: error.code,
+            model: error.model
+          })
+        );
+        return;
+      }
+      throw error;
+    }
     await recordModelRequest(
       {
         route: '/v1/chat/completions',
@@ -1082,6 +1260,20 @@ export function createLloomServer(
             model: resolved.model.upstreamModel
           }
         });
+        if (!upstream.ok && body.stream === true) {
+          // Avoid opening an SSE response for an already-failed upstream.
+          const text = await upstream.text();
+          let message = text;
+          try {
+            message = JSON.parse(text)?.error?.message ?? text;
+          } catch {
+            // keep raw
+          }
+          throw Object.assign(new Error(message || `upstream status ${upstream.status}`), {
+            code: 'upstream_error',
+            statusCode: upstream.status
+          });
+        }
         return body.stream === true
           ? proxyOpenAIChatStream(res, upstream, resolved.requestedId, { signal, timing, corsConfig: config })
           : proxyOpenAIChatResponse(res, upstream, resolved.requestedId, { signal, timing, corsConfig: config });
@@ -2037,6 +2229,7 @@ export function createLloomServer(
       );
     } catch (error) {
       if (isClientClosedError(error) || req.aborted || (res.destroyed && !res.writableEnded)) {
+        endResponseWithError(res, error, { stream: false, config, status: 499 });
         return;
       }
       if (error instanceof UnknownModelError) {
@@ -2050,33 +2243,49 @@ export function createLloomServer(
         );
         return;
       }
+      if (error instanceof PromptTooLargeError) {
+        sendJson(
+          res,
+          error.statusCode,
+          errorBody(error.message, {
+            type: error.type,
+            code: error.code,
+            model: error.model
+          })
+        );
+        return;
+      }
       logger.error?.(error);
-      sendJson(
-        res,
-        500,
-        errorBody(error?.message ?? String(error), {
-          type: 'server_error',
-          code: 'server_error'
-        })
-      );
+      endResponseWithError(res, error, {
+        stream: res.headersSent,
+        config,
+        status: 500
+      });
     }
   }
 
   const server = http.createServer((req, res) => {
     handleRequest(req, res).catch((error) => {
       if (isClientClosedError(error) || req.aborted || (res.destroyed && !res.writableEnded)) {
+        endResponseWithError(res, error, { stream: res.headersSent, config, status: 499 });
         return;
       }
       logger.error?.(error);
-      sendJson(
-        res,
-        500,
-        errorBody(error?.message ?? String(error), {
-          type: 'server_error',
-          code: 'server_error'
-        })
-      );
+      // Never throw from the HTTP server callback — a second writeHead takes down the process.
+      endResponseWithError(res, error, {
+        stream: res.headersSent,
+        config,
+        status: 500
+      });
     });
+  });
+  server.on('clientError', (error, socket) => {
+    logger.error?.(error);
+    try {
+      socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');
+    } catch {
+      // ignore
+    }
   });
 
   return {
