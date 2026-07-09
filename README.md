@@ -66,7 +66,7 @@ Then open OMP normally. The generated OMP config points at `http://127.0.0.1:810
 - OpenAI-compatible `/v1/models`, `/v1/chat/completions`, `/v1/responses`, embeddings, image generation, speech, and transcription routes.
 - Anthropic-compatible `/v1/messages`, including tool-use and streaming deltas.
 - Runtime start, health checks, stop, warmup, keep-warm bootstrapping, per-runtime concurrency slots, and conservative memory admission planning.
-- Backend recipes for MTPLX, MLX LM, llama.cpp, Ollama, OptiQ, stable-diffusion.cpp, vLLM, and SGLang.
+- Backend recipes for MTPLX, MLX LM, llama.cpp, Ollama, OptiQ, stable-diffusion.cpp, vLLM, and SGLang (including DGX Spark / GB10 CUDA seeds — see `docs/dgx-spark.md`).
 - Community recipe packs and hardware-matched benchmark evidence so machines can select the best known model/backend recipe automatically instead of blindly chasing global tok/s.
 - Generated client profiles for OMP, OpenCode, Codex-compatible, Claude-compatible, Hermes, Zero, and any OpenAI-compatible client.
 - A small dashboard at `/` for local status and guarded setup actions.

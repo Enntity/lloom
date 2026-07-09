@@ -34,6 +34,8 @@ const requiredFiles = [
   'community/recipes/apple-silicon-qwen36-27b-mtplx.json',
   'community/recipes/apple-silicon-qwen36-35b-a3b-mtplx.json',
   'community/recipes/linux-nvidia-qwen36-27b-nvfp4-vllm.json',
+  'community/recipes/linux-nvidia-qwen36-35b-a3b-fp8-vllm.json',
+  'community/recipes/linux-nvidia-qwen36-27b-sglang.json',
   'community/benchmarks/apple-silicon-qwen36-m2max.json',
   'community/benchmarks/linux-nvidia-qwen36-vllm.json',
   'community/keys/README.md',

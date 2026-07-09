@@ -72,10 +72,19 @@ Run a dry-run backend install:
 lloom backend-install mtplx
 lloom backend-install vllm --backend-catalog https://lloom.host/v1/backends/catalog
 lloom backend-install sglang --backend-catalog https://lloom.host/v1/backends/catalog
-lloom backend-plan mtplx --backend-catalog https://lloom.host/v1/backends/catalog
 ```
 
-Apply it after review:
+### NVIDIA DGX Spark / GB10
+
+vLLM and SGLang are the primary Spark backends (see `docs/dgx-spark.md`). On GB10, generic PyPI wheels may lack Blackwell/ARM64 support — set `LLOOM_VLLM_BIN` / `LLOOM_SGLANG_PYTHON` to a Spark-tuned binary or register an external Docker OpenAI server with `lloom add-model 'openai:http://host:port/v1#model-id'`.
+
+Seed recipes:
+
+- `community/recipes/linux-nvidia-qwen36-35b-a3b-fp8-vllm.json` — agent default (vLLM)
+- `community/recipes/linux-nvidia-qwen36-27b-nvfp4-vllm.json` — dense NVFP4 (vLLM)
+- `community/recipes/linux-nvidia-qwen36-27b-sglang.json` — agent/prefix lane (SGLang)
+
+Apply a backend install after review:
 
 ```zsh
 lloom backend-install mtplx --apply --yes

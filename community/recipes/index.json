@@ -121,6 +121,82 @@
         "type": "lloom-host-seed",
         "url": "community/recipes/linux-nvidia-qwen36-27b-nvfp4-vllm.json"
       }
+    },
+    {
+      "id": "linux-nvidia-qwen36-35b-a3b-fp8-vllm",
+      "path": "linux-nvidia-qwen36-35b-a3b-fp8-vllm.json",
+      "name": "Linux NVIDIA Qwen3.6 35B-A3B FP8 vLLM",
+      "summary": "CUDA/NVIDIA Qwen3.6 35B-A3B MoE lane using vLLM — primary DGX Spark / GB10 agent default for throughput, tools, and long context.",
+      "tags": [
+        "linux",
+        "nvidia",
+        "cuda",
+        "qwen3.6",
+        "moe",
+        "fp8",
+        "vllm",
+        "agentic-coding",
+        "coding-agent",
+        "reasoning",
+        "long-context",
+        "dgx-spark"
+      ],
+      "recommendedFor": [
+        "DGX Spark / GB10 class local inference setups",
+        "Linux NVIDIA CUDA machines with at least 96 GB memory",
+        "agentic coding with Qwen MoE quality and tool calls"
+      ],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "tools",
+        "reasoning",
+        "batching",
+        "long-context"
+      ],
+      "source": {
+        "type": "lloom-host-seed",
+        "url": "community/recipes/linux-nvidia-qwen36-35b-a3b-fp8-vllm.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-qwen36-27b-sglang",
+      "path": "linux-nvidia-qwen36-27b-sglang.json",
+      "name": "Linux NVIDIA Qwen3.6 27B SGLang",
+      "summary": "CUDA/NVIDIA Qwen3.6 27B dense lane using SGLang for agent/tool loops and prefix-cache-heavy sessions on Spark-class hardware.",
+      "tags": [
+        "linux",
+        "nvidia",
+        "cuda",
+        "qwen3.6",
+        "dense",
+        "sglang",
+        "agentic-coding",
+        "coding-agent",
+        "prefix-cache",
+        "long-context",
+        "dgx-spark"
+      ],
+      "recommendedFor": [
+        "DGX Spark / GB10 when agent multi-turn prefix reuse matters",
+        "Linux NVIDIA machines preferring SGLang over vLLM for tool loops"
+      ],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "tools",
+        "reasoning",
+        "batching",
+        "long-context"
+      ],
+      "source": {
+        "type": "lloom-host-seed",
+        "url": "community/recipes/linux-nvidia-qwen36-27b-sglang.json"
+      }
     }
   ]
 }

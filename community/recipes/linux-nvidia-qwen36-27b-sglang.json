@@ -1,0 +1,153 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-qwen36-27b-sglang",
+  "name": "Linux NVIDIA Qwen3.6 27B SGLang",
+  "version": 1,
+  "summary": "CUDA/NVIDIA Qwen3.6 27B dense lane using SGLang — preferred agent/tool loop backend when RadixAttention prefix cache and structured generation matter (DGX Spark friendly).",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe metadata license"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "public DGX Spark forum guidance favoring SGLang for agentic prefix-heavy workloads alongside vLLM"
+  },
+  "links": [
+    {
+      "rel": "related",
+      "href": "linux-nvidia-qwen36-27b-nvfp4-vllm.json",
+      "mediaType": "application/vnd.lloom.recipe+json;version=1"
+    },
+    {
+      "rel": "source",
+      "href": "https://forums.developer.nvidia.com/t/why-do-so-many-people-here-prefer-vllm/366718",
+      "mediaType": "text/html"
+    }
+  ],
+  "keywords": [
+    "agentic-coding",
+    "coding-agent",
+    "local-first",
+    "qwen3.6",
+    "nvidia",
+    "cuda",
+    "sglang",
+    "dense",
+    "prefix-cache",
+    "long-context",
+    "dgx-spark"
+  ],
+  "capabilities": [
+    "chat",
+    "responses",
+    "anthropic-messages",
+    "streaming",
+    "usage",
+    "tools",
+    "reasoning",
+    "batching",
+    "long-context"
+  ],
+  "hardware": {
+    "family": "Linux NVIDIA CUDA",
+    "testedMachine": "DGX Spark / GB10 class NVIDIA system",
+    "notes": [
+      "Use SGLang when multi-turn agents share long prefixes or need tight structured/tool loops.",
+      "vLLM remains the default high-throughput / multi-GPU lane; both can be registered in LLooM as separate runtimes on different ports.",
+      "On Spark, install via Spark-tuned wheels or Docker if PyPI lacks sm_121 builds; set LLOOM_SGLANG_PYTHON."
+    ]
+  },
+  "requirements": {
+    "platforms": ["linux-x64", "linux-arm64"],
+    "memoryGb": 96,
+    "diskGb": 40,
+    "commands": ["sglang-python"],
+    "accelerators": ["cuda", "nvidia-gpu"]
+  },
+  "backend": {
+    "id": "sglang",
+    "name": "SGLang",
+    "type": "openai-compatible-server",
+    "features": ["cuda", "openai-chat", "streaming", "tools", "batching", "prefix-cache"]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-sglang",
+        "title": "Check SGLang launcher",
+        "action": "check-command",
+        "command": "sglang-python",
+        "args": ["-m", "sglang.launch_server", "--help"]
+      },
+      {
+        "id": "download-qwen36-27b",
+        "title": "Download Qwen3.6 27B (prefer NVFP4/FP8 weights on Spark)",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "Qwen/Qwen3.6-27B"
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "default",
+      "model": "Qwen/Qwen3.6-27B",
+      "gatewayModel": "Qwen/Qwen3.6-27B",
+      "runtime": "sglang-qwen36-27b",
+      "backendConfig": "sglang-qwen36-27b",
+      "backend": "SGLang CUDA",
+      "input": ["text"],
+      "output": ["text"],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "usage",
+        "tools",
+        "reasoning",
+        "batching",
+        "long-context"
+      ],
+      "settings": {
+        "contextWindow": 131072,
+        "maxOutputTokens": 32768,
+        "maxActiveRequests": 4,
+        "memoryGb": 96,
+        "runtime": {
+          "command": "sglang-python",
+          "args": [
+            "-m",
+            "sglang.launch_server",
+            "--model-path",
+            "${modelPath}",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "${port}",
+            "--served-model-name",
+            "${modelId}",
+            "--tp",
+            "1",
+            "--context-length",
+            "131072",
+            "--mem-fraction-static",
+            "0.85",
+            "--trust-remote-code",
+            "--enable-metrics"
+          ],
+          "adapter": "sglang",
+          "baseUrlPath": "/v1",
+          "healthPath": "/health",
+          "warmupPath": "/v1/chat/completions"
+        }
+      },
+      "observed": {
+        "notes": "Seed SGLang lane for agentic prefix reuse on Spark-class hardware. Override tool/reasoning parsers per SGLang version."
+      }
+    }
+  ]
+}

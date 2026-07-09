@@ -1,0 +1,167 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-qwen36-35b-a3b-fp8-vllm",
+  "name": "Linux NVIDIA Qwen3.6 35B-A3B FP8 vLLM",
+  "version": 1,
+  "summary": "CUDA/NVIDIA Qwen3.6 35B-A3B MoE lane using vLLM — primary DGX Spark / GB10 agent default for throughput + tools + long context.",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe metadata license"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "public DGX Spark / vLLM community deployments of Qwen3.5/3.6 35B-A3B class models"
+  },
+  "links": [
+    {
+      "rel": "related",
+      "href": "linux-nvidia-qwen36-27b-nvfp4-vllm.json",
+      "mediaType": "application/vnd.lloom.recipe+json;version=1"
+    },
+    {
+      "rel": "source",
+      "href": "https://vllm.ai/blog/2026-06-01-vllm-dgx-spark",
+      "mediaType": "text/html"
+    }
+  ],
+  "keywords": [
+    "agentic-coding",
+    "coding-agent",
+    "local-first",
+    "qwen3.6",
+    "nvidia",
+    "cuda",
+    "vllm",
+    "moe",
+    "fp8",
+    "long-context",
+    "dgx-spark"
+  ],
+  "capabilities": [
+    "chat",
+    "responses",
+    "anthropic-messages",
+    "streaming",
+    "usage",
+    "tools",
+    "reasoning",
+    "batching",
+    "long-context"
+  ],
+  "hardware": {
+    "family": "Linux NVIDIA CUDA",
+    "testedMachine": "DGX Spark / GB10 class NVIDIA system",
+    "notes": [
+      "MoE 35B-A3B is the usual Spark agent default: lower active params than dense 27B FP16, strong tool/coding quality.",
+      "Prefer FP8 or NVFP4 weights for 128 GB unified memory headroom; retune --gpu-memory-utilization per box.",
+      "On multi-Spark clusters use tensor-parallel or Ray; this seed is solo Spark (tp=1)."
+    ]
+  },
+  "requirements": {
+    "platforms": ["linux-x64", "linux-arm64"],
+    "memoryGb": 96,
+    "diskGb": 50,
+    "commands": ["vllm"],
+    "accelerators": ["cuda", "nvidia-gpu"]
+  },
+  "backend": {
+    "id": "vllm",
+    "name": "vLLM",
+    "type": "openai-compatible-server",
+    "features": ["cuda", "openai-chat", "streaming", "tools", "batching"]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-vllm",
+        "title": "Check vLLM CLI",
+        "action": "check-command",
+        "command": "vllm",
+        "args": ["--version"]
+      },
+      {
+        "id": "download-qwen36-35b-a3b",
+        "title": "Download Qwen3.6 35B-A3B (Hugging Face id; pick FP8/NVFP4 variant available on host)",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "Qwen/Qwen3.6-35B-A3B"
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "default",
+      "model": "Qwen/Qwen3.6-35B-A3B",
+      "gatewayModel": "Qwen/Qwen3.6-35B-A3B",
+      "runtime": "vllm-qwen36-35b-a3b",
+      "backendConfig": "vllm-qwen36-35b-a3b",
+      "backend": "vLLM CUDA",
+      "input": ["text"],
+      "output": ["text"],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "usage",
+        "tools",
+        "reasoning",
+        "batching",
+        "long-context"
+      ],
+      "settings": {
+        "contextWindow": 262144,
+        "maxOutputTokens": 32768,
+        "maxActiveRequests": 4,
+        "memoryGb": 96,
+        "runtime": {
+          "command": "vllm",
+          "args": [
+            "serve",
+            "${modelPath}",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "${port}",
+            "--served-model-name",
+            "${modelId}",
+            "--tensor-parallel-size",
+            "1",
+            "--trust-remote-code",
+            "--dtype",
+            "auto",
+            "--kv-cache-dtype",
+            "fp8",
+            "--gpu-memory-utilization",
+            "0.85",
+            "--max-model-len",
+            "131072",
+            "--max-num-seqs",
+            "4",
+            "--max-num-batched-tokens",
+            "8192",
+            "--enable-chunked-prefill",
+            "--enable-prefix-caching",
+            "--load-format",
+            "fastsafetensors",
+            "--reasoning-parser",
+            "qwen3",
+            "--tool-call-parser",
+            "qwen3_coder",
+            "--enable-auto-tool-choice"
+          ],
+          "adapter": "vllm",
+          "baseUrlPath": "/v1",
+          "healthPath": "/health",
+          "warmupPath": "/v1/chat/completions"
+        }
+      },
+      "observed": {
+        "notes": "Seed recipe for Spark-class boxes. Retune max-model-len and gpu-memory-utilization from local benchmarks; multi-Spark TP is out of scope for this solo recipe."
+      }
+    }
+  ]
+}

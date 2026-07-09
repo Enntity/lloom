@@ -63,11 +63,20 @@ function deviceAccelerators(device) {
   const vendor = String(device.vendor ?? '').toLowerCase();
   const backend = String(device.backend ?? '').toLowerCase();
   const kind = String(device.kind ?? '').toLowerCase();
+  const name = String(device.name ?? '').toLowerCase();
+  const computeCapability = String(device.computeCapability ?? device.compute_cap ?? '');
+  const major = Number(computeCapability.split('.')[0]);
   if (vendor === 'apple' && kind === 'gpu') values.push('apple-gpu', 'metal');
   if (vendor === 'apple' && (kind === 'npu' || backend === 'ane')) values.push('apple-neural-engine', 'ane');
   if (vendor === 'nvidia') values.push('nvidia-gpu');
   if (backend === 'cuda') values.push('cuda');
   if (backend === 'metal') values.push('metal');
+  // DGX Spark / GB10 class (Blackwell, SM 12.x) and name heuristics.
+  if (Number.isFinite(major) && major >= 12) values.push('blackwell');
+  if (/\bgb10\b|\bdgx\s*spark\b|\bspark\b.*\bnvidia\b|\bnvidia\b.*\bspark\b/.test(name)) {
+    values.push('blackwell', 'dgx-spark', 'gb10');
+  }
+  if (name.includes('blackwell')) values.push('blackwell');
   return [...new Set(values)];
 }
 
@@ -141,6 +150,13 @@ async function detectCudaDevices() {
     .map((line) => {
       const [index, name, memoryMiB, computeCapability] = line.split(',').map((value) => value.trim());
       const memoryGb = numericValue(memoryMiB) == null ? undefined : round(Number(memoryMiB) / 1024, 1);
+      const accelerators = ['cuda', 'nvidia-gpu'];
+      const major = Number(String(computeCapability ?? '').split('.')[0]);
+      if (Number.isFinite(major) && major >= 12) accelerators.push('blackwell');
+      const nameLower = String(name ?? '').toLowerCase();
+      if (/\bgb10\b|\bdgx\s*spark\b|blackwell/.test(nameLower)) {
+        accelerators.push('blackwell', 'dgx-spark', 'gb10');
+      }
       return normalizeDevice({
         id: `cuda:${index}`,
         kind: 'gpu',
@@ -149,7 +165,7 @@ async function detectCudaDevices() {
         backend: 'cuda',
         memoryGb,
         computeCapability,
-        accelerators: ['cuda', 'nvidia-gpu']
+        accelerators: [...new Set(accelerators)]
       });
     })
     .filter(Boolean);

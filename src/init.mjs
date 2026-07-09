@@ -388,6 +388,8 @@ function buildRecipeRuntime({ recipe, recipeModel, backendId, runtimeId, modelPa
   }
 
   if (backendId === 'vllm') {
+    // Spark/GB10 class defaults: low concurrent seqs (unified-memory boxes thrash
+    // above ~4), chunked prefill, and leave headroom for OS/tools.
     return {
       ...base,
       command: 'vllm',
@@ -400,8 +402,17 @@ function buildRecipeRuntime({ recipe, recipeModel, backendId, runtimeId, modelPa
         String(port),
         '--served-model-name',
         modelId,
+        '--tensor-parallel-size',
+        '1',
         '--max-model-len',
-        String(contextWindow)
+        String(contextWindow),
+        '--max-num-seqs',
+        '4',
+        '--gpu-memory-utilization',
+        '0.85',
+        '--enable-chunked-prefill',
+        '--enable-prefix-caching',
+        '--trust-remote-code'
       ],
       healthUrl: urlWithPort(port, '/health'),
       warmup: warmupForRuntime(port, modelId)
@@ -409,10 +420,30 @@ function buildRecipeRuntime({ recipe, recipeModel, backendId, runtimeId, modelPa
   }
 
   if (backendId === 'sglang') {
+    // SGLang is popular for agent/tool loops (RadixAttention prefix cache).
+    // Defaults stay conservative; Spark recipes override with tools/MTP flags.
     return {
       ...base,
       command: 'sglang-python',
-      args: ['-m', 'sglang.launch_server', '--model-path', modelPath, '--host', '127.0.0.1', '--port', String(port)],
+      args: [
+        '-m',
+        'sglang.launch_server',
+        '--model-path',
+        modelPath,
+        '--host',
+        '127.0.0.1',
+        '--port',
+        String(port),
+        '--served-model-name',
+        modelId,
+        '--tp',
+        '1',
+        '--context-length',
+        String(contextWindow),
+        '--mem-fraction-static',
+        '0.85',
+        '--trust-remote-code'
+      ],
       healthUrl: urlWithPort(port, '/health'),
       warmup: warmupForRuntime(port, modelId)
     };

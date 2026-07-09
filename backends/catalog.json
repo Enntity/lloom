@@ -344,10 +344,15 @@
       "id": "vllm",
       "name": "vLLM",
       "kind": "openai-compatible-server",
-      "description": "High-throughput CUDA-first inference server used widely on NVIDIA systems.",
+      "description": "High-throughput CUDA-first inference server. Default NVIDIA/DGX Spark lane for concurrent serving, long context, and multi-GPU tensor parallel.",
       "platforms": ["linux-x64", "linux-arm64"],
-      "features": ["chat", "streaming", "usage", "tools", "batching", "speculative-decoding", "cuda"],
+      "features": ["chat", "streaming", "usage", "tools", "batching", "speculative-decoding", "cuda", "blackwell", "dgx-spark"],
       "commands": ["vllm"],
+      "notes": [
+        "On DGX Spark / GB10 (linux-arm64 + Blackwell), prefer a Spark-tuned wheel or Docker image (NGC / community spark-vllm-docker / vllm-openai:cu130-nightly) rather than a generic PyPI install.",
+        "Point LLOOM_VLLM_BIN at a working vllm binary or wrapper so LLooM skips broken global installs.",
+        "You can also run vLLM outside LLooM and register it with: lloom add-model 'openai:http://127.0.0.1:8000/v1#model-id'."
+      ],
       "setup": [
         {
           "id": "check-vllm",
@@ -360,7 +365,7 @@
           "id": "install-vllm",
           "title": "Create vLLM Python environment",
           "action": "python-venv",
-          "description": "Create a LLooM-managed Python environment for vLLM instead of modifying the user's global Python.",
+          "description": "Create a LLooM-managed Python environment for vLLM instead of modifying the user's global Python. On DGX Spark prefer a prebuilt Spark/CUDA13 wheel or container binary via LLOOM_VLLM_BIN.",
           "skipIfExecutableExists": ["${LLOOM_VLLM_BIN}", "${installRoot}/vllm/venv/bin/vllm"],
           "path": "${installRoot}/vllm/venv"
         },
@@ -368,7 +373,7 @@
           "id": "install-vllm-package",
           "title": "Install vLLM package",
           "action": "pip-install",
-          "description": "Install the published vLLM package into the LLooM-managed Python environment.",
+          "description": "Install the published vLLM package into the LLooM-managed Python environment. Generic PyPI may lack GB10/sm_121 wheels — use a Spark-specific index or set LLOOM_VLLM_BIN.",
           "skipIfExecutableExists": ["${LLOOM_VLLM_BIN}", "${installRoot}/vllm/venv/bin/vllm"],
           "venv": "${installRoot}/vllm/venv",
           "args": ["--upgrade"],
@@ -397,7 +402,7 @@
       "id": "sglang",
       "name": "SGLang",
       "kind": "openai-compatible-server",
-      "description": "High-throughput OpenAI-compatible serving framework for large language and multimodal models, common on NVIDIA and AMD GPU systems.",
+      "description": "High-throughput OpenAI-compatible server with RadixAttention prefix cache. Preferred on NVIDIA/DGX Spark for agent/tool loops and shared long prefixes; also used on AMD ROCm.",
       "platforms": ["linux-x64", "linux-arm64"],
       "features": [
         "chat",
@@ -409,9 +414,15 @@
         "prefix-cache",
         "vision",
         "cuda",
-        "rocm"
+        "rocm",
+        "blackwell",
+        "dgx-spark"
       ],
       "commands": ["sglang-python"],
+      "notes": [
+        "On DGX Spark, community often runs SGLang via Docker (e.g. scitrera/dgx-spark-sglang) when pip wheels lag Blackwell/ARM64.",
+        "Set LLOOM_SGLANG_PYTHON to a working python that can import sglang, or register an external OpenAI-compatible SGLang server with lloom add-model."
+      ],
       "setup": [
         {
           "id": "check-sglang",
@@ -424,7 +435,7 @@
           "id": "install-sglang",
           "title": "Create SGLang Python environment",
           "action": "python-venv",
-          "description": "Create a LLooM-managed Python environment for SGLang instead of modifying the user's global Python.",
+          "description": "Create a LLooM-managed Python environment for SGLang instead of modifying the user's global Python. On DGX Spark prefer a prebuilt container/binary via LLOOM_SGLANG_PYTHON when PyPI lacks GB10 wheels.",
           "skipIfExecutableExists": ["${LLOOM_SGLANG_PYTHON}", "${installRoot}/sglang/venv/bin/python"],
           "path": "${installRoot}/sglang/venv"
         },

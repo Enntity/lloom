@@ -385,13 +385,23 @@ function runtimeForBackend({ backend, runtimeId, modelPath, port, modelId, conte
         String(port),
         '--served-model-name',
         modelId,
+        '--tensor-parallel-size',
+        '1',
         '--max-model-len',
-        String(contextWindow)
+        String(contextWindow),
+        '--max-num-seqs',
+        '4',
+        '--gpu-memory-utilization',
+        '0.85',
+        '--enable-chunked-prefill',
+        '--enable-prefix-caching',
+        '--trust-remote-code'
       ],
       port,
       healthUrl: urlWithPort(port, '/health'),
       startupTimeoutMs: 900000,
-      maxConcurrency: 8,
+      maxConcurrency: 4,
+      memoryGb: 96,
       warmup
     };
   }
@@ -400,11 +410,30 @@ function runtimeForBackend({ backend, runtimeId, modelPath, port, modelId, conte
     return {
       enabled: true,
       command: 'sglang-python',
-      args: ['-m', 'sglang.launch_server', '--model-path', modelPath, '--host', '127.0.0.1', '--port', String(port)],
+      args: [
+        '-m',
+        'sglang.launch_server',
+        '--model-path',
+        modelPath,
+        '--host',
+        '127.0.0.1',
+        '--port',
+        String(port),
+        '--served-model-name',
+        modelId,
+        '--tp',
+        '1',
+        '--context-length',
+        String(contextWindow),
+        '--mem-fraction-static',
+        '0.85',
+        '--trust-remote-code'
+      ],
       port,
       healthUrl: urlWithPort(port, '/health'),
       startupTimeoutMs: 900000,
-      maxConcurrency: 8,
+      maxConcurrency: 4,
+      memoryGb: 96,
       warmup
     };
   }
