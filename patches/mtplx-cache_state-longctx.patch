@@ -1,5 +1,5 @@
---- /Volumes/JMac External/LLM/mtplx/venv/lib/python3.11/site-packages/mtplx/cache_state.py.bak-lloom-longctx	2026-07-08 20:53:22
-+++ /Volumes/JMac External/LLM/mtplx/venv/lib/python3.11/site-packages/mtplx/cache_state.py	2026-07-08 20:53:51
+--- a/mtplx/cache_state.py
++++ b/mtplx/cache_state.py
 @@ -1403,7 +1403,16 @@
                  sliding_window=int(sliding_window),
              )

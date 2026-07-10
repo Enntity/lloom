@@ -1,5 +1,7 @@
 # MTPLX long-context Metal abort fix
 
+These files contain modifications to Apache-2.0-licensed MTPLX code. See [`../THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) and [`../LICENSES/Apache-2.0.txt`](../LICENSES/Apache-2.0.txt). They are an LLooM-maintained workaround, not an official upstream MTPLX release.
+
 ## Symptom
 At ~90k+ prompt tokens, Python dies with:
 ```
@@ -24,7 +26,7 @@ process-killing command-buffer error, not system OOM.
 
 ### 1. Site-package patch (required)
 ```bash
-"/Volumes/JMac External/LLM/mtplx/venv/bin/python" \
+/path/to/mtplx/venv/bin/python \
   patches/apply_mtplx_longctx_fix.py
 ```
 Patches:
@@ -33,6 +35,8 @@ Patches:
 - `mtplx/attention_split.py` — prefer large-q split over dense fallback
 
 Backups: `*.bak-lloom-longctx`. Re-run after `pip install -U mtplx`.
+
+The helper matches exact upstream source blocks and exits without modifying files when they no longer match. Treat it as version-sensitive: after any MTPLX upgrade, review the upstream changes and re-run the long-context validation ladder before applying or publishing an updated patch.
 
 ### 2. Runtime env (LLooM applies for adapter `mtplx`)
 | Variable | Default | Role |

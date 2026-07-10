@@ -6,6 +6,10 @@ node_modules/
 !.env.example
 *.log
 *.out
+*.tgz
+.eslintcache
+.nyc_output/
+coverage/
 __pycache__/
 *.pyc
 clients/generated/*

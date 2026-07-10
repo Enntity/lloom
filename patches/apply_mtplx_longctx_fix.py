@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# Contains modified fragments of MTPLX; see THIRD_PARTY_NOTICES.md.
 """Apply LLooM MTPLX long-context GPU-watchdog fix to an installed mtpLX package.
 
 Root cause (MLX #3302): macOS GPU watchdog aborts processes when a single

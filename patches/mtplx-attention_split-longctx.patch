@@ -1,5 +1,5 @@
---- /Volumes/JMac External/LLM/mtplx/venv/lib/python3.11/site-packages/mtplx/attention_split.py.bak-lloom-longctx	2026-07-08 20:53:22
-+++ /Volumes/JMac External/LLM/mtplx/venv/lib/python3.11/site-packages/mtplx/attention_split.py	2026-07-08 20:53:51
+--- a/mtplx/attention_split.py
++++ b/mtplx/attention_split.py
 @@ -297,15 +297,42 @@
                          "Sustained long-context paged attention attempted dense "
                          "cache.state fallback after the partition threshold"

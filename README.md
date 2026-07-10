@@ -1,20 +1,30 @@
 # LLooM
 
+[![CI](https://github.com/enntity/lloom/actions/workflows/ci.yml/badge.svg)](https://github.com/enntity/lloom/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 LLooM is a local-first LLM gateway for people who run serious open models on their own hardware. It sits in front of MLX, MTPLX, llama.cpp, Ollama, image generators, and other local runtimes, then exposes stable OpenAI-compatible and Anthropic-compatible APIs to agent tools.
 
 The goal is simple: install one bridge, let it inspect the machine, choose the best agentic model recipe from the LLooM community library, install the backend needed for that recipe, download and configure the model, keep it warm, and point Codex, Claude Code, OMP, OpenCode, Hermes, Zero, or any OpenAI-compatible client at one base URL.
 
 The hosted LLooM service is a separate product surface. It owns the recipe database, benchmark leaderboard, community submissions, signing keys, and moderation. The local gateway only imports signed recipe packs from that host and runs local backends; it does not do hosted community state, accounts, global rankings, or remote memory management.
 
+> **Project status:** LLooM is pre-1.0 and under active development. The GitHub repository is currently the canonical distribution; the `lloom` npm package has not been published yet.
+
+The production community host is not live yet. URLs under the reserved `community.example` domain are placeholders for operators deploying their own host; source checkouts use the bundled loopback development host.
+
 ## Quick Start
 
 ```zsh
-npm install -g lloom
+git clone https://github.com/enntity/lloom.git
+cd lloom
+npm ci
+npm link
 lloom
 lloom --go
 ```
 
-From a source checkout before a package release, run `npm install -g .` once from the repository root to install the same `lloom` and `lloom-host` commands.
+`npm link` installs the same `lloom` and `lloom-host` commands from your checkout. After the first npm release, `npm install -g lloom` will be the supported package install path.
 
 Open the dashboard or point an OpenAI-compatible client at the local endpoint:
 
@@ -105,8 +115,8 @@ The gateway and backend ports are configurable:
 lloom setup --port 9100 --backend-port-range 9200-9299 --apply --yes --start
 lloom onboard --port 9100 --backend-port-range 9200-9299 --go
 lloom onboard --backend-catalog ./backend-catalog.json --shim-dir ~/.lloom/bin
-lloom backend-plan mtplx --backend-catalog https://lloom.host/v1/backends/catalog
-lloom backend-install vllm --backend-catalog https://lloom.host/v1/backends/catalog
+lloom backend-plan mtplx --backend-catalog https://community.example/v1/backends/catalog
+lloom backend-install vllm --backend-catalog https://community.example/v1/backends/catalog
 lloom serve --config ~/.lloom/config.json --port 9100
 ```
 
@@ -176,17 +186,17 @@ lloom backend-install mtplx
 lloom select
 lloom recipes
 lloom recipe-index
-lloom community --host https://lloom.host
+lloom community --host https://community.example
 lloom community --workload agentic-coding --capability tools --capability reasoning
-lloom community-import --host https://lloom.host --apply --yes
+lloom community-import --host https://community.example --apply --yes
 lloom recipe-export apple-silicon-qwen36 --output qwen-pack.json --apply --yes
-lloom recipe-submit qwen-pack.json --host https://lloom.host
-lloom recipe-submit qwen-pack.json --host https://lloom.host --apply --yes
+lloom recipe-submit qwen-pack.json --host https://community.example
+lloom recipe-submit qwen-pack.json --host https://community.example --apply --yes
 lloom recipe-import ./my-recipe-pack.json
 lloom benchmarks
 lloom benchmarks apple-silicon-qwen36
-lloom benchmark-submit benchmarks/community/apple-silicon-qwen36-m2max.json --host https://lloom.host
-lloom benchmark-submit benchmarks/community/apple-silicon-qwen36-m2max.json --host https://lloom.host --apply --yes
+lloom benchmark-submit benchmarks/community/apple-silicon-qwen36-m2max.json --host https://community.example
+lloom benchmark-submit benchmarks/community/apple-silicon-qwen36-m2max.json --host https://community.example --apply --yes
 lloom plan apple-silicon-qwen36 --model-root ~/Models
 lloom install apple-silicon-qwen36 --model-root ~/Models
 lloom setup-status --recipe apple-silicon-qwen36 --model-root ~/Models --no-runtimes
@@ -239,14 +249,14 @@ curl -sS 'http://127.0.0.1:8100/gateway/metrics?model=Youssofal%2FQwen3.6-27B-MT
 curl -sS 'http://127.0.0.1:8100/gateway/setup/status?runtimes=false'
 curl -sS 'http://127.0.0.1:8100/gateway/doctor?runtimes=false'
 curl -sS 'http://127.0.0.1:8100/gateway/onboarding/plan?runtimes=false'
-curl -sS 'http://127.0.0.1:8100/gateway/onboarding/plan?host=https%3A%2F%2Flloom.host&require_signature=true'
+curl -sS 'http://127.0.0.1:8100/gateway/onboarding/plan?host=https%3A%2F%2Fcommunity.example&require_signature=true'
 curl -sS http://127.0.0.1:8100/gateway/backends
 curl -sS http://127.0.0.1:8100/gateway/backends/mtplx/plan
 curl -sS -X POST http://127.0.0.1:8100/gateway/backends/mtplx/install \
   -H 'content-type: application/json' \
   -d '{"yes":true}'
-curl -sS 'http://127.0.0.1:8100/gateway/library?model_root=/Users/me/.lloom/models'
-curl -sS 'http://127.0.0.1:8100/gateway/community/recommendations?host=https%3A%2F%2Flloom.host'
+curl -sS 'http://127.0.0.1:8100/gateway/library?model_root=/path/to/models'
+curl -sS 'http://127.0.0.1:8100/gateway/community/recommendations?host=https%3A%2F%2Fcommunity.example'
 curl -sS 'http://127.0.0.1:8100/gateway/setup/plan?port=9100&backend_port_range=9200-9299'
 curl -sS -X POST http://127.0.0.1:8100/gateway/models/import-plan \
   -H 'content-type: application/json' \
@@ -256,13 +266,13 @@ curl -sS -X POST http://127.0.0.1:8100/gateway/models/import \
   -d '{"modelRef":"qwen3:8b","yes":true}'
 curl -sS -X POST http://127.0.0.1:8100/gateway/recipe-packs/plan \
   -H 'content-type: application/json' \
-  -d '{"source":"https://lloom.host/v1/recipe-packs/apple-silicon.json"}'
+  -d '{"source":"https://community.example/v1/recipe-packs/apple-silicon.json"}'
 curl -sS -X POST http://127.0.0.1:8100/gateway/recipe-packs/import \
   -H 'content-type: application/json' \
-  -d '{"source":"https://lloom.host/v1/recipe-packs/apple-silicon.json","requireSignature":true,"yes":true}'
+  -d '{"source":"https://community.example/v1/recipe-packs/apple-silicon.json","requireSignature":true,"yes":true}'
 curl -sS -X POST http://127.0.0.1:8100/gateway/community/import \
   -H 'content-type: application/json' \
-  -d '{"host":"https://lloom.host","requireSignature":true,"yes":true}'
+  -d '{"host":"https://community.example","requireSignature":true,"yes":true}'
 curl -sS -X POST http://127.0.0.1:8100/gateway/runtimes/mtplx-qwen36-27b-speed/start
 curl -sS -X POST http://127.0.0.1:8100/gateway/runtimes/mtplx-qwen36-27b-speed/warmup
 curl -sS -X POST http://127.0.0.1:8100/gateway/runtimes/mtplx-qwen36-27b-speed/stop
@@ -297,8 +307,8 @@ Community recipe packs can be previewed and imported without hand-editing the lo
 lloom recipe-export apple-silicon-qwen36 --output qwen-pack.json
 lloom validate qwen-pack.json
 lloom recipe-export apple-silicon-qwen36 --output qwen-pack.json --apply --yes
-lloom recipe-submit qwen-pack.json --host https://lloom.host
-lloom recipe-submit qwen-pack.json --host https://lloom.host --apply --yes
+lloom recipe-submit qwen-pack.json --host https://community.example
+lloom recipe-submit qwen-pack.json --host https://community.example --apply --yes
 lloom recipe-import ./qwen-next-pack.json
 lloom recipe-import ./qwen-next-pack.json --trusted-key publisher=./publisher.pub --require-signature
 lloom recipe-import ./qwen-next-pack.json --apply --yes
@@ -366,3 +376,13 @@ flowchart LR
 - More platform coverage and safer native installers for backend families with manual fallbacks
 - Richer dashboard progress for long backend/model setup phases
 - Vision and richer multimodal output parity across supported backends
+
+## Contributing and Security
+
+Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), and use the issue templates for reproducible bugs, backend requests, recipe proposals, and benchmark evidence. By participating, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+Please do not file public issues for suspected vulnerabilities. Follow [SECURITY.md](SECURITY.md) to report them privately.
+
+## License
+
+LLooM is licensed under the [MIT License](LICENSE). Files derived from or patching third-party projects remain under their upstream licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

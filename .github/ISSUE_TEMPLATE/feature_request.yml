@@ -1,0 +1,34 @@
+name: Feature request
+description: Propose a focused improvement, backend, recipe, or protocol capability
+title: '[Feature]: '
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What user or developer problem should LLooM solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the desired behavior and public contract.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: textarea
+    id: platform
+    attributes:
+      label: Platform, backend, and model details
+      description: Include licenses and reproducible evidence for new backends, recipes, or performance claims.
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I would be willing to help implement or test this.
