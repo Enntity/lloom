@@ -855,8 +855,12 @@ const libraryCli = await runCommand(process.execPath, [
 ]);
 const libraryJson = JSON.parse(libraryCli.stdout);
 assert.equal(libraryJson.index.id, 'lloom-community-recipes');
-assert.equal(libraryJson.selected.recipeId, 'apple-silicon-qwen36-35b-a3b-optiq');
 assert.equal(libraryJson.recipes[0].id, 'apple-silicon-qwen36-35b-a3b-optiq');
+if (process.platform === 'darwin' && process.arch === 'arm64') {
+  assert.equal(libraryJson.selected.recipeId, 'apple-silicon-qwen36-35b-a3b-optiq');
+} else {
+  assert.equal(libraryJson.selected, null);
+}
 const addModelCli = await runCommand(process.execPath, [
   path.join(process.cwd(), 'bin', 'lloom.mjs'),
   'add-model',
@@ -4650,7 +4654,11 @@ if (listened) {
     assert.equal(libraryResponse.status, 200);
     const libraryPlanJson = await libraryResponse.json();
     assert.equal(libraryPlanJson.index.id, 'lloom-community-recipes');
-    assert.equal(libraryPlanJson.selected.recipeId, 'apple-silicon-qwen36-35b-a3b-optiq');
+    if (process.platform === 'darwin' && process.arch === 'arm64') {
+      assert.equal(libraryPlanJson.selected.recipeId, 'apple-silicon-qwen36-35b-a3b-optiq');
+    } else {
+      assert.equal(libraryPlanJson.selected, null);
+    }
     assert.equal(
       libraryPlanJson.recipes[0].commands.installApply,
       'lloom install apple-silicon-qwen36-35b-a3b-optiq --model-root /models --apply --yes'
