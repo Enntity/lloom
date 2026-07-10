@@ -868,7 +868,9 @@ const addModelCli = await runCommand(process.execPath, [
   '--model-root',
   '/models with spaces',
   '--port',
-  '8403'
+  '8403',
+  '--config',
+  config.sourcePath
 ]);
 const addModelJson = JSON.parse(addModelCli.stdout);
 assert.equal(addModelJson.inference.backend, 'llama-cpp');
