@@ -359,25 +359,48 @@ try {
     'CUDA installed host recommendation'
   );
 
+  const onboardingProfileEnv = {};
+  if (process.platform === 'linux') {
+    const profileBin = path.join(tempRoot, 'profile-bin');
+    const profileShim = path.join(tempRoot, 'profile-shim.cjs');
+    await fs.mkdir(profileBin, { recursive: true });
+    await fs.writeFile(path.join(profileBin, 'nvidia-smi'), '#!/bin/sh\nprintf "0, NVIDIA GB10, 131072, 12.1\\n"\n', {
+      mode: 0o755
+    });
+    await fs.writeFile(profileShim, "const os = require('node:os');\nos.totalmem = () => 128 * 1024 ** 3;\n", 'utf8');
+    onboardingProfileEnv.NODE_OPTIONS = [process.env.NODE_OPTIONS, `--require=${profileShim}`]
+      .filter(Boolean)
+      .join(' ');
+    onboardingProfileEnv.PATH = `${profileBin}${path.delimiter}${process.env.PATH ?? ''}`;
+  }
+  const expectedOnboardingRecipe =
+    process.platform === 'linux' ? 'linux-nvidia-qwen36-27b-nvfp4-vllm' : 'apple-silicon-qwen36-35b-a3b-mtplx';
+  const expectedEvidence = process.platform === 'linux' ? 'Evidence: 98.1 tok/s' : 'Evidence: 68.58 tok/s';
   const onboard = await runCommand(
     lloom,
     ['onboard', '--home', homeRoot, '--host', baseUrl, '--no-auto-host', '--json'],
     {
       env: commandEnv({
         HOME: homeRoot,
-        LLOOM_HOME: path.join(homeRoot, '.lloom')
+        LLOOM_HOME: path.join(homeRoot, '.lloom'),
+        ...onboardingProfileEnv
       })
     }
   );
   const onboardReport = JSON.parse(onboard.stdout);
   if (onboardReport?.source !== 'community') fail('installed lloom onboard did not use the community source');
-  if (onboardReport?.selectedRecipe?.id !== 'apple-silicon-qwen36-35b-a3b-mtplx') {
+  if (onboardReport?.selectedRecipe?.id !== expectedOnboardingRecipe) {
     fail('installed lloom onboard selected the wrong recipe', [
+      `expected ${expectedOnboardingRecipe}`,
       `actual ${onboardReport?.selectedRecipe?.id ?? '(none)'}`
     ]);
   }
-  const warmup = onboardReport?.setup?.phases?.init?.config?.runtimes?.['mtplx-qwen36-35b-a3b-speed-fp16']?.warmup;
-  if (warmup?.body?.max_tokens !== 2) fail('installed lloom onboard did not materialize the runtime warmup request');
+  const warmups = Object.values(onboardReport?.setup?.phases?.init?.config?.runtimes ?? {})
+    .map((runtime) => runtime?.warmup)
+    .filter(Boolean);
+  if (!warmups.some((warmup) => warmup?.body?.max_tokens === 2)) {
+    fail('installed lloom onboard did not materialize the runtime warmup request');
+  }
 
   const humanOnboard = await runCommand(
     lloom,
@@ -385,14 +408,15 @@ try {
     {
       env: commandEnv({
         HOME: path.join(tempRoot, 'human-home'),
-        LLOOM_HOME: path.join(tempRoot, 'human-home', '.lloom')
+        LLOOM_HOME: path.join(tempRoot, 'human-home', '.lloom'),
+        ...onboardingProfileEnv
       })
     }
   );
   if (!humanOnboard.stdout.includes('Why this model:')) {
     fail('installed lloom onboard human summary did not explain the recommendation');
   }
-  if (!humanOnboard.stdout.includes('Evidence: 68.58 tok/s')) {
+  if (!humanOnboard.stdout.includes(expectedEvidence)) {
     fail('installed lloom onboard human summary did not include benchmark evidence');
   }
   if (!humanOnboard.stdout.includes('trusted signature')) {
