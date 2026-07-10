@@ -39,10 +39,7 @@ export const OPENAI_VOICE_ALIASES = {
 export const SPEECH_RESPONSE_FORMATS = ['wav', 'mp3', 'flac', 'opus', 'aac', 'pcm'];
 
 function modelText(model = {}) {
-  return [model.id, model.upstreamModel, model.name, ...(model.tags ?? [])]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
+  return [model.id, model.upstreamModel, model.name, ...(model.tags ?? [])].filter(Boolean).join(' ').toLowerCase();
 }
 
 function param(spec) {
@@ -77,8 +74,7 @@ function qwenCustomVoiceDescriptor(model) {
     family: 'qwen3-tts',
     mode: 'custom_voice',
     modes: ['custom_voice'],
-    description:
-      'Qwen3-TTS CustomVoice: pick a built-in speaker and optionally style it with instructions.',
+    description: 'Qwen3-TTS CustomVoice: pick a built-in speaker and optionally style it with instructions.',
     voices,
     defaultVoice: 'serena',
     voiceAliases: { ...OPENAI_VOICE_ALIASES },
@@ -149,8 +145,7 @@ function qwenVoiceDesignDescriptor(model) {
     family: 'qwen3-tts',
     mode: 'voice_design',
     modes: ['voice_design'],
-    description:
-      'Qwen3-TTS VoiceDesign: describe the desired voice in natural language via instructions.',
+    description: 'Qwen3-TTS VoiceDesign: describe the desired voice in natural language via instructions.',
     voices: [],
     defaultVoice: null,
     voiceAliases: {},
@@ -169,8 +164,7 @@ function qwenVoiceDesignDescriptor(model) {
         required: true,
         aliases: ['instruct'],
         role: 'voice_description',
-        description:
-          'Natural-language description of the target voice (age, gender, accent, tone, character).'
+        description: 'Natural-language description of the target voice (age, gender, accent, tone, character).'
       }),
       language: param({
         type: 'string',
@@ -192,8 +186,7 @@ function qwenVoiceDesignDescriptor(model) {
         body: {
           model: model.id,
           input: 'Welcome to the local voice lab.',
-          instructions:
-            'A warm middle-aged female narrator with a slight British accent, calm and clear.',
+          instructions: 'A warm middle-aged female narrator with a slight British accent, calm and clear.',
           response_format: 'wav'
         }
       }
@@ -206,8 +199,7 @@ function qwenVoiceCloneDescriptor(model) {
     family: 'qwen3-tts',
     mode: 'voice_clone',
     modes: ['voice_clone'],
-    description:
-      'Qwen3-TTS Base: zero-shot clone from a short reference clip (ref_audio + ref_text).',
+    description: 'Qwen3-TTS Base: zero-shot clone from a short reference clip (ref_audio + ref_text).',
     voices: [],
     defaultVoice: null,
     voiceAliases: {},
@@ -225,8 +217,7 @@ function qwenVoiceCloneDescriptor(model) {
       ref_audio: param({
         type: 'audio',
         required: true,
-        description:
-          'Reference audio for cloning. JSON: local path or data URL. Multipart: file field ref_audio.',
+        description: 'Reference audio for cloning. JSON: local path or data URL. Multipart: file field ref_audio.',
         contentTypes: ['audio/wav', 'audio/mpeg', 'audio/flac', 'audio/ogg']
       }),
       ref_text: param({
@@ -465,11 +456,7 @@ export function modelDiscoveryMetadata(model) {
   const tts = resolveTtsDescriptor(model);
   const stt = resolveSttDescriptor(model);
   const capabilities = [
-    ...new Set([
-      ...(model.capabilities ?? []),
-      ...(tts?.capabilities ?? []),
-      ...(stt?.capabilities ?? [])
-    ])
+    ...new Set([...(model.capabilities ?? []), ...(tts?.capabilities ?? []), ...(stt?.capabilities ?? [])])
   ];
 
   const metadata = {
@@ -509,9 +496,7 @@ export function listVoicesForModel(model) {
   const tts = resolveTtsDescriptor(model);
   if (!tts) return null;
   const voices = (tts.voices ?? []).map((voice) =>
-    typeof voice === 'string'
-      ? { id: voice, name: voice, object: 'voice' }
-      : { object: 'voice', ...voice }
+    typeof voice === 'string' ? { id: voice, name: voice, object: 'voice' } : { object: 'voice', ...voice }
   );
   return {
     object: 'list',
@@ -531,9 +516,7 @@ export function speechSchemaForModel(model) {
     object: 'speech.schema',
     model: model.id,
     endpoint: 'POST /v1/audio/speech',
-    contentTypes: tts.acceptsMultipart
-      ? ['application/json', 'multipart/form-data']
-      : ['application/json'],
+    contentTypes: tts.acceptsMultipart ? ['application/json', 'multipart/form-data'] : ['application/json'],
     ...tts
   };
 }

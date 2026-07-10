@@ -42,8 +42,8 @@ lloom onboard --apply --yes
 Community-backed first run:
 
 ```zsh
-lloom onboard --host https://lloom.host
-lloom onboard --host https://lloom.host --go
+lloom onboard --host https://community.example
+lloom onboard --host https://community.example --go
 lloom onboard --workload agentic-coding --capability tools --capability reasoning
 lloom onboard --no-auto-host
 ```
@@ -60,9 +60,9 @@ Useful options:
 
 ```zsh
 lloom onboard --recipe apple-silicon-qwen36
-lloom onboard --host https://lloom.host --no-require-signature
-lloom onboard --host https://lloom.host --signing-keys-path /v1/keys
-lloom onboard --host https://lloom.host --no-trust-host-keys
+lloom onboard --host https://community.example --no-require-signature
+lloom onboard --host https://community.example --signing-keys-path /v1/keys
+lloom onboard --host https://community.example --no-trust-host-keys
 lloom onboard --home /opt/lloom-user
 lloom onboard --client omp
 lloom onboard --model-root ~/Models
@@ -77,7 +77,7 @@ LLooM keeps first-run planning separate from installed-operation commands. `lloo
 
 Onboarding uses the same guarded executors as `setup`, `backend-install`, `install`, and `integrate`. `--go` is the first-run shortcut for applying the plan, confirming noninteractive writes, and starting the selected runtime. Real execution writes resumable state to `~/.lloom/install-state.json` unless `--state` overrides it; a repeated run skips completed backend and recipe steps. If a backend phase fails, LLooM records the failed step, marks recipe and integration phases as blocked, and returns `ok: false` without starting runtimes. Fix the failure and rerun the same `onboard --go` command to continue from the recorded state.
 
-Advanced backend flags let recipe authors and power users test alternate backend catalogs without editing the generated user config: `--backend-catalog`, `--shim-dir`, `--backend-root`, `--install-root`, `--repo-parent`, and `--backend-model-root`. `--backend-catalog` accepts either a local `backend-catalog.v1` JSON file or a hosted catalog URL such as `https://lloom.host/v1/backends/catalog`; community onboarding defaults to that hosted route automatically. These flags are accepted by first-run setup and the lower-level backend/setup/status commands.
+Advanced backend flags let recipe authors and power users test alternate backend catalogs without editing the generated user config: `--backend-catalog`, `--shim-dir`, `--backend-root`, `--install-root`, `--repo-parent`, and `--backend-model-root`. `--backend-catalog` accepts either a local `backend-catalog.v1` JSON file or a hosted catalog URL such as `https://community.example/v1/backends/catalog`; community onboarding defaults to that hosted route automatically. These flags are accepted by first-run setup and the lower-level backend/setup/status commands.
 
 The gateway defaults to `127.0.0.1:8100`. Managed backend runtimes default to the `8201-8299` range in the packaged config. `--port` rewrites the generated LLooM provider URL, and `--backend-port-range` rewrites the selected recipe runtime ports, backend base URLs, health URLs, and warmup URLs. Users who do not have port conflicts should leave both alone.
 
@@ -110,7 +110,7 @@ The running gateway exposes the same read-only planning contracts for a UI or da
 ```zsh
 curl -sS http://127.0.0.1:8100/gateway/library
 curl -sS 'http://127.0.0.1:8100/gateway/onboarding/plan?port=9100&backend_port_range=9200-9299'
-curl -sS 'http://127.0.0.1:8100/gateway/onboarding/plan?host=https%3A%2F%2Flloom.host&require_signature=true'
+curl -sS 'http://127.0.0.1:8100/gateway/onboarding/plan?host=https%3A%2F%2Fcommunity.example&require_signature=true'
 curl -sS 'http://127.0.0.1:8100/gateway/setup/plan?port=9100&backend_port_range=9200-9299'
 curl -sS -X POST http://127.0.0.1:8100/gateway/models/import-plan \
   -H 'content-type: application/json' \

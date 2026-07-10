@@ -147,10 +147,8 @@ export async function createBootstrapPlan(
     recipesRoot,
     recipeDocuments = [],
     backendCatalogPath,
-    /* eslint-disable no-unused-vars */
     _onProgress,
     _stdio
-    /* eslint-enable no-unused-vars */
   } = {}
 ) {
   const profile = await profileMachine();
@@ -213,7 +211,6 @@ export async function applyBootstrap(
     statePath = defaultInstallStatePathFor({ ...process.env, HOME: home }),
     generatedRoot,
     backendVariables = defaultBackendVariables(process.env),
-    /* eslint-disable-next-line no-unused-vars */
     _benchmarkDocuments = [],
     recipesRoot,
     recipeDocuments = [],

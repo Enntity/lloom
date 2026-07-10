@@ -444,14 +444,12 @@ async function buildRecipePackPlan(
       benchmarksRoot: path.resolve(benchmarksRoot)
     },
     validationErrors,
-    // eslint-disable-next-line no-unused-vars
     actions: actions.map(({ content: _content, ...action }) => action),
     writableActions: actions
   };
 }
 
 export async function createRecipePackPlan(source, config, options = {}) {
-  // eslint-disable-next-line no-unused-vars
   const { writableActions: _writableActions, ...plan } = await buildRecipePackPlan(source, config, options);
   return plan;
 }

@@ -6,11 +6,9 @@
  * Used so all LLooM clients share one dialect regardless of upstream leak patterns.
  */
 
-const CLOSED_THINK_TAG_RE =
-  /<\s*(?:think|thinking|reasoning)\s*>([\s\S]*?)<\s*\/\s*(?:think|thinking|reasoning)\s*>/gi;
+const CLOSED_THINK_TAG_RE = /<\s*(?:think|thinking|reasoning)\s*>([\s\S]*?)<\s*\/\s*(?:think|thinking|reasoning)\s*>/gi;
 
-const PROSE_THINKING_PREFIX_RE =
-  /^(?:here'?s\s+a\s+)?thinking\s+process\s*:?\s*(?:\n+|$)/i;
+const PROSE_THINKING_PREFIX_RE = /^(?:here'?s\s+a\s+)?thinking\s+process\s*:?\s*(?:\n+|$)/i;
 
 /**
  * Split think tags / prose "Thinking Process" blocks out of content.
@@ -92,9 +90,7 @@ export function normalizeOpenAIAssistantPayload(payload = {}) {
     next.content = split.content;
   } else if (Array.isArray(rawContent) && reasoning && split.content !== contentString) {
     // Multimodal content: only replace when we actually stripped thinking from joined text
-    next.content = split.content
-      ? [{ type: 'text', text: split.content }]
-      : [];
+    next.content = split.content ? [{ type: 'text', text: split.content }] : [];
   }
 
   if (reasoning) {

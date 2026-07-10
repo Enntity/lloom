@@ -428,7 +428,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       <div class="band-head"><h2>Community Feed</h2></div>
       <div class="band-body">
         <form id="community-form" class="form-grid">
-          <label class="wide">Host URL<input name="host" placeholder="https://lloom.host"></label>
+          <label class="wide">Host URL<input name="host" placeholder="https://community.example"></label>
           <label>Feed path<input name="recipe_feed_path" placeholder="/v1/recipe-packs/recommended"></label>
           <label>Limit<input name="limit" inputmode="numeric" placeholder="1"></label>
           <div class="wide check-row">
@@ -446,7 +446,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       <div class="band-head"><h2>Recipe Pack</h2></div>
       <div class="band-body">
         <form id="pack-form" class="form-grid">
-          <label class="wide">Pack source<input name="source" placeholder="https://lloom.host/v1/recipe-packs/apple-silicon.json or ./pack.json"></label>
+          <label class="wide">Pack source<input name="source" placeholder="https://community.example/v1/recipe-packs/apple-silicon.json or ./pack.json"></label>
           <label>Index path<input name="indexPath" placeholder="recipes/index.json"></label>
           <label>Recipes root<input name="recipesRoot" placeholder="recipes"></label>
           <label>Benchmarks root<input name="benchmarksRoot" placeholder="benchmarks/community"></label>

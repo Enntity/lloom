@@ -208,16 +208,16 @@ assert.throws(() => defaultRegistry.resolve('Youssofal/Qwen3.6-27B-MTPLX-Optimiz
 const localCommunityConfig = await loadConfig(undefined, {
   env: {
     ...process.env,
-    LLOOM_COMMUNITY_HOST_URL: 'https://lloom.host',
+    LLOOM_COMMUNITY_HOST_URL: 'https://community.example',
     LLOOM_COMMUNITY_REQUIRE_SIGNED_PACKS: 'true'
   }
 });
-assert.equal(localCommunityConfig.community.hostUrl, 'https://lloom.host');
+assert.equal(localCommunityConfig.community.hostUrl, 'https://community.example');
 assert.equal(localCommunityConfig.community.requireSignedPacks, true);
 assert.equal(isLoopbackCommunityHost('http://127.0.0.1:8110'), true);
 assert.equal(isLoopbackCommunityHost('http://localhost:8110'), true);
 assert.equal(isLoopbackCommunityHost('http://localhost'), false);
-assert.equal(isLoopbackCommunityHost('https://lloom.host'), false);
+assert.equal(isLoopbackCommunityHost('https://community.example'), false);
 const defaultLocalHostCommand = localHostServeCommand(config, {
   hostUrl: 'http://127.0.0.1:8110'
 });
@@ -836,9 +836,7 @@ const recipeIndexReport = await buildRecipeIndexReport(config, {
 assert.equal(recipeIndexReport.ok, true);
 assert.equal(recipeIndexReport.index.id, 'lloom-community-recipes');
 assert.equal(recipeIndexReport.recipes.length, 2);
-const indexedQwen36Recipe = recipeIndexReport.recipes.find(
-  (candidate) => candidate.id === 'apple-silicon-qwen36'
-);
+const indexedQwen36Recipe = recipeIndexReport.recipes.find((candidate) => candidate.id === 'apple-silicon-qwen36');
 assert.equal(indexedQwen36Recipe.ok, true);
 assert.equal(indexedQwen36Recipe.commands.plan, 'lloom plan apple-silicon-qwen36 --model-root /models');
 assert.equal(
@@ -2951,7 +2949,6 @@ assert.equal(doctorCliJson.complete, false);
 assert.equal(doctorCliJson.phases.find((phase) => phase.id === 'clients').status, 'ready');
 assert.equal(doctorCliJson.phases.find((phase) => phase.id === 'models').status, 'action-needed');
 
-// eslint-disable-next-line no-unused-vars
 const { LLOOM_CONFIG: _unusedLloomConfig, ...envWithoutLloomConfig } = process.env;
 const freshDoctorHome = path.join(tempDir, 'fresh-doctor-home');
 const missingDoctorCli = await runCommand(
@@ -5628,16 +5625,12 @@ if (speechListened) {
       assert.equal(catalogJson.object, 'speech.catalog');
       assert.ok(catalogJson.models.some((model) => model.id === 'synthetic-speech'));
 
-      const voicesResponse = await fetch(
-        `http://127.0.0.1:${port}/v1/audio/voices?model=synthetic-speech`
-      );
+      const voicesResponse = await fetch(`http://127.0.0.1:${port}/v1/audio/voices?model=synthetic-speech`);
       assert.equal(voicesResponse.status, 200);
       const voicesJson = await voicesResponse.json();
       assert.equal(voicesJson.object, 'list');
 
-      const schemaResponse = await fetch(
-        `http://127.0.0.1:${port}/v1/audio/speech/schema?model=synthetic-speech`
-      );
+      const schemaResponse = await fetch(`http://127.0.0.1:${port}/v1/audio/speech/schema?model=synthetic-speech`);
       assert.equal(schemaResponse.status, 200);
       const schemaJson = await schemaResponse.json();
       assert.equal(schemaJson.object, 'speech.schema');

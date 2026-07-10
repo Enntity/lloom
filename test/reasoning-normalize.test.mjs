@@ -13,9 +13,7 @@ import {
 }
 
 {
-  const split = splitThinkingFromContent(
-    "Here's a thinking process:\n\n1. Do math.\n2. Return 7."
-  );
+  const split = splitThinkingFromContent("Here's a thinking process:\n\n1. Do math.\n2. Return 7.");
   assert.match(split.reasoning, /Do math/);
   assert.equal(split.content, '');
 }

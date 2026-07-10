@@ -94,9 +94,9 @@ lloom benchmark-submit benchmarks/community/apple-silicon-qwen36-m2max.json \
 The local gateway can ask the host for machine-specific recommendations:
 
 ```zsh
-lloom onboard --host https://lloom.host
-lloom community --host https://lloom.host
-lloom community-import --host https://lloom.host --apply --yes
+lloom onboard --host https://community.example
+lloom community --host https://community.example
+lloom community-import --host https://community.example --apply --yes
 ```
 
 `onboard --host` is the zero-to-running path: the dry-run plan uses the host recommendation and the host backend catalog immediately, and the apply path imports the selected recipe pack before running local setup. `community` and `community-import` remain lower-level tools for inspecting or syncing the recommendation cache separately.
@@ -133,17 +133,17 @@ The response echoes the normalized `machineProfile`, includes `recommendationCou
 or over the running gateway:
 
 ```zsh
-curl -sS 'http://127.0.0.1:8100/gateway/community/recommendations?host=https%3A%2F%2Flloom.host'
-curl -sS 'http://127.0.0.1:8100/gateway/onboarding/plan?host=https%3A%2F%2Flloom.host&require_signature=true'
+curl -sS 'http://127.0.0.1:8100/gateway/community/recommendations?host=https%3A%2F%2Fcommunity.example'
+curl -sS 'http://127.0.0.1:8100/gateway/onboarding/plan?host=https%3A%2F%2Fcommunity.example&require_signature=true'
 curl -sS -X POST http://127.0.0.1:8100/gateway/community/import \
   -H 'content-type: application/json' \
-  -d '{"host":"https://lloom.host","requireSignature":true,"yes":true}'
+  -d '{"host":"https://community.example","requireSignature":true,"yes":true}'
 ```
 
 It can also consume a specific pack URL through:
 
 ```zsh
-lloom recipe-import https://lloom.host/v1/recipe-packs/<id> --require-signature
+lloom recipe-import https://community.example/v1/recipe-packs/<id> --require-signature
 ```
 
 or:
@@ -151,7 +151,7 @@ or:
 ```zsh
 curl -sS -X POST http://127.0.0.1:8100/gateway/recipe-packs/plan \
   -H 'content-type: application/json' \
-  -d '{"source":"https://lloom.host/v1/recipe-packs/<id>","requireSignature":true}'
+  -d '{"source":"https://community.example/v1/recipe-packs/<id>","requireSignature":true}'
 ```
 
 ## Data Flow

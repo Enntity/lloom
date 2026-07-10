@@ -70,8 +70,8 @@ Run a dry-run backend install:
 
 ```zsh
 lloom backend-install mtplx
-lloom backend-install vllm --backend-catalog https://lloom.host/v1/backends/catalog
-lloom backend-install sglang --backend-catalog https://lloom.host/v1/backends/catalog
+lloom backend-install vllm --backend-catalog https://community.example/v1/backends/catalog
+lloom backend-install sglang --backend-catalog https://community.example/v1/backends/catalog
 ```
 
 ### NVIDIA DGX Spark / GB10

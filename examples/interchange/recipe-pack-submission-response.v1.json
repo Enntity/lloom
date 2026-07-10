@@ -19,7 +19,7 @@
       "recipeCount": 1,
       "benchmarkCount": 1,
       "fileName": "example-apple-silicon-27b-pack.json",
-      "url": "https://lloom.host/v1/recipe-packs/example-apple-silicon-27b-pack"
+      "url": "https://community.example/v1/recipe-packs/example-apple-silicon-27b-pack"
     }
   ],
   "message": "recipe pack accepted and persisted for review"

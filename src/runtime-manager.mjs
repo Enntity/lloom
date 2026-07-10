@@ -415,11 +415,7 @@ export class RuntimeManager {
     const child = spawn(runtime.command, args, {
       cwd: runtime.cwd,
       env: runtimeEnvironment(this.config, runtime),
-      stdio: [
-        'ignore',
-        this.captureOutput ? 'pipe' : 'ignore',
-        this.captureOutput ? 'pipe' : 'ignore'
-      ],
+      stdio: ['ignore', this.captureOutput ? 'pipe' : 'ignore', this.captureOutput ? 'pipe' : 'ignore'],
       detached: true
     });
     child.unref();
@@ -451,11 +447,7 @@ export class RuntimeManager {
       state.status = code === 0 || expectedStop ? 'stopped' : 'failed';
       state.stoppedAt = nowIso();
       const base = state.status === 'stopped' ? null : `process exited code=${code} signal=${signal ?? ''}`.trim();
-      state.lastError = base
-        ? state.lastStderr
-          ? `${base}; stderr=${state.lastStderr}`
-          : base
-        : null;
+      state.lastError = base ? (state.lastStderr ? `${base}; stderr=${state.lastStderr}` : base) : null;
       this.record({ runtimeId, event: 'exit', code, signal, lastError: state.lastError });
       // Drop dead handle so the next ensure()/start can relaunch.
       if (this.processes.get(runtimeId) === child) {

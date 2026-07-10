@@ -132,9 +132,9 @@ The report checks the index schema, verifies that each listed recipe file loads,
 When `community.hostUrl` is configured, or when a host is supplied explicitly, LLooM can ask `lloom-host` for the best recipe packs for the current `machine-profile.v1` hardware profile:
 
 ```zsh
-lloom onboard --host https://lloom.host
-lloom community --host https://lloom.host
-lloom community-import --host https://lloom.host --apply --yes
+lloom onboard --host https://community.example
+lloom community --host https://community.example
+lloom community-import --host https://community.example --apply --yes
 ```
 
 `onboard --host` is the normal first-run path: it fetches the host `recommendation-response.v1`, validates the selected pack, uses the recommended recipe in memory for the setup dry-run, and imports the pack before setup when applied. `community` is a lower-level dry-run that fetches the same response, normalizes direct pack URLs or inline pack JSON, and returns the same recipe-pack validation plan used by `recipe-import`. `community-import` is guarded by `--apply --yes` and writes only to the local recipe index, recipe files, and benchmark evidence roots.
@@ -142,11 +142,11 @@ lloom community-import --host https://lloom.host --apply --yes
 The gateway exposes the same flow:
 
 ```zsh
-curl -sS 'http://127.0.0.1:8100/gateway/community/recommendations?host=https%3A%2F%2Flloom.host'
-curl -sS 'http://127.0.0.1:8100/gateway/onboarding/plan?host=https%3A%2F%2Flloom.host'
+curl -sS 'http://127.0.0.1:8100/gateway/community/recommendations?host=https%3A%2F%2Fcommunity.example'
+curl -sS 'http://127.0.0.1:8100/gateway/onboarding/plan?host=https%3A%2F%2Fcommunity.example'
 curl -sS -X POST http://127.0.0.1:8100/gateway/community/import \
   -H 'content-type: application/json' \
-  -d '{"host":"https://lloom.host","requireSignature":true,"yes":true}'
+  -d '{"host":"https://community.example","requireSignature":true,"yes":true}'
 ```
 
 After import, normal setup continues from the local cache:
@@ -187,10 +187,10 @@ The running gateway exposes the same guarded import flow for dashboards and host
 ```zsh
 curl -sS -X POST http://127.0.0.1:8100/gateway/recipe-packs/plan \
   -H 'content-type: application/json' \
-  -d '{"source":"https://lloom.host/v1/recipe-packs/apple-silicon.json"}'
+  -d '{"source":"https://community.example/v1/recipe-packs/apple-silicon.json"}'
 curl -sS -X POST http://127.0.0.1:8100/gateway/recipe-packs/import \
   -H 'content-type: application/json' \
-  -d '{"source":"https://lloom.host/v1/recipe-packs/apple-silicon.json","requireSignature":true,"yes":true}'
+  -d '{"source":"https://community.example/v1/recipe-packs/apple-silicon.json","requireSignature":true,"yes":true}'
 ```
 
 Signed packs use Ed25519 signatures over a canonical form of the pack without the `signatures` field. Import reports signature status in dry-runs. Passing `--require-signature` rejects unsigned packs; passing one or more `--trusted-key key-id=pubkey.pem` flags also requires a verified signature from one of those trusted key IDs.

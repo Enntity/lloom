@@ -20,7 +20,9 @@ const SIZES = arg('--sizes', '2k,32k,64k,100k,131k')
 const GEN_TOKENS = Number(arg('--gen-tokens', '128'));
 
 function parseSize(label) {
-  const m = String(label).toLowerCase().match(/^(\d+(?:\.\d+)?)(k|m)?$/);
+  const m = String(label)
+    .toLowerCase()
+    .match(/^(\d+(?:\.\d+)?)(k|m)?$/);
   if (!m) throw new Error(`bad size ${label}`);
   let n = Number(m[1]);
   if (m[2] === 'k') n *= 1000;
@@ -246,7 +248,9 @@ for (const label of SIZES) {
   const r = await streamOnce({ model, wantTokens: want, label });
   console.log(JSON.stringify(r, null, 2));
   results.push(r);
-  const health = await fetch(`${BASE}/health`).then((x) => x.ok).catch(() => false);
+  const health = await fetch(`${BASE}/health`)
+    .then((x) => x.ok)
+    .catch(() => false);
   console.log('gateway_health', health);
   if (!r.ok || !health) break;
 }

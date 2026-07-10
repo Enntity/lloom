@@ -243,10 +243,10 @@ Contributor:
 ```zsh
 lloom recipe-export apple-silicon-qwen36 --output pack.json
 lloom recipe-export apple-silicon-qwen36 --output pack.json --apply --yes
-lloom recipe-submit pack.json --host https://lloom.host
-lloom recipe-submit pack.json --host https://lloom.host --apply --yes
-lloom benchmark-submit benchmarks/community/apple-silicon-qwen36-m2max.json --host https://lloom.host
-lloom benchmark-submit benchmarks/community/apple-silicon-qwen36-m2max.json --host https://lloom.host --apply --yes
+lloom recipe-submit pack.json --host https://community.example
+lloom recipe-submit pack.json --host https://community.example --apply --yes
+lloom benchmark-submit benchmarks/community/apple-silicon-qwen36-m2max.json --host https://community.example
+lloom benchmark-submit benchmarks/community/apple-silicon-qwen36-m2max.json --host https://community.example --apply --yes
 ```
 
 Publisher:
@@ -264,15 +264,15 @@ Consumer:
 
 ```zsh
 lloom recipe-import pack.json --require-signature
-lloom community --host https://lloom.host
-lloom community-import --host https://lloom.host --apply --yes
+lloom community --host https://community.example
+lloom community-import --host https://community.example --apply --yes
 ```
 
 Hosts should expose the full backend setup vocabulary as a `backend-catalog.v1` document:
 
 ```zsh
 curl -H 'accept: application/vnd.lloom.backend-catalog+json;version=1' \
-  https://lloom.host/v1/backends/catalog
+  https://community.example/v1/backends/catalog
 ```
 
 ## Boundary

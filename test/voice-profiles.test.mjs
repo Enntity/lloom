@@ -38,20 +38,14 @@ assert.equal(listed.length, 1);
 assert.equal(listed[0].id, 'jinx-demo');
 
 const loaded = await loadVoiceProfileFromDir(path.join(tmp, 'jinx-demo'));
-const expanded = applyVoiceProfileToSpeechBody(
-  { voice: 'jinx-demo', input: 'Hello Player One.' },
-  loaded
-);
+const expanded = applyVoiceProfileToSpeechBody({ voice: 'jinx-demo', input: 'Hello Player One.' }, loaded);
 assert.equal(expanded.applied, true);
 assert.equal(expanded.body.model, 'mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit');
 assert.equal(expanded.body.ref_text, 'slow, teasing every edge. You boys like that?');
 assert.equal(expanded.body.temperature, 1.05);
 assert.equal(expanded.body.input, 'Hello Player One.');
 // Client override sampling
-const overridden = applyVoiceProfileToSpeechBody(
-  { voice: 'jinx-demo', input: 'Hi', temperature: 1.2 },
-  loaded
-);
+const overridden = applyVoiceProfileToSpeechBody({ voice: 'jinx-demo', input: 'Hi', temperature: 1.2 }, loaded);
 assert.equal(overridden.body.temperature, 1.2);
 
 const discovery = listVoicesDiscovery({

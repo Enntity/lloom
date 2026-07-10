@@ -1056,11 +1056,11 @@ async function main() {
       await app.listen();
       console.log(`LLooM listening on http://${config.server.host}:${config.server.port}`);
     },
-    models: async ({ args, config, command: _command }) => {
+    models: async ({ args: _args, config, command: _command }) => {
       const registry = createRegistry(config);
       console.log(JSON.stringify({ data: registry.openAIModels() }, null, 2));
     },
-    backends: async ({ args, config, command: _command }) => {
+    backends: async ({ args, config: _config, command: _command }) => {
       const backendId = positional(args)[1] ?? 'all';
       const catalog = await loadBackendCatalog(argValue(args, '--backend-catalog'));
       const errors = validateBackendCatalog(catalog);
@@ -1088,7 +1088,7 @@ async function main() {
         )
       );
     },
-    'backend-plan': async ({ args, config, command: _command }) => {
+    'backend-plan': async ({ args, config: _config, command: _command }) => {
       const backendId = positional(args)[1];
       if (!backendId) {
         console.error('Missing backend id');
@@ -1110,7 +1110,7 @@ async function main() {
         )
       );
     },
-    'backend-install': async ({ args, config, command: _command }) => {
+    'backend-install': async ({ args, config: _config, command: _command }) => {
       const backendId = positional(args)[1];
       if (!backendId) {
         console.error('Missing backend id');
@@ -1318,7 +1318,7 @@ async function main() {
       }
       console.log(JSON.stringify(setupStatus, null, 2));
     },
-    benchmarks: async ({ args, config, command: _command }) => {
+    benchmarks: async ({ args, config: _config, command: _command }) => {
       const recipeId = positional(args)[1] ?? 'all';
       const { root, evidence, validationErrors } = await loadBenchmarksForCli(args);
       if (recipeId === 'all') {
@@ -1376,7 +1376,7 @@ async function main() {
         )
       );
     },
-    profile: async ({ args, config, command: _command }) => {
+    profile: async ({ args, config: _config, command: _command }) => {
       const profile = await profileMachine();
       const recipes = await loadRecipes();
       const catalog = await loadBackendCatalog(argValue(args, '--backend-catalog'));
@@ -1395,7 +1395,7 @@ async function main() {
         )
       );
     },
-    recipes: async ({ args, config, command: _command }) => {
+    recipes: async ({ args: _args, config: _config, command: _command }) => {
       const recipes = await loadRecipes();
       console.log(
         JSON.stringify(
@@ -1709,10 +1709,12 @@ async function main() {
           name: argValue(args, '--name'),
           ref: argValue(args, '--ref'),
           refText: argValue(args, '--ref-text') ?? argValue(args, '--refText'),
-          model:
-            argValue(args, '--model') ?? 'mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit',
+          model: argValue(args, '--model') ?? 'mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit',
           description: argValue(args, '--description'),
-          tags: argValue(args, '--tags')?.split(',').map((t) => t.trim()).filter(Boolean),
+          tags: argValue(args, '--tags')
+            ?.split(',')
+            .map((t) => t.trim())
+            .filter(Boolean),
           defaults,
           voicesRoot: argValue(args, '--voices-root') ?? defaultVoicesRoot(),
           force: hasFlag(args, '--force'),
@@ -1747,7 +1749,7 @@ async function main() {
       });
       console.log(JSON.stringify(result, null, 2));
     },
-    select: async ({ args, config, command: _command }) => {
+    select: async ({ args: _args, config: _config, command: _command }) => {
       const profile = await profileMachine();
       const recipes = await loadRecipes();
       const ranked = await rankRecipes(recipes, profile, { checkCommands: true });

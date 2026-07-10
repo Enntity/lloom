@@ -6,10 +6,7 @@ import {
   openAIChoiceReasoningSignature,
   anthropicUsageFromOpenAI
 } from './text.mjs';
-import {
-  normalizeOpenAIChatCompletionBody,
-  normalizeOpenAIChatRequestBody
-} from './reasoning-normalize.mjs';
+import { normalizeOpenAIChatCompletionBody, normalizeOpenAIChatRequestBody } from './reasoning-normalize.mjs';
 
 export function anthropicStopReason(choice) {
   const reason = choice?.finish_reason;

@@ -39,12 +39,7 @@ import { createSetupStatus } from './setup-status.mjs';
 import { renderDashboardPage } from './dashboard.mjs';
 import { applyBackend } from './installer.mjs';
 import { normalizeSpeechRequestBody } from './tts-catalog.mjs';
-import {
-  defaultVoicesRoot,
-  listVoiceProfiles,
-  listVoicesDiscovery,
-  resolveSpeechVoice
-} from './voice-profiles.mjs';
+import { defaultVoicesRoot, listVoiceProfiles, listVoicesDiscovery, resolveSpeechVoice } from './voice-profiles.mjs';
 import {
   anthropicMessagesToOpenAI,
   encodeSseBlock,
@@ -186,13 +181,7 @@ function estimateMessageTokens(value) {
 }
 
 function estimateRequestPromptTokens(body = {}) {
-  const parts = [
-    body.messages,
-    body.input,
-    body.instructions,
-    body.system,
-    body.prompt
-  ];
+  const parts = [body.messages, body.input, body.instructions, body.system, body.prompt];
   return parts.reduce((sum, part) => sum + estimateMessageTokens(part), 0);
 }
 
@@ -212,9 +201,7 @@ class PromptTooLargeError extends Error {
 function assertPromptWithinBudget(resolved, body, { logger } = {}) {
   const model = resolved?.model ?? {};
   const hardLimit =
-    numberOrNull(model.maxPromptTokens) ??
-    numberOrNull(model.safeContextWindow) ??
-    numberOrNull(model.contextWindow);
+    numberOrNull(model.maxPromptTokens) ?? numberOrNull(model.safeContextWindow) ?? numberOrNull(model.contextWindow);
   if (!hardLimit || hardLimit <= 0) return null;
   const estimated = estimateRequestPromptTokens(body);
   // Soft warn at 80%; hard reject at 98% of configured budget (token estimate is approximate).
@@ -817,8 +804,7 @@ async function proxyOpenAIChatStream(res, upstream, requestedModel, { signal, ti
       if (openAIStreamChunkHasContent(value)) {
         markFirstContent(timing);
       }
-      const dataText =
-        value && typeof value === 'object' ? JSON.stringify(value) : rewritten.text;
+      const dataText = value && typeof value === 'object' ? JSON.stringify(value) : rewritten.text;
       output = encodeSseBlock({
         ...event,
         data: dataText
@@ -1185,9 +1171,7 @@ export function createLloomServer(
     } catch (error) {
       const status = client.closed
         ? 499
-        : clientClosedStatus(error) ||
-          (error instanceof PromptTooLargeError ? error.statusCode : 0) ||
-          502;
+        : clientClosedStatus(error) || (error instanceof PromptTooLargeError ? error.statusCode : 0) || 502;
       metrics.record({
         route,
         model: resolved.model.id,
@@ -1420,11 +1404,7 @@ export function createLloomServer(
   }
 
   function voicesRoot() {
-    return (
-      config.paths?.voicesRoot ??
-      process.env.LLOOM_VOICES_ROOT ??
-      defaultVoicesRoot(process.env)
-    );
+    return config.paths?.voicesRoot ?? process.env.LLOOM_VOICES_ROOT ?? defaultVoicesRoot(process.env);
   }
 
   async function expandSpeechBody(body) {
@@ -1485,8 +1465,7 @@ export function createLloomServer(
         model: multipartTextField(raw, type, 'model'),
         voice: multipartTextField(raw, type, 'voice'),
         input: multipartTextField(raw, type, 'input') ?? multipartTextField(raw, type, 'text'),
-        instructions:
-          multipartTextField(raw, type, 'instructions') ?? multipartTextField(raw, type, 'instruct'),
+        instructions: multipartTextField(raw, type, 'instructions') ?? multipartTextField(raw, type, 'instruct'),
         instruct: multipartTextField(raw, type, 'instruct'),
         ref_text: multipartTextField(raw, type, 'ref_text') ?? multipartTextField(raw, type, 'refText'),
         language: multipartTextField(raw, type, 'language') ?? multipartTextField(raw, type, 'lang_code'),
@@ -1513,8 +1492,7 @@ export function createLloomServer(
       try {
         upstreamBody = multipartWithTextField(raw, type, 'model', resolved.model.upstreamModel);
         const instruct =
-          multipartTextField(upstreamBody, type, 'instruct') ??
-          multipartTextField(upstreamBody, type, 'instructions');
+          multipartTextField(upstreamBody, type, 'instruct') ?? multipartTextField(upstreamBody, type, 'instructions');
         if (instruct != null) {
           upstreamBody = multipartWithTextField(upstreamBody, type, 'instruct', instruct);
           upstreamBody = multipartWithTextField(upstreamBody, type, 'instructions', instruct);
@@ -1606,8 +1584,7 @@ export function createLloomServer(
 
   function handleSpeechSchema(req, res, url) {
     const modelId =
-      firstQueryParam(url.searchParams, ['model', 'model_id', 'model-id']) ??
-      config.defaults?.speechModel;
+      firstQueryParam(url.searchParams, ['model', 'model_id', 'model-id']) ?? config.defaults?.speechModel;
     if (!modelId) {
       sendJson(
         res,
@@ -1628,8 +1605,7 @@ export function createLloomServer(
 
   function handleTranscriptionSchema(req, res, url) {
     const modelId =
-      firstQueryParam(url.searchParams, ['model', 'model_id', 'model-id']) ??
-      config.defaults?.transcriptionModel;
+      firstQueryParam(url.searchParams, ['model', 'model_id', 'model-id']) ?? config.defaults?.transcriptionModel;
     if (!modelId) {
       sendJson(
         res,
@@ -2475,8 +2451,7 @@ export function createLloomServer(
 
       if (
         req.method === 'GET' &&
-        (url.pathname === '/v1/audio/transcriptions/schema' ||
-          url.pathname === '/gateway/audio/transcriptions/schema')
+        (url.pathname === '/v1/audio/transcriptions/schema' || url.pathname === '/gateway/audio/transcriptions/schema')
       ) {
         handleTranscriptionSchema(req, res, url);
         return;

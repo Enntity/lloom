@@ -8,10 +8,7 @@ import {
   responseIncompleteDetails,
   responseStatusFromFinishReason
 } from './text.mjs';
-import {
-  normalizeOpenAIChatCompletionBody,
-  normalizeOpenAIChatRequestBody
-} from './reasoning-normalize.mjs';
+import { normalizeOpenAIChatCompletionBody, normalizeOpenAIChatRequestBody } from './reasoning-normalize.mjs';
 
 export function responsesContentPartToOpenAI(part) {
   if (typeof part === 'string') return { type: 'text', text: part };
@@ -70,7 +67,7 @@ export function responsesInputToMessages(body) {
             .map((part) => part?.text ?? part?.reasoning_text ?? '')
             .filter(Boolean)
             .join('\n')
-        : item.text ?? item.reasoning_content ?? '';
+        : (item.text ?? item.reasoning_content ?? '');
       if (text) {
         const last = messages.at(-1);
         if (last?.role === 'assistant') {
@@ -176,8 +173,7 @@ export function responsesToolChoiceToOpenAI(toolChoice) {
 
 export function responsesToOpenAIChat(body, resolvedModel) {
   const effort =
-    body.reasoning_effort ??
-    (body.reasoning && typeof body.reasoning === 'object' ? body.reasoning.effort : undefined);
+    body.reasoning_effort ?? (body.reasoning && typeof body.reasoning === 'object' ? body.reasoning.effort : undefined);
   const chatBody = {
     model: resolvedModel.model.upstreamModel,
     messages: responsesInputToMessages(body),
@@ -258,9 +254,7 @@ export function openAIToResponses(responseJson, requestedModel) {
   const text = openAIChoiceText(choice);
   const reasoningText = openAIChoiceReasoning(choice);
   const reasoningSummary = openAIChoiceReasoningSummary(choice);
-  const responseId = normalized.id?.startsWith('resp_')
-    ? normalized.id
-    : `resp_${normalized.id ?? Date.now()}`;
+  const responseId = normalized.id?.startsWith('resp_') ? normalized.id : `resp_${normalized.id ?? Date.now()}`;
   const status = responseStatusFromFinishReason(choice.finish_reason);
   const output = [
     ...(reasoningText || reasoningSummary

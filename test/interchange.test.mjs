@@ -1,9 +1,5 @@
 import assert from 'node:assert/strict';
-import {
-  createErrorResponse,
-  createInterchangeRegistry,
-  validateInterchangeDocument
-} from '../src/interchange.mjs';
+import { createErrorResponse, createInterchangeRegistry, validateInterchangeDocument } from '../src/interchange.mjs';
 
 const config = {
   community: {

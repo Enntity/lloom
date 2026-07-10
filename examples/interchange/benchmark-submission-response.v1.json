@@ -17,7 +17,7 @@
       "id": "example-apple-silicon-27b-benchmarks",
       "status": "persisted",
       "fileName": "example-apple-silicon-27b-benchmarks.json",
-      "url": "https://lloom.host/v1/benchmarks/example-apple-silicon-27b-benchmarks"
+      "url": "https://community.example/v1/benchmarks/example-apple-silicon-27b-benchmarks"
     }
   ],
   "message": "benchmark submission accepted and persisted for review"
