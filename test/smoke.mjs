@@ -2622,6 +2622,7 @@ await fs.writeFile(
 );
 const setupStatusStatePath = path.join(tempDir, 'setup-status-state.json');
 const setupStatusGeneratedRoot = path.join(tempDir, 'setup-status-generated');
+const setupRecipePlatformSupported = process.platform === 'darwin' && process.arch === 'arm64';
 const setupStatusBeforeIntegration = await createSetupStatus(config, {
   recipeId: 'apple-silicon-qwen36',
   modelRoot: statusModelRoot,
@@ -2631,7 +2632,8 @@ const setupStatusBeforeIntegration = await createSetupStatus(config, {
   statePath: setupStatusStatePath,
   includeRuntimes: false
 });
-assert.equal(setupStatusBeforeIntegration.ok, true);
+assert.equal(setupStatusBeforeIntegration.ok, setupRecipePlatformSupported);
+assert.equal(setupStatusBeforeIntegration.recipe.platformSupported, setupRecipePlatformSupported);
 assert.equal(setupStatusBeforeIntegration.complete, false);
 assert.equal(setupStatusBeforeIntegration.integrations.ready, false);
 assert.equal(setupStatusBeforeIntegration.integrations.summary.missing, 2);
@@ -2895,7 +2897,7 @@ const doctorReport = await createDoctorReport(setupStatusIntegrationConfig, {
   statePath: setupStatusStatePath,
   includeRuntimes: false
 });
-assert.equal(doctorReport.ok, true);
+assert.equal(doctorReport.ok, setupRecipePlatformSupported);
 assert.equal(doctorReport.complete, false);
 assert.equal(doctorReport.selectedRecipe.id, 'apple-silicon-qwen36');
 assert.equal(doctorReport.phases.find((phase) => phase.id === 'clients').status, 'ready');
@@ -2950,7 +2952,7 @@ const doctorCliJson = JSON.parse(
     ])
   ).stdout
 );
-assert.equal(doctorCliJson.ok, true);
+assert.equal(doctorCliJson.ok, setupRecipePlatformSupported);
 assert.equal(doctorCliJson.complete, false);
 assert.equal(doctorCliJson.phases.find((phase) => phase.id === 'clients').status, 'ready');
 assert.equal(doctorCliJson.phases.find((phase) => phase.id === 'models').status, 'action-needed');
@@ -3847,7 +3849,7 @@ if (listened) {
     const doctorResponse = await fetch(`http://127.0.0.1:${port}/gateway/doctor?${setupStatusParams}`);
     assert.equal(doctorResponse.status, 200);
     const doctorJson = await doctorResponse.json();
-    assert.equal(doctorJson.ok, true);
+    assert.equal(doctorJson.ok, setupRecipePlatformSupported);
     assert.equal(doctorJson.complete, false);
     assert.equal(doctorJson.selectedRecipe.id, 'apple-silicon-qwen36');
     assert.equal(doctorJson.phases.find((phase) => phase.id === 'clients').status, 'ready');
