@@ -3098,8 +3098,25 @@ assert.deepEqual(
 );
 assert(bootstrapPlan.next.pathHint.includes('bootstrap-bin'));
 
+const bootstrapBackendCatalogPath = path.join(tempDir, 'bootstrap-backend-catalog.json');
+await fs.writeFile(
+  bootstrapBackendCatalogPath,
+  `${JSON.stringify(
+    {
+      ...backendCatalog,
+      id: 'bootstrap-test-catalog',
+      backends: backendCatalog.backends.map((backend) =>
+        backend.id === 'mtplx' ? { ...backend, platforms: [`${process.platform}-${process.arch}`] } : backend
+      )
+    },
+    null,
+    2
+  )}\n`,
+  'utf8'
+);
 const bootstrapDryRun = await applyBootstrap(config, {
   recipeId: 'apple-silicon-qwen36',
+  backendCatalogPath: bootstrapBackendCatalogPath,
   modelRoot: '/models',
   clientId: 'omp',
   dryRun: true,
