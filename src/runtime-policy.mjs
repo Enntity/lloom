@@ -1,4 +1,5 @@
 import os from 'node:os';
+import fs from 'node:fs/promises';
 import { RuntimeManager } from './runtime-manager.mjs';
 
 function numberOrNull(value) {
@@ -40,17 +41,49 @@ function isRuntimeLoaded(status) {
   return status?.healthy === true || ['running', 'external', 'starting'].includes(status?.status);
 }
 
+async function liveMemoryProfile(profile = {}) {
+  if (numberOrNull(profile.totalMemoryGb) != null && numberOrNull(profile.availableMemoryGb) != null) return profile;
+  if (process.platform === 'linux') {
+    try {
+      const meminfo = await fs.readFile('/proc/meminfo', 'utf8');
+      const values = Object.fromEntries(
+        [...meminfo.matchAll(/^(MemTotal|MemAvailable):\s+(\d+)\s+kB$/gm)].map((match) => [match[1], Number(match[2])])
+      );
+      if (values.MemTotal && values.MemAvailable != null) {
+        return {
+          ...profile,
+          totalMemoryGb: values.MemTotal / 1024 / 1024,
+          availableMemoryGb: values.MemAvailable / 1024 / 1024
+        };
+      }
+    } catch {
+      // Fall through to the portable process-level values.
+    }
+  }
+  return {
+    ...profile,
+    totalMemoryGb: numberOrNull(profile.totalMemoryGb) ?? os.totalmem() / 1024 / 1024 / 1024,
+    availableMemoryGb: numberOrNull(profile.availableMemoryGb) ?? os.freemem() / 1024 / 1024 / 1024
+  };
+}
+
 function policyConfig(config, profile = {}) {
   const policy = config.runtimePolicy ?? {};
   const totalMemoryGb = numberOrNull(profile.totalMemoryGb) ?? Math.round(os.totalmem() / 1024 / 1024 / 1024);
   const reserveMemoryGb = numberOrNull(policy.reserveMemoryGb) ?? 8;
-  const memoryBudgetGb = numberOrNull(policy.memoryBudgetGb) ?? Math.max(0, totalMemoryGb - reserveMemoryGb);
+  const maxMemoryUtilization = numberOrNull(policy.maxMemoryUtilization);
+  const memoryBudgetGb =
+    numberOrNull(policy.memoryBudgetGb) ??
+    (maxMemoryUtilization != null
+      ? Math.max(0, totalMemoryGb * maxMemoryUtilization)
+      : Math.max(0, totalMemoryGb - reserveMemoryGb));
   return {
     enabled: policy.enabled !== false,
     autoEvict: policy.autoEvict === true,
     totalMemoryGb,
     reserveMemoryGb,
     memoryBudgetGb,
+    maxMemoryUtilization,
     protectActiveRequests: policy.protectActiveRequests !== false,
     protectKeepWarm: policy.protectKeepWarm === true
   };
@@ -108,7 +141,8 @@ export async function createRuntimePolicyPlan(config, { requestedRuntimeId, prof
       captureOutput: false,
       logger: { error() {} }
     }).status());
-  const policy = policyConfig(config, profile);
+  const memoryProfile = await liveMemoryProfile(profile);
+  const policy = policyConfig(config, memoryProfile);
   const rows = runtimeRows(config, runtimeStatus, requestedRuntimeId);
   const requested = requestedRuntimeId ? rows.find((row) => row.runtimeId === requestedRuntimeId) : null;
   const validationErrors = [];
@@ -117,7 +151,12 @@ export async function createRuntimePolicyPlan(config, { requestedRuntimeId, prof
 
   const loadedMemoryGb = rows.filter((row) => row.loaded).reduce((sum, row) => sum + row.memoryGb, 0);
   const requestedAddsMemory = requested && !requested.loaded ? requested.memoryGb : 0;
-  const projectedMemoryGb = loadedMemoryGb + requestedAddsMemory;
+  const actualUsedMemoryGb = Math.max(
+    0,
+    policy.totalMemoryGb - (numberOrNull(memoryProfile.availableMemoryGb) ?? policy.totalMemoryGb)
+  );
+  const predictive = policy.maxMemoryUtilization != null;
+  const projectedMemoryGb = (predictive ? actualUsedMemoryGb : loadedMemoryGb) + requestedAddsMemory;
   let overBudgetGb = Math.max(0, projectedMemoryGb - policy.memoryBudgetGb);
 
   const actions = [];
@@ -182,6 +221,9 @@ export async function createRuntimePolicyPlan(config, { requestedRuntimeId, prof
       allowed,
       overBudgetGb,
       loadedMemoryGb,
+      actualUsedMemoryGb,
+      availableMemoryGb: numberOrNull(memoryProfile.availableMemoryGb),
+      predictive,
       requestedAddsMemoryGb: requestedAddsMemory,
       projectedMemoryGb,
       memoryBudgetGb: policy.memoryBudgetGb

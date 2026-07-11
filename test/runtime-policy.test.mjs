@@ -45,6 +45,54 @@ assert.deepEqual(
 );
 assert.equal(runtimePolicyPlan.admission.projectedMemoryGb, 55);
 
+const predictiveConfig = {
+  runtimePolicy: {
+    maxMemoryUtilization: 0.9,
+    protectActiveRequests: true
+  },
+  runtimes: {
+    loaded: { enabled: true, memoryGb: 64 },
+    requested: { enabled: true, memoryGb: 64 }
+  }
+};
+const predictiveStatus = {
+  runtimes: {
+    loaded: { healthy: true, status: 'running', activeRequests: 0 },
+    requested: { healthy: false, status: 'idle', activeRequests: 0 }
+  }
+};
+const predictivePlan = await createRuntimePolicyPlan(predictiveConfig, {
+  requestedRuntimeId: 'requested',
+  status: predictiveStatus,
+  profile: { totalMemoryGb: 128, availableMemoryGb: 60 }
+});
+assert.equal(predictivePlan.admission.predictive, true);
+assert.equal(predictivePlan.admission.actualUsedMemoryGb, 68);
+assert.equal(predictivePlan.admission.memoryBudgetGb, 115.2);
+assert.deepEqual(
+  predictivePlan.actions.map((action) => `${action.type}:${action.runtimeId}`),
+  ['stop:loaded', 'start:requested']
+);
+
+const coexistPlan = await createRuntimePolicyPlan(
+  {
+    runtimePolicy: { maxMemoryUtilization: 0.9 },
+    runtimes: {
+      loaded: { enabled: true, memoryGb: 20 },
+      requested: { enabled: true, memoryGb: 20 }
+    }
+  },
+  {
+    requestedRuntimeId: 'requested',
+    status: predictiveStatus,
+    profile: { totalMemoryGb: 128, availableMemoryGb: 78 }
+  }
+);
+assert.deepEqual(
+  coexistPlan.actions.map((action) => `${action.type}:${action.runtimeId}`),
+  ['start:requested']
+);
+
 const blockedPolicyPlan = await createRuntimePolicyPlan(runtimePolicyConfig, {
   requestedRuntimeId: 'big',
   status: {

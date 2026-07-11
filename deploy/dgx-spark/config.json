@@ -21,8 +21,7 @@
   "runtimePolicy": {
     "enabled": true,
     "autoEvict": true,
-    "memoryBudgetGb": 100,
-    "reserveMemoryGb": 21,
+    "maxMemoryUtilization": 0.9,
     "protectActiveRequests": true,
     "protectKeepWarm": false
   },

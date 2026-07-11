@@ -78,6 +78,12 @@ LLooM therefore reports `cachePersistence.supported: false` for these Docker
 runtimes. MTPLX SSD sessions and llama.cpp slot caches continue to report
 continuous persistence and survive runtime eviction.
 
+For unified-memory machines, set `runtimePolicy.maxMemoryUtilization` (for
+example `0.9`). Admission samples live `MemAvailable`, adds the requested
+runtime's declared memory estimate, and evicts only when the projected host
+utilization would cross that ceiling. This allows smaller runtimes to coexist
+while preventing two large runtimes from exhausting the machine.
+
 ## Multi-backend management pattern
 
 Typical Spark layout:
