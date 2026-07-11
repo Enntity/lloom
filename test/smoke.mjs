@@ -7389,12 +7389,16 @@ if (mockListened) {
       assert(delayedMetric);
       assert(delayedMetric.outputChars > 0);
       assert.equal(typeof delayedMetric.firstContentMs, 'number');
+      assert.equal(typeof delayedMetric.lastContentMs, 'number');
       assert(delayedMetric.firstContentMs >= 40);
+      assert(delayedMetric.lastContentMs >= delayedMetric.firstContentMs);
       assert(delayedMetric.durationMs >= delayedMetric.firstContentMs);
       assert(modelMetrics.firstContentCount > 0);
       assert.equal(typeof modelMetrics.avgFirstContentMs, 'number');
       assert(modelMetrics.maxFirstContentMs >= delayedMetric.firstContentMs);
       assert.equal(typeof modelMetrics.decodeTokensPerSecond, 'number');
+      assert(modelMetrics.decodeSamples > 0);
+      assert(modelMetrics.decodeTokens > 0);
       assert.equal(typeof metricsJson.rolling.short.outputTokensPerSecond, 'number');
       assert.equal(metricsJson.rolling.short.windowMs, 10000);
       assert.equal(metricsJson.rolling.minute.windowMs, 60000);

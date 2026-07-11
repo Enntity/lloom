@@ -585,13 +585,19 @@ function sseHeaders(extra = {}) {
 
 function createResponseTiming(startedAt) {
   let firstContentMs = null;
+  let lastContentMs = null;
   return {
     markFirstContent() {
-      if (firstContentMs == null) firstContentMs = Date.now() - startedAt;
+      const elapsed = Date.now() - startedAt;
+      if (firstContentMs == null) firstContentMs = elapsed;
+      lastContentMs = elapsed;
       return firstContentMs;
     },
     get firstContentMs() {
       return firstContentMs;
+    },
+    get lastContentMs() {
+      return lastContentMs;
     }
   };
 }
@@ -630,9 +636,12 @@ function createMetricsStore({ maxRecent = 200 } = {}) {
         bucket.maxFirstContentMs == null
           ? entry.firstContentMs
           : Math.max(bucket.maxFirstContentMs, entry.firstContentMs);
-      bucket.generationDurationMs += entry.stream
-        ? Math.max(1, entry.durationMs - entry.firstContentMs)
-        : entry.durationMs;
+      const outputTokens = entry.usage?.output_tokens ?? 0;
+      if (entry.stream && outputTokens > 1 && entry.lastContentMs != null) {
+        bucket.decodeTokens += outputTokens - 1;
+        bucket.generationDurationMs += Math.max(1, entry.lastContentMs - entry.firstContentMs);
+        bucket.decodeSamples += 1;
+      }
     }
     bucket.inputTokens += entry.usage?.input_tokens ?? 0;
     bucket.outputTokens += entry.usage?.output_tokens ?? 0;
@@ -692,6 +701,7 @@ function createMetricsStore({ maxRecent = 200 } = {}) {
         stream: raw.stream === true,
         durationMs: raw.durationMs ?? 0,
         firstContentMs: raw.firstContentMs ?? null,
+        lastContentMs: raw.lastContentMs ?? null,
         responseBytes: raw.responseBytes ?? 0,
         requestBytes: raw.requestBytes ?? 0,
         outputChars: live?.outputChars ?? 0,
@@ -733,21 +743,22 @@ function rollingMetricWindow(entries, now, windowMs, model) {
   const cutoff = now - windowMs;
   const selected = entries.filter((entry) => (!model || entry.model === model) && Date.parse(entry.at) >= cutoff);
   const outputTokens = selected.reduce((sum, entry) => sum + (entry.usage?.output_tokens ?? 0), 0);
+  const decodeTokens = selected.reduce((sum, entry) => {
+    const tokens = entry.usage?.output_tokens ?? 0;
+    return sum + (entry.stream && entry.lastContentMs != null && tokens > 1 ? tokens - 1 : 0);
+  }, 0);
   const generationDurationMs = selected.reduce((sum, entry) => {
-    if (!entry.usage?.output_tokens) return sum;
-    return (
-      sum +
-      (entry.stream && entry.firstContentMs != null
-        ? Math.max(1, entry.durationMs - entry.firstContentMs)
-        : entry.durationMs)
-    );
+    const tokens = entry.usage?.output_tokens ?? 0;
+    if (!entry.stream || tokens <= 1 || entry.firstContentMs == null || entry.lastContentMs == null) return sum;
+    return sum + Math.max(1, entry.lastContentMs - entry.firstContentMs);
   }, 0);
   return {
     windowMs,
     requests: selected.length,
     outputTokens,
+    decodeTokens,
     outputTokensPerSecond:
-      generationDurationMs > 0 ? Number((outputTokens / (generationDurationMs / 1000)).toFixed(2)) : 0
+      generationDurationMs > 0 ? Number((decodeTokens / (generationDurationMs / 1000)).toFixed(2)) : 0
   };
 }
 
@@ -771,6 +782,8 @@ function emptyMetricBucket(id) {
     minFirstContentMs: null,
     maxFirstContentMs: null,
     generationDurationMs: 0,
+    decodeTokens: 0,
+    decodeSamples: 0,
     inputTokens: 0,
     outputTokens: 0,
     totalTokens: 0,
@@ -788,7 +801,7 @@ function finalizeMetricBucket(bucket) {
       ? Number((bucket.firstContentMs / bucket.firstContentCount).toFixed(2))
       : null,
     outputTokensPerSecond: durationSeconds > 0 ? Number((bucket.outputTokens / durationSeconds).toFixed(2)) : 0,
-    decodeTokensPerSecond: generationSeconds > 0 ? Number((bucket.outputTokens / generationSeconds).toFixed(2)) : 0
+    decodeTokensPerSecond: generationSeconds > 0 ? Number((bucket.decodeTokens / generationSeconds).toFixed(2)) : null
   };
 }
 
@@ -1372,6 +1385,7 @@ export function createLloomServer(
         stream: result?.stream ?? stream,
         durationMs: Date.now() - started,
         firstContentMs: result?.firstContentMs ?? timing.firstContentMs,
+        lastContentMs: result?.lastContentMs ?? timing.lastContentMs,
         responseBytes: result?.responseBytes ?? 0,
         requestBytes,
         usage: result?.usage ?? null
@@ -1395,6 +1409,7 @@ export function createLloomServer(
         stream,
         durationMs: Date.now() - started,
         firstContentMs: timing.firstContentMs,
+        lastContentMs: timing.lastContentMs,
         requestBytes,
         error: error?.message ?? String(error)
       });

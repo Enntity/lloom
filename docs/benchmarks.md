@@ -50,6 +50,6 @@ Each result should include:
 - `metrics.prefillTokPerSec`: prompt-processing speed, when measured.
 - `metrics.contextWindow`: validated context window.
 - `metrics.firstContentMs`: first streamed content latency, when captured from gateway metrics.
-- `metrics.decodeTokensPerSecond`: decode speed after first content, when captured from gateway metrics.
+- `metrics.decodeTokensPerSecond`: Spark Arena-style streaming decode speed, calculated as `(generated tokens - 1) / (last content token time - first content token time)`. Non-streaming and zero-output requests are excluded.
 
 The current score favors interactive generation first, then prefill and context size. That is intentionally simple while the community format is young; recipe authors should still include raw metrics and settings so rankings can improve without losing evidence. The gateway's `/gateway/metrics` feed is useful for local evidence collection because it separates first-content latency from decode throughput before a formal benchmark suite is submitted.
