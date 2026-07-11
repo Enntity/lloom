@@ -331,9 +331,7 @@ function buildExplicitRecipeRuntime({
     ...(runtimeSettings.containerName
       ? { containerName: templateString(runtimeSettings.containerName, variables) }
       : {}),
-    ...(runtimeSettings.bootstrap
-      ? { bootstrap: templateValue(asObject(runtimeSettings.bootstrap), variables) }
-      : {}),
+    ...(runtimeSettings.bootstrap ? { bootstrap: templateValue(asObject(runtimeSettings.bootstrap), variables) } : {}),
     recipe: {
       id: recipe.id,
       version: recipe.version ?? 1,
@@ -829,14 +827,14 @@ export function deriveUserConfig(
   if (Object.keys(ports).length) derived.ports = ports;
   derived.keepWarm = additive
     ? [...new Set([...existingKeepWarm, ...requestedRecipeKeepWarm])]
-    : (keepWarm ? [keepWarm] : []);
+    : keepWarm
+      ? [keepWarm]
+      : [];
   derived.init = {
     ...(derived.init ?? {}),
     recipeId: recipe.id,
     generatedAt: new Date().toISOString(),
-    enabledRuntimes: additive
-      ? [...new Set([...(derived.init?.enabledRuntimes ?? []), ...runtimeIds])]
-      : runtimeIds,
+    enabledRuntimes: additive ? [...new Set([...(derived.init?.enabledRuntimes ?? []), ...runtimeIds])] : runtimeIds,
     keepWarmRuntime: additive ? null : keepWarm,
     additive,
     ...(recipesRoot ? { recipesRoot } : {}),

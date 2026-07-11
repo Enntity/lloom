@@ -1196,8 +1196,8 @@ async function main() {
         recipesRoot: argValue(args, '--recipes-root'),
         benchmarksRoot: argValue(args, '--benchmarks-root'),
         backendCatalogPath: argValue(args, '--backend-catalog'),
-        ...(statePath ? { statePath } : {})
-        ,additive
+        ...(statePath ? { statePath } : {}),
+        additive
       };
       console.log(
         JSON.stringify(

@@ -40,19 +40,19 @@ function compactRuntime(runtimeId, runtime) {
     port: runtime.port,
     healthUrl: runtime.healthUrl,
     startupTimeoutMs: runtime.startupTimeoutMs,
-    sessionCache: runtime.sessionCache ?? null
-    ,adapter: runtimeAdapter(runtime)
-    ,management: runtime.management ?? (runtime.managed === false ? 'external' : 'managed')
-    ,containerName: runtime.containerName ?? runtime.container?.name ?? null
-    ,recipe: runtime.recipe ?? null
-    ,bootstrap: runtime.bootstrap
+    sessionCache: runtime.sessionCache ?? null,
+    adapter: runtimeAdapter(runtime),
+    management: runtime.management ?? (runtime.managed === false ? 'external' : 'managed'),
+    containerName: runtime.containerName ?? runtime.container?.name ?? null,
+    recipe: runtime.recipe ?? null,
+    bootstrap: runtime.bootstrap
       ? {
           configured: true,
           adapter: runtime.bootstrap.adapter ?? runtime.bootstrap.type ?? 'docker',
           image: runtime.bootstrap.image ?? null
         }
-      : null
-    ,cachePersistence: runtimeCacheCapability(runtime)
+      : null,
+    cachePersistence: runtimeCacheCapability(runtime)
   };
 }
 
@@ -81,9 +81,9 @@ export function dockerCreateArgs(runtime) {
     'create',
     '--name',
     name,
-    ...((Array.isArray(bootstrap.createArgs) ? bootstrap.createArgs : []).map(String)),
+    ...(Array.isArray(bootstrap.createArgs) ? bootstrap.createArgs : []).map(String),
     String(bootstrap.image),
-    ...((Array.isArray(bootstrap.command) ? bootstrap.command : []).map(String))
+    ...(Array.isArray(bootstrap.command) ? bootstrap.command : []).map(String)
   ];
 }
 
@@ -433,8 +433,8 @@ export class RuntimeManager {
         startedAt: state.startedAt,
         stoppedAt: state.stoppedAt,
         lastWarmup: state.lastWarmup,
-        lastError: state.lastError
-        ,container
+        lastError: state.lastError,
+        container
       };
     }
     return {
@@ -537,7 +537,12 @@ export class RuntimeManager {
       this.record({ runtimeId, event: 'docker-start', processResult, reason });
       const result = await this.waitForHealth(runtimeId, runtime);
       const warmupResult = result.healthy && warmup && runtime.warmup ? await this.warmup(runtimeId, runtime) : null;
-      return { ...result, started: true, containerName: dockerContainerName(runtime), ...(warmupResult ? { warmup: warmupResult } : {}) };
+      return {
+        ...result,
+        started: true,
+        containerName: dockerContainerName(runtime),
+        ...(warmupResult ? { warmup: warmupResult } : {})
+      };
     }
 
     if (runtime.enabled !== true && !force) {

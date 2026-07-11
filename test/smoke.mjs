@@ -732,10 +732,14 @@ assert.equal(authenticatedBackend.apiKeyEnv, 'OPENROUTER_API_KEY');
 assert.equal(authenticatedBackend.apiKey, undefined);
 assert.deepEqual(authenticatedExternalPlan.config.security.apiKeys, config.sourceTemplate.security.apiKeys);
 assert(authenticatedExternalPlan.next.apply.includes("--api-key-env 'OPENROUTER_API_KEY'"));
-assert.throws(() => createModelImportPlan(config, {
-  modelRef: 'openai:https://openrouter.ai/api/v1#bad-env',
-  apiKeyEnv: 'NOT-VALID'
-}), /valid environment variable name/);
+assert.throws(
+  () =>
+    createModelImportPlan(config, {
+      modelRef: 'openai:https://openrouter.ai/api/v1#bad-env',
+      apiKeyEnv: 'NOT-VALID'
+    }),
+  /valid environment variable name/
+);
 
 const models = registry.openAIModels().map((model) => model.id);
 assert(models.includes('Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed'));
@@ -1572,14 +1576,17 @@ const derivedConfig = deriveUserConfig(config, recipe, {
   modelRoot: '/models'
 });
 const envTemplatePath = path.join(tempDir, 'env-template-config.json');
-await fs.writeFile(envTemplatePath, JSON.stringify({
-  security: {
-    apiKeys: ['${LLOOM_API_KEY}'],
-    adminApiKeys: ['${LLOOM_ADMIN_API_KEY}']
-  },
-  backends: {},
-  models: []
-}));
+await fs.writeFile(
+  envTemplatePath,
+  JSON.stringify({
+    security: {
+      apiKeys: ['${LLOOM_API_KEY}'],
+      adminApiKeys: ['${LLOOM_ADMIN_API_KEY}']
+    },
+    backends: {},
+    models: []
+  })
+);
 const envTemplateConfig = await loadConfig(envTemplatePath, {
   env: { ...process.env, LLOOM_API_KEY: 'resolved-user-key', LLOOM_ADMIN_API_KEY: 'resolved-admin-key' }
 });
@@ -1612,10 +1619,7 @@ const additiveDerived = deriveUserConfig(additiveBase, embeddingRecipe, {
   additive: true
 });
 assert.equal(additiveDerived.defaults.chatModel, 'existing-chat');
-assert.deepEqual(additiveDerived.models.map((model) => model.id).sort(), [
-  'Qwen/Qwen3-Embedding-4B',
-  'existing-chat'
-]);
+assert.deepEqual(additiveDerived.models.map((model) => model.id).sort(), ['Qwen/Qwen3-Embedding-4B', 'existing-chat']);
 assert.deepEqual(additiveDerived.keepWarm.sort(), ['existing-runtime', 'qwen3-embedding-4b']);
 assert(additiveDerived.clientCatalog.modelOrder.includes('existing-chat'));
 assert(additiveDerived.clientCatalog.modelOrder.includes('Qwen/Qwen3-Embedding-4B'));
@@ -4800,7 +4804,8 @@ if (listened) {
       assert.equal(libraryPlanJson.selected, null);
     }
     assert.equal(
-      libraryPlanJson.recipes.find((recipe) => recipe.id === 'apple-silicon-qwen36-35b-a3b-optiq')?.commands.installApply,
+      libraryPlanJson.recipes.find((recipe) => recipe.id === 'apple-silicon-qwen36-35b-a3b-optiq')?.commands
+        .installApply,
       'lloom install apple-silicon-qwen36-35b-a3b-optiq --model-root /models --apply --yes'
     );
 

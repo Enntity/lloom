@@ -75,33 +75,55 @@ function createHostTelemetry({ sampleIntervalMs = 2000 } = {}) {
   let previousCpu = null;
 
   function cpuTimes() {
-    return os.cpus().reduce((totals, cpu) => {
-      const total = Object.values(cpu.times).reduce((sum, value) => sum + value, 0);
-      return { idle: totals.idle + cpu.times.idle, total: totals.total + total };
-    }, { idle: 0, total: 0 });
+    return os.cpus().reduce(
+      (totals, cpu) => {
+        const total = Object.values(cpu.times).reduce((sum, value) => sum + value, 0);
+        return { idle: totals.idle + cpu.times.idle, total: totals.total + total };
+      },
+      { idle: 0, total: 0 }
+    );
   }
 
   async function collect() {
     const currentCpu = cpuTimes();
-    const cpuDelta = previousCpu ? { idle: currentCpu.idle - previousCpu.idle, total: currentCpu.total - previousCpu.total } : null;
+    const cpuDelta = previousCpu
+      ? { idle: currentCpu.idle - previousCpu.idle, total: currentCpu.total - previousCpu.total }
+      : null;
     previousCpu = currentCpu;
     let gpu = null;
     try {
-      const { stdout } = await execFileAsync('nvidia-smi', [
-        '--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw',
-        '--format=csv,noheader,nounits'
-      ], { timeout: 1500 });
-      const devices = stdout.trim().split(/\r?\n/).filter(Boolean).map((line, index) => {
-        const [utilization, memoryUsed, memoryTotal, temperature, powerDraw] = line.split(',').map(value => Number(value.trim()));
-        return { index, utilization, memoryUsedMb: memoryUsed, memoryTotalMb: memoryTotal, temperatureC: temperature, powerDrawW: powerDraw };
-      });
+      const { stdout } = await execFileAsync(
+        'nvidia-smi',
+        [
+          '--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw',
+          '--format=csv,noheader,nounits'
+        ],
+        { timeout: 1500 }
+      );
+      const devices = stdout
+        .trim()
+        .split(/\r?\n/)
+        .filter(Boolean)
+        .map((line, index) => {
+          const [utilization, memoryUsed, memoryTotal, temperature, powerDraw] = line
+            .split(',')
+            .map((value) => Number(value.trim()));
+          return {
+            index,
+            utilization,
+            memoryUsedMb: memoryUsed,
+            memoryTotalMb: memoryTotal,
+            temperatureC: temperature,
+            powerDrawW: powerDraw
+          };
+        });
       if (devices.length) {
         gpu = {
           devices,
           utilization: devices.reduce((sum, device) => sum + device.utilization, 0) / devices.length,
           memoryUsedMb: devices.reduce((sum, device) => sum + device.memoryUsedMb, 0),
           memoryTotalMb: devices.reduce((sum, device) => sum + device.memoryTotalMb, 0),
-          temperatureC: Math.max(...devices.map(device => device.temperatureC)),
+          temperatureC: Math.max(...devices.map((device) => device.temperatureC)),
           powerDrawW: devices.reduce((sum, device) => sum + device.powerDrawW, 0)
         };
       }
@@ -112,8 +134,15 @@ function createHostTelemetry({ sampleIntervalMs = 2000 } = {}) {
     const freeMemory = os.freemem();
     return {
       sampledAt: new Date().toISOString(),
-      cpu: { utilization: cpuDelta?.total > 0 ? (1 - cpuDelta.idle / cpuDelta.total) * 100 : null, logicalCpus: os.cpus().length },
-      memory: { usedBytes: totalMemory - freeMemory, totalBytes: totalMemory, utilization: totalMemory > 0 ? (totalMemory - freeMemory) / totalMemory * 100 : 0 },
+      cpu: {
+        utilization: cpuDelta?.total > 0 ? (1 - cpuDelta.idle / cpuDelta.total) * 100 : null,
+        logicalCpus: os.cpus().length
+      },
+      memory: {
+        usedBytes: totalMemory - freeMemory,
+        totalBytes: totalMemory,
+        utilization: totalMemory > 0 ? ((totalMemory - freeMemory) / totalMemory) * 100 : 0
+      },
       gpu
     };
   }
@@ -121,7 +150,16 @@ function createHostTelemetry({ sampleIntervalMs = 2000 } = {}) {
   return {
     async snapshot() {
       if (cached && Date.now() - sampledAt < sampleIntervalMs) return cached;
-      if (!pending) pending = collect().then(value => { cached = value; sampledAt = Date.now(); return value; }).finally(() => { pending = null; });
+      if (!pending)
+        pending = collect()
+          .then((value) => {
+            cached = value;
+            sampledAt = Date.now();
+            return value;
+          })
+          .finally(() => {
+            pending = null;
+          });
       return pending;
     }
   };
@@ -693,9 +731,7 @@ function createMetricsStore({ maxRecent = 200 } = {}) {
 
 function rollingMetricWindow(entries, now, windowMs, model) {
   const cutoff = now - windowMs;
-  const selected = entries.filter(
-    (entry) => (!model || entry.model === model) && Date.parse(entry.at) >= cutoff
-  );
+  const selected = entries.filter((entry) => (!model || entry.model === model) && Date.parse(entry.at) >= cutoff);
   const outputTokens = selected.reduce((sum, entry) => sum + (entry.usage?.output_tokens ?? 0), 0);
   const generationDurationMs = selected.reduce((sum, entry) => {
     if (!entry.usage?.output_tokens) return sum;
@@ -898,7 +934,10 @@ async function proxyOpenAIChatResponse(res, upstream, requestedModel, { signal, 
   setCors(res, corsConfig);
   res.writeHead(upstream.status, headers);
   if (output.length) markFirstContent(timing);
-  progress?.({ responseBytesDelta: output.length, outputCharsDelta: usage?.output_tokens ? usage.output_tokens * 4 : 0 });
+  progress?.({
+    responseBytesDelta: output.length,
+    outputCharsDelta: usage?.output_tokens ? usage.output_tokens * 4 : 0
+  });
   res.end(output);
   return {
     status: upstream.status,
@@ -1459,7 +1498,12 @@ export function createLloomServer(
         }
         return body.stream === true
           ? proxyOpenAIChatStream(res, upstream, resolved.requestedId, { signal, timing, progress, corsConfig: config })
-          : proxyOpenAIChatResponse(res, upstream, resolved.requestedId, { signal, timing, progress, corsConfig: config });
+          : proxyOpenAIChatResponse(res, upstream, resolved.requestedId, {
+              signal,
+              timing,
+              progress,
+              corsConfig: config
+            });
       }
     );
   }
@@ -2193,11 +2237,7 @@ export function createLloomServer(
           model: firstQueryParam(url.searchParams, ['model'])
         });
         snapshot.host = await hostTelemetry.snapshot();
-        sendJson(
-          res,
-          200,
-          snapshot
-        );
+        sendJson(res, 200, snapshot);
         return;
       }
 
