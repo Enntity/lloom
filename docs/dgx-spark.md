@@ -40,14 +40,31 @@ Generic `pip install vllm` / `pip install sglang` often **fails or is suboptimal
    lloom backend-install sglang
    ```
 
-If the server is already running in Docker:
+If the server is already running in Docker, register it as a Docker runtime. Use
+`management: "external"` to adopt and monitor a container without allowing LLooM
+to stop it, or `management: "managed"` when LLooM should own `docker start/stop`:
 
 ```bash
 lloom add-model 'openai:http://127.0.0.1:8000/v1#Qwen/Qwen3.6-35B-A3B'
 # then set defaults.chatModel / keepWarm as needed
 ```
 
-LLooM still provides the single client URL, auth, multi-model catalog, and (for native runtimes) process lifecycle.
+```json
+{
+  "runtimes": {
+    "qwen": {
+      "adapter": "docker",
+      "management": "external",
+      "containerName": "qwen-vllm",
+      "healthUrl": "http://127.0.0.1:8000/v1/models",
+      "port": 8000
+    }
+  }
+}
+```
+
+LLooM still provides the single client URL, auth, multi-model catalog, container
+state, and—when management is `managed`—native Docker process lifecycle.
 
 ## Multi-backend management pattern
 

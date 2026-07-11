@@ -1,0 +1,33 @@
+providers:
+  ennspark01:
+    baseUrl: http://spark-8333.local:8100/v1
+    api: openai-completions
+    apiKey: REPLACE_WITH_LLOOM_API_KEY
+    auth: apiKey
+    compat:
+      supportsStore: false
+      supportsDeveloperRole: false
+      supportsReasoningEffort: false
+      supportsUsageInStreaming: true
+      maxTokensField: max_tokens
+      supportsStrictMode: false
+      toolStrictMode: none
+      thinkingFormat: qwen-chat-template
+    models:
+      - id: unsloth/Qwen3.6-35B-A3B-NVFP4
+        name: Qwen3.6-35B-A3B-NVFP4 on ennspark01
+        reasoning: true
+        thinking:
+          mode: effort
+          efforts: [minimal, low]
+          defaultLevel: low
+          supportsDisplay: true
+        input: [text]
+        supportsTools: true
+        contextWindow: 262144
+        maxTokens: 8192
+        cost:
+          input: 0
+          output: 0
+          cacheRead: 0
+          cacheWrite: 0

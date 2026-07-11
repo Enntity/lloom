@@ -2064,6 +2064,30 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
   const stopResult = await lifecycleManager.stop('synthetic-runtime');
   assert.equal(stopResult.stopped, true);
 
+  const adoptedDockerManager = new RuntimeManager({
+    runtimes: {
+      adopted: {
+        adapter: 'docker',
+        management: 'external',
+        containerName: 'must-not-be-touched',
+        port: 65534
+      }
+    }
+  });
+  const adoptedStart = await adoptedDockerManager.start('adopted');
+  assert.deepEqual(adoptedStart, {
+    runtimeId: 'adopted',
+    started: false,
+    healthy: false,
+    reason: 'externally-managed'
+  });
+  const adoptedStop = await adoptedDockerManager.stop('adopted');
+  assert.deepEqual(adoptedStop, {
+    runtimeId: 'adopted',
+    stopped: false,
+    reason: 'externally-managed'
+  });
+
   const limiterManager = new RuntimeManager(
     {
       runtimes: {
@@ -3819,6 +3843,9 @@ if (listened) {
     assert(dashboardResponse.headers.get('content-type').includes('text/html'));
     const dashboardHtml = await dashboardResponse.text();
     assert(dashboardHtml.includes('<title>LLooM</title>'));
+    const dashboardScript = dashboardHtml.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+    assert(dashboardScript);
+    assert.doesNotThrow(() => new Function(dashboardScript));
     assert(dashboardHtml.includes('/gateway/library'));
     assert(dashboardHtml.includes('/gateway/onboarding/plan'));
     assert(dashboardHtml.includes('/gateway/setup/plan'));
@@ -7268,6 +7295,9 @@ if (mockListened) {
       assert.equal(typeof modelMetrics.avgFirstContentMs, 'number');
       assert(modelMetrics.maxFirstContentMs >= delayedMetric.firstContentMs);
       assert.equal(typeof modelMetrics.decodeTokensPerSecond, 'number');
+      assert.equal(typeof metricsJson.rolling.short.outputTokensPerSecond, 'number');
+      assert.equal(metricsJson.rolling.short.windowMs, 10000);
+      assert.equal(metricsJson.rolling.minute.windowMs, 60000);
       assert(
         metricsJson.recent.some(
           (entry) => entry.status === 499 && entry.error === 'client closed before upstream response completed'

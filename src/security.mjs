@@ -80,7 +80,13 @@ export function classifyRoute(method, pathname) {
 }
 
 export function authorizeRequest(req, config, { method, pathname } = {}) {
-  const routeKind = classifyRoute(method ?? req.method, pathname ?? '/');
+  const effectiveMethod = String(method ?? req.method ?? 'GET').toUpperCase();
+  const effectivePath = pathname ?? '/';
+  const publicTelemetry =
+    config.security?.publicTelemetry === true &&
+    effectiveMethod === 'GET' &&
+    ['/gateway/status', '/gateway/metrics'].includes(effectivePath);
+  const routeKind = publicTelemetry ? 'public' : classifyRoute(effectiveMethod, effectivePath);
   const bindHost = config.server?.host ?? '127.0.0.1';
   const loopbackBind = isLoopbackAddress(bindHost);
   const allowMissing = config.security?.allowMissingAuth === true;
@@ -192,7 +198,8 @@ export function securityPublicStatus(config = {}) {
     authRequired: !loopback || !allowMissing,
     adminAuthRequired: adminRequired || !loopback,
     inferenceKeysConfigured: hasInferenceKeys,
-    adminKeysConfigured: adminRequired
+    adminKeysConfigured: adminRequired,
+    publicTelemetry: config.security?.publicTelemetry === true
   };
 }
 

@@ -104,6 +104,7 @@ export async function loadConfig(
       allowRemoteAdmin: false,
       allowWildcardCors: false,
       allowNonLoopbackBind: false,
+      publicTelemetry: false,
       apiKeys: [],
       adminApiKeys: [],
       ...asObject(expanded.security)

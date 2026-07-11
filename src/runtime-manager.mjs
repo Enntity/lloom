@@ -1,9 +1,13 @@
 import { spawn } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { defaultShimDirFor } from './backend-catalog.mjs';
 import { cleanupPortListener, terminateProcessTree } from './process-control.mjs';
+
+const execFileAsync = promisify(execFile);
 
 function nowIso() {
   return new Date().toISOString();
@@ -37,7 +41,46 @@ function compactRuntime(runtimeId, runtime) {
     healthUrl: runtime.healthUrl,
     startupTimeoutMs: runtime.startupTimeoutMs,
     sessionCache: runtime.sessionCache ?? null
+    ,adapter: runtimeAdapter(runtime)
+    ,management: runtime.management ?? (runtime.managed === false ? 'external' : 'managed')
+    ,containerName: runtime.containerName ?? runtime.container?.name ?? null
   };
+}
+
+function runtimeManagement(runtime) {
+  return runtime?.management ?? (runtime?.managed === false ? 'external' : 'managed');
+}
+
+function dockerContainerName(runtime) {
+  return runtime?.containerName ?? runtime?.container?.name ?? null;
+}
+
+async function dockerContainerState(runtime) {
+  const name = dockerContainerName(runtime);
+  if (!name) return { exists: false, running: false, status: 'missing' };
+  try {
+    const { stdout } = await execFileAsync('docker', ['inspect', '--format', '{{json .State}}', name], {
+      timeout: 5000
+    });
+    const state = JSON.parse(stdout.trim());
+    return {
+      exists: true,
+      running: state.Running === true,
+      status: state.Status ?? (state.Running ? 'running' : 'stopped'),
+      pid: state.Pid ?? null,
+      startedAt: state.StartedAt ?? null,
+      error: state.Error || null
+    };
+  } catch (error) {
+    return { exists: false, running: false, status: 'missing', error: error?.message ?? String(error) };
+  }
+}
+
+async function dockerLifecycle(action, runtime) {
+  const name = dockerContainerName(runtime);
+  if (!name) throw new Error('docker runtime requires containerName or container.name');
+  const { stdout, stderr } = await execFileAsync('docker', [action, name], { timeout: 120000 });
+  return { action, containerName: name, stdout: stdout.trim(), stderr: stderr.trim() };
 }
 
 async function healthOk(url, timeoutMs = 1500) {
@@ -69,6 +112,7 @@ function runtimeAdapter(runtime) {
   const command = commandName(runtime?.command).toLowerCase();
   if (command === 'mtplx') return 'mtplx';
   if (command === 'llama-server') return 'llama-cpp';
+  if (command === 'docker') return 'docker';
   return null;
 }
 
@@ -291,11 +335,18 @@ export class RuntimeManager {
       const state = this.stateFor(runtimeId);
       const process = this.processes.get(runtimeId);
       const healthy = await healthOk(runtime.healthUrl);
+      const container = runtimeAdapter(runtime) === 'docker' ? await dockerContainerState(runtime) : null;
       let status = state.status;
       if (this.processRunning(runtimeId)) {
         status = healthy ? 'running' : 'starting';
+      } else if (container?.running && healthy) {
+        status = 'running';
+      } else if (container?.running) {
+        status = 'starting';
       } else if (healthy) {
         status = 'external';
+      } else if (container?.exists) {
+        status = container.status;
       }
       runtimes[runtimeId] = {
         ...compactRuntime(runtimeId, runtime),
@@ -311,6 +362,7 @@ export class RuntimeManager {
         stoppedAt: state.stoppedAt,
         lastWarmup: state.lastWarmup,
         lastError: state.lastError
+        ,container
       };
     }
     return {
@@ -390,6 +442,24 @@ export class RuntimeManager {
         reason: 'already-healthy',
         ...(warmupResult ? { warmup: warmupResult } : {})
       };
+    }
+
+    if (runtimeAdapter(runtime) === 'docker') {
+      if (runtimeManagement(runtime) !== 'managed') {
+        return { runtimeId, started: false, healthy: false, reason: 'externally-managed' };
+      }
+      const container = await dockerContainerState(runtime);
+      if (!container.exists) {
+        throw new Error(`docker runtime ${runtimeId} container ${dockerContainerName(runtime)} does not exist`);
+      }
+      const processResult = await dockerLifecycle('start', runtime);
+      state.status = 'starting';
+      state.starts += 1;
+      state.startedAt = nowIso();
+      this.record({ runtimeId, event: 'docker-start', processResult, reason });
+      const result = await this.waitForHealth(runtimeId, runtime);
+      const warmupResult = result.healthy && warmup && runtime.warmup ? await this.warmup(runtimeId, runtime) : null;
+      return { ...result, started: true, containerName: dockerContainerName(runtime), ...(warmupResult ? { warmup: warmupResult } : {}) };
     }
 
     if (runtime.enabled !== true && !force) {
@@ -572,6 +642,21 @@ export class RuntimeManager {
   async stopUnlocked(runtimeId) {
     const runtime = this.getRuntime(runtimeId);
     const state = this.stateFor(runtimeId);
+    if (runtimeManagement(runtime) !== 'managed') {
+      return { runtimeId, stopped: false, reason: 'externally-managed' };
+    }
+    if (runtimeAdapter(runtime) === 'docker') {
+      const container = await dockerContainerState(runtime);
+      if (!container.exists) return { runtimeId, stopped: false, reason: 'container-missing' };
+      if (!container.running) return { runtimeId, stopped: false, reason: 'already-stopped' };
+      state.status = 'stopping';
+      const processResult = await dockerLifecycle('stop', runtime);
+      state.status = 'stopped';
+      state.stops += 1;
+      state.stoppedAt = nowIso();
+      this.record({ runtimeId, event: 'docker-stop', processResult });
+      return { runtimeId, stopped: true, processResult };
+    }
     const child = this.processes.get(runtimeId);
     let processResult = null;
     if (child?.pid) {

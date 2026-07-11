@@ -1,0 +1,54 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8100
+  },
+  "security": {
+    "allowMissingAuth": false,
+    "allowRemoteAdmin": true,
+    "allowWildcardCors": false,
+    "allowNonLoopbackBind": true,
+    "publicTelemetry": true,
+    "apiKeys": ["${LLOOM_API_KEY}"],
+    "adminApiKeys": ["${LLOOM_ADMIN_API_KEY}"]
+  },
+  "community": {
+    "autoStartLocalHost": false
+  },
+  "defaults": {
+    "chatModel": "unsloth/Qwen3.6-35B-A3B-NVFP4"
+  },
+  "backends": {
+    "spark-vllm-8000": {
+      "baseUrl": "http://192.168.1.131:8000/v1",
+      "timeoutMs": 1800000
+    }
+  },
+  "runtimes": {
+    "qwen36-unsloth": {
+      "enabled": true,
+      "adapter": "docker",
+      "management": "managed",
+      "containerName": "qwen36-unsloth",
+      "port": 8000,
+      "healthUrl": "http://192.168.1.131:8000/v1/models",
+      "maxConcurrency": 4,
+      "memoryGb": 64,
+      "keepWarm": true
+    }
+  },
+  "keepWarm": ["qwen36-unsloth"],
+  "models": [
+    {
+      "id": "unsloth/Qwen3.6-35B-A3B-NVFP4",
+      "name": "Qwen 3.6 35B A3B NVFP4 on DGX Spark",
+      "kind": "chat",
+      "backend": "spark-vllm-8000",
+      "runtime": "qwen36-unsloth",
+      "upstreamModel": "unsloth/Qwen3.6-35B-A3B-NVFP4",
+      "contextWindow": 262144,
+      "maxPromptTokens": 255000,
+      "capabilities": ["chat", "streaming", "usage", "tools", "reasoning", "long-context", "batching"]
+    }
+  ]
+}

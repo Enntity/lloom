@@ -102,6 +102,32 @@ const remoteInferenceWithKey = authorizeRequest({ headers: { 'x-api-key': 'sk-ll
 });
 assert.equal(remoteInferenceWithKey.ok, true);
 
+const publicTelemetryConfig = {
+  ...remoteConfig,
+  security: { ...remoteConfig.security, publicTelemetry: true }
+};
+assert.equal(
+  authorizeRequest({ headers: {} }, publicTelemetryConfig, {
+    method: 'GET',
+    pathname: '/gateway/status'
+  }).ok,
+  true
+);
+assert.equal(
+  authorizeRequest({ headers: {} }, publicTelemetryConfig, {
+    method: 'GET',
+    pathname: '/gateway/metrics'
+  }).ok,
+  true
+);
+assert.equal(
+  authorizeRequest({ headers: {} }, publicTelemetryConfig, {
+    method: 'GET',
+    pathname: '/gateway/backends'
+  }).ok,
+  false
+);
+
 const remoteAdminAllowed = {
   ...remoteConfig,
   security: { ...remoteConfig.security, allowRemoteAdmin: true }

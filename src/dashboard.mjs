@@ -168,6 +168,22 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       text-transform: uppercase;
       letter-spacing: .02em;
     }
+    .live-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; }
+    .metric-value { font-size:26px; font-weight:800; letter-spacing:-.04em; }
+    .metric-sub { color:var(--muted); font-size:12px; margin-top:4px; }
+    .chart { width:100%; height:150px; display:block; overflow:visible; }
+    .chart-line { fill:none; stroke:var(--accent); stroke-width:2.5; vector-effect:non-scaling-stroke; }
+    .chart-area { fill:url(#activity-gradient); opacity:.45; }
+    .connection-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(270px,1fr)); gap:12px; }
+    .connection { background:var(--panel); border:1px solid var(--line); padding:14px; min-width:0; }
+    .connection.live { border-color:rgba(47,230,200,.65); box-shadow:inset 3px 0 var(--accent); }
+    .connection-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+    .connection-model { font-weight:750; overflow-wrap:anywhere; }
+    .connection-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:14px; }
+    .connection-stats strong { display:block; font-size:17px; }
+    .connection-stats span { color:var(--muted); font-size:10px; text-transform:uppercase; }
+    .pulse { animation:pulse 1.4s ease-in-out infinite; }
+    @keyframes pulse { 50% { opacity:.35; transform:scale(.78); } }
     .pill {
       display: inline-flex;
       align-items: center;
@@ -285,7 +301,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     @media (max-width: 1040px) {
       header { align-items: flex-start; flex-direction: column; }
       .topline { justify-content: flex-start; }
-      .grid.two, .split, .stats { grid-template-columns: 1fr; }
+      .grid.two, .split, .stats, .live-grid { grid-template-columns: 1fr; }
       main { padding: 18px; }
     }
     @media (max-width: 640px) {
@@ -319,6 +335,29 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       <div class="stat"><span>Runtimes</span><strong id="stat-runtimes">-</strong></div>
       <div class="stat"><span>Active</span><strong id="stat-active">-</strong></div>
       <div class="stat"><span>Queued</span><strong id="stat-queued">-</strong></div>
+    </section>
+
+    <section class="band" aria-label="Live activity">
+      <div class="band-head">
+        <div><h2>Live Activity</h2><div class="muted">Streaming gateway telemetry · updates every second</div></div>
+        <span id="activity-state" class="pill"><span class="dot pulse"></span><span>connecting</span></span>
+      </div>
+      <div class="band-body grid">
+        <div class="live-grid">
+          <div class="stat"><span>Live connections</span><div id="live-connections" class="metric-value">0</div><div id="live-streams" class="metric-sub">0 streaming</div></div>
+          <div class="stat"><span>Live decode speed</span><div id="live-tps" class="metric-value">0</div><div id="live-tps-sub" class="metric-sub">10s rolling · 0 one-minute</div></div>
+          <div class="stat"><span>Total tokens</span><div id="live-total-tokens" class="metric-value">0</div><div id="live-token-split" class="metric-sub">0 in · 0 out</div></div>
+          <div class="stat"><span>Requests</span><div id="live-requests" class="metric-value">0</div><div id="live-errors" class="metric-sub">0 errors</div></div>
+          <div class="stat"><span>Time to first token</span><div id="live-ttft" class="metric-value">–</div><div class="metric-sub">average ms</div></div>
+        </div>
+        <div>
+          <svg class="chart" viewBox="0 0 1000 150" preserveAspectRatio="none" aria-label="Token throughput history">
+            <defs><linearGradient id="activity-gradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2fe6c8"/><stop offset="1" stop-color="#2fe6c8" stop-opacity="0"/></linearGradient></defs>
+            <path id="activity-area" class="chart-area"></path><path id="activity-line" class="chart-line"></path>
+          </svg>
+        </div>
+        <div id="connection-grid" class="connection-grid"></div>
+      </div>
     </section>
 
     <section class="grid two">
@@ -478,6 +517,8 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       status: null,
       library: null,
       security: null,
+      metrics: null,
+      throughput: [],
       output: null,
     };
 
@@ -663,6 +704,63 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         '<pre>' + escapeHtml(recipe?.commands?.installApply || selected.reason || "") + '</pre>';
     }
 
+    function formatNumber(value) { return new Intl.NumberFormat().format(Number(value || 0)); }
+    function formatRate(value) { return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 1 }); }
+    function shortModel(value) { const parts = String(value || "unknown").split("/"); return parts[parts.length - 1]; }
+
+    function renderActivity() {
+      const metrics = state.metrics || { totals: {}, models: [], active: [] };
+      const totals = metrics.totals || {};
+      const active = metrics.active || [];
+      $("#live-connections").textContent = formatNumber(active.length);
+      $("#live-streams").textContent = active.filter(item => item.stream).length + " streaming";
+      const shortRate = metrics.rolling?.short?.outputTokensPerSecond || 0;
+      const minuteRate = metrics.rolling?.minute?.outputTokensPerSecond || 0;
+      $("#live-tps").textContent = formatRate(shortRate);
+      $("#live-tps-sub").textContent = "10s rolling · " + formatRate(minuteRate) + " one-minute";
+      $("#live-total-tokens").textContent = formatNumber(totals.totalTokens);
+      $("#live-token-split").textContent = formatNumber(totals.inputTokens) + " in · " + formatNumber(totals.outputTokens) + " out";
+      $("#live-requests").textContent = formatNumber(totals.requests);
+      $("#live-errors").textContent = formatNumber(totals.errors) + " errors · " + formatNumber(totals.streams) + " streams";
+      $("#live-ttft").textContent = totals.avgFirstContentMs == null ? "–" : formatNumber(Math.round(totals.avgFirstContentMs));
+
+      state.throughput.push(Number(shortRate));
+      if (state.throughput.length > 60) state.throughput.shift();
+      const values = state.throughput;
+      const max = Math.max(1, ...values);
+      const points = values.map((value, index) => [values.length === 1 ? 1000 : index * 1000 / (values.length - 1), 145 - value / max * 135]);
+      const line = points.map((point, index) => (index ? "L" : "M") + point[0].toFixed(1) + " " + point[1].toFixed(1)).join(" ");
+      $("#activity-line").setAttribute("d", line);
+      $("#activity-area").setAttribute("d", points.length ? line + " L1000 150 L0 150 Z" : "");
+
+      const byModel = new Map((metrics.models || []).map(item => [item.id, item]));
+      const cards = [];
+      for (const connection of active) cards.push({ ...connection, live: true, metrics: byModel.get(connection.model) || {} });
+      for (const model of state.models || []) if (!active.some(item => item.model === model.id)) cards.push({ model: model.id, runtime: model.runtime, metrics: byModel.get(model.id) || {} });
+      $("#connection-grid").innerHTML = cards.length ? cards.map(item => {
+        const data = item.metrics || {};
+        return '<article class="connection ' + (item.live ? "live" : "") + '">' +
+          '<div class="connection-head"><div><div class="connection-model">' + escapeHtml(shortModel(item.model)) + '</div><div class="muted mono">' + escapeHtml(item.runtime || "no runtime") + '</div></div>' +
+          '<span class="pill"><span class="dot ' + (item.live ? "ok pulse" : "") + '"></span><span>' + (item.live ? "live · " + Math.ceil(item.elapsedMs / 1000) + "s" : "idle") + '</span></span></div>' +
+          '<div class="connection-stats"><div><strong>' + formatRate(data.decodeTokensPerSecond) + '</strong><span>tok/s</span></div><div><strong>' + formatNumber(data.totalTokens) + '</strong><span>tokens</span></div><div><strong>' + formatNumber(data.requests) + '</strong><span>requests</span></div></div>' +
+        '</article>';
+      }).join("") : '<div class="empty">No configured model connections.</div>';
+    }
+
+    async function refreshActivity() {
+      try {
+        state.metrics = await getJson("/gateway/metrics");
+        renderActivity();
+        const marker = $("#activity-state");
+        marker.querySelector(".dot").className = "dot ok pulse";
+        marker.querySelector("span:last-child").textContent = "live · " + new Date().toLocaleTimeString();
+      } catch (error) {
+        const marker = $("#activity-state");
+        marker.querySelector(".dot").className = "dot bad";
+        marker.querySelector("span:last-child").textContent = "telemetry offline";
+      }
+    }
+
     function showOutput(value) {
       state.output = value;
       $("#output").textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -676,21 +774,24 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         if ((security.authRequired || security.adminAuthRequired) && !headers().authorization) {
           // Best-effort: models/status may 401 until a key is provided.
         }
-        const [health, models, status, library, backends] = await Promise.all([
+        const [health, models, status, library, backends, metrics] = await Promise.all([
           getJson("/health"),
           getJson("/gateway/models").catch(error => ({ models: [], error: error.message })),
           getJson("/gateway/status").catch(error => ({ error: error.message })),
           getJson("/gateway/library").catch(error => ({ error: error.message })),
           getJson("/gateway/backends").catch(error => ({ backends: [], error: error.message })),
+          getJson("/gateway/metrics").catch(error => ({ totals: {}, models: [], active: [], error: error.message })),
         ]);
         state.models = models.models || [];
         state.status = status;
         state.library = library;
         state.backends = backends.backends || [];
+        state.metrics = metrics;
         renderModels();
         renderRuntimes();
         renderBackends();
         renderLibrary();
+        renderActivity();
         const authHint = security.adminAuthRequired
           ? "admin auth on"
           : security.authRequired
@@ -816,6 +917,8 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     });
 
     refresh();
+    setInterval(refreshActivity, 1000);
+    setInterval(refresh, 10000);
   </script>
 </body>
 </html>`;

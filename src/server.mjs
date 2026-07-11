@@ -501,6 +501,8 @@ function markFirstContent(timing) {
 
 function createMetricsStore({ maxRecent = 200 } = {}) {
   const recent = [];
+  const active = new Map();
+  let nextConnectionId = 1;
   const totals = emptyMetricBucket('all');
   const models = new Map();
   const routes = new Map();
@@ -527,7 +529,9 @@ function createMetricsStore({ maxRecent = 200 } = {}) {
         bucket.maxFirstContentMs == null
           ? entry.firstContentMs
           : Math.max(bucket.maxFirstContentMs, entry.firstContentMs);
-      bucket.generationDurationMs += Math.max(0, entry.durationMs - entry.firstContentMs);
+      bucket.generationDurationMs += entry.stream
+        ? Math.max(1, entry.durationMs - entry.firstContentMs)
+        : entry.durationMs;
     }
     bucket.inputTokens += entry.usage?.input_tokens ?? 0;
     bucket.outputTokens += entry.usage?.output_tokens ?? 0;
@@ -543,6 +547,25 @@ function createMetricsStore({ maxRecent = 200 } = {}) {
   }
 
   return {
+    begin(raw) {
+      const id = `conn_${nextConnectionId++}`;
+      active.set(id, {
+        id,
+        startedAt: new Date().toISOString(),
+        route: raw.route,
+        model: raw.model,
+        requestedModel: raw.requestedModel,
+        upstreamModel: raw.upstreamModel,
+        kind: raw.kind,
+        backend: raw.backend,
+        runtime: raw.runtime,
+        stream: raw.stream === true
+      });
+      return id;
+    },
+    end(id) {
+      if (id) active.delete(id);
+    },
     record(raw) {
       const entry = {
         at: new Date().toISOString(),
@@ -570,6 +593,8 @@ function createMetricsStore({ maxRecent = 200 } = {}) {
     },
     snapshot({ model } = {}) {
       const selectedModel = model ? (models.get(model) ?? null) : null;
+      const now = Date.now();
+      const rolling = rollingMetricWindows(recent, now, model);
       return {
         object: 'gateway.metrics',
         generatedAt: new Date().toISOString(),
@@ -580,9 +605,45 @@ function createMetricsStore({ maxRecent = 200 } = {}) {
             : []
           : [...models.values()].map(finalizeMetricBucket).sort((a, b) => a.id.localeCompare(b.id)),
         routes: [...routes.values()].map(finalizeMetricBucket).sort((a, b) => a.id.localeCompare(b.id)),
+        active: [...active.values()].map((entry) => ({
+          ...entry,
+          elapsedMs: Math.max(0, Date.now() - Date.parse(entry.startedAt))
+        })),
+        rolling,
         recent: recent.filter((entry) => !model || entry.model === model).slice(-50)
       };
     }
+  };
+}
+
+function rollingMetricWindow(entries, now, windowMs, model) {
+  const cutoff = now - windowMs;
+  const selected = entries.filter(
+    (entry) => (!model || entry.model === model) && Date.parse(entry.at) >= cutoff
+  );
+  const outputTokens = selected.reduce((sum, entry) => sum + (entry.usage?.output_tokens ?? 0), 0);
+  const generationDurationMs = selected.reduce((sum, entry) => {
+    if (!entry.usage?.output_tokens) return sum;
+    return (
+      sum +
+      (entry.stream && entry.firstContentMs != null
+        ? Math.max(1, entry.durationMs - entry.firstContentMs)
+        : entry.durationMs)
+    );
+  }, 0);
+  return {
+    windowMs,
+    requests: selected.length,
+    outputTokens,
+    outputTokensPerSecond:
+      generationDurationMs > 0 ? Number((outputTokens / (generationDurationMs / 1000)).toFixed(2)) : 0
+  };
+}
+
+function rollingMetricWindows(entries, now, model) {
+  return {
+    short: rollingMetricWindow(entries, now, 10_000, model),
+    minute: rollingMetricWindow(entries, now, 60_000, model)
   };
 }
 
@@ -1107,6 +1168,12 @@ export function createLloomServer(
 
   const baseMetrics = createMetricsStore();
   const metrics = {
+    begin(entry) {
+      return baseMetrics.begin(entry);
+    },
+    end(id) {
+      baseMetrics.end(id);
+    },
     record(entry) {
       baseMetrics.record(entry);
       appendRequestLog({
@@ -1141,6 +1208,16 @@ export function createLloomServer(
 
   async function recordModelRequest({ route, resolved, stream, req, res }, fn) {
     const started = Date.now();
+    const connectionId = metrics.begin({
+      route,
+      model: resolved.model.id,
+      requestedModel: resolved.requestedId,
+      upstreamModel: resolved.model.upstreamModel,
+      kind: resolved.model.kind ?? 'chat',
+      backend: resolved.model.backend,
+      runtime: resolved.model.runtime,
+      stream
+    });
     const timing = createResponseTiming(started);
     const client = createClientCloseTracker(req, res);
     try {
@@ -1214,6 +1291,7 @@ export function createLloomServer(
       }
       throw error;
     } finally {
+      metrics.end(connectionId);
       client.dispose();
     }
   }
