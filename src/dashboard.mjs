@@ -182,6 +182,26 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     .connection-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:14px; }
     .connection-stats strong { display:block; font-size:17px; }
     .connection-stats span { color:var(--muted); font-size:10px; text-transform:uppercase; }
+    .fabric-card { position:relative; overflow:hidden; background:#080c0d; border:1px solid rgba(47,230,200,.38); min-height:270px; box-shadow:inset 0 0 70px rgba(47,230,200,.045),0 0 28px rgba(47,230,200,.07); }
+    .fabric-card::before { content:""; position:absolute; inset:0; pointer-events:none; background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(47,230,200,.025) 4px); }
+    .fabric-head { position:relative; z-index:2; display:flex; justify-content:space-between; gap:18px; align-items:flex-start; padding:16px 18px 0; }
+    .fabric-title { font:800 16px "SFMono-Regular",monospace; letter-spacing:.16em; color:var(--accent); text-shadow:0 0 14px rgba(47,230,200,.55); }
+    .fabric-totals { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px 20px; }
+    .fabric-total { text-align:right; }
+    .fabric-total strong { display:block; font:800 19px "SFMono-Regular",monospace; color:var(--text); }
+    .fabric-total span { color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.1em; }
+    .token-canvas { display:block; width:100%; height:205px; }
+    .connection-grid { grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); }
+    .connection { position:relative; overflow:hidden; padding:0; background:#080c0d; }
+    .connection .connection-head,.connection .connection-stats { position:relative; z-index:2; }
+    .connection .connection-head { padding:13px 14px 0; }
+    .connection .connection-stats { margin:0; padding:0 14px 12px; }
+    .connection .token-canvas { height:125px; }
+    .connection-id { color:var(--accent-2); font:700 11px "SFMono-Regular",monospace; letter-spacing:.04em; }
+    .topology { position:relative; min-height:560px; overflow:hidden; background:#070b0c; border:1px solid rgba(47,230,200,.38); box-shadow:inset 0 0 90px rgba(47,230,200,.04); }
+    .topology::before { content:""; position:absolute; inset:0; pointer-events:none; background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(47,230,200,.022) 4px); }
+    .topology-head { position:absolute; z-index:2; left:16px; right:16px; top:14px; display:flex; justify-content:space-between; align-items:flex-start; gap:18px; pointer-events:none; }
+    .topology-canvas { display:block; width:100%; height:560px; }
     .pulse { animation:pulse 1.4s ease-in-out infinite; }
     @keyframes pulse { 50% { opacity:.35; transform:scale(.78); } }
     .pill {
@@ -309,6 +329,11 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       main { padding: 12px; }
       .form-grid { grid-template-columns: 1fr; }
       .band-head { align-items: flex-start; flex-direction: column; }
+      .fabric-head { flex-direction:column; }
+      .fabric-totals { justify-content:flex-start; }
+      .topology { min-height:470px; }
+      .topology-canvas { height:470px; }
+      .topology-head { position:relative; padding-bottom:8px; flex-direction:column; }
     }
   </style>
 </head>
@@ -343,20 +368,12 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         <span id="activity-state" class="pill"><span class="dot pulse"></span><span>connecting</span></span>
       </div>
       <div class="band-body grid">
-        <div class="live-grid">
-          <div class="stat"><span>Live connections</span><div id="live-connections" class="metric-value">0</div><div id="live-streams" class="metric-sub">0 streaming</div></div>
-          <div class="stat"><span>Live decode speed</span><div id="live-tps" class="metric-value">0</div><div id="live-tps-sub" class="metric-sub">10s rolling · 0 one-minute</div></div>
-          <div class="stat"><span>Total tokens</span><div id="live-total-tokens" class="metric-value">0</div><div id="live-token-split" class="metric-sub">0 in · 0 out</div></div>
-          <div class="stat"><span>Requests</span><div id="live-requests" class="metric-value">0</div><div id="live-errors" class="metric-sub">0 errors</div></div>
-          <div class="stat"><span>Time to first token</span><div id="live-ttft" class="metric-value">–</div><div class="metric-sub">average ms</div></div>
-        </div>
-        <div>
-          <svg class="chart" viewBox="0 0 1000 150" preserveAspectRatio="none" aria-label="Token throughput history">
-            <defs><linearGradient id="activity-gradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2fe6c8"/><stop offset="1" stop-color="#2fe6c8" stop-opacity="0"/></linearGradient></defs>
-            <path id="activity-area" class="chart-area"></path><path id="activity-line" class="chart-line"></path>
-          </svg>
-        </div>
-        <div id="connection-grid" class="connection-grid"></div>
+        <article class="topology" aria-label="Live LLooM connection and model topology">
+          <div class="topology-head"><div><div class="fabric-title">LLooM // LIVE TOPOLOGY</div><div class="muted mono">connections → gateway → models</div></div>
+            <div class="fabric-totals"><div class="fabric-total"><strong id="fabric-in">0</strong><span>tokens in</span></div><div class="fabric-total"><strong id="fabric-out">0</strong><span>tokens out</span></div><div class="fabric-total"><strong id="fabric-rate">0</strong><span id="fabric-rate-label">avg tok/s</span></div><div class="fabric-total"><strong id="fabric-active">0</strong><span>active</span></div></div>
+          </div>
+          <canvas id="topology-canvas" class="topology-canvas" aria-label="Animated connections flowing through LLooM to configured models"></canvas>
+        </article>
       </div>
     </section>
 
@@ -450,6 +467,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
             <label>Context<input name="contextWindow" inputmode="numeric" placeholder="32768"></label>
             <label>Model root<input name="modelRoot" placeholder="~/.lloom/models"></label>
             <label>Display name<input name="name" placeholder="optional"></label>
+            <label>API key env<input name="apiKeyEnv" placeholder="OPENROUTER_API_KEY"></label>
             <div class="wide check-row">
               <label><input type="checkbox" name="keepWarm"> keep warm</label>
               <label><input type="checkbox" name="setDefault"> default</label>
@@ -519,6 +537,10 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       security: null,
       metrics: null,
       throughput: [],
+      flows: new Map(),
+      trafficSample: null,
+      connectionKey: "",
+      threadNodes: new Map(),
       output: null,
     };
 
@@ -706,45 +728,322 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
 
     function formatNumber(value) { return new Intl.NumberFormat().format(Number(value || 0)); }
     function formatRate(value) { return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 1 }); }
+    function formatCompact(value) {
+      const number = Number(value || 0);
+      if (Math.abs(number) < 1000) return String(Math.trunc(number));
+      const unit = [[1e9, "B"], [1e6, "M"], [1e3, "K"]].find(([size]) => Math.abs(number) >= size);
+      const scaled = number / unit[0];
+      return (scaled >= 100 ? Math.trunc(scaled) : Math.trunc(scaled * 10) / 10) + unit[1];
+    }
+    function fitCanvasText(ctx, value, maxWidth) {
+      const text = String(value || "");
+      if (ctx.measureText(text).width <= maxWidth) return text;
+      const suffix = "…";
+      let low = 0, high = text.length;
+      while (low < high) {
+        const middle = Math.ceil((low + high) / 2);
+        if (ctx.measureText(text.slice(0, middle) + suffix).width <= maxWidth) low = middle;
+        else high = middle - 1;
+      }
+      return text.slice(0, low) + suffix;
+    }
+    function formatBytes(value) {
+      const bytes = Number(value || 0);
+      if (bytes < 1024) return bytes + " B";
+      if (bytes < 1048576) return (bytes / 1024).toFixed(bytes < 10240 ? 1 : 0) + " KB";
+      return (bytes / 1048576).toFixed(bytes < 10485760 ? 1 : 0) + " MB";
+    }
     function shortModel(value) { const parts = String(value || "unknown").split("/"); return parts[parts.length - 1]; }
+
+    function hashUnit(seed) {
+      const value = Math.sin(seed * 91.733) * 43758.5453;
+      return value - Math.floor(value);
+    }
+
+    function pointOnPath(from, via, to, progress) {
+      if (progress < .5) {
+        const t = progress * 2;
+        return { x: from.x + (via.x - from.x) * t, y: from.y + (via.y - from.y) * t };
+      }
+      const t = (progress - .5) * 2;
+      return { x: via.x + (to.x - via.x) * t, y: via.y + (to.y - via.y) * t };
+    }
+
+    function pointOnPolyline(points, progress) {
+      const segment = Math.min(points.length - 2, Math.floor(progress * (points.length - 1)));
+      const t = progress * (points.length - 1) - segment;
+      return { x: points[segment].x + (points[segment + 1].x - points[segment].x) * t, y: points[segment].y + (points[segment + 1].y - points[segment].y) * t };
+    }
+
+    function pointOnCurve(from, control, to, progress) {
+      const inverse = 1 - progress;
+      return { x: inverse * inverse * from.x + 2 * inverse * progress * control.x + progress * progress * to.x, y: inverse * inverse * from.y + 2 * inverse * progress * control.y + progress * progress * to.y };
+    }
+
+    function pointOnCubicCurve(from, controlOne, controlTwo, to, progress) {
+      const inverse = 1 - progress;
+      return {
+        x: inverse ** 3 * from.x + 3 * inverse * inverse * progress * controlOne.x + 3 * inverse * progress * progress * controlTwo.x + progress ** 3 * to.x,
+        y: inverse ** 3 * from.y + 3 * inverse * inverse * progress * controlOne.y + 3 * inverse * progress * progress * controlTwo.y + progress ** 3 * to.y
+      };
+    }
+
+    function updateThreadLayout(connections, field) {
+      const activeIds = new Set(connections.map(item => item.id));
+      for (const id of state.threadNodes.keys()) if (!activeIds.has(id)) state.threadNodes.delete(id);
+      const centerX = (field.left + field.right) / 2, centerY = (field.top + field.bottom) / 2;
+      connections.forEach((connection, index) => {
+        const seed = Number(String(connection.id).replace(/\D/g, "")) || index + 1;
+        let node = state.threadNodes.get(connection.id);
+        if (!node) {
+          node = { x: field.left + hashUnit(seed * 3) * (field.right - field.left), y: field.top + hashUnit(seed * 11) * (field.bottom - field.top), vx: 0, vy: 0 };
+          state.threadNodes.set(connection.id, node);
+        }
+        node.vx += (centerX - node.x) * .0012;
+        node.vy += (centerY - node.y) * .0012;
+      });
+      const nodes = connections.map(item => state.threadNodes.get(item.id));
+      for (let left = 0; left < nodes.length; left++) for (let right = left + 1; right < nodes.length; right++) {
+        const a = nodes[left], b = nodes[right], dx = b.x - a.x, dy = b.y - a.y;
+        const distanceSquared = Math.max(100, dx * dx + dy * dy), distance = Math.sqrt(distanceSquared);
+        if (distance < 280) {
+          const charge = 2200 / distanceSquared;
+          a.vx -= dx / distance * charge; a.vy -= dy / distance * charge;
+          b.vx += dx / distance * charge; b.vy += dy / distance * charge;
+        }
+        const xOverlap = 170 - Math.abs(dx), yOverlap = 40 - Math.abs(dy);
+        if (xOverlap > 0 && yOverlap > 0) {
+          const force = .35 + 1.2 * Math.max(xOverlap / 170, yOverlap / 40);
+          const angle = Math.atan2(dy || .1, dx || .1);
+          a.vx -= Math.cos(angle) * force; a.vy -= Math.sin(angle) * force;
+          b.vx += Math.cos(angle) * force; b.vy += Math.sin(angle) * force;
+        }
+      }
+      for (const node of nodes) {
+        const margin = 38;
+        if (node.x < field.left + margin) node.vx += (field.left + margin - node.x) * .018;
+        if (node.x > field.right - margin) node.vx -= (node.x - field.right + margin) * .018;
+        if (node.y < field.top + margin) node.vy += (field.top + margin - node.y) * .018;
+        if (node.y > field.bottom - margin) node.vy -= (node.y - field.bottom + margin) * .018;
+        node.vx *= .86; node.vy *= .86; node.x += node.vx; node.y += node.vy;
+        node.x = Math.max(field.left, Math.min(field.right, node.x)); node.y = Math.max(field.top, Math.min(field.bottom, node.y));
+      }
+    }
+
+    function drawTopology(now) {
+      const canvas = $("#topology-canvas");
+      if (!canvas || !canvas.isConnected) return;
+      const width = Math.max(1, canvas.clientWidth), height = Math.max(1, canvas.clientHeight);
+      if (canvas.width !== Math.round(width) || canvas.height !== Math.round(height)) { canvas.width = Math.round(width); canvas.height = Math.round(height); }
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, width, height);
+      ctx.font = '10px "SFMono-Regular",monospace'; ctx.textAlign = "left";
+      ctx.fillStyle = "#8fb4ff"; ctx.beginPath(); ctx.arc(50, 91, 3, 0, Math.PI * 2); ctx.fill(); ctx.fillText("INPUT  →", 59, 95);
+      ctx.fillStyle = "#2fe6c8"; ctx.beginPath(); ctx.arc(132, 91, 3, 0, Math.PI * 2); ctx.fill(); ctx.fillText("←  OUTPUT", 141, 95);
+      const center = { x: width * .66, y: height * .53 };
+      const gate = { left: center.x - 82, right: center.x + 82, top: center.y - 170, bottom: center.y + 170 };
+      const models = state.topologyModels || [];
+      const rackX = width * .84;
+      const rackGap = Math.min(124, Math.max(82, (height - 170) / Math.max(1, models.length)));
+      const rackTop = height * .53 - ((models.length - 1) * rackGap) / 2;
+      const modelPoints = new Map(models.map((model, index) => [model.id, { x: rackX, y: rackTop + index * rackGap, model }]));
+      ctx.font = '11px "SFMono-Regular",monospace';
+      ctx.textAlign = "left";
+      ctx.fillStyle = "rgba(153,163,176,.55)"; ctx.fillText("INSTALLED MODEL RACK", rackX - 58, 88);
+      const modelList = [...modelPoints.values()];
+      modelList.forEach((point, index) => {
+        const portY = center.y - Math.min(94, (modelList.length - 1) * 32) / 2 + index * Math.min(47, 94 / Math.max(1, modelList.length - 1));
+        const from = { x: gate.right, y: portY }, to = { x: point.x - 38, y: point.y };
+        const inputRate = point.model.liveInputRate || 0, outputRate = point.model.liveOutputRate || 0;
+        const rate = Math.max(inputRate, outputRate);
+        const cumulative = Number(point.model.inputTokens || 0) + Number(point.model.outputTokens || 0);
+        ctx.strokeStyle = rate > 0 ? "rgba(47,230,200,.82)" : cumulative > 0 ? "rgba(47,230,200,.32)" : "rgba(153,163,176,.15)";
+        ctx.lineWidth = 1 + Math.min(2.5, Math.sqrt(rate) / 8);
+        ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke();
+        [[inputRate, false, "rgba(143,180,255,.94)"], [outputRate, true, "rgba(47,230,200,.94)"]].forEach(([directionRate, reverse, color], direction) => {
+          const particles = directionRate > 0 ? Math.min(12, Math.max(2, Math.ceil(Math.sqrt(directionRate)))) : 0;
+          for (let particle = 0; particle < particles; particle++) {
+            let progress = (now * (.00012 + Math.min(directionRate, 180) * .0000015) + hashUnit(particle + index * 31 + direction * 71)) % 1;
+            if (reverse) progress = 1 - progress;
+            ctx.fillStyle = color;
+            ctx.beginPath(); ctx.arc(from.x + (to.x - from.x) * progress, from.y + (to.y - from.y) * progress, 1.5 + Math.min(2, directionRate / 90), 0, Math.PI * 2); ctx.fill();
+          }
+        });
+      });
+      for (const point of modelPoints.values()) {
+        const live = point.model.liveRate > 0;
+        const serving = point.model.state === "serving";
+        const external = point.model.state === "external";
+        const warming = point.model.state === "warming";
+        const hot = point.model.state === "hot" || serving;
+        const pulse = warming ? .35 + (Math.sin(now * .006) + 1) * .3 : 1;
+        ctx.strokeStyle = serving ? "rgba(47,230,200,.95)" : external ? "rgba(192,153,255,.65)" : hot ? "rgba(47,230,200,.6)" : warming ? "rgba(243,189,79," + pulse + ")" : "rgba(143,180,255,.22)";
+        ctx.fillStyle = hot ? "rgba(7,18,17,.98)" : external ? "rgba(15,10,24,.96)" : warming ? "rgba(24,19,9,.97)" : "rgba(8,10,15,.94)";
+        const cardLeft = point.x - 38, cardWidth = Math.min(220, width - point.x - 18), cardTop = point.y - 34;
+        ctx.beginPath(); ctx.roundRect(cardLeft, cardTop, cardWidth, 68, 5); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = serving ? "#42d77d" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : "#8fb4ff"; ctx.fillRect(cardLeft, cardTop, 4, 68);
+        ctx.fillStyle = "rgba(242,245,247,.92)"; ctx.fillText(fitCanvasText(ctx, shortModel(point.model.id), cardWidth - 22), point.x - 27, point.y - 15);
+        ctx.fillStyle = "rgba(153,163,176,.9)";
+        ctx.fillText(formatCompact(point.model.inputTokens) + " in · " + formatCompact(point.model.outputTokens) + " out", point.x - 27, point.y + 4);
+        ctx.fillStyle = serving ? "#42d77d" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : "rgba(143,180,255,.7)";
+        const modelRateText = live ? formatRate(point.model.liveRate) + " ~tok/s" : formatRate(point.model.averageRate) + " avg tok/s";
+        ctx.fillText(fitCanvasText(ctx, (serving ? "SERVING" : point.model.state.toUpperCase()) + " · " + modelRateText, cardWidth - 22), point.x - 27, point.y + 23);
+      }
+      const connections = state.topologyConnections || [];
+      const orderedConnections = connections.slice().sort((a, b) => {
+        const aSeed = Number(String(a.id).replace(/\D/g, "")) || 1;
+        const bSeed = Number(String(b.id).replace(/\D/g, "")) || 1;
+        return hashUnit(aSeed * 29) - hashUnit(bSeed * 29);
+      });
+      const threadField = { left: 62, right: gate.left - 170, top: 112, bottom: height - 45 };
+      updateThreadLayout(orderedConnections, threadField);
+      orderedConnections.forEach((connection, index) => {
+        const seed = Number(String(connection.id).replace(/\D/g, "")) || index + 1;
+        const from = state.threadNodes.get(connection.id);
+        const slotCount = Math.max(1, Math.min(10, orderedConnections.length));
+        const slotY = center.y - 136 + (index % slotCount) * (272 / Math.max(1, slotCount - 1));
+        const ingress = { x: gate.left, y: slotY };
+        const controlOne = { x: from.x + (ingress.x - from.x) * .38, y: from.y };
+        const controlTwo = { x: from.x + (ingress.x - from.x) * .72, y: ingress.y };
+        const rate = Math.max(connection.inputRate, connection.outputRate);
+        const alpha = connection.live ? 1 : Math.max(0, 1 - (now - connection.fadeStartedAt) / 22500);
+        ctx.strokeStyle = rate > 0 ? "rgba(47,230,200," + (.2 + alpha * .55) + ")" : "rgba(153,163,176," + alpha * .22 + ")";
+        ctx.lineWidth = 1 + Math.min(2.5, Math.sqrt(rate) / 8);
+        ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.bezierCurveTo(controlOne.x, controlOne.y, controlTwo.x, controlTwo.y, ingress.x, ingress.y); ctx.stroke();
+        [[connection.inputRate, false, "rgba(143,180,255," + alpha * .94 + ")"], [connection.outputRate, true, "rgba(47,230,200," + alpha * .94 + ")"]].forEach(([directionRate, reverse, color], direction) => {
+          const particles = directionRate > 0 ? Math.min(10, Math.max(2, Math.ceil(Math.sqrt(directionRate)))) : 0;
+          for (let particle = 0; particle < particles; particle++) {
+            let progress = (now * (.00009 + Math.min(directionRate, 150) * .0000014) + hashUnit(particle + index * 17 + direction * 59)) % 1;
+            if (reverse) progress = 1 - progress;
+            const point = pointOnCubicCurve(from, controlOne, controlTwo, ingress, progress);
+            ctx.fillStyle = color;
+            ctx.beginPath(); ctx.arc(point.x, point.y, 1.5 + Math.min(2, directionRate / 80), 0, Math.PI * 2); ctx.fill();
+          }
+        });
+        ctx.fillStyle = connection.live ? "#42d77d" : "rgba(153,163,176," + alpha * .7 + ")";
+        ctx.beginPath(); ctx.arc(from.x, from.y, connection.live ? 6 : 4, 0, Math.PI * 2); ctx.fill();
+        ctx.textAlign = "left"; ctx.fillStyle = "rgba(242,245,247," + alpha * .88 + ")";
+        ctx.fillText(connection.id, from.x + 10, from.y - 8);
+        ctx.fillStyle = "rgba(153,163,176," + alpha * .9 + ")";
+        const connectionRate = connection.outputRate > 0 ? formatRate(connection.outputRate) + " ~tok/s" : formatRate(connection.averageRate) + " avg tok/s";
+        const liveStats = connection.outputPending ? " · awaiting JSON" : " · " + connectionRate;
+        ctx.fillText(formatNumber(connection.inputTokens) + " in · " + formatNumber(connection.outputTokens) + " out" + liveStats, from.x + 10, from.y + 13);
+      });
+      ctx.textAlign = "center";
+      const chassis = ctx.createLinearGradient(gate.left, 0, gate.right, 0);
+      chassis.addColorStop(0, "rgba(7,11,12,.98)"); chassis.addColorStop(.5, "rgba(20,64,63,.96)"); chassis.addColorStop(1, "rgba(7,11,12,.98)");
+      ctx.fillStyle = chassis; ctx.strokeStyle = "rgba(47,230,200,.9)"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.roundRect(gate.left, gate.top, gate.right - gate.left, gate.bottom - gate.top, 9); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = "rgba(143,180,255,.35)"; ctx.lineWidth = 1;
+      for (let i = 0; i < 9; i++) { const y = gate.top + 30 + i * 25; ctx.beginPath(); ctx.moveTo(gate.left + 13, y); ctx.lineTo(gate.right - 13, y); ctx.stroke(); }
+      ctx.fillStyle = "#e9fffb"; ctx.font = '700 18px "SFMono-Regular",monospace'; ctx.fillText("LLooM", center.x, gate.top + 39);
+      ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.font = '10px "SFMono-Regular",monospace'; ctx.fillText("ROUTING LOOM", center.x, gate.top + 57);
+      const summary = state.topologySummary || {};
+      const statRows = [["ACTIVE", summary.active || 0], ["INPUT", formatRate(summary.inputRate) + " ~t/s"], ["OUTPUT", formatRate(summary.outputRate) + " ~t/s"], ["ERRORS", summary.errors || 0]];
+      ctx.font = '11px "SFMono-Regular",monospace';
+      statRows.forEach((row, index) => { const y = gate.top + 94 + index * 27; ctx.textAlign = "left"; ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.fillText(row[0], gate.left + 18, y); ctx.textAlign = "right"; ctx.fillStyle = "rgba(242,245,247,.95)"; ctx.fillText(String(row[1]), gate.right - 18, y); });
+      const host = summary.host || {};
+      const resourceRows = [
+        ["CPU", host.cpu?.utilization],
+        ["RAM", host.memory?.utilization],
+        ["GPU", host.gpu?.utilization]
+      ];
+      ctx.font = '9px "SFMono-Regular",monospace';
+      resourceRows.forEach((row, index) => {
+        const y = gate.top + 218 + index * 24, value = row[1];
+        ctx.textAlign = "left"; ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.fillText(row[0], gate.left + 17, y);
+        ctx.fillStyle = "rgba(143,180,255,.13)"; ctx.fillRect(gate.left + 51, y - 8, 74, 7);
+        if (value != null) { ctx.fillStyle = value > 90 ? "#ff6f7d" : value > 70 ? "#f3bd4f" : "#2fe6c8"; ctx.fillRect(gate.left + 51, y - 8, 74 * Math.max(0, Math.min(100, value)) / 100, 7); }
+        ctx.textAlign = "right"; ctx.fillStyle = "rgba(242,245,247,.9)"; ctx.fillText(value == null ? "–" : Math.round(value) + "%", gate.right - 17, y);
+      });
+      if (host.gpu) { ctx.textAlign = "center"; ctx.fillStyle = "rgba(153,163,176,.8)"; ctx.fillText(Math.round(host.gpu.temperatureC) + "°C · " + Math.round(host.gpu.powerDrawW) + "W", center.x, gate.bottom - 13); }
+    }
+
+    function animateTopology() {
+      if (!document.hidden) drawTopology(window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : performance.now());
+      setTimeout(animateTopology, 83);
+    }
+    animateTopology();
 
     function renderActivity() {
       const metrics = state.metrics || { totals: {}, models: [], active: [] };
       const totals = metrics.totals || {};
       const active = metrics.active || [];
-      $("#live-connections").textContent = formatNumber(active.length);
-      $("#live-streams").textContent = active.filter(item => item.stream).length + " streaming";
-      const shortRate = metrics.rolling?.short?.outputTokensPerSecond || 0;
-      const minuteRate = metrics.rolling?.minute?.outputTokensPerSecond || 0;
-      $("#live-tps").textContent = formatRate(shortRate);
-      $("#live-tps-sub").textContent = "10s rolling · " + formatRate(minuteRate) + " one-minute";
-      $("#live-total-tokens").textContent = formatNumber(totals.totalTokens);
-      $("#live-token-split").textContent = formatNumber(totals.inputTokens) + " in · " + formatNumber(totals.outputTokens) + " out";
-      $("#live-requests").textContent = formatNumber(totals.requests);
-      $("#live-errors").textContent = formatNumber(totals.errors) + " errors · " + formatNumber(totals.streams) + " streams";
-      $("#live-ttft").textContent = totals.avgFirstContentMs == null ? "–" : formatNumber(Math.round(totals.avgFirstContentMs));
-
-      state.throughput.push(Number(shortRate));
-      if (state.throughput.length > 60) state.throughput.shift();
-      const values = state.throughput;
-      const max = Math.max(1, ...values);
-      const points = values.map((value, index) => [values.length === 1 ? 1000 : index * 1000 / (values.length - 1), 145 - value / max * 135]);
-      const line = points.map((point, index) => (index ? "L" : "M") + point[0].toFixed(1) + " " + point[1].toFixed(1)).join(" ");
-      $("#activity-line").setAttribute("d", line);
-      $("#activity-area").setAttribute("d", points.length ? line + " L1000 150 L0 150 Z" : "");
-
-      const byModel = new Map((metrics.models || []).map(item => [item.id, item]));
-      const cards = [];
-      for (const connection of active) cards.push({ ...connection, live: true, metrics: byModel.get(connection.model) || {} });
-      for (const model of state.models || []) if (!active.some(item => item.model === model.id)) cards.push({ model: model.id, runtime: model.runtime, metrics: byModel.get(model.id) || {} });
-      $("#connection-grid").innerHTML = cards.length ? cards.map(item => {
-        const data = item.metrics || {};
-        return '<article class="connection ' + (item.live ? "live" : "") + '">' +
-          '<div class="connection-head"><div><div class="connection-model">' + escapeHtml(shortModel(item.model)) + '</div><div class="muted mono">' + escapeHtml(item.runtime || "no runtime") + '</div></div>' +
-          '<span class="pill"><span class="dot ' + (item.live ? "ok pulse" : "") + '"></span><span>' + (item.live ? "live · " + Math.ceil(item.elapsedMs / 1000) + "s" : "idle") + '</span></span></div>' +
-          '<div class="connection-stats"><div><strong>' + formatRate(data.decodeTokensPerSecond) + '</strong><span>tok/s</span></div><div><strong>' + formatNumber(data.totalTokens) + '</strong><span>tokens</span></div><div><strong>' + formatNumber(data.requests) + '</strong><span>requests</span></div></div>' +
-        '</article>';
-      }).join("") : '<div class="empty">No configured model connections.</div>';
+      const sampleAt = Date.parse(metrics.generatedAt) || Date.now();
+      const previous = state.trafficSample;
+      const intervalSeconds = previous ? Math.max(.25, (sampleAt - previous.at) / 1000) : 1;
+      const previousActive = previous?.active ?? new Map();
+      const activeIds = new Set(active.map(item => item.id));
+      const completedEstimate = [...previousActive.entries()].filter(([id]) => !activeIds.has(id)).reduce((sum, [, item]) => ({
+        input: sum.input + Number(item.requestBytes || 0) / 4,
+        output: sum.output + Number(item.outputChars || 0) / 4
+      }), { input: 0, output: 0 });
+      const inputRate = previous ? Math.max(0, Number(totals.inputTokens || 0) - previous.inputTokens - completedEstimate.input) / intervalSeconds : 0;
+      const outputRate = previous ? Math.max(0, Number(totals.outputTokens || 0) - previous.outputTokens - completedEstimate.output) / intervalSeconds : 0;
+      const activeRates = new Map(active.map(item => {
+        const prior = previousActive.get(item.id);
+        return [item.id, {
+          input: prior ? 0 : Number(item.requestBytes || 0) / 4 / intervalSeconds,
+          output: Math.max(0, Number(item.outputChars || 0) - Number(prior?.outputChars || 0)) / 4 / intervalSeconds
+        }];
+      }));
+      state.trafficSample = {
+        at: sampleAt,
+        inputTokens: Number(totals.inputTokens || 0),
+        outputTokens: Number(totals.outputTokens || 0),
+        active: new Map(active.map(item => [item.id, { outputChars: item.outputChars || 0, requestBytes: item.requestBytes || 0 }]))
+      };
+      $("#fabric-in").textContent = formatNumber(totals.inputTokens);
+      $("#fabric-out").textContent = formatNumber(totals.outputTokens);
+      const liveInputRate = inputRate + [...activeRates.values()].reduce((sum, item) => sum + item.input, 0);
+      const liveOutputRate = outputRate + [...activeRates.values()].reduce((sum, item) => sum + item.output, 0);
+      const totalDurationSeconds = Math.max(.001, Number(totals.durationMs || 0) / 1000);
+      const averageInputRate = Number(totals.inputTokens || 0) / totalDurationSeconds;
+      const averageOutputRate = Number(totals.decodeTokensPerSecond || 0);
+      $("#fabric-rate").textContent = formatRate(liveOutputRate > 0 ? liveOutputRate : averageOutputRate);
+      $("#fabric-rate-label").textContent = liveOutputRate > 0 ? "live ~tok/s" : "avg tok/s";
+      $("#fabric-active").textContent = formatNumber(active.length);
+      state.topologySummary = {
+        active: active.length,
+        inputRate: liveInputRate,
+        outputRate: liveOutputRate,
+        averageInputRate,
+        averageOutputRate,
+        errors: totals.errors || 0,
+        host: metrics.host || null
+      };
+      const recentById = new Map();
+      for (const entry of (metrics.recent || []).slice().reverse()) if (entry.id && !recentById.has(entry.id)) recentById.set(entry.id, entry);
+      const topologyCanvas = $("#topology-canvas");
+      const availableArea = Math.max(1, (topologyCanvas?.clientWidth || 1200) * .52 * Math.max(1, (topologyCanvas?.clientHeight || 560) - 150));
+      const fieldCapacity = Math.max(8, Math.min(24, Math.floor(availableArea / (170 * 48))));
+      const inactiveCapacity = Math.max(0, fieldCapacity - active.length);
+      const fading = [...recentById.values()].filter(item => !activeIds.has(item.id) && sampleAt - Date.parse(item.at) < 22500).slice(0, inactiveCapacity);
+      const connections = active.map(item => ({ ...item, live: true, ageMs: 0 })).concat(fading.map(item => ({ ...item, ageMs: Math.max(0, sampleAt - Date.parse(item.at)) })));
+      state.topologyConnections = connections.map(item => ({
+        ...item,
+        fadeStartedAt: item.live ? performance.now() : performance.now() - item.ageMs,
+        inputTokens: Math.round(Number(item.usage?.input_tokens || (item.requestBytes || 0) / 4)),
+        outputTokens: Math.round(Number(item.usage?.output_tokens || item.outputChars / 4 || 0)),
+        averageRate: Number(item.durationMs || item.elapsedMs) > 0 ? Number(item.usage?.output_tokens || item.outputChars / 4 || 0) / (Number(item.durationMs || item.elapsedMs) / 1000) : 0,
+        inputRate: item.live ? activeRates.get(item.id)?.input || 0 : 0,
+        outputRate: item.live ? activeRates.get(item.id)?.output || 0 : 0,
+        outputPending: item.live === true && !item.stream && !item.responseBytes
+      }));
+      const modelMetrics = new Map((metrics.models || []).map(model => [model.id, model]));
+      const runtimeStates = state.status?.runtimeManager?.runtimes || {};
+      state.topologyModels = (state.models || []).map(model => {
+        const data = modelMetrics.get(model.id) || {};
+        const liveConnections = state.topologyConnections.filter(item => item.live && item.model === model.id);
+        const liveInputRate = liveConnections.reduce((sum, item) => sum + item.inputRate, 0);
+        const liveOutputRate = liveConnections.reduce((sum, item) => sum + item.outputRate, 0);
+        const liveRate = liveOutputRate;
+        const activeInput = liveConnections.reduce((sum, item) => sum + item.inputTokens, 0);
+        const activeOutput = liveConnections.reduce((sum, item) => sum + item.outputTokens, 0);
+        const runtimeStatus = runtimeStates[model.runtime]?.status || "idle";
+        const stateLabel = liveConnections.length ? "serving" : !model.runtime ? "external" : runtimeStatus === "running" ? "hot" : runtimeStatus === "starting" ? "warming" : "cold";
+        return { id: model.id, inputTokens: Number(data.inputTokens || 0) + activeInput, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveInputRate, liveOutputRate, averageRate: Number(data.decodeTokensPerSecond || 0), state: stateLabel };
+      });
     }
 
     async function refreshActivity() {

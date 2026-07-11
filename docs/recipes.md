@@ -71,6 +71,16 @@ Execute the same plan only after review:
 lloom install apple-silicon-qwen36 --model-root ~/Models --apply --yes
 ```
 
+To add a recipe to an existing multi-model gateway without replacing its current model registry,
+default chat model, or existing keep-warm runtimes, use additive setup:
+
+```zsh
+lloom setup --recipe <recipe-id> --additive --apply --yes --start
+```
+
+Only recipe models with `settings.keepWarm: true` are added to the existing keep-warm set in
+additive mode. Replacement-oriented first-run setup remains the default when `--additive` is absent.
+
 Real execution records completed steps in `~/.lloom/install-state.json` unless `--state` overrides it. If setup is interrupted, rerunning the command skips completed steps and resumes from the next pending step.
 
 Inspect current install state and seeded model folders:

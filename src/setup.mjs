@@ -24,6 +24,7 @@ function setupCommand({
   recipesRoot,
   benchmarksRoot,
   backendCatalogPath,
+  additive = false,
   apply = false,
   start = false
 } = {}) {
@@ -40,6 +41,7 @@ function setupCommand({
   if (benchmarksRoot) args.push('--benchmarks-root', shellArg(benchmarksRoot));
   if (backendCatalogPath) args.push('--backend-catalog', shellArg(backendCatalogPath));
   if (clientId && clientId !== 'all') args.push('--client', shellArg(clientId));
+  if (additive) args.push('--additive');
   if (apply) args.push('--apply', '--yes');
   if (start) args.push('--start');
   return args.join(' ');
@@ -70,7 +72,8 @@ export async function createSetupPlan(
     recipeDocuments = [],
     backendCatalogPath,
     statePath,
-    autoDetectModelRoot
+    autoDetectModelRoot,
+    additive = false
   } = {}
 ) {
   const init = await createInitPlan(config, {
@@ -87,7 +90,8 @@ export async function createSetupPlan(
     recipesRoot,
     recipeDocuments,
     backendCatalogPath,
-    autoDetectModelRoot
+    autoDetectModelRoot,
+    additive
   });
   const plannedConfig = configWithSource(init.config, init.configPath);
   const bootstrap = await createBootstrapPlan(plannedConfig, {
@@ -131,6 +135,7 @@ export async function createSetupPlan(
         benchmarksRoot,
         backendCatalogPath,
         clientId,
+        additive,
         apply: true
       }),
       applyAndStart: setupCommand({
@@ -146,6 +151,7 @@ export async function createSetupPlan(
         benchmarksRoot,
         backendCatalogPath,
         clientId,
+        additive,
         apply: true,
         start: true
       }),

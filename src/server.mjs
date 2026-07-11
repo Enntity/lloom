@@ -1,6 +1,9 @@
 import http from 'node:http';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import {
   backendIds,
   defaultBackendVariables,
@@ -63,6 +66,66 @@ import { assertBindAllowed, authorizeRequest, corsHeaders, securityPublicStatus 
 
 const JSON_TYPE = 'application/json; charset=utf-8';
 const SSE_TYPE = 'text/event-stream; charset=utf-8';
+const execFileAsync = promisify(execFile);
+
+function createHostTelemetry({ sampleIntervalMs = 2000 } = {}) {
+  let cached = null;
+  let sampledAt = 0;
+  let pending = null;
+  let previousCpu = null;
+
+  function cpuTimes() {
+    return os.cpus().reduce((totals, cpu) => {
+      const total = Object.values(cpu.times).reduce((sum, value) => sum + value, 0);
+      return { idle: totals.idle + cpu.times.idle, total: totals.total + total };
+    }, { idle: 0, total: 0 });
+  }
+
+  async function collect() {
+    const currentCpu = cpuTimes();
+    const cpuDelta = previousCpu ? { idle: currentCpu.idle - previousCpu.idle, total: currentCpu.total - previousCpu.total } : null;
+    previousCpu = currentCpu;
+    let gpu = null;
+    try {
+      const { stdout } = await execFileAsync('nvidia-smi', [
+        '--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw',
+        '--format=csv,noheader,nounits'
+      ], { timeout: 1500 });
+      const devices = stdout.trim().split(/\r?\n/).filter(Boolean).map((line, index) => {
+        const [utilization, memoryUsed, memoryTotal, temperature, powerDraw] = line.split(',').map(value => Number(value.trim()));
+        return { index, utilization, memoryUsedMb: memoryUsed, memoryTotalMb: memoryTotal, temperatureC: temperature, powerDrawW: powerDraw };
+      });
+      if (devices.length) {
+        gpu = {
+          devices,
+          utilization: devices.reduce((sum, device) => sum + device.utilization, 0) / devices.length,
+          memoryUsedMb: devices.reduce((sum, device) => sum + device.memoryUsedMb, 0),
+          memoryTotalMb: devices.reduce((sum, device) => sum + device.memoryTotalMb, 0),
+          temperatureC: Math.max(...devices.map(device => device.temperatureC)),
+          powerDrawW: devices.reduce((sum, device) => sum + device.powerDrawW, 0)
+        };
+      }
+    } catch {
+      // NVIDIA telemetry is optional on non-CUDA hosts.
+    }
+    const totalMemory = os.totalmem();
+    const freeMemory = os.freemem();
+    return {
+      sampledAt: new Date().toISOString(),
+      cpu: { utilization: cpuDelta?.total > 0 ? (1 - cpuDelta.idle / cpuDelta.total) * 100 : null, logicalCpus: os.cpus().length },
+      memory: { usedBytes: totalMemory - freeMemory, totalBytes: totalMemory, utilization: totalMemory > 0 ? (totalMemory - freeMemory) / totalMemory * 100 : 0 },
+      gpu
+    };
+  }
+
+  return {
+    async snapshot() {
+      if (cached && Date.now() - sampledAt < sampleIntervalMs) return cached;
+      if (!pending) pending = collect().then(value => { cached = value; sampledAt = Date.now(); return value; }).finally(() => { pending = null; });
+      return pending;
+    }
+  };
+}
 
 function stripTrailingSlash(value) {
   return String(value ?? '').replace(/\/+$/, '');
@@ -559,6 +622,7 @@ function createMetricsStore({ maxRecent = 200 } = {}) {
         kind: raw.kind,
         backend: raw.backend,
         runtime: raw.runtime,
+        requestBytes: raw.requestBytes ?? 0,
         stream: raw.stream === true
       });
       return id;
@@ -566,8 +630,17 @@ function createMetricsStore({ maxRecent = 200 } = {}) {
     end(id) {
       if (id) active.delete(id);
     },
+    update(id, patch = {}) {
+      const entry = active.get(id);
+      if (!entry) return;
+      entry.responseBytes = (entry.responseBytes ?? 0) + (patch.responseBytesDelta ?? 0);
+      entry.outputChars = (entry.outputChars ?? 0) + (patch.outputCharsDelta ?? 0);
+      entry.lastActivityAt = new Date().toISOString();
+    },
     record(raw) {
+      const live = active.get(raw.id);
       const entry = {
+        id: raw.id,
         at: new Date().toISOString(),
         route: raw.route,
         model: raw.model,
@@ -582,6 +655,8 @@ function createMetricsStore({ maxRecent = 200 } = {}) {
         durationMs: raw.durationMs ?? 0,
         firstContentMs: raw.firstContentMs ?? null,
         responseBytes: raw.responseBytes ?? 0,
+        requestBytes: raw.requestBytes ?? 0,
+        outputChars: live?.outputChars ?? 0,
         usage: raw.usage ?? null,
         error: raw.error
       };
@@ -798,7 +873,7 @@ async function proxyRawResponse(res, upstream, { signal, timing, corsConfig } = 
   };
 }
 
-async function proxyOpenAIChatResponse(res, upstream, requestedModel, { signal, timing, corsConfig } = {}) {
+async function proxyOpenAIChatResponse(res, upstream, requestedModel, { signal, timing, progress, corsConfig } = {}) {
   const body = Buffer.from(await upstream.arrayBuffer());
   throwIfClientClosed(signal, res);
   const headers = copyResponseHeaders(upstream);
@@ -823,6 +898,7 @@ async function proxyOpenAIChatResponse(res, upstream, requestedModel, { signal, 
   setCors(res, corsConfig);
   res.writeHead(upstream.status, headers);
   if (output.length) markFirstContent(timing);
+  progress?.({ responseBytesDelta: output.length, outputCharsDelta: usage?.output_tokens ? usage.output_tokens * 4 : 0 });
   res.end(output);
   return {
     status: upstream.status,
@@ -832,7 +908,7 @@ async function proxyOpenAIChatResponse(res, upstream, requestedModel, { signal, 
   };
 }
 
-async function proxyOpenAIChatStream(res, upstream, requestedModel, { signal, timing, corsConfig } = {}) {
+async function proxyOpenAIChatStream(res, upstream, requestedModel, { signal, timing, progress, corsConfig } = {}) {
   throwIfClientClosed(signal, res);
   setCors(res, corsConfig);
   res.writeHead(upstream.status, copyResponseHeaders(upstream));
@@ -853,6 +929,7 @@ async function proxyOpenAIChatStream(res, upstream, requestedModel, { signal, ti
     throwIfClientClosed(signal, res);
     // eslint-disable-next-line no-useless-assignment
     let output = '';
+    let outputChars = 0;
     if (event.data && event.data !== '[DONE]') {
       const rewritten = rewriteJsonModelText(event.data, requestedModel);
       let value = rewritten.value;
@@ -865,6 +942,10 @@ async function proxyOpenAIChatStream(res, upstream, requestedModel, { signal, ti
       if (openAIStreamChunkHasContent(value)) {
         markFirstContent(timing);
       }
+      outputChars = (value?.choices ?? []).reduce((sum, choice) => {
+        const delta = choice?.delta ?? {};
+        return sum + String(delta.content ?? '').length + String(delta.reasoning_content ?? '').length;
+      }, 0);
       const dataText = value && typeof value === 'object' ? JSON.stringify(value) : rewritten.text;
       output = encodeSseBlock({
         ...event,
@@ -874,6 +955,7 @@ async function proxyOpenAIChatStream(res, upstream, requestedModel, { signal, ti
       output = encodeSseBlock(event);
     }
     responseBytes += Buffer.byteLength(output);
+    progress?.({ responseBytesDelta: Buffer.byteLength(output), outputCharsDelta: outputChars ?? 0 });
     res.write(output);
   }
   throwIfClientClosed(signal, res);
@@ -1012,6 +1094,7 @@ function modelImportOptionsFromBody(config, body = {}) {
     port: optionalNumber(body.port, 'port'),
     contextWindow: optionalNumber(body.contextWindow ?? body.context_window, 'contextWindow'),
     maxOutputTokens: optionalNumber(body.maxOutputTokens ?? body.max_output_tokens, 'maxOutputTokens'),
+    apiKeyEnv: body.apiKeyEnv ?? body.api_key_env,
     keepWarm: body.keepWarm ?? body.keep_warm ?? false,
     setDefault: body.setDefault ?? body.set_default ?? body.default ?? false
   };
@@ -1167,12 +1250,16 @@ export function createLloomServer(
   }
 
   const baseMetrics = createMetricsStore();
+  const hostTelemetry = createHostTelemetry();
   const metrics = {
     begin(entry) {
       return baseMetrics.begin(entry);
     },
     end(id) {
       baseMetrics.end(id);
+    },
+    update(id, patch) {
+      baseMetrics.update(id, patch);
     },
     record(entry) {
       baseMetrics.record(entry);
@@ -1208,6 +1295,7 @@ export function createLloomServer(
 
   async function recordModelRequest({ route, resolved, stream, req, res }, fn) {
     const started = Date.now();
+    const requestBytes = Number(req.headers['content-length']) || 0;
     const connectionId = metrics.begin({
       route,
       model: resolved.model.id,
@@ -1216,19 +1304,23 @@ export function createLloomServer(
       kind: resolved.model.kind ?? 'chat',
       backend: resolved.model.backend,
       runtime: resolved.model.runtime,
+      requestBytes,
       stream
     });
     const timing = createResponseTiming(started);
     const client = createClientCloseTracker(req, res);
+    const progress = (patch) => metrics.update(connectionId, patch);
     try {
       const result = await runtimeManager.withSlot(resolved.model.runtime, () =>
         fn({
           signal: client.signal,
-          timing
+          timing,
+          progress
         })
       );
       const status = result?.status ?? 200;
       metrics.record({
+        id: connectionId,
         route,
         model: resolved.model.id,
         requestedModel: resolved.requestedId,
@@ -1242,6 +1334,7 @@ export function createLloomServer(
         durationMs: Date.now() - started,
         firstContentMs: result?.firstContentMs ?? timing.firstContentMs,
         responseBytes: result?.responseBytes ?? 0,
+        requestBytes,
         usage: result?.usage ?? null
       });
       return result;
@@ -1250,6 +1343,7 @@ export function createLloomServer(
         ? 499
         : clientClosedStatus(error) || (error instanceof PromptTooLargeError ? error.statusCode : 0) || 502;
       metrics.record({
+        id: connectionId,
         route,
         model: resolved.model.id,
         requestedModel: resolved.requestedId,
@@ -1262,6 +1356,7 @@ export function createLloomServer(
         stream,
         durationMs: Date.now() - started,
         firstContentMs: timing.firstContentMs,
+        requestBytes,
         error: error?.message ?? String(error)
       });
       if (status === 499 || isClientClosedError(error)) {
@@ -1335,7 +1430,7 @@ export function createLloomServer(
         req,
         res
       },
-      async ({ signal, timing }) => {
+      async ({ signal, timing, progress }) => {
         await ensureRuntime(resolved.model.runtime);
         // Normalize history so reasoning_content is OpenAI-shaped before MTPLX render.
         const normalizedRequest = normalizeOpenAIChatRequestBody(body);
@@ -1363,8 +1458,8 @@ export function createLloomServer(
           });
         }
         return body.stream === true
-          ? proxyOpenAIChatStream(res, upstream, resolved.requestedId, { signal, timing, corsConfig: config })
-          : proxyOpenAIChatResponse(res, upstream, resolved.requestedId, { signal, timing, corsConfig: config });
+          ? proxyOpenAIChatStream(res, upstream, resolved.requestedId, { signal, timing, progress, corsConfig: config })
+          : proxyOpenAIChatResponse(res, upstream, resolved.requestedId, { signal, timing, progress, corsConfig: config });
       }
     );
   }
@@ -2094,12 +2189,14 @@ export function createLloomServer(
       }
 
       if (req.method === 'GET' && url.pathname === '/gateway/metrics') {
+        const snapshot = metrics.snapshot({
+          model: firstQueryParam(url.searchParams, ['model'])
+        });
+        snapshot.host = await hostTelemetry.snapshot();
         sendJson(
           res,
           200,
-          metrics.snapshot({
-            model: firstQueryParam(url.searchParams, ['model'])
-          })
+          snapshot
         );
         return;
       }

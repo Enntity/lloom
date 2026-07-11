@@ -722,6 +722,20 @@ const openAICompatibleDefaultPortPlan = createModelImportPlan(config, {
 assert.equal(openAICompatibleDefaultPortPlan.additions.port, null);
 assert.equal(openAICompatibleDefaultPortPlan.additions.baseUrl, 'https://example.test/v1');
 assert(!openAICompatibleDefaultPortPlan.next.apply.includes("--port '0'"));
+const authenticatedExternalPlan = createModelImportPlan(config, {
+  modelRef: 'openai:https://openrouter.ai/api/v1#z-ai/glm-5.2',
+  apiKeyEnv: 'OPENROUTER_API_KEY',
+  name: 'GLM 5.2 · OpenRouter'
+});
+const authenticatedBackend = authenticatedExternalPlan.config.backends['openai-compatible-z-ai-glm-5-2'];
+assert.equal(authenticatedBackend.apiKeyEnv, 'OPENROUTER_API_KEY');
+assert.equal(authenticatedBackend.apiKey, undefined);
+assert.deepEqual(authenticatedExternalPlan.config.security.apiKeys, config.sourceTemplate.security.apiKeys);
+assert(authenticatedExternalPlan.next.apply.includes("--api-key-env 'OPENROUTER_API_KEY'"));
+assert.throws(() => createModelImportPlan(config, {
+  modelRef: 'openai:https://openrouter.ai/api/v1#bad-env',
+  apiKeyEnv: 'NOT-VALID'
+}), /valid environment variable name/);
 
 const models = registry.openAIModels().map((model) => model.id);
 assert(models.includes('Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed'));
@@ -748,7 +762,7 @@ assert.equal(recipe.schemaVersion, 1);
 const loadedRecipes = await loadRecipes();
 assert.deepEqual(
   loadedRecipes.map((candidate) => candidate.id),
-  ['apple-silicon-qwen36-35b-a3b-optiq', 'apple-silicon-qwen36']
+  ['apple-silicon-qwen36-35b-a3b-optiq', 'apple-silicon-qwen36', 'linux-nvidia-qwen3-embedding-4b-vllm']
 );
 const benchmarkEvidence = await loadBenchmarkEvidence();
 assert.equal(benchmarkEvidence.length, 2);
@@ -835,7 +849,7 @@ const recipeIndexReport = await buildRecipeIndexReport(config, {
 });
 assert.equal(recipeIndexReport.ok, true);
 assert.equal(recipeIndexReport.index.id, 'lloom-community-recipes');
-assert.equal(recipeIndexReport.recipes.length, 2);
+assert.equal(recipeIndexReport.recipes.length, 3);
 const indexedQwen36Recipe = recipeIndexReport.recipes.find((candidate) => candidate.id === 'apple-silicon-qwen36');
 assert.equal(indexedQwen36Recipe.ok, true);
 assert.equal(indexedQwen36Recipe.commands.plan, 'lloom plan apple-silicon-qwen36 --model-root /models');
@@ -855,7 +869,7 @@ const libraryCli = await runCommand(process.execPath, [
 ]);
 const libraryJson = JSON.parse(libraryCli.stdout);
 assert.equal(libraryJson.index.id, 'lloom-community-recipes');
-assert.equal(libraryJson.recipes[0].id, 'apple-silicon-qwen36-35b-a3b-optiq');
+assert.equal(libraryJson.recipes[0].id, 'linux-nvidia-qwen3-embedding-4b-vllm');
 if (process.platform === 'darwin' && process.arch === 'arm64') {
   assert.equal(libraryJson.selected.recipeId, 'apple-silicon-qwen36-35b-a3b-optiq');
 } else {
@@ -1557,6 +1571,21 @@ assert.equal(recipeSubmitCliPlan.pack.id, 'apple-silicon-qwen36-pack');
 const derivedConfig = deriveUserConfig(config, recipe, {
   modelRoot: '/models'
 });
+const envTemplatePath = path.join(tempDir, 'env-template-config.json');
+await fs.writeFile(envTemplatePath, JSON.stringify({
+  security: {
+    apiKeys: ['${LLOOM_API_KEY}'],
+    adminApiKeys: ['${LLOOM_ADMIN_API_KEY}']
+  },
+  backends: {},
+  models: []
+}));
+const envTemplateConfig = await loadConfig(envTemplatePath, {
+  env: { ...process.env, LLOOM_API_KEY: 'resolved-user-key', LLOOM_ADMIN_API_KEY: 'resolved-admin-key' }
+});
+const envTemplateDerived = deriveUserConfig(envTemplateConfig, recipe, { modelRoot: '/models' });
+assert.deepEqual(envTemplateDerived.security.apiKeys, ['${LLOOM_API_KEY}']);
+assert.deepEqual(envTemplateDerived.security.adminApiKeys, ['${LLOOM_ADMIN_API_KEY}']);
 assert.equal(
   config.runtimes['mtplx-qwen36-27b-speed'].args.at(2),
   path.join(defaultUserModelRoot(), 'Youssofal--Qwen3.6-27B-MTPLX-Optimized-Speed')
@@ -1569,6 +1598,40 @@ assert.equal(
 );
 assert.deepEqual(derivedConfig.keepWarm, ['mtplx-qwen36-35b-a3b-speed-fp16']);
 assert.equal(derivedConfig.runtimes['mtplx-qwen36-27b-speed'].args.includes('--ssd-session-cache'), false);
+const embeddingRecipe = await loadRecipeById('linux-nvidia-qwen3-embedding-4b-vllm');
+const additiveBase = {
+  ...config,
+  defaults: { ...(config.defaults ?? {}), chatModel: 'existing-chat' },
+  models: [{ id: 'existing-chat', name: 'Existing chat', kind: 'chat', backend: 'existing-backend' }],
+  backends: { ...(config.backends ?? {}), 'existing-backend': { baseUrl: 'http://127.0.0.1:8999/v1' } },
+  runtimes: { ...(config.runtimes ?? {}), 'existing-runtime': { enabled: true, port: 8999 } },
+  keepWarm: ['existing-runtime']
+};
+const additiveDerived = deriveUserConfig(additiveBase, embeddingRecipe, {
+  modelRoot: '/models',
+  additive: true
+});
+assert.equal(additiveDerived.defaults.chatModel, 'existing-chat');
+assert.deepEqual(additiveDerived.models.map((model) => model.id).sort(), [
+  'Qwen/Qwen3-Embedding-4B',
+  'existing-chat'
+]);
+assert.deepEqual(additiveDerived.keepWarm.sort(), ['existing-runtime', 'qwen3-embedding-4b']);
+assert(additiveDerived.clientCatalog.modelOrder.includes('existing-chat'));
+assert(additiveDerived.clientCatalog.modelOrder.includes('Qwen/Qwen3-Embedding-4B'));
+assert(
+  additiveDerived.clientCatalog.modelOrder.indexOf('existing-chat') <
+    additiveDerived.clientCatalog.modelOrder.indexOf('Qwen/Qwen3-Embedding-4B')
+);
+assert.equal(additiveDerived.models.find((model) => model.id === 'Qwen/Qwen3-Embedding-4B').kind, 'embedding');
+assert.equal(additiveDerived.runtimes['qwen3-embedding-4b'].adapter, 'docker');
+const retunedEmbeddingRecipe = structuredClone(embeddingRecipe);
+retunedEmbeddingRecipe.models[0].settings.memoryGb = 13;
+const retunedDerived = deriveUserConfig(additiveDerived, retunedEmbeddingRecipe, {
+  modelRoot: '/models',
+  additive: true
+});
+assert.equal(retunedDerived.runtimes['qwen3-embedding-4b'].memoryGb, 13);
 const singleModelRecipe = await loadRecipeById(
   'apple-silicon-qwen36-35b-a3b-mtplx',
   path.join(process.cwd(), 'community', 'recipes')
@@ -4737,7 +4800,7 @@ if (listened) {
       assert.equal(libraryPlanJson.selected, null);
     }
     assert.equal(
-      libraryPlanJson.recipes[0].commands.installApply,
+      libraryPlanJson.recipes.find((recipe) => recipe.id === 'apple-silicon-qwen36-35b-a3b-optiq')?.commands.installApply,
       'lloom install apple-silicon-qwen36-35b-a3b-optiq --model-root /models --apply --yes'
     );
 
@@ -7299,6 +7362,8 @@ if (mockListened) {
       const metricsResponse = await fetch(`http://127.0.0.1:${port}/gateway/metrics`);
       assert.equal(metricsResponse.status, 200);
       const metricsJson = await metricsResponse.json();
+      assert(metricsJson.host?.memory?.totalBytes > 0);
+      assert.equal(typeof metricsJson.host?.cpu?.logicalCpus, 'number');
       const modelMetrics = metricsJson.models.find(
         (model) => model.id === 'Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed'
       );
@@ -7317,6 +7382,7 @@ if (mockListened) {
           entry.usage?.output_tokens === 1
       );
       assert(delayedMetric);
+      assert(delayedMetric.outputChars > 0);
       assert.equal(typeof delayedMetric.firstContentMs, 'number');
       assert(delayedMetric.firstContentMs >= 40);
       assert(delayedMetric.durationMs >= delayedMetric.firstContentMs);

@@ -173,7 +173,7 @@ Backends and runtimes:
   lloom keep-warm
 
 Models and clients:
-  lloom add-model <hf-url|repo-id|local-path|ollama:tag|lmstudio:id|openai:url#model> [--backend id] [--keep-warm] [--default] [--apply --yes]
+  lloom add-model <hf-url|repo-id|local-path|ollama:tag|lmstudio:id|openai:url#model> [--backend id] [--api-key-env NAME] [--keep-warm] [--default] [--apply --yes]
   lloom integrations [client-id|all] [--home path] [--generated-root path]
   lloom integrate [client-id|all] [--home path] [--generated-root path] [--apply --yes]
 
@@ -1182,6 +1182,7 @@ async function main() {
       const apply = hasFlag(args, '--apply');
       const yes = hasFlag(args, '--yes');
       const start = hasFlag(args, '--start');
+      const additive = hasFlag(args, '--additive');
       const options = {
         recipeId,
         configPath: configOut,
@@ -1196,6 +1197,7 @@ async function main() {
         benchmarksRoot: argValue(args, '--benchmarks-root'),
         backendCatalogPath: argValue(args, '--backend-catalog'),
         ...(statePath ? { statePath } : {})
+        ,additive
       };
       console.log(
         JSON.stringify(
@@ -1622,6 +1624,7 @@ async function main() {
             port: argValue(args, '--port'),
             ...(contextWindow ? { contextWindow: Number(contextWindow) } : {}),
             ...(maxOutputTokens ? { maxOutputTokens: Number(maxOutputTokens) } : {}),
+            apiKeyEnv: argValue(args, '--api-key-env'),
             keepWarm: hasFlag(args, '--keep-warm'),
             setDefault: hasFlag(args, '--default'),
             dryRun: !apply,

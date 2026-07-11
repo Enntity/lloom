@@ -372,6 +372,30 @@
       }
     },
     {
+      "id": "docker-vllm",
+      "name": "Docker vLLM",
+      "kind": "openai-compatible-server",
+      "description": "LLooM-managed vLLM containers for NVIDIA hosts where the tested runtime is delivered as a Docker image.",
+      "platforms": ["linux-x64", "linux-arm64"],
+      "features": ["chat", "embeddings", "pooling", "streaming", "usage", "tools", "batching", "cuda", "blackwell", "dgx-spark", "docker"],
+      "commands": ["docker"],
+      "setup": [
+        {
+          "id": "check-docker",
+          "title": "Check Docker",
+          "action": "check-command",
+          "command": "docker",
+          "args": ["--version"]
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health",
+        "chatPath": "/v1/chat/completions",
+        "embeddingsPath": "/v1/embeddings"
+      }
+    },
+    {
       "id": "vllm",
       "name": "vLLM",
       "kind": "openai-compatible-server",

@@ -218,10 +218,11 @@ lloom add-model mlx-community/Qwen3.6-27B-OptiQ-4bit --keep-warm --default
 lloom add-model qwen3:8b --backend ollama
 lloom add-model lmstudio:local-qwen --port 1234
 lloom add-model 'openai:http://127.0.0.1:9009/v1#remote-model'
+lloom add-model 'openai:https://openrouter.ai/api/v1#z-ai/glm-5.2' --api-key-env OPENROUTER_API_KEY --name 'GLM 5.2 · OpenRouter'
 lloom add-model ~/Models/my-local-model.gguf --port 8230 --context-window 131072
 ```
 
-`add-model` accepts Hugging Face URLs, Hugging Face repo IDs, local paths, Ollama tags, LM Studio model IDs, and explicit OpenAI-compatible endpoints. It infers a backend, allocates a backend port from the configured range unless one is supplied, emits the backend install/download/runtime commands when LLooM manages the runtime, and only writes config with `--apply --yes`. External OpenAI-compatible servers use config-only model entries; start the external app/server yourself, then let LLooM provide the stable gateway URL and client integrations.
+`add-model` accepts Hugging Face URLs, Hugging Face repo IDs, local paths, Ollama tags, LM Studio model IDs, and explicit OpenAI-compatible endpoints. It infers a backend, allocates a backend port from the configured range unless one is supplied, emits the backend install/download/runtime commands when LLooM manages the runtime, and only writes config with `--apply --yes`. External OpenAI-compatible servers use config-only unmanaged model entries; start the external app/server yourself, then let LLooM provide the stable gateway URL, client integrations, and the same per-connection telemetry as local models. For authenticated providers, pass `--api-key-env NAME`; LLooM stores only the environment-variable name and resolves the credential inside the gateway process at request time. Unmanaged models are excluded from warmup, admission, eviction, and local GPU-memory planning.
 
 Hugging Face `blob`, `resolve`, and `tree` links are normalized into the same model reference. Non-`main` revisions are preserved in the generated `hf download --revision ...` command, so a copied model-card link keeps pointing at the intended branch, tag, or commit.
 

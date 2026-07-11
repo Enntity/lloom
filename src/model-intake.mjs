@@ -532,6 +532,7 @@ function addModelCommand({
   port,
   contextWindow,
   maxOutputTokens,
+  apiKeyEnv,
   keepWarm,
   setDefault,
   apply = false
@@ -548,6 +549,7 @@ function addModelCommand({
   if (port != null) args.push('--port', shellArg(port));
   if (contextWindow != null) args.push('--context-window', shellArg(contextWindow));
   if (maxOutputTokens != null) args.push('--max-output-tokens', shellArg(maxOutputTokens));
+  if (apiKeyEnv) args.push('--api-key-env', shellArg(apiKeyEnv));
   if (keepWarm) args.push('--keep-warm');
   if (setDefault) args.push('--default');
   if (apply) args.push('--apply', '--yes');
@@ -567,6 +569,7 @@ export function createModelImportPlan(
     port,
     contextWindow = 32768,
     maxOutputTokens = 8192,
+    apiKeyEnv,
     keepWarm = false,
     setDefault = false,
     platform = process.platform,
@@ -576,6 +579,13 @@ export function createModelImportPlan(
   const reference = normalizeModelReference(modelRef);
   const inference = inferBackend(reference, { backend, platform, arch });
   const backendId = inference.backend;
+  const selectedApiKeyEnv = apiKeyEnv == null ? null : String(apiKeyEnv).trim();
+  if (selectedApiKeyEnv && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(selectedApiKeyEnv)) {
+    throw new Error('apiKeyEnv must be a valid environment variable name');
+  }
+  if (selectedApiKeyEnv && !['openai-compatible', 'lm-studio'].includes(backendId)) {
+    throw new Error('apiKeyEnv is only supported for external OpenAI-compatible backends');
+  }
   const selectedContextWindow = positiveInteger(contextWindow, 'contextWindow');
   const selectedMaxOutputTokens = positiveInteger(maxOutputTokens, 'maxOutputTokens');
   const resolvedModelId = modelId ?? reference.modelId;
@@ -612,7 +622,7 @@ export function createModelImportPlan(
     throw new Error(`runtime ${runtimeId} already exists in config`);
   }
 
-  const nextConfig = clone(config);
+  const nextConfig = clone(config.sourceTemplate ?? config);
   delete nextConfig.sourcePath;
   nextConfig.backends ??= {};
   nextConfig.runtimes ??= {};
@@ -628,7 +638,7 @@ export function createModelImportPlan(
   nextConfig.backends[backendConfigId] = {
     type: 'openai',
     baseUrl: externalBaseUrl ?? urlWithPort(selectedPort, '/v1'),
-    apiKey: 'sk-local-llm',
+    ...(selectedApiKeyEnv ? { apiKeyEnv: selectedApiKeyEnv } : { apiKey: 'sk-local-llm' }),
     timeoutMs: 1800000
   };
   if (runtime) nextConfig.runtimes[runtimeId] = runtime;
@@ -683,7 +693,8 @@ export function createModelImportPlan(
       modelId: resolvedModelId,
       port: selectedPort,
       modelPath,
-      baseUrl: externalBaseUrl ?? urlWithPort(selectedPort, '/v1')
+      baseUrl: externalBaseUrl ?? urlWithPort(selectedPort, '/v1'),
+      apiKeyEnv: selectedApiKeyEnv
     },
     config: nextConfig,
     next: {
@@ -698,6 +709,7 @@ export function createModelImportPlan(
         port: selectedPort,
         contextWindow: selectedContextWindow,
         maxOutputTokens: selectedMaxOutputTokens,
+        apiKeyEnv: selectedApiKeyEnv,
         keepWarm,
         setDefault,
         apply: true

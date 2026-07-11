@@ -172,6 +172,13 @@ export async function loadConfig(
     }
   };
 
+  Object.defineProperty(config, 'sourceTemplate', {
+    value: parsed,
+    enumerable: false,
+    configurable: false,
+    writable: false
+  });
+
   validateConfig(config, resolvedPath);
   return config;
 }

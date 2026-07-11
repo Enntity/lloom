@@ -16,6 +16,16 @@
   },
   "recipes": [
     {
+      "id": "linux-nvidia-qwen3-embedding-4b-vllm",
+      "path": "linux-nvidia-qwen3-embedding-4b-vllm.json",
+      "name": "Linux NVIDIA Qwen3 Embedding 4B vLLM",
+      "summary": "Persistent local Qwen3-Embedding-4B pooling runtime for continuity and semantic retrieval.",
+      "tags": ["linux", "nvidia", "embedding", "qwen3", "vllm", "continuity"],
+      "recommendedFor": ["DGX Spark and CUDA hosts needing a local semantic-memory embedding service"],
+      "capabilities": ["embedding", "embeddings", "batching", "multilingual"],
+      "source": { "type": "local", "url": "recipes/linux-nvidia-qwen3-embedding-4b-vllm.json" }
+    },
+    {
       "id": "apple-silicon-qwen36-35b-a3b-optiq",
       "path": "apple-silicon-qwen36-35b-a3b-optiq.json",
       "name": "Apple Silicon Qwen3.6 35B-A3B OptiQ (official)",

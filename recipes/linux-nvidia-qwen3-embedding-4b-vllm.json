@@ -1,0 +1,118 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-qwen3-embedding-4b-vllm",
+  "name": "Linux NVIDIA Qwen3 Embedding 4B vLLM",
+  "version": 1,
+  "summary": "A persistent Qwen3-Embedding-4B pooling runtime for local semantic memory behind LLooM.",
+  "license": { "id": "Apache-2.0", "name": "Qwen3-Embedding-4B model license" },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "Qwen model card and vLLM pooling runtime documentation"
+  },
+  "links": [
+    {
+      "rel": "model",
+      "href": "https://huggingface.co/Qwen/Qwen3-Embedding-4B",
+      "mediaType": "text/html"
+    }
+  ],
+  "keywords": ["embedding", "continuity", "qwen3", "nvidia", "cuda", "vllm", "multilingual"],
+  "capabilities": ["embedding", "embeddings", "batching", "multilingual", "long-context"],
+  "hardware": {
+    "family": "Linux NVIDIA CUDA",
+    "testedMachine": "DGX Spark / GB10 class NVIDIA system",
+    "notes": [
+      "Runs as a small persistent pooling runtime alongside a larger evictable chat runtime.",
+      "Native output is 2560-dimensional and uses last-token pooling with normalized vectors."
+    ]
+  },
+  "requirements": {
+    "platforms": ["linux-x64", "linux-arm64"],
+    "memoryGb": 12,
+    "diskGb": 12,
+    "commands": ["docker"],
+    "accelerators": ["cuda", "nvidia-gpu"]
+  },
+  "backend": {
+    "id": "docker-vllm",
+    "name": "Docker vLLM pooling runtime",
+    "type": "openai-compatible-server",
+    "features": ["cuda", "openai-embeddings", "batching", "pooling"]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-docker",
+        "title": "Check Docker CLI",
+        "action": "check-command",
+        "command": "docker",
+        "args": ["--version"]
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "embedding",
+      "model": "Qwen/Qwen3-Embedding-4B",
+      "gatewayModel": "Qwen/Qwen3-Embedding-4B",
+      "runtime": "qwen3-embedding-4b",
+      "backendConfig": "qwen3-embedding-4b",
+      "backend": "vLLM CUDA pooling",
+      "input": ["text"],
+      "output": ["embedding"],
+      "capabilities": ["embedding", "embeddings", "batching", "multilingual", "long-context"],
+      "settings": {
+        "contextWindow": 8192,
+        "maxActiveRequests": 8,
+        "memoryGb": 12,
+        "priority": 200,
+        "evictable": false,
+        "keepWarm": true,
+        "startupTimeoutMs": 900000,
+        "runtime": {
+          "command": "docker",
+          "adapter": "docker",
+          "management": "managed",
+          "containerName": "qwen3-embedding-4b",
+          "healthUrl": "http://127.0.0.1:${port}/v1/models",
+          "warmup": {
+            "url": "http://127.0.0.1:${port}/v1/embeddings",
+            "method": "POST",
+            "body": {
+              "model": "${modelId}",
+              "input": ["Continuity is the persistence of meaningful identity through time."]
+            }
+          },
+          "bootstrap": {
+            "adapter": "docker",
+            "image": "vllm/vllm-openai:v0.24.0",
+            "createArgs": [
+              "--restart", "unless-stopped",
+              "--gpus", "all",
+              "--ipc", "host",
+              "-p", "127.0.0.1:${port}:8000",
+              "-e", "CUTE_DSL_ARCH=sm_121a",
+              "-v", "lloom-huggingface-cache:/root/.cache/huggingface"
+            ],
+            "command": [
+              "${modelId}",
+              "--host", "0.0.0.0",
+              "--port", "8000",
+              "--served-model-name", "${modelId}",
+              "--runner", "pooling",
+              "--dtype", "bfloat16",
+              "--trust-remote-code",
+              "--gpu-memory-utilization", "0.09",
+              "--max-model-len", "8192",
+              "--max-num-seqs", "16",
+              "--max-num-batched-tokens", "8192"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

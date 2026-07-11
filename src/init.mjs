@@ -23,6 +23,30 @@ function stripRuntimeFields(config) {
   return copy;
 }
 
+function containsEnvReference(value) {
+  if (typeof value === 'string') return /\$\{[A-Za-z_][A-Za-z0-9_]*\}/.test(value);
+  if (Array.isArray(value)) return value.some(containsEnvReference);
+  return false;
+}
+
+function preserveEnvBackedSecrets(derived, sourceTemplate) {
+  if (!sourceTemplate) return derived;
+  for (const key of ['apiKeys', 'adminApiKeys']) {
+    const template = sourceTemplate.security?.[key];
+    if (containsEnvReference(template)) {
+      derived.security ??= {};
+      derived.security[key] = clone(template);
+    }
+  }
+  for (const section of ['backends', 'providers']) {
+    for (const [id, templateEntry] of Object.entries(sourceTemplate[section] ?? {})) {
+      if (!containsEnvReference(templateEntry?.apiKey) || !derived[section]?.[id]) continue;
+      derived[section][id].apiKey = templateEntry.apiKey;
+    }
+  }
+  return derived;
+}
+
 function defaultHome(home = process.env.HOME) {
   return home ? path.join(home, '.lloom') : path.resolve('.lloom');
 }
@@ -510,7 +534,8 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
       };
     }
 
-    if (!config.runtimes[runtimeId]) {
+    const existingRuntime = config.runtimes[runtimeId];
+    if (!existingRuntime || existingRuntime.recipe?.id === recipe.id) {
       const runtime = buildRecipeRuntime({
         recipe,
         recipeModel,
@@ -748,23 +773,38 @@ export function deriveUserConfig(
     keepWarmRuntimeId,
     recipesRoot,
     benchmarksRoot,
-    backendCatalogPath
+    backendCatalogPath,
+    additive = false
   } = {}
 ) {
+  const sourceTemplate = config.sourceTemplate;
   const derived = stripRuntimeFields(config);
   const runtimeIds = recipeRuntimeIds(recipe);
+  if (additive) {
+    derived.clientCatalog ??= {};
+    derived.clientCatalog.modelOrder ??= [];
+    for (const model of derived.models ?? []) {
+      if (model?.id && model.advertise !== false && !derived.clientCatalog.modelOrder.includes(model.id)) {
+        derived.clientCatalog.modelOrder.push(model.id);
+      }
+    }
+  }
   ensureRecipeConfigEntries(derived, recipe, {
     modelRoot,
     sessionCacheRoot
   });
   const preferredModel = preferredRecipeModel(derived, recipe);
-  if (preferredModel?.gatewayModel) {
+  if (!additive && preferredModel?.gatewayModel) {
     derived.defaults = {
       ...(derived.defaults ?? {}),
       chatModel: preferredModel.gatewayModel
     };
   }
-  restrictAdvertisedModelsToRecipe(derived, recipe);
+  if (!additive) restrictAdvertisedModelsToRecipe(derived, recipe);
+  const existingKeepWarm = asArray(derived.keepWarm);
+  const requestedRecipeKeepWarm = (recipe.models ?? [])
+    .filter((model) => model.settings?.keepWarm === true && model.runtime)
+    .map((model) => model.runtime);
   const keepWarm = keepWarmRuntimeId ?? preferredModel?.runtime ?? defaultKeepWarmRuntime(derived, recipe);
 
   for (const recipeModel of recipe.models ?? []) {
@@ -787,17 +827,23 @@ export function deriveUserConfig(
   const backendPorts = retargetBackendPorts(derived, runtimeIds, backendPortRange);
   if (backendPorts) ports.backends = backendPorts;
   if (Object.keys(ports).length) derived.ports = ports;
-  derived.keepWarm = keepWarm ? [keepWarm] : [];
+  derived.keepWarm = additive
+    ? [...new Set([...existingKeepWarm, ...requestedRecipeKeepWarm])]
+    : (keepWarm ? [keepWarm] : []);
   derived.init = {
+    ...(derived.init ?? {}),
     recipeId: recipe.id,
     generatedAt: new Date().toISOString(),
-    enabledRuntimes: runtimeIds,
-    keepWarmRuntime: keepWarm,
+    enabledRuntimes: additive
+      ? [...new Set([...(derived.init?.enabledRuntimes ?? []), ...runtimeIds])]
+      : runtimeIds,
+    keepWarmRuntime: additive ? null : keepWarm,
+    additive,
     ...(recipesRoot ? { recipesRoot } : {}),
     ...(benchmarksRoot ? { benchmarksRoot } : {}),
     ...(backendCatalogPath ? { backendCatalogPath } : {})
   };
-  return derived;
+  return preserveEnvBackedSecrets(derived, sourceTemplate);
 }
 
 async function selectRecipe({ recipeId, recipes, profile, recipesRoot }) {
@@ -843,7 +889,8 @@ export async function createInitPlan(
     recipesRoot,
     recipeDocuments = [],
     backendCatalogPath,
-    autoDetectModelRoot = false
+    autoDetectModelRoot = false,
+    additive = false
   } = {}
 ) {
   const effectiveConfigPath = configPath ?? defaultUserConfigPath(home);
@@ -874,7 +921,8 @@ export async function createInitPlan(
     enableRecipeRuntimes,
     recipesRoot,
     benchmarksRoot,
-    backendCatalogPath
+    backendCatalogPath,
+    additive
   });
 
   return {

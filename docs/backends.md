@@ -94,4 +94,6 @@ Completed backend steps are recorded in `~/.lloom/install-state.json` unless `--
 
 Recipe install plans remain responsible for model-specific downloads and tuning. Backend plans are the shared substrate that lets community recipes target common runtime families consistently.
 
+Authenticated hosted OpenAI-compatible providers use the same config-only unmanaged path: `lloom add-model 'openai:https://provider.example/v1#model-id' --api-key-env PROVIDER_API_KEY`. The generated backend stores only `apiKeyEnv`, never the credential value. Unmanaged models remain visible through `/v1/models`, client integrations, metrics, and the live topology while staying outside runtime warmup, admission, eviction, and local memory planning.
+
 `lloom-host` publishes a lightweight backend index at `GET /v1/backends` and the full portable backend setup document at `GET /v1/backends/catalog`. Recipe authors and independent installers should use the catalog endpoint when they need setup actions, platform filters, server contracts, and idempotency guards rather than just the stable backend IDs.
