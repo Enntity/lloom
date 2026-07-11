@@ -86,7 +86,7 @@ import { defaultUserModelRoot, defaultUserSessionCacheRoot, loadConfig } from '.
 import { runCommand } from '../src/process-control.mjs';
 import { createRegistry } from '../src/registry.mjs';
 import { loadRecipeById, loadRecipes, planRecipe } from '../src/recipes.mjs';
-import { RuntimeManager, effectiveRuntimeArgs } from '../src/runtime-manager.mjs';
+import { RuntimeManager, dockerCreateArgs, effectiveRuntimeArgs } from '../src/runtime-manager.mjs';
 import { applyRuntimePolicyPlan } from '../src/runtime-policy.mjs';
 import { createLloomServer } from '../src/server.mjs';
 import { applySetup, createSetupPlan } from '../src/setup.mjs';
@@ -2087,6 +2087,31 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
     stopped: false,
     reason: 'externally-managed'
   });
+
+  assert.deepEqual(
+    dockerCreateArgs({
+      containerName: 'qwen-fast',
+      bootstrap: {
+        adapter: 'docker',
+        image: 'vllm/vllm-openai:v0.24.0',
+        createArgs: ['--restart', 'unless-stopped', '-p', '8001:8000'],
+        command: ['unsloth/Qwen3.6-35B-A3B-NVFP4-Fast', '--port', '8000']
+      }
+    }),
+    [
+      'create',
+      '--name',
+      'qwen-fast',
+      '--restart',
+      'unless-stopped',
+      '-p',
+      '8001:8000',
+      'vllm/vllm-openai:v0.24.0',
+      'unsloth/Qwen3.6-35B-A3B-NVFP4-Fast',
+      '--port',
+      '8000'
+    ]
+  );
 
   const limiterManager = new RuntimeManager(
     {

@@ -14,6 +14,23 @@ providers:
       toolStrictMode: none
       thinkingFormat: qwen-chat-template
     models:
+      - id: unsloth/Qwen3.6-35B-A3B-NVFP4-Fast
+        name: Qwen3.6-35B-A3B-NVFP4-Fast MTP on ennspark01
+        reasoning: true
+        thinking:
+          mode: effort
+          efforts: [minimal, low]
+          defaultLevel: low
+          supportsDisplay: true
+        input: [text]
+        supportsTools: true
+        contextWindow: 262144
+        maxTokens: 8192
+        cost:
+          input: 0
+          output: 0
+          cacheRead: 0
+          cacheWrite: 0
       - id: unsloth/Qwen3.6-35B-A3B-NVFP4
         name: Qwen3.6-35B-A3B-NVFP4 on ennspark01
         reasoning: true

@@ -44,6 +44,15 @@ function compactRuntime(runtimeId, runtime) {
     ,adapter: runtimeAdapter(runtime)
     ,management: runtime.management ?? (runtime.managed === false ? 'external' : 'managed')
     ,containerName: runtime.containerName ?? runtime.container?.name ?? null
+    ,recipe: runtime.recipe ?? null
+    ,bootstrap: runtime.bootstrap
+      ? {
+          configured: true,
+          adapter: runtime.bootstrap.adapter ?? runtime.bootstrap.type ?? 'docker',
+          image: runtime.bootstrap.image ?? null
+        }
+      : null
+    ,cachePersistence: runtimeCacheCapability(runtime)
   };
 }
 
@@ -53,6 +62,48 @@ function runtimeManagement(runtime) {
 
 function dockerContainerName(runtime) {
   return runtime?.containerName ?? runtime?.container?.name ?? null;
+}
+
+function dockerBootstrap(runtime) {
+  const bootstrap = runtime?.bootstrap;
+  if (!bootstrap || bootstrap.enabled === false) return null;
+  const adapter = String(bootstrap.adapter ?? bootstrap.type ?? 'docker').toLowerCase();
+  return adapter === 'docker' ? bootstrap : null;
+}
+
+export function dockerCreateArgs(runtime) {
+  const bootstrap = dockerBootstrap(runtime);
+  if (!bootstrap) return null;
+  const name = dockerContainerName(runtime);
+  if (!name) throw new Error('docker runtime bootstrap requires containerName or container.name');
+  if (!bootstrap.image) throw new Error(`docker runtime ${name} bootstrap requires image`);
+  return [
+    'create',
+    '--name',
+    name,
+    ...((Array.isArray(bootstrap.createArgs) ? bootstrap.createArgs : []).map(String)),
+    String(bootstrap.image),
+    ...((Array.isArray(bootstrap.command) ? bootstrap.command : []).map(String))
+  ];
+}
+
+function runtimeCacheCapability(runtime) {
+  const kind = sessionCacheKind(runtime?.sessionCache, runtime);
+  if (kind === 'mtplx-ssd-session' || kind === 'mtplx') {
+    return { supported: true, persistence: 'continuous', kind: 'mtplx-ssd-session' };
+  }
+  if (kind === 'llama-cpp-kv-cache' || kind === 'llama-cpp') {
+    return { supported: true, persistence: 'continuous', kind: 'llama-cpp-kv-cache' };
+  }
+  return {
+    supported: false,
+    persistence: 'none',
+    kind: null,
+    reason:
+      runtimeAdapter(runtime) === 'docker'
+        ? 'docker runtime does not declare a supported session-cache adapter'
+        : 'runtime does not declare a supported session-cache adapter'
+  };
 }
 
 async function dockerContainerState(runtime) {
@@ -81,6 +132,27 @@ async function dockerLifecycle(action, runtime) {
   if (!name) throw new Error('docker runtime requires containerName or container.name');
   const { stdout, stderr } = await execFileAsync('docker', [action, name], { timeout: 120000 });
   return { action, containerName: name, stdout: stdout.trim(), stderr: stderr.trim() };
+}
+
+async function bootstrapDockerContainer(runtime) {
+  const bootstrap = dockerBootstrap(runtime);
+  const args = dockerCreateArgs(runtime);
+  if (!bootstrap || !args) return { created: false, reason: 'bootstrap-not-configured' };
+  if (bootstrap.pull !== false) {
+    await execFileAsync('docker', ['pull', String(bootstrap.image)], {
+      timeout: bootstrap.pullTimeoutMs ?? 1800000
+    });
+  }
+  const { stdout, stderr } = await execFileAsync('docker', args, {
+    timeout: bootstrap.createTimeoutMs ?? 120000
+  });
+  return {
+    created: true,
+    containerName: dockerContainerName(runtime),
+    image: bootstrap.image,
+    stdout: stdout.trim(),
+    stderr: stderr.trim()
+  };
 }
 
 async function healthOk(url, timeoutMs = 1500) {
@@ -450,7 +522,13 @@ export class RuntimeManager {
       }
       const container = await dockerContainerState(runtime);
       if (!container.exists) {
-        throw new Error(`docker runtime ${runtimeId} container ${dockerContainerName(runtime)} does not exist`);
+        const bootstrapResult = await bootstrapDockerContainer(runtime);
+        if (!bootstrapResult.created) {
+          throw new Error(
+            `docker runtime ${runtimeId} container ${dockerContainerName(runtime)} does not exist and bootstrap is not configured`
+          );
+        }
+        this.record({ runtimeId, event: 'docker-create', bootstrapResult, reason });
       }
       const processResult = await dockerLifecycle('start', runtime);
       state.status = 'starting';

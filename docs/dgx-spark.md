@@ -66,6 +66,18 @@ lloom add-model 'openai:http://127.0.0.1:8000/v1#Qwen/Qwen3.6-35B-A3B'
 LLooM still provides the single client URL, auth, multi-model catalog, container
 state, and—when management is `managed`—native Docker process lifecycle.
 
+Managed Docker runtimes may also carry a materialized `bootstrap` block from a
+recipe. If the named container is missing during request-time admission, LLooM
+pulls the declared image, creates the container from `createArgs` and `command`,
+then starts it and waits for the configured health check. Runtime status exposes
+the originating recipe and whether cache persistence is supported.
+
+vLLM model weights and compiled kernels persist through host cache mounts, but
+vLLM does not currently expose a supported portable KV/session checkpoint hook.
+LLooM therefore reports `cachePersistence.supported: false` for these Docker
+runtimes. MTPLX SSD sessions and llama.cpp slot caches continue to report
+continuous persistence and survive runtime eviction.
+
 ## Multi-backend management pattern
 
 Typical Spark layout:

@@ -303,6 +303,18 @@ function buildExplicitRecipeRuntime({
     ...(runtimeSettings.cwd ? { cwd: templateString(runtimeSettings.cwd, variables) } : {}),
     ...(runtimeSettings.env ? { env: templateValue(asObject(runtimeSettings.env), variables) } : {}),
     ...(runtimeSettings.adapter ? { adapter: templateString(runtimeSettings.adapter, variables) } : {}),
+    ...(runtimeSettings.management ? { management: templateString(runtimeSettings.management, variables) } : {}),
+    ...(runtimeSettings.containerName
+      ? { containerName: templateString(runtimeSettings.containerName, variables) }
+      : {}),
+    ...(runtimeSettings.bootstrap
+      ? { bootstrap: templateValue(asObject(runtimeSettings.bootstrap), variables) }
+      : {}),
+    recipe: {
+      id: recipe.id,
+      version: recipe.version ?? 1,
+      source: recipe.filePath ?? null
+    },
     ...(sessionCache ? { sessionCache } : {}),
     healthUrl: runtimeSettings.healthUrl
       ? templateString(runtimeSettings.healthUrl, variables)

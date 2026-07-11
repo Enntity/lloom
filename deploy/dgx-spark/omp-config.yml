@@ -1,0 +1,21 @@
+modelRoles:
+  default: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4-Fast:low
+  smol: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4-Fast
+  slow: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4-Fast
+  plan: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4-Fast
+  commit: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4-Fast
+  designer: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4-Fast
+  advisor: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4-Fast
+  tiny: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4-Fast
+  vision: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4-Fast
+  task: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4-Fast
+defaultThinkingLevel: auto
+hideThinkingBlock: true
+startup:
+  setupWizard: false
+setupVersion: 1
+compaction:
+  strategy: context-full
+providers:
+  streamFirstEventTimeoutSeconds: 1800
+  streamIdleTimeoutSeconds: 1800
