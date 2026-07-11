@@ -606,6 +606,12 @@ function markFirstContent(timing) {
   return timing?.markFirstContent?.();
 }
 
+function metricOutputTokens(entry) {
+  const reported = Number(entry.usage?.output_tokens);
+  if (Number.isFinite(reported) && reported > 0) return reported;
+  return Math.max(0, Math.round(Number(entry.outputChars ?? 0) / 4));
+}
+
 function createMetricsStore({ maxRecent = 200 } = {}) {
   const recent = [];
   const active = new Map();
@@ -636,16 +642,18 @@ function createMetricsStore({ maxRecent = 200 } = {}) {
         bucket.maxFirstContentMs == null
           ? entry.firstContentMs
           : Math.max(bucket.maxFirstContentMs, entry.firstContentMs);
-      const outputTokens = entry.usage?.output_tokens ?? 0;
+      const outputTokens = metricOutputTokens(entry);
       if (entry.stream && outputTokens > 1 && entry.lastContentMs != null) {
         bucket.decodeTokens += outputTokens - 1;
         bucket.generationDurationMs += Math.max(1, entry.lastContentMs - entry.firstContentMs);
         bucket.decodeSamples += 1;
+        if (entry.usage?.output_tokens == null) bucket.estimatedDecodeSamples += 1;
       }
     }
     bucket.inputTokens += entry.usage?.input_tokens ?? 0;
-    bucket.outputTokens += entry.usage?.output_tokens ?? 0;
-    bucket.totalTokens += entry.usage?.total_tokens ?? 0;
+    const outputTokens = metricOutputTokens(entry);
+    bucket.outputTokens += outputTokens;
+    bucket.totalTokens += entry.usage?.total_tokens ?? (entry.usage?.input_tokens ?? 0) + outputTokens;
     bucket.last = {
       at: entry.at,
       status: entry.status,
@@ -742,13 +750,13 @@ function createMetricsStore({ maxRecent = 200 } = {}) {
 function rollingMetricWindow(entries, now, windowMs, model) {
   const cutoff = now - windowMs;
   const selected = entries.filter((entry) => (!model || entry.model === model) && Date.parse(entry.at) >= cutoff);
-  const outputTokens = selected.reduce((sum, entry) => sum + (entry.usage?.output_tokens ?? 0), 0);
+  const outputTokens = selected.reduce((sum, entry) => sum + metricOutputTokens(entry), 0);
   const decodeTokens = selected.reduce((sum, entry) => {
-    const tokens = entry.usage?.output_tokens ?? 0;
+    const tokens = metricOutputTokens(entry);
     return sum + (entry.stream && entry.lastContentMs != null && tokens > 1 ? tokens - 1 : 0);
   }, 0);
   const generationDurationMs = selected.reduce((sum, entry) => {
-    const tokens = entry.usage?.output_tokens ?? 0;
+    const tokens = metricOutputTokens(entry);
     if (!entry.stream || tokens <= 1 || entry.firstContentMs == null || entry.lastContentMs == null) return sum;
     return sum + Math.max(1, entry.lastContentMs - entry.firstContentMs);
   }, 0);
@@ -784,6 +792,7 @@ function emptyMetricBucket(id) {
     generationDurationMs: 0,
     decodeTokens: 0,
     decodeSamples: 0,
+    estimatedDecodeSamples: 0,
     inputTokens: 0,
     outputTokens: 0,
     totalTokens: 0,

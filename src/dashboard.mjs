@@ -886,8 +886,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         ctx.fillStyle = "rgba(153,163,176,.9)";
         ctx.fillText(formatCompact(point.model.inputTokens) + " in · " + formatCompact(point.model.outputTokens) + " out", point.x - 27, point.y + 4);
         ctx.fillStyle = serving ? "#42d77d" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : "rgba(143,180,255,.7)";
-        const modelRateText = live ? formatRate(point.model.liveRate) + " ~tok/s" : point.model.averageRate == null ? "NO DECODE SAMPLE" : formatRate(point.model.averageRate) + " decode tok/s";
-        ctx.fillText(fitCanvasText(ctx, (serving ? "SERVING" : point.model.state.toUpperCase()) + " · " + modelRateText, cardWidth - 22), point.x - 27, point.y + 23);
+        const modelRateText = live ? formatRate(point.model.liveRate) + " ~tok/s" : point.model.averageRate == null ? "" : formatRate(point.model.averageRate) + " decode ~tok/s";
+        const modelStateText = serving ? "SERVING" : point.model.state.toUpperCase();
+        ctx.fillText(fitCanvasText(ctx, modelStateText + (modelRateText ? " · " + modelRateText : ""), cardWidth - 22), point.x - 27, point.y + 23);
       }
       const connections = state.topologyConnections || [];
       const orderedConnections = connections.slice().sort((a, b) => {
@@ -1001,7 +1002,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const averageInputRate = Number(totals.inputTokens || 0) / totalDurationSeconds;
       const decodeOutputRate = totals.decodeTokensPerSecond == null ? null : Number(totals.decodeTokensPerSecond);
       $("#fabric-rate").textContent = liveOutputRate > 0 ? formatRate(liveOutputRate) : decodeOutputRate == null ? "—" : formatRate(decodeOutputRate);
-      $("#fabric-rate-label").textContent = liveOutputRate > 0 ? "live ~tok/s" : "decode tok/s";
+      $("#fabric-rate-label").textContent = liveOutputRate > 0 ? "live ~tok/s" : "decode ~tok/s";
       $("#fabric-active").textContent = formatNumber(active.length);
       state.topologySummary = {
         active: active.length,
