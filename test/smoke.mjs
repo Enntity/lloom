@@ -2026,9 +2026,11 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
   );
   const lifecycleConfig = {
     keepWarm: ['synthetic-runtime'],
+    runtimePolicy: { enabled: true, autoEvict: true, memoryBudgetGb: 10 },
     runtimes: {
       'synthetic-runtime': {
         enabled: true,
+        memoryGb: 1,
         command: process.execPath,
         args: [runtimeScript, String(runtimePort)],
         port: runtimePort,
@@ -2060,7 +2062,9 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
   const warmupAgain = await lifecycleManager.warmupById('synthetic-runtime');
   assert.equal(warmupAgain.warmed, true);
   const keepWarmResult = await lifecycleManager.startKeepWarm();
-  assert.equal(keepWarmResult[0].reason, 'already-healthy');
+  assert.equal(keepWarmResult[0].dryRun, false);
+  assert.equal(keepWarmResult[0].plan.requestedRuntimeId, 'synthetic-runtime');
+  assert.equal(keepWarmResult[0].results[0].result.reason, 'already-healthy');
   const stopResult = await lifecycleManager.stop('synthetic-runtime');
   assert.equal(stopResult.stopped, true);
 
@@ -2212,8 +2216,8 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
   assert.equal(cliWarmup.warmed, true);
 
   const cliKeepWarm = JSON.parse((await runLLooM(['keep-warm'])).stdout);
-  assert.equal(cliKeepWarm.results[0].runtimeId, 'synthetic-runtime');
-  assert.equal(cliKeepWarm.results[0].healthy, true);
+  assert.equal(cliKeepWarm.results[0].plan.requestedRuntimeId, 'synthetic-runtime');
+  assert.equal(cliKeepWarm.results[0].results[0].result.healthy, true);
 
   const cliRunningStatus = JSON.parse((await runLLooM(['runtimes', 'synthetic-runtime'])).stdout);
   assert.equal(cliRunningStatus.runtimes['synthetic-runtime'].healthy, true);

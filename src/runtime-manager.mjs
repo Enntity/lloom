@@ -702,13 +702,27 @@ export class RuntimeManager {
         results.push({ runtimeId, started: false, reason: 'runtime-disabled' });
         continue;
       }
-      results.push(
-        await this.start(runtimeId, {
-          force: false,
-          warmup: true,
-          reason: 'keep-warm'
-        })
-      );
+      if (this.config.runtimePolicy?.autoEvict === true) {
+        const { applyRuntimePolicyPlan } = await import('./runtime-policy.mjs');
+        results.push(
+          await applyRuntimePolicyPlan(this.config, this, {
+            requestedRuntimeId: runtimeId,
+            dryRun: false,
+            yes: true,
+            warmup: true,
+            force: false,
+            reason: 'keep-warm'
+          })
+        );
+      } else {
+        results.push(
+          await this.start(runtimeId, {
+            force: false,
+            warmup: true,
+            reason: 'keep-warm'
+          })
+        );
+      }
     }
     return results;
   }
