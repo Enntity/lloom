@@ -539,6 +539,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       throughput: [],
       flows: new Map(),
       trafficSample: null,
+      aggregateRateSamples: [],
       connectionKey: "",
       threadNodes: new Map(),
       output: null,
@@ -1002,15 +1003,21 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const liveOutputRate = outputRate + [...activeRates.values()].reduce((sum, item) => sum + item.output, 0);
       const totalDurationSeconds = Math.max(.001, Number(totals.durationMs || 0) / 1000);
       const averageInputRate = Number(totals.inputTokens || 0) / totalDurationSeconds;
-      const decodeOutputRate = totals.decodeTokensPerSecond == null ? null : Number(totals.decodeTokensPerSecond);
-      $("#fabric-rate").textContent = decodeOutputRate == null ? "—" : formatRate(decodeOutputRate);
+      if (liveOutputRate > 0) {
+        state.aggregateRateSamples.push(liveOutputRate);
+        if (state.aggregateRateSamples.length > 10) state.aggregateRateSamples.shift();
+      }
+      const aggregateOutputRate = state.aggregateRateSamples.length
+        ? state.aggregateRateSamples.reduce((sum, rate) => sum + rate, 0) / state.aggregateRateSamples.length
+        : null;
+      $("#fabric-rate").textContent = aggregateOutputRate == null ? "—" : formatRate(aggregateOutputRate);
       $("#fabric-active").textContent = formatNumber(active.length);
       state.topologySummary = {
         active: active.length,
         inputRate: liveInputRate,
         outputRate: liveOutputRate,
         averageInputRate,
-        averageOutputRate: decodeOutputRate || 0,
+        averageOutputRate: aggregateOutputRate || 0,
         errors: totals.errors || 0,
         host: metrics.host || null
       };
