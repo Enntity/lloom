@@ -925,7 +925,8 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         ctx.fillStyle = connection.live ? "#42d77d" : "rgba(153,163,176," + alpha * .7 + ")";
         ctx.beginPath(); ctx.arc(from.x, from.y, connection.live ? 6 : 4, 0, Math.PI * 2); ctx.fill();
         ctx.textAlign = "left"; ctx.fillStyle = "rgba(242,245,247," + alpha * .88 + ")";
-        ctx.fillText(connection.id, from.x + 10, from.y - 8);
+        const connectionLabel = connection.caller ? connection.caller + " · " + connection.id : connection.id;
+        ctx.fillText(connectionLabel, from.x + 10, from.y - 8);
         ctx.fillStyle = "rgba(153,163,176," + alpha * .9 + ")";
         const connectionRate = connection.outputRate > 0 ? formatRate(connection.outputRate) + " ~tok/s" : formatRate(connection.averageRate) + " avg tok/s";
         const liveStats = connection.outputPending ? " · awaiting JSON" : " · " + connectionRate;
@@ -995,16 +996,14 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         outputTokens: Number(totals.outputTokens || 0),
         active: new Map(active.map(item => [item.id, { outputChars: item.outputChars || 0, requestBytes: item.requestBytes || 0 }]))
       };
-      const activeInputTokens = active.reduce((sum, item) => sum + Number(item.requestBytes || 0) / 4, 0);
-      const activeOutputTokens = active.reduce((sum, item) => sum + Number(item.outputChars || 0) / 4, 0);
-      $("#fabric-in").textContent = formatNumber(Number(totals.inputTokens || 0) + activeInputTokens);
-      $("#fabric-out").textContent = formatNumber(Number(totals.outputTokens || 0) + activeOutputTokens);
+      $("#fabric-in").textContent = formatCompact(Math.round(Number(totals.inputTokens || 0)));
+      $("#fabric-out").textContent = formatCompact(Math.round(Number(totals.outputTokens || 0)));
       const liveInputRate = inputRate + [...activeRates.values()].reduce((sum, item) => sum + item.input, 0);
       const liveOutputRate = outputRate + [...activeRates.values()].reduce((sum, item) => sum + item.output, 0);
       const totalDurationSeconds = Math.max(.001, Number(totals.durationMs || 0) / 1000);
       const averageInputRate = Number(totals.inputTokens || 0) / totalDurationSeconds;
       const decodeOutputRate = totals.decodeTokensPerSecond == null ? null : Number(totals.decodeTokensPerSecond);
-      $("#fabric-rate").textContent = liveOutputRate > 0 ? formatRate(liveOutputRate) : decodeOutputRate == null ? "—" : formatRate(decodeOutputRate);
+      $("#fabric-rate").textContent = decodeOutputRate == null ? "—" : formatRate(decodeOutputRate);
       $("#fabric-active").textContent = formatNumber(active.length);
       state.topologySummary = {
         active: active.length,

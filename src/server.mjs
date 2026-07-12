@@ -609,7 +609,39 @@ function markFirstContent(timing) {
 function metricOutputTokens(entry) {
   const reported = Number(entry.usage?.output_tokens);
   if (Number.isFinite(reported) && reported > 0) return reported;
-  return Math.max(0, Math.round(Number(entry.outputChars ?? 0) / 4));
+  const observedChars = Number(entry.outputChars ?? 0);
+  if (observedChars > 0) return Math.max(0, Math.round(observedChars / 4));
+  if (entry.kind === 'embedding') return Math.max(0, Math.round(Number(entry.responseBytes ?? 0) / 4));
+  return 0;
+}
+
+function safeCallerPart(value) {
+  const text = String(value ?? '')
+    .trim()
+    .replace(/[^a-z0-9._+-]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32);
+  return text || null;
+}
+
+function requestCallerLabel(req) {
+  const explicit = safeCallerPart(req.headers['x-lloom-client'] ?? req.headers['x-client-name']);
+  if (explicit) return explicit;
+  const userAgent = String(req.headers['user-agent'] ?? '').toLowerCase();
+  const families = [
+    ['codex', 'codex'],
+    ['oh-my-pi', 'omp'],
+    ['open-code', 'opencode'],
+    ['opencode', 'opencode'],
+    ['claude', 'claude'],
+    ['curl/', 'curl'],
+    ['undici', 'node'],
+    ['python', 'python'],
+    ['node', 'node'],
+    ['go-http-client', 'go']
+  ];
+  const family = families.find(([needle]) => userAgent.includes(needle))?.[1];
+  return family ?? safeCallerPart(req.headers['x-stainless-lang']);
 }
 
 function createMetricsStore({ maxRecent = 200 } = {}) {
@@ -681,6 +713,7 @@ function createMetricsStore({ maxRecent = 200 } = {}) {
         kind: raw.kind,
         backend: raw.backend,
         runtime: raw.runtime,
+        caller: raw.caller ?? null,
         requestBytes: raw.requestBytes ?? 0,
         stream: raw.stream === true
       });
@@ -708,6 +741,7 @@ function createMetricsStore({ maxRecent = 200 } = {}) {
         kind: raw.kind,
         backend: raw.backend,
         runtime: raw.runtime,
+        caller: raw.caller ?? live?.caller ?? null,
         status: raw.status ?? 0,
         ok: raw.ok === true,
         stream: raw.stream === true,
@@ -1372,6 +1406,7 @@ export function createLloomServer(
       kind: resolved.model.kind ?? 'chat',
       backend: resolved.model.backend,
       runtime: resolved.model.runtime,
+      caller: requestCallerLabel(req),
       requestBytes,
       stream
     });
@@ -1396,6 +1431,7 @@ export function createLloomServer(
         kind: resolved.model.kind ?? 'chat',
         backend: resolved.model.backend,
         runtime: resolved.model.runtime,
+        caller: requestCallerLabel(req),
         status,
         ok: status >= 200 && status < 400,
         stream: result?.stream ?? stream,
@@ -1420,6 +1456,7 @@ export function createLloomServer(
         kind: resolved.model.kind ?? 'chat',
         backend: resolved.model.backend,
         runtime: resolved.model.runtime,
+        caller: requestCallerLabel(req),
         status,
         ok: false,
         stream,

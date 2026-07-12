@@ -7377,6 +7377,7 @@ if (mockListened) {
       assert(metricsJson.routes.some((route) => route.id === '/v1/responses' && route.requests >= 5));
       assert(metricsJson.routes.some((route) => route.id === '/v1/messages' && route.requests >= 4));
       assert(metricsJson.recent.some((entry) => entry.stream === true && entry.usage?.input_tokens === 17));
+      assert(metricsJson.recent.some((entry) => entry.caller === 'node'));
       const delayedMetric = metricsJson.recent.find(
         (entry) =>
           entry.route === '/v1/chat/completions' &&
