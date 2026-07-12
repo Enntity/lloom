@@ -540,6 +540,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       flows: new Map(),
       trafficSample: null,
       aggregateRateSamples: [],
+      smoothedRates: new Map(),
       connectionKey: "",
       threadNodes: new Map(),
       output: null,
@@ -756,6 +757,22 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     }
     function shortModel(value) { const parts = String(value || "unknown").split("/"); return parts[parts.length - 1]; }
 
+    function smoothRate(key, target, now) {
+      const desired = Math.max(0, Number(target || 0));
+      let sample = state.smoothedRates.get(key);
+      if (!sample) {
+        sample = { value: desired, at: now };
+        state.smoothedRates.set(key, sample);
+        return sample.value;
+      }
+      const elapsed = Math.max(0, Math.min(500, now - sample.at));
+      const timeConstant = desired > sample.value ? 550 : 1100;
+      sample.value += (desired - sample.value) * (1 - Math.exp(-elapsed / timeConstant));
+      if (Math.abs(desired - sample.value) < .05) sample.value = desired;
+      sample.at = now;
+      return sample.value;
+    }
+
     function hashUnit(seed) {
       const value = Math.sin(seed * 91.733) * 43758.5453;
       return value - Math.floor(value);
@@ -855,7 +872,8 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       modelList.forEach((point, index) => {
         const portY = center.y - Math.min(94, (modelList.length - 1) * 32) / 2 + index * Math.min(47, 94 / Math.max(1, modelList.length - 1));
         const from = { x: gate.right, y: portY }, to = { x: point.x - 38, y: point.y };
-        const inputRate = point.model.liveInputRate || 0, outputRate = point.model.liveOutputRate || 0;
+        const inputRate = smoothRate("model:" + point.model.id + ":in", point.model.liveInputRate, now);
+        const outputRate = smoothRate("model:" + point.model.id + ":out", point.model.liveOutputRate, now);
         const rate = Math.max(inputRate, outputRate);
         const cumulative = Number(point.model.inputTokens || 0) + Number(point.model.outputTokens || 0);
         ctx.strokeStyle = rate > 0 ? "rgba(47,230,200,.82)" : cumulative > 0 ? "rgba(47,230,200,.32)" : "rgba(153,163,176,.15)";
@@ -872,7 +890,8 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         });
       });
       for (const point of modelPoints.values()) {
-        const live = point.model.liveRate > 0;
+        const displayedLiveRate = smoothRate("model:" + point.model.id + ":display", point.model.liveRate, now);
+        const live = displayedLiveRate > .05;
         const serving = point.model.state === "serving";
         const external = point.model.state === "external";
         const warming = point.model.state === "warming";
@@ -887,7 +906,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         ctx.fillStyle = "rgba(153,163,176,.9)";
         ctx.fillText(formatCompact(point.model.inputTokens) + " in · " + formatCompact(point.model.outputTokens) + " out", point.x - 27, point.y + 4);
         ctx.fillStyle = serving ? "#42d77d" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : "rgba(143,180,255,.7)";
-        const displayedModelRate = live ? point.model.liveRate : point.model.averageRate;
+        const displayedModelRate = live ? displayedLiveRate : point.model.averageRate;
         const modelRateText = displayedModelRate == null ? "" : formatRate(displayedModelRate) + " tok/s";
         const modelStateText = serving ? "SERVING" : point.model.state.toUpperCase();
         ctx.fillText(fitCanvasText(ctx, modelStateText + (modelRateText ? " · " + modelRateText : ""), cardWidth - 22), point.x - 27, point.y + 23);
@@ -908,12 +927,14 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const ingress = { x: gate.left, y: slotY };
         const controlOne = { x: from.x + (ingress.x - from.x) * .38, y: from.y };
         const controlTwo = { x: from.x + (ingress.x - from.x) * .72, y: ingress.y };
-        const rate = Math.max(connection.inputRate, connection.outputRate);
+        const inputRate = smoothRate("connection:" + connection.id + ":in", connection.inputRate, now);
+        const outputRate = smoothRate("connection:" + connection.id + ":out", connection.outputRate, now);
+        const rate = Math.max(inputRate, outputRate);
         const alpha = connection.live ? 1 : Math.max(0, 1 - (now - connection.fadeStartedAt) / 22500);
         ctx.strokeStyle = rate > 0 ? "rgba(47,230,200," + (.2 + alpha * .55) + ")" : "rgba(153,163,176," + alpha * .22 + ")";
         ctx.lineWidth = 1 + Math.min(2.5, Math.sqrt(rate) / 8);
         ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.bezierCurveTo(controlOne.x, controlOne.y, controlTwo.x, controlTwo.y, ingress.x, ingress.y); ctx.stroke();
-        [[connection.inputRate, false, "rgba(143,180,255," + alpha * .94 + ")"], [connection.outputRate, true, "rgba(47,230,200," + alpha * .94 + ")"]].forEach(([directionRate, reverse, color], direction) => {
+        [[inputRate, false, "rgba(143,180,255," + alpha * .94 + ")"], [outputRate, true, "rgba(47,230,200," + alpha * .94 + ")"]].forEach(([directionRate, reverse, color], direction) => {
           const particles = directionRate > 0 ? Math.min(10, Math.max(2, Math.ceil(Math.sqrt(directionRate)))) : 0;
           for (let particle = 0; particle < particles; particle++) {
             let progress = (now * (.00009 + Math.min(directionRate, 150) * .0000014) + hashUnit(particle + index * 17 + direction * 59)) % 1;
@@ -929,7 +950,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const connectionLabel = connection.caller ? connection.caller + " · " + connection.id : connection.id;
         ctx.fillText(connectionLabel, from.x + 10, from.y - 8);
         ctx.fillStyle = "rgba(153,163,176," + alpha * .9 + ")";
-        const connectionRate = connection.outputRate > 0 ? formatRate(connection.outputRate) + " ~tok/s" : formatRate(connection.averageRate) + " avg tok/s";
+        const connectionRate = outputRate > .05 ? formatRate(outputRate) + " ~tok/s" : formatRate(connection.averageRate) + " avg tok/s";
         const liveStats = connection.outputPending ? " · awaiting JSON" : " · " + connectionRate;
         ctx.fillText(formatNumber(connection.inputTokens) + " in · " + formatNumber(connection.outputTokens) + " out" + liveStats, from.x + 10, from.y + 13);
       });
@@ -943,7 +964,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       ctx.fillStyle = "#e9fffb"; ctx.font = '700 18px "SFMono-Regular",monospace'; ctx.fillText("LLooM", center.x, gate.top + 39);
       ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.font = '10px "SFMono-Regular",monospace'; ctx.fillText("ROUTING LOOM", center.x, gate.top + 57);
       const summary = state.topologySummary || {};
-      const statRows = [["ACTIVE", summary.active || 0], ["INPUT", formatRate(summary.inputRate) + " ~t/s"], ["OUTPUT", formatRate(summary.outputRate) + " ~t/s"], ["ERRORS", summary.errors || 0]];
+      const smoothedInputRate = smoothRate("summary:input", summary.inputRate, now);
+      const smoothedOutputRate = smoothRate("summary:output", summary.outputRate, now);
+      const statRows = [["ACTIVE", summary.active || 0], ["INPUT", formatRate(smoothedInputRate) + " ~t/s"], ["OUTPUT", formatRate(smoothedOutputRate) + " ~t/s"], ["ERRORS", summary.errors || 0]];
       ctx.font = '11px "SFMono-Regular",monospace';
       statRows.forEach((row, index) => { const y = gate.top + 94 + index * 27; ctx.textAlign = "left"; ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.fillText(row[0], gate.left + 18, y); ctx.textAlign = "right"; ctx.fillStyle = "rgba(242,245,247,.95)"; ctx.fillText(String(row[1]), gate.right - 18, y); });
       const host = summary.host || {};
@@ -965,7 +988,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
 
     function animateTopology() {
       if (!document.hidden) drawTopology(window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : performance.now());
-      setTimeout(animateTopology, 83);
+      setTimeout(animateTopology, 50);
     }
     animateTopology();
 
@@ -1082,24 +1105,21 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         if ((security.authRequired || security.adminAuthRequired) && !headers().authorization) {
           // Best-effort: models/status may 401 until a key is provided.
         }
-        const [health, models, status, library, backends, metrics] = await Promise.all([
+        const [health, models, status, library, backends] = await Promise.all([
           getJson("/health"),
           getJson("/gateway/models").catch(error => ({ models: [], error: error.message })),
           getJson("/gateway/status").catch(error => ({ error: error.message })),
           getJson("/gateway/library").catch(error => ({ error: error.message })),
           getJson("/gateway/backends").catch(error => ({ backends: [], error: error.message })),
-          getJson("/gateway/metrics").catch(error => ({ totals: {}, models: [], active: [], error: error.message })),
         ]);
         state.models = models.models || [];
         state.status = status;
         state.library = library;
         state.backends = backends.backends || [];
-        state.metrics = metrics;
         renderModels();
         renderRuntimes();
         renderBackends();
         renderLibrary();
-        renderActivity();
         const authHint = security.adminAuthRequired
           ? "admin auth on"
           : security.authRequired
@@ -1225,10 +1245,14 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     });
 
     refresh();
+    refreshActivity();
     setInterval(refreshActivity, 1000);
-    setInterval(refresh, 2000);
+    setInterval(refresh, 10000);
     document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) refresh();
+      if (!document.hidden) {
+        refresh();
+        refreshActivity();
+      }
     });
   </script>
 </body>
