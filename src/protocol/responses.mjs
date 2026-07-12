@@ -9,6 +9,7 @@ import {
   responseStatusFromFinishReason
 } from './text.mjs';
 import { normalizeOpenAIChatCompletionBody, normalizeOpenAIChatRequestBody } from './reasoning-normalize.mjs';
+import { translateReasoningEffortForBackend } from './reasoning-effort.mjs';
 
 export function responsesContentPartToOpenAI(part) {
   if (typeof part === 'string') return { type: 'text', text: part };
@@ -188,7 +189,7 @@ export function responsesToOpenAIChat(body, resolvedModel) {
     ...(effort ? { reasoning_effort: effort } : {})
   };
   // Ensure history reasoning_content is clean OpenAI-shaped before upstream.
-  return normalizeOpenAIChatRequestBody(chatBody);
+  return translateReasoningEffortForBackend(normalizeOpenAIChatRequestBody(chatBody), resolvedModel);
 }
 
 export function responseOutputTextItem(responseId, text) {
