@@ -979,11 +979,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const previousActive = previous?.active ?? new Map();
       const activeIds = new Set(active.map(item => item.id));
       const completedEstimate = [...previousActive.entries()].filter(([id]) => !activeIds.has(id)).reduce((sum, [, item]) => ({
-        input: sum.input + Number(item.requestBytes || 0) / 4,
-        output: sum.output + Number(item.outputChars || 0) / 4
-      }), { input: 0, output: 0 });
+        input: sum.input + Number(item.requestBytes || 0) / 4
+      }), { input: 0 });
       const inputRate = previous ? Math.max(0, Number(totals.inputTokens || 0) - previous.inputTokens - completedEstimate.input) / intervalSeconds : 0;
-      const outputRate = previous ? Math.max(0, Number(totals.outputTokens || 0) - previous.outputTokens - completedEstimate.output) / intervalSeconds : 0;
       const activeRates = new Map(active.map(item => {
         const prior = previousActive.get(item.id);
         return [item.id, {
@@ -1000,7 +998,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       $("#fabric-in").textContent = formatCompact(Math.round(Number(totals.inputTokens || 0)));
       $("#fabric-out").textContent = formatCompact(Math.round(Number(totals.outputTokens || 0)));
       const liveInputRate = inputRate + [...activeRates.values()].reduce((sum, item) => sum + item.input, 0);
-      const liveOutputRate = outputRate + [...activeRates.values()].reduce((sum, item) => sum + item.output, 0);
+      // Completed totals include one-shot embedding and non-streaming payload estimates.
+      // They count toward cumulative output volume, but are not generative decode throughput.
+      const liveOutputRate = [...activeRates.values()].reduce((sum, item) => sum + item.output, 0);
       const totalDurationSeconds = Math.max(.001, Number(totals.durationMs || 0) / 1000);
       const averageInputRate = Number(totals.inputTokens || 0) / totalDurationSeconds;
       if (liveOutputRate > 0) {
