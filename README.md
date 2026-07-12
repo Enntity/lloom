@@ -3,7 +3,7 @@
 [![CI](https://github.com/enntity/lloom/actions/workflows/ci.yml/badge.svg)](https://github.com/enntity/lloom/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-LLooM is a local-first LLM gateway for people who run serious open models on their own hardware. It sits in front of MLX, MTPLX, llama.cpp, Ollama, image generators, and other local runtimes, then exposes stable OpenAI-compatible and Anthropic-compatible APIs to agent tools.
+LLooM is a local-first LLM gateway for people who run serious open models on their own hardware. It treats NVIDIA systems—including DGX Spark / GB10—and Apple Silicon Macs as first-class platforms. LLooM sits in front of vLLM, SGLang, MLX, MTPLX, llama.cpp, Ollama, image generators, and other local runtimes, then exposes stable OpenAI-compatible and Anthropic-compatible APIs to agent tools.
 
 The goal is simple: install one bridge, let it inspect the machine, choose the best agentic model recipe from the LLooM community library, install the backend needed for that recipe, download and configure the model, keep it warm, and point Codex, Claude Code, OMP, OpenCode, Hermes, Zero, or any OpenAI-compatible client at one base URL.
 
@@ -13,26 +13,38 @@ The hosted LLooM service is a separate product surface. It owns the recipe datab
 
 The production community host is not live yet. URLs under the reserved `community.example` domain are placeholders for operators deploying their own host; source checkouts use the bundled loopback development host.
 
+## First-Class Platforms
+
+| NVIDIA / DGX Spark | Apple Silicon |
+| --- | --- |
+| CUDA, Blackwell, DGX Spark / GB10, and Linux NVIDIA hosts | M-series Macs with unified memory |
+| vLLM and SGLang are the primary high-throughput backends | MLX, MTPLX, OptiQ, and llama.cpp are the primary native backends |
+| Managed Docker runtimes, GPU-memory admission, warm/on-demand lanes, and Spark recipes | Native processes, unified-memory-aware recipes, model-root reuse, and Mac recipes |
+| See [`docs/dgx-spark.md`](docs/dgx-spark.md) | See the bundled `apple-silicon-*` recipes |
+
+Both platforms get the same gateway APIs, runtime policy, per-connection telemetry, live dashboard, client integrations, external-provider passthrough, and community recipe/benchmark workflow.
+
 ## Quick Start
 
-```zsh
+```bash
 git clone https://github.com/enntity/lloom.git
 cd lloom
 npm ci
 npm link
 lloom
-lloom --go
+lloom up --go
 ```
 
 `npm link` installs the same `lloom` and `lloom-host` commands from your checkout. After the first npm release, `npm install -g lloom` will be the supported package install path.
 
-Open the dashboard or point an OpenAI-compatible client at the local endpoint:
+Open the dashboard in any browser or point an OpenAI-compatible client at the local endpoint:
 
-```zsh
-open http://127.0.0.1:8100/
+```bash
 curl -sS http://127.0.0.1:8100/health
 curl -sS http://127.0.0.1:8100/v1/models
 ```
+
+Dashboard: [http://127.0.0.1:8100/](http://127.0.0.1:8100/)
 
 That is the 1.0 path. A bare `lloom` is a dry run first: it inspects the machine, asks the LLooM community host for the best known recipe pack and backend catalog, shows what will be installed, and refuses writes until you rerun it with `--go`. `up` is the named alias for the same first-run flow. `--go` applies the plan, confirms noninteractive writes, and starts the selected keep-warm runtime after setup. Use `--offline` when you want to ignore the host and select from only the local recipe library.
 
@@ -44,18 +56,23 @@ The default gateway endpoint is `127.0.0.1:8100`; managed backend runtimes defau
 
 Use this path when validating the repository before a package release:
 
-```zsh
+```bash
 npm install -g .
 lloom up
 lloom up --go
 lloom doctor --no-runtimes
 ```
 
-`lloom up` should show the detected machine profile, the trusted community recommendation, the selected recipe, benchmark evidence, and the exact apply command. On a 96 GB Apple Silicon machine, the bundled development host should recommend `apple-silicon-qwen36-35b-a3b-mtplx` and select `Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16`. On lower-memory Apple Silicon machines, it should fall back to the 27B MTPLX recipe.
+`lloom up` should show the detected machine profile, the trusted community recommendation, the selected recipe, benchmark evidence, and the exact apply command.
+
+- On NVIDIA Linux, LLooM detects CUDA devices, compute capability, Blackwell, and DGX Spark / GB10 markers. Spark recipes use vLLM or SGLang, managed Docker containers, and explicit GPU-memory/runtime policy. The checked-in Spark deployment demonstrates a warm primary chat model, warm embedding model, and an on-demand alternate chat lane.
+- On a 96 GB Apple Silicon machine, the bundled development host should recommend `apple-silicon-qwen36-35b-a3b-mtplx` and select `Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16`. Lower-memory Macs should fall back to the 27B MTPLX recipe.
+
+For a concrete NVIDIA deployment, start with [`deploy/dgx-spark/config.json`](deploy/dgx-spark/config.json) and [`docs/dgx-spark.md`](docs/dgx-spark.md). The deployment config uses environment-variable references for provider credentials and shows managed vLLM chat and embedding runtimes without embedding private keys.
 
 If you already have model files outside `~/.lloom/models`, `lloom up` tries to reuse obvious local roots such as a nearby `mtplx/models` directory before downloading. If it cannot find them, pass the same model root to both preview and apply:
 
-```zsh
+```bash
 lloom up --model-root /path/to/models
 lloom up --model-root /path/to/models --go
 ```
@@ -64,7 +81,7 @@ lloom up --model-root /path/to/models --go
 
 To connect OMP after setup:
 
-```zsh
+```bash
 lloom integrate omp --apply --yes
 curl -sS http://127.0.0.1:8100/v1/models
 ```
@@ -76,7 +93,7 @@ Then open OMP normally. The generated OMP config points at `http://127.0.0.1:810
 - OpenAI-compatible `/v1/models`, `/v1/chat/completions`, `/v1/responses`, embeddings, image generation, speech, and transcription routes.
 - Anthropic-compatible `/v1/messages`, including tool-use and streaming deltas.
 - Runtime start, health checks, stop, warmup, keep-warm bootstrapping, per-runtime concurrency slots, and conservative memory admission planning.
-- Backend recipes for MTPLX, MLX LM, llama.cpp, Ollama, OptiQ, stable-diffusion.cpp, vLLM, and SGLang (including DGX Spark / GB10 CUDA seeds — see `docs/dgx-spark.md`).
+- Backend recipes for vLLM, SGLang, MTPLX, MLX LM, llama.cpp, Ollama, OptiQ, and stable-diffusion.cpp, with dedicated DGX Spark / GB10 and Apple Silicon recipes.
 - Community recipe packs and hardware-matched benchmark evidence so machines can select the best known model/backend recipe automatically instead of blindly chasing global tok/s.
 - Generated client profiles for OMP, OpenCode, Codex-compatible, Claude-compatible, Hermes, Zero, and any OpenAI-compatible client.
 - A small dashboard at `/` for local status and guarded setup actions.
@@ -85,13 +102,15 @@ Then open OMP normally. The generated OMP config points at `http://127.0.0.1:810
 
 Primary ladder (see `lloom help`; full catalog under `lloom help advanced`):
 
-```zsh
+```bash
 lloom                         # preview plan
 lloom up --go                 # install + integrate + start
+lloom down                    # stop all managed model backends
 lloom doctor --no-runtimes
 lloom models
 lloom integrate omp --apply --yes
-lloom add-model mlx-community/Qwen3.6-27B-OptiQ-4bit --keep-warm --default --apply --yes
+lloom add-model mlx-community/Qwen3.6-27B-OptiQ-4bit --keep-warm --default --apply --yes  # Mac
+lloom add-model 'openai:http://127.0.0.1:8000/v1#my-model' --default --apply --yes       # NVIDIA/vLLM
 lloom serve --config ~/.lloom/config.json
 ```
 
@@ -111,7 +130,7 @@ The CLI is the durable automation surface. A UI should call these same commands 
 
 The gateway and backend ports are configurable:
 
-```zsh
+```bash
 lloom setup --port 9100 --backend-port-range 9200-9299 --apply --yes --start
 lloom onboard --port 9100 --backend-port-range 9200-9299 --go
 lloom onboard --backend-catalog ./backend-catalog.json --shim-dir ~/.lloom/bin
@@ -124,7 +143,7 @@ lloom serve --config ~/.lloom/config.json --port 9100
 
 Lower-level setup commands remain available when you want to inspect or run a phase separately:
 
-```zsh
+```bash
 lloom init
 lloom init --config-out ~/.lloom/config.json --model-root ~/.lloom/models --client omp --apply --yes
 lloom bootstrap
@@ -135,7 +154,7 @@ lloom bootstrap --apply --yes
 
 Generate client configs:
 
-```zsh
+```bash
 npm run generate:clients
 lloom integrations
 lloom integrate all
@@ -165,7 +184,7 @@ The generator reads the gateway registry. If a model ID is stale, remove it from
 
 `integrate` is a dry-run by default. Real client file writes require both `--apply` and `--yes`:
 
-```zsh
+```bash
 lloom integrate omp --apply --yes
 ```
 
@@ -175,7 +194,7 @@ OpenCode, Codex, Claude-compatible, Hermes, and Zero integrations also install l
 
 Inspect install recipes:
 
-```zsh
+```bash
 lloom profile
 lloom backends
 lloom library
@@ -200,19 +219,22 @@ lloom benchmark-submit benchmarks/community/apple-silicon-qwen36-m2max.json --ho
 lloom plan apple-silicon-qwen36 --model-root ~/Models
 lloom install apple-silicon-qwen36 --model-root ~/Models
 lloom setup-status --recipe apple-silicon-qwen36 --model-root ~/Models --no-runtimes
+lloom plan linux-nvidia-qwen3-embedding-4b-vllm --model-root ~/.lloom/models
+lloom setup-status --recipe linux-nvidia-qwen3-embedding-4b-vllm --model-root ~/.lloom/models --no-runtimes
 ```
 
 Recipe selection distinguishes `selectable` from `runnable`: a recipe can be the best match for the machine even if setup still needs to install or expose a backend command. Plans are intentionally explicit: LLooM reports checks, downloads, tuning commands, model mappings, and platform requirements before executing anything. `install` is a dry-run by default. Real execution requires both `--apply` and `--yes`:
 
-```zsh
+```bash
 lloom install apple-silicon-qwen36 --model-root ~/Models --apply --yes
+lloom install linux-nvidia-qwen3-embedding-4b-vllm --model-root ~/.lloom/models --apply --yes
 ```
 
 Completed real install steps are recorded in `~/.lloom/install-state.json`, so interrupted setup can resume without rerunning completed steps. Hugging Face model downloads use `hf download` or `huggingface-cli download`; set `LLOOM_HF_BIN=/path/to/hf` when the CLI lives outside `PATH`. If a model destination already has model payload files, LLooM treats that download step as satisfied; metadata-only partial downloads are still reported as missing.
 
 Add an ad hoc model outside the community library:
 
-```zsh
+```bash
 lloom add-model https://huggingface.co/unsloth/Qwen3.6-27B-MTP-GGUF/blob/main/Qwen3.6-27B-MTP-Q4_K_XL.gguf
 lloom add-model mlx-community/Qwen3.6-27B-OptiQ-4bit --keep-warm --default
 lloom add-model qwen3:8b --backend ollama
@@ -230,7 +252,7 @@ Hugging Face `blob`, `resolve`, and `tree` links are normalized into the same mo
 
 Runtime management:
 
-```zsh
+```bash
 lloom runtimes
 lloom runtime-plan mtplx-qwen36-27b-speed
 lloom runtime-admit mtplx-qwen36-27b-speed
@@ -239,11 +261,12 @@ lloom runtime-start mtplx-qwen36-27b-speed
 lloom runtime-warmup mtplx-qwen36-27b-speed
 lloom runtime-stop mtplx-qwen36-27b-speed
 lloom keep-warm
+lloom down
 ```
 
 The same controls are exposed over HTTP for dashboards and external automation:
 
-```zsh
+```bash
 curl -sS http://127.0.0.1:8100/gateway/status
 curl -sS http://127.0.0.1:8100/gateway/metrics
 curl -sS 'http://127.0.0.1:8100/gateway/metrics?model=Youssofal%2FQwen3.6-27B-MTPLX-Optimized-Speed'
@@ -295,7 +318,7 @@ Setup apply is resumable. Backend and recipe steps are persisted in `~/.lloom/in
 
 Backend installs are dry-runs by default. Real execution requires `--apply --yes` and writes resumable state to `~/.lloom/install-state.json`. Link steps can create local command shims in `~/.lloom/bin`, so a backend installed beside LLooM can be exposed without a global install:
 
-```zsh
+```bash
 lloom backend-install mtplx --apply --yes
 export PATH="$HOME/.lloom/bin:$PATH"
 ```
@@ -304,7 +327,7 @@ Benchmark evidence lives in `benchmarks/community/*.json`. `lloom benchmarks` va
 
 Community recipe packs can be previewed and imported without hand-editing the local index:
 
-```zsh
+```bash
 lloom recipe-export apple-silicon-qwen36 --output qwen-pack.json
 lloom validate qwen-pack.json
 lloom recipe-export apple-silicon-qwen36 --output qwen-pack.json --apply --yes
@@ -334,7 +357,7 @@ Local installs consume a host through `lloom community --host <url>` for a dry-r
 
 Run the static development host against the checked-in recipe library:
 
-```zsh
+```bash
 lloom-host serve --port 8110
 lloom community --host http://127.0.0.1:8110 --no-require-signature
 ```
@@ -345,10 +368,14 @@ The development host exposes `GET /v1/interchange`, `GET /.well-known/lloom-inte
 
 Community recipes are the source of truth for first-run model choice. `lloom onboard` asks the host for a signed recommendation, validates the selected recipe pack, starts from a minimal local gateway shell, and materializes the local registry entries, backend bindings, runtime command, warmup, session-cache settings, keep-warm, and client model order from that recipe. After setup, `/v1/models`, OMP YAML, and OpenCode JSON are derived from the installed local registry.
 
-Current Apple Silicon headline defaults:
+Current platform examples:
 
-- Fastest dense 27B: `Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed`
-- Fastest 35B-A3B MoE observed here: `Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16`
+- DGX Spark / NVIDIA chat: `unsloth/Qwen3.6-35B-A3B-NVFP4` through a managed vLLM runtime
+- DGX Spark / NVIDIA embeddings: `Qwen/Qwen3-Embedding-4B` through a managed vLLM pooling runtime
+- Apple Silicon dense 27B: `Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed`
+- Apple Silicon 35B-A3B MoE: `Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16`
+
+These are recipe examples, not permanent global defaults. LLooM chooses from compatible local/community recipes and benchmark evidence for the detected machine.
 
 Durable route aliases such as `qwen36-27b-fastest` are allowed for scripts and humans, but `/v1/models` and generated client profiles advertise exact model IDs only.
 
