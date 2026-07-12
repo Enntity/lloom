@@ -16,7 +16,7 @@
     "autoStartLocalHost": false
   },
   "defaults": {
-    "chatModel": "unsloth/Qwen3.6-35B-A3B-NVFP4-Fast"
+    "chatModel": "unsloth/Qwen3.6-35B-A3B-NVFP4"
   },
   "runtimePolicy": {
     "enabled": true,
@@ -32,6 +32,18 @@
     },
     "spark-vllm-8001": {
       "baseUrl": "http://192.168.1.131:8001/v1",
+      "timeoutMs": 1800000
+    },
+    "qwen3-embedding-4b": {
+      "type": "openai",
+      "baseUrl": "http://127.0.0.1:8002/v1",
+      "apiKey": "sk-local-llm",
+      "timeoutMs": 1800000
+    },
+    "openai-compatible-z-ai-glm-5-2": {
+      "type": "openai",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
       "timeoutMs": 1800000
     }
   },
@@ -68,12 +80,37 @@
       "keepWarm": false,
       "startupTimeoutMs": 600000,
       "policy": { "priority": 100, "evictable": true },
-      "recipe": { "id": "dgx-spark-qwen36-nvfp4-fast-mtp", "version": 1 },
+      "recipe": { "id": "dgx-spark-qwen36-nvfp4-fast-mtp", "version": 4 },
       "bootstrap": {
         "adapter": "docker",
         "image": "vllm/vllm-openai:v0.24.0",
         "createArgs": ["--restart", "unless-stopped", "--gpus", "all", "--ipc", "host", "-p", "192.168.1.131:8001:8000", "-e", "CUTE_DSL_ARCH=sm_121a", "-v", "/home/enntitysparkadmin/.cache/huggingface:/root/.cache/huggingface", "-v", "/home/enntitysparkadmin/.cache/vllm:/root/.cache/vllm"],
         "command": ["unsloth/Qwen3.6-35B-A3B-NVFP4-Fast", "--host", "0.0.0.0", "--port", "8000", "--tensor-parallel-size", "1", "--trust-remote-code", "--dtype", "bfloat16", "--kv-cache-dtype", "fp8", "--attention-backend", "flashinfer", "--gpu-memory-utilization", "0.4", "--max-model-len", "262144", "--max-num-seqs", "4", "--max-num-batched-tokens", "8192", "--enable-chunked-prefill", "--async-scheduling", "--enable-prefix-caching", "--load-format", "fastsafetensors", "--reasoning-parser", "qwen3", "--tool-call-parser", "qwen3_xml", "--enable-auto-tool-choice", "--speculative-config", "{\"method\":\"mtp\",\"num_speculative_tokens\":2}"]
+      }
+    },
+    "qwen3-embedding-4b": {
+      "enabled": true,
+      "adapter": "docker",
+      "management": "managed",
+      "containerName": "qwen3-embedding-4b",
+      "port": 8002,
+      "healthUrl": "http://127.0.0.1:8002/v1/models",
+      "startupTimeoutMs": 900000,
+      "maxConcurrency": 8,
+      "memoryGb": 12,
+      "keepWarm": true,
+      "policy": { "priority": 200, "evictable": false },
+      "bootstrap": {
+        "adapter": "docker",
+        "image": "vllm/vllm-openai:v0.24.0",
+        "createArgs": ["--restart", "unless-stopped", "--gpus", "all", "--ipc", "host", "-p", "127.0.0.1:8002:8000", "-e", "CUTE_DSL_ARCH=sm_121a", "-v", "/home/enntitysparkadmin/.cache/huggingface:/root/.cache/huggingface"],
+        "command": ["Qwen/Qwen3-Embedding-4B", "--host", "0.0.0.0", "--port", "8000", "--served-model-name", "Qwen/Qwen3-Embedding-4B", "--runner", "pooling", "--dtype", "bfloat16", "--trust-remote-code", "--gpu-memory-utilization", "0.09", "--max-model-len", "8192", "--max-num-seqs", "16", "--max-num-batched-tokens", "8192"]
+      },
+      "recipe": { "id": "linux-nvidia-qwen3-embedding-4b-vllm", "version": 1 },
+      "warmup": {
+        "url": "http://127.0.0.1:8002/v1/embeddings",
+        "method": "POST",
+        "body": { "model": "Qwen/Qwen3-Embedding-4B", "input": ["Continuity is the persistence of meaningful identity through time."] }
       }
     }
   },
@@ -99,6 +136,33 @@
       "contextWindow": 262144,
       "maxPromptTokens": 255000,
       "capabilities": ["chat", "streaming", "usage", "tools", "reasoning", "long-context", "batching", "speculative-decoding"]
+    },
+    {
+      "id": "Qwen/Qwen3-Embedding-4B",
+      "name": "Qwen3-Embedding-4B",
+      "kind": "embedding",
+      "backend": "qwen3-embedding-4b",
+      "runtime": "qwen3-embedding-4b",
+      "upstreamModel": "Qwen/Qwen3-Embedding-4B",
+      "input": ["text"],
+      "output": ["embedding"],
+      "capabilities": ["embedding", "embeddings", "batching", "multilingual", "long-context"],
+      "contextWindow": 8192,
+      "maxOutputTokens": 8192,
+      "advertise": true
+    },
+    {
+      "id": "z-ai/glm-5.2",
+      "name": "GLM 5.2 · OpenRouter",
+      "kind": "chat",
+      "backend": "openai-compatible-z-ai-glm-5-2",
+      "upstreamModel": "z-ai/glm-5.2",
+      "input": ["text"],
+      "output": ["text"],
+      "capabilities": ["chat", "streaming", "usage", "tools"],
+      "contextWindow": 1024000,
+      "maxOutputTokens": 128000,
+      "advertise": true
     }
   ]
 }

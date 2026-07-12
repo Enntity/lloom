@@ -327,6 +327,7 @@ export class RuntimeManager {
     this.processes = new Map();
     this.state = new Map();
     this.queues = new Map();
+    this.pausedRuntimes = new Set();
     this.lifecycleQueues = new Map();
     this.admissionQueue = Promise.resolve();
     this.events = [];
@@ -453,7 +454,7 @@ export class RuntimeManager {
     if (!runtime) return () => {};
     const state = this.stateFor(runtimeId);
     const maxConcurrency = runtimeMaxConcurrency(runtime);
-    if (state.activeRequests < maxConcurrency) {
+    if (!this.pausedRuntimes.has(runtimeId) && state.activeRequests < maxConcurrency) {
       state.activeRequests += 1;
       return () => this.releaseSlot(runtimeId);
     }
@@ -468,11 +469,82 @@ export class RuntimeManager {
     const state = this.stateFor(runtimeId);
     state.activeRequests = Math.max(0, state.activeRequests - 1);
     const queue = this.queueFor(runtimeId);
-    const next = queue.shift();
+    const next = this.pausedRuntimes.has(runtimeId) ? null : queue.shift();
     state.queuedRequests = queue.length;
     if (!next) return;
     state.activeRequests += 1;
     next(() => this.releaseSlot(runtimeId));
+  }
+
+  resumeRuntime(runtimeId) {
+    this.pausedRuntimes.delete(runtimeId);
+    const state = this.stateFor(runtimeId);
+    const queue = this.queueFor(runtimeId);
+    const maxConcurrency = runtimeMaxConcurrency(this.getRuntime(runtimeId));
+    while (state.activeRequests < maxConcurrency && queue.length > 0) {
+      const next = queue.shift();
+      state.activeRequests += 1;
+      next(() => this.releaseSlot(runtimeId));
+    }
+    state.queuedRequests = queue.length;
+  }
+
+  async drainRuntime(runtimeId, { timeoutMs = 300000 } = {}) {
+    this.pausedRuntimes.add(runtimeId);
+    const deadline = Date.now() + timeoutMs;
+    const state = this.stateFor(runtimeId);
+    while (state.activeRequests > 0) {
+      if (Date.now() >= deadline) throw new Error(`timed out draining runtime ${runtimeId}`);
+      await delay(50);
+    }
+  }
+
+  async reconfigure(nextConfig, { drainTimeoutMs = 300000 } = {}) {
+    const previousConfig = this.config;
+    const runtimeIds = new Set([
+      ...Object.keys(previousConfig.runtimes ?? {}),
+      ...Object.keys(nextConfig.runtimes ?? {})
+    ]);
+    const changed = [...runtimeIds].filter(
+      (runtimeId) =>
+        JSON.stringify(previousConfig.runtimes?.[runtimeId] ?? null) !==
+        JSON.stringify(nextConfig.runtimes?.[runtimeId] ?? null)
+    );
+    const wasRunning = new Map();
+    for (const runtimeId of changed) {
+      const runtime = previousConfig.runtimes?.[runtimeId];
+      if (!runtime) {
+        wasRunning.set(runtimeId, false);
+      } else if (runtimeAdapter(runtime) === 'docker') {
+        wasRunning.set(runtimeId, (await dockerContainerState(runtime)).running === true);
+      } else {
+        wasRunning.set(runtimeId, this.processRunning(runtimeId) || (await healthOk(runtime.healthUrl)));
+      }
+    }
+    for (const runtimeId of changed) await this.drainRuntime(runtimeId, { timeoutMs: drainTimeoutMs });
+    const results = [];
+    try {
+      for (const runtimeId of changed) {
+        const previous = previousConfig.runtimes?.[runtimeId];
+        if (previous) await this.stop(runtimeId);
+        if (previous && runtimeAdapter(previous) === 'docker') {
+          const name = dockerContainerName(previous);
+          if (name) await execFileAsync('docker', ['rm', name], { timeout: 120000 }).catch(() => {});
+        }
+      }
+      this.config = nextConfig;
+      for (const runtimeId of changed) {
+        const current = nextConfig.runtimes?.[runtimeId];
+        results.push(
+          current?.keepWarm === true || wasRunning.get(runtimeId) === true
+            ? await this.start(runtimeId, { force: true, warmup: true, reason: 'config-reload' })
+            : { runtimeId, started: false, reason: current ? 'disabled' : 'removed' }
+        );
+      }
+      return { changed, results };
+    } finally {
+      for (const runtimeId of changed) this.resumeRuntime(runtimeId);
+    }
   }
 
   async ensure(runtimeId) {
@@ -729,6 +801,19 @@ export class RuntimeManager {
 
   async stop(runtimeId) {
     return this.withRuntimeLifecycleLock(runtimeId, () => this.stopUnlocked(runtimeId));
+  }
+
+  async stopAll() {
+    const runtimeIds = Object.keys(this.config.runtimes ?? {});
+    const results = [];
+    for (const runtimeId of runtimeIds) {
+      results.push(await this.stop(runtimeId));
+    }
+    return {
+      stopped: results.filter((result) => result.stopped === true).length,
+      total: runtimeIds.length,
+      results
+    };
   }
 
   async stopUnlocked(runtimeId) {

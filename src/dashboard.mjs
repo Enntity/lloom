@@ -1226,7 +1226,10 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
 
     refresh();
     setInterval(refreshActivity, 1000);
-    setInterval(refresh, 10000);
+    setInterval(refresh, 2000);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) refresh();
+    });
   </script>
 </body>
 </html>`;

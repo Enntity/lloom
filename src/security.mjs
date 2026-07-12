@@ -85,7 +85,7 @@ export function authorizeRequest(req, config, { method, pathname } = {}) {
   const publicTelemetry =
     config.security?.publicTelemetry === true &&
     effectiveMethod === 'GET' &&
-    ['/gateway/status', '/gateway/metrics'].includes(effectivePath);
+    ['/gateway/status', '/gateway/metrics', '/gateway/models'].includes(effectivePath);
   const routeKind = publicTelemetry ? 'public' : classifyRoute(effectiveMethod, effectivePath);
   const bindHost = config.server?.host ?? '127.0.0.1';
   const loopbackBind = isLoopbackAddress(bindHost);

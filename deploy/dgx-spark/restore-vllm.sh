@@ -36,7 +36,6 @@ docker run -d \
   --dtype bfloat16 \
   --kv-cache-dtype fp8 \
   --attention-backend flashinfer \
-  --moe-backend marlin \
   --gpu-memory-utilization 0.4 \
   --max-model-len 262144 \
   --max-num-seqs 4 \

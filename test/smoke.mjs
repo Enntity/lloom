@@ -2290,6 +2290,12 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
 
   const cliStop = JSON.parse((await runLLooM(['runtime-stop', 'synthetic-runtime'])).stdout);
   assert.equal(cliStop.stopped, true);
+
+  await runLLooM(['runtime-start', 'synthetic-runtime']);
+  const cliDown = JSON.parse((await runLLooM(['down'])).stdout);
+  assert.equal(cliDown.stopped, 1);
+  assert.equal(cliDown.total, 1);
+  assert.equal(cliDown.results[0].runtimeId, 'synthetic-runtime');
 }
 
 const syntheticRecipe = {

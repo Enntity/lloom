@@ -1,14 +1,14 @@
 modelRoles:
-  default: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4-Fast:low
-  smol: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4-Fast
-  slow: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4-Fast
-  plan: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4-Fast
-  commit: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4-Fast
-  designer: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4-Fast
-  advisor: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4-Fast
-  tiny: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4-Fast
-  vision: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4-Fast
-  task: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4-Fast
+  default: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4:low
+  smol: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4
+  slow: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4
+  plan: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4
+  commit: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4
+  designer: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4
+  advisor: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4
+  tiny: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4
+  vision: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4
+  task: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4
 defaultThinkingLevel: auto
 hideThinkingBlock: true
 startup:

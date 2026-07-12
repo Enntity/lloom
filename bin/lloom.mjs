@@ -65,6 +65,7 @@ const __filename = fileURLToPath(import.meta.url);
 /** Command tiers used for help + installed-config policy. Aliases resolve before dispatch. */
 const COMMAND_REGISTRY = [
   { name: 'up', aliases: ['onboard'], tier: 'primary', needsInstalledConfig: false },
+  { name: 'down', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'doctor', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'serve', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'models', aliases: [], tier: 'primary', needsInstalledConfig: true },
@@ -129,6 +130,7 @@ function usage() {
 Primary commands:
   lloom / lloom up                 Preview the best setup for this machine
   lloom up --go                    Install, integrate clients, and start the model
+  lloom down                       Stop all managed model backends
   lloom doctor                     Readiness report (blockers, warnings, next actions)
   lloom serve                      Run the gateway (reads ~/.lloom/config.json)
   lloom models                     List gateway model IDs
@@ -163,6 +165,7 @@ Serving and discovery:
   lloom setup-status [--recipe id] [--model-root path] [--client id|all] [--no-runtimes]
 
 Backends and runtimes:
+  lloom down
   lloom backends [backend-id|all]
   lloom backend-plan <backend-id>
   lloom backend-install <backend-id> [--apply --yes] [--step step-id]
@@ -234,6 +237,7 @@ const INSTALLED_CONFIG_COMMANDS = new Set([
   'add-model',
   'bootstrap',
   'doctor',
+  'down',
   'integrate',
   'integrations',
   'keep-warm',
@@ -256,6 +260,7 @@ const INSTALLED_CONFIG_COMMANDS = new Set([
 const OPERATIONAL_CONFIG_COMMANDS = new Set([
   'add-model',
   'doctor',
+  'down',
   'integrate',
   'keep-warm',
   'model-add',
@@ -1940,6 +1945,10 @@ async function main() {
       if (!runtimeId) return;
       const manager = runtimeManagerForCli(config);
       console.log(JSON.stringify(await manager.stop(runtimeId), null, 2));
+    },
+    down: async ({ config }) => {
+      const manager = runtimeManagerForCli(config);
+      console.log(JSON.stringify(await manager.stopAll(), null, 2));
     },
     'keep-warm': async ({ config }) => {
       const manager = runtimeManagerForCli(config);

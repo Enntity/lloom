@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { appendFileSync, mkdirSync } from 'node:fs';
+import { appendFileSync, mkdirSync, unwatchFile, watchFile } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
@@ -26,7 +26,7 @@ import {
   recipeDocumentsFromCommunityPlan,
   selectedRecipeIdFromCommunityPlan
 } from './community-client.mjs';
-import { defaultLloomHome } from './config.mjs';
+import { defaultLloomHome, loadConfig } from './config.mjs';
 import { createDoctorReport } from './doctor.mjs';
 import { MACHINE_PROFILE_MEDIA_TYPE, profileMachine, rankRecipes, validateMachineProfile } from './machine-profile.mjs';
 import { applyModelImport, createModelImportPlan } from './model-intake.mjs';
@@ -1338,7 +1338,24 @@ export function createLloomServer(
   config,
   { logger = console, runtimeManager = new RuntimeManager(config, { logger }) } = {}
 ) {
-  const registry = createRegistry(config);
+  let registry = createRegistry(config);
+  let reloadInFlight = Promise.resolve();
+  const configPath = config.sourcePath;
+
+  function reloadConfig() {
+    if (!configPath) return;
+    reloadInFlight = reloadInFlight
+      .catch(() => {})
+      .then(async () => {
+        const nextConfig = await loadConfig(configPath);
+        const result = await runtimeManager.reconfigure(nextConfig);
+        for (const key of Object.keys(config)) delete config[key];
+        Object.assign(config, nextConfig);
+        registry = createRegistry(config);
+        logger.info?.(`reloaded LLooM config; changed runtimes: ${result.changed.join(', ') || 'none'}`);
+      })
+      .catch((error) => logger.error?.(`LLooM config reload failed: ${error?.message ?? error}`));
+  }
   function appendRequestLog(entry) {
     if (config.logging?.requestLog !== true && process.env.LLOOM_REQUEST_LOG !== '1') return;
     const home = process.env.HOME ? `${process.env.HOME}/.lloom/logs` : './.lloom/logs';
@@ -2846,9 +2863,14 @@ export function createLloomServer(
         server.listen(config.server.port, config.server.host, () => {
           server.off('error', onError);
           runtimeManager.startKeepWarm().catch((error) => logger.error?.(error));
+          if (configPath) watchFile(configPath, { interval: 500 }, reloadConfig);
           resolve(server);
         });
       });
+    },
+    close() {
+      if (configPath) unwatchFile(configPath, reloadConfig);
+      return new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
     }
   };
 }

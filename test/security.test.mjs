@@ -123,6 +123,13 @@ assert.equal(
 assert.equal(
   authorizeRequest({ headers: {} }, publicTelemetryConfig, {
     method: 'GET',
+    pathname: '/gateway/models'
+  }).ok,
+  true
+);
+assert.equal(
+  authorizeRequest({ headers: {} }, publicTelemetryConfig, {
+    method: 'GET',
     pathname: '/gateway/backends'
   }).ok,
   false
