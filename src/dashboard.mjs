@@ -543,6 +543,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       smoothedRates: new Map(),
       connectionKey: "",
       threadNodes: new Map(),
+      modelNodes: new Map(),
       output: null,
     };
 
@@ -756,6 +757,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       return (bytes / 1048576).toFixed(bytes < 10485760 ? 1 : 0) + " MB";
     }
     function shortModel(value) { const parts = String(value || "unknown").split("/"); return parts[parts.length - 1]; }
+    function modelVendor(value) { const parts = String(value || "local").split("/"); return parts.length > 1 ? parts[0] : "local"; }
 
     function smoothRate(key, target, now) {
       const desired = Math.max(0, Number(target || 0));
@@ -848,6 +850,52 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       }
     }
 
+    function updateModelLayout(models, field) {
+      const activeIds = new Set(models.map(model => model.id));
+      for (const id of state.modelNodes.keys()) if (!activeIds.has(id)) state.modelNodes.delete(id);
+      const centerX = (field.left + field.right) / 2, centerY = (field.top + field.bottom) / 2;
+      models.forEach((model, index) => {
+        let node = state.modelNodes.get(model.id);
+        if (!node) {
+          const seed = [...model.id].reduce((sum, character) => sum + character.charCodeAt(0), index + 1);
+          node = {
+            x: field.left + 112 + hashUnit(seed * 7) * Math.max(1, field.right - field.left - 224),
+            y: field.top + 38 + hashUnit(seed * 13) * Math.max(1, field.bottom - field.top - 76),
+            vx: 0,
+            vy: 0
+          };
+          state.modelNodes.set(model.id, node);
+        }
+        node.vx += (centerX - node.x) * .0008;
+        node.vy += (centerY - node.y) * .0008;
+      });
+      const nodes = models.map(model => state.modelNodes.get(model.id));
+      for (let left = 0; left < nodes.length; left++) for (let right = left + 1; right < nodes.length; right++) {
+        const a = nodes[left], b = nodes[right], dx = b.x - a.x, dy = b.y - a.y;
+        const xOverlap = 232 - Math.abs(dx), yOverlap = 82 - Math.abs(dy);
+        if (xOverlap > 0 && yOverlap > 0) {
+          const horizontal = xOverlap / 232, vertical = yOverlap / 82;
+          if (horizontal < vertical) {
+            const force = .18 + horizontal * .8, direction = Math.sign(dx || hashUnit(left + right) - .5) || 1;
+            a.vx -= direction * force; b.vx += direction * force;
+          } else {
+            const force = .18 + vertical * .8, direction = Math.sign(dy || hashUnit(left * 3 + right) - .5) || 1;
+            a.vy -= direction * force; b.vy += direction * force;
+          }
+        }
+      }
+      for (const node of nodes) {
+        const halfWidth = 110, halfHeight = 34;
+        if (node.x < field.left + halfWidth) node.vx += (field.left + halfWidth - node.x) * .025;
+        if (node.x > field.right - halfWidth) node.vx -= (node.x - field.right + halfWidth) * .025;
+        if (node.y < field.top + halfHeight) node.vy += (field.top + halfHeight - node.y) * .025;
+        if (node.y > field.bottom - halfHeight) node.vy -= (node.y - field.bottom + halfHeight) * .025;
+        node.vx *= .84; node.vy *= .84; node.x += node.vx; node.y += node.vy;
+        node.x = Math.max(field.left + halfWidth, Math.min(field.right - halfWidth, node.x));
+        node.y = Math.max(field.top + halfHeight, Math.min(field.bottom - halfHeight, node.y));
+      }
+    }
+
     function drawTopology(now) {
       const canvas = $("#topology-canvas");
       if (!canvas || !canvas.isConnected) return;
@@ -858,20 +906,23 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       ctx.font = '10px "SFMono-Regular",monospace'; ctx.textAlign = "left";
       ctx.fillStyle = "#8fb4ff"; ctx.beginPath(); ctx.arc(50, 91, 3, 0, Math.PI * 2); ctx.fill(); ctx.fillText("INPUT  →", 59, 95);
       ctx.fillStyle = "#2fe6c8"; ctx.beginPath(); ctx.arc(132, 91, 3, 0, Math.PI * 2); ctx.fill(); ctx.fillText("←  OUTPUT", 141, 95);
-      const center = { x: width * .66, y: height * .53 };
-      const gate = { left: center.x - 82, right: center.x + 82, top: center.y - 170, bottom: center.y + 170 };
       const models = state.topologyModels || [];
-      const rackX = width * .84;
-      const rackGap = Math.min(124, Math.max(82, (height - 170) / Math.max(1, models.length)));
-      const rackTop = height * .53 - ((models.length - 1) * rackGap) / 2;
-      const modelPoints = new Map(models.map((model, index) => [model.id, { x: rackX, y: rackTop + index * rackGap, model }]));
+      const rackFraction = Math.min(.5, .27 + Math.max(0, models.length - 3) * .045);
+      const modelField = { left: width * (1 - rackFraction), right: width - 18, top: 105, bottom: height - 28 };
+      const center = { x: modelField.left - 105, y: height * .53 };
+      const gate = { left: center.x - 82, right: center.x + 82, top: center.y - 170, bottom: center.y + 170 };
+      updateModelLayout(models, modelField);
+      const modelPoints = new Map(models.map(model => {
+        const node = state.modelNodes.get(model.id);
+        return [model.id, { x: node.x, y: node.y, cardWidth: Math.min(220, modelField.right - modelField.left), model }];
+      }));
       ctx.font = '11px "SFMono-Regular",monospace';
       ctx.textAlign = "left";
-      ctx.fillStyle = "rgba(153,163,176,.55)"; ctx.fillText("INSTALLED MODEL RACK", rackX - 58, 88);
-      const modelList = [...modelPoints.values()];
+      ctx.fillStyle = "rgba(153,163,176,.55)"; ctx.fillText("INSTALLED MODEL CLUSTER", modelField.left + 4, 88);
+      const modelList = [...modelPoints.values()].sort((a, b) => a.y - b.y);
       modelList.forEach((point, index) => {
         const portY = center.y - Math.min(94, (modelList.length - 1) * 32) / 2 + index * Math.min(47, 94 / Math.max(1, modelList.length - 1));
-        const from = { x: gate.right, y: portY }, to = { x: point.x - 38, y: point.y };
+        const from = { x: gate.right, y: portY }, to = { x: point.x - point.cardWidth / 2, y: point.y };
         const inputRate = smoothRate("model:" + point.model.id + ":in", point.model.liveInputRate, now);
         const outputRate = smoothRate("model:" + point.model.id + ":out", point.model.liveOutputRate, now);
         const rate = Math.max(inputRate, outputRate);
@@ -899,17 +950,19 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const pulse = warming ? .35 + (Math.sin(now * .006) + 1) * .3 : 1;
         ctx.strokeStyle = serving ? "rgba(47,230,200,.95)" : external ? "rgba(192,153,255,.65)" : hot ? "rgba(47,230,200,.6)" : warming ? "rgba(243,189,79," + pulse + ")" : "rgba(143,180,255,.22)";
         ctx.fillStyle = hot ? "rgba(7,18,17,.98)" : external ? "rgba(15,10,24,.96)" : warming ? "rgba(24,19,9,.97)" : "rgba(8,10,15,.94)";
-        const cardLeft = point.x - 38, cardWidth = Math.min(220, width - point.x - 18), cardTop = point.y - 34;
+        const cardWidth = point.cardWidth, cardLeft = point.x - cardWidth / 2, cardTop = point.y - 34;
         ctx.beginPath(); ctx.roundRect(cardLeft, cardTop, cardWidth, 68, 5); ctx.fill(); ctx.stroke();
         ctx.fillStyle = serving ? "#42d77d" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : "#8fb4ff"; ctx.fillRect(cardLeft, cardTop, 4, 68);
-        ctx.fillStyle = "rgba(242,245,247,.92)"; ctx.fillText(fitCanvasText(ctx, shortModel(point.model.id), cardWidth - 22), point.x - 27, point.y - 15);
+        ctx.fillStyle = "rgba(242,245,247,.92)"; ctx.fillText(fitCanvasText(ctx, shortModel(point.model.id), cardWidth - 68), cardLeft + 12, point.y - 15);
+        const vendor = modelVendor(point.model.id).toUpperCase();
+        ctx.textAlign = "right"; ctx.fillStyle = "rgba(143,180,255,.78)"; ctx.fillText(fitCanvasText(ctx, vendor, 54), cardLeft + cardWidth - 10, point.y - 15); ctx.textAlign = "left";
         ctx.fillStyle = "rgba(153,163,176,.9)";
-        ctx.fillText(formatCompact(point.model.inputTokens) + " in · " + formatCompact(point.model.outputTokens) + " out", point.x - 27, point.y + 4);
+        ctx.fillText(formatCompact(point.model.inputTokens) + " in · " + formatCompact(point.model.outputTokens) + " out", cardLeft + 12, point.y + 4);
         ctx.fillStyle = serving ? "#42d77d" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : "rgba(143,180,255,.7)";
         const displayedModelRate = live ? displayedLiveRate : point.model.averageRate;
         const modelRateText = displayedModelRate == null ? "" : formatRate(displayedModelRate) + " tok/s";
         const modelStateText = serving ? "SERVING" : point.model.state.toUpperCase();
-        ctx.fillText(fitCanvasText(ctx, modelStateText + (modelRateText ? " · " + modelRateText : ""), cardWidth - 22), point.x - 27, point.y + 23);
+        ctx.fillText(fitCanvasText(ctx, modelStateText + (modelRateText ? " · " + modelRateText : ""), cardWidth - 22), cardLeft + 12, point.y + 23);
       }
       const connections = state.topologyConnections || [];
       const orderedConnections = connections.slice().sort((a, b) => {
