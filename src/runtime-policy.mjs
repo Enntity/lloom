@@ -8,14 +8,6 @@ function numberOrNull(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-function asArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
-function unique(values) {
-  return [...new Set(values.filter(Boolean))];
-}
-
 function runtimeMemoryGb(runtime) {
   return (
     numberOrNull(runtime?.memoryGb) ??
@@ -91,12 +83,9 @@ function policyConfig(config, profile = {}) {
 
 function runtimeRows(config, status, requestedRuntimeId) {
   const keepWarm = new Set(
-    unique([
-      ...asArray(config.keepWarm),
-      ...Object.entries(config.runtimes ?? {})
-        .filter(([, runtime]) => runtime.keepWarm === true)
-        .map(([runtimeId]) => runtimeId)
-    ])
+    Object.entries(config.runtimes ?? {})
+      .filter(([, runtime]) => runtime.keepWarm === true)
+      .map(([runtimeId]) => runtimeId)
   );
   return Object.entries(config.runtimes ?? {}).map(([runtimeId, runtime]) => {
     const runtimeStatus = status?.runtimes?.[runtimeId] ?? {};

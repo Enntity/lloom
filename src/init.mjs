@@ -799,7 +799,9 @@ export function deriveUserConfig(
     };
   }
   if (!additive) restrictAdvertisedModelsToRecipe(derived, recipe);
-  const existingKeepWarm = asArray(derived.keepWarm);
+  const existingKeepWarm = Object.entries(derived.runtimes ?? {})
+    .filter(([, runtime]) => runtime.keepWarm === true)
+    .map(([runtimeId]) => runtimeId);
   const requestedRecipeKeepWarm = (recipe.models ?? [])
     .filter((model) => model.settings?.keepWarm === true && model.runtime)
     .map((model) => model.runtime);
@@ -825,11 +827,15 @@ export function deriveUserConfig(
   const backendPorts = retargetBackendPorts(derived, runtimeIds, backendPortRange);
   if (backendPorts) ports.backends = backendPorts;
   if (Object.keys(ports).length) derived.ports = ports;
-  derived.keepWarm = additive
+  const keepWarmRuntimeIds = additive
     ? [...new Set([...existingKeepWarm, ...requestedRecipeKeepWarm])]
     : keepWarm
       ? [keepWarm]
       : [];
+  for (const [runtimeId, runtime] of Object.entries(derived.runtimes ?? {})) {
+    runtime.keepWarm = keepWarmRuntimeIds.includes(runtimeId);
+  }
+  delete derived.keepWarm;
   derived.init = {
     ...(derived.init ?? {}),
     recipeId: recipe.id,
@@ -938,7 +944,9 @@ export async function createInitPlan(
     sessionCacheRoot: effectiveSessionCacheRoot,
     ports: userConfig.ports ?? {},
     enabledRuntimes: recipeRuntimeIds(recipe),
-    keepWarm: userConfig.keepWarm,
+    keepWarm: Object.entries(userConfig.runtimes ?? {})
+      .filter(([, runtime]) => runtime.keepWarm === true)
+      .map(([runtimeId]) => runtimeId),
     backend: await planBackend(backend, {
       variables: backendVariables,
       checkCommands: true

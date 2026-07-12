@@ -168,7 +168,6 @@ function communityOnlyConfig(baseConfig) {
   next.runtimes = {};
   next.models = [];
   next.aliases = {};
-  next.keepWarm = [];
   next.clientCatalog = {
     providerId: 'local-llm',
     providerName: 'LLooM Local',
@@ -697,7 +696,7 @@ assert.equal(lmStudioImportPlan.additions.runtimeId, null);
 assert.equal(lmStudioImportPlan.additions.baseUrl, 'http://127.0.0.1:1235/v1');
 assert.equal(lmStudioImportPlan.config.backends['lm-studio-local-qwen'].baseUrl, 'http://127.0.0.1:1235/v1');
 assert.equal(lmStudioImportPlan.config.models.find((model) => model.id === 'local-qwen').runtime, undefined);
-assert(!lmStudioImportPlan.config.keepWarm.includes('lm-studio-local-qwen'));
+assert.equal(lmStudioImportPlan.config.runtimes['lm-studio-local-qwen'], undefined);
 assert.equal(lmStudioImportPlan.next.setupBackend, "lloom backend-install 'lm-studio' --apply --yes");
 assert.equal(lmStudioImportPlan.next.start, null);
 
@@ -1092,7 +1091,7 @@ assert.equal(intakeApplied.written.configPath, intakeConfigPath);
 const writtenIntakeConfig = JSON.parse(await fs.readFile(intakeConfigPath, 'utf8'));
 assert(writtenIntakeConfig.models.some((model) => model.id === 'mlx-community/Qwen3.5-4B-Instruct-4bit'));
 assert.equal(writtenIntakeConfig.defaults.chatModel, 'mlx-community/Qwen3.5-4B-Instruct-4bit');
-assert(writtenIntakeConfig.keepWarm.includes('mlx-lm-mlx-community-qwen3-5-4b-instruct-4bit'));
+assert.equal(writtenIntakeConfig.runtimes['mlx-lm-mlx-community-qwen3-5-4b-instruct-4bit'].keepWarm, true);
 assert.equal(
   writtenIntakeConfig.runtimes['mlx-lm-mlx-community-qwen3-5-4b-instruct-4bit'].args.at(1),
   path.join(tempDir, 'intake models', 'mlx-community--Qwen3.5-4B-Instruct-4bit')
@@ -1603,7 +1602,7 @@ assert.equal(
   derivedConfig.runtimes['mtplx-qwen36-27b-speed'].args.at(2),
   '/models/Youssofal--Qwen3.6-27B-MTPLX-Optimized-Speed'
 );
-assert.deepEqual(derivedConfig.keepWarm, ['mtplx-qwen36-35b-a3b-speed-fp16']);
+assert.equal(derivedConfig.runtimes['mtplx-qwen36-35b-a3b-speed-fp16'].keepWarm, true);
 assert.equal(derivedConfig.runtimes['mtplx-qwen36-27b-speed'].args.includes('--ssd-session-cache'), false);
 const embeddingRecipe = await loadRecipeById('linux-nvidia-qwen3-embedding-4b-vllm');
 const additiveBase = {
@@ -1611,8 +1610,7 @@ const additiveBase = {
   defaults: { ...(config.defaults ?? {}), chatModel: 'existing-chat' },
   models: [{ id: 'existing-chat', name: 'Existing chat', kind: 'chat', backend: 'existing-backend' }],
   backends: { ...(config.backends ?? {}), 'existing-backend': { baseUrl: 'http://127.0.0.1:8999/v1' } },
-  runtimes: { ...(config.runtimes ?? {}), 'existing-runtime': { enabled: true, port: 8999 } },
-  keepWarm: ['existing-runtime']
+  runtimes: { ...(config.runtimes ?? {}), 'existing-runtime': { enabled: true, port: 8999, keepWarm: true } }
 };
 const additiveDerived = deriveUserConfig(additiveBase, embeddingRecipe, {
   modelRoot: '/models',
@@ -1620,7 +1618,8 @@ const additiveDerived = deriveUserConfig(additiveBase, embeddingRecipe, {
 });
 assert.equal(additiveDerived.defaults.chatModel, 'existing-chat');
 assert.deepEqual(additiveDerived.models.map((model) => model.id).sort(), ['Qwen/Qwen3-Embedding-4B', 'existing-chat']);
-assert.deepEqual(additiveDerived.keepWarm.sort(), ['existing-runtime', 'qwen3-embedding-4b']);
+assert.equal(additiveDerived.runtimes['existing-runtime'].keepWarm, true);
+assert.equal(additiveDerived.runtimes['qwen3-embedding-4b'].keepWarm, true);
 assert(additiveDerived.clientCatalog.modelOrder.includes('existing-chat'));
 assert(additiveDerived.clientCatalog.modelOrder.includes('Qwen/Qwen3-Embedding-4B'));
 assert(
@@ -1732,7 +1731,6 @@ minimalDataDrivenConfig.backends = {};
 minimalDataDrivenConfig.runtimes = {};
 minimalDataDrivenConfig.models = [];
 minimalDataDrivenConfig.aliases = {};
-minimalDataDrivenConfig.keepWarm = [];
 minimalDataDrivenConfig.clientCatalog = {
   providerId: 'local-llm',
   providerName: 'LLooM Local',
@@ -1743,7 +1741,7 @@ const portableDerivedConfig = deriveUserConfig(minimalDataDrivenConfig, portable
   sessionCacheRoot: '/sessions'
 });
 assert.equal(portableDerivedConfig.defaults.chatModel, 'Example/Portable-MTPLX-Speed');
-assert.deepEqual(portableDerivedConfig.keepWarm, ['mtplx-portable-community-speed']);
+assert.equal(portableDerivedConfig.runtimes['mtplx-portable-community-speed'].keepWarm, true);
 assert.equal(portableDerivedConfig.models.length, 1);
 assert.equal(portableDerivedConfig.models[0].backend, 'mtplx-example-portable-mtplx-speed');
 assert.equal(portableDerivedConfig.models[0].contextWindow, 65536);
@@ -1822,7 +1820,7 @@ const portableSglangConfig = deriveUserConfig(minimalDataDrivenConfig, portableS
   modelRoot: '/models'
 });
 assert.equal(portableSglangConfig.defaults.chatModel, 'Example/Portable-SGLang-Chat');
-assert.deepEqual(portableSglangConfig.keepWarm, ['sglang-portable-community-chat']);
+assert.equal(portableSglangConfig.runtimes['sglang-portable-community-chat'].keepWarm, true);
 assert.equal(portableSglangConfig.runtimes['sglang-portable-community-chat'].command, 'sglang-python');
 assert.equal(portableSglangConfig.runtimes['sglang-portable-community-chat'].maxConcurrency, 8);
 assert.equal(portableSglangConfig.runtimes['sglang-portable-community-chat'].memoryGb, 24);
@@ -2044,7 +2042,7 @@ const initApply = await applyInit(config, {
 assert.equal(initApply.dryRun, false);
 const appliedConfig = JSON.parse(await fs.readFile(path.join(tempDir, 'applied-config.json'), 'utf8'));
 assert.equal(appliedConfig.runtimes['mtplx-qwen36-27b-speed'].enabled, true);
-assert.deepEqual(appliedConfig.keepWarm, ['mtplx-qwen36-35b-a3b-speed-fp16']);
+assert.equal(appliedConfig.runtimes['mtplx-qwen36-35b-a3b-speed-fp16'].keepWarm, true);
 const initGeneratedOmp = await fs.readFile(path.join(tempDir, 'generated-applied', 'omp-models.yml'), 'utf8');
 assert(initGeneratedOmp.includes('Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed'));
 const initGeneratedOmpConfig = await fs.readFile(path.join(tempDir, 'generated-applied', 'omp-config.yml'), 'utf8');
@@ -2092,11 +2090,11 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
     'utf8'
   );
   const lifecycleConfig = {
-    keepWarm: ['synthetic-runtime'],
     runtimePolicy: { enabled: true, autoEvict: true, memoryBudgetGb: 10 },
     runtimes: {
       'synthetic-runtime': {
         enabled: true,
+        keepWarm: true,
         memoryGb: 1,
         command: process.execPath,
         args: [runtimeScript, String(runtimePort)],
@@ -5489,7 +5487,7 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
       }
     }
   };
-  adminConfig.keepWarm = ['synthetic-admin-runtime'];
+  adminConfig.runtimes['synthetic-admin-runtime'].keepWarm = true;
   const adminApp = createLloomServer(adminConfig, {
     logger: { error() {} }
   });
@@ -5600,10 +5598,10 @@ if (autoBackendListened) {
     defaults: {
       chatModel: 'auto-model'
     },
-    keepWarm: ['warm-runtime'],
     runtimes: {
       'warm-runtime': {
         enabled: true,
+        keepWarm: true,
         memoryGb: 25,
         policy: {
           priority: 100

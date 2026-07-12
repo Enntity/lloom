@@ -363,14 +363,9 @@ export class RuntimeManager {
   }
 
   keepWarmRuntimeIds() {
-    return [
-      ...new Set([
-        ...(this.config.keepWarm ?? []),
-        ...Object.entries(this.config.runtimes ?? {})
-          .filter(([, runtime]) => runtime.keepWarm === true)
-          .map(([runtimeId]) => runtimeId)
-      ])
-    ];
+    return Object.entries(this.config.runtimes ?? {})
+      .filter(([, runtime]) => runtime.keepWarm === true)
+      .map(([runtimeId]) => runtimeId);
   }
 
   processRunning(runtimeId) {

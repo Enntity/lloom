@@ -446,6 +446,7 @@
       }
     },
     "mtplx-qwen36-35b-a3b-speed-fp16": {
+      "keepWarm": true,
       "enabled": false,
       "command": "mtplx",
       "args": [
@@ -547,9 +548,6 @@
       "maxConcurrency": 1
     }
   },
-  "keepWarm": [
-    "mtplx-qwen36-35b-a3b-speed-fp16"
-  ],
   "clientCatalog": {
     "providerId": "local-llm",
     "providerName": "LLooM Local",

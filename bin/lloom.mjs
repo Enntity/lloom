@@ -1873,7 +1873,7 @@ async function main() {
           {
             config: config.sourcePath,
             defaults: config.defaults,
-            keepWarm: config.keepWarm ?? [],
+            keepWarm: manager.keepWarmRuntimeIds(),
             runtimes,
             events: status.events
           },
@@ -1946,7 +1946,7 @@ async function main() {
       console.log(
         JSON.stringify(
           {
-            keepWarm: config.keepWarm ?? [],
+            keepWarm: manager.keepWarmRuntimeIds(),
             results: await manager.startKeepWarm()
           },
           null,

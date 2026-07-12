@@ -45,7 +45,7 @@
       "healthUrl": "http://192.168.1.131:8000/v1/models",
       "maxConcurrency": 4,
       "memoryGb": 64,
-      "keepWarm": false,
+      "keepWarm": true,
       "startupTimeoutMs": 600000,
       "policy": { "priority": 50, "evictable": true },
       "recipe": { "id": "dgx-spark-qwen36-nvfp4-mtp", "version": 1 },
@@ -65,7 +65,7 @@
       "healthUrl": "http://192.168.1.131:8001/v1/models",
       "maxConcurrency": 4,
       "memoryGb": 64,
-      "keepWarm": true,
+      "keepWarm": false,
       "startupTimeoutMs": 600000,
       "policy": { "priority": 100, "evictable": true },
       "recipe": { "id": "dgx-spark-qwen36-nvfp4-fast-mtp", "version": 1 },
@@ -77,7 +77,6 @@
       }
     }
   },
-  "keepWarm": ["qwen36-unsloth-fast"],
   "models": [
     {
       "id": "unsloth/Qwen3.6-35B-A3B-NVFP4",

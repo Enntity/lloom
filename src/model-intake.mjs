@@ -666,7 +666,7 @@ export function createModelImportPlan(
     nextConfig.clientCatalog.modelOrder.push(resolvedModelId);
   }
   if (keepWarm && runtime) {
-    nextConfig.keepWarm = [...new Set([...(nextConfig.keepWarm ?? []), runtimeId])];
+    nextConfig.runtimes[runtimeId].keepWarm = true;
   }
   if (setDefault) {
     nextConfig.defaults ??= {};

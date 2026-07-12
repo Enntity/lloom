@@ -89,6 +89,11 @@ export async function loadConfig(
   const raw = await fs.readFile(resolvedPath, 'utf8');
   const parsed = JSON.parse(raw);
   const expanded = expandEnvValue(parsed, configEnv(env));
+  if (Object.hasOwn(expanded, 'keepWarm')) {
+    throw new Error(
+      `Invalid LLooM config ${resolvedPath}: top-level keepWarm is not supported; use runtimes.<id>.keepWarm`
+    );
+  }
   const community = asObject(expanded.community);
   const requireSignedPacks = envBoolean(env, 'LLOOM_COMMUNITY_REQUIRE_SIGNED_PACKS');
   const config = {
@@ -161,7 +166,6 @@ export async function loadConfig(
     backends: asObject(expanded.backends),
     aliases: asObject(expanded.aliases),
     runtimes: asObject(expanded.runtimes),
-    keepWarm: Array.isArray(expanded.keepWarm) ? expanded.keepWarm : [],
     models: Array.isArray(expanded.models) ? expanded.models : [],
     clientCatalog: {
       providerId: 'local-llm',

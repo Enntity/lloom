@@ -46,7 +46,7 @@ to stop it, or `management: "managed"` when LLooM should own `docker start/stop`
 
 ```bash
 lloom add-model 'openai:http://127.0.0.1:8000/v1#Qwen/Qwen3.6-35B-A3B'
-# then set defaults.chatModel / keepWarm as needed
+# then set defaults.chatModel and runtimes.<id>.keepWarm as needed
 ```
 
 ```json
@@ -96,7 +96,7 @@ Typical Spark layout:
 | 8220 | TTS (optional) | OpenAI-compatible | Voice |
 
 - Only one huge chat model **resident** at a time unless memory admits both.
-- `keepWarm: ["vllm-…"]` for the daily driver; second runtime `enabled: true` for on-demand start.
+- `runtimes.<daily-driver>.keepWarm: true`; leave the second runtime `enabled: true, keepWarm: false` for on-demand start.
 - Clients pick models by **id**; gateway routes to the right backend/runtime.
 
 ## Recommended first-run on a new Spark

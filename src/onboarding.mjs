@@ -97,7 +97,8 @@ function communitySetupBaseConfig(config) {
   next.runtimes = {};
   next.models = [];
   next.aliases = {};
-  next.keepWarm = [];
+  for (const runtime of Object.values(next.runtimes ?? {})) runtime.keepWarm = false;
+  delete next.keepWarm;
   next.clientCatalog = {
     providerId: config.clientCatalog?.providerId ?? 'local-llm',
     providerName: config.clientCatalog?.providerName ?? config.providers?.['local-llm']?.name ?? 'LLooM Local',

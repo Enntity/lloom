@@ -6,10 +6,10 @@ const runtimePolicyConfig = {
     memoryBudgetGb: 40,
     protectActiveRequests: true
   },
-  keepWarm: ['warm'],
   runtimes: {
     warm: {
       enabled: true,
+      keepWarm: true,
       memoryGb: 25,
       policy: { priority: 100 }
     },

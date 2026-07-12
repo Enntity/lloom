@@ -369,7 +369,11 @@ export async function createSetupStatus(
   const integrations = integrationReport.data;
 
   const runtimes = includeRuntimes ? await new RuntimeManager(config, { logger: { error() {} } }).status() : null;
-  const keepWarm = new Set(config.keepWarm ?? []);
+  const keepWarm = new Set(
+    Object.entries(config.runtimes ?? {})
+      .filter(([, runtime]) => runtime.keepWarm === true)
+      .map(([runtimeId]) => runtimeId)
+  );
   const keepWarmRuntimeStatus = runtimes
     ? Object.fromEntries(Object.entries(runtimes.runtimes).filter(([runtimeId]) => keepWarm.has(runtimeId)))
     : null;
