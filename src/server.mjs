@@ -644,9 +644,13 @@ function createMetricsStore({ maxRecent = 200 } = {}) {
           : Math.max(bucket.maxFirstContentMs, entry.firstContentMs);
       const outputTokens = metricOutputTokens(entry);
       if (entry.stream && outputTokens > 1 && entry.lastContentMs != null) {
+        const decodeDurationMs = Math.max(1, entry.lastContentMs - entry.firstContentMs);
+        const decodeRate = (outputTokens - 1) / (decodeDurationMs / 1000);
         bucket.decodeTokens += outputTokens - 1;
-        bucket.generationDurationMs += Math.max(1, entry.lastContentMs - entry.firstContentMs);
+        bucket.generationDurationMs += decodeDurationMs;
         bucket.decodeSamples += 1;
+        bucket.recentDecodeRates.push(decodeRate);
+        if (bucket.recentDecodeRates.length > 10) bucket.recentDecodeRates.shift();
         if (entry.usage?.output_tokens == null) bucket.estimatedDecodeSamples += 1;
       }
     }
@@ -793,6 +797,7 @@ function emptyMetricBucket(id) {
     decodeTokens: 0,
     decodeSamples: 0,
     estimatedDecodeSamples: 0,
+    recentDecodeRates: [],
     inputTokens: 0,
     outputTokens: 0,
     totalTokens: 0,
@@ -802,7 +807,9 @@ function emptyMetricBucket(id) {
 
 function finalizeMetricBucket(bucket) {
   const durationSeconds = bucket.durationMs / 1000;
-  const generationSeconds = bucket.generationDurationMs / 1000;
+  const recentDecodeRate = bucket.recentDecodeRates.length
+    ? bucket.recentDecodeRates.reduce((sum, rate) => sum + rate, 0) / bucket.recentDecodeRates.length
+    : null;
   return {
     ...bucket,
     avgDurationMs: bucket.requests ? Number((bucket.durationMs / bucket.requests).toFixed(2)) : 0,
@@ -810,7 +817,7 @@ function finalizeMetricBucket(bucket) {
       ? Number((bucket.firstContentMs / bucket.firstContentCount).toFixed(2))
       : null,
     outputTokensPerSecond: durationSeconds > 0 ? Number((bucket.outputTokens / durationSeconds).toFixed(2)) : 0,
-    decodeTokensPerSecond: generationSeconds > 0 ? Number((bucket.decodeTokens / generationSeconds).toFixed(2)) : null
+    decodeTokensPerSecond: recentDecodeRate == null ? null : Number(recentDecodeRate.toFixed(2))
   };
 }
 

@@ -7399,6 +7399,8 @@ if (mockListened) {
       assert.equal(typeof modelMetrics.decodeTokensPerSecond, 'number');
       assert(modelMetrics.decodeSamples > 0);
       assert(modelMetrics.decodeTokens > 0);
+      assert(modelMetrics.recentDecodeRates.length > 0);
+      assert(modelMetrics.recentDecodeRates.length <= 10);
       assert.equal(typeof metricsJson.rolling.short.outputTokensPerSecond, 'number');
       assert.equal(metricsJson.rolling.short.windowMs, 10000);
       assert.equal(metricsJson.rolling.minute.windowMs, 60000);

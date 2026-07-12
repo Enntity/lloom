@@ -370,7 +370,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       <div class="band-body grid">
         <article class="topology" aria-label="Live LLooM connection and model topology">
           <div class="topology-head"><div><div class="fabric-title">LLooM // LIVE TOPOLOGY</div><div class="muted mono">connections → gateway → models</div></div>
-            <div class="fabric-totals"><div class="fabric-total"><strong id="fabric-in">0</strong><span>tokens in</span></div><div class="fabric-total"><strong id="fabric-out">0</strong><span>tokens out</span></div><div class="fabric-total"><strong id="fabric-rate">—</strong><span id="fabric-rate-label">decode tok/s</span></div><div class="fabric-total"><strong id="fabric-active">0</strong><span>active</span></div></div>
+            <div class="fabric-totals"><div class="fabric-total"><strong id="fabric-in">0</strong><span>tokens in</span></div><div class="fabric-total"><strong id="fabric-out">0</strong><span>tokens out</span></div><div class="fabric-total"><strong id="fabric-rate">—</strong><span id="fabric-rate-label">tok/s</span></div><div class="fabric-total"><strong id="fabric-active">0</strong><span>active</span></div></div>
           </div>
           <canvas id="topology-canvas" class="topology-canvas" aria-label="Animated connections flowing through LLooM to configured models"></canvas>
         </article>
@@ -886,7 +886,8 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         ctx.fillStyle = "rgba(153,163,176,.9)";
         ctx.fillText(formatCompact(point.model.inputTokens) + " in · " + formatCompact(point.model.outputTokens) + " out", point.x - 27, point.y + 4);
         ctx.fillStyle = serving ? "#42d77d" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : "rgba(143,180,255,.7)";
-        const modelRateText = live ? formatRate(point.model.liveRate) + " ~tok/s" : point.model.averageRate == null ? "" : formatRate(point.model.averageRate) + " decode ~tok/s";
+        const displayedModelRate = live ? point.model.liveRate : point.model.averageRate;
+        const modelRateText = displayedModelRate == null ? "" : formatRate(displayedModelRate) + " tok/s";
         const modelStateText = serving ? "SERVING" : point.model.state.toUpperCase();
         ctx.fillText(fitCanvasText(ctx, modelStateText + (modelRateText ? " · " + modelRateText : ""), cardWidth - 22), point.x - 27, point.y + 23);
       }
@@ -994,15 +995,16 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         outputTokens: Number(totals.outputTokens || 0),
         active: new Map(active.map(item => [item.id, { outputChars: item.outputChars || 0, requestBytes: item.requestBytes || 0 }]))
       };
-      $("#fabric-in").textContent = formatNumber(totals.inputTokens);
-      $("#fabric-out").textContent = formatNumber(totals.outputTokens);
+      const activeInputTokens = active.reduce((sum, item) => sum + Number(item.requestBytes || 0) / 4, 0);
+      const activeOutputTokens = active.reduce((sum, item) => sum + Number(item.outputChars || 0) / 4, 0);
+      $("#fabric-in").textContent = formatNumber(Number(totals.inputTokens || 0) + activeInputTokens);
+      $("#fabric-out").textContent = formatNumber(Number(totals.outputTokens || 0) + activeOutputTokens);
       const liveInputRate = inputRate + [...activeRates.values()].reduce((sum, item) => sum + item.input, 0);
       const liveOutputRate = outputRate + [...activeRates.values()].reduce((sum, item) => sum + item.output, 0);
       const totalDurationSeconds = Math.max(.001, Number(totals.durationMs || 0) / 1000);
       const averageInputRate = Number(totals.inputTokens || 0) / totalDurationSeconds;
       const decodeOutputRate = totals.decodeTokensPerSecond == null ? null : Number(totals.decodeTokensPerSecond);
       $("#fabric-rate").textContent = liveOutputRate > 0 ? formatRate(liveOutputRate) : decodeOutputRate == null ? "—" : formatRate(decodeOutputRate);
-      $("#fabric-rate-label").textContent = liveOutputRate > 0 ? "live ~tok/s" : "decode ~tok/s";
       $("#fabric-active").textContent = formatNumber(active.length);
       state.topologySummary = {
         active: active.length,
