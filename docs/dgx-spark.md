@@ -27,6 +27,18 @@ Community orchestration notes (Spark forums / sparkrun / spark-vllm-docker) conv
 
 ## Install reality on GB10 (important)
 
+### Checked-in official NVFP4 lanes
+
+`deploy/dgx-spark/config.json` includes three managed, on-demand NVFP4 lanes sourced from their Hugging Face model cards:
+
+| Gateway model ID | Source recipe | LLooM port | Notes |
+|---|---|---:|---|
+| `nvidia/Qwen3.6-35B-A3B-NVFP4` | [NVIDIA model card](https://huggingface.co/nvidia/Qwen3.6-35B-A3B-NVFP4) | 8003 | Uses NVIDIA's explicit DGX Spark flags, including Marlin MoE and MTP with Triton |
+| `nvidia/Qwen3.6-27B-NVFP4` | [NVIDIA model card](https://huggingface.co/nvidia/Qwen3.6-27B-NVFP4) | 8004 | NVIDIA publishes a generic ModelOpt/vLLM command, not a separate Spark-tuned block |
+| `unsloth/Qwen3.6-27B-NVFP4` | [Unsloth model card](https://huggingface.co/unsloth/Qwen3.6-27B-NVFP4) | 8005 | Uses Unsloth's required Spark `CUTE_DSL_ARCH=sm_121a` and `flashinfer_b12x` guidance plus its MTP configuration |
+
+All three use `vllm/vllm-openai:nightly`, share the host Hugging Face/vLLM caches, and set `keepWarm: false`. Adding the config advertises the models but does not load them. The first request (or `lloom runtime-start <runtime-id>`) lets LLooM admit the runtime, pull the image/checkpoint when absent, create the container, and wait for its health endpoint. Model-card commands can drift with nightly vLLM, so update the checked-in recipe version whenever flags change.
+
 Generic `pip install vllm` / `pip install sglang` often **fails or is suboptimal** on Spark (ARM64 Grace + Blackwell sm_121). Prefer:
 
 1. **NVIDIA / community Docker** (most reliable day-1 path)  

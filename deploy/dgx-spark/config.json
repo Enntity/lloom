@@ -34,6 +34,18 @@
       "baseUrl": "http://192.168.1.131:8001/v1",
       "timeoutMs": 1800000
     },
+    "nvidia-qwen36-35b-nvfp4": {
+      "baseUrl": "http://192.168.1.131:8003/v1",
+      "timeoutMs": 1800000
+    },
+    "nvidia-qwen36-27b-nvfp4": {
+      "baseUrl": "http://192.168.1.131:8004/v1",
+      "timeoutMs": 1800000
+    },
+    "unsloth-qwen36-27b-nvfp4": {
+      "baseUrl": "http://192.168.1.131:8005/v1",
+      "timeoutMs": 1800000
+    },
     "qwen3-embedding-4b": {
       "type": "openai",
       "baseUrl": "http://127.0.0.1:8002/v1",
@@ -112,6 +124,78 @@
         "method": "POST",
         "body": { "model": "Qwen/Qwen3-Embedding-4B", "input": ["Continuity is the persistence of meaningful identity through time."] }
       }
+    },
+    "nvidia-qwen36-35b-nvfp4": {
+      "enabled": true,
+      "adapter": "docker",
+      "management": "managed",
+      "containerName": "nvidia-qwen36-35b-nvfp4",
+      "port": 8003,
+      "healthUrl": "http://192.168.1.131:8003/v1/models",
+      "maxConcurrency": 4,
+      "memoryGb": 64,
+      "keepWarm": false,
+      "startupTimeoutMs": 900000,
+      "policy": { "priority": 80, "evictable": true },
+      "recipe": {
+        "id": "nvidia-hf-qwen36-35b-a3b-nvfp4-dgx-spark",
+        "version": 1,
+        "source": "https://huggingface.co/nvidia/Qwen3.6-35B-A3B-NVFP4"
+      },
+      "bootstrap": {
+        "adapter": "docker",
+        "image": "vllm/vllm-openai:nightly",
+        "createArgs": ["--restart", "unless-stopped", "--gpus", "all", "--ipc", "host", "-p", "192.168.1.131:8003:8000", "-e", "CUTE_DSL_ARCH=sm_121a", "-v", "/home/enntitysparkadmin/.cache/huggingface:/root/.cache/huggingface", "-v", "/home/enntitysparkadmin/.cache/vllm:/root/.cache/vllm"],
+        "command": ["nvidia/Qwen3.6-35B-A3B-NVFP4", "--host", "0.0.0.0", "--port", "8000", "--tensor-parallel-size", "1", "--trust-remote-code", "--kv-cache-dtype", "fp8", "--attention-backend", "flashinfer", "--moe-backend", "marlin", "--gpu-memory-utilization", "0.4", "--max-model-len", "262144", "--max-num-seqs", "4", "--max-num-batched-tokens", "8192", "--enable-chunked-prefill", "--async-scheduling", "--enable-prefix-caching", "--speculative-config", "{\"method\":\"mtp\",\"num_speculative_tokens\":3,\"moe_backend\":\"triton\"}", "--load-format", "fastsafetensors", "--reasoning-parser", "qwen3", "--tool-call-parser", "qwen3_xml", "--enable-auto-tool-choice"]
+      }
+    },
+    "nvidia-qwen36-27b-nvfp4": {
+      "enabled": true,
+      "adapter": "docker",
+      "management": "managed",
+      "containerName": "nvidia-qwen36-27b-nvfp4",
+      "port": 8004,
+      "healthUrl": "http://192.168.1.131:8004/v1/models",
+      "maxConcurrency": 4,
+      "memoryGb": 64,
+      "keepWarm": false,
+      "startupTimeoutMs": 900000,
+      "policy": { "priority": 90, "evictable": true },
+      "recipe": {
+        "id": "nvidia-hf-qwen36-27b-nvfp4-vllm",
+        "version": 1,
+        "source": "https://huggingface.co/nvidia/Qwen3.6-27B-NVFP4"
+      },
+      "bootstrap": {
+        "adapter": "docker",
+        "image": "vllm/vllm-openai:nightly",
+        "createArgs": ["--restart", "unless-stopped", "--gpus", "all", "--ipc", "host", "-p", "192.168.1.131:8004:8000", "-e", "CUTE_DSL_ARCH=sm_121a", "-v", "/home/enntitysparkadmin/.cache/huggingface:/root/.cache/huggingface", "-v", "/home/enntitysparkadmin/.cache/vllm:/root/.cache/vllm"],
+        "command": ["nvidia/Qwen3.6-27B-NVFP4", "--port", "8000", "--quantization", "modelopt", "--max-model-len", "262144", "--reasoning-parser", "qwen3"]
+      }
+    },
+    "unsloth-qwen36-27b-nvfp4": {
+      "enabled": true,
+      "adapter": "docker",
+      "management": "managed",
+      "containerName": "unsloth-qwen36-27b-nvfp4",
+      "port": 8005,
+      "healthUrl": "http://192.168.1.131:8005/v1/models",
+      "maxConcurrency": 4,
+      "memoryGb": 64,
+      "keepWarm": false,
+      "startupTimeoutMs": 900000,
+      "policy": { "priority": 85, "evictable": true },
+      "recipe": {
+        "id": "unsloth-hf-qwen36-27b-nvfp4-dgx-spark",
+        "version": 1,
+        "source": "https://huggingface.co/unsloth/Qwen3.6-27B-NVFP4"
+      },
+      "bootstrap": {
+        "adapter": "docker",
+        "image": "vllm/vllm-openai:nightly",
+        "createArgs": ["--restart", "unless-stopped", "--gpus", "all", "--ipc", "host", "-p", "192.168.1.131:8005:8000", "-e", "CUTE_DSL_ARCH=sm_121a", "-v", "/home/enntitysparkadmin/.cache/huggingface:/root/.cache/huggingface", "-v", "/home/enntitysparkadmin/.cache/vllm:/root/.cache/vllm"],
+        "command": ["unsloth/Qwen3.6-27B-NVFP4", "--host", "0.0.0.0", "--port", "8000", "--tensor-parallel-size", "1", "--trust-remote-code", "--dtype", "bfloat16", "--kv-cache-dtype", "fp8", "--attention-backend", "flashinfer", "--moe-backend", "flashinfer_b12x", "--gpu-memory-utilization", "0.4", "--max-model-len", "262144", "--max-num-seqs", "4", "--max-num-batched-tokens", "8192", "--enable-chunked-prefill", "--async-scheduling", "--enable-prefix-caching", "--speculative-config", "{\"method\":\"mtp\",\"num_speculative_tokens\":2}", "--load-format", "fastsafetensors", "--reasoning-parser", "qwen3", "--tool-call-parser", "qwen3_xml", "--enable-auto-tool-choice"]
+      }
     }
   },
   "models": [
@@ -149,6 +233,48 @@
       "capabilities": ["embedding", "embeddings", "batching", "multilingual", "long-context"],
       "contextWindow": 8192,
       "maxOutputTokens": 8192,
+      "advertise": true
+    },
+    {
+      "id": "nvidia/Qwen3.6-35B-A3B-NVFP4",
+      "name": "NVIDIA Qwen 3.6 35B A3B NVFP4 · Official DGX Spark Recipe",
+      "kind": "chat",
+      "backend": "nvidia-qwen36-35b-nvfp4",
+      "runtime": "nvidia-qwen36-35b-nvfp4",
+      "upstreamModel": "nvidia/Qwen3.6-35B-A3B-NVFP4",
+      "input": ["text"],
+      "output": ["text"],
+      "capabilities": ["chat", "streaming", "usage", "tools", "reasoning", "long-context", "batching", "speculative-decoding"],
+      "contextWindow": 262144,
+      "maxPromptTokens": 255000,
+      "advertise": true
+    },
+    {
+      "id": "nvidia/Qwen3.6-27B-NVFP4",
+      "name": "NVIDIA Qwen 3.6 27B NVFP4 · Official vLLM Recipe",
+      "kind": "chat",
+      "backend": "nvidia-qwen36-27b-nvfp4",
+      "runtime": "nvidia-qwen36-27b-nvfp4",
+      "upstreamModel": "nvidia/Qwen3.6-27B-NVFP4",
+      "input": ["text"],
+      "output": ["text"],
+      "capabilities": ["chat", "streaming", "usage", "tools", "reasoning", "long-context", "batching"],
+      "contextWindow": 262144,
+      "maxPromptTokens": 255000,
+      "advertise": true
+    },
+    {
+      "id": "unsloth/Qwen3.6-27B-NVFP4",
+      "name": "Unsloth Qwen 3.6 27B NVFP4 · DGX Spark",
+      "kind": "chat",
+      "backend": "unsloth-qwen36-27b-nvfp4",
+      "runtime": "unsloth-qwen36-27b-nvfp4",
+      "upstreamModel": "unsloth/Qwen3.6-27B-NVFP4",
+      "input": ["text"],
+      "output": ["text"],
+      "capabilities": ["chat", "streaming", "usage", "tools", "reasoning", "long-context", "batching", "speculative-decoding"],
+      "contextWindow": 262144,
+      "maxPromptTokens": 255000,
       "advertise": true
     },
     {

@@ -1558,10 +1558,7 @@ export function createLloomServer(
       async ({ signal, timing, progress }) => {
         await ensureRuntime(resolved.model.runtime);
         // Normalize history so reasoning_content is OpenAI-shaped before MTPLX render.
-        const normalizedRequest = translateReasoningEffortForBackend(
-          normalizeOpenAIChatRequestBody(body),
-          resolved
-        );
+        const normalizedRequest = translateReasoningEffortForBackend(normalizeOpenAIChatRequestBody(body), resolved);
         const upstream = await fetchUpstream({
           backend: resolved.backend,
           path: '/v1/chat/completions',
