@@ -9,7 +9,7 @@
     "id": "MIT",
     "name": "Recipe metadata license"
   },
-  "updatedAt": "2026-07-08T08:00:04.728Z",
+  "updatedAt": "2026-07-13T20:45:00.000Z",
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated"
@@ -55,6 +55,22 @@
     {
       "id": "linux-nvidia-gb10-qwen36-unsloth-vllm",
       "path": "linux-nvidia-gb10-qwen36-unsloth-vllm.json",
+      "currentVersion": 2,
+      "versions": [
+        {
+          "version": 1,
+          "path": "archive/linux-nvidia-gb10-qwen36-unsloth-vllm/v1.json",
+          "status": "archived",
+          "archivedAt": "2026-07-13T20:45:00.000Z",
+          "notes": "Tuned vLLM nightly recipe retained for reproducibility."
+        },
+        {
+          "version": 2,
+          "path": "linux-nvidia-gb10-qwen36-unsloth-vllm.json",
+          "status": "current",
+          "notes": "Promotes released vLLM 0.25.0 for the measured 27B dense GB10 lane."
+        }
+      ],
       "name": "DGX Spark Qwen3.6 Unsloth NVFP4 vLLM",
       "summary": "Curated Qwen3.6 27B dense and 35B-A3B MoE NVFP4 lanes for NVIDIA GB10.",
       "tags": ["linux", "nvidia", "dgx-spark", "gb10", "qwen3.6", "unsloth", "nvfp4", "vllm"],

@@ -6,6 +6,7 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Added
 
+- Immutable recipe-version archives with index-declared current/history metadata and validation.
 - MLX Audio speech and transcription discovery, named voice profiles, and Qwen3-TTS support.
 - Reasoning normalization across OpenAI-compatible, Responses, and Anthropic-compatible protocol surfaces.
 - Qwen3.6 35B-A3B OptiQ recipe and context benchmark helper.
@@ -13,6 +14,7 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Fixed
 
+- DGX Spark Unsloth Qwen3.6-27B now defaults to the measured released vLLM 0.25.0 runtime instead of nightly.
 - Detached CLI runtime starts no longer keep the command process open through inherited output pipes.
 - Native chat-client artifacts remain chat-only while discovery APIs advertise all supported model kinds.
 

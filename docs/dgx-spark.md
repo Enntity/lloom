@@ -35,9 +35,9 @@ Community orchestration notes (Spark forums / sparkrun / spark-vllm-docker) conv
 |---|---|---:|---|
 | `nvidia/Qwen3.6-35B-A3B-NVFP4` | [NVIDIA model card](https://huggingface.co/nvidia/Qwen3.6-35B-A3B-NVFP4) | 8003 | Uses NVIDIA's explicit DGX Spark flags, including Marlin MoE and MTP with Triton |
 | `nvidia/Qwen3.6-27B-NVFP4` | [NVIDIA model card](https://huggingface.co/nvidia/Qwen3.6-27B-NVFP4) | 8004 | NVIDIA publishes a generic ModelOpt/vLLM command, not a separate Spark-tuned block |
-| `unsloth/Qwen3.6-27B-NVFP4` | [Unsloth model card](https://huggingface.co/unsloth/Qwen3.6-27B-NVFP4) | 8005 | Uses Unsloth's required Spark `CUTE_DSL_ARCH=sm_121a` and `flashinfer_b12x` guidance plus its MTP configuration |
+| `unsloth/Qwen3.6-27B-NVFP4` | [Unsloth model card](https://huggingface.co/unsloth/Qwen3.6-27B-NVFP4) | 8005 | Uses released vLLM 0.25.0 with Unsloth's required Spark `CUTE_DSL_ARCH=sm_121a` and `flashinfer_b12x` guidance plus its MTP configuration |
 
-All three use `vllm/vllm-openai:nightly`, share the host Hugging Face/vLLM caches, and set `keepWarm: false`. Adding the config advertises the models but does not load them. The first request (or `lloom runtime-start <runtime-id>`) lets LLooM admit the runtime, pull the image/checkpoint when absent, create the container, and wait for its health endpoint. Model-card commands can drift with nightly vLLM, so update the checked-in recipe version whenever flags change.
+The Unsloth 27B lane is pinned to `vllm/vllm-openai:v0.25.0`; the two NVIDIA-source experimental lanes remain on nightly. All three share the host Hugging Face/vLLM caches and set `keepWarm: false`. Adding the config advertises the models but does not load them. The first request (or `lloom runtime-start <runtime-id>`) lets LLooM admit the runtime, pull the image/checkpoint when absent, create the container, and wait for its health endpoint. When flags or images change, archive the prior recipe and increment the active recipe version.
 
 Generic `pip install vllm` / `pip install sglang` often **fails or is suboptimal** on Spark (ARM64 Grace + Blackwell sm_121). Prefer:
 

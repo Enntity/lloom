@@ -115,6 +115,10 @@
           "type": "string",
           "minLength": 1
         },
+        "recipeVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
         "backendId": {
           "type": "string",
           "minLength": 1

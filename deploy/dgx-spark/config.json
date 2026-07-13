@@ -199,12 +199,12 @@
       "policy": { "priority": 85, "evictable": true },
       "recipe": {
         "id": "unsloth-hf-qwen36-27b-nvfp4-dgx-spark",
-        "version": 1,
+        "version": 2,
         "source": "https://huggingface.co/unsloth/Qwen3.6-27B-NVFP4"
       },
       "bootstrap": {
         "adapter": "docker",
-        "image": "vllm/vllm-openai:nightly",
+        "image": "vllm/vllm-openai:v0.25.0",
         "createArgs": ["--restart", "unless-stopped", "--gpus", "all", "--ipc", "host", "-p", "192.168.1.131:8005:8000", "-e", "CUTE_DSL_ARCH=sm_121a", "-v", "/home/enntitysparkadmin/.cache/huggingface:/root/.cache/huggingface", "-v", "/home/enntitysparkadmin/.cache/vllm:/root/.cache/vllm"],
         "command": ["unsloth/Qwen3.6-27B-NVFP4", "--host", "0.0.0.0", "--port", "8000", "--tensor-parallel-size", "1", "--trust-remote-code", "--dtype", "bfloat16", "--kv-cache-dtype", "fp8", "--attention-backend", "flashinfer", "--moe-backend", "flashinfer_b12x", "--gpu-memory-utilization", "0.4", "--max-model-len", "262144", "--max-num-seqs", "8", "--max-num-batched-tokens", "8192", "--enable-chunked-prefill", "--async-scheduling", "--enable-prefix-caching", "--speculative-config", "{\"method\":\"mtp\",\"num_speculative_tokens\":2}", "--load-format", "fastsafetensors", "--reasoning-parser", "qwen3", "--tool-call-parser", "qwen3_xml", "--enable-auto-tool-choice"]
       }

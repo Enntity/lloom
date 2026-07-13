@@ -774,7 +774,7 @@ assert.deepEqual(
   ]
 );
 const benchmarkEvidence = await loadBenchmarkEvidence();
-assert.equal(benchmarkEvidence.length, 5);
+assert.equal(benchmarkEvidence.length, 8);
 assert.deepEqual(validateBenchmarkEvidence(benchmarkEvidence), []);
 const benchmarkSuite = JSON.parse(
   await fs.readFile(path.join(process.cwd(), 'benchmarks', 'community', 'apple-silicon-qwen36-m2max.json'), 'utf8')
@@ -857,6 +857,18 @@ assert(validateRecipeIndex(duplicateRecipeIndex).some((error) => error.includes(
 const traversalRecipeIndex = structuredClone(recipeIndex);
 traversalRecipeIndex.recipes[0].path = '../escape.json';
 assert(validateRecipeIndex(traversalRecipeIndex).some((error) => error.includes('recipes root')));
+const versionedRecipeEntry = recipeIndex.recipes.find(
+  (entry) => entry.id === 'linux-nvidia-gb10-qwen36-unsloth-vllm'
+);
+assert.equal(versionedRecipeEntry.currentVersion, 2);
+assert.equal(versionedRecipeEntry.versions.length, 2);
+assert.equal(versionedRecipeEntry.versions.find((version) => version.status === 'archived')?.version, 1);
+const mismatchedVersionIndex = structuredClone(recipeIndex);
+const mismatchedVersionEntry = mismatchedVersionIndex.recipes.find(
+  (entry) => entry.id === 'linux-nvidia-gb10-qwen36-unsloth-vllm'
+);
+mismatchedVersionEntry.currentVersion = 3;
+assert(validateRecipeIndex(mismatchedVersionIndex).some((error) => error.includes('must match currentVersion')));
 const recipeIndexReport = await buildRecipeIndexReport(config, {
   modelRoot: '/models',
   backendIds: backendIds(backendCatalog),
@@ -867,6 +879,21 @@ const recipeIndexReport = await buildRecipeIndexReport(config, {
 assert.equal(recipeIndexReport.ok, true);
 assert.equal(recipeIndexReport.index.id, 'lloom-community-recipes');
 assert.equal(recipeIndexReport.recipes.length, 5);
+const indexedSparkRecipe = recipeIndexReport.recipes.find(
+  (candidate) => candidate.id === 'linux-nvidia-gb10-qwen36-unsloth-vllm'
+);
+assert.equal(indexedSparkRecipe.currentVersion, 2);
+assert.equal(indexedSparkRecipe.versions.length, 2);
+assert.equal(indexedSparkRecipe.models.find((model) => model.role === 'dense-quality')?.benchmark.count, 3);
+assert.equal(
+  indexedSparkRecipe.models.find((model) => model.role === 'dense-quality')?.benchmark.best.recipeVersion,
+  2
+);
+assert.equal(
+  indexedSparkRecipe.models.find((model) => model.role === 'dense-quality')?.benchmark.best.metrics
+    .generationTokPerSec,
+  55.82
+);
 const indexedQwen36Recipe = recipeIndexReport.recipes.find((candidate) => candidate.id === 'apple-silicon-qwen36');
 assert.equal(indexedQwen36Recipe.ok, true);
 assert.equal(indexedQwen36Recipe.commands.plan, 'lloom plan apple-silicon-qwen36 --model-root /models');

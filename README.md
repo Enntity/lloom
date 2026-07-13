@@ -327,6 +327,8 @@ export PATH="$HOME/.lloom/bin:$PATH"
 
 Benchmark evidence lives in `benchmarks/community/*.json`. `lloom benchmarks` validates and ranks all local evidence, while recipe plans attach the best matching result to each model role. `lloom recipe-index` validates `recipes/index.json`, joins indexed recipes to their benchmark evidence, and prints the plan/install/bootstrap commands that a user or CI job can trust.
 
+Recipe IDs and active paths stay stable across tuning revisions. Prior immutable documents live under `recipes/archive/<recipe-id>/vN.json`; index entries declare `currentVersion` and their full `versions` history. Archived versions remain reproducible and validated but are never selected automatically. See [`docs/recipes.md`](docs/recipes.md#recipe-version-history).
+
 Community recipe packs can be previewed and imported without hand-editing the local index:
 
 ```bash

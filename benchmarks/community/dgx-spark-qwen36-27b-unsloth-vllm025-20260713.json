@@ -1,0 +1,149 @@
+{
+  "$schema": "https://lloom.dev/schemas/benchmark-suite.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "dgx-spark-qwen36-27b-unsloth-vllm025-20260713",
+  "name": "DGX Spark Qwen3.6 27B Unsloth NVFP4 vLLM 0.25",
+  "summary": "Matched random-prompt measurements for recipe v2 using released vLLM 0.25.0.",
+  "license": { "id": "CC0-1.0", "name": "CC0 1.0" },
+  "source": { "type": "local-measurement", "name": "LLooM Spark-Arena-style runtime comparison" },
+  "submittedAt": "2026-07-13T20:34:00Z",
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "vllm bench serve 0.25.0",
+    "source": "reproducible local measurement"
+  },
+  "methodology": {
+    "harness": "vllm bench serve",
+    "harnessVersion": "0.25.0",
+    "promptCorpus": "random deterministic input=2048 output=128 temperature=0 ignore-eos seed=20260713",
+    "warmupRuns": 1,
+    "measurementRuns": 1,
+    "streaming": true
+  },
+  "results": [
+    {
+      "id": "dgx-spark-unsloth-qwen36-27b-vllm025-mtp2-s8-c1",
+      "recipeId": "linux-nvidia-gb10-qwen36-unsloth-vllm",
+      "recipeVersion": 2,
+      "backendId": "docker-vllm",
+      "model": "unsloth/Qwen3.6-27B-NVFP4",
+      "gatewayModel": "unsloth/Qwen3.6-27B-NVFP4",
+      "machine": {
+        "platformId": "linux-arm64",
+        "chip": "NVIDIA DGX Spark / GB10",
+        "memoryGb": 128,
+        "accelerators": ["cuda", "nvidia-gpu", "blackwell"]
+      },
+      "settings": {
+        "runtimeVersion": "vLLM 0.25.0",
+        "quantization": "mixed NVFP4/FP8",
+        "kvCacheDtype": "fp8",
+        "attentionBackend": "flashinfer",
+        "contextWindow": 262144,
+        "maxNumSeqs": 8,
+        "maxNumBatchedTokens": 8192,
+        "speculative": { "method": "mtp", "numSpeculativeTokens": 2 }
+      },
+      "workload": {
+        "type": "interactive-generation",
+        "category": "matched-random",
+        "concurrency": 1,
+        "promptTokens": 2048,
+        "outputTokens": 128
+      },
+      "metrics": {
+        "generationTokPerSec": 20.84,
+        "outputThroughputTokPerSec": 20.84,
+        "timeToFirstTokenMs": 1042.16,
+        "contextWindow": 262144,
+        "medianTimePerOutputTokenMs": 40.15
+      }
+    },
+    {
+      "id": "dgx-spark-unsloth-qwen36-27b-vllm025-mtp2-s8-c4",
+      "recipeId": "linux-nvidia-gb10-qwen36-unsloth-vllm",
+      "recipeVersion": 2,
+      "backendId": "docker-vllm",
+      "model": "unsloth/Qwen3.6-27B-NVFP4",
+      "gatewayModel": "unsloth/Qwen3.6-27B-NVFP4",
+      "machine": {
+        "platformId": "linux-arm64",
+        "chip": "NVIDIA DGX Spark / GB10",
+        "memoryGb": 128,
+        "accelerators": ["cuda", "nvidia-gpu", "blackwell"]
+      },
+      "settings": {
+        "runtimeVersion": "vLLM 0.25.0",
+        "quantization": "mixed NVFP4/FP8",
+        "kvCacheDtype": "fp8",
+        "attentionBackend": "flashinfer",
+        "contextWindow": 262144,
+        "maxNumSeqs": 8,
+        "maxNumBatchedTokens": 8192,
+        "speculative": { "method": "mtp", "numSpeculativeTokens": 2 }
+      },
+      "workload": {
+        "type": "interactive-generation",
+        "category": "matched-random",
+        "concurrency": 4,
+        "promptTokens": 2048,
+        "outputTokens": 128
+      },
+      "metrics": {
+        "generationTokPerSec": 47.42,
+        "outputThroughputTokPerSec": 47.42,
+        "timeToFirstTokenMs": 4162.87,
+        "contextWindow": 262144,
+        "medianTimePerOutputTokenMs": 50.33
+      }
+    },
+    {
+      "id": "dgx-spark-unsloth-qwen36-27b-vllm025-mtp2-s8-c8",
+      "recipeId": "linux-nvidia-gb10-qwen36-unsloth-vllm",
+      "recipeVersion": 2,
+      "backendId": "docker-vllm",
+      "model": "unsloth/Qwen3.6-27B-NVFP4",
+      "gatewayModel": "unsloth/Qwen3.6-27B-NVFP4",
+      "machine": {
+        "platformId": "linux-arm64",
+        "chip": "NVIDIA DGX Spark / GB10",
+        "memoryGb": 128,
+        "accelerators": ["cuda", "nvidia-gpu", "blackwell"]
+      },
+      "settings": {
+        "runtimeVersion": "vLLM 0.25.0",
+        "quantization": "mixed NVFP4/FP8",
+        "kvCacheDtype": "fp8",
+        "attentionBackend": "flashinfer",
+        "contextWindow": 262144,
+        "maxNumSeqs": 8,
+        "maxNumBatchedTokens": 8192,
+        "speculative": { "method": "mtp", "numSpeculativeTokens": 2 }
+      },
+      "workload": {
+        "type": "interactive-generation",
+        "category": "matched-random",
+        "concurrency": 8,
+        "promptTokens": 2048,
+        "outputTokens": 128
+      },
+      "metrics": {
+        "generationTokPerSec": 55.82,
+        "outputThroughputTokPerSec": 55.82,
+        "timeToFirstTokenMs": 11157.29,
+        "contextWindow": 262144,
+        "medianTimePerOutputTokenMs": 52.34
+      }
+    }
+  ],
+  "x-comparison": {
+    "matchedHarness": "vLLM 0.25.0 benchmark client",
+    "nightlyEngine": {
+      "c1OutputTokPerSec": 19.27,
+      "c4OutputTokPerSec": 43.07,
+      "c8OutputTokPerSec": 53.55
+    },
+    "notes": "The older recipe-v1 64.50 tok/s result used a different benchmark-harness build and is retained only with recipeVersion 1."
+  }
+}

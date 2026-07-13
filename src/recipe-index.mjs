@@ -63,9 +63,69 @@ export function validateRecipeIndex(index) {
     if (entry?.path) paths.add(entry.path);
     const source = asObject(entry?.source);
     if (entry?.source && !source.type) errors.push(`${prefix} source is missing type`);
+    if (entry?.currentVersion != null && (!Number.isInteger(entry.currentVersion) || entry.currentVersion < 1)) {
+      errors.push(`${prefix} currentVersion must be a positive integer`);
+    }
+    if (entry?.versions != null && !Array.isArray(entry.versions)) {
+      errors.push(`${prefix} versions must be an array`);
+    }
+    const versionNumbers = new Set();
+    const versionPaths = new Set();
+    let currentCount = 0;
+    for (const [versionIndex, version] of asArray(entry?.versions).entries()) {
+      const versionPrefix = `${prefix} versions[${versionIndex}]`;
+      if (!Number.isInteger(version?.version) || version.version < 1) {
+        errors.push(`${versionPrefix} version must be a positive integer`);
+      }
+      if (!version?.path) errors.push(`${versionPrefix} is missing path`);
+      const versionPathError = pathTraversalError(version?.path);
+      if (versionPathError) errors.push(`${versionPrefix} ${versionPathError}`);
+      if (!['current', 'archived'].includes(version?.status)) {
+        errors.push(`${versionPrefix} status must be current or archived`);
+      }
+      if (version?.status === 'current') currentCount += 1;
+      if (versionNumbers.has(version?.version)) errors.push(`${prefix} has duplicate version ${version?.version}`);
+      if (versionPaths.has(version?.path)) errors.push(`${prefix} has duplicate version path ${version?.path}`);
+      versionNumbers.add(version?.version);
+      versionPaths.add(version?.path);
+    }
+    if (asArray(entry?.versions).length) {
+      if (currentCount !== 1) errors.push(`${prefix} versions must contain exactly one current entry`);
+      const current = entry.versions.find((version) => version.status === 'current');
+      if (current && current.path !== entry.path) errors.push(`${prefix} current version path must match path`);
+      if (current && current.version !== entry.currentVersion) {
+        errors.push(`${prefix} current version must match currentVersion`);
+      }
+    }
   }
 
   return errors;
+}
+
+async function validateRecipeVersionFiles(index, root) {
+  const errorsById = new Map();
+  for (const entry of asArray(index.recipes)) {
+    const errors = [];
+    for (const version of asArray(entry?.versions)) {
+      if (!version?.path || pathTraversalError(version.path)) continue;
+      const filePath = path.resolve(root, version.path);
+      try {
+        const document = JSON.parse(await fs.readFile(filePath, 'utf8'));
+        if (document.id !== entry.id) {
+          errors.push(`recipe ${entry.id} version ${version.version} file has id ${document.id ?? '(missing)'}`);
+        }
+        if (document.version !== version.version) {
+          errors.push(
+            `recipe ${entry.id} version ${version.version} file declares version ${document.version ?? '(missing)'}`
+          );
+        }
+      } catch (error) {
+        errors.push(`recipe ${entry.id} version ${version.version} could not be read: ${error.message}`);
+      }
+    }
+    errorsById.set(entry.id, errors);
+  }
+  return errorsById;
 }
 
 export async function buildRecipeIndexReport(
@@ -86,6 +146,7 @@ export async function buildRecipeIndexReport(
   const evidence = benchmarkEvidence ?? (await loadBenchmarkEvidence(benchmarksRoot));
   const evidenceValidationErrors = benchmarkValidationErrors ?? validateBenchmarkEvidence(evidence);
   const validationErrors = validateRecipeIndex(index);
+  const versionErrorsById = await validateRecipeVersionFiles(index, root);
 
   const entries = asArray(index.recipes).map((entry) => {
     const recipe = recipeById.get(entry.id);
@@ -112,7 +173,7 @@ export async function buildRecipeIndexReport(
           benchmarkValidationErrors: evidenceValidationErrors
         })
       : null;
-    const recipeErrors = [...errors, ...recipeValidationErrors];
+    const recipeErrors = [...errors, ...recipeValidationErrors, ...(versionErrorsById.get(entry.id) ?? [])];
 
     return {
       id: entry.id ?? null,
@@ -124,6 +185,8 @@ export async function buildRecipeIndexReport(
       tags: asArray(entry.tags),
       recommendedFor: asArray(entry.recommendedFor),
       source: entry.source ?? null,
+      currentVersion: entry.currentVersion ?? recipe?.version ?? null,
+      versions: asArray(entry.versions),
       present: Boolean(recipe),
       ok: recipeErrors.length === 0,
       validationErrors: recipeErrors,

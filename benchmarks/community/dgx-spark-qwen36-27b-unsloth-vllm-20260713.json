@@ -21,6 +21,7 @@
     {
       "id": "dgx-spark-unsloth-qwen36-27b-nvfp4-mtp2-s8-c1",
       "recipeId": "linux-nvidia-gb10-qwen36-unsloth-vllm",
+      "recipeVersion": 1,
       "backendId": "docker-vllm",
       "model": "unsloth/Qwen3.6-27B-NVFP4",
       "gatewayModel": "unsloth/Qwen3.6-27B-NVFP4",
@@ -32,6 +33,7 @@
     {
       "id": "dgx-spark-unsloth-qwen36-27b-nvfp4-mtp2-s8-c4",
       "recipeId": "linux-nvidia-gb10-qwen36-unsloth-vllm",
+      "recipeVersion": 1,
       "backendId": "docker-vllm",
       "model": "unsloth/Qwen3.6-27B-NVFP4",
       "gatewayModel": "unsloth/Qwen3.6-27B-NVFP4",
@@ -43,6 +45,7 @@
     {
       "id": "dgx-spark-unsloth-qwen36-27b-nvfp4-mtp2-s8-c8",
       "recipeId": "linux-nvidia-gb10-qwen36-unsloth-vllm",
+      "recipeVersion": 1,
       "backendId": "docker-vllm",
       "model": "unsloth/Qwen3.6-27B-NVFP4",
       "gatewayModel": "unsloth/Qwen3.6-27B-NVFP4",

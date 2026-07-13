@@ -18,6 +18,8 @@ lloom plan apple-silicon-qwen36 --model-root ~/Models
 
 `plan`, `bootstrap`, and `recipe-index` attach the best matching benchmark to each recipe model role. The gateway does not silently rewrite stale model IDs; benchmark `model` and `gatewayModel` values must match recipe and registry IDs exactly.
 
+Benchmark results for recipe version 2 and later must also declare `recipeVersion`. LLooM only attaches evidence whose `recipeId` and `recipeVersion` match the active recipe, preventing archived runtime measurements from being presented as evidence for a newer recipe. Version 1 evidence may omit the field for compatibility with existing packs.
+
 Recipe packs can carry benchmark suites alongside recipes:
 
 ```zsh

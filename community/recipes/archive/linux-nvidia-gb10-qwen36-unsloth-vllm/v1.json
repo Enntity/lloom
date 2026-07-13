@@ -4,8 +4,8 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-gb10-qwen36-unsloth-vllm",
   "name": "DGX Spark Qwen3.6 Unsloth NVFP4 vLLM",
-  "version": 2,
-  "summary": "The curated Qwen3.6 27B dense and 35B-A3B MoE NVFP4 lanes for 128 GB NVIDIA GB10 systems; the dense lane defaults to released vLLM 0.25.",
+  "version": 1,
+  "summary": "The curated Qwen3.6 27B dense and 35B-A3B MoE NVFP4 lanes for 128 GB NVIDIA GB10 systems.",
   "license": { "id": "Apache-2.0", "name": "Qwen model license" },
   "provenance": {
     "createdBy": "lloom",
@@ -194,7 +194,7 @@
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "vllm/vllm-openai:v0.25.0",
+            "image": "vllm/vllm-openai:nightly",
             "createArgs": [
               "--restart",
               "unless-stopped",

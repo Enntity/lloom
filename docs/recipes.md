@@ -251,11 +251,29 @@ The portable JSON contracts are documented in `docs/interchange.md` and backed b
 
 Contributor publish flow:
 
-1. Add or update `recipes/<recipe-id>.json`.
+1. Add `recipes/<recipe-id>.json`, or archive the old document before updating it.
 2. Add benchmark evidence under `benchmarks/community/`.
-3. Add the recipe to `recipes/index.json`.
+3. Add or update the recipe in `recipes/index.json`.
 4. Run `npm run check`.
 5. Run `npm run smoke`.
 6. Run `lloom recipe-index` and confirm `ok: true`.
+
+### Recipe version history
+
+An active recipe always keeps the stable path `recipes/<recipe-id>.json`. Before changing it, preserve the old document unchanged at `recipes/archive/<recipe-id>/v<version>.json`, increment the active document's `version`, and update the index entry:
+
+```json
+{
+  "id": "example-recipe",
+  "path": "example-recipe.json",
+  "currentVersion": 2,
+  "versions": [
+    { "version": 1, "path": "archive/example-recipe/v1.json", "status": "archived" },
+    { "version": 2, "path": "example-recipe.json", "status": "current" }
+  ]
+}
+```
+
+Only the stable active file participates in planning and automatic recommendation. `lloom recipe-index` also reads every declared history file and fails validation if its `id` or `version` does not match the index. The seed host keeps a matching archive below `community/recipes/archive/`.
 
 LLooM intentionally does not use stale model fallback aliases to make an index pass. Recipe `model` and `gatewayModel` values must be exact advertised IDs.

@@ -320,6 +320,9 @@ export function validateBenchmarkResult(result) {
   const errors = [];
   if (!result.id) errors.push('benchmark result is missing id');
   if (!result.recipeId) errors.push(`benchmark ${result.id ?? '(missing)'} is missing recipeId`);
+  if (result.recipeVersion != null && (!Number.isInteger(result.recipeVersion) || result.recipeVersion < 1)) {
+    errors.push(`benchmark ${result.id ?? '(missing)'} recipeVersion must be a positive integer`);
+  }
   if (!result.backendId) errors.push(`benchmark ${result.id ?? '(missing)'} is missing backendId`);
   if (!result.model) errors.push(`benchmark ${result.id ?? '(missing)'} is missing model`);
   if (!result.machine?.platformId) errors.push(`benchmark ${result.id ?? '(missing)'} is missing machine.platformId`);
@@ -346,7 +349,13 @@ export function benchmarkScore(result) {
 }
 
 export function summarizeBenchmarksForRecipe(recipe, results) {
-  const recipeResults = asArray(results).filter((result) => result.recipeId === recipe.id);
+  const recipeResults = asArray(results).filter(
+    (result) =>
+      result.recipeId === recipe.id &&
+      (recipe.version === 1
+        ? result.recipeVersion == null || result.recipeVersion === 1
+        : result.recipeVersion === recipe.version)
+  );
   return asArray(recipe.models).map((model) => {
     const matching = recipeResults
       .filter((result) => result.model === model.model || result.gatewayModel === model.gatewayModel)
@@ -360,6 +369,7 @@ export function summarizeBenchmarksForRecipe(recipe, results) {
       best: best
         ? {
             id: best.id,
+            recipeVersion: best.recipeVersion ?? null,
             backendId: best.backendId,
             machine: best.machine,
             settings: best.settings ?? {},
@@ -378,6 +388,7 @@ export function benchmarkOverview(results) {
     .map((result) => ({
       id: result.id,
       recipeId: result.recipeId,
+      recipeVersion: result.recipeVersion ?? null,
       backendId: result.backendId,
       model: result.model,
       gatewayModel: result.gatewayModel,
