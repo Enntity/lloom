@@ -201,7 +201,8 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     .topology { position:relative; min-height:560px; overflow:hidden; background:#070b0c; border:1px solid rgba(47,230,200,.38); box-shadow:inset 0 0 90px rgba(47,230,200,.04); }
     .topology::before { content:""; position:absolute; inset:0; pointer-events:none; background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(47,230,200,.022) 4px); }
     .topology-head { position:absolute; z-index:2; left:16px; right:16px; top:14px; display:flex; justify-content:space-between; align-items:flex-start; gap:18px; pointer-events:none; }
-    .topology-canvas { display:block; width:100%; height:560px; }
+    .topology-canvas { display:block; width:100%; height:560px; cursor:grab; touch-action:none; }
+    .topology-canvas.is-panning { cursor:grabbing; }
     .topology-zoom { position:absolute; z-index:3; right:14px; bottom:14px; display:flex; align-items:center; gap:5px; padding:5px; border:1px solid rgba(47,230,200,.28); background:rgba(7,11,12,.88); backdrop-filter:blur(8px); }
     .topology-zoom button { min-width:30px; min-height:28px; padding:2px 8px; font:700 14px "SFMono-Regular",monospace; }
     .topology-zoom-output { min-width:48px; color:var(--muted); text-align:center; font:700 10px "SFMono-Regular",monospace; }
@@ -376,7 +377,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
             <div class="fabric-totals"><div class="fabric-total"><strong id="fabric-in">0</strong><span>tokens in</span></div><div class="fabric-total"><strong id="fabric-out">0</strong><span>tokens out</span></div><div class="fabric-total"><strong id="fabric-rate">—</strong><span id="fabric-rate-label">tok/s</span></div><div class="fabric-total"><strong id="fabric-active">0</strong><span>active</span></div></div>
           </div>
           <canvas id="topology-canvas" class="topology-canvas" aria-label="Animated connections flowing through LLooM to configured models"></canvas>
-          <div class="topology-zoom" aria-label="Topology zoom controls"><button id="topology-zoom-out" type="button" aria-label="Zoom out">−</button><span id="topology-zoom-output" class="topology-zoom-output">100%</span><button id="topology-zoom-in" type="button" aria-label="Zoom in">+</button><button id="topology-zoom-reset" type="button" aria-label="Reset zoom">↺</button></div>
+          <div class="topology-zoom" aria-label="Topology zoom and pan controls"><button id="topology-zoom-out" type="button" aria-label="Zoom out">−</button><span id="topology-zoom-output" class="topology-zoom-output">100%</span><button id="topology-zoom-in" type="button" aria-label="Zoom in">+</button><button id="topology-zoom-reset" type="button" aria-label="Reset view">↺</button></div>
         </article>
       </div>
     </section>
@@ -552,7 +553,8 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       modelLayoutStableFrames: 0,
       modelLayoutSettled: false,
       topologyWorldScale: 1,
-      topologyCamera: { manual: 1, current: 1 },
+      topologyCamera: { manual: 1, current: 1, panX: 0, panY: 0 },
+      topologyPanDrag: null,
       topologyRaisedModelId: null,
       topologyView: null,
       topologyHitCards: [],
@@ -980,13 +982,14 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const targetZoom = Math.max(.18, Math.min(1.6, fitZoom * state.topologyCamera.manual));
       state.topologyCamera.current += (targetZoom - state.topologyCamera.current) * .12;
       const zoom = state.topologyCamera.current;
+      const panX = state.topologyCamera.panX || 0, panY = state.topologyCamera.panY || 0;
       const zoomOutput = $("#topology-zoom-output");
       if (zoomOutput) zoomOutput.textContent = Math.round(zoom * 100) + "%";
       // Content density owns the logical world size. The camera only chooses
       // how much of that stable world is visible and never changes its bounds.
       const width = viewportWidth * state.topologyWorldScale, height = viewportHeight * state.topologyWorldScale;
       ctx.save();
-      ctx.translate(viewportWidth / 2, viewportHeight / 2);
+      ctx.translate(viewportWidth / 2 + panX, viewportHeight / 2 + panY);
       ctx.scale(zoom, zoom);
       ctx.translate(-width / 2, -height / 2);
       ctx.font = '10px "SFMono-Regular",monospace'; ctx.textAlign = "left";
@@ -1059,7 +1062,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         ctx.fillText(fitCanvasText(ctx, modelStateText + (modelRateText ? " · " + modelRateText : ""), cardWidth - 22), cardLeft + 12, point.y + 23);
       }
       state.topologyHitCards = hitCards;
-      state.topologyView = { viewportWidth, viewportHeight, width, height, zoom };
+      state.topologyView = { viewportWidth, viewportHeight, width, height, zoom, panX, panY };
       const connections = state.topologyConnections || [];
       const orderedConnections = connections.slice().sort((a, b) => {
         const aSeed = Number(String(a.id).replace(/\D/g, "")) || 1;
@@ -1298,39 +1301,94 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     }
 
     $("#refresh").addEventListener("click", refresh);
-    function adjustTopologyZoom(delta) {
-      state.topologyCamera.manual = Math.max(.55, Math.min(1.6, state.topologyCamera.manual + delta));
+    function resetTopologyCamera() {
+      state.topologyCamera.manual = 1;
+      state.topologyCamera.panX = 0;
+      state.topologyCamera.panY = 0;
+    }
+    function adjustTopologyZoom(delta, anchor) {
+      const camera = state.topologyCamera;
+      const view = state.topologyView;
+      const beforeManual = camera.manual;
+      camera.manual = Math.max(.55, Math.min(1.6, beforeManual + delta));
+      if (!view || !anchor || camera.manual === beforeManual || !view.zoom) return;
+      const fitZoom = 1 / Math.max(.001, state.topologyWorldScale);
+      const beforeZoom = Math.max(.18, Math.min(1.6, fitZoom * beforeManual));
+      const afterZoom = Math.max(.18, Math.min(1.6, fitZoom * camera.manual));
+      const ratio = afterZoom / Math.max(.001, beforeZoom);
+      const sx = anchor.x - view.viewportWidth / 2;
+      const sy = anchor.y - view.viewportHeight / 2;
+      camera.panX = sx - (sx - (camera.panX || 0)) * ratio;
+      camera.panY = sy - (sy - (camera.panY || 0)) * ratio;
+    }
+    function topologyScreenPoint(event, canvas) {
+      const rect = canvas.getBoundingClientRect();
+      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    }
+    function topologyWorldFromScreen(screenX, screenY, view) {
+      const panX = view.panX || 0, panY = view.panY || 0;
+      return {
+        x: (screenX - view.viewportWidth / 2 - panX) / view.zoom + view.width / 2,
+        y: (screenY - view.viewportHeight / 2 - panY) / view.zoom + view.height / 2
+      };
+    }
+    function hitTopologyModelCard(screenX, screenY) {
+      const view = state.topologyView;
+      const cards = state.topologyHitCards || [];
+      if (!view || !cards.length) return null;
+      const world = topologyWorldFromScreen(screenX, screenY, view);
+      for (let index = cards.length - 1; index >= 0; index--) {
+        const card = cards[index];
+        if (world.x >= card.left && world.x <= card.left + card.width && world.y >= card.top && world.y <= card.top + card.height) return card.id;
+      }
+      return null;
     }
     $("#topology-zoom-out").addEventListener("click", () => adjustTopologyZoom(-.1));
     $("#topology-zoom-in").addEventListener("click", () => adjustTopologyZoom(.1));
-    $("#topology-zoom-reset").addEventListener("click", () => { state.topologyCamera.manual = 1; });
+    $("#topology-zoom-reset").addEventListener("click", resetTopologyCamera);
     $("#topology-canvas").addEventListener("wheel", event => {
       event.preventDefault();
-      adjustTopologyZoom(event.deltaY > 0 ? -.08 : .08);
+      const canvas = event.currentTarget;
+      adjustTopologyZoom(event.deltaY > 0 ? -.08 : .08, topologyScreenPoint(event, canvas));
     }, { passive: false });
-    $("#topology-canvas").addEventListener("click", event => {
-      const view = state.topologyView;
-      const cards = state.topologyHitCards || [];
-      if (!view || !cards.length) {
-        state.topologyRaisedModelId = null;
-        return;
-      }
-      const rect = event.currentTarget.getBoundingClientRect();
-      const screenX = event.clientX - rect.left;
-      const screenY = event.clientY - rect.top;
-      const worldX = (screenX - view.viewportWidth / 2) / view.zoom + view.width / 2;
-      const worldY = (screenY - view.viewportHeight / 2) / view.zoom + view.height / 2;
-      // Walk top-to-bottom so overlaps pick the visible (highest z) card.
-      let hitId = null;
-      for (let index = cards.length - 1; index >= 0; index--) {
-        const card = cards[index];
-        if (worldX >= card.left && worldX <= card.left + card.width && worldY >= card.top && worldY <= card.top + card.height) {
-          hitId = card.id;
-          break;
-        }
-      }
-      state.topologyRaisedModelId = hitId;
+    $("#topology-canvas").addEventListener("pointerdown", event => {
+      if (event.button !== 0) return;
+      const canvas = event.currentTarget;
+      const point = topologyScreenPoint(event, canvas);
+      state.topologyPanDrag = {
+        pointerId: event.pointerId,
+        startX: point.x,
+        startY: point.y,
+        originPanX: state.topologyCamera.panX || 0,
+        originPanY: state.topologyCamera.panY || 0,
+        moved: false
+      };
+      canvas.setPointerCapture(event.pointerId);
     });
+    $("#topology-canvas").addEventListener("pointermove", event => {
+      const drag = state.topologyPanDrag;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      const canvas = event.currentTarget;
+      const point = topologyScreenPoint(event, canvas);
+      const dx = point.x - drag.startX, dy = point.y - drag.startY;
+      if (!drag.moved && (dx * dx + dy * dy) < 25) return;
+      drag.moved = true;
+      canvas.classList.add("is-panning");
+      state.topologyCamera.panX = drag.originPanX + dx;
+      state.topologyCamera.panY = drag.originPanY + dy;
+    });
+    function endTopologyPan(event) {
+      const drag = state.topologyPanDrag;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      const canvas = event.currentTarget;
+      canvas.classList.remove("is-panning");
+      state.topologyPanDrag = null;
+      if (drag.moved) return;
+      const point = topologyScreenPoint(event, canvas);
+      state.topologyRaisedModelId = hitTopologyModelCard(point.x, point.y);
+    }
+    $("#topology-canvas").addEventListener("pointerup", endTopologyPan);
+    $("#topology-canvas").addEventListener("pointercancel", endTopologyPan);
     $("#copy-output").addEventListener("click", async () => {
       await navigator.clipboard.writeText($("#output").textContent);
     });
