@@ -552,7 +552,8 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       modelLayoutIdsKey: "",
       modelLayoutField: null,
       modelLayoutWorkingField: null,
-      modelLayoutResetPositions: false,
+      modelLayoutTargetKey: "",
+      modelLayoutTargets: new Map(),
       modelLayoutStableFrames: 0,
       modelLayoutSettled: false,
       topologyWorldScale: 1,
@@ -928,6 +929,34 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       return { targets };
     }
 
+    function separateModelTargets(targets, field) {
+      const points = [...targets.entries()].map(([id, point]) => ({ id, ...point }));
+      const cardWidth = 220, cardHeight = 68, gapX = 12, gapY = 12;
+      for (let pass = 0; pass < 64; pass++) {
+        let moved = false;
+        for (let left = 0; left < points.length; left++) for (let right = left + 1; right < points.length; right++) {
+          const a = points[left], b = points[right];
+          const dx = b.x - a.x, dy = b.y - a.y;
+          const xOverlap = cardWidth + gapX - Math.abs(dx), yOverlap = cardHeight + gapY - Math.abs(dy);
+          if (xOverlap <= 0 || yOverlap <= 0) continue;
+          moved = true;
+          if (xOverlap / (cardWidth + gapX) < yOverlap / (cardHeight + gapY)) {
+            const direction = Math.sign(dx) || (a.id < b.id ? 1 : -1);
+            const shift = xOverlap / 2 + .05;
+            a.x -= direction * shift; b.x += direction * shift;
+          } else {
+            const direction = Math.sign(dy) || (a.id < b.id ? 1 : -1);
+            const shift = yOverlap / 2 + .05;
+            a.y -= direction * shift; b.y += direction * shift;
+          }
+          Object.assign(a, clampModelPoint(a.x, a.y, field));
+          Object.assign(b, clampModelPoint(b.x, b.y, field));
+        }
+        if (!moved) break;
+      }
+      return new Map(points.map(point => [point.id, point]));
+    }
+
     function smoothRate(key, target, now) {
       const desired = Math.max(0, Number(target || 0));
       let sample = state.smoothedRates.get(key);
@@ -979,7 +1008,11 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
 
     function updateThreadLayout(connections, field) {
       const activeIds = new Set(connections.map(item => item.id));
-      for (const id of state.threadNodes.keys()) if (!activeIds.has(id)) state.threadNodes.delete(id);
+      for (const id of state.threadNodes.keys()) if (!activeIds.has(id)) {
+        state.threadNodes.delete(id);
+        state.smoothedRates.delete("connection:" + id + ":in");
+        state.smoothedRates.delete("connection:" + id + ":out");
+      }
       const centerX = (field.left + field.right) / 2, centerY = (field.top + field.bottom) / 2;
       connections.forEach((connection, index) => {
         const seed = Number(String(connection.id).replace(/\D/g, "")) || index + 1;
@@ -1021,7 +1054,12 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
 
     function updateModelLayout(models, field) {
       const activeIds = new Set(models.map(model => model.id));
-      for (const id of state.modelNodes.keys()) if (!activeIds.has(id)) state.modelNodes.delete(id);
+      for (const id of state.modelNodes.keys()) if (!activeIds.has(id)) {
+        state.modelNodes.delete(id);
+        state.smoothedRates.delete("model:" + id + ":in");
+        state.smoothedRates.delete("model:" + id + ":out");
+        state.smoothedRates.delete("model:" + id + ":display");
+      }
       const snapshotField = () => ({ left: field.left, right: field.right, top: field.top, bottom: field.bottom });
       const idsKey = models.map(model => model.id).sort().join("|");
       if (idsKey !== state.modelLayoutIdsKey) {
@@ -1029,7 +1067,6 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         state.modelLayoutSettled = false;
         state.modelLayoutStableFrames = 0;
         state.modelLayoutWorkingField = snapshotField();
-        state.modelLayoutResetPositions = true;
       }
       if (state.modelLayoutSettled && modelFieldDelta(state.modelLayoutField, field) >= 16) {
         state.modelLayoutSettled = false;
@@ -1046,12 +1083,16 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         if (liveArea > workArea * 1.02) state.modelLayoutWorkingField = snapshotField();
       }
       const layoutField = state.modelLayoutWorkingField;
-      const orbit = assignClusterOrbitTargets(models, layoutField);
+      const targetKey = idsKey + "@" + [layoutField.left, layoutField.right, layoutField.top, layoutField.bottom].map(value => Math.round(value)).join(":");
+      if (targetKey !== state.modelLayoutTargetKey) {
+        const orbit = assignClusterOrbitTargets(models, layoutField);
+        state.modelLayoutTargets = separateModelTargets(orbit.targets, layoutField);
+        state.modelLayoutTargetKey = targetKey;
+      }
       const fallbackX = (layoutField.left + layoutField.right) / 2;
       const fallbackY = (layoutField.top + layoutField.bottom) / 2;
-      const resetPositions = state.modelLayoutResetPositions;
       models.forEach(model => {
-        const slot = orbit.targets.get(model.id) || { x: fallbackX, y: fallbackY, centerX: fallbackX, centerY: fallbackY };
+        const slot = state.modelLayoutTargets.get(model.id) || { x: fallbackX, y: fallbackY, centerX: fallbackX, centerY: fallbackY };
         let node = state.modelNodes.get(model.id);
         if (!node) {
           // Start already seated in the constellation slot.
@@ -1060,22 +1101,32 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           state.modelLayoutSettled = false;
           state.modelLayoutStableFrames = 0;
           state.modelLayoutWorkingField = snapshotField();
-        } else if (resetPositions) {
-          node.x = slot.x;
-          node.y = slot.y;
-          node.vx = 0;
-          node.vy = 0;
         }
         node.targetX = slot.x;
         node.targetY = slot.y;
       });
-      state.modelLayoutResetPositions = false;
       if (state.modelLayoutSettled) return;
       const nodes = models.map(model => state.modelNodes.get(model.id));
-      // Collision temporarily disabled so constellation seating can be judged alone.
       for (const node of nodes) {
         node.vx += (node.targetX - node.x) * .004;
         node.vy += (node.targetY - node.y) * .004;
+      }
+      // Targets are separated up front; this lightweight force only prevents
+      // cards from passing through each other while they animate to new seats.
+      for (let left = 0; left < nodes.length; left++) for (let right = left + 1; right < nodes.length; right++) {
+        const a = nodes[left], b = nodes[right];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const xOverlap = 232 - Math.abs(dx), yOverlap = 80 - Math.abs(dy);
+        if (xOverlap <= 0 || yOverlap <= 0) continue;
+        if (xOverlap / 232 < yOverlap / 80) {
+          const direction = Math.sign(dx) || (left < right ? 1 : -1);
+          const force = .08 + xOverlap * .018;
+          a.vx -= direction * force; b.vx += direction * force;
+        } else {
+          const direction = Math.sign(dy) || (left < right ? 1 : -1);
+          const force = .08 + yOverlap * .018;
+          a.vy -= direction * force; b.vy += direction * force;
+        }
       }
       const previousPositions = nodes.map(node => ({ x: node.x, y: node.y }));
       for (const node of nodes) {
