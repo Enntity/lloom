@@ -1,0 +1,207 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "high-memory-local-image-generation",
+  "name": "High-memory local image generation",
+  "version": 1,
+  "summary": "FLUX.2 Klein 4B for fast interactive generation and Qwen-Image-2512 for maximum open-model quality and text rendering on 96–128 GB Apple Silicon or NVIDIA systems.",
+  "license": { "id": "Apache-2.0", "name": "Model and recipe license" },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "Official Black Forest Labs and Qwen model cards plus stable-diffusion.cpp documentation"
+  },
+  "links": [
+    { "rel": "model", "href": "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B", "mediaType": "text/html" },
+    { "rel": "model", "href": "https://huggingface.co/Qwen/Qwen-Image-2512", "mediaType": "text/html" },
+    { "rel": "runtime", "href": "https://github.com/leejet/stable-diffusion.cpp", "mediaType": "text/html" }
+  ],
+  "keywords": [
+    "image-generation",
+    "text-to-image",
+    "apple-silicon",
+    "nvidia",
+    "gb10",
+    "flux2",
+    "qwen-image",
+    "stable-diffusion-cpp"
+  ],
+  "capabilities": ["image-generation", "image-editing"],
+  "hardware": {
+    "family": "High-memory Apple Silicon and NVIDIA CUDA",
+    "testedMachine": "Apple Silicon 96–128 GB and DGX Spark / GB10 128 GB class",
+    "notes": [
+      "FLUX.2 Klein 4B is the fast Apache-2.0 default: four-step generation, strong prompt adherence, and editing support.",
+      "Qwen-Image-2512 is the slower quality lane, especially for realism, natural detail, bilingual text, and layout.",
+      "The stable-diffusion.cpp backend builds Metal on macOS and CUDA on Linux automatically through LLooM's backend catalog."
+    ]
+  },
+  "requirements": {
+    "platforms": ["darwin-arm64", "linux-arm64", "linux-x64"],
+    "memoryGb": 64,
+    "diskGb": 80,
+    "commands": ["hf", "sd-server"],
+    "accelerators": ["apple-gpu", "cuda", "nvidia-gpu"]
+  },
+  "backend": {
+    "id": "stable-diffusion-cpp",
+    "name": "stable-diffusion.cpp",
+    "type": "openai-images-server",
+    "features": ["metal", "cuda", "openai-images", "flux2", "qwen-image"]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "download-flux2-klein-4b-diffusion",
+        "title": "Download FLUX.2 Klein 4B Q8 diffusion weights",
+        "action": "command",
+        "command": "hf",
+        "args": [
+          "download",
+          "leejet/FLUX.2-klein-4B-GGUF",
+          "flux-2-klein-4b-Q8_0.gguf",
+          "--local-dir",
+          "${modelRoot}/lloom-flux2-klein-4b"
+        ],
+        "skipIfPathExists": "${modelRoot}/lloom-flux2-klein-4b/flux-2-klein-4b-Q8_0.gguf"
+      },
+      {
+        "id": "download-flux2-klein-4b-components",
+        "title": "Download FLUX.2 Klein VAE and Qwen3 text encoder",
+        "action": "command",
+        "command": "hf",
+        "args": [
+          "download",
+          "Comfy-Org/vae-text-encorder-for-flux-klein-4b",
+          "split_files/text_encoders/qwen_3_4b.safetensors",
+          "split_files/vae/flux2-vae.safetensors",
+          "--local-dir",
+          "${modelRoot}/lloom-flux2-klein-4b"
+        ],
+        "skipIfPathExists": "${modelRoot}/lloom-flux2-klein-4b/split_files/vae/flux2-vae.safetensors"
+      },
+      {
+        "id": "download-qwen-image-2512-diffusion",
+        "title": "Download Qwen-Image-2512 Q8 diffusion weights",
+        "action": "command",
+        "command": "hf",
+        "args": [
+          "download",
+          "unsloth/Qwen-Image-2512-GGUF",
+          "qwen-image-2512-Q8_0.gguf",
+          "--local-dir",
+          "${modelRoot}/lloom-qwen-image-2512"
+        ],
+        "skipIfPathExists": "${modelRoot}/lloom-qwen-image-2512/qwen-image-2512-Q8_0.gguf"
+      },
+      {
+        "id": "download-qwen-image-2512-components",
+        "title": "Download Qwen-Image VAE and Qwen2.5-VL text encoder",
+        "action": "command",
+        "command": "hf",
+        "args": [
+          "download",
+          "Comfy-Org/Qwen-Image_ComfyUI",
+          "split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors",
+          "split_files/vae/qwen_image_vae.safetensors",
+          "--local-dir",
+          "${modelRoot}/lloom-qwen-image-2512"
+        ],
+        "skipIfPathExists": "${modelRoot}/lloom-qwen-image-2512/split_files/vae/qwen_image_vae.safetensors"
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "default-image",
+      "model": "black-forest-labs/FLUX.2-klein-4B",
+      "gatewayModel": "black-forest-labs/FLUX.2-klein-4B",
+      "runtime": "flux2-klein-4b-sdcpp",
+      "backendConfig": "flux2-klein-4b-sdcpp",
+      "backend": "stable-diffusion.cpp Metal/CUDA",
+      "input": ["text", "image"],
+      "output": ["image"],
+      "capabilities": ["image-generation", "image-editing"],
+      "settings": {
+        "maxActiveRequests": 1,
+        "memoryGb": 32,
+        "priority": 70,
+        "evictable": true,
+        "keepWarm": false,
+        "startupTimeoutMs": 900000,
+        "runtime": {
+          "command": "sd-server",
+          "args": [
+            "--listen-ip",
+            "127.0.0.1",
+            "--listen-port",
+            "${port}",
+            "--diffusion-model",
+            "${modelRoot}/lloom-flux2-klein-4b/flux-2-klein-4b-Q8_0.gguf",
+            "--llm",
+            "${modelRoot}/lloom-flux2-klein-4b/split_files/text_encoders/qwen_3_4b.safetensors",
+            "--vae",
+            "${modelRoot}/lloom-flux2-klein-4b/split_files/vae/flux2-vae.safetensors",
+            "--cfg-scale",
+            "1.0",
+            "--steps",
+            "4",
+            "--sampling-method",
+            "euler",
+            "--diffusion-fa"
+          ],
+          "baseUrlPath": "/v1",
+          "healthPath": "/health",
+          "warmup": false
+        }
+      }
+    },
+    {
+      "role": "quality-image",
+      "model": "Qwen/Qwen-Image-2512",
+      "gatewayModel": "Qwen/Qwen-Image-2512",
+      "runtime": "qwen-image-2512-sdcpp",
+      "backendConfig": "qwen-image-2512-sdcpp",
+      "backend": "stable-diffusion.cpp Metal/CUDA",
+      "input": ["text"],
+      "output": ["image"],
+      "capabilities": ["image-generation"],
+      "settings": {
+        "maxActiveRequests": 1,
+        "memoryGb": 48,
+        "priority": 65,
+        "evictable": true,
+        "keepWarm": false,
+        "startupTimeoutMs": 1200000,
+        "runtime": {
+          "command": "sd-server",
+          "args": [
+            "--listen-ip",
+            "127.0.0.1",
+            "--listen-port",
+            "${port}",
+            "--diffusion-model",
+            "${modelRoot}/lloom-qwen-image-2512/qwen-image-2512-Q8_0.gguf",
+            "--llm",
+            "${modelRoot}/lloom-qwen-image-2512/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors",
+            "--vae",
+            "${modelRoot}/lloom-qwen-image-2512/split_files/vae/qwen_image_vae.safetensors",
+            "--cfg-scale",
+            "4.0",
+            "--steps",
+            "50",
+            "--sampling-method",
+            "euler",
+            "--flow-shift",
+            "3",
+            "--diffusion-fa"
+          ],
+          "baseUrlPath": "/v1",
+          "healthPath": "/health",
+          "warmup": false
+        }
+      }
+    }
+  ]
+}

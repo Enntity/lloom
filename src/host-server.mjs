@@ -50,6 +50,29 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+async function loadHostRecipes(recipesRoot) {
+  const roots =
+    path.resolve(recipesRoot) === path.resolve(defaultRecipesRoot)
+      ? [defaultRecipesRoot]
+      : [defaultRecipesRoot, recipesRoot];
+  const merged = new Map();
+  for (const root of roots) {
+    for (const recipe of await loadRecipes(root)) merged.set(recipe.id, recipe);
+  }
+  return [...merged.values()];
+}
+
+async function loadHostRecipeIndex(indexPath) {
+  const paths =
+    path.resolve(indexPath) === path.resolve(path.join(defaultRecipesRoot, 'index.json'))
+      ? [indexPath]
+      : [path.join(defaultRecipesRoot, 'index.json'), indexPath];
+  const indexes = await Promise.all(paths.map((candidate) => loadRecipeIndex(candidate)));
+  const recipes = new Map();
+  for (const index of indexes) for (const recipe of asArray(index.recipes)) recipes.set(recipe.id, recipe);
+  return { ...indexes.at(-1), recipes: [...recipes.values()] };
+}
+
 function firstQueryParam(searchParams, names) {
   for (const name of names) {
     const value = searchParams.get(name);
@@ -483,9 +506,9 @@ async function createRecommendationDocument(
   options,
   { profile, filters, limit = 1, endpoint = '/v1/recipe-packs/recommended' } = {}
 ) {
-  const index = await loadRecipeIndex(options.indexPath);
+  const index = await loadHostRecipeIndex(options.indexPath);
   const indexEntryById = new Map(asArray(index.recipes).map((entry) => [entry.id, entry]));
-  const recipes = await loadRecipes(options.recipesRoot);
+  const recipes = await loadHostRecipes(options.recipesRoot);
   const evidence = await loadBenchmarkEvidence(options.benchmarksRoot);
   const evaluations = [];
   for (const recipe of recipes) {
@@ -656,22 +679,16 @@ async function persistRecipePack(pack, submissionsRoot) {
 async function packForRecipe(
   config,
   recipeId,
-  {
-    indexPath,
-    recipesRoot,
-    benchmarksRoot,
-    publisher,
-    keyId,
-    privateKey,
-    publicKey,
-    privateKeyPath,
-    publicKeyPath
-  } = {}
+  { recipesRoot, benchmarksRoot, publisher, keyId, privateKey, publicKey, privateKeyPath, publicKeyPath } = {}
 ) {
+  const recipe = (await loadHostRecipes(recipesRoot)).find((candidate) => candidate.id === recipeId);
+  if (!recipe) throw new Error(`unknown recipe ${recipeId}`);
+  const selectedRecipesRoot = path.dirname(recipe.filePath);
+  const selectedIndexPath = path.join(selectedRecipesRoot, 'index.json');
   const exportPlan = await createRecipePackExport(config, {
     recipeIds: [recipeId],
-    indexPath,
-    recipesRoot,
+    indexPath: selectedIndexPath,
+    recipesRoot: selectedRecipesRoot,
     benchmarksRoot,
     id: `${recipeId}-pack`,
     name: `${recipeId} recipe pack`,
@@ -707,7 +724,7 @@ async function signedKeyMetadata({ keyId, publicKey, publicKeyPath, ephemeral } 
 async function hostDataSummary(options) {
   const [catalog, recipes, evidence] = await Promise.all([
     loadBackendCatalog(options.backendCatalogPath),
-    loadRecipes(options.recipesRoot),
+    loadHostRecipes(options.recipesRoot),
     loadBenchmarkEvidence(options.benchmarksRoot)
   ]);
   return {
@@ -860,8 +877,8 @@ export function createLloomHostServer(
       }
 
       if (req.method === 'GET' && url.pathname === '/v1/recipes') {
-        const index = await loadRecipeIndex(options.indexPath);
-        const recipes = await loadRecipes(options.recipesRoot);
+        const index = await loadHostRecipeIndex(options.indexPath);
+        const recipes = await loadHostRecipes(options.recipesRoot);
         const recipeById = new Map(recipes.map((recipe) => [recipe.id, recipe]));
         const data = filterRecipes(index, recipeById, url.searchParams);
         sendJson(res, 200, {
@@ -929,7 +946,7 @@ export function createLloomHostServer(
       if (req.method === 'GET' && packMatch) {
         const packId = decodeURIComponent(packMatch[1]);
         const recipeId = packId.endsWith('-pack') ? packId.slice(0, -5) : packId;
-        const recipes = await loadRecipes(options.recipesRoot);
+        const recipes = await loadHostRecipes(options.recipesRoot);
         if (!recipes.some((recipe) => recipe.id === recipeId)) {
           sendError(res, 404, `unknown recipe pack ${packId}`, {
             code: 'not_found',

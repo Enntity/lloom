@@ -15,14 +15,16 @@ The production community host is not live yet. URLs under the reserved `communit
 
 ## First-Class Platforms
 
-| NVIDIA / DGX Spark | Apple Silicon |
-| --- | --- |
-| CUDA, Blackwell, DGX Spark / GB10, and Linux NVIDIA hosts | M-series Macs with unified memory |
-| vLLM and SGLang are the primary high-throughput backends | MLX, MTPLX, OptiQ, and llama.cpp are the primary native backends |
+| NVIDIA / DGX Spark                                                                     | Apple Silicon                                                                     |
+| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| CUDA, Blackwell, DGX Spark / GB10, and Linux NVIDIA hosts                              | M-series Macs with unified memory                                                 |
+| vLLM and SGLang are the primary high-throughput backends                               | MLX, MTPLX, OptiQ, and llama.cpp are the primary native backends                  |
 | Managed Docker runtimes, GPU-memory admission, warm/on-demand lanes, and Spark recipes | Native processes, unified-memory-aware recipes, model-root reuse, and Mac recipes |
-| See [`docs/dgx-spark.md`](docs/dgx-spark.md) | See the bundled `apple-silicon-*` recipes |
+| See [`docs/dgx-spark.md`](docs/dgx-spark.md)                                           | See the bundled `apple-silicon-*` recipes                                         |
 
 Both platforms get the same gateway APIs, runtime policy, per-connection telemetry, live dashboard, client integrations, external-provider passthrough, and community recipe/benchmark workflow.
+
+The bundled offline recipe library stays deliberately small: proven Apple Silicon Qwen3.6 lanes, Unsloth Qwen3.6 35B-A3B and 27B NVFP4 for DGX Spark/GB10, and conventional FLUX.2 Klein 4B plus Qwen-Image-2512 image lanes for high-memory systems. The community host automatically includes every bundled recipe and adds the wider experimental and opt-in catalog; host entries can override a bundled recipe with stronger evidence without making offline setup depend on the host.
 
 ## Quick Start
 

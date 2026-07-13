@@ -11,6 +11,15 @@ Recipes are evidence-backed backend/model choices for a machine class. They shou
 - Prompt-processing and generation throughput
 - Known client compatibility issues
 
+## Bundled library and host library
+
+LLooM intentionally has two catalog tiers:
+
+- `recipes/` is the small offline library: one or two high-confidence ways to get productive on each supported hardware class without contacting a community host.
+- `community/recipes/` contains broader, specialized, experimental, and opt-in choices. `lloom-host` automatically merges the bundled library into its configured host library, with host entries overriding duplicate IDs, so the host is always a strict superset.
+
+The current high-memory defaults include Apple Silicon Qwen3.6 lanes, Unsloth Qwen3.6 35B-A3B and 27B NVFP4 lanes for NVIDIA GB10, FLUX.2 Klein 4B for fast conventional image generation, and Qwen-Image-2512 for the higher-quality image lane. Adult-content-capable CyberRealistic Pony and FLUX.2 community merges remain host-only and opt-in.
+
 ## Apple Silicon Qwen3.6 Starting Point
 
 On the current M2 Max 96 GB machine, the strongest observed Qwen3.6 lanes were:
@@ -41,8 +50,8 @@ Model entries should be specific enough for LLooM to create the local runtime wi
 - `backendConfig`: optional stable backend config ID when the recipe should not use an auto-generated ID.
 - `input` and `output`: modalities such as `text`, `image`, `audio`, `embedding`, or `scores`.
 - `capabilities`: the API contract the model supports, for example `responses`, `anthropic-messages`, `tools`, `reasoning`, `vision`, `mtp`, or `long-context`.
-- `settings`: runtime knobs consumed during config materialization, including `contextWindow`, `maxOutputTokens`, `maxActiveRequests`, `profile`, `draftDepth`, `reasoning`, `preserveThinking`, `batchingPreset`, `memoryGb`, `startupTimeoutMs`, `priority`, `evictable`, and session-cache fields.
-- `settings.runtime`: optional explicit launcher data for recipes that need backend-specific command lines. LLooM templates `command`, `args`, `env`, `healthPath` or `healthUrl`, `warmup`, and session-cache hints with variables such as `${modelPath}`, `${modelId}`, `${port}`, `${contextWindow}`, `${maxOutputTokens}`, `${maxActiveRequests}`, `${runtimeId}`, and `${sessionCacheDir}`. If it is absent, LLooM uses the built-in defaults for known backends.
+- `settings`: runtime knobs consumed during config materialization, including `contextWindow`, `maxOutputTokens`, `maxActiveRequests`, `profile`, `draftDepth`, `reasoning`, `preserveThinking`, `batchingPreset`, `memoryGb`, `startupTimeoutMs`, `priority`, `evictable`, `keepWarm`, and session-cache fields.
+- `settings.runtime`: optional explicit launcher data for recipes that need backend-specific command lines or bootstrap-only managed containers. LLooM templates `command`, `args`, `env`, `bootstrap`, `healthPath` or `healthUrl`, `warmup`, and session-cache hints with variables such as `${modelRoot}`, `${modelPath}`, `${modelId}`, `${port}`, `${contextWindow}`, `${maxOutputTokens}`, `${maxActiveRequests}`, `${runtimeId}`, and `${sessionCacheDir}`. If it is absent, LLooM uses the built-in defaults for known backends.
 - `observed`: a lightweight performance summary for humans. Ranking-quality evidence should still live in a linked `benchmark-suite.v1`.
 
 Inspect a plan without running it:

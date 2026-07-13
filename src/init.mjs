@@ -226,6 +226,7 @@ function runtimeTemplateVariables({
   backendId,
   runtimeId,
   modelPath,
+  modelRoot,
   modelId,
   port,
   sessionCacheRoot,
@@ -241,6 +242,7 @@ function runtimeTemplateVariables({
     backendId,
     runtimeId,
     modelPath,
+    modelRoot,
     modelId,
     gatewayModel: modelId,
     upstreamModel: recipeModel.model,
@@ -287,6 +289,7 @@ function buildExplicitRecipeRuntime({
   backendId,
   runtimeId,
   modelPath,
+  modelRoot,
   modelId,
   port,
   sessionCacheRoot,
@@ -297,13 +300,14 @@ function buildExplicitRecipeRuntime({
 }) {
   const settings = asObject(recipeModel.settings);
   const runtimeSettings = asObject(settings.runtime);
-  if (!runtimeSettings.command) return null;
+  if (!runtimeSettings.command && !runtimeSettings.bootstrap) return null;
   const variables = runtimeTemplateVariables({
     recipe,
     recipeModel,
     backendId,
     runtimeId,
     modelPath,
+    modelRoot,
     modelId,
     port,
     sessionCacheRoot,
@@ -322,8 +326,12 @@ function buildExplicitRecipeRuntime({
   const warmup = explicitWarmup(runtimeSettings, port, modelId, variables);
   return {
     ...base,
-    command: templateString(runtimeSettings.command, variables),
-    args: templateValue(asArray(runtimeSettings.args), variables),
+    ...(runtimeSettings.command
+      ? {
+          command: templateString(runtimeSettings.command, variables),
+          args: templateValue(asArray(runtimeSettings.args), variables)
+        }
+      : {}),
     ...(runtimeSettings.cwd ? { cwd: templateString(runtimeSettings.cwd, variables) } : {}),
     ...(runtimeSettings.env ? { env: templateValue(asObject(runtimeSettings.env), variables) } : {}),
     ...(runtimeSettings.adapter ? { adapter: templateString(runtimeSettings.adapter, variables) } : {}),
@@ -345,7 +353,17 @@ function buildExplicitRecipeRuntime({
   };
 }
 
-function buildRecipeRuntime({ recipe, recipeModel, backendId, runtimeId, modelPath, modelId, port, sessionCacheRoot }) {
+function buildRecipeRuntime({
+  recipe,
+  recipeModel,
+  backendId,
+  runtimeId,
+  modelPath,
+  modelRoot,
+  modelId,
+  port,
+  sessionCacheRoot
+}) {
   const settings = asObject(recipeModel.settings);
   const contextWindow = positiveInteger(settings.contextWindow, 32768);
   const maxOutputTokens = positiveInteger(settings.maxOutputTokens, 8192);
@@ -357,6 +375,7 @@ function buildRecipeRuntime({ recipe, recipeModel, backendId, runtimeId, modelPa
     startupTimeoutMs: positiveInteger(settings.startupTimeoutMs, 900000),
     maxConcurrency: maxActiveRequests,
     ...(Number.isFinite(memoryGb) ? { memoryGb } : {}),
+    ...(typeof settings.keepWarm === 'boolean' ? { keepWarm: settings.keepWarm } : {}),
     policy: {
       priority: positiveInteger(settings.priority, 50),
       evictable: settings.evictable !== false
@@ -369,6 +388,7 @@ function buildRecipeRuntime({ recipe, recipeModel, backendId, runtimeId, modelPa
     backendId,
     runtimeId,
     modelPath,
+    modelRoot,
     modelId,
     port,
     sessionCacheRoot,
@@ -540,6 +560,7 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
         backendId,
         runtimeId,
         modelPath,
+        modelRoot,
         modelId,
         port,
         sessionCacheRoot
@@ -805,7 +826,15 @@ export function deriveUserConfig(
   const requestedRecipeKeepWarm = (recipe.models ?? [])
     .filter((model) => model.settings?.keepWarm === true && model.runtime)
     .map((model) => model.runtime);
-  const keepWarm = keepWarmRuntimeId ?? preferredModel?.runtime ?? defaultKeepWarmRuntime(derived, recipe);
+  const recipeHasExplicitKeepWarm = (recipe.models ?? []).some(
+    (model) => typeof model.settings?.keepWarm === 'boolean'
+  );
+  const keepWarm =
+    keepWarmRuntimeId !== undefined
+      ? keepWarmRuntimeId
+      : recipeHasExplicitKeepWarm
+        ? (requestedRecipeKeepWarm[0] ?? null)
+        : (preferredModel?.runtime ?? defaultKeepWarmRuntime(derived, recipe));
 
   for (const recipeModel of recipe.models ?? []) {
     const runtimeId = recipeModel.runtime;

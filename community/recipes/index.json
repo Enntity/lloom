@@ -37,13 +37,7 @@
         "agentic chat/coding that should match stock Qwen3.6 behavior",
         "users who hit thought-loops or memory thrash on MTPLX Speed FP16"
       ],
-      "capabilities": [
-        "chat",
-        "streaming",
-        "tools",
-        "reasoning",
-        "long-context"
-      ],
+      "capabilities": ["chat", "streaming", "tools", "reasoning", "long-context"],
       "source": {
         "type": "lloom-host-seed",
         "url": "community/recipes/apple-silicon-qwen36-35b-a3b-optiq.json"
@@ -194,6 +188,18 @@
         "type": "lloom-host-seed",
         "url": "community/recipes/linux-nvidia-qwen36-35b-a3b-fp8-vllm.json"
       }
+    },
+    {
+      "id": "high-memory-nsfw-image-generation",
+      "path": "high-memory-nsfw-image-generation.json",
+      "name": "High-memory NSFW image generation",
+      "summary": "Opt-in CyberRealistic Pony v18 and Aisha V96 FLUX.2 Klein 9B NSFW image lanes.",
+      "tags": ["image-generation", "nsfw", "sdxl", "pony", "flux2", "stable-diffusion-cpp", "host-only"],
+      "recommendedFor": [
+        "High-memory local systems where users explicitly want adult-content-capable community models"
+      ],
+      "capabilities": ["image-generation"],
+      "source": { "type": "lloom-host-seed", "url": "community/recipes/high-memory-nsfw-image-generation.json" }
     },
     {
       "id": "linux-nvidia-qwen36-27b-sglang",

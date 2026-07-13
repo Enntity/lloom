@@ -316,7 +316,7 @@
       "description": "Local C/C++ image generation runtime for Flux and Stable Diffusion style models.",
       "platforms": ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"],
       "features": ["image-generation", "flux", "stable-diffusion"],
-      "commands": ["sd"],
+      "commands": ["sd-server"],
       "setup": [
         {
           "id": "check-sd",
@@ -335,14 +335,26 @@
           "depth": 1
         },
         {
-          "id": "configure-stable-diffusion-cpp",
-          "title": "Configure stable-diffusion.cpp",
+          "id": "configure-stable-diffusion-cpp-metal",
+          "title": "Configure stable-diffusion.cpp with Metal",
           "action": "cmake-configure",
-          "description": "Generate the stable-diffusion.cpp CMake build tree.",
+          "platforms": ["darwin-arm64", "darwin-x64"],
+          "description": "Generate the stable-diffusion.cpp CMake build tree with the Apple Metal backend.",
           "source": "${installRoot}/stable-diffusion.cpp",
           "build": "${installRoot}/stable-diffusion.cpp/build",
           "skipIfExecutableExists": ["${installRoot}/stable-diffusion.cpp/build/bin/sd-cli"],
-          "args": ["-DCMAKE_BUILD_TYPE=Release"]
+          "args": ["-DCMAKE_BUILD_TYPE=Release", "-DSD_METAL=ON"]
+        },
+        {
+          "id": "configure-stable-diffusion-cpp-cuda",
+          "title": "Configure stable-diffusion.cpp with CUDA",
+          "action": "cmake-configure",
+          "platforms": ["linux-x64", "linux-arm64"],
+          "description": "Generate the stable-diffusion.cpp CMake build tree with the NVIDIA CUDA backend.",
+          "source": "${installRoot}/stable-diffusion.cpp",
+          "build": "${installRoot}/stable-diffusion.cpp/build",
+          "skipIfExecutableExists": ["${installRoot}/stable-diffusion.cpp/build/bin/sd-cli"],
+          "args": ["-DCMAKE_BUILD_TYPE=Release", "-DSD_CUDA=ON"]
         },
         {
           "id": "build-stable-diffusion-cpp",
@@ -363,6 +375,17 @@
             "${installRoot}/stable-diffusion.cpp/build/bin/sd-cli",
             "${repoParent}/stable-diffusion.cpp/build/bin/sd-cli"
           ]
+        },
+        {
+          "id": "link-stable-diffusion-cpp-server",
+          "title": "Expose the stable-diffusion.cpp server through LLooM shims",
+          "action": "link-command",
+          "commandName": "sd-server",
+          "sourceCandidates": [
+            "${backendRoot}/stable-diffusion.cpp/build/bin/sd-server",
+            "${installRoot}/stable-diffusion.cpp/build/bin/sd-server",
+            "${repoParent}/stable-diffusion.cpp/build/bin/sd-server"
+          ]
         }
       ],
       "server": {
@@ -377,7 +400,19 @@
       "kind": "openai-compatible-server",
       "description": "LLooM-managed vLLM containers for NVIDIA hosts where the tested runtime is delivered as a Docker image.",
       "platforms": ["linux-x64", "linux-arm64"],
-      "features": ["chat", "embeddings", "pooling", "streaming", "usage", "tools", "batching", "cuda", "blackwell", "dgx-spark", "docker"],
+      "features": [
+        "chat",
+        "embeddings",
+        "pooling",
+        "streaming",
+        "usage",
+        "tools",
+        "batching",
+        "cuda",
+        "blackwell",
+        "dgx-spark",
+        "docker"
+      ],
       "commands": ["docker"],
       "setup": [
         {
@@ -401,7 +436,17 @@
       "kind": "openai-compatible-server",
       "description": "High-throughput CUDA-first inference server. Default NVIDIA/DGX Spark lane for concurrent serving, long context, and multi-GPU tensor parallel.",
       "platforms": ["linux-x64", "linux-arm64"],
-      "features": ["chat", "streaming", "usage", "tools", "batching", "speculative-decoding", "cuda", "blackwell", "dgx-spark"],
+      "features": [
+        "chat",
+        "streaming",
+        "usage",
+        "tools",
+        "batching",
+        "speculative-decoding",
+        "cuda",
+        "blackwell",
+        "dgx-spark"
+      ],
       "commands": ["vllm"],
       "notes": [
         "On DGX Spark / GB10 (linux-arm64 + Blackwell), prefer a Spark-tuned wheel or Docker image (NGC / community spark-vllm-docker / vllm-openai:cu130-nightly) rather than a generic PyPI install.",

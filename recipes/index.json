@@ -46,17 +46,45 @@
         "M-series Macs with at least 48 GB unified memory",
         "agentic chat/coding that should match stock Qwen3.6 behavior"
       ],
-      "capabilities": [
-        "chat",
-        "streaming",
-        "tools",
-        "reasoning",
-        "long-context"
-      ],
+      "capabilities": ["chat", "streaming", "tools", "reasoning", "long-context"],
       "source": {
         "type": "local",
         "url": "recipes/apple-silicon-qwen36-35b-a3b-optiq.json"
       }
+    },
+    {
+      "id": "linux-nvidia-gb10-qwen36-unsloth-vllm",
+      "path": "linux-nvidia-gb10-qwen36-unsloth-vllm.json",
+      "name": "DGX Spark Qwen3.6 Unsloth NVFP4 vLLM",
+      "summary": "Curated Qwen3.6 27B dense and 35B-A3B MoE NVFP4 lanes for NVIDIA GB10.",
+      "tags": ["linux", "nvidia", "dgx-spark", "gb10", "qwen3.6", "unsloth", "nvfp4", "vllm"],
+      "recommendedFor": ["DGX Spark and GB10 systems with 128 GB unified memory"],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "tools",
+        "reasoning",
+        "mtp",
+        "batching",
+        "long-context"
+      ],
+      "source": { "type": "local", "url": "recipes/linux-nvidia-gb10-qwen36-unsloth-vllm.json" }
+    },
+    {
+      "id": "high-memory-local-image-generation",
+      "path": "high-memory-local-image-generation.json",
+      "name": "High-memory local image generation",
+      "summary": "FLUX.2 Klein 4B fast generation plus Qwen-Image-2512 quality generation for Apple Silicon and NVIDIA.",
+      "tags": ["image-generation", "apple-silicon", "nvidia", "gb10", "flux2", "qwen-image", "stable-diffusion-cpp"],
+      "recommendedFor": [
+        "Apple Silicon 96–128 GB",
+        "DGX Spark / GB10 128 GB",
+        "local image generation without a host connection"
+      ],
+      "capabilities": ["image-generation", "image-editing"],
+      "source": { "type": "local", "url": "recipes/high-memory-local-image-generation.json" }
     },
     {
       "id": "apple-silicon-qwen36",

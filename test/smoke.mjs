@@ -765,7 +765,13 @@ assert.equal(recipe.schemaVersion, 1);
 const loadedRecipes = await loadRecipes();
 assert.deepEqual(
   loadedRecipes.map((candidate) => candidate.id),
-  ['apple-silicon-qwen36-35b-a3b-optiq', 'apple-silicon-qwen36', 'linux-nvidia-qwen3-embedding-4b-vllm']
+  [
+    'apple-silicon-qwen36-35b-a3b-optiq',
+    'apple-silicon-qwen36',
+    'high-memory-local-image-generation',
+    'linux-nvidia-gb10-qwen36-unsloth-vllm',
+    'linux-nvidia-qwen3-embedding-4b-vllm'
+  ]
 );
 const benchmarkEvidence = await loadBenchmarkEvidence();
 assert.equal(benchmarkEvidence.length, 2);
@@ -852,7 +858,7 @@ const recipeIndexReport = await buildRecipeIndexReport(config, {
 });
 assert.equal(recipeIndexReport.ok, true);
 assert.equal(recipeIndexReport.index.id, 'lloom-community-recipes');
-assert.equal(recipeIndexReport.recipes.length, 3);
+assert.equal(recipeIndexReport.recipes.length, 5);
 const indexedQwen36Recipe = recipeIndexReport.recipes.find((candidate) => candidate.id === 'apple-silicon-qwen36');
 assert.equal(indexedQwen36Recipe.ok, true);
 assert.equal(indexedQwen36Recipe.commands.plan, 'lloom plan apple-silicon-qwen36 --model-root /models');
@@ -1966,6 +1972,22 @@ assert.equal(
 );
 assert(initPlan.next.apply.includes("--model-root '/models'"));
 assert(initPlan.next.apply.includes("--client 'omp'"));
+
+const imageRecipe = await loadRecipeById('high-memory-local-image-generation');
+const imageConfig = deriveUserConfig(config, imageRecipe, { modelRoot: '/models' });
+assert(
+  imageConfig.runtimes['flux2-klein-4b-sdcpp'].args.includes('/models/lloom-flux2-klein-4b/flux-2-klein-4b-Q8_0.gguf')
+);
+assert(
+  imageConfig.runtimes['qwen-image-2512-sdcpp'].args.includes('/models/lloom-qwen-image-2512/qwen-image-2512-Q8_0.gguf')
+);
+assert.equal(imageConfig.runtimes['flux2-klein-4b-sdcpp'].keepWarm, false);
+
+const sparkRecipe = await loadRecipeById('linux-nvidia-gb10-qwen36-unsloth-vllm');
+const sparkConfig = deriveUserConfig(config, sparkRecipe, { modelRoot: '/models' });
+assert.equal(sparkConfig.runtimes['unsloth-qwen36-35b-a3b-nvfp4'].adapter, 'docker');
+assert.equal(sparkConfig.runtimes['unsloth-qwen36-35b-a3b-nvfp4'].keepWarm, false);
+assert.equal(sparkConfig.runtimes['unsloth-qwen36-27b-nvfp4'].keepWarm, false);
 
 const initPlanWithDefaultModelRoot = await createInitPlan(config, {
   recipeId: 'apple-silicon-qwen36',
@@ -4806,7 +4828,7 @@ if (listened) {
       try {
         assert.equal(autoHostPlan.ok, true);
         assert(autoHostPlan.host.autoStarted.pid);
-        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, 6);
+        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, 11);
         assert.equal(autoHostPlan.plans[0].recommendation.id, 'apple-silicon-qwen36-35b-a3b-mtplx-pack');
         assert.equal(autoHostPlan.plans[0].plan.roots.recipesRoot, autoHostRecipesRoot);
         assert.equal(autoHostPlan.plans[0].plan.roots.benchmarksRoot, autoHostBenchmarksRoot);
