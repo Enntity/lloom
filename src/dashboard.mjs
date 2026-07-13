@@ -553,8 +553,19 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       modelLayoutSettled: false,
       topologyWorldScale: 1,
       topologyCamera: { manual: 1, current: 1 },
+      topologyRaisedModelId: null,
+      topologyView: null,
+      topologyHitCards: [],
       output: null,
     };
+
+    // Higher values draw later (on top). Serving stays above idle hot/external cards
+    // so overlaps favor live traffic; click temporarily overrides via topologyRaisedModelId.
+    const MODEL_CARD_STATE_Z = { cold: 0, warming: 1, evicting: 1, hot: 2, external: 2, serving: 3 };
+    function modelCardZ(model) {
+      if (state.topologyRaisedModelId && model.id === state.topologyRaisedModelId) return 1000;
+      return MODEL_CARD_STATE_Z[model.state] ?? 0;
+    }
 
     const $ = selector => document.querySelector(selector);
     const endpoint = location.origin;
@@ -1014,7 +1025,14 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           }
         });
       });
-      for (const point of modelPoints.values()) {
+      const cardDrawList = [...modelPoints.values()].sort((a, b) => {
+        const zDiff = modelCardZ(a.model) - modelCardZ(b.model);
+        if (zDiff !== 0) return zDiff;
+        return a.y - b.y || String(a.model.id).localeCompare(String(b.model.id));
+      });
+      if (state.topologyRaisedModelId && !modelPoints.has(state.topologyRaisedModelId)) state.topologyRaisedModelId = null;
+      const hitCards = [];
+      for (const point of cardDrawList) {
         const displayedLiveRate = smoothRate("model:" + point.model.id + ":display", point.model.liveRate, now);
         const live = displayedLiveRate > .05;
         const serving = point.model.state === "serving";
@@ -1026,6 +1044,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         ctx.strokeStyle = serving ? "rgba(47,230,200,.95)" : external ? "rgba(192,153,255,.65)" : hot ? "rgba(47,230,200,.6)" : warming ? "rgba(243,189,79," + pulse + ")" : evicting ? "rgba(255,126,102," + pulse + ")" : "rgba(143,180,255,.22)";
         ctx.fillStyle = hot ? "rgba(7,18,17,.98)" : external ? "rgba(15,10,24,.96)" : warming ? "rgba(24,19,9,.97)" : evicting ? "rgba(25,11,9,.97)" : "rgba(8,10,15,.94)";
         const cardWidth = point.cardWidth, cardLeft = point.x - cardWidth / 2, cardTop = point.y - 34;
+        hitCards.push({ id: point.model.id, left: cardLeft, top: cardTop, width: cardWidth, height: 68 });
         ctx.beginPath(); ctx.roundRect(cardLeft, cardTop, cardWidth, 68, 5); ctx.fill(); ctx.stroke();
         ctx.fillStyle = serving ? "#42d77d" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : evicting ? "#ff7e66" : "#8fb4ff"; ctx.fillRect(cardLeft, cardTop, 4, 68);
         ctx.fillStyle = "rgba(242,245,247,.92)"; ctx.fillText(fitCanvasText(ctx, shortModel(point.model.id), cardWidth - 68), cardLeft + 12, point.y - 15);
@@ -1039,6 +1058,8 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const modelStateText = serving ? "SERVING" : point.model.state.toUpperCase();
         ctx.fillText(fitCanvasText(ctx, modelStateText + (modelRateText ? " · " + modelRateText : ""), cardWidth - 22), cardLeft + 12, point.y + 23);
       }
+      state.topologyHitCards = hitCards;
+      state.topologyView = { viewportWidth, viewportHeight, width, height, zoom };
       const connections = state.topologyConnections || [];
       const orderedConnections = connections.slice().sort((a, b) => {
         const aSeed = Number(String(a.id).replace(/\D/g, "")) || 1;
@@ -1287,6 +1308,29 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       event.preventDefault();
       adjustTopologyZoom(event.deltaY > 0 ? -.08 : .08);
     }, { passive: false });
+    $("#topology-canvas").addEventListener("click", event => {
+      const view = state.topologyView;
+      const cards = state.topologyHitCards || [];
+      if (!view || !cards.length) {
+        state.topologyRaisedModelId = null;
+        return;
+      }
+      const rect = event.currentTarget.getBoundingClientRect();
+      const screenX = event.clientX - rect.left;
+      const screenY = event.clientY - rect.top;
+      const worldX = (screenX - view.viewportWidth / 2) / view.zoom + view.width / 2;
+      const worldY = (screenY - view.viewportHeight / 2) / view.zoom + view.height / 2;
+      // Walk top-to-bottom so overlaps pick the visible (highest z) card.
+      let hitId = null;
+      for (let index = cards.length - 1; index >= 0; index--) {
+        const card = cards[index];
+        if (worldX >= card.left && worldX <= card.left + card.width && worldY >= card.top && worldY <= card.top + card.height) {
+          hitId = card.id;
+          break;
+        }
+      }
+      state.topologyRaisedModelId = hitId;
+    });
     $("#copy-output").addEventListener("click", async () => {
       await navigator.clipboard.writeText($("#output").textContent);
     });
