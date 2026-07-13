@@ -926,10 +926,10 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     function drawTopology(now) {
       const canvas = $("#topology-canvas");
       if (!canvas || !canvas.isConnected) return;
-      const width = Math.max(1, canvas.clientWidth), height = Math.max(1, canvas.clientHeight);
-      if (canvas.width !== Math.round(width) || canvas.height !== Math.round(height)) { canvas.width = Math.round(width); canvas.height = Math.round(height); }
+      const viewportWidth = Math.max(1, canvas.clientWidth), viewportHeight = Math.max(1, canvas.clientHeight);
+      if (canvas.width !== Math.round(viewportWidth) || canvas.height !== Math.round(viewportHeight)) { canvas.width = Math.round(viewportWidth); canvas.height = Math.round(viewportHeight); }
       const ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, width, height);
+      ctx.clearRect(0, 0, viewportWidth, viewportHeight);
       const modelCount = (state.topologyModels || []).length;
       const connectionCount = (state.topologyConnections || []).length;
       const autoZoom = Math.max(.62, Math.min(1, 1 - Math.max(0, modelCount - 4) * .045 - Math.max(0, connectionCount - 10) * .012));
@@ -938,10 +938,12 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const zoom = state.topologyCamera.current;
       const zoomOutput = $("#topology-zoom-output");
       if (zoomOutput) zoomOutput.textContent = Math.round(zoom * 100) + "%";
+      // Zooming out increases the logical topology world instead of shrinking a
+      // fixed layout in place. The force fields can therefore use the newly
+      // visible space while the physical canvas remains responsive to its host.
+      const width = viewportWidth / zoom, height = viewportHeight / zoom;
       ctx.save();
-      ctx.translate(width / 2, height / 2);
       ctx.scale(zoom, zoom);
-      ctx.translate(-width / 2, -height / 2);
       ctx.font = '10px "SFMono-Regular",monospace'; ctx.textAlign = "left";
       ctx.fillStyle = "#8fb4ff"; ctx.beginPath(); ctx.arc(50, 91, 3, 0, Math.PI * 2); ctx.fill(); ctx.fillText("INPUT  →", 59, 95);
       ctx.fillStyle = "#2fe6c8"; ctx.beginPath(); ctx.arc(132, 91, 3, 0, Math.PI * 2); ctx.fill(); ctx.fillText("←  OUTPUT", 141, 95);
