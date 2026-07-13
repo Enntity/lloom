@@ -903,7 +903,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           a.vy -= direction * force; b.vy += direction * force;
         }
       }
-      let maxSpeed = 0;
+      const previousPositions = nodes.map(node => ({ x: node.x, y: node.y }));
       for (const node of nodes) {
         const halfWidth = 110, halfHeight = 34;
         if (node.x < field.left + halfWidth) node.vx += (field.left + halfWidth - node.x) * .03;
@@ -914,9 +914,37 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         node.x += node.vx; node.y += node.vy;
         node.x = Math.max(field.left + halfWidth, Math.min(field.right - halfWidth, node.x));
         node.y = Math.max(field.top + halfHeight, Math.min(field.bottom - halfHeight, node.y));
-        maxSpeed = Math.max(maxSpeed, Math.abs(node.vx), Math.abs(node.vy));
       }
-      state.modelLayoutStableFrames = maxSpeed < .035 ? state.modelLayoutStableFrames + 1 : 0;
+      // Project overlapping cards apart after applying the softer forces. This
+      // makes non-overlap a layout constraint whenever the field has room,
+      // while still allowing the boundary to win in an impossibly dense field.
+      for (let pass = 0; pass < 8; pass++) {
+        let separated = true;
+        for (let left = 0; left < nodes.length; left++) for (let right = left + 1; right < nodes.length; right++) {
+          const a = nodes[left], b = nodes[right], dx = b.x - a.x, dy = b.y - a.y;
+          const xOverlap = 232 - Math.abs(dx), yOverlap = 82 - Math.abs(dy);
+          if (xOverlap <= 0 || yOverlap <= 0) continue;
+          separated = false;
+          if (xOverlap < yOverlap) {
+            const direction = Math.sign(dx) || (hashUnit(left * 17 + right * 31) > .5 ? 1 : -1);
+            const shift = xOverlap / 2 + .05;
+            a.x -= direction * shift; b.x += direction * shift;
+            a.vx = 0; b.vx = 0;
+          } else {
+            const direction = Math.sign(dy) || (hashUnit(left * 29 + right * 11) > .5 ? 1 : -1);
+            const shift = yOverlap / 2 + .05;
+            a.y -= direction * shift; b.y += direction * shift;
+            a.vy = 0; b.vy = 0;
+          }
+          a.x = Math.max(field.left + 110, Math.min(field.right - 110, a.x));
+          b.x = Math.max(field.left + 110, Math.min(field.right - 110, b.x));
+          a.y = Math.max(field.top + 34, Math.min(field.bottom - 34, a.y));
+          b.y = Math.max(field.top + 34, Math.min(field.bottom - 34, b.y));
+        }
+        if (separated) break;
+      }
+      const maxMovement = nodes.reduce((maximum, node, index) => Math.max(maximum, Math.abs(node.x - previousPositions[index].x), Math.abs(node.y - previousPositions[index].y)), 0);
+      state.modelLayoutStableFrames = maxMovement < .035 ? state.modelLayoutStableFrames + 1 : 0;
       if (state.modelLayoutStableFrames >= 24) {
         for (const node of nodes) { node.vx = 0; node.vy = 0; }
         state.modelLayoutSettled = true;
@@ -959,7 +987,6 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       }));
       ctx.font = '11px "SFMono-Regular",monospace';
       ctx.textAlign = "left";
-      ctx.textAlign = "center"; ctx.fillStyle = "rgba(153,163,176,.55)"; ctx.fillText("INSTALLED MODEL CLUSTER", (modelField.left + modelField.right) / 2, 88); ctx.textAlign = "left";
       const modelList = [...modelPoints.values()].sort((a, b) => a.y - b.y);
       modelList.forEach((point, index) => {
         const portY = center.y - Math.min(94, (modelList.length - 1) * 32) / 2 + index * Math.min(47, 94 / Math.max(1, modelList.length - 1));
