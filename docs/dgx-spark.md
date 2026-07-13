@@ -20,6 +20,7 @@ Community orchestration notes (Spark forums / sparkrun / spark-vllm-docker) conv
 - **Runtime manager**: multi-runtime ports (`8201+`), keep-warm, concurrency slots, memory admission, `ensureRuntime` on request.
 - **Recipes** (seed community):
   - `linux-nvidia-qwen36-27b-nvfp4-vllm` — dense NVFP4 + MTP-style flags (Spark-oriented)
+  - `linux-nvidia-gb10-thinkingcap-qwen36-27b-vllm` — token-efficient ThinkingCap 27B NVFP4 candidate on released vLLM 0.25
   - `linux-nvidia-qwen36-35b-a3b-fp8-vllm` — MoE agent default lane
   - `linux-nvidia-qwen36-27b-sglang` — SGLang agent/prefix lane
 - **Generic OpenAI attach**: run Docker yourself and register  
@@ -36,8 +37,9 @@ Community orchestration notes (Spark forums / sparkrun / spark-vllm-docker) conv
 | `nvidia/Qwen3.6-35B-A3B-NVFP4` | [NVIDIA model card](https://huggingface.co/nvidia/Qwen3.6-35B-A3B-NVFP4) | 8003 | Uses NVIDIA's explicit DGX Spark flags, including Marlin MoE and MTP with Triton |
 | `nvidia/Qwen3.6-27B-NVFP4` | [NVIDIA model card](https://huggingface.co/nvidia/Qwen3.6-27B-NVFP4) | 8004 | NVIDIA publishes a generic ModelOpt/vLLM command, not a separate Spark-tuned block |
 | `unsloth/Qwen3.6-27B-NVFP4` | [Unsloth model card](https://huggingface.co/unsloth/Qwen3.6-27B-NVFP4) | 8005 | Uses released vLLM 0.25.0 with Unsloth's required Spark `CUTE_DSL_ARCH=sm_121a` and `flashinfer_b12x` guidance plus its MTP configuration |
+| `sakamakismile/ThinkingCap-Qwen3.6-27B-NVFP4` | [ThinkingCap NVFP4 model card](https://huggingface.co/sakamakismile/ThinkingCap-Qwen3.6-27B-NVFP4) | 8008 | Separate on-demand candidate derived from BottleCap AI's token-efficient reasoning fine-tune; uses released vLLM 0.25.0, FP8 KV cache, FlashInfer, and native MTP |
 
-The Unsloth 27B lane is pinned to `vllm/vllm-openai:v0.25.0`; the two NVIDIA-source experimental lanes remain on nightly. All three share the host Hugging Face/vLLM caches and set `keepWarm: false`. Adding the config advertises the models but does not load them. The first request (or `lloom runtime-start <runtime-id>`) lets LLooM admit the runtime, pull the image/checkpoint when absent, create the container, and wait for its health endpoint. When flags or images change, archive the prior recipe and increment the active recipe version.
+The Unsloth 27B and ThinkingCap candidate lanes are pinned to `vllm/vllm-openai:v0.25.0`; the two NVIDIA-source experimental lanes remain on nightly. These on-demand lanes share the host Hugging Face/vLLM caches and set `keepWarm: false`. Adding the config advertises the models but does not load them. The first request (or `lloom runtime-start <runtime-id>`) lets LLooM admit the runtime, pull the image/checkpoint when absent, create the container, and wait for its health endpoint. When flags or images change, archive the prior recipe and increment the active recipe version. ThinkingCap remains a candidate—not the default—until matched Spark throughput, reasoning-token efficiency, tool use, long-context, and vision checks are recorded as benchmark evidence.
 
 Generic `pip install vllm` / `pip install sglang` often **fails or is suboptimal** on Spark (ARM64 Grace + Blackwell sm_121). Prefer:
 

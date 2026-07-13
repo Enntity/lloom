@@ -1,0 +1,150 @@
+{
+  "$schema": "https://lloom.dev/schemas/benchmark-suite.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "dgx-spark-thinkingcap-qwen36-27b-vllm025-20260713",
+  "name": "DGX Spark ThinkingCap Qwen3.6 27B NVFP4 vLLM 0.25",
+  "summary": "Matched random-prompt measurements for the ThinkingCap candidate recipe using released vLLM 0.25.0.",
+  "license": { "id": "CC0-1.0", "name": "CC0 1.0" },
+  "source": { "type": "local-measurement", "name": "LLooM Spark-Arena-style runtime comparison" },
+  "submittedAt": "2026-07-13T21:44:00Z",
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "vllm bench serve 0.25.0",
+    "source": "reproducible local measurement"
+  },
+  "methodology": {
+    "harness": "vllm bench serve",
+    "harnessVersion": "0.25.0",
+    "promptCorpus": "random deterministic input=2048 output=128 temperature=0 ignore-eos seed=20260713",
+    "warmupRuns": 1,
+    "measurementRuns": 1,
+    "streaming": true
+  },
+  "results": [
+    {
+      "id": "dgx-spark-thinkingcap-qwen36-27b-vllm025-mtp3-s8-c1",
+      "recipeId": "linux-nvidia-gb10-thinkingcap-qwen36-27b-vllm",
+      "recipeVersion": 1,
+      "backendId": "docker-vllm",
+      "model": "sakamakismile/ThinkingCap-Qwen3.6-27B-NVFP4",
+      "gatewayModel": "sakamakismile/ThinkingCap-Qwen3.6-27B-NVFP4",
+      "machine": {
+        "platformId": "linux-arm64",
+        "chip": "NVIDIA DGX Spark / GB10",
+        "memoryGb": 128,
+        "accelerators": ["cuda", "nvidia-gpu", "blackwell"]
+      },
+      "settings": {
+        "runtimeVersion": "vLLM 0.25.0",
+        "quantization": "mixed NVFP4/BF16 MTP",
+        "kvCacheDtype": "fp8",
+        "attentionBackend": "flashinfer",
+        "contextWindow": 262144,
+        "maxNumSeqs": 8,
+        "maxNumBatchedTokens": 8192,
+        "speculative": { "method": "mtp", "numSpeculativeTokens": 3 }
+      },
+      "workload": {
+        "type": "interactive-generation",
+        "category": "matched-random",
+        "concurrency": 1,
+        "promptTokens": 2048,
+        "outputTokens": 128
+      },
+      "metrics": {
+        "generationTokPerSec": 19.48,
+        "outputThroughputTokPerSec": 19.48,
+        "timeToFirstTokenMs": 916.51,
+        "contextWindow": 262144,
+        "medianTimePerOutputTokenMs": 44.51
+      }
+    },
+    {
+      "id": "dgx-spark-thinkingcap-qwen36-27b-vllm025-mtp3-s8-c4",
+      "recipeId": "linux-nvidia-gb10-thinkingcap-qwen36-27b-vllm",
+      "recipeVersion": 1,
+      "backendId": "docker-vllm",
+      "model": "sakamakismile/ThinkingCap-Qwen3.6-27B-NVFP4",
+      "gatewayModel": "sakamakismile/ThinkingCap-Qwen3.6-27B-NVFP4",
+      "machine": {
+        "platformId": "linux-arm64",
+        "chip": "NVIDIA DGX Spark / GB10",
+        "memoryGb": 128,
+        "accelerators": ["cuda", "nvidia-gpu", "blackwell"]
+      },
+      "settings": {
+        "runtimeVersion": "vLLM 0.25.0",
+        "quantization": "mixed NVFP4/BF16 MTP",
+        "kvCacheDtype": "fp8",
+        "attentionBackend": "flashinfer",
+        "contextWindow": 262144,
+        "maxNumSeqs": 8,
+        "maxNumBatchedTokens": 8192,
+        "speculative": { "method": "mtp", "numSpeculativeTokens": 3 }
+      },
+      "workload": {
+        "type": "interactive-generation",
+        "category": "matched-random",
+        "concurrency": 4,
+        "promptTokens": 2048,
+        "outputTokens": 128
+      },
+      "metrics": {
+        "generationTokPerSec": 45.80,
+        "outputThroughputTokPerSec": 45.80,
+        "timeToFirstTokenMs": 4901.55,
+        "contextWindow": 262144,
+        "medianTimePerOutputTokenMs": 47.24
+      }
+    },
+    {
+      "id": "dgx-spark-thinkingcap-qwen36-27b-vllm025-mtp3-s8-c8",
+      "recipeId": "linux-nvidia-gb10-thinkingcap-qwen36-27b-vllm",
+      "recipeVersion": 1,
+      "backendId": "docker-vllm",
+      "model": "sakamakismile/ThinkingCap-Qwen3.6-27B-NVFP4",
+      "gatewayModel": "sakamakismile/ThinkingCap-Qwen3.6-27B-NVFP4",
+      "machine": {
+        "platformId": "linux-arm64",
+        "chip": "NVIDIA DGX Spark / GB10",
+        "memoryGb": 128,
+        "accelerators": ["cuda", "nvidia-gpu", "blackwell"]
+      },
+      "settings": {
+        "runtimeVersion": "vLLM 0.25.0",
+        "quantization": "mixed NVFP4/BF16 MTP",
+        "kvCacheDtype": "fp8",
+        "attentionBackend": "flashinfer",
+        "contextWindow": 262144,
+        "maxNumSeqs": 8,
+        "maxNumBatchedTokens": 8192,
+        "speculative": { "method": "mtp", "numSpeculativeTokens": 3 }
+      },
+      "workload": {
+        "type": "interactive-generation",
+        "category": "matched-random",
+        "concurrency": 8,
+        "promptTokens": 2048,
+        "outputTokens": 128
+      },
+      "metrics": {
+        "generationTokPerSec": 67.26,
+        "outputThroughputTokPerSec": 67.26,
+        "timeToFirstTokenMs": 7625.39,
+        "contextWindow": 262144,
+        "medianTimePerOutputTokenMs": 54.71
+      }
+    }
+  ],
+  "x-comparison": {
+    "matchedBaseline": "dgx-spark-qwen36-27b-unsloth-vllm025-20260713",
+    "baselineOutputTokPerSec": { "c1": 20.84, "c4": 47.42, "c8": 55.82 },
+    "mtpAcceptancePercent": { "c1": 69.92, "c4": 69.26, "c8": 67.15 },
+    "qualityChecks": {
+      "routedToolCall": "passed",
+      "temperatureZeroReasoningProbe": "inconclusive; both ThinkingCap and the Unsloth baseline exhausted 4096 completion tokens before finalizing"
+    },
+    "notes": "ThinkingCap is retained as a non-default candidate: it leads matched c8 throughput but trails c1/c4 and still needs broader quality and reasoning-efficiency evaluation under recommended sampling settings."
+  }
+}

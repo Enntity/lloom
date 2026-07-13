@@ -10,6 +10,7 @@ All notable changes to LLooM will be documented in this file. The format follows
 - MLX Audio speech and transcription discovery, named voice profiles, and Qwen3-TTS support.
 - Reasoning normalization across OpenAI-compatible, Responses, and Anthropic-compatible protocol surfaces.
 - Qwen3.6 35B-A3B OptiQ recipe and context benchmark helper.
+- A separate DGX Spark ThinkingCap Qwen3.6-27B NVFP4 candidate recipe on released vLLM 0.25, preserving the established Unsloth default while token-efficiency and quality evidence are collected.
 - Public project governance, security, contribution, CI, and release metadata.
 
 ### Fixed

@@ -47,6 +47,10 @@
       "baseUrl": "http://192.168.1.131:8005/v1",
       "timeoutMs": 1800000
     },
+    "thinkingcap-qwen36-27b-nvfp4": {
+      "baseUrl": "http://192.168.1.131:8008/v1",
+      "timeoutMs": 1800000
+    },
     "qwen3-embedding-4b": {
       "type": "openai",
       "baseUrl": "http://127.0.0.1:8002/v1",
@@ -209,6 +213,30 @@
         "command": ["unsloth/Qwen3.6-27B-NVFP4", "--host", "0.0.0.0", "--port", "8000", "--tensor-parallel-size", "1", "--trust-remote-code", "--dtype", "bfloat16", "--kv-cache-dtype", "fp8", "--attention-backend", "flashinfer", "--moe-backend", "flashinfer_b12x", "--gpu-memory-utilization", "0.4", "--max-model-len", "262144", "--max-num-seqs", "8", "--max-num-batched-tokens", "8192", "--enable-chunked-prefill", "--async-scheduling", "--enable-prefix-caching", "--speculative-config", "{\"method\":\"mtp\",\"num_speculative_tokens\":2}", "--load-format", "fastsafetensors", "--reasoning-parser", "qwen3", "--tool-call-parser", "qwen3_xml", "--enable-auto-tool-choice"]
       }
     },
+    "thinkingcap-qwen36-27b-nvfp4": {
+      "enabled": true,
+      "adapter": "docker",
+      "management": "managed",
+      "containerName": "thinkingcap-qwen36-27b-nvfp4",
+      "port": 8008,
+      "healthUrl": "http://192.168.1.131:8008/v1/models",
+      "maxConcurrency": 8,
+      "memoryGb": 64,
+      "keepWarm": false,
+      "startupTimeoutMs": 900000,
+      "policy": { "priority": 89, "evictable": true },
+      "recipe": {
+        "id": "linux-nvidia-gb10-thinkingcap-qwen36-27b-vllm",
+        "version": 1,
+        "source": "https://huggingface.co/sakamakismile/ThinkingCap-Qwen3.6-27B-NVFP4"
+      },
+      "bootstrap": {
+        "adapter": "docker",
+        "image": "vllm/vllm-openai:v0.25.0",
+        "createArgs": ["--restart", "unless-stopped", "--gpus", "all", "--ipc", "host", "-p", "192.168.1.131:8008:8000", "-e", "CUTE_DSL_ARCH=sm_121a", "-v", "/home/enntitysparkadmin/.cache/huggingface:/root/.cache/huggingface", "-v", "/home/enntitysparkadmin/.cache/vllm:/root/.cache/vllm"],
+        "command": ["sakamakismile/ThinkingCap-Qwen3.6-27B-NVFP4", "--host", "0.0.0.0", "--port", "8000", "--tensor-parallel-size", "1", "--trust-remote-code", "--dtype", "bfloat16", "--kv-cache-dtype", "fp8", "--attention-backend", "flashinfer", "--gpu-memory-utilization", "0.4", "--max-model-len", "262144", "--max-num-seqs", "8", "--max-num-batched-tokens", "8192", "--enable-chunked-prefill", "--async-scheduling", "--enable-prefix-caching", "--load-format", "fastsafetensors", "--reasoning-parser", "qwen3", "--tool-call-parser", "qwen3_xml", "--enable-auto-tool-choice", "--speculative-config", "{\"method\":\"mtp\",\"num_speculative_tokens\":3}"]
+      }
+    },
     "flux-klein-9b-nsfw": {
       "enabled": true,
       "adapter": "docker",
@@ -335,6 +363,20 @@
       "input": ["text"],
       "output": ["text"],
       "capabilities": ["chat", "streaming", "usage", "tools", "reasoning", "long-context", "batching", "speculative-decoding"],
+      "contextWindow": 262144,
+      "maxPromptTokens": 255000,
+      "advertise": true
+    },
+    {
+      "id": "sakamakismile/ThinkingCap-Qwen3.6-27B-NVFP4",
+      "name": "ThinkingCap Qwen 3.6 27B NVFP4 · Token-Efficient Reasoning",
+      "kind": "chat",
+      "backend": "thinkingcap-qwen36-27b-nvfp4",
+      "runtime": "thinkingcap-qwen36-27b-nvfp4",
+      "upstreamModel": "sakamakismile/ThinkingCap-Qwen3.6-27B-NVFP4",
+      "input": ["text", "image"],
+      "output": ["text"],
+      "capabilities": ["chat", "streaming", "usage", "tools", "reasoning", "vision", "long-context", "batching", "speculative-decoding"],
       "contextWindow": 262144,
       "maxPromptTokens": 255000,
       "advertise": true

@@ -112,6 +112,20 @@
       }
     },
     {
+      "id": "linux-nvidia-gb10-thinkingcap-qwen36-27b-vllm",
+      "path": "linux-nvidia-gb10-thinkingcap-qwen36-27b-vllm.json",
+      "currentVersion": 1,
+      "versions": [
+        { "version": 1, "path": "linux-nvidia-gb10-thinkingcap-qwen36-27b-vllm.json", "status": "current" }
+      ],
+      "name": "DGX Spark ThinkingCap Qwen3.6 27B NVFP4 vLLM",
+      "summary": "Token-efficient ThinkingCap Qwen3.6 27B NVFP4 candidate for NVIDIA GB10.",
+      "tags": ["linux", "nvidia", "dgx-spark", "gb10", "qwen3.6", "thinkingcap", "nvfp4", "vllm", "efficient-thinking"],
+      "recommendedFor": ["DGX Spark users evaluating shorter reasoning traces at retained answer quality"],
+      "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "tools", "reasoning", "vision", "mtp", "batching", "long-context"],
+      "source": { "type": "lloom-host-seed", "url": "community/recipes/linux-nvidia-gb10-thinkingcap-qwen36-27b-vllm.json" }
+    },
+    {
       "id": "linux-nvidia-gb10-qwen36-unsloth-vllm",
       "path": "linux-nvidia-gb10-qwen36-unsloth-vllm.json",
       "currentVersion": 2,

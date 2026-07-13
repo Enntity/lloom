@@ -1,0 +1,94 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-gb10-thinkingcap-qwen36-27b-vllm",
+  "name": "DGX Spark ThinkingCap Qwen3.6 27B NVFP4 vLLM",
+  "version": 1,
+  "summary": "Token-efficient ThinkingCap Qwen3.6 27B in NVFP4 with native MTP for 128 GB NVIDIA GB10 systems.",
+  "license": { "id": "Apache-2.0", "name": "Apache License 2.0" },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "BottleCap AI fine-tune and sakamakismile NVFP4 model cards"
+  },
+  "links": [
+    { "rel": "base-model", "href": "https://huggingface.co/bottlecapai/ThinkingCap-Qwen3.6-27B", "mediaType": "text/html" },
+    { "rel": "model", "href": "https://huggingface.co/sakamakismile/ThinkingCap-Qwen3.6-27B-NVFP4", "mediaType": "text/html" }
+  ],
+  "keywords": ["linux", "nvidia", "dgx-spark", "gb10", "qwen3.6", "thinkingcap", "nvfp4", "vllm", "efficient-thinking"],
+  "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "usage", "tools", "reasoning", "vision", "mtp", "batching", "long-context"],
+  "hardware": {
+    "family": "NVIDIA GB10 / DGX Spark",
+    "testedMachine": "DGX Spark with 128 GB unified memory",
+    "notes": ["Candidate lane retained separately until local quality and efficiency gates pass."]
+  },
+  "requirements": {
+    "platforms": ["linux-arm64"],
+    "memoryGb": 96,
+    "diskGb": 40,
+    "commands": ["docker"],
+    "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"]
+  },
+  "backend": {
+    "id": "docker-vllm",
+    "name": "Docker vLLM for NVIDIA GB10",
+    "type": "openai-compatible-server",
+    "features": ["cuda", "blackwell", "openai-chat", "streaming", "tools", "vision", "batching", "mtp"]
+  },
+  "setup": {
+    "steps": [
+      { "id": "check-docker", "title": "Check Docker", "action": "check-command", "command": "docker", "args": ["--version"] }
+    ]
+  },
+  "models": [
+    {
+      "role": "token-efficient-reasoning",
+      "model": "sakamakismile/ThinkingCap-Qwen3.6-27B-NVFP4",
+      "gatewayModel": "sakamakismile/ThinkingCap-Qwen3.6-27B-NVFP4",
+      "runtime": "thinkingcap-qwen36-27b-nvfp4",
+      "backendConfig": "thinkingcap-qwen36-27b-nvfp4",
+      "backend": "vLLM CUDA",
+      "input": ["text", "image"],
+      "output": ["text"],
+      "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "usage", "tools", "reasoning", "vision", "mtp", "batching", "long-context"],
+      "settings": {
+        "contextWindow": 262144,
+        "maxOutputTokens": 32768,
+        "maxActiveRequests": 8,
+        "memoryGb": 64,
+        "priority": 89,
+        "evictable": true,
+        "keepWarm": false,
+        "startupTimeoutMs": 900000,
+        "runtime": {
+          "adapter": "docker",
+          "management": "managed",
+          "containerName": "lloom-thinkingcap-qwen36-27b-nvfp4",
+          "healthUrl": "http://127.0.0.1:${port}/health",
+          "bootstrap": {
+            "adapter": "docker",
+            "image": "vllm/vllm-openai:v0.25.0",
+            "createArgs": [
+              "--restart", "unless-stopped", "--gpus", "all", "--ipc", "host",
+              "-p", "127.0.0.1:${port}:8000", "-e", "CUTE_DSL_ARCH=sm_121a",
+              "-v", "lloom-huggingface-cache:/root/.cache/huggingface",
+              "-v", "lloom-vllm-cache:/root/.cache/vllm"
+            ],
+            "command": [
+              "${upstreamModel}", "--host", "0.0.0.0", "--port", "8000",
+              "--tensor-parallel-size", "1", "--trust-remote-code", "--dtype", "bfloat16",
+              "--kv-cache-dtype", "fp8", "--attention-backend", "flashinfer",
+              "--gpu-memory-utilization", "0.4", "--max-model-len", "262144",
+              "--max-num-seqs", "8", "--max-num-batched-tokens", "8192",
+              "--enable-chunked-prefill", "--async-scheduling", "--enable-prefix-caching",
+              "--load-format", "fastsafetensors", "--reasoning-parser", "qwen3",
+              "--tool-call-parser", "qwen3_xml", "--enable-auto-tool-choice",
+              "--speculative-config", "{\"method\":\"mtp\",\"num_speculative_tokens\":3}"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
