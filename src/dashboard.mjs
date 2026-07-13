@@ -544,6 +544,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       connectionKey: "",
       threadNodes: new Map(),
       modelNodes: new Map(),
+      modelLayoutKey: "",
+      modelLayoutStableFrames: 0,
+      modelLayoutSettled: false,
       output: null,
     };
 
@@ -853,46 +856,65 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     function updateModelLayout(models, field) {
       const activeIds = new Set(models.map(model => model.id));
       for (const id of state.modelNodes.keys()) if (!activeIds.has(id)) state.modelNodes.delete(id);
+      const layoutKey = models.map(model => model.id).sort().join("|") + ":" + [field.left, field.right, field.top, field.bottom].map(Math.round).join(":");
+      if (layoutKey !== state.modelLayoutKey) {
+        state.modelLayoutKey = layoutKey;
+        state.modelLayoutStableFrames = 0;
+        state.modelLayoutSettled = false;
+      }
       const centerX = (field.left + field.right) / 2, centerY = (field.top + field.bottom) / 2;
       models.forEach((model, index) => {
+        const seed = [...model.id].reduce((sum, character) => sum + character.charCodeAt(0), index + 1);
+        const targetX = field.left + 110 + hashUnit(seed * 7) * Math.max(1, field.right - field.left - 220);
+        const targetY = field.top + 34 + hashUnit(seed * 13) * Math.max(1, field.bottom - field.top - 68);
         let node = state.modelNodes.get(model.id);
         if (!node) {
-          const seed = [...model.id].reduce((sum, character) => sum + character.charCodeAt(0), index + 1);
-          node = {
-            x: field.left + 112 + hashUnit(seed * 7) * Math.max(1, field.right - field.left - 224),
-            y: field.top + 38 + hashUnit(seed * 13) * Math.max(1, field.bottom - field.top - 76),
-            vx: 0,
-            vy: 0
-          };
+          node = { x: centerX, y: centerY, vx: 0, vy: 0, targetX, targetY };
           state.modelNodes.set(model.id, node);
+          state.modelLayoutSettled = false;
+          state.modelLayoutStableFrames = 0;
         }
-        node.vx += (centerX - node.x) * .0008;
-        node.vy += (centerY - node.y) * .0008;
+        node.targetX = targetX;
+        node.targetY = targetY;
       });
+      if (state.modelLayoutSettled) return;
       const nodes = models.map(model => state.modelNodes.get(model.id));
+      for (const node of nodes) {
+        node.vx += (node.targetX - node.x) * .003;
+        node.vy += (node.targetY - node.y) * .003;
+      }
       for (let left = 0; left < nodes.length; left++) for (let right = left + 1; right < nodes.length; right++) {
         const a = nodes[left], b = nodes[right], dx = b.x - a.x, dy = b.y - a.y;
         const xOverlap = 232 - Math.abs(dx), yOverlap = 82 - Math.abs(dy);
-        if (xOverlap > 0 && yOverlap > 0) {
-          const horizontal = xOverlap / 232, vertical = yOverlap / 82;
-          if (horizontal < vertical) {
-            const force = .18 + horizontal * .8, direction = Math.sign(dx || hashUnit(left + right) - .5) || 1;
-            a.vx -= direction * force; b.vx += direction * force;
-          } else {
-            const force = .18 + vertical * .8, direction = Math.sign(dy || hashUnit(left * 3 + right) - .5) || 1;
-            a.vy -= direction * force; b.vy += direction * force;
-          }
+        if (xOverlap <= 0 || yOverlap <= 0) continue;
+        const horizontal = xOverlap / 232, vertical = yOverlap / 82;
+        if (horizontal < vertical) {
+          const direction = Math.sign(dx) || (hashUnit(left * 17 + right * 31) > .5 ? 1 : -1);
+          const force = .22 + horizontal * 1.15;
+          a.vx -= direction * force; b.vx += direction * force;
+        } else {
+          const direction = Math.sign(dy) || (hashUnit(left * 29 + right * 11) > .5 ? 1 : -1);
+          const force = .22 + vertical * 1.15;
+          a.vy -= direction * force; b.vy += direction * force;
         }
       }
+      let maxSpeed = 0;
       for (const node of nodes) {
         const halfWidth = 110, halfHeight = 34;
-        if (node.x < field.left + halfWidth) node.vx += (field.left + halfWidth - node.x) * .025;
-        if (node.x > field.right - halfWidth) node.vx -= (node.x - field.right + halfWidth) * .025;
-        if (node.y < field.top + halfHeight) node.vy += (field.top + halfHeight - node.y) * .025;
-        if (node.y > field.bottom - halfHeight) node.vy -= (node.y - field.bottom + halfHeight) * .025;
-        node.vx *= .84; node.vy *= .84; node.x += node.vx; node.y += node.vy;
+        if (node.x < field.left + halfWidth) node.vx += (field.left + halfWidth - node.x) * .03;
+        if (node.x > field.right - halfWidth) node.vx -= (node.x - field.right + halfWidth) * .03;
+        if (node.y < field.top + halfHeight) node.vy += (field.top + halfHeight - node.y) * .03;
+        if (node.y > field.bottom - halfHeight) node.vy -= (node.y - field.bottom + halfHeight) * .03;
+        node.vx *= .78; node.vy *= .78;
+        node.x += node.vx; node.y += node.vy;
         node.x = Math.max(field.left + halfWidth, Math.min(field.right - halfWidth, node.x));
         node.y = Math.max(field.top + halfHeight, Math.min(field.bottom - halfHeight, node.y));
+        maxSpeed = Math.max(maxSpeed, Math.abs(node.vx), Math.abs(node.vy));
+      }
+      state.modelLayoutStableFrames = maxSpeed < .035 ? state.modelLayoutStableFrames + 1 : 0;
+      if (state.modelLayoutStableFrames >= 24) {
+        for (const node of nodes) { node.vx = 0; node.vy = 0; }
+        state.modelLayoutSettled = true;
       }
     }
 
@@ -946,19 +968,20 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const serving = point.model.state === "serving";
         const external = point.model.state === "external";
         const warming = point.model.state === "warming";
+        const evicting = point.model.state === "evicting";
         const hot = point.model.state === "hot" || serving;
-        const pulse = warming ? .35 + (Math.sin(now * .006) + 1) * .3 : 1;
-        ctx.strokeStyle = serving ? "rgba(47,230,200,.95)" : external ? "rgba(192,153,255,.65)" : hot ? "rgba(47,230,200,.6)" : warming ? "rgba(243,189,79," + pulse + ")" : "rgba(143,180,255,.22)";
-        ctx.fillStyle = hot ? "rgba(7,18,17,.98)" : external ? "rgba(15,10,24,.96)" : warming ? "rgba(24,19,9,.97)" : "rgba(8,10,15,.94)";
+        const pulse = warming || evicting ? .35 + (Math.sin(now * .006) + 1) * .3 : 1;
+        ctx.strokeStyle = serving ? "rgba(47,230,200,.95)" : external ? "rgba(192,153,255,.65)" : hot ? "rgba(47,230,200,.6)" : warming ? "rgba(243,189,79," + pulse + ")" : evicting ? "rgba(255,126,102," + pulse + ")" : "rgba(143,180,255,.22)";
+        ctx.fillStyle = hot ? "rgba(7,18,17,.98)" : external ? "rgba(15,10,24,.96)" : warming ? "rgba(24,19,9,.97)" : evicting ? "rgba(25,11,9,.97)" : "rgba(8,10,15,.94)";
         const cardWidth = point.cardWidth, cardLeft = point.x - cardWidth / 2, cardTop = point.y - 34;
         ctx.beginPath(); ctx.roundRect(cardLeft, cardTop, cardWidth, 68, 5); ctx.fill(); ctx.stroke();
-        ctx.fillStyle = serving ? "#42d77d" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : "#8fb4ff"; ctx.fillRect(cardLeft, cardTop, 4, 68);
+        ctx.fillStyle = serving ? "#42d77d" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : evicting ? "#ff7e66" : "#8fb4ff"; ctx.fillRect(cardLeft, cardTop, 4, 68);
         ctx.fillStyle = "rgba(242,245,247,.92)"; ctx.fillText(fitCanvasText(ctx, shortModel(point.model.id), cardWidth - 68), cardLeft + 12, point.y - 15);
         const vendor = modelVendor(point.model.id).toUpperCase();
         ctx.textAlign = "right"; ctx.fillStyle = "rgba(143,180,255,.78)"; ctx.fillText(fitCanvasText(ctx, vendor, 54), cardLeft + cardWidth - 10, point.y - 15); ctx.textAlign = "left";
         ctx.fillStyle = "rgba(153,163,176,.9)";
         ctx.fillText(formatCompact(point.model.inputTokens) + " in · " + formatCompact(point.model.outputTokens) + " out", cardLeft + 12, point.y + 4);
-        ctx.fillStyle = serving ? "#42d77d" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : "rgba(143,180,255,.7)";
+        ctx.fillStyle = serving ? "#42d77d" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : evicting ? "#ff7e66" : "rgba(143,180,255,.7)";
         const displayedModelRate = live ? displayedLiveRate : point.model.averageRate;
         const modelRateText = displayedModelRate == null ? "" : formatRate(displayedModelRate) + " tok/s";
         const modelStateText = serving ? "SERVING" : point.model.state.toUpperCase();
@@ -1126,7 +1149,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const activeInput = liveConnections.reduce((sum, item) => sum + item.inputTokens, 0);
         const activeOutput = liveConnections.reduce((sum, item) => sum + item.outputTokens, 0);
         const runtimeStatus = runtimeStates[model.runtime]?.status || "idle";
-        const stateLabel = liveConnections.length ? "serving" : !model.runtime ? "external" : runtimeStatus === "running" ? "hot" : runtimeStatus === "starting" ? "warming" : "cold";
+        const stateLabel = liveConnections.length ? "serving" : !model.runtime ? "external" : runtimeStatus === "running" ? "hot" : runtimeStatus === "starting" ? "warming" : runtimeStatus === "stopping" ? "evicting" : "cold";
         return { id: model.id, inputTokens: Number(data.inputTokens || 0) + activeInput, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveInputRate, liveOutputRate, averageRate: data.decodeTokensPerSecond == null ? null : Number(data.decodeTokensPerSecond), state: stateLabel };
       });
     }
