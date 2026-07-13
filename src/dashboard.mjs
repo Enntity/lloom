@@ -551,6 +551,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       modelLayoutKey: "",
       modelLayoutStableFrames: 0,
       modelLayoutSettled: false,
+      topologyWorldScale: 1,
       topologyCamera: { manual: 1, current: 1 },
       output: null,
     };
@@ -960,18 +961,23 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       ctx.clearRect(0, 0, viewportWidth, viewportHeight);
       const modelCount = (state.topologyModels || []).length;
       const connectionCount = (state.topologyConnections || []).length;
-      const autoZoom = Math.max(.62, Math.min(1, 1 - Math.max(0, modelCount - 4) * .045 - Math.max(0, connectionCount - 10) * .012));
-      const targetZoom = Math.max(.5, Math.min(1.35, autoZoom * state.topologyCamera.manual));
+      const targetWorldScale = Math.max(1, Math.sqrt(Math.max(1, modelCount / 6)), Math.sqrt(Math.max(1, connectionCount / 14)));
+      const worldEase = targetWorldScale > state.topologyWorldScale ? .18 : .06;
+      state.topologyWorldScale += (targetWorldScale - state.topologyWorldScale) * worldEase;
+      if (Math.abs(targetWorldScale - state.topologyWorldScale) < .002) state.topologyWorldScale = targetWorldScale;
+      const fitZoom = 1 / state.topologyWorldScale;
+      const targetZoom = Math.max(.18, Math.min(1.6, fitZoom * state.topologyCamera.manual));
       state.topologyCamera.current += (targetZoom - state.topologyCamera.current) * .12;
       const zoom = state.topologyCamera.current;
       const zoomOutput = $("#topology-zoom-output");
       if (zoomOutput) zoomOutput.textContent = Math.round(zoom * 100) + "%";
-      // Zooming out increases the logical topology world instead of shrinking a
-      // fixed layout in place. The force fields can therefore use the newly
-      // visible space while the physical canvas remains responsive to its host.
-      const width = viewportWidth / zoom, height = viewportHeight / zoom;
+      // Content density owns the logical world size. The camera only chooses
+      // how much of that stable world is visible and never changes its bounds.
+      const width = viewportWidth * state.topologyWorldScale, height = viewportHeight * state.topologyWorldScale;
       ctx.save();
+      ctx.translate(viewportWidth / 2, viewportHeight / 2);
       ctx.scale(zoom, zoom);
+      ctx.translate(-width / 2, -height / 2);
       ctx.font = '10px "SFMono-Regular",monospace'; ctx.textAlign = "left";
       ctx.fillStyle = "#8fb4ff"; ctx.beginPath(); ctx.arc(50, 91, 3, 0, Math.PI * 2); ctx.fill(); ctx.fillText("INPUT  →", 59, 95);
       ctx.fillStyle = "#2fe6c8"; ctx.beginPath(); ctx.arc(132, 91, 3, 0, Math.PI * 2); ctx.fill(); ctx.fillText("←  OUTPUT", 141, 95);
