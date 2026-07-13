@@ -40,7 +40,7 @@ import { applyInit, defaultUserConfigPath } from '../src/init.mjs';
 import { applyBackend, applyRecipe } from '../src/installer.mjs';
 import { createInterchangeRegistry, createInterchangeValidationReport } from '../src/interchange.mjs';
 import { profileMachine, rankRecipes } from '../src/machine-profile.mjs';
-import { applyModelImport } from '../src/model-intake.mjs';
+import { applyModelImport, applyModelImportGo } from '../src/model-intake.mjs';
 import { applyOnboarding, createOnboardingPlan } from '../src/onboarding.mjs';
 import { writeRecipePackExport } from '../src/recipe-pack-export.mjs';
 import { applyRecipePack, createRecipePackPlan, loadTrustedKeys, submitRecipePack } from '../src/recipe-pack.mjs';
@@ -48,6 +48,7 @@ import { buildRecipeIndexReport } from '../src/recipe-index.mjs';
 import { createRegistry } from '../src/registry.mjs';
 import { loadRecipeById, loadRecipes, planRecipe } from '../src/recipes.mjs';
 import { RuntimeManager } from '../src/runtime-manager.mjs';
+import { runCommand } from '../src/process-control.mjs';
 import { applyRuntimePolicyPlan, createRuntimePolicyPlan } from '../src/runtime-policy.mjs';
 import { createLloomServer } from '../src/server.mjs';
 import { applySetup, createSetupPlan } from '../src/setup.mjs';
@@ -176,7 +177,7 @@ Backends and runtimes:
   lloom keep-warm
 
 Models and clients:
-  lloom add-model <hf-url|repo-id|local-path|ollama:tag|lmstudio:id|openai:url#model> [--backend id] [--api-key-env NAME] [--keep-warm] [--default] [--apply --yes]
+  lloom add-model <hf-url|repo-id|local-path|ollama:tag|lmstudio:id|openai:url#model> [--backend id] [--api-key-env NAME] [--keep-warm] [--default] [--go|--apply --yes]
   lloom integrations [client-id|all] [--home path] [--generated-root path]
   lloom integrate [client-id|all] [--home path] [--generated-root path] [--apply --yes]
 
@@ -811,6 +812,88 @@ function backendVariablesForCli(args) {
     if (value) variables[key] = value;
   }
   return variables;
+}
+
+function envWithShimDir(variables) {
+  const shimDir = variables?.shimDir;
+  if (!shimDir) return process.env;
+  return {
+    ...process.env,
+    PATH: `${shimDir}${process.env.PATH ? `:${process.env.PATH}` : ''}`
+  };
+}
+
+async function installModelBackendForCli(plan, args) {
+  if (!plan.additions.runtimeId) {
+    return { ok: true, status: 'skipped', reason: 'unmanaged-model' };
+  }
+  const catalog = await loadBackendCatalog(argValue(args, '--backend-catalog'));
+  const backend = getBackend(catalog, plan.inference.backend);
+  if (!backend) return { ok: false, error: `Unknown backend ${plan.inference.backend}` };
+  const variables = backendVariablesForCli(args);
+  const result = await applyBackend(backend, {
+    dryRun: false,
+    yes: true,
+    variables,
+    env: envWithShimDir(variables)
+  });
+  const failed = result.results.filter((entry) => ['failed', 'manual-required'].includes(entry.status));
+  return {
+    ...result,
+    ok: failed.length === 0,
+    status: failed.length ? 'failed' : 'completed',
+    ...(failed.length
+      ? { error: failed.map((entry) => entry.stderr || entry.message || `${entry.id} failed`).join('\n') }
+      : {})
+  };
+}
+
+async function downloadModelForCli(plan, args) {
+  if (!plan.download?.command) return { ok: true, status: 'skipped', reason: 'no-download' };
+  const variables = backendVariablesForCli(args);
+  const env = envWithShimDir(variables);
+  if (plan.download.command[0] !== 'hf') {
+    const [command, ...commandArgs] = plan.download.command;
+    const result = await runCommand(command, commandArgs, { allowFailure: true, env, stdio: 'inherit' });
+    return result.code === 0
+      ? { ok: true, status: 'completed', command: plan.download.command }
+      : { ok: false, status: 'failed', error: result.stderr || `${command} exited ${result.code}` };
+  }
+  const [, ...downloadArgs] = plan.download.command;
+  const candidates = [
+    process.env.LLOOM_HF_BIN,
+    process.env.HF_HUB_CLI,
+    plan.download.command[0],
+    'hf',
+    'huggingface-cli'
+  ]
+    .filter(Boolean)
+    .filter((command, index, all) => all.indexOf(command) === index);
+  let lastResult = null;
+  for (const command of candidates) {
+    const result = await runCommand(command, downloadArgs, { allowFailure: true, env, stdio: 'inherit' });
+    if (result.code === 0) return { ok: true, status: 'completed', command: [command, ...downloadArgs] };
+    lastResult = result;
+    if (result.code != null) break;
+  }
+  return {
+    ok: false,
+    status: 'failed',
+    error: lastResult?.stderr || `No Hugging Face download CLI found. Install huggingface_hub or set LLOOM_HF_BIN.`
+  };
+}
+
+async function startModelRuntimeForCli(plan, nextConfig) {
+  const manager = runtimeManagerForCli(nextConfig);
+  const result = await manager.start(plan.additions.runtimeId, {
+    force: true,
+    warmup: true,
+    reason: 'cli-add-model-go'
+  });
+  return {
+    ...result,
+    ok: result.healthy === true
+  };
 }
 
 function requireRuntimeId(args, command) {
@@ -1613,29 +1696,39 @@ async function main() {
         process.exitCode = 2;
         return;
       }
-      const apply = hasFlag(args, '--apply');
+      const go = wantsGo(args);
+      const apply = hasFlag(args, '--apply') || go;
       const yes = hasFlag(args, '--yes');
       const contextWindow = argValue(args, '--context-window');
       const maxOutputTokens = argValue(args, '--max-output-tokens');
+      const options = {
+        modelRef,
+        backend: argValue(args, '--backend'),
+        modelRoot: argValue(args, '--model-root') ?? config.paths?.modelRoot,
+        sessionCacheRoot: argValue(args, '--session-cache-root') ?? config.paths?.sessionCacheRoot,
+        modelId: argValue(args, '--model-id'),
+        name: argValue(args, '--name'),
+        port: argValue(args, '--port'),
+        ...(contextWindow ? { contextWindow: Number(contextWindow) } : {}),
+        ...(maxOutputTokens ? { maxOutputTokens: Number(maxOutputTokens) } : {}),
+        apiKeyEnv: argValue(args, '--api-key-env'),
+        keepWarm: hasFlag(args, '--keep-warm'),
+        setDefault: hasFlag(args, '--default'),
+        configPath: config.sourcePath
+      };
       console.log(
         JSON.stringify(
-          await applyModelImport(config, {
-            modelRef,
-            backend: argValue(args, '--backend'),
-            modelRoot: argValue(args, '--model-root') ?? config.paths?.modelRoot,
-            sessionCacheRoot: argValue(args, '--session-cache-root') ?? config.paths?.sessionCacheRoot,
-            modelId: argValue(args, '--model-id'),
-            name: argValue(args, '--name'),
-            port: argValue(args, '--port'),
-            ...(contextWindow ? { contextWindow: Number(contextWindow) } : {}),
-            ...(maxOutputTokens ? { maxOutputTokens: Number(maxOutputTokens) } : {}),
-            apiKeyEnv: argValue(args, '--api-key-env'),
-            keepWarm: hasFlag(args, '--keep-warm'),
-            setDefault: hasFlag(args, '--default'),
-            dryRun: !apply,
-            yes,
-            configPath: config.sourcePath
-          }),
+          go
+            ? await applyModelImportGo(config, options, {
+                installBackend: (plan) => installModelBackendForCli(plan, args),
+                downloadModel: (plan) => downloadModelForCli(plan, args),
+                startRuntime: startModelRuntimeForCli
+              })
+            : await applyModelImport(config, {
+                ...options,
+                dryRun: !apply,
+                yes
+              }),
           null,
           2
         )

@@ -66,6 +66,7 @@ import {
 } from '../src/machine-profile.mjs';
 import {
   applyModelImport,
+  applyModelImportGo,
   createModelImportPlan,
   inferBackend,
   normalizeModelReference
@@ -552,6 +553,7 @@ assert.equal(
 assert(ggufImportPlan.config.models.some((model) => model.id === 'unsloth/Qwen3.6-27B-MTP-GGUF'));
 assert.equal(ggufImportPlan.config.runtimes['llama-cpp-unsloth-qwen3-6-27b-mtp-gguf'].args.at(-1), '131072');
 assert(ggufImportPlan.next.apply.includes("--context-window '131072'"));
+assert(ggufImportPlan.next.go.endsWith('--go'));
 assert.equal(ggufImportPlan.next.setupBackend, "lloom backend-install 'llama-cpp' --apply --yes");
 
 const revisionedHfReference = normalizeModelReference(
@@ -1137,6 +1139,91 @@ assert.equal(
 );
 assert(intakeApplied.next.apply.includes(`--config '${intakeConfigPath}'`));
 assert(intakeApplied.next.apply.includes(`--model-root '${path.join(tempDir, 'intake models')}'`));
+
+const goConfigPath = path.join(tempDir, 'model-intake-go-config.json');
+await fs.writeFile(goConfigPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+const goBaseConfig = await loadConfig(goConfigPath);
+const goPhases = [];
+const goApplied = await applyModelImportGo(
+  goBaseConfig,
+  {
+    configPath: goConfigPath,
+    modelRef: 'mlx-community/Qwen3.6-27B-OptiQ-4bit',
+    modelRoot: path.join(tempDir, 'go models'),
+    port: 8404,
+    keepWarm: true,
+    setDefault: true
+  },
+  {
+    async installBackend(plan) {
+      goPhases.push(`backend:${plan.inference.backend}`);
+      assert.equal(plan.inference.backend, 'mlx-lm');
+      return { ok: true, status: 'completed' };
+    },
+    async downloadModel(plan) {
+      goPhases.push(`download:${plan.reference.repoId}`);
+      return { ok: true, status: 'completed' };
+    },
+    async startRuntime(plan, nextConfig) {
+      goPhases.push(`runtime:${plan.additions.runtimeId}`);
+      assert(nextConfig.models.some((model) => model.id === 'mlx-community/Qwen3.6-27B-OptiQ-4bit'));
+      const written = JSON.parse(await fs.readFile(goConfigPath, 'utf8'));
+      assert.equal(written.defaults.chatModel, 'mlx-community/Qwen3.6-27B-OptiQ-4bit');
+      return { ok: true, healthy: true, started: true };
+    }
+  }
+);
+assert.equal(goApplied.go, true);
+assert.equal(goApplied.status, 'ready');
+assert.deepEqual(goPhases, [
+  'backend:mlx-lm',
+  'download:mlx-community/Qwen3.6-27B-OptiQ-4bit',
+  'runtime:mlx-lm-mlx-community-qwen3-6-27b-optiq-4bit'
+]);
+
+const failedGoConfigPath = path.join(tempDir, 'model-intake-go-failed-config.json');
+await fs.writeFile(failedGoConfigPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+const failedGoBaseConfig = await loadConfig(failedGoConfigPath);
+await assert.rejects(
+  () =>
+    applyModelImportGo(
+      failedGoBaseConfig,
+      {
+        configPath: failedGoConfigPath,
+        modelRef: 'mlx-community/Qwen3.6-27B-OptiQ-4bit',
+        modelRoot: path.join(tempDir, 'failed go models'),
+        port: 8405
+      },
+      {
+        installBackend: async () => ({ ok: true }),
+        downloadModel: async () => ({ ok: false, error: 'synthetic download failure' }),
+        startRuntime: async () => ({ ok: true, healthy: true })
+      }
+    ),
+  /synthetic download failure/
+);
+const failedGoConfig = JSON.parse(await fs.readFile(failedGoConfigPath, 'utf8'));
+assert(!failedGoConfig.models.some((model) => model.id === 'mlx-community/Qwen3.6-27B-OptiQ-4bit'));
+
+const unmanagedGoConfigPath = path.join(tempDir, 'model-intake-unmanaged-go-config.json');
+await fs.writeFile(unmanagedGoConfigPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+const unmanagedGoCli = await runCommand(process.execPath, [
+  path.join(process.cwd(), 'bin', 'lloom.mjs'),
+  'add-model',
+  'openai:http://127.0.0.1:9999/v1#synthetic-external',
+  '--default',
+  '--go',
+  '--config',
+  unmanagedGoConfigPath
+]);
+const unmanagedGoResult = JSON.parse(unmanagedGoCli.stdout);
+assert.equal(unmanagedGoResult.go, true);
+assert.equal(unmanagedGoResult.status, 'ready');
+assert.equal(unmanagedGoResult.phases.backend.reason, 'unmanaged-model');
+assert.equal(unmanagedGoResult.phases.download.reason, 'no-download');
+assert.equal(unmanagedGoResult.phases.runtime.reason, 'unmanaged-model');
+const unmanagedGoConfig = JSON.parse(await fs.readFile(unmanagedGoConfigPath, 'utf8'));
+assert.equal(unmanagedGoConfig.defaults.chatModel, 'synthetic-external');
 
 const packRecipesRoot = path.join(tempDir, 'pack-recipes');
 const packBenchmarksRoot = path.join(tempDir, 'pack-benchmarks');

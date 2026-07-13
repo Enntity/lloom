@@ -535,7 +535,8 @@ function addModelCommand({
   apiKeyEnv,
   keepWarm,
   setDefault,
-  apply = false
+  apply = false,
+  go = false
 } = {}) {
   const args = ['lloom', 'add-model', shellArg(modelRef)];
   if (configPath) args.push('--config', shellArg(configPath));
@@ -552,7 +553,8 @@ function addModelCommand({
   if (apiKeyEnv) args.push('--api-key-env', shellArg(apiKeyEnv));
   if (keepWarm) args.push('--keep-warm');
   if (setDefault) args.push('--default');
-  if (apply) args.push('--apply', '--yes');
+  if (go) args.push('--go');
+  else if (apply) args.push('--apply', '--yes');
   return args.join(' ');
 }
 
@@ -714,6 +716,22 @@ export function createModelImportPlan(
         setDefault,
         apply: true
       }),
+      go: addModelCommand({
+        modelRef,
+        configPath,
+        backend,
+        modelRoot,
+        sessionCacheRoot,
+        modelId,
+        name,
+        port: selectedPort,
+        contextWindow: selectedContextWindow,
+        maxOutputTokens: selectedMaxOutputTokens,
+        apiKeyEnv: selectedApiKeyEnv,
+        keepWarm,
+        setDefault,
+        go: true
+      }),
       setupBackend: `lloom backend-install ${shellArg(backendId)} --apply --yes`,
       download: downloadCommand ? shellCommand(downloadCommand) : null,
       start: runtime ? `lloom runtime-start ${runtimeId}` : null,
@@ -743,5 +761,52 @@ export async function applyModelImport(
     written: {
       configPath
     }
+  };
+}
+
+export async function applyModelImportGo(config, options = {}, { installBackend, downloadModel, startRuntime } = {}) {
+  if (typeof installBackend !== 'function') throw new Error('add-model --go requires a backend installer');
+  if (typeof downloadModel !== 'function') throw new Error('add-model --go requires a model downloader');
+  if (typeof startRuntime !== 'function') throw new Error('add-model --go requires a runtime starter');
+
+  const plan = createModelImportPlan(config, options);
+  const phases = {
+    backend: await installBackend(plan),
+    download: null,
+    config: null,
+    runtime: null
+  };
+  if (phases.backend?.ok === false) {
+    throw new Error(phases.backend.error ?? `Failed to install backend ${plan.inference.backend}`);
+  }
+
+  phases.download = await downloadModel(plan);
+  if (phases.download?.ok === false) {
+    throw new Error(phases.download.error ?? `Failed to download ${plan.reference.canonical}`);
+  }
+
+  const applied = await applyModelImport(config, {
+    ...options,
+    dryRun: false,
+    yes: true
+  });
+  phases.config = {
+    ok: true,
+    configPath: applied.written.configPath
+  };
+
+  phases.runtime = plan.additions.runtimeId
+    ? await startRuntime(plan, applied.config)
+    : { ok: true, status: 'skipped', reason: 'unmanaged-model' };
+  if (phases.runtime?.ok === false || phases.runtime?.healthy === false) {
+    throw new Error(phases.runtime.error ?? `Failed to start runtime ${plan.additions.runtimeId}`);
+  }
+
+  return {
+    ...applied,
+    go: true,
+    phases,
+    ok: true,
+    status: 'ready'
   };
 }

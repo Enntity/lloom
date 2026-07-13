@@ -127,6 +127,14 @@ The command accepts Hugging Face URLs, Hugging Face repo IDs, local paths, and O
 lloom add-model mlx-community/Qwen3.6-27B-OptiQ-4bit --keep-warm --default --apply --yes
 ```
 
+Use `--go` instead of `--apply --yes` for the one-step managed flow. LLooM installs the inferred backend, downloads the model, writes the registry/runtime configuration, starts and warms the runtime, and waits for its health endpoint:
+
+```bash
+lloom add-model mlx-community/Qwen3.6-27B-OptiQ-4bit --keep-warm --default --go
+```
+
+The existing `--apply --yes` form intentionally remains registration-only for automation that wants to manage backend installation, model transfer, or runtime startup separately. Unmanaged external OpenAI-compatible and LM Studio entries have no runtime for LLooM to start, so `--go` registers them after skipping the managed install/download/start phases.
+
 ## Community Index
 
 `recipes/index.json` is the local cache that automatic selection reads. A hosted `lloom-host` service can publish signed recipe packs, but the gateway always imports them into this local index before setup uses them:

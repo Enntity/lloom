@@ -111,7 +111,7 @@ lloom down                    # stop all managed model backends
 lloom doctor --no-runtimes
 lloom models
 lloom integrate omp --apply --yes
-lloom add-model mlx-community/Qwen3.6-27B-OptiQ-4bit --keep-warm --default --apply --yes  # Mac
+lloom add-model mlx-community/Qwen3.6-27B-OptiQ-4bit --keep-warm --default --go           # Mac: install, download, start
 lloom add-model 'openai:http://127.0.0.1:8000/v1#my-model' --default --apply --yes       # NVIDIA/vLLM
 lloom serve --config ~/.lloom/config.json
 ```
@@ -246,7 +246,7 @@ lloom add-model 'openai:https://openrouter.ai/api/v1#z-ai/glm-5.2' --api-key-env
 lloom add-model ~/Models/my-local-model.gguf --port 8230 --context-window 131072
 ```
 
-`add-model` accepts Hugging Face URLs, Hugging Face repo IDs, local paths, Ollama tags, LM Studio model IDs, and explicit OpenAI-compatible endpoints. It infers a backend, allocates a backend port from the configured range unless one is supplied, emits the backend install/download/runtime commands when LLooM manages the runtime, and only writes config with `--apply --yes`. External OpenAI-compatible servers use config-only unmanaged model entries; start the external app/server yourself, then let LLooM provide the stable gateway URL, client integrations, and the same per-connection telemetry as local models. For authenticated providers, pass `--api-key-env NAME`; LLooM stores only the environment-variable name and resolves the credential inside the gateway process at request time. Unmanaged models are excluded from warmup, admission, eviction, and local GPU-memory planning.
+`add-model` accepts Hugging Face URLs, Hugging Face repo IDs, local paths, Ollama tags, LM Studio model IDs, and explicit OpenAI-compatible endpoints. It infers a backend, allocates a backend port from the configured range unless one is supplied, and emits the backend install/download/runtime commands when LLooM manages the runtime. Dry-run is the default; `--apply --yes` writes only the config, while `--go` performs the complete managed path: install the inferred backend, download the model, write the config, start the runtime, warm it, and verify health. External OpenAI-compatible servers remain config-only unmanaged model entries because LLooM cannot start the external app or service. For authenticated providers, pass `--api-key-env NAME`; LLooM stores only the environment-variable name and resolves the credential inside the gateway process at request time. Unmanaged models are excluded from warmup, admission, eviction, and local GPU-memory planning.
 
 Hugging Face `blob`, `resolve`, and `tree` links are normalized into the same model reference. Non-`main` revisions are preserved in the generated `hf download --revision ...` command, so a copied model-card link keeps pointing at the intended branch, tag, or commit.
 
