@@ -555,6 +555,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       topologyWorldScale: 1,
       topologyCamera: { manual: 1, current: 1, panX: 0, panY: 0 },
       topologyPanDrag: null,
+      topologyZoomAnchor: null,
       topologyRaisedModelId: null,
       topologyView: null,
       topologyHitCards: [],
@@ -981,13 +982,22 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const fitZoom = 1 / state.topologyWorldScale;
       const targetZoom = Math.max(.18, Math.min(1.6, fitZoom * state.topologyCamera.manual));
       state.topologyCamera.current += (targetZoom - state.topologyCamera.current) * .12;
+      if (Math.abs(targetZoom - state.topologyCamera.current) < .002) state.topologyCamera.current = targetZoom;
       const zoom = state.topologyCamera.current;
-      const panX = state.topologyCamera.panX || 0, panY = state.topologyCamera.panY || 0;
-      const zoomOutput = $("#topology-zoom-output");
-      if (zoomOutput) zoomOutput.textContent = Math.round(zoom * 100) + "%";
       // Content density owns the logical world size. The camera only chooses
       // how much of that stable world is visible and never changes its bounds.
       const width = viewportWidth * state.topologyWorldScale, height = viewportHeight * state.topologyWorldScale;
+      const zoomAnchor = state.topologyZoomAnchor;
+      if (zoomAnchor) {
+        // Keep the pre-zoom world point under the cursor while zoom eases in,
+        // instead of applying a one-shot pan jump against the unfinished zoom.
+        state.topologyCamera.panX = zoomAnchor.screenX - viewportWidth / 2 - (zoomAnchor.worldX - width / 2) * zoom;
+        state.topologyCamera.panY = zoomAnchor.screenY - viewportHeight / 2 - (zoomAnchor.worldY - height / 2) * zoom;
+        if (zoom === targetZoom) state.topologyZoomAnchor = null;
+      }
+      const panX = state.topologyCamera.panX || 0, panY = state.topologyCamera.panY || 0;
+      const zoomOutput = $("#topology-zoom-output");
+      if (zoomOutput) zoomOutput.textContent = Math.round(zoom * 100) + "%";
       ctx.save();
       ctx.translate(viewportWidth / 2 + panX, viewportHeight / 2 + panY);
       ctx.scale(zoom, zoom);
@@ -1305,21 +1315,20 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       state.topologyCamera.manual = 1;
       state.topologyCamera.panX = 0;
       state.topologyCamera.panY = 0;
+      state.topologyZoomAnchor = null;
     }
     function adjustTopologyZoom(delta, anchor) {
       const camera = state.topologyCamera;
       const view = state.topologyView;
       const beforeManual = camera.manual;
       camera.manual = Math.max(.55, Math.min(1.6, beforeManual + delta));
-      if (!view || !anchor || camera.manual === beforeManual || !view.zoom) return;
-      const fitZoom = 1 / Math.max(.001, state.topologyWorldScale);
-      const beforeZoom = Math.max(.18, Math.min(1.6, fitZoom * beforeManual));
-      const afterZoom = Math.max(.18, Math.min(1.6, fitZoom * camera.manual));
-      const ratio = afterZoom / Math.max(.001, beforeZoom);
-      const sx = anchor.x - view.viewportWidth / 2;
-      const sy = anchor.y - view.viewportHeight / 2;
-      camera.panX = sx - (sx - (camera.panX || 0)) * ratio;
-      camera.panY = sy - (sy - (camera.panY || 0)) * ratio;
+      if (camera.manual === beforeManual) return;
+      if (!view || !anchor || !view.zoom) {
+        state.topologyZoomAnchor = null;
+        return;
+      }
+      const world = topologyWorldFromScreen(anchor.x, anchor.y, view);
+      state.topologyZoomAnchor = { screenX: anchor.x, screenY: anchor.y, worldX: world.x, worldY: world.y };
     }
     function topologyScreenPoint(event, canvas) {
       const rect = canvas.getBoundingClientRect();
@@ -1373,6 +1382,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const dx = point.x - drag.startX, dy = point.y - drag.startY;
       if (!drag.moved && (dx * dx + dy * dy) < 25) return;
       drag.moved = true;
+      state.topologyZoomAnchor = null;
       canvas.classList.add("is-panning");
       state.topologyCamera.panX = drag.originPanX + dx;
       state.topologyCamera.panY = drag.originPanY + dy;
