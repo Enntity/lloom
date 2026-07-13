@@ -858,9 +858,7 @@ assert(validateRecipeIndex(duplicateRecipeIndex).some((error) => error.includes(
 const traversalRecipeIndex = structuredClone(recipeIndex);
 traversalRecipeIndex.recipes[0].path = '../escape.json';
 assert(validateRecipeIndex(traversalRecipeIndex).some((error) => error.includes('recipes root')));
-const versionedRecipeEntry = recipeIndex.recipes.find(
-  (entry) => entry.id === 'linux-nvidia-gb10-qwen36-unsloth-vllm'
-);
+const versionedRecipeEntry = recipeIndex.recipes.find((entry) => entry.id === 'linux-nvidia-gb10-qwen36-unsloth-vllm');
 assert.equal(versionedRecipeEntry.currentVersion, 2);
 assert.equal(versionedRecipeEntry.versions.length, 2);
 assert.equal(versionedRecipeEntry.versions.find((version) => version.status === 'archived')?.version, 1);
@@ -891,8 +889,7 @@ assert.equal(
   2
 );
 assert.equal(
-  indexedSparkRecipe.models.find((model) => model.role === 'dense-quality')?.benchmark.best.metrics
-    .generationTokPerSec,
+  indexedSparkRecipe.models.find((model) => model.role === 'dense-quality')?.benchmark.best.metrics.generationTokPerSec,
   55.82
 );
 const indexedQwen36Recipe = recipeIndexReport.recipes.find((candidate) => candidate.id === 'apple-silicon-qwen36');
