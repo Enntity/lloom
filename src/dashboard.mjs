@@ -552,6 +552,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       modelLayoutIdsKey: "",
       modelLayoutField: null,
       modelLayoutWorkingField: null,
+      modelLayoutResetPositions: false,
       modelLayoutStableFrames: 0,
       modelLayoutSettled: false,
       topologyWorldScale: 1,
@@ -857,7 +858,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     }
     function assignClusterOrbitTargets(models, field) {
       const clusters = clusterModelsByName(models);
-      const cardW = 220, cardH = 68, gapX = 16, gapY = 12;
+      const cardW = 220, cardH = 68, gapX = 18, gapY = 14;
       const pitchX = cardW + gapX, pitchY = cardH + gapY;
       const spanX = Math.max(pitchX, field.right - field.left - cardW);
       const midX = (field.left + field.right) / 2;
@@ -879,7 +880,8 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         };
       });
       // Prefer a vertical stack of family blocks; spill into columns if the rack is short.
-      const blockGap = 28;
+      // Keep families visually distinct with generous inter-cluster air.
+      const blockGap = 72;
       let clusterCols = 1;
       let packedHeight = footprints.reduce((sum, item) => sum + item.height, 0) + Math.max(0, footprints.length - 1) * blockGap;
       while (clusterCols < footprints.length && packedHeight > usableH) {
@@ -909,7 +911,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       footprints.forEach((item, clusterIndex) => {
         const col = clusterIndex % clusterCols;
         const seed = [...item.members[0]].reduce((sum, character) => sum + character.charCodeAt(0), clusterIndex + 1);
-        const centerX = colX[col] + (hashUnit(seed * 7) - .5) * Math.min(24, spanX * .08);
+        const centerX = colX[col] + (hashUnit(seed * 7) - .5) * Math.min(20, spanX * .06);
         const centerY = colY[col] + item.height / 2;
         item.members.forEach((id, memberIndex) => {
           const slotCol = item.cols === 1 ? 0 : memberIndex % item.cols;
@@ -917,7 +919,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           const localX = (slotCol - (item.cols - 1) / 2) * pitchX;
           const localY = (slotRow - (item.rows - 1) / 2) * pitchY;
           // Slight orbital twist so multi-member families don't look like a spreadsheet.
-          const twist = item.n === 1 ? 0 : Math.sin((memberIndex + 1) * 1.7) * Math.min(18, pitchX * .08);
+          const twist = item.n === 1 ? 0 : Math.sin((memberIndex + 1) * 1.7) * Math.min(14, pitchX * .06);
           const point = clampModelPoint(centerX + localX + twist, centerY + localY, field);
           targets.set(id, { x: point.x, y: point.y, centerX, centerY });
         });
@@ -1027,6 +1029,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         state.modelLayoutSettled = false;
         state.modelLayoutStableFrames = 0;
         state.modelLayoutWorkingField = snapshotField();
+        state.modelLayoutResetPositions = true;
       }
       if (state.modelLayoutSettled && modelFieldDelta(state.modelLayoutField, field) >= 16) {
         state.modelLayoutSettled = false;
@@ -1046,19 +1049,27 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const orbit = assignClusterOrbitTargets(models, layoutField);
       const fallbackX = (layoutField.left + layoutField.right) / 2;
       const fallbackY = (layoutField.top + layoutField.bottom) / 2;
+      const resetPositions = state.modelLayoutResetPositions;
       models.forEach(model => {
         const slot = orbit.targets.get(model.id) || { x: fallbackX, y: fallbackY, centerX: fallbackX, centerY: fallbackY };
         let node = state.modelNodes.get(model.id);
         if (!node) {
-          node = { x: slot.centerX, y: slot.centerY, vx: 0, vy: 0, targetX: slot.x, targetY: slot.y };
+          // Start already seated in the constellation slot.
+          node = { x: slot.x, y: slot.y, vx: 0, vy: 0, targetX: slot.x, targetY: slot.y };
           state.modelNodes.set(model.id, node);
           state.modelLayoutSettled = false;
           state.modelLayoutStableFrames = 0;
           state.modelLayoutWorkingField = snapshotField();
+        } else if (resetPositions) {
+          node.x = slot.x;
+          node.y = slot.y;
+          node.vx = 0;
+          node.vy = 0;
         }
         node.targetX = slot.x;
         node.targetY = slot.y;
       });
+      state.modelLayoutResetPositions = false;
       if (state.modelLayoutSettled) return;
       const nodes = models.map(model => state.modelNodes.get(model.id));
       for (const node of nodes) {
