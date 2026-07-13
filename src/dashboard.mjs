@@ -857,33 +857,73 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     }
     function assignClusterOrbitTargets(models, field) {
       const clusters = clusterModelsByName(models);
-      const spanX = Math.max(1, field.right - field.left - 220);
+      const cardW = 220, cardH = 68, gapX = 16, gapY = 12;
+      const pitchX = cardW + gapX, pitchY = cardH + gapY;
+      const spanX = Math.max(pitchX, field.right - field.left - cardW);
       const midX = (field.left + field.right) / 2;
+      const usableH = Math.max(pitchY, field.bottom - field.top - cardH);
+      const usableW = Math.max(pitchX, field.right - field.left - cardW);
       const footprints = clusters.map(members => {
-        const n = members.length;
-        const rx = Math.max(36, 28 + n * 8);
-        const ry = Math.max(52, n * 42 / Math.PI);
-        return { members, n, rx, ry, height: Math.max(68, ry * 2 + 68) };
+        const n = Math.max(1, members.length);
+        // Wide cards can't share a tiny ellipse — pack each family on a
+        // card-clearing grid (constellation), then orbit that block's center.
+        const cols = Math.max(1, Math.min(n, Math.max(1, Math.floor(usableW / pitchX))));
+        const rows = Math.ceil(n / cols);
+        return {
+          members,
+          n,
+          cols,
+          rows,
+          width: cols * pitchX - gapX,
+          height: rows * pitchY - gapY
+        };
       });
-      const totalHeight = footprints.reduce((sum, item) => sum + item.height, 0);
-      const usable = Math.max(1, field.bottom - field.top - 68);
-      const gap = footprints.length > 1 ? Math.max(12, (usable - totalHeight) / (footprints.length + 1)) : 0;
-      let cursorY = field.top + 34 + gap;
+      // Prefer a vertical stack of family blocks; spill into columns if the rack is short.
+      const blockGap = 28;
+      let clusterCols = 1;
+      let packedHeight = footprints.reduce((sum, item) => sum + item.height, 0) + Math.max(0, footprints.length - 1) * blockGap;
+      while (clusterCols < footprints.length && packedHeight > usableH) {
+        clusterCols += 1;
+        const colHeights = Array.from({ length: clusterCols }, () => 0);
+        footprints.forEach((item, index) => {
+          const col = index % clusterCols;
+          colHeights[col] += item.height + (colHeights[col] ? blockGap : 0);
+        });
+        packedHeight = Math.max(...colHeights);
+      }
+      const colWidths = Array.from({ length: clusterCols }, () => 0);
+      footprints.forEach((item, index) => {
+        const col = index % clusterCols;
+        colWidths[col] = Math.max(colWidths[col], item.width);
+      });
+      const totalWidth = colWidths.reduce((sum, width) => sum + width, 0) + Math.max(0, clusterCols - 1) * blockGap;
+      const startX = midX - totalWidth / 2;
+      const colX = [];
+      let xCursor = startX;
+      for (let col = 0; col < clusterCols; col++) {
+        colX.push(xCursor + colWidths[col] / 2);
+        xCursor += colWidths[col] + blockGap;
+      }
+      const colY = Array.from({ length: clusterCols }, () => field.top + 34);
       const targets = new Map();
-      const centers = new Map();
       footprints.forEach((item, clusterIndex) => {
+        const col = clusterIndex % clusterCols;
         const seed = [...item.members[0]].reduce((sum, character) => sum + character.charCodeAt(0), clusterIndex + 1);
-        const centerX = midX + (hashUnit(seed * 7) - .5) * spanX * .34;
-        const centerY = cursorY + item.height / 2;
-        centers.set(item.members[0], { x: centerX, y: centerY });
+        const centerX = colX[col] + (hashUnit(seed * 7) - .5) * Math.min(24, spanX * .08);
+        const centerY = colY[col] + item.height / 2;
         item.members.forEach((id, memberIndex) => {
-          const angle = item.n === 1 ? -Math.PI / 2 : (memberIndex / item.n) * Math.PI * 2 - Math.PI / 2;
-          const point = clampModelPoint(centerX + Math.cos(angle) * item.rx, centerY + Math.sin(angle) * item.ry, field);
+          const slotCol = item.cols === 1 ? 0 : memberIndex % item.cols;
+          const slotRow = item.cols === 1 ? memberIndex : Math.floor(memberIndex / item.cols);
+          const localX = (slotCol - (item.cols - 1) / 2) * pitchX;
+          const localY = (slotRow - (item.rows - 1) / 2) * pitchY;
+          // Slight orbital twist so multi-member families don't look like a spreadsheet.
+          const twist = item.n === 1 ? 0 : Math.sin((memberIndex + 1) * 1.7) * Math.min(18, pitchX * .08);
+          const point = clampModelPoint(centerX + localX + twist, centerY + localY, field);
           targets.set(id, { x: point.x, y: point.y, centerX, centerY });
         });
-        cursorY += item.height + gap;
+        colY[col] += item.height + blockGap;
       });
-      return { targets, centers };
+      return { targets };
     }
 
     function smoothRate(key, target, now) {
@@ -994,6 +1034,14 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         state.modelLayoutWorkingField = snapshotField();
       }
       if (!state.modelLayoutWorkingField) state.modelLayoutWorkingField = snapshotField();
+      // While still settling, let the rack grow with world-scale so constellation
+      // slots aren't frozen into the first undersized frame.
+      if (!state.modelLayoutSettled) {
+        const working = state.modelLayoutWorkingField;
+        const liveArea = Math.max(1, (field.right - field.left) * (field.bottom - field.top));
+        const workArea = Math.max(1, (working.right - working.left) * (working.bottom - working.top));
+        if (liveArea > workArea * 1.02) state.modelLayoutWorkingField = snapshotField();
+      }
       const layoutField = state.modelLayoutWorkingField;
       const orbit = assignClusterOrbitTargets(models, layoutField);
       const fallbackX = (layoutField.left + layoutField.right) / 2;
