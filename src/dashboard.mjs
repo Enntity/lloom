@@ -202,6 +202,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     .topology::before { content:""; position:absolute; inset:0; pointer-events:none; background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(47,230,200,.022) 4px); }
     .topology-head { position:absolute; z-index:2; left:16px; right:16px; top:14px; display:flex; justify-content:space-between; align-items:flex-start; gap:18px; pointer-events:none; }
     .topology-canvas { display:block; width:100%; height:560px; }
+    .topology-zoom { position:absolute; z-index:3; right:14px; bottom:14px; display:flex; align-items:center; gap:5px; padding:5px; border:1px solid rgba(47,230,200,.28); background:rgba(7,11,12,.88); backdrop-filter:blur(8px); }
+    .topology-zoom button { min-width:30px; min-height:28px; padding:2px 8px; font:700 14px "SFMono-Regular",monospace; }
+    .topology-zoom-output { min-width:48px; color:var(--muted); text-align:center; font:700 10px "SFMono-Regular",monospace; }
     .pulse { animation:pulse 1.4s ease-in-out infinite; }
     @keyframes pulse { 50% { opacity:.35; transform:scale(.78); } }
     .pill {
@@ -373,6 +376,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
             <div class="fabric-totals"><div class="fabric-total"><strong id="fabric-in">0</strong><span>tokens in</span></div><div class="fabric-total"><strong id="fabric-out">0</strong><span>tokens out</span></div><div class="fabric-total"><strong id="fabric-rate">—</strong><span id="fabric-rate-label">tok/s</span></div><div class="fabric-total"><strong id="fabric-active">0</strong><span>active</span></div></div>
           </div>
           <canvas id="topology-canvas" class="topology-canvas" aria-label="Animated connections flowing through LLooM to configured models"></canvas>
+          <div class="topology-zoom" aria-label="Topology zoom controls"><button id="topology-zoom-out" type="button" aria-label="Zoom out">−</button><span id="topology-zoom-output" class="topology-zoom-output">100%</span><button id="topology-zoom-in" type="button" aria-label="Zoom in">+</button><button id="topology-zoom-reset" type="button" aria-label="Reset zoom">↺</button></div>
         </article>
       </div>
     </section>
@@ -547,6 +551,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       modelLayoutKey: "",
       modelLayoutStableFrames: 0,
       modelLayoutSettled: false,
+      topologyCamera: { manual: 1, current: 1 },
       output: null,
     };
 
@@ -925,6 +930,18 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       if (canvas.width !== Math.round(width) || canvas.height !== Math.round(height)) { canvas.width = Math.round(width); canvas.height = Math.round(height); }
       const ctx = canvas.getContext("2d");
       ctx.clearRect(0, 0, width, height);
+      const modelCount = (state.topologyModels || []).length;
+      const connectionCount = (state.topologyConnections || []).length;
+      const autoZoom = Math.max(.62, Math.min(1, 1 - Math.max(0, modelCount - 4) * .045 - Math.max(0, connectionCount - 10) * .012));
+      const targetZoom = Math.max(.5, Math.min(1.35, autoZoom * state.topologyCamera.manual));
+      state.topologyCamera.current += (targetZoom - state.topologyCamera.current) * .12;
+      const zoom = state.topologyCamera.current;
+      const zoomOutput = $("#topology-zoom-output");
+      if (zoomOutput) zoomOutput.textContent = Math.round(zoom * 100) + "%";
+      ctx.save();
+      ctx.translate(width / 2, height / 2);
+      ctx.scale(zoom, zoom);
+      ctx.translate(-width / 2, -height / 2);
       ctx.font = '10px "SFMono-Regular",monospace'; ctx.textAlign = "left";
       ctx.fillStyle = "#8fb4ff"; ctx.beginPath(); ctx.arc(50, 91, 3, 0, Math.PI * 2); ctx.fill(); ctx.fillText("INPUT  →", 59, 95);
       ctx.fillStyle = "#2fe6c8"; ctx.beginPath(); ctx.arc(132, 91, 3, 0, Math.PI * 2); ctx.fill(); ctx.fillText("←  OUTPUT", 141, 95);
@@ -940,7 +957,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       }));
       ctx.font = '11px "SFMono-Regular",monospace';
       ctx.textAlign = "left";
-      ctx.fillStyle = "rgba(153,163,176,.55)"; ctx.fillText("INSTALLED MODEL CLUSTER", modelField.left + 4, 88);
+      ctx.textAlign = "center"; ctx.fillStyle = "rgba(153,163,176,.55)"; ctx.fillText("INSTALLED MODEL CLUSTER", (modelField.left + modelField.right) / 2, 88); ctx.textAlign = "left";
       const modelList = [...modelPoints.values()].sort((a, b) => a.y - b.y);
       modelList.forEach((point, index) => {
         const portY = center.y - Math.min(94, (modelList.length - 1) * 32) / 2 + index * Math.min(47, 94 / Math.max(1, modelList.length - 1));
@@ -1060,6 +1077,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         ctx.textAlign = "right"; ctx.fillStyle = "rgba(242,245,247,.9)"; ctx.fillText(value == null ? "–" : Math.round(value) + "%", gate.right - 17, y);
       });
       if (host.gpu) { ctx.textAlign = "center"; ctx.fillStyle = "rgba(153,163,176,.8)"; ctx.fillText(Math.round(host.gpu.temperatureC) + "°C · " + Math.round(host.gpu.powerDrawW) + "W", center.x, gate.bottom - 13); }
+      ctx.restore();
     }
 
     function animateTopology() {
@@ -1224,6 +1242,16 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     }
 
     $("#refresh").addEventListener("click", refresh);
+    function adjustTopologyZoom(delta) {
+      state.topologyCamera.manual = Math.max(.55, Math.min(1.6, state.topologyCamera.manual + delta));
+    }
+    $("#topology-zoom-out").addEventListener("click", () => adjustTopologyZoom(-.1));
+    $("#topology-zoom-in").addEventListener("click", () => adjustTopologyZoom(.1));
+    $("#topology-zoom-reset").addEventListener("click", () => { state.topologyCamera.manual = 1; });
+    $("#topology-canvas").addEventListener("wheel", event => {
+      event.preventDefault();
+      adjustTopologyZoom(event.deltaY > 0 ? -.08 : .08);
+    }, { passive: false });
     $("#copy-output").addEventListener("click", async () => {
       await navigator.clipboard.writeText($("#output").textContent);
     });
