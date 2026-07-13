@@ -549,10 +549,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       connectionKey: "",
       threadNodes: new Map(),
       modelNodes: new Map(),
-      modelLayoutIdsKey: "",
-      modelLayoutField: null,
-      modelLayoutWorkingField: null,
-      modelLayoutFrames: 0,
+      modelLayoutKey: "",
       modelLayoutStableFrames: 0,
       modelLayoutSettled: false,
       topologyWorldScale: 1,
@@ -784,91 +781,6 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     }
     function shortModel(value) { const parts = String(value || "unknown").split("/"); return parts[parts.length - 1]; }
     function modelVendor(value) { const parts = String(value || "local").split("/"); return parts.length > 1 ? parts[0] : "local"; }
-    function modelNameParts(id) {
-      const raw = String(id || "");
-      const vendor = modelVendor(raw).toLowerCase();
-      const name = shortModel(raw).toLowerCase();
-      const tokens = new Set(name.split(/[^a-z0-9]+/).filter(token => token && token.length > 1));
-      return { vendor, name, tokens };
-    }
-    function modelNameSimilarity(leftId, rightId) {
-      if (leftId === rightId) return 0;
-      const left = modelNameParts(leftId), right = modelNameParts(rightId);
-      let score = 0;
-      if (left.vendor && left.vendor === right.vendor) score += .38;
-      let shared = 0;
-      for (const token of left.tokens) if (right.tokens.has(token)) shared += 1;
-      const union = left.tokens.size + right.tokens.size - shared;
-      if (union > 0) score += .55 * (shared / union);
-      let prefix = 0;
-      const limit = Math.min(left.name.length, right.name.length, 18);
-      while (prefix < limit && left.name[prefix] === right.name[prefix]) prefix += 1;
-      if (prefix >= 4) score += Math.min(.22, prefix * .018);
-      return Math.min(1, score);
-    }
-    function modelFieldDelta(previous, next) {
-      if (!previous || !next) return Infinity;
-      return Math.max(
-        Math.abs(previous.left - next.left),
-        Math.abs(previous.right - next.right),
-        Math.abs(previous.top - next.top),
-        Math.abs(previous.bottom - next.bottom)
-      );
-    }
-    function clampModelNode(node, field) {
-      node.x = Math.max(field.left + 110, Math.min(field.right - 110, node.x));
-      node.y = Math.max(field.top + 34, Math.min(field.bottom - 34, node.y));
-    }
-    function separateModelCards(nodes, field, passes) {
-      for (let pass = 0; pass < passes; pass++) {
-        let separated = true;
-        for (let left = 0; left < nodes.length; left++) for (let right = left + 1; right < nodes.length; right++) {
-          const a = nodes[left], b = nodes[right], dx = b.x - a.x, dy = b.y - a.y;
-          const xOverlap = 232 - Math.abs(dx), yOverlap = 82 - Math.abs(dy);
-          if (xOverlap <= 0 || yOverlap <= 0) continue;
-          separated = false;
-          if (xOverlap < yOverlap) {
-            const direction = Math.sign(dx) || (hashUnit(left * 17 + right * 31) > .5 ? 1 : -1);
-            const shift = xOverlap / 2 + .5;
-            a.x -= direction * shift; b.x += direction * shift;
-          } else {
-            const direction = Math.sign(dy) || (hashUnit(left * 29 + right * 11) > .5 ? 1 : -1);
-            const shift = yOverlap / 2 + .5;
-            a.y -= direction * shift; b.y += direction * shift;
-          }
-          a.vx = 0; b.vx = 0; a.vy = 0; b.vy = 0;
-          clampModelNode(a, field); clampModelNode(b, field);
-        }
-        if (separated) break;
-      }
-    }
-    function freezeModelLayout(nodes, field) {
-      separateModelCards(nodes, field, 10);
-      for (const node of nodes) {
-        clampModelNode(node, field);
-        node.x = Math.round(node.x);
-        node.y = Math.round(node.y);
-        node.vx = 0;
-        node.vy = 0;
-      }
-      separateModelCards(nodes, field, 4);
-      for (const node of nodes) {
-        clampModelNode(node, field);
-        node.x = Math.round(node.x);
-        node.y = Math.round(node.y);
-        node.vx = 0;
-        node.vy = 0;
-      }
-      state.modelLayoutSettled = true;
-      state.modelLayoutFrames = 0;
-      state.modelLayoutStableFrames = 0;
-      state.modelLayoutField = { left: field.left, right: field.right, top: field.top, bottom: field.bottom };
-    }
-    function unsettleModelLayout() {
-      state.modelLayoutSettled = false;
-      state.modelLayoutFrames = 0;
-      state.modelLayoutStableFrames = 0;
-    }
 
     function smoothRate(key, target, now) {
       const desired = Math.max(0, Number(target || 0));
@@ -964,101 +876,94 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     function updateModelLayout(models, field) {
       const activeIds = new Set(models.map(model => model.id));
       for (const id of state.modelNodes.keys()) if (!activeIds.has(id)) state.modelNodes.delete(id);
-      const idsKey = models.map(model => model.id).sort().join("|");
-      const snapshotField = () => ({ left: field.left, right: field.right, top: field.top, bottom: field.bottom });
-      if (idsKey !== state.modelLayoutIdsKey) {
-        state.modelLayoutIdsKey = idsKey;
-        unsettleModelLayout();
-        state.modelLayoutWorkingField = snapshotField();
+      const layoutKey = models.map(model => model.id).sort().join("|") + ":" + [field.left, field.right, field.top, field.bottom].map(Math.round).join(":");
+      if (layoutKey !== state.modelLayoutKey) {
+        state.modelLayoutKey = layoutKey;
+        state.modelLayoutStableFrames = 0;
+        state.modelLayoutSettled = false;
       }
-      // Ignore tiny rack breathing from world-scale easing; only reflow on real resizes.
-      if (state.modelLayoutSettled && modelFieldDelta(state.modelLayoutField, field) >= 16) {
-        unsettleModelLayout();
-        state.modelLayoutWorkingField = snapshotField();
-      }
-      if (!state.modelLayoutWorkingField) state.modelLayoutWorkingField = snapshotField();
-      const layoutField = state.modelLayoutWorkingField;
-      const centerX = (layoutField.left + layoutField.right) / 2, centerY = (layoutField.top + layoutField.bottom) / 2;
-      const spanX = Math.max(1, layoutField.right - layoutField.left - 220);
-      const spanY = Math.max(1, layoutField.bottom - layoutField.top - 68);
+      const centerX = (field.left + field.right) / 2, centerY = (field.top + field.bottom) / 2;
       models.forEach((model, index) => {
         const seed = [...model.id].reduce((sum, character) => sum + character.charCodeAt(0), index + 1);
-        const vendor = modelVendor(model.id).toLowerCase();
-        const vendorSeed = [...vendor].reduce((sum, character) => sum + character.charCodeAt(0), 1);
-        // Same vendor shares a vertical band so related cards start near each other.
-        const vendorBand = hashUnit(vendorSeed * 19);
-        const targetX = layoutField.left + 110 + hashUnit(seed * 7) * spanX;
-        const targetY = layoutField.top + 34 + (vendorBand * .58 + hashUnit(seed * 13) * .42) * spanY;
+        const targetX = field.left + 110 + hashUnit(seed * 7) * Math.max(1, field.right - field.left - 220);
+        const targetY = field.top + 34 + hashUnit(seed * 13) * Math.max(1, field.bottom - field.top - 68);
         let node = state.modelNodes.get(model.id);
         if (!node) {
-          let spawnX = centerX, spawnY = centerY, bestSim = .28;
-          for (const other of models) {
-            if (other.id === model.id) continue;
-            const existing = state.modelNodes.get(other.id);
-            if (!existing) continue;
-            const similarity = modelNameSimilarity(model.id, other.id);
-            if (similarity > bestSim) {
-              bestSim = similarity;
-              spawnX = existing.x + (hashUnit(seed * 5) - .5) * 28;
-              spawnY = existing.y + 48;
-            }
-          }
-          node = { x: spawnX, y: spawnY, vx: 0, vy: 0, targetX, targetY, id: model.id };
+          node = { x: centerX, y: centerY, vx: 0, vy: 0, targetX, targetY };
           state.modelNodes.set(model.id, node);
-          unsettleModelLayout();
-          state.modelLayoutWorkingField = snapshotField();
+          state.modelLayoutSettled = false;
+          state.modelLayoutStableFrames = 0;
         }
-        node.id = model.id;
         node.targetX = targetX;
         node.targetY = targetY;
       });
       if (state.modelLayoutSettled) return;
       const nodes = models.map(model => state.modelNodes.get(model.id));
-      state.modelLayoutFrames += 1;
       for (const node of nodes) {
-        node.vx += (node.targetX - node.x) * .0024;
-        node.vy += (node.targetY - node.y) * .0024;
+        node.vx += (node.targetX - node.x) * .003;
+        node.vy += (node.targetY - node.y) * .003;
       }
       for (let left = 0; left < nodes.length; left++) for (let right = left + 1; right < nodes.length; right++) {
         const a = nodes[left], b = nodes[right], dx = b.x - a.x, dy = b.y - a.y;
-        const distance = Math.sqrt(dx * dx + dy * dy) || 1;
-        const similarity = modelNameSimilarity(a.id, b.id);
-        if (similarity > .28) {
-          const ideal = 102 - similarity * 18;
-          if (distance > ideal) {
-            const pull = .01 * similarity * similarity * ((distance - ideal) / distance);
-            a.vx += dx * pull; a.vy += dy * pull;
-            b.vx -= dx * pull; b.vy -= dy * pull;
-          }
-        }
         const xOverlap = 232 - Math.abs(dx), yOverlap = 82 - Math.abs(dy);
         if (xOverlap <= 0 || yOverlap <= 0) continue;
         const horizontal = xOverlap / 232, vertical = yOverlap / 82;
         if (horizontal < vertical) {
           const direction = Math.sign(dx) || (hashUnit(left * 17 + right * 31) > .5 ? 1 : -1);
-          const force = .2 + horizontal * 1.05;
+          const force = .22 + horizontal * 1.15;
           a.vx -= direction * force; b.vx += direction * force;
         } else {
           const direction = Math.sign(dy) || (hashUnit(left * 29 + right * 11) > .5 ? 1 : -1);
-          const force = .2 + vertical * 1.05;
+          const force = .22 + vertical * 1.15;
           a.vy -= direction * force; b.vy += direction * force;
         }
       }
       const previousPositions = nodes.map(node => ({ x: node.x, y: node.y }));
       for (const node of nodes) {
-        if (node.x < layoutField.left + 110) node.vx += (layoutField.left + 110 - node.x) * .028;
-        if (node.x > layoutField.right - 110) node.vx -= (node.x - layoutField.right + 110) * .028;
-        if (node.y < layoutField.top + 34) node.vy += (layoutField.top + 34 - node.y) * .028;
-        if (node.y > layoutField.bottom - 34) node.vy -= (node.y - layoutField.bottom + 34) * .028;
-        node.vx *= .8; node.vy *= .8;
+        const halfWidth = 110, halfHeight = 34;
+        if (node.x < field.left + halfWidth) node.vx += (field.left + halfWidth - node.x) * .03;
+        if (node.x > field.right - halfWidth) node.vx -= (node.x - field.right + halfWidth) * .03;
+        if (node.y < field.top + halfHeight) node.vy += (field.top + halfHeight - node.y) * .03;
+        if (node.y > field.bottom - halfHeight) node.vy -= (node.y - field.bottom + halfHeight) * .03;
+        node.vx *= .78; node.vy *= .78;
         node.x += node.vx; node.y += node.vy;
-        clampModelNode(node, layoutField);
+        node.x = Math.max(field.left + halfWidth, Math.min(field.right - halfWidth, node.x));
+        node.y = Math.max(field.top + halfHeight, Math.min(field.bottom - halfHeight, node.y));
       }
-      separateModelCards(nodes, layoutField, 6);
+      // Project overlapping cards apart after applying the softer forces. This
+      // makes non-overlap a layout constraint whenever the field has room,
+      // while still allowing the boundary to win in an impossibly dense field.
+      for (let pass = 0; pass < 8; pass++) {
+        let separated = true;
+        for (let left = 0; left < nodes.length; left++) for (let right = left + 1; right < nodes.length; right++) {
+          const a = nodes[left], b = nodes[right], dx = b.x - a.x, dy = b.y - a.y;
+          const xOverlap = 232 - Math.abs(dx), yOverlap = 82 - Math.abs(dy);
+          if (xOverlap <= 0 || yOverlap <= 0) continue;
+          separated = false;
+          if (xOverlap < yOverlap) {
+            const direction = Math.sign(dx) || (hashUnit(left * 17 + right * 31) > .5 ? 1 : -1);
+            const shift = xOverlap / 2 + .05;
+            a.x -= direction * shift; b.x += direction * shift;
+            a.vx = 0; b.vx = 0;
+          } else {
+            const direction = Math.sign(dy) || (hashUnit(left * 29 + right * 11) > .5 ? 1 : -1);
+            const shift = yOverlap / 2 + .05;
+            a.y -= direction * shift; b.y += direction * shift;
+            a.vy = 0; b.vy = 0;
+          }
+          a.x = Math.max(field.left + 110, Math.min(field.right - 110, a.x));
+          b.x = Math.max(field.left + 110, Math.min(field.right - 110, b.x));
+          a.y = Math.max(field.top + 34, Math.min(field.bottom - 34, a.y));
+          b.y = Math.max(field.top + 34, Math.min(field.bottom - 34, b.y));
+        }
+        if (separated) break;
+      }
       const maxMovement = nodes.reduce((maximum, node, index) => Math.max(maximum, Math.abs(node.x - previousPositions[index].x), Math.abs(node.y - previousPositions[index].y)), 0);
-      state.modelLayoutStableFrames = maxMovement < .08 ? state.modelLayoutStableFrames + 1 : 0;
-      // Settle when calm, or force-freeze after ~2s so dense racks never jitter forever.
-      if (state.modelLayoutStableFrames >= 16 || state.modelLayoutFrames >= 40) freezeModelLayout(nodes, layoutField);
+      state.modelLayoutStableFrames = maxMovement < .035 ? state.modelLayoutStableFrames + 1 : 0;
+      if (state.modelLayoutStableFrames >= 24) {
+        for (const node of nodes) { node.vx = 0; node.vy = 0; }
+        state.modelLayoutSettled = true;
+      }
     }
 
     function drawTopology(now) {
@@ -1108,14 +1013,14 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       updateModelLayout(models, modelField);
       const modelPoints = new Map(models.map(model => {
         const node = state.modelNodes.get(model.id);
-        return [model.id, { x: Math.round(node.x), y: Math.round(node.y), cardWidth: Math.min(220, modelField.right - modelField.left), model }];
+        return [model.id, { x: node.x, y: node.y, cardWidth: Math.min(220, modelField.right - modelField.left), model }];
       }));
       ctx.font = '11px "SFMono-Regular",monospace';
       ctx.textAlign = "left";
-      const modelList = [...modelPoints.values()].sort((a, b) => a.y - b.y || String(a.model.id).localeCompare(String(b.model.id)));
+      const modelList = [...modelPoints.values()].sort((a, b) => a.y - b.y);
       modelList.forEach((point, index) => {
-        const portY = Math.round(center.y - Math.min(94, (modelList.length - 1) * 32) / 2 + index * Math.min(47, 94 / Math.max(1, modelList.length - 1)));
-        const from = { x: Math.round(gate.right), y: portY }, to = { x: point.x - Math.round(point.cardWidth / 2), y: point.y };
+        const portY = center.y - Math.min(94, (modelList.length - 1) * 32) / 2 + index * Math.min(47, 94 / Math.max(1, modelList.length - 1));
+        const from = { x: gate.right, y: portY }, to = { x: point.x - point.cardWidth / 2, y: point.y };
         const inputRate = smoothRate("model:" + point.model.id + ":in", point.model.liveInputRate, now);
         const outputRate = smoothRate("model:" + point.model.id + ":out", point.model.liveOutputRate, now);
         const rate = Math.max(inputRate, outputRate);
@@ -1151,7 +1056,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const pulse = warming || evicting ? .35 + (Math.sin(now * .006) + 1) * .3 : 1;
         ctx.strokeStyle = serving ? "rgba(47,230,200,.95)" : external ? "rgba(192,153,255,.65)" : hot ? "rgba(47,230,200,.6)" : warming ? "rgba(243,189,79," + pulse + ")" : evicting ? "rgba(255,126,102," + pulse + ")" : "rgba(143,180,255,.22)";
         ctx.fillStyle = hot ? "rgba(7,18,17,.98)" : external ? "rgba(15,10,24,.96)" : warming ? "rgba(24,19,9,.97)" : evicting ? "rgba(25,11,9,.97)" : "rgba(8,10,15,.94)";
-        const cardWidth = Math.round(point.cardWidth), cardLeft = point.x - cardWidth / 2, cardTop = point.y - 34;
+        const cardWidth = point.cardWidth, cardLeft = point.x - cardWidth / 2, cardTop = point.y - 34;
         hitCards.push({ id: point.model.id, left: cardLeft, top: cardTop, width: cardWidth, height: 68 });
         ctx.beginPath(); ctx.roundRect(cardLeft, cardTop, cardWidth, 68, 5); ctx.fill(); ctx.stroke();
         ctx.fillStyle = serving ? "#42d77d" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : evicting ? "#ff7e66" : "#8fb4ff"; ctx.fillRect(cardLeft, cardTop, 4, 68);
