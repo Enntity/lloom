@@ -328,7 +328,7 @@ try {
     LLOOM_HOME: path.join(homeRoot, '.lloom')
   });
   const health = await waitForHostHealth(baseUrl);
-  if (health?.data?.recipeCount !== 11 || health?.data?.benchmarkCount !== 3) {
+  if (health?.data?.recipeCount !== 11 || health?.data?.benchmarkCount !== 6) {
     fail('installed lloom-host is not serving packaged seed community data', [JSON.stringify(health?.data ?? null)]);
   }
 

@@ -192,7 +192,7 @@
       "containerName": "unsloth-qwen36-27b-nvfp4",
       "port": 8005,
       "healthUrl": "http://192.168.1.131:8005/v1/models",
-      "maxConcurrency": 4,
+      "maxConcurrency": 8,
       "memoryGb": 64,
       "keepWarm": false,
       "startupTimeoutMs": 900000,
@@ -206,7 +206,7 @@
         "adapter": "docker",
         "image": "vllm/vllm-openai:nightly",
         "createArgs": ["--restart", "unless-stopped", "--gpus", "all", "--ipc", "host", "-p", "192.168.1.131:8005:8000", "-e", "CUTE_DSL_ARCH=sm_121a", "-v", "/home/enntitysparkadmin/.cache/huggingface:/root/.cache/huggingface", "-v", "/home/enntitysparkadmin/.cache/vllm:/root/.cache/vllm"],
-        "command": ["unsloth/Qwen3.6-27B-NVFP4", "--host", "0.0.0.0", "--port", "8000", "--tensor-parallel-size", "1", "--trust-remote-code", "--dtype", "bfloat16", "--kv-cache-dtype", "fp8", "--attention-backend", "flashinfer", "--moe-backend", "flashinfer_b12x", "--gpu-memory-utilization", "0.4", "--max-model-len", "262144", "--max-num-seqs", "4", "--max-num-batched-tokens", "8192", "--enable-chunked-prefill", "--async-scheduling", "--enable-prefix-caching", "--speculative-config", "{\"method\":\"mtp\",\"num_speculative_tokens\":2}", "--load-format", "fastsafetensors", "--reasoning-parser", "qwen3", "--tool-call-parser", "qwen3_xml", "--enable-auto-tool-choice"]
+        "command": ["unsloth/Qwen3.6-27B-NVFP4", "--host", "0.0.0.0", "--port", "8000", "--tensor-parallel-size", "1", "--trust-remote-code", "--dtype", "bfloat16", "--kv-cache-dtype", "fp8", "--attention-backend", "flashinfer", "--moe-backend", "flashinfer_b12x", "--gpu-memory-utilization", "0.4", "--max-model-len", "262144", "--max-num-seqs", "8", "--max-num-batched-tokens", "8192", "--enable-chunked-prefill", "--async-scheduling", "--enable-prefix-caching", "--speculative-config", "{\"method\":\"mtp\",\"num_speculative_tokens\":2}", "--load-format", "fastsafetensors", "--reasoning-parser", "qwen3", "--tool-call-parser", "qwen3_xml", "--enable-auto-tool-choice"]
       }
     },
     "flux-klein-9b-nsfw": {

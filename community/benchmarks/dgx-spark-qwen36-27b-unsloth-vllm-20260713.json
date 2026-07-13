@@ -1,0 +1,69 @@
+{
+  "$schema": "https://lloom.dev/schemas/benchmark-suite.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "dgx-spark-qwen36-27b-unsloth-vllm-20260713",
+  "name": "DGX Spark Qwen3.6 27B Unsloth NVFP4 tuned vLLM",
+  "summary": "Matched local measurements for the tuned LLooM DGX Spark recipe after screening NVIDIA stock vLLM, AEON DFlash, MiaAI-style settings, and Atlas.",
+  "license": {"id": "CC0-1.0", "name": "CC0 1.0"},
+  "source": {"type": "local-measurement", "name": "LLooM Spark-Arena-style runtime shootout"},
+  "submittedAt": "2026-07-13T19:08:00Z",
+  "provenance": {"createdBy": "lloom", "generatedBy": "vllm bench serve", "source": "reproducible local measurement"},
+  "methodology": {
+    "harness": "vllm bench serve",
+    "harnessVersion": "0.23.1rc1.dev1060+g9e57de719",
+    "promptCorpus": "random deterministic input=2048 output=128 temperature=0 ignore-eos seed=20260713",
+    "warmupRuns": 1,
+    "measurementRuns": 1,
+    "streaming": true
+  },
+  "results": [
+    {
+      "id": "dgx-spark-unsloth-qwen36-27b-nvfp4-mtp2-s8-c1",
+      "recipeId": "linux-nvidia-gb10-qwen36-unsloth-vllm",
+      "backendId": "docker-vllm",
+      "model": "unsloth/Qwen3.6-27B-NVFP4",
+      "gatewayModel": "unsloth/Qwen3.6-27B-NVFP4",
+      "machine": {"platformId": "linux-arm64", "chip": "NVIDIA DGX Spark / GB10", "memoryGb": 128, "accelerators": ["cuda", "nvidia-gpu", "blackwell"]},
+      "settings": {"quantization": "mixed NVFP4/FP8", "kvCacheDtype": "fp8", "attentionBackend": "flashinfer", "contextWindow": 262144, "maxNumSeqs": 8, "maxNumBatchedTokens": 8192, "speculative": {"method": "mtp", "numSpeculativeTokens": 2}},
+      "workload": {"type": "interactive-generation", "category": "matched-random", "concurrency": 1, "promptTokens": 2048, "outputTokens": 128},
+      "metrics": {"generationTokPerSec": 19.1747270572, "outputThroughputTokPerSec": 19.1747270572, "timeToFirstTokenMs": 992.0030040084, "contextWindow": 262144, "medianTimePerOutputTokenMs": 44.5163022442}
+    },
+    {
+      "id": "dgx-spark-unsloth-qwen36-27b-nvfp4-mtp2-s8-c4",
+      "recipeId": "linux-nvidia-gb10-qwen36-unsloth-vllm",
+      "backendId": "docker-vllm",
+      "model": "unsloth/Qwen3.6-27B-NVFP4",
+      "gatewayModel": "unsloth/Qwen3.6-27B-NVFP4",
+      "machine": {"platformId": "linux-arm64", "chip": "NVIDIA DGX Spark / GB10", "memoryGb": 128, "accelerators": ["cuda", "nvidia-gpu", "blackwell"]},
+      "settings": {"quantization": "mixed NVFP4/FP8", "kvCacheDtype": "fp8", "attentionBackend": "flashinfer", "contextWindow": 262144, "maxNumSeqs": 8, "maxNumBatchedTokens": 8192, "speculative": {"method": "mtp", "numSpeculativeTokens": 2}},
+      "workload": {"type": "interactive-generation", "category": "matched-random", "concurrency": 4, "promptTokens": 2048, "outputTokens": 128},
+      "metrics": {"generationTokPerSec": 48.010749859, "outputThroughputTokPerSec": 48.010749859, "timeToFirstTokenMs": 3414.1904559947, "contextWindow": 262144, "medianTimePerOutputTokenMs": 51.8117584017}
+    },
+    {
+      "id": "dgx-spark-unsloth-qwen36-27b-nvfp4-mtp2-s8-c8",
+      "recipeId": "linux-nvidia-gb10-qwen36-unsloth-vllm",
+      "backendId": "docker-vllm",
+      "model": "unsloth/Qwen3.6-27B-NVFP4",
+      "gatewayModel": "unsloth/Qwen3.6-27B-NVFP4",
+      "machine": {"platformId": "linux-arm64", "chip": "NVIDIA DGX Spark / GB10", "memoryGb": 128, "accelerators": ["cuda", "nvidia-gpu", "blackwell"]},
+      "settings": {"quantization": "mixed NVFP4/FP8", "kvCacheDtype": "fp8", "attentionBackend": "flashinfer", "contextWindow": 262144, "maxNumSeqs": 8, "maxNumBatchedTokens": 8192, "speculative": {"method": "mtp", "numSpeculativeTokens": 2}},
+      "workload": {"type": "interactive-generation", "category": "matched-random", "concurrency": 8, "promptTokens": 2048, "outputTokens": 128},
+      "metrics": {"generationTokPerSec": 64.5017224203, "outputThroughputTokPerSec": 64.5017224203, "timeToFirstTokenMs": 3102.961800003, "contextWindow": 262144, "medianTimePerOutputTokenMs": 80.1331751064}
+    }
+  ],
+  "x-comparison": {
+    "matchedCandidates": [
+      {"runtime": "NVIDIA stock vLLM", "c1OutputTokPerSec": 10.39, "c4OutputTokPerSec": 27.5},
+      {"runtime": "AEON DFlash K3 exact NVIDIA weights", "c1OutputTokPerSec": 18.2505845542, "c4OutputTokPerSec": 43.7392807424},
+      {"runtime": "Atlas K1 exact NVIDIA weights at 70% unified-memory budget", "c1OutputTokPerSec": 12.3684291036, "c4OutputTokPerSec": 11.2296860074, "notes": "Atlas emits an early SSE event, so vLLM-harness TTFT was excluded as invalid."}
+    ],
+    "qualityGate": "Candidate and NVIDIA reference matched arithmetic, 50K-token needle retrieval, vision, and thinking-budget behavior; candidate additionally passed structured tool-call emission."
+  },
+  "x-gatewayValidation": [
+    {"concurrency": 1, "outputTokPerSec": 18.85, "medianTimeToFirstTokenMs": 1115.71},
+    {"concurrency": 4, "outputTokPerSec": 49.11, "medianTimeToFirstTokenMs": 2747.96},
+    {"concurrency": 8, "outputTokPerSec": 62.95, "medianTimeToFirstTokenMs": 3792.79}
+  ],
+  "x-fileName": "dgx-spark-qwen36-27b-unsloth-vllm-20260713.json"
+}

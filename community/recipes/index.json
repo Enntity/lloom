@@ -9,7 +9,7 @@
     "id": "MIT",
     "name": "Recipe metadata license"
   },
-  "updatedAt": "2026-07-08T00:00:00.000Z",
+  "updatedAt": "2026-07-13T19:30:00.000Z",
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated"
@@ -109,6 +109,22 @@
       "source": {
         "type": "lloom-host-seed",
         "url": "community/recipes/apple-silicon-qwen36-27b-mtplx.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-gb10-qwen36-unsloth-vllm",
+      "path": "linux-nvidia-gb10-qwen36-unsloth-vllm.json",
+      "name": "DGX Spark Qwen3.6 Unsloth NVFP4 vLLM",
+      "summary": "Curated Qwen3.6 27B dense and 35B-A3B MoE NVFP4 lanes for 128 GB NVIDIA GB10 systems, including the measured scheduler-8 dense configuration.",
+      "tags": ["linux", "nvidia", "cuda", "dgx-spark", "gb10", "qwen3.6", "nvfp4", "unsloth", "vllm", "agentic-coding", "reasoning", "long-context"],
+      "recommendedFor": [
+        "NVIDIA DGX Spark / GB10 systems with 128 GB unified memory",
+        "users who want the measured local 27B dense or 35B-A3B MoE Qwen3.6 lanes"
+      ],
+      "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "usage", "tools", "reasoning", "mtp", "batching", "long-context"],
+      "source": {
+        "type": "lloom-host-seed",
+        "url": "community/recipes/linux-nvidia-gb10-qwen36-unsloth-vllm.json"
       }
     },
     {

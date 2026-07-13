@@ -774,7 +774,7 @@ assert.deepEqual(
   ]
 );
 const benchmarkEvidence = await loadBenchmarkEvidence();
-assert.equal(benchmarkEvidence.length, 2);
+assert.equal(benchmarkEvidence.length, 5);
 assert.deepEqual(validateBenchmarkEvidence(benchmarkEvidence), []);
 const benchmarkSuite = JSON.parse(
   await fs.readFile(path.join(process.cwd(), 'benchmarks', 'community', 'apple-silicon-qwen36-m2max.json'), 'utf8')
@@ -782,7 +782,15 @@ const benchmarkSuite = JSON.parse(
 assert.deepEqual(validateBenchmarkSuite(benchmarkSuite), []);
 const benchmarkRanking = benchmarkOverview(benchmarkEvidence);
 assert.equal(benchmarkRanking[0].model, 'Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16');
-assert.equal(benchmarkRanking[1].model, 'Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed');
+assert.equal(
+  benchmarkRanking.find((result) => result.id === 'qwen36-27b-mtplx-speed-m2max-d3')?.model,
+  'Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed'
+);
+assert.equal(
+  benchmarkRanking.find((result) => result.id === 'dgx-spark-unsloth-qwen36-27b-nvfp4-mtp2-s8-c8')?.metrics
+    .generationTokPerSec,
+  64.5017224203
+);
 const benchmarkSummary = summarizeBenchmarksForRecipe(recipe, benchmarkEvidence);
 assert.equal(benchmarkSummary.length, 2);
 assert.equal(
