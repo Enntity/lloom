@@ -1072,23 +1072,29 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       state.modelLayoutResetPositions = false;
       if (state.modelLayoutSettled) return;
       const nodes = models.map(model => state.modelNodes.get(model.id));
+      const maxTargetError = nodes.reduce((maximum, node) => Math.max(maximum, Math.hypot(node.targetX - node.x, node.targetY - node.y)), 0);
+      // Constellation slots are already non-overlapping. Collision during the
+      // approach just jams cards into cluster centers — wait until seated.
+      const approaching = maxTargetError > 12;
       for (const node of nodes) {
         node.vx += (node.targetX - node.x) * .004;
         node.vy += (node.targetY - node.y) * .004;
       }
-      for (let left = 0; left < nodes.length; left++) for (let right = left + 1; right < nodes.length; right++) {
-        const a = nodes[left], b = nodes[right], dx = b.x - a.x, dy = b.y - a.y;
-        const xOverlap = 232 - Math.abs(dx), yOverlap = 82 - Math.abs(dy);
-        if (xOverlap <= 0 || yOverlap <= 0) continue;
-        const horizontal = xOverlap / 232, vertical = yOverlap / 82;
-        if (horizontal < vertical) {
-          const direction = Math.sign(dx) || (hashUnit(left * 17 + right * 31) > .5 ? 1 : -1);
-          const force = .22 + horizontal * 1.15;
-          a.vx -= direction * force; b.vx += direction * force;
-        } else {
-          const direction = Math.sign(dy) || (hashUnit(left * 29 + right * 11) > .5 ? 1 : -1);
-          const force = .22 + vertical * 1.15;
-          a.vy -= direction * force; b.vy += direction * force;
+      if (!approaching) {
+        for (let left = 0; left < nodes.length; left++) for (let right = left + 1; right < nodes.length; right++) {
+          const a = nodes[left], b = nodes[right], dx = b.x - a.x, dy = b.y - a.y;
+          const xOverlap = 232 - Math.abs(dx), yOverlap = 82 - Math.abs(dy);
+          if (xOverlap <= 0 || yOverlap <= 0) continue;
+          const horizontal = xOverlap / 232, vertical = yOverlap / 82;
+          if (horizontal < vertical) {
+            const direction = Math.sign(dx) || (hashUnit(left * 17 + right * 31) > .5 ? 1 : -1);
+            const force = .22 + horizontal * 1.15;
+            a.vx -= direction * force; b.vx += direction * force;
+          } else {
+            const direction = Math.sign(dy) || (hashUnit(left * 29 + right * 11) > .5 ? 1 : -1);
+            const force = .22 + vertical * 1.15;
+            a.vy -= direction * force; b.vy += direction * force;
+          }
         }
       }
       const previousPositions = nodes.map(node => ({ x: node.x, y: node.y }));
@@ -1104,37 +1110,40 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         node.y = Math.max(layoutField.top + halfHeight, Math.min(layoutField.bottom - halfHeight, node.y));
       }
       let separated = true;
-      for (let pass = 0; pass < 8; pass++) {
-        separated = true;
-        for (let left = 0; left < nodes.length; left++) for (let right = left + 1; right < nodes.length; right++) {
-          const a = nodes[left], b = nodes[right], dx = b.x - a.x, dy = b.y - a.y;
-          const xOverlap = 232 - Math.abs(dx), yOverlap = 82 - Math.abs(dy);
-          if (xOverlap <= 0 || yOverlap <= 0) continue;
-          separated = false;
-          if (xOverlap < yOverlap) {
-            const direction = Math.sign(dx) || (hashUnit(left * 17 + right * 31) > .5 ? 1 : -1);
-            const shift = xOverlap / 2 + .05;
-            a.x -= direction * shift; b.x += direction * shift;
-            a.vx = 0; b.vx = 0;
-          } else {
-            const direction = Math.sign(dy) || (hashUnit(left * 29 + right * 11) > .5 ? 1 : -1);
-            const shift = yOverlap / 2 + .05;
-            a.y -= direction * shift; b.y += direction * shift;
-            a.vy = 0; b.vy = 0;
+      if (!approaching) {
+        for (let pass = 0; pass < 8; pass++) {
+          separated = true;
+          for (let left = 0; left < nodes.length; left++) for (let right = left + 1; right < nodes.length; right++) {
+            const a = nodes[left], b = nodes[right], dx = b.x - a.x, dy = b.y - a.y;
+            const xOverlap = 232 - Math.abs(dx), yOverlap = 82 - Math.abs(dy);
+            if (xOverlap <= 0 || yOverlap <= 0) continue;
+            separated = false;
+            if (xOverlap < yOverlap) {
+              const direction = Math.sign(dx) || (hashUnit(left * 17 + right * 31) > .5 ? 1 : -1);
+              const shift = xOverlap / 2 + .05;
+              a.x -= direction * shift; b.x += direction * shift;
+              a.vx = 0; b.vx = 0;
+            } else {
+              const direction = Math.sign(dy) || (hashUnit(left * 29 + right * 11) > .5 ? 1 : -1);
+              const shift = yOverlap / 2 + .05;
+              a.y -= direction * shift; b.y += direction * shift;
+              a.vy = 0; b.vy = 0;
+            }
+            a.x = Math.max(layoutField.left + 110, Math.min(layoutField.right - 110, a.x));
+            b.x = Math.max(layoutField.left + 110, Math.min(layoutField.right - 110, b.x));
+            a.y = Math.max(layoutField.top + 34, Math.min(layoutField.bottom - 34, a.y));
+            b.y = Math.max(layoutField.top + 34, Math.min(layoutField.bottom - 34, b.y));
           }
-          a.x = Math.max(layoutField.left + 110, Math.min(layoutField.right - 110, a.x));
-          b.x = Math.max(layoutField.left + 110, Math.min(layoutField.right - 110, b.x));
-          a.y = Math.max(layoutField.top + 34, Math.min(layoutField.bottom - 34, a.y));
-          b.y = Math.max(layoutField.top + 34, Math.min(layoutField.bottom - 34, b.y));
+          if (separated) break;
         }
-        if (separated) break;
       }
       const maxMovement = nodes.reduce((maximum, node, index) => Math.max(maximum, Math.abs(node.x - previousPositions[index].x), Math.abs(node.y - previousPositions[index].y)), 0);
-      state.modelLayoutStableFrames = maxMovement < .035 && separated ? state.modelLayoutStableFrames + 1 : 0;
+      const seated = maxTargetError < 8;
+      state.modelLayoutStableFrames = maxMovement < .035 && seated && separated ? state.modelLayoutStableFrames + 1 : 0;
       if (state.modelLayoutStableFrames >= 24) {
         for (const node of nodes) {
-          node.x = Math.round(node.x);
-          node.y = Math.round(node.y);
+          node.x = Math.round(node.targetX);
+          node.y = Math.round(node.targetY);
           node.vx = 0;
           node.vy = 0;
         }
