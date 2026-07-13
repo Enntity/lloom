@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LLooM Image Playground</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #07100f;
+        color: #d8fff5;
+        min-height: 100vh;
+      }
+      main {
+        width: min(1100px, 94vw);
+        margin: 32px auto;
+        display: grid;
+        gap: 22px;
+      }
+      h1 {
+        margin: 0;
+        color: #53f5cb;
+        font-size: clamp(24px, 4vw, 38px);
+      }
+      .sub {
+        color: #8bb8ad;
+        margin-top: 8px;
+      }
+      form {
+        display: grid;
+        gap: 12px;
+        padding: 18px;
+        border: 1px solid #1c685a;
+        background: #0b1917;
+        border-radius: 12px;
+      }
+      textarea {
+        width: 100%;
+        min-height: 125px;
+        resize: vertical;
+      }
+      textarea,
+      select,
+      button {
+        font: inherit;
+        color: inherit;
+        background: #07110f;
+        border: 1px solid #287767;
+        border-radius: 8px;
+        padding: 12px;
+      }
+      .row {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+      select {
+        flex: 1;
+      }
+      button {
+        background: #22b994;
+        color: #02110d;
+        font-weight: 800;
+        cursor: pointer;
+        min-width: 150px;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: wait;
+      }
+      #status {
+        min-height: 22px;
+        color: #8bb8ad;
+      }
+      #status.error {
+        color: #ff8f9f;
+      }
+      .result {
+        display: none;
+        place-items: center;
+        min-height: 320px;
+        padding: 14px;
+        border: 1px solid #173c35;
+        border-radius: 12px;
+        background: #050a09;
+      }
+      .result.show {
+        display: grid;
+      }
+      img {
+        max-width: 100%;
+        max-height: 72vh;
+        border-radius: 8px;
+        box-shadow: 0 12px 44px #000b;
+      }
+      @media (max-width: 620px) {
+        .row {
+          align-items: stretch;
+          flex-direction: column;
+        }
+        button {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>LLooM Image Playground</h1>
+        <div class="sub">CyberRealistic Pony v18 CoreShift · DGX Spark</div>
+      </header>
+      <form id="form">
+        <textarea id="prompt" required autofocus placeholder="Describe the image you want…"></textarea>
+        <div class="row">
+          <select id="size" aria-label="Image size">
+            <option value="832x1216">Portrait · 832×1216 (recommended)</option>
+            <option value="896x1152">Portrait · 896×1152</option>
+            <option value="768x1024">Portrait · 768×1024</option>
+            <option value="1024x768">Landscape · 1024×768</option>
+            <option value="1024x1024">Square · 1024×1024</option>
+            <option value="512x512">Fast square · 512×512</option>
+          </select>
+          <button id="submit" type="submit">Generate</button>
+        </div>
+        <div id="status">Ready.</div>
+      </form>
+      <section id="result" class="result"><img id="image" alt="Generated image" /></section>
+    </main>
+    <script>
+      const form = document.querySelector('#form');
+      const prompt = document.querySelector('#prompt');
+      const size = document.querySelector('#size');
+      const submit = document.querySelector('#submit');
+      const status = document.querySelector('#status');
+      const result = document.querySelector('#result');
+      const image = document.querySelector('#image');
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        submit.disabled = true;
+        status.className = '';
+        status.textContent = 'Generating on the Spark…';
+        const started = performance.now();
+        try {
+          const response = await fetch('/generate', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ prompt: prompt.value, size: size.value })
+          });
+          const data = await response.json();
+          if (!response.ok || data.error)
+            throw new Error(data.error?.message || data.error || `HTTP ${response.status}`);
+          const item = data.data?.[0];
+          if (!item?.b64_json) throw new Error('LLooM returned no image.');
+          image.src = `data:image/png;base64,${item.b64_json}`;
+          result.classList.add('show');
+          status.textContent = `Done in ${((performance.now() - started) / 1000).toFixed(1)} seconds.`;
+        } catch (error) {
+          status.className = 'error';
+          status.textContent = error.message;
+        } finally {
+          submit.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

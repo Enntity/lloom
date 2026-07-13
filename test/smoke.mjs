@@ -2182,6 +2182,30 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
     ]
   );
 
+  const behaviorOverrideArgs = dockerCreateArgs({
+    containerName: 'qwen-corrected',
+    behaviorOverrides: { chatTemplate: 'qwen3-xml-tool-reminder' },
+    bootstrap: {
+      adapter: 'docker',
+      image: 'vllm/vllm-openai:v0.24.0',
+      command: ['unsloth/Qwen3.6-35B-A3B-NVFP4', '--port', '8000']
+    }
+  });
+  assert(behaviorOverrideArgs.includes('--mount'));
+  assert(
+    behaviorOverrideArgs.some((arg) => arg.includes('qwen3-xml-tool-reminder.jinja') && arg.endsWith(',readonly'))
+  );
+  assert.deepEqual(behaviorOverrideArgs.slice(-2), ['--chat-template', '/etc/lloom/chat-template.jinja']);
+  assert.throws(
+    () =>
+      dockerCreateArgs({
+        containerName: 'invalid-correction',
+        behaviorOverrides: { chatTemplate: 'not-installed' },
+        bootstrap: { image: 'example.invalid/vllm' }
+      }),
+    /unknown chat template behavior override/
+  );
+
   const limiterManager = new RuntimeManager(
     {
       runtimes: {

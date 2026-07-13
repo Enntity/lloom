@@ -3,11 +3,17 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { defaultShimDirFor } from './backend-catalog.mjs';
 import { cleanupPortListener, terminateProcessTree } from './process-control.mjs';
 
 const execFileAsync = promisify(execFile);
+const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const CHAT_TEMPLATE_OVERRIDES = new Map([
+  ['qwen3-xml-tool-reminder', path.join(packageRoot, 'assets', 'chat-templates', 'qwen3-xml-tool-reminder.jinja')]
+]);
+const VLLM_CHAT_TEMPLATE_PATH = '/etc/lloom/chat-template.jinja';
 
 function nowIso() {
   return new Date().toISOString();
@@ -71,19 +77,37 @@ function dockerBootstrap(runtime) {
   return adapter === 'docker' ? bootstrap : null;
 }
 
+export function runtimeChatTemplateOverride(runtime) {
+  const configured = runtime?.behaviorOverrides?.chatTemplate;
+  if (!configured) return null;
+  const id = typeof configured === 'string' ? configured : configured.id;
+  if (!id || !CHAT_TEMPLATE_OVERRIDES.has(id)) {
+    throw new Error(`unknown chat template behavior override: ${id || 'missing id'}`);
+  }
+  return { id, hostPath: CHAT_TEMPLATE_OVERRIDES.get(id), containerPath: VLLM_CHAT_TEMPLATE_PATH };
+}
+
 export function dockerCreateArgs(runtime) {
   const bootstrap = dockerBootstrap(runtime);
   if (!bootstrap) return null;
   const name = dockerContainerName(runtime);
   if (!name) throw new Error('docker runtime bootstrap requires containerName or container.name');
   if (!bootstrap.image) throw new Error(`docker runtime ${name} bootstrap requires image`);
+  const chatTemplate = runtimeChatTemplateOverride(runtime);
+  const command = (Array.isArray(bootstrap.command) ? bootstrap.command : []).map(String);
+  if (chatTemplate && !command.includes('--chat-template')) {
+    command.push('--chat-template', chatTemplate.containerPath);
+  }
   return [
     'create',
     '--name',
     name,
     ...(Array.isArray(bootstrap.createArgs) ? bootstrap.createArgs : []).map(String),
+    ...(chatTemplate
+      ? ['--mount', `type=bind,src=${chatTemplate.hostPath},dst=${chatTemplate.containerPath},readonly`]
+      : []),
     String(bootstrap.image),
-    ...(Array.isArray(bootstrap.command) ? bootstrap.command : []).map(String)
+    ...command
   ];
 }
 
