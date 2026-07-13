@@ -133,6 +133,15 @@ Use `--go` instead of `--apply --yes` for the one-step managed flow. LLooM insta
 lloom add-model mlx-community/Qwen3.6-27B-OptiQ-4bit --keep-warm --default --go
 ```
 
+Remove an imported model with a complete dry-run first:
+
+```bash
+lloom remove-model mlx-community/Qwen3.6-27B-OptiQ-4bit
+lloom remove-model mlx-community/Qwen3.6-27B-OptiQ-4bit --apply --yes
+```
+
+Removal clears aliases, defaults, and client catalog entries that lead to the model. Dedicated runtimes and backends are removed; shared ones are preserved and identified in the plan. Weights remain in place unless `--delete-files` is supplied, and that destructive option is accepted only for an unshared path safely contained by the configured model root.
+
 The existing `--apply --yes` form intentionally remains registration-only for automation that wants to manage backend installation, model transfer, or runtime startup separately. Unmanaged external OpenAI-compatible and LM Studio entries have no runtime for LLooM to start, so `--go` registers them after skipping the managed install/download/start phases.
 
 ## Community Index

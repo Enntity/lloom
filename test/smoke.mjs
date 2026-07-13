@@ -71,6 +71,7 @@ import {
   inferBackend,
   normalizeModelReference
 } from '../src/model-intake.mjs';
+import { applyModelRemoval, createModelRemovalPlan } from '../src/model-removal.mjs';
 import { applyOnboarding, createOnboardingPlan } from '../src/onboarding.mjs';
 import { writeRecipePackExport } from '../src/recipe-pack-export.mjs';
 import {
@@ -1161,6 +1162,107 @@ assert.equal(
 );
 assert(intakeApplied.next.apply.includes(`--config '${intakeConfigPath}'`));
 assert(intakeApplied.next.apply.includes(`--model-root '${path.join(tempDir, 'intake models')}'`));
+
+writtenIntakeConfig.aliases = {
+  quick: 'mlx-community/Qwen3.5-4B-Instruct-4bit',
+  quicker: { target: 'mlx-community/Qwen3.5-4B-Instruct-4bit', advertise: true }
+};
+writtenIntakeConfig.clientCatalog.modelOrder.push('quick');
+await fs.writeFile(intakeConfigPath, `${JSON.stringify(writtenIntakeConfig, null, 2)}\n`, 'utf8');
+const removableIntakeConfig = await loadConfig(intakeConfigPath);
+const removalRuntimeId = 'mlx-lm-mlx-community-qwen3-5-4b-instruct-4bit';
+const activeRemovalPlan = createModelRemovalPlan(removableIntakeConfig, {
+  modelId: 'mlx-community/Qwen3.5-4B-Instruct-4bit',
+  runtimeStatus: { runtimes: { [removalRuntimeId]: { status: 'running', healthy: true, activeRequests: 1 } } }
+});
+assert.equal(activeRemovalPlan.ok, false);
+assert.match(activeRemovalPlan.validationErrors[0], /active request/);
+const removalPlan = createModelRemovalPlan(removableIntakeConfig, {
+  modelId: 'mlx-community/Qwen3.5-4B-Instruct-4bit',
+  runtimeStatus: { runtimes: { [removalRuntimeId]: { status: 'running', healthy: true, activeRequests: 0 } } }
+});
+assert.equal(removalPlan.ok, true);
+assert.equal(removalPlan.cleanup.backend, removalRuntimeId);
+assert.equal(removalPlan.cleanup.runtime, removalRuntimeId);
+assert.deepEqual(removalPlan.cleanup.aliases, ['quick', 'quicker']);
+assert.deepEqual(removalPlan.cleanup.defaultKeys, ['chatModel']);
+assert.equal(removalPlan.cleanup.modelFiles, null);
+assert(removalPlan.preserved.modelFiles.includes('mlx-community--Qwen3.5-4B-Instruct-4bit'));
+assert.equal(JSON.stringify(removalPlan).includes('"config"'), false);
+let removedRuntimeId = null;
+const removalApplied = await applyModelRemoval(removableIntakeConfig, {
+  modelId: 'mlx-community/Qwen3.5-4B-Instruct-4bit',
+  configPath: intakeConfigPath,
+  runtimeStatus: { runtimes: { [removalRuntimeId]: { status: 'running', healthy: true, activeRequests: 0 } } },
+  stopRuntime: async (runtimeId) => {
+    removedRuntimeId = runtimeId;
+    return { runtimeId, stopped: true };
+  },
+  dryRun: false,
+  yes: true
+});
+assert.equal(removedRuntimeId, removalRuntimeId);
+assert(removalApplied.written.backupPath.includes('.bak-'));
+const removedIntakeConfig = JSON.parse(await fs.readFile(intakeConfigPath, 'utf8'));
+assert(!removedIntakeConfig.models.some((model) => model.id === 'mlx-community/Qwen3.5-4B-Instruct-4bit'));
+assert.equal(removedIntakeConfig.backends[removalRuntimeId], undefined);
+assert.equal(removedIntakeConfig.runtimes[removalRuntimeId], undefined);
+assert.equal(removedIntakeConfig.aliases.quick, undefined);
+assert.equal(removedIntakeConfig.aliases.quicker, undefined);
+assert.equal(removedIntakeConfig.defaults.chatModel, undefined);
+assert(!removedIntakeConfig.clientCatalog.modelOrder.includes('quick'));
+
+const sharedRemovalPlan = createModelRemovalPlan(
+  {
+    models: [
+      { id: 'remove-me', backend: 'shared', runtime: 'shared-runtime' },
+      { id: 'keep-me', backend: 'shared', runtime: 'shared-runtime' }
+    ],
+    backends: { shared: { type: 'openai' } },
+    runtimes: { 'shared-runtime': { args: [] } },
+    aliases: {},
+    defaults: {},
+    clientCatalog: { modelOrder: ['remove-me', 'keep-me'] }
+  },
+  { modelId: 'remove-me' }
+);
+assert.equal(sharedRemovalPlan.cleanup.backend, null);
+assert.equal(sharedRemovalPlan.cleanup.runtime, null);
+assert.deepEqual(sharedRemovalPlan.preserved.backend.usedBy, ['keep-me']);
+assert.deepEqual(sharedRemovalPlan.preserved.runtime.usedBy, ['keep-me']);
+
+const deleteModelRoot = path.join(tempDir, 'delete-models');
+const deleteModelPath = path.join(deleteModelRoot, 'synthetic--delete-me');
+const deleteConfigPath = path.join(tempDir, 'model-removal-delete-config.json');
+await fs.mkdir(deleteModelPath, { recursive: true });
+await fs.writeFile(path.join(deleteModelPath, 'weights.safetensors'), 'synthetic');
+await fs.writeFile(
+  deleteConfigPath,
+  `${JSON.stringify(
+    {
+      paths: { modelRoot: deleteModelRoot },
+      models: [{ id: 'delete-me', backend: 'delete-backend', runtime: 'delete-runtime' }],
+      backends: { 'delete-backend': { type: 'openai', baseUrl: 'http://127.0.0.1:65530/v1' } },
+      runtimes: { 'delete-runtime': { enabled: true, command: 'synthetic', args: ['--model', deleteModelPath] } },
+      aliases: {},
+      defaults: {},
+      clientCatalog: { modelOrder: ['delete-me'] }
+    },
+    null,
+    2
+  )}\n`
+);
+const deleteRemovalConfig = await loadConfig(deleteConfigPath);
+const deleteRemovalApplied = await applyModelRemoval(deleteRemovalConfig, {
+  modelId: 'delete-me',
+  deleteFiles: true,
+  configPath: deleteConfigPath,
+  runtimeStatus: { runtimes: { 'delete-runtime': { status: 'stopped', activeRequests: 0 } } },
+  dryRun: false,
+  yes: true
+});
+assert.equal(deleteRemovalApplied.deletedFiles, deleteModelPath);
+await assert.rejects(() => fs.access(deleteModelPath));
 
 const goConfigPath = path.join(tempDir, 'model-intake-go-config.json');
 await fs.writeFile(goConfigPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');

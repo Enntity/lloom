@@ -6,6 +6,7 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Added
 
+- Guarded `lloom remove-model` planning and apply support with shared-resource protection, config backups, and opt-in weight deletion.
 - One-step `lloom add-model <ref> --go` backend installation, model download, configuration, runtime startup, warmup, and health verification.
 - Immutable recipe-version archives with index-declared current/history metadata and validation.
 - MLX Audio speech and transcription discovery, named voice profiles, and Qwen3-TTS support.

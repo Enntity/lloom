@@ -41,6 +41,7 @@ import { applyBackend, applyRecipe } from '../src/installer.mjs';
 import { createInterchangeRegistry, createInterchangeValidationReport } from '../src/interchange.mjs';
 import { profileMachine, rankRecipes } from '../src/machine-profile.mjs';
 import { applyModelImport, applyModelImportGo } from '../src/model-intake.mjs';
+import { applyModelRemoval } from '../src/model-removal.mjs';
 import { applyOnboarding, createOnboardingPlan } from '../src/onboarding.mjs';
 import { writeRecipePackExport } from '../src/recipe-pack-export.mjs';
 import { applyRecipePack, createRecipePackPlan, loadTrustedKeys, submitRecipePack } from '../src/recipe-pack.mjs';
@@ -73,6 +74,7 @@ const COMMAND_REGISTRY = [
   { name: 'integrate', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'integrations', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'add-model', aliases: ['model-add'], tier: 'primary', needsInstalledConfig: true },
+  { name: 'remove-model', aliases: ['model-remove'], tier: 'primary', needsInstalledConfig: true },
   { name: 'voices', aliases: ['voice-list'], tier: 'primary', needsInstalledConfig: false },
   { name: 'voice-install', aliases: ['install-voice'], tier: 'primary', needsInstalledConfig: false },
   { name: 'voice-show', aliases: [], tier: 'primary', needsInstalledConfig: false },
@@ -131,12 +133,13 @@ function usage() {
 Primary commands:
   lloom / lloom up                 Preview the best setup for this machine
   lloom up --go                    Install, integrate clients, and start the model
-  lloom down                       Stop all managed model backends
+  lloom down                       Stop the gateway and all managed model backends
   lloom doctor                     Readiness report (blockers, warnings, next actions)
   lloom serve                      Run the gateway (reads ~/.lloom/config.json)
   lloom models                     List gateway model IDs
   lloom integrate <client|all>     Write client configs (omp, opencode, codex, …)
   lloom add-model <ref>            Import an ad hoc model (dry-run; add --apply --yes)
+  lloom remove-model <model-id>    Remove a model and its dedicated config resources
   lloom voices                     List installed named voices (clone profiles)
   lloom voice-install <id>         Install a named voice from a reference clip
 
@@ -178,6 +181,7 @@ Backends and runtimes:
 
 Models and clients:
   lloom add-model <hf-url|repo-id|local-path|ollama:tag|lmstudio:id|openai:url#model> [--backend id] [--api-key-env NAME] [--keep-warm] [--default] [--go|--apply --yes]
+  lloom remove-model <model-id> [--delete-files] [--apply --yes]
   lloom integrations [client-id|all] [--home path] [--generated-root path]
   lloom integrate [client-id|all] [--home path] [--generated-root path] [--apply --yes]
 
@@ -244,6 +248,7 @@ const INSTALLED_CONFIG_COMMANDS = new Set([
   'keep-warm',
   'model-add',
   'models',
+  'remove-model',
   'runtime-admit',
   'runtime-plan',
   'runtime-policy',
@@ -266,6 +271,7 @@ const OPERATIONAL_CONFIG_COMMANDS = new Set([
   'keep-warm',
   'model-add',
   'models',
+  'remove-model',
   'runtime-admit',
   'runtime-plan',
   'runtime-policy',
@@ -956,6 +962,29 @@ async function gatewayHealth(config) {
     });
     if (!response.ok) return null;
     return await response.json().catch(() => ({ ok: true }));
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function gatewayAdminHeaders(config) {
+  const key = config.security?.adminApiKeys?.[0] ?? config.security?.apiKeys?.[0];
+  return key ? { authorization: `Bearer ${key}` } : {};
+}
+
+async function gatewayRequest(config, pathname, { method = 'GET' } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 2000);
+  try {
+    const response = await fetch(`${gatewayUrlFor(config)}${pathname}`, {
+      method,
+      headers: gatewayAdminHeaders(config),
+      signal: controller.signal
+    });
+    if (!response.ok) return null;
+    return await response.json();
   } catch {
     return null;
   } finally {
@@ -1813,6 +1842,42 @@ async function main() {
           2
         )
       );
+    },
+    'remove-model': async ({ args, config, command: _command }) => {
+      const modelId = positional(args)[1];
+      if (!modelId) {
+        console.error('Missing model id');
+        console.error(usage());
+        process.exitCode = 2;
+        return;
+      }
+      const apply = hasFlag(args, '--apply');
+      const localManager = runtimeManagerForCli(config);
+      const gatewayStatus = await gatewayRequest(config, '/gateway/status');
+      const runtimeStatus = gatewayStatus?.runtimeManager ?? (await localManager.status());
+      const report = await applyModelRemoval(config, {
+        modelId,
+        deleteFiles: hasFlag(args, '--delete-files'),
+        configPath: config.sourcePath,
+        runtimeStatus,
+        dryRun: !apply,
+        yes: hasFlag(args, '--yes'),
+        stopRuntime: async (runtimeId) => {
+          const latestGatewayStatus = await gatewayRequest(config, '/gateway/status');
+          const latestStatus = latestGatewayStatus?.runtimeManager ?? (await localManager.status());
+          const activeRequests = Number(latestStatus.runtimes?.[runtimeId]?.activeRequests ?? 0);
+          if (activeRequests > 0) {
+            throw new Error(`runtime ${runtimeId} has ${activeRequests} active request(s); wait for them to finish`);
+          }
+          return (
+            (await gatewayRequest(config, `/gateway/runtimes/${encodeURIComponent(runtimeId)}/stop`, {
+              method: 'POST'
+            })) ?? localManager.stop(runtimeId)
+          );
+        }
+      });
+      console.log(JSON.stringify(report, null, 2));
+      if (!report.ok) process.exitCode = 1;
     },
     voices: async ({ args, config: _config, command: _command }) => {
       const voicesRoot = argValue(args, '--voices-root') ?? defaultVoicesRoot();
