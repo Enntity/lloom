@@ -197,8 +197,9 @@ async function executePlannedStep(step, { env = process.env, stdio } = {}) {
     };
   }
   if (step.action === 'link-command') {
-    if (!step.link?.source) {
-      const candidates = asList(step.link?.sourceCandidates).filter(Boolean);
+    const candidates = asList(step.link?.sourceCandidates).filter(Boolean);
+    const source = step.link?.source ?? (await firstExecutable(candidates));
+    if (!source) {
       return {
         ok: false,
         status: 'failed',
@@ -207,13 +208,14 @@ async function executePlannedStep(step, { env = process.env, stdio } = {}) {
         link: step.link
       };
     }
-    const result = await writeCommandShim(step.link ?? {});
+    const link = { ...(step.link ?? {}), source };
+    const result = await writeCommandShim(link);
     return {
       ok: result.ok,
       status: result.ok ? 'completed' : 'failed',
       stdout: result.ok ? `linked ${result.target} -> ${result.source}` : '',
       stderr: result.ok ? '' : result.error,
-      link: step.link
+      link
     };
   }
   if (step.action === 'download-model') {
@@ -233,6 +235,13 @@ async function executePlannedStep(step, { env = process.env, stdio } = {}) {
     ...execution,
     status: execution.ok ? 'completed' : 'failed'
   };
+}
+
+async function firstExecutable(candidates) {
+  for (const candidate of candidates) {
+    if (await pathExecutable(candidate)) return candidate;
+  }
+  return null;
 }
 
 async function previousRecipeStepStillApplies(step) {

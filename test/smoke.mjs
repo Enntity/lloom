@@ -447,6 +447,28 @@ assert.equal(syntheticBrewPlan.steps[0].audit.modifiesSystem, true);
 assert(syntheticBrewPlan.steps[0].audit.effects.includes('modifies-system-package-manager'));
 const allBackendPlans = await planBackendCatalog(backendCatalog, { checkCommands: false });
 assert(allBackendPlans.some((plan) => plan.id === 'vllm'));
+const mlxLmPlan = await planBackend(getBackend(backendCatalog, 'mlx-lm'), {
+  platform: 'darwin',
+  arch: 'arm64',
+  checkCommands: false,
+  variables: {
+    ...defaultBackendVariables({ ...process.env, LLOOM_HOME: '/lloom-home' }),
+    installRoot: '/lloom-home/backends',
+    backendRoot: '/lloom-home/backends',
+    shimDir: '/lloom-home/bin'
+  }
+});
+assert(
+  mlxLmPlan.steps.some((step) => step.action === 'python-venv' && step.path === '/lloom-home/backends/mlx-lm/venv')
+);
+assert(
+  mlxLmPlan.steps.some(
+    (step) =>
+      step.action === 'pip-install' &&
+      step.command.join(' ') === '/lloom-home/backends/mlx-lm/venv/bin/python -m pip install --upgrade pip mlx-lm'
+  )
+);
+assert(mlxLmPlan.steps.some((step) => step.action === 'link-command' && step.link.commandName === 'mlx_lm.server'));
 const vllmPlan = await planBackend(getBackend(backendCatalog, 'vllm'), {
   platform: 'linux',
   arch: 'x64',
@@ -2257,6 +2279,36 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
   const lifecycleManager = new RuntimeManager(lifecycleConfig, {
     logger: { error() {} }
   });
+  const priorityManager = new RuntimeManager({
+    runtimes: {
+      normal: { keepWarm: true, priority: 100 },
+      firstHigh: { keepWarm: true, policy: { priority: 300 } },
+      secondHigh: { keepWarm: true, policy: { priority: 300 } },
+      low: { keepWarm: true, priority: 10 }
+    }
+  });
+  assert.deepEqual(priorityManager.keepWarmRuntimeIds(), ['firstHigh', 'secondHigh', 'normal', 'low']);
+  const admissionWarnings = [];
+  const constrainedKeepWarmManager = new RuntimeManager(
+    {
+      runtimePolicy: { memoryBudgetGb: 1 },
+      runtimes: {
+        tooLargeFirst: { enabled: true, keepWarm: true, memoryGb: 3, priority: 200 },
+        tooLargeSecond: { enabled: true, keepWarm: true, memoryGb: 2, priority: 100 }
+      }
+    },
+    {
+      logger: {
+        warn(message) {
+          admissionWarnings.push(message);
+        }
+      }
+    }
+  );
+  const constrainedKeepWarmResult = await constrainedKeepWarmManager.startKeepWarm();
+  assert.equal(constrainedKeepWarmResult.length, 2);
+  assert(constrainedKeepWarmResult.every((result) => result.reason === 'insufficient-memory'));
+  assert.equal(admissionWarnings.length, 2);
   const startResult = await lifecycleManager.ensure('synthetic-runtime');
   assert.equal(startResult.started, true);
   assert.equal(startResult.healthy, true);
@@ -2458,10 +2510,11 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
   assert.equal(cliStop.stopped, true);
 
   await runLLooM(['runtime-start', 'synthetic-runtime']);
-  const cliDown = JSON.parse((await runLLooM(['down'])).stdout);
-  assert.equal(cliDown.stopped, 1);
-  assert.equal(cliDown.total, 1);
-  assert.equal(cliDown.results[0].runtimeId, 'synthetic-runtime');
+  const cliDown = JSON.parse((await runLLooM(['down', '--json'])).stdout);
+  assert.equal(cliDown.gateway.status, 'not-running');
+  assert.equal(cliDown.runtimes.stopped, 1);
+  assert.equal(cliDown.runtimes.total, 1);
+  assert.equal(cliDown.runtimes.results[0].runtimeId, 'synthetic-runtime');
 }
 
 const syntheticRecipe = {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
-import { closeSync, existsSync, mkdirSync, openSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -720,6 +720,27 @@ function formatProgressEvent(event) {
   return `Running setup step: ${step.title ?? step.id ?? 'setup'}`;
 }
 
+function formatBackendInstallSummary(report) {
+  const results = Array.isArray(report.results) ? report.results : [];
+  const failed = results.find((step) => step.status === 'failed' || step.status === 'manual-required');
+  const completed = results.filter((step) => step.status === 'completed').length;
+  const skipped = results.filter((step) => ['skipped', 'missing'].includes(step.status)).length;
+  const lines = [report.dryRun ? `Backend install plan: ${report.plan.name}` : `Backend setup: ${report.plan.name}`];
+  if (failed) {
+    lines.push(`Status: failed at ${failed.title ?? failed.id}`);
+    const detail = String(failed.stderr || failed.message || 'The setup command failed.').trim();
+    if (detail) lines.push(detail.split('\n').slice(-8).join('\n'));
+  } else if (report.dryRun) {
+    lines.push(`Status: ready to apply (${results.filter((step) => step.status === 'planned').length} step(s))`);
+    lines.push(`Run: lloom backend-install ${shellArg(report.plan.id)} --apply --yes`);
+  } else {
+    lines.push(`Status: complete (${completed} completed${skipped ? `, ${skipped} already satisfied` : ''})`);
+    lines.push(`Command: ${report.plan.commands.map((entry) => entry.command).join(', ')}`);
+  }
+  lines.push('Details: rerun with --json');
+  return lines.join('\n');
+}
+
 function formatIntegrationResult(result, clientId) {
   const lines = [];
   lines.push(result.dryRun ? 'LLooM integration plan' : 'LLooM integration result');
@@ -1010,6 +1031,54 @@ async function startGatewayBackground(configPath) {
   };
 }
 
+async function stopGatewayBackground(configPath, config) {
+  const paths = gatewayProcessPaths(configPath);
+  const health = await gatewayHealth(config);
+  if (!existsSync(paths.pidPath)) {
+    return health?.ok
+      ? {
+          status: 'not-managed',
+          warning: `A gateway is listening at ${gatewayUrlFor(config)}, but LLooM has no PID file for it.`
+        }
+      : { status: 'not-running' };
+  }
+
+  const pid = Number(readFileSync(paths.pidPath, 'utf8').trim());
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return { status: 'stale-pid-file', warning: `Invalid gateway PID file: ${paths.pidPath}` };
+  }
+  const processCheck = await runCommand('ps', ['-p', String(pid), '-o', 'command='], { allowFailure: true });
+  const owned =
+    processCheck.code === 0 &&
+    processCheck.stdout.includes(__filename) &&
+    processCheck.stdout.includes('serve') &&
+    processCheck.stdout.includes(configPath);
+  if (!owned) {
+    unlinkSync(paths.pidPath);
+    return health?.ok
+      ? {
+          status: 'not-managed',
+          warning: `A gateway is listening at ${gatewayUrlFor(config)}, but PID ${pid} is not LLooM's managed gateway.`
+        }
+      : { status: 'cleaned-stale-pid', pid };
+  }
+  try {
+    process.kill(pid, 'SIGTERM');
+  } catch (error) {
+    if (error?.code !== 'ESRCH') throw error;
+  }
+
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline && (await gatewayHealth(config))?.ok) {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  const stillRunning = (await gatewayHealth(config))?.ok === true;
+  if (!stillRunning) unlinkSync(paths.pidPath);
+  return stillRunning
+    ? { status: 'still-running', pid, warning: `Gateway did not stop within 15 seconds; see ${paths.logPath}.` }
+    : { status: health?.ok ? 'stopped' : 'cleaned-stale-pid', pid };
+}
+
 async function communityCliOptions(args) {
   const requireSignature = hasFlag(args, '--require-signature')
     ? true
@@ -1143,6 +1212,20 @@ async function main() {
       const app = createLloomServer(config);
       await app.listen();
       console.log(`LLooM listening on http://${config.server.host}:${config.server.port}`);
+      let shuttingDown = false;
+      const shutdown = async () => {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        try {
+          await app.close();
+          process.exitCode = 0;
+        } catch (error) {
+          console.error(`LLooM shutdown failed: ${error?.message ?? error}`);
+          process.exitCode = 1;
+        }
+      };
+      process.once('SIGTERM', shutdown);
+      process.once('SIGINT', shutdown);
     },
     models: async ({ args: _args, config, command: _command }) => {
       const registry = createRegistry(config);
@@ -1213,19 +1296,16 @@ async function main() {
       const onlyStep = argValue(args, '--step');
       const apply = hasFlag(args, '--apply');
       const yes = hasFlag(args, '--yes');
-      console.log(
-        JSON.stringify(
-          await applyBackend(backend, {
-            dryRun: !apply,
-            yes,
-            ...(statePath ? { statePath } : {}),
-            ...(onlyStep ? { onlyStep } : {}),
-            variables: backendVariablesForCli(args)
-          }),
-          null,
-          2
-        )
-      );
+      const report = await applyBackend(backend, {
+        dryRun: !apply,
+        yes,
+        ...(statePath ? { statePath } : {}),
+        ...(onlyStep ? { onlyStep } : {}),
+        variables: backendVariablesForCli(args)
+      });
+      const failed = report.results.some((step) => step.status === 'failed' || step.status === 'manual-required');
+      console.log(wantsJson(args) ? JSON.stringify(report, null, 2) : formatBackendInstallSummary(report));
+      if (failed) process.exitCode = 1;
     },
     onboard: async ({ args, config, command: _command }) => {
       const go = wantsGo(args);
@@ -2039,9 +2119,24 @@ async function main() {
       const manager = runtimeManagerForCli(config);
       console.log(JSON.stringify(await manager.stop(runtimeId), null, 2));
     },
-    down: async ({ config }) => {
-      const manager = runtimeManagerForCli(config);
-      console.log(JSON.stringify(await manager.stopAll(), null, 2));
+    down: async ({ args, config, command }) => {
+      const configPath = installedConfigPath(args, command);
+      const gateway = await stopGatewayBackground(configPath, config);
+      let runtimes = null;
+      if (!['stopped', 'cleaned-stale-pid'].includes(gateway.status)) {
+        runtimes = await runtimeManagerForCli(config).stopAll();
+      }
+      const report = { ok: gateway.status !== 'still-running', gateway, runtimes };
+      if (wantsJson(args)) {
+        console.log(JSON.stringify(report, null, 2));
+      } else {
+        const lines = [];
+        lines.push(gateway.status === 'stopped' ? 'LLooM is down' : `LLooM gateway: ${gateway.status}`);
+        if (gateway.warning) lines.push(`Warning: ${gateway.warning}`);
+        if (runtimes) lines.push(`Managed model backends stopped: ${runtimes.stopped}/${runtimes.total}`);
+        console.log(lines.join('\n'));
+      }
+      if (!report.ok) process.exitCode = 1;
     },
     'keep-warm': async ({ config }) => {
       const manager = runtimeManagerForCli(config);

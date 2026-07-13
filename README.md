@@ -107,7 +107,7 @@ Primary ladder (see `lloom help`; full catalog under `lloom help advanced`):
 ```bash
 lloom                         # preview plan
 lloom up --go                 # install + integrate + start
-lloom down                    # stop all managed model backends
+lloom down                    # stop the gateway and all managed model backends
 lloom doctor --no-runtimes
 lloom models
 lloom integrate omp --apply --yes
@@ -266,6 +266,8 @@ lloom keep-warm
 lloom down
 ```
 
+`lloom down` stops the background gateway started by `lloom up --go` and asks it to stop every managed model backend before exiting. If a gateway was started some other way and has no LLooM PID file, the command leaves that unknown process alone, reports it clearly, and still stops any directly manageable backends.
+
 The same controls are exposed over HTTP for dashboards and external automation:
 
 ```bash
@@ -313,6 +315,8 @@ Requests through chat/image/message APIs call the runtime manager automatically.
 Runtime definitions can set `maxConcurrency`. Model requests acquire a runtime slot before contacting the upstream backend, so optimized text lanes can run multiple concurrent agent streams while image and audio runtimes can stay serial. `/gateway/status` reports `maxConcurrency`, `activeRequests`, and `queuedRequests` for each runtime.
 
 Runtime definitions can also declare `memoryGb` and `policy.priority`. `lloom runtime-plan <runtime-id>` and `GET /gateway/runtimes/plan?runtime=<runtime-id>` return a dry-run admission plan: projected loaded memory, configured memory budget, protected active runtimes, and any lower-priority runtimes that should be stopped before starting the requested lane. `lloom runtime-admit <runtime-id> --apply --yes` and `POST /gateway/runtimes/:id/admit` apply that plan through guarded stop/start calls. Applied admissions are serialized, so concurrent requests re-plan against the latest runtime state instead of dueling over stale eviction snapshots. Model requests only perform policy evictions automatically when `runtimePolicy.autoEvict` is explicitly set to `true`; the default is conservative preview/manual admission.
+
+Keep-warm startup is capacity-aware regardless of request-time `autoEvict`. LLooM processes enabled keep-warm runtimes by descending `policy.priority` (configuration order breaks ties), protects everything already loaded during that pass, and skips with a warning when another runtime cannot fit. A skipped large runtime does not prevent a later smaller runtime from being considered. Recipes and ad hoc runtimes should provide `memoryGb` so the warning and admission decision are meaningful.
 
 Backend plans are read-only readiness reports. They show supported platforms, expected commands, server protocol paths, setup steps, and per-step audit metadata for each runtime family. Recipes reference backend IDs from the catalog so community recipes can share a common backend vocabulary.
 

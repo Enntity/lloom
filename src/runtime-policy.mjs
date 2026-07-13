@@ -186,6 +186,10 @@ export async function createRuntimePolicyPlan(config, { requestedRuntimeId, prof
 
   if (!rows.some((row) => row.memoryGb > 0)) {
     warnings.push('runtime memory estimates are missing; admission plan cannot make memory-aware eviction decisions');
+  } else if (requested && requested.memoryGb <= 0) {
+    warnings.push(
+      `runtime ${requested.runtimeId} has no memory estimate; admission cannot predict how much capacity it needs`
+    );
   }
   const blockedRows = rows
     .filter((row) => row.loaded)

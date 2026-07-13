@@ -390,6 +390,11 @@ export class RuntimeManager {
   keepWarmRuntimeIds() {
     return Object.entries(this.config.runtimes ?? {})
       .filter(([, runtime]) => runtime.keepWarm === true)
+      .sort(([, left], [, right]) => {
+        const leftPriority = Number(left?.policy?.priority ?? left?.priority ?? 100);
+        const rightPriority = Number(right?.policy?.priority ?? right?.priority ?? 100);
+        return rightPriority - leftPriority;
+      })
       .map(([runtimeId]) => runtimeId);
   }
 
@@ -788,6 +793,29 @@ export class RuntimeManager {
 
   async startKeepWarm() {
     const results = [];
+    // Keep-warm boot is an ordered admission pass, not request-time eviction.
+    // Protect everything already loaded so a later preference cannot churn an
+    // earlier admitted runtime out of memory during the same pass.
+    const admissionConfig = {
+      ...this.config,
+      runtimePolicy: {
+        ...(this.config.runtimePolicy ?? {}),
+        enabled: true,
+        protectKeepWarm: true
+      },
+      runtimes: Object.fromEntries(
+        Object.entries(this.config.runtimes ?? {}).map(([runtimeId, runtime]) => [
+          runtimeId,
+          {
+            ...runtime,
+            policy: {
+              ...(runtime.policy ?? {}),
+              evictable: false
+            }
+          }
+        ])
+      )
+    };
     for (const runtimeId of this.keepWarmRuntimeIds()) {
       const runtime = this.getRuntime(runtimeId);
       if (!runtime) {
@@ -798,26 +826,32 @@ export class RuntimeManager {
         results.push({ runtimeId, started: false, reason: 'runtime-disabled' });
         continue;
       }
-      if (this.config.runtimePolicy?.autoEvict === true) {
-        const { applyRuntimePolicyPlan } = await import('./runtime-policy.mjs');
-        results.push(
-          await applyRuntimePolicyPlan(this.config, this, {
-            requestedRuntimeId: runtimeId,
-            dryRun: false,
-            yes: true,
-            warmup: true,
-            force: false,
-            reason: 'keep-warm'
-          })
-        );
-      } else {
-        results.push(
-          await this.start(runtimeId, {
-            force: false,
-            warmup: true,
-            reason: 'keep-warm'
-          })
-        );
+      const { applyRuntimePolicyPlan } = await import('./runtime-policy.mjs');
+      try {
+        const result = await applyRuntimePolicyPlan(admissionConfig, this, {
+          requestedRuntimeId: runtimeId,
+          dryRun: false,
+          yes: true,
+          warmup: true,
+          force: false,
+          reason: 'keep-warm'
+        });
+        results.push(result);
+        for (const warning of result.plan?.warnings ?? []) {
+          this.logger.warn?.(`Keep-warm ${runtimeId}: ${warning}`);
+        }
+      } catch (error) {
+        const warning = error?.message ?? String(error);
+        const result = {
+          runtimeId,
+          started: false,
+          status: 'skipped',
+          reason: warning.startsWith('Runtime admission denied:') ? 'insufficient-memory' : 'start-failed',
+          warning
+        };
+        results.push(result);
+        this.record({ ...result, event: 'keep-warm-skipped' });
+        this.logger.warn?.(`Keep-warm skipped ${runtimeId}: ${warning}`);
       }
     }
     return results;

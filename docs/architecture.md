@@ -145,7 +145,7 @@ Runtime policy is deliberately separate from process lifecycle. Runtime definiti
 
 Model requests automatically ensure the bound runtime only when that runtime is `enabled`; manual admin `start` can force-start any configured runtime for setup and diagnostics.
 
-Runtimes with `keepWarm: true` are started in the background after the gateway begins listening, but only when they are also `enabled`. Keep-warm policy lives exclusively on each runtime; a top-level `keepWarm` list is invalid configuration.
+Runtimes with `keepWarm: true` are considered in the background after the gateway begins listening, but only when they are also `enabled`. The pass is ordered by descending runtime priority with stable configuration-order ties. Every candidate goes through predictive memory admission; previously loaded runtimes are protected, a candidate that does not fit is warned and skipped, and later candidates are still considered. Keep-warm policy lives exclusively on each runtime; a top-level `keepWarm` list is invalid configuration.
 
 Memory admission and eviction planning lives in `src/runtime-policy.mjs` so it can be tested without the HTTP server. Enforcement is guarded by `--apply --yes` or request-body `yes: true`, except for model-request auto-eviction when the user explicitly enables `runtimePolicy.autoEvict`.
 

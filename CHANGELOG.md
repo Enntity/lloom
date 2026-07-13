@@ -16,6 +16,9 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Fixed
 
+- Keep-warm startup now admits models in priority order, preserves already loaded runtimes, and warns and continues when a model does not fit.
+- MLX LM installs into a LLooM-managed Python environment, avoiding macOS externally-managed Python failures.
+- `lloom down` now stops the managed gateway service as well as its managed model backends.
 - DGX Spark Unsloth Qwen3.6-27B now defaults to the measured released vLLM 0.25.0 runtime instead of nightly.
 - Detached CLI runtime starts no longer keep the command process open through inherited output pipes.
 - Native chat-client artifacts remain chat-only while discovery APIs advertise all supported model kinds.

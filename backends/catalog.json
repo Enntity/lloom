@@ -86,10 +86,31 @@
         },
         {
           "id": "install-mlx-lm",
-          "title": "Install MLX LM",
-          "action": "command",
-          "command": "python3",
-          "args": ["-m", "pip", "install", "mlx-lm"]
+          "title": "Create MLX LM Python environment",
+          "action": "python-venv",
+          "description": "Create a LLooM-managed Python environment instead of modifying Apple's or Homebrew's externally managed Python.",
+          "skipIfExecutableExists": ["${installRoot}/mlx-lm/venv/bin/mlx_lm.server"],
+          "path": "${installRoot}/mlx-lm/venv"
+        },
+        {
+          "id": "install-mlx-lm-package",
+          "title": "Install MLX LM package",
+          "action": "pip-install",
+          "description": "Install mlx-lm into LLooM's private environment.",
+          "skipIfExecutableExists": ["${installRoot}/mlx-lm/venv/bin/mlx_lm.server"],
+          "venv": "${installRoot}/mlx-lm/venv",
+          "args": ["--upgrade"],
+          "packages": ["pip", "mlx-lm"]
+        },
+        {
+          "id": "link-mlx-lm",
+          "title": "Expose MLX LM through LLooM shims",
+          "action": "link-command",
+          "commandName": "mlx_lm.server",
+          "sourceCandidates": [
+            "${backendRoot}/mlx-lm/venv/bin/mlx_lm.server",
+            "${installRoot}/mlx-lm/venv/bin/mlx_lm.server"
+          ]
         }
       ],
       "server": {

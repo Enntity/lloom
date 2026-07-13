@@ -2869,9 +2869,16 @@ export function createLloomServer(
         });
       });
     },
-    close() {
+    async close() {
       if (configPath) unwatchFile(configPath, reloadConfig);
-      return new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+      let runtimeError = null;
+      try {
+        await runtimeManager.stopAll();
+      } catch (error) {
+        runtimeError = error;
+      }
+      await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+      if (runtimeError) throw runtimeError;
     }
   };
 }
