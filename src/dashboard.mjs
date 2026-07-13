@@ -549,7 +549,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       connectionKey: "",
       threadNodes: new Map(),
       modelNodes: new Map(),
-      modelLayoutKey: "",
+      modelLayoutIdsKey: "",
+      modelLayoutField: null,
+      modelLayoutWorkingField: null,
       modelLayoutStableFrames: 0,
       modelLayoutSettled: false,
       topologyWorldScale: 1,
@@ -781,6 +783,108 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     }
     function shortModel(value) { const parts = String(value || "unknown").split("/"); return parts[parts.length - 1]; }
     function modelVendor(value) { const parts = String(value || "local").split("/"); return parts.length > 1 ? parts[0] : "local"; }
+    function modelNameParts(id) {
+      const raw = String(id || "");
+      const vendor = modelVendor(raw).toLowerCase();
+      const name = shortModel(raw).toLowerCase();
+      const tokens = new Set(name.split(/[^a-z0-9]+/).filter(token => token && token.length > 1));
+      return { vendor, name, tokens };
+    }
+    function modelNameSimilarity(leftId, rightId) {
+      if (leftId === rightId) return 0;
+      const left = modelNameParts(leftId), right = modelNameParts(rightId);
+      let score = 0;
+      if (left.vendor && left.vendor === right.vendor) score += .38;
+      let shared = 0;
+      for (const token of left.tokens) if (right.tokens.has(token)) shared += 1;
+      const union = left.tokens.size + right.tokens.size - shared;
+      if (union > 0) score += .55 * (shared / union);
+      let prefix = 0;
+      const limit = Math.min(left.name.length, right.name.length, 18);
+      while (prefix < limit && left.name[prefix] === right.name[prefix]) prefix += 1;
+      if (prefix >= 4) score += Math.min(.22, prefix * .018);
+      return Math.min(1, score);
+    }
+    function clusterModelsByName(models) {
+      const ids = models.map(model => model.id).sort();
+      const parent = new Map(ids.map(id => [id, id]));
+      function find(id) {
+        let root = id;
+        while (parent.get(root) !== root) root = parent.get(root);
+        let cursor = id;
+        while (cursor !== root) {
+          const next = parent.get(cursor);
+          parent.set(cursor, root);
+          cursor = next;
+        }
+        return root;
+      }
+      function union(left, right) {
+        const a = find(left), b = find(right);
+        if (a === b) return;
+        if (a < b) parent.set(b, a);
+        else parent.set(a, b);
+      }
+      for (let left = 0; left < ids.length; left++) {
+        for (let right = left + 1; right < ids.length; right++) {
+          if (modelNameSimilarity(ids[left], ids[right]) >= .42) union(ids[left], ids[right]);
+        }
+      }
+      const clusters = new Map();
+      for (const id of ids) {
+        const root = find(id);
+        if (!clusters.has(root)) clusters.set(root, []);
+        clusters.get(root).push(id);
+      }
+      return [...clusters.values()]
+        .map(members => members.slice().sort())
+        .sort((a, b) => a[0].localeCompare(b[0]));
+    }
+    function modelFieldDelta(previous, next) {
+      if (!previous || !next) return Infinity;
+      return Math.max(
+        Math.abs(previous.left - next.left),
+        Math.abs(previous.right - next.right),
+        Math.abs(previous.top - next.top),
+        Math.abs(previous.bottom - next.bottom)
+      );
+    }
+    function clampModelPoint(x, y, field) {
+      return {
+        x: Math.max(field.left + 110, Math.min(field.right - 110, x)),
+        y: Math.max(field.top + 34, Math.min(field.bottom - 34, y))
+      };
+    }
+    function assignClusterOrbitTargets(models, field) {
+      const clusters = clusterModelsByName(models);
+      const spanX = Math.max(1, field.right - field.left - 220);
+      const midX = (field.left + field.right) / 2;
+      const footprints = clusters.map(members => {
+        const n = members.length;
+        const rx = Math.max(36, 28 + n * 8);
+        const ry = Math.max(52, n * 42 / Math.PI);
+        return { members, n, rx, ry, height: Math.max(68, ry * 2 + 68) };
+      });
+      const totalHeight = footprints.reduce((sum, item) => sum + item.height, 0);
+      const usable = Math.max(1, field.bottom - field.top - 68);
+      const gap = footprints.length > 1 ? Math.max(12, (usable - totalHeight) / (footprints.length + 1)) : 0;
+      let cursorY = field.top + 34 + gap;
+      const targets = new Map();
+      const centers = new Map();
+      footprints.forEach((item, clusterIndex) => {
+        const seed = [...item.members[0]].reduce((sum, character) => sum + character.charCodeAt(0), clusterIndex + 1);
+        const centerX = midX + (hashUnit(seed * 7) - .5) * spanX * .34;
+        const centerY = cursorY + item.height / 2;
+        centers.set(item.members[0], { x: centerX, y: centerY });
+        item.members.forEach((id, memberIndex) => {
+          const angle = item.n === 1 ? -Math.PI / 2 : (memberIndex / item.n) * Math.PI * 2 - Math.PI / 2;
+          const point = clampModelPoint(centerX + Math.cos(angle) * item.rx, centerY + Math.sin(angle) * item.ry, field);
+          targets.set(id, { x: point.x, y: point.y, centerX, centerY });
+        });
+        cursorY += item.height + gap;
+      });
+      return { targets, centers };
+    }
 
     function smoothRate(key, target, now) {
       const desired = Math.max(0, Number(target || 0));
@@ -876,32 +980,42 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     function updateModelLayout(models, field) {
       const activeIds = new Set(models.map(model => model.id));
       for (const id of state.modelNodes.keys()) if (!activeIds.has(id)) state.modelNodes.delete(id);
-      const layoutKey = models.map(model => model.id).sort().join("|") + ":" + [field.left, field.right, field.top, field.bottom].map(Math.round).join(":");
-      if (layoutKey !== state.modelLayoutKey) {
-        state.modelLayoutKey = layoutKey;
-        state.modelLayoutStableFrames = 0;
+      const snapshotField = () => ({ left: field.left, right: field.right, top: field.top, bottom: field.bottom });
+      const idsKey = models.map(model => model.id).sort().join("|");
+      if (idsKey !== state.modelLayoutIdsKey) {
+        state.modelLayoutIdsKey = idsKey;
         state.modelLayoutSettled = false;
+        state.modelLayoutStableFrames = 0;
+        state.modelLayoutWorkingField = snapshotField();
       }
-      const centerX = (field.left + field.right) / 2, centerY = (field.top + field.bottom) / 2;
-      models.forEach((model, index) => {
-        const seed = [...model.id].reduce((sum, character) => sum + character.charCodeAt(0), index + 1);
-        const targetX = field.left + 110 + hashUnit(seed * 7) * Math.max(1, field.right - field.left - 220);
-        const targetY = field.top + 34 + hashUnit(seed * 13) * Math.max(1, field.bottom - field.top - 68);
+      if (state.modelLayoutSettled && modelFieldDelta(state.modelLayoutField, field) >= 16) {
+        state.modelLayoutSettled = false;
+        state.modelLayoutStableFrames = 0;
+        state.modelLayoutWorkingField = snapshotField();
+      }
+      if (!state.modelLayoutWorkingField) state.modelLayoutWorkingField = snapshotField();
+      const layoutField = state.modelLayoutWorkingField;
+      const orbit = assignClusterOrbitTargets(models, layoutField);
+      const fallbackX = (layoutField.left + layoutField.right) / 2;
+      const fallbackY = (layoutField.top + layoutField.bottom) / 2;
+      models.forEach(model => {
+        const slot = orbit.targets.get(model.id) || { x: fallbackX, y: fallbackY, centerX: fallbackX, centerY: fallbackY };
         let node = state.modelNodes.get(model.id);
         if (!node) {
-          node = { x: centerX, y: centerY, vx: 0, vy: 0, targetX, targetY };
+          node = { x: slot.centerX, y: slot.centerY, vx: 0, vy: 0, targetX: slot.x, targetY: slot.y };
           state.modelNodes.set(model.id, node);
           state.modelLayoutSettled = false;
           state.modelLayoutStableFrames = 0;
+          state.modelLayoutWorkingField = snapshotField();
         }
-        node.targetX = targetX;
-        node.targetY = targetY;
+        node.targetX = slot.x;
+        node.targetY = slot.y;
       });
       if (state.modelLayoutSettled) return;
       const nodes = models.map(model => state.modelNodes.get(model.id));
       for (const node of nodes) {
-        node.vx += (node.targetX - node.x) * .003;
-        node.vy += (node.targetY - node.y) * .003;
+        node.vx += (node.targetX - node.x) * .004;
+        node.vy += (node.targetY - node.y) * .004;
       }
       for (let left = 0; left < nodes.length; left++) for (let right = left + 1; right < nodes.length; right++) {
         const a = nodes[left], b = nodes[right], dx = b.x - a.x, dy = b.y - a.y;
@@ -921,20 +1035,18 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const previousPositions = nodes.map(node => ({ x: node.x, y: node.y }));
       for (const node of nodes) {
         const halfWidth = 110, halfHeight = 34;
-        if (node.x < field.left + halfWidth) node.vx += (field.left + halfWidth - node.x) * .03;
-        if (node.x > field.right - halfWidth) node.vx -= (node.x - field.right + halfWidth) * .03;
-        if (node.y < field.top + halfHeight) node.vy += (field.top + halfHeight - node.y) * .03;
-        if (node.y > field.bottom - halfHeight) node.vy -= (node.y - field.bottom + halfHeight) * .03;
+        if (node.x < layoutField.left + halfWidth) node.vx += (layoutField.left + halfWidth - node.x) * .03;
+        if (node.x > layoutField.right - halfWidth) node.vx -= (node.x - layoutField.right + halfWidth) * .03;
+        if (node.y < layoutField.top + halfHeight) node.vy += (layoutField.top + halfHeight - node.y) * .03;
+        if (node.y > layoutField.bottom - halfHeight) node.vy -= (node.y - layoutField.bottom + halfHeight) * .03;
         node.vx *= .78; node.vy *= .78;
         node.x += node.vx; node.y += node.vy;
-        node.x = Math.max(field.left + halfWidth, Math.min(field.right - halfWidth, node.x));
-        node.y = Math.max(field.top + halfHeight, Math.min(field.bottom - halfHeight, node.y));
+        node.x = Math.max(layoutField.left + halfWidth, Math.min(layoutField.right - halfWidth, node.x));
+        node.y = Math.max(layoutField.top + halfHeight, Math.min(layoutField.bottom - halfHeight, node.y));
       }
-      // Project overlapping cards apart after applying the softer forces. This
-      // makes non-overlap a layout constraint whenever the field has room,
-      // while still allowing the boundary to win in an impossibly dense field.
+      let separated = true;
       for (let pass = 0; pass < 8; pass++) {
-        let separated = true;
+        separated = true;
         for (let left = 0; left < nodes.length; left++) for (let right = left + 1; right < nodes.length; right++) {
           const a = nodes[left], b = nodes[right], dx = b.x - a.x, dy = b.y - a.y;
           const xOverlap = 232 - Math.abs(dx), yOverlap = 82 - Math.abs(dy);
@@ -951,18 +1063,25 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
             a.y -= direction * shift; b.y += direction * shift;
             a.vy = 0; b.vy = 0;
           }
-          a.x = Math.max(field.left + 110, Math.min(field.right - 110, a.x));
-          b.x = Math.max(field.left + 110, Math.min(field.right - 110, b.x));
-          a.y = Math.max(field.top + 34, Math.min(field.bottom - 34, a.y));
-          b.y = Math.max(field.top + 34, Math.min(field.bottom - 34, b.y));
+          a.x = Math.max(layoutField.left + 110, Math.min(layoutField.right - 110, a.x));
+          b.x = Math.max(layoutField.left + 110, Math.min(layoutField.right - 110, b.x));
+          a.y = Math.max(layoutField.top + 34, Math.min(layoutField.bottom - 34, a.y));
+          b.y = Math.max(layoutField.top + 34, Math.min(layoutField.bottom - 34, b.y));
         }
         if (separated) break;
       }
       const maxMovement = nodes.reduce((maximum, node, index) => Math.max(maximum, Math.abs(node.x - previousPositions[index].x), Math.abs(node.y - previousPositions[index].y)), 0);
-      state.modelLayoutStableFrames = maxMovement < .035 ? state.modelLayoutStableFrames + 1 : 0;
+      state.modelLayoutStableFrames = maxMovement < .035 && separated ? state.modelLayoutStableFrames + 1 : 0;
       if (state.modelLayoutStableFrames >= 24) {
-        for (const node of nodes) { node.vx = 0; node.vy = 0; }
+        for (const node of nodes) {
+          node.x = Math.round(node.x);
+          node.y = Math.round(node.y);
+          node.vx = 0;
+          node.vy = 0;
+        }
         state.modelLayoutSettled = true;
+        state.modelLayoutStableFrames = 0;
+        state.modelLayoutField = { left: layoutField.left, right: layoutField.right, top: layoutField.top, bottom: layoutField.bottom };
       }
     }
 
