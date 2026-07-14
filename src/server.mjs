@@ -2951,7 +2951,7 @@ export function createLloomServer(
         });
       });
     },
-    async close({ stopRuntimes = true } = {}) {
+    async close({ stopRuntimes = true, httpGraceMs = 5000 } = {}) {
       if (configPath) unwatchFile(configPath, reloadConfig);
       let runtimeError = null;
       if (stopRuntimes) {
@@ -2961,7 +2961,16 @@ export function createLloomServer(
           runtimeError = error;
         }
       }
-      await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+      await new Promise((resolve, reject) => {
+        const forceClose = setTimeout(() => server.closeAllConnections?.(), Math.max(0, httpGraceMs));
+        forceClose.unref?.();
+        server.close((error) => {
+          clearTimeout(forceClose);
+          if (error) reject(error);
+          else resolve();
+        });
+        server.closeIdleConnections?.();
+      });
       if (runtimeError) throw runtimeError;
     }
   };

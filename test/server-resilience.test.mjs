@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import net from 'node:net';
 import { createLloomServer } from '../src/server.mjs';
 
 function listen(server) {
@@ -115,4 +116,23 @@ console.log('server-resilience tests passed');
   await app.listen();
   await app.close({ stopRuntimes: false });
   assert.equal(stopAllCalls, 0);
+}
+
+// An incomplete or long-lived HTTP client cannot block service shutdown forever.
+{
+  const runtimeManager = { startKeepWarm: async () => {}, stopAll: async () => {} };
+  const config = {
+    server: { host: '127.0.0.1', port: 0 },
+    security: { allowMissingAuth: true, apiKeys: [] },
+    defaults: {}, backends: {}, models: [], runtimes: {}
+  };
+  const app = createLloomServer(config, { runtimeManager, logger: { error() {}, warn() {} } });
+  await app.listen();
+  const socket = net.createConnection(app.server.address().port, '127.0.0.1');
+  await new Promise((resolve, reject) => { socket.once('connect', resolve); socket.once('error', reject); });
+  socket.write('GET /health HTTP/1.1\r\nHost: localhost\r\n');
+  const startedAt = Date.now();
+  await app.close({ stopRuntimes: false, httpGraceMs: 25 });
+  assert(Date.now() - startedAt < 1000);
+  socket.destroy();
 }
