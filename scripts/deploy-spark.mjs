@@ -10,9 +10,10 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const release = await buildRelease({ root, allowDirty: !!flags["allow-dirty"], runTests: !flags["skip-tests"] });
 const remoteDir = `/tmp/lloom-release-${release.manifest.commit.slice(0, 12)}`;
 const ssh = options(flags, false), scp = options(flags, true);
+const scpHost = scpHostSpec(host);
 await inherit("ssh", [...ssh, host, `mkdir -p '${remoteDir}'`], root);
-await inherit("scp", [...scp, release.artifact, release.manifestPath, `${host}:${remoteDir}/`], root);
-await inherit("scp", [...scp, path.join(root, "scripts", "remote-install-spark.sh"), `${host}:${remoteDir}/install.sh`], root);
+await inherit("scp", [...scp, release.artifact, release.manifestPath, `${scpHost}:${remoteDir}/`], root);
+await inherit("scp", [...scp, path.join(root, "scripts", "remote-install-spark.sh"), `${scpHost}:${remoteDir}/install.sh`], root);
 const remoteArgs = ["bash", `${remoteDir}/install.sh`, `${remoteDir}/${path.basename(release.artifact)}`, `${remoteDir}/${path.basename(release.manifestPath)}`];
 if (flags.runtime) remoteArgs.push(String(flags.runtime));
 else remoteArgs.push("-");
@@ -25,4 +26,11 @@ function options(input, isScp) {
   if (input["host-key-alias"]) args.push("-o", `HostKeyAlias=${input["host-key-alias"]}`);
   if (input.port) args.push(isScp ? "-P" : "-p", String(input.port));
   return args;
+}
+
+function scpHostSpec(value) {
+  const at = value.lastIndexOf("@");
+  const user = at >= 0 ? value.slice(0, at + 1) : "";
+  const address = at >= 0 ? value.slice(at + 1) : value;
+  return address.includes(":") && !address.startsWith("[") ? `${user}[${address}]` : value;
 }
