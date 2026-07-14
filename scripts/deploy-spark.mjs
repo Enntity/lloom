@@ -15,8 +15,10 @@ await inherit("scp", [...scp, release.artifact, release.manifestPath, `${host}:$
 await inherit("scp", [...scp, path.join(root, "scripts", "remote-install-spark.sh"), `${host}:${remoteDir}/install.sh`], root);
 const remoteArgs = ["bash", `${remoteDir}/install.sh`, `${remoteDir}/${path.basename(release.artifact)}`, `${remoteDir}/${path.basename(release.manifestPath)}`];
 if (flags.runtime) remoteArgs.push(String(flags.runtime));
+else remoteArgs.push("-");
+remoteArgs.push(String(flags.entity || "Jinx"));
 await inherit("ssh", [...ssh, host, ...remoteArgs], root);
-console.log(JSON.stringify({ deployed: true, host, runtime: flags.runtime || null, commit: release.manifest.commit, sha256: release.manifest.sha256 }, null, 2));
+console.log(JSON.stringify({ deployed: true, host, entity: flags.entity || "Jinx", runtime: flags.runtime || null, commit: release.manifest.commit, sha256: release.manifest.sha256 }, null, 2));
 
 function options(input, isScp) {
   const args = [];

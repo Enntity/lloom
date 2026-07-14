@@ -4,6 +4,8 @@ set -euo pipefail
 artifact=${1:?artifact required}
 manifest=${2:?manifest required}
 runtime=${3:-}
+[[ "$runtime" == "-" ]] && runtime=""
+entity=${4:-Jinx}
 export PATH="$HOME/.local/bin:$HOME/.local/opt/node-v22.17.0-linux-arm64/bin:$PATH"
 export NPM_CONFIG_CACHE="$HOME/.cache/npm-release"
 
@@ -16,6 +18,7 @@ backup_root="$HOME/.lloom/releases/backups"
 mkdir -p "$release_root" "$backup_root"
 cp "$artifact" "$manifest" "$release_root/"
 rollback_artifact=""
+old_presence_enabled="false"
 
 rollback() {
   status=$?
@@ -25,9 +28,21 @@ rollback() {
     npm install --global --prefix "$HOME/.local" "$rollback_artifact" --omit=dev --ignore-scripts || true
     systemctl --user restart lloom.service || true
   fi
+  [[ "$old_presence_enabled" == "true" ]] && enn presence enable "$entity" >/dev/null 2>&1 || true
   exit "$status"
 }
 trap rollback EXIT
+
+if command -v enn >/dev/null 2>&1; then
+  old_presence_enabled=$(enn presence status "$entity" 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).state.enabled?"true":"false")}catch{console.log("false")}})')
+  enn presence disable "$entity" >/dev/null
+  for _ in $(seq 1 240); do
+    posture=$(enn presence status "$entity" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).state.posture||"")}catch{}})')
+    [[ "$posture" == "offline" ]] && break
+    sleep 1
+  done
+  [[ "${posture:-}" == "offline" ]] || { echo "entity did not finish its current thought" >&2; exit 1; }
+fi
 
 installed="$HOME/.local/lib/node_modules/lloom"
 if [[ -f "$installed/package.json" ]]; then
@@ -60,5 +75,6 @@ if [[ -n "$runtime" ]]; then
   [[ "${healthy:-false}" == "true" ]] || { echo "runtime failed health check" >&2; exit 1; }
 fi
 cp "$manifest" "$HOME/.lloom/releases/current.manifest.json"
+[[ "$old_presence_enabled" == "true" ]] && enn presence enable "$entity" >/dev/null
 trap - EXIT
 echo "deployed LLooM $release_id"
