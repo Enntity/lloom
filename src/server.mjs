@@ -36,7 +36,7 @@ import { buildRecipeIndexReport } from './recipe-index.mjs';
 import { loadRecipes } from './recipes.mjs';
 import { createRegistry, UnknownModelError } from './registry.mjs';
 import { RuntimeManager } from './runtime-manager.mjs';
-import { applyRuntimePolicyPlan, createRuntimePolicyPlan } from './runtime-policy.mjs';
+import { applyRuntimePolicyPlan, createRuntimePolicyPlan, RuntimeAdmissionError } from './runtime-policy.mjs';
 import { applySetup, createSetupPlan } from './setup.mjs';
 import { createSetupStatus } from './setup-status.mjs';
 import { renderDashboardPage } from './dashboard.mjs';
@@ -242,7 +242,8 @@ function endResponseWithError(res, error, { stream = false, config = {}, status 
   if (!canWriteBody(res)) return false;
   try {
     if (!res.headersSent) {
-      return sendJson(res, status, errorBody(message, { type, code, model: error?.model }), {}, config);
+      const headers = error?.retryAfterSeconds ? { 'retry-after': String(error.retryAfterSeconds) } : {};
+      return sendJson(res, status, errorBody(message, { type, code, model: error?.model }), headers, config);
     }
     if (stream) {
       // OpenAI-style stream error chunk, then DONE.
@@ -1401,14 +1402,32 @@ export function createLloomServer(
   async function ensureRuntime(runtimeId) {
     if (!runtimeId) return { runtimeId, started: false, reason: 'no-runtime' };
     if (config.runtimePolicy?.autoEvict === true) {
-      return applyRuntimePolicyPlan(config, runtimeManager, {
-        requestedRuntimeId: runtimeId,
-        dryRun: false,
-        yes: true,
-        warmup: true,
-        force: false,
-        reason: 'model-request'
-      });
+      const waitMs = Math.max(0, Number(config.runtimePolicy?.admissionWaitMs ?? 120000));
+      const deadline = Date.now() + waitMs;
+      let queued = false;
+      try {
+        while (true) {
+          try {
+            return await applyRuntimePolicyPlan(config, runtimeManager, {
+              requestedRuntimeId: runtimeId,
+              dryRun: false,
+              yes: true,
+              warmup: true,
+              force: false,
+              reason: 'model-request'
+            });
+          } catch (error) {
+            if (!(error instanceof RuntimeAdmissionError) || !error.temporary || Date.now() >= deadline) throw error;
+            if (!queued) {
+              runtimeManager.markAdmissionQueued(runtimeId, true, 'waiting-for-capacity');
+              queued = true;
+            }
+            await new Promise((resolve) => setTimeout(resolve, Math.min(error.retryAfterSeconds * 1000, deadline - Date.now())));
+          }
+        }
+      } finally {
+        if (queued) runtimeManager.markAdmissionQueued(runtimeId, false);
+      }
     }
     return runtimeManager.ensure(runtimeId);
   }
@@ -2811,6 +2830,14 @@ export function createLloomServer(
             model: error.model
           })
         );
+        return;
+      }
+      if (error instanceof RuntimeAdmissionError) {
+        endResponseWithError(res, error, {
+          stream: res.headersSent,
+          config,
+          status: error.statusCode
+        });
         return;
       }
       logger.error?.(error);

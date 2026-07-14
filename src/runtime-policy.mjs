@@ -2,6 +2,19 @@ import os from 'node:os';
 import fs from 'node:fs/promises';
 import { RuntimeManager } from './runtime-manager.mjs';
 
+export class RuntimeAdmissionError extends Error {
+  constructor(message, { plan, temporary = false, retryAfterSeconds = 2 } = {}) {
+    super(message);
+    this.name = 'RuntimeAdmissionError';
+    this.plan = plan;
+    this.temporary = temporary;
+    this.retryAfterSeconds = retryAfterSeconds;
+    this.statusCode = temporary ? 429 : 503;
+    this.code = temporary ? 'runtime_capacity_busy' : 'runtime_capacity_impossible';
+    this.type = 'runtime_admission_error';
+  }
+}
+
 function numberOrNull(value) {
   if (value == null || value === '') return null;
   const number = Number(value);
@@ -77,7 +90,7 @@ function policyConfig(config, profile = {}) {
     memoryBudgetGb,
     maxMemoryUtilization,
     protectActiveRequests: policy.protectActiveRequests !== false,
-    protectKeepWarm: policy.protectKeepWarm === true
+    protectKeepWarm: true
   };
 }
 
@@ -102,6 +115,8 @@ function runtimeRows(config, status, requestedRuntimeId) {
       status: runtimeStatus.status ?? 'unknown',
       activeRequests: runtimeStatus.activeRequests ?? 0,
       queuedRequests: runtimeStatus.queuedRequests ?? 0,
+      lastRequestedAt: runtimeStatus.lastRequestedAt ?? null,
+      lastIdleAt: runtimeStatus.lastIdleAt ?? null,
       memoryGb,
       priority: runtimePriority(runtime, {
         requested,
@@ -119,7 +134,8 @@ function protectedReasons(row, policy) {
   if (row.requested) reasons.push('requested');
   if (!row.evictable) reasons.push('pinned');
   if (policy.protectActiveRequests && row.activeRequests > 0) reasons.push('active-requests');
-  if (policy.protectKeepWarm && row.keepWarm) reasons.push('keep-warm');
+  // keepWarm is a hard pin: request-time admission may never evict it.
+  if (row.keepWarm) reasons.push('keep-warm');
   return reasons;
 }
 
@@ -163,6 +179,9 @@ export async function createRuntimePolicyPlan(config, { requestedRuntimeId, prof
     .filter((row) => row.loaded)
     .filter((row) => protectedReasons(row, policy).length === 0)
     .sort((left, right) => {
+      const leftUsed = Date.parse(left.lastRequestedAt || left.lastIdleAt || 0) || 0;
+      const rightUsed = Date.parse(right.lastRequestedAt || right.lastIdleAt || 0) || 0;
+      if (leftUsed !== rightUsed) return leftUsed - rightUsed;
       if (left.priority !== right.priority) return left.priority - right.priority;
       if (left.memoryGb !== right.memoryGb) return right.memoryGb - left.memoryGb;
       return left.runtimeId.localeCompare(right.runtimeId);
@@ -275,17 +294,35 @@ export async function applyRuntimePolicyPlan(
       };
     }
     if (!plan.admission.allowed) {
-      throw new Error(`Runtime admission denied: projected memory exceeds budget by ${plan.admission.overBudgetGb} GB`);
+      const activeBlockers = plan.protected.filter((item) => item.protectedReasons.includes('active-requests'));
+      const permanentBlockers = plan.protected.filter((item) =>
+        item.protectedReasons.some((reason) => reason === 'pinned' || reason === 'keep-warm')
+      );
+      const temporary = activeBlockers.length > 0;
+      const blockerText = [...activeBlockers, ...permanentBlockers]
+        .map((item) => `${item.runtimeId} (${item.protectedReasons.join(', ')})`)
+        .join(', ');
+      throw new RuntimeAdmissionError(
+        temporary
+          ? `Runtime ${requestedRuntimeId} is queued for capacity; waiting for active runtime(s) to drain: ${blockerText}`
+          : `Runtime ${requestedRuntimeId} cannot fit within the ${plan.policy.memoryBudgetGb.toFixed(1)} GB memory budget; protected runtime(s): ${blockerText || 'none'}`,
+        { plan, temporary }
+      );
     }
 
     const results = [];
     for (const action of plan.actions) {
       if (action.type === 'stop') {
-        results.push({
-          ...action,
-          status: 'applied',
-          result: await runtimeManager.stop(action.runtimeId)
-        });
+        if (typeof runtimeManager.drainRuntime === 'function') await runtimeManager.drainRuntime(action.runtimeId);
+        try {
+          results.push({
+            ...action,
+            status: 'applied',
+            result: await runtimeManager.stop(action.runtimeId)
+          });
+        } finally {
+          runtimeManager.resumeRuntime?.(action.runtimeId);
+        }
       } else if (action.type === 'start') {
         results.push({
           ...action,

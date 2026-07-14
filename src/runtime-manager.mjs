@@ -365,6 +365,11 @@ export class RuntimeManager {
         stops: 0,
         activeRequests: 0,
         queuedRequests: 0,
+        admissionQueuedRequests: 0,
+        lastRequestedAt: null,
+        lastIdleAt: null,
+        statusSince: nowIso(),
+        transitionReason: null,
         startedAt: null,
         stoppedAt: null,
         lastWarmup: null,
@@ -381,6 +386,24 @@ export class RuntimeManager {
       ...event
     });
     this.events = this.events.slice(0, 100);
+  }
+
+  setStatus(runtimeId, status, reason = null) {
+    const state = this.stateFor(runtimeId);
+    if (state.status !== status || state.transitionReason !== reason) {
+      state.status = status;
+      state.statusSince = nowIso();
+      state.transitionReason = reason;
+      this.record({ runtimeId, event: 'state', status, reason });
+    }
+    return state;
+  }
+
+  markAdmissionQueued(runtimeId, queued, reason = 'capacity') {
+    const state = this.stateFor(runtimeId);
+    state.admissionQueuedRequests = Math.max(0, state.admissionQueuedRequests + (queued ? 1 : -1));
+    if (queued && !['running', 'starting', 'warming'].includes(state.status)) this.setStatus(runtimeId, 'queued', reason);
+    if (!queued && state.admissionQueuedRequests === 0 && state.status === 'queued') this.setStatus(runtimeId, 'idle');
   }
 
   getRuntime(runtimeId) {
@@ -434,7 +457,13 @@ export class RuntimeManager {
       const healthy = await healthOk(runtime.healthUrl);
       const container = runtimeAdapter(runtime) === 'docker' ? await dockerContainerState(runtime) : null;
       let status = state.status;
-      if (this.processRunning(runtimeId)) {
+      if (state.status === 'queued') {
+        status = 'queued';
+      } else if (state.status === 'stopping' || state.status === 'draining') {
+        if (!this.processRunning(runtimeId) && !container?.running && !healthy) status = 'stopped';
+      } else if (state.status === 'starting' || state.status === 'warming') {
+        if (healthy && state.status !== 'warming') status = 'running';
+      } else if (this.processRunning(runtimeId)) {
         status = healthy ? 'running' : 'starting';
       } else if (container?.running && healthy) {
         status = 'running';
@@ -455,6 +484,11 @@ export class RuntimeManager {
         stops: state.stops,
         activeRequests: state.activeRequests,
         queuedRequests: state.queuedRequests,
+        admissionQueuedRequests: state.admissionQueuedRequests,
+        lastRequestedAt: state.lastRequestedAt,
+        lastIdleAt: state.lastIdleAt,
+        statusSince: state.statusSince,
+        transitionReason: state.transitionReason,
         startedAt: state.startedAt,
         stoppedAt: state.stoppedAt,
         lastWarmup: state.lastWarmup,
@@ -482,6 +516,7 @@ export class RuntimeManager {
     const runtime = this.getRuntime(runtimeId);
     if (!runtime) return () => {};
     const state = this.stateFor(runtimeId);
+    state.lastRequestedAt = nowIso();
     const maxConcurrency = runtimeMaxConcurrency(runtime);
     if (!this.pausedRuntimes.has(runtimeId) && state.activeRequests < maxConcurrency) {
       state.activeRequests += 1;
@@ -497,6 +532,7 @@ export class RuntimeManager {
   releaseSlot(runtimeId) {
     const state = this.stateFor(runtimeId);
     state.activeRequests = Math.max(0, state.activeRequests - 1);
+    if (state.activeRequests === 0) state.lastIdleAt = nowIso();
     const queue = this.queueFor(runtimeId);
     const next = this.pausedRuntimes.has(runtimeId) ? null : queue.shift();
     state.queuedRequests = queue.length;
@@ -520,6 +556,7 @@ export class RuntimeManager {
 
   async drainRuntime(runtimeId, { timeoutMs = 300000 } = {}) {
     this.pausedRuntimes.add(runtimeId);
+    this.setStatus(runtimeId, 'draining', 'eviction');
     const deadline = Date.now() + timeoutMs;
     const state = this.stateFor(runtimeId);
     while (state.activeRequests > 0) {
@@ -601,7 +638,7 @@ export class RuntimeManager {
     const state = this.stateFor(runtimeId);
 
     if (await healthOk(runtime.healthUrl)) {
-      state.status = 'running';
+      this.setStatus(runtimeId, 'running');
       const warmupResult = warmup ? await this.warmup(runtimeId, runtime) : null;
       return {
         runtimeId,
@@ -626,8 +663,8 @@ export class RuntimeManager {
         }
         this.record({ runtimeId, event: 'docker-create', bootstrapResult, reason });
       }
+      this.setStatus(runtimeId, 'starting', reason);
       const processResult = await dockerLifecycle('start', runtime);
-      state.status = 'starting';
       state.starts += 1;
       state.startedAt = nowIso();
       this.record({ runtimeId, event: 'docker-start', processResult, reason });
@@ -654,7 +691,7 @@ export class RuntimeManager {
       return this.waitForHealth(runtimeId, runtime, existing);
     }
 
-    state.status = 'starting';
+    this.setStatus(runtimeId, 'starting', reason);
     state.lastError = null;
     const args = effectiveRuntimeArgs(runtimeId, runtime);
     await prepareRuntimeFilesystem(runtime);
@@ -722,7 +759,7 @@ export class RuntimeManager {
     const deadline = Date.now() + (runtime.startupTimeoutMs ?? 300000);
     while (Date.now() < deadline) {
       if (await healthOk(runtime.healthUrl)) {
-        state.status = 'running';
+        this.setStatus(runtimeId, 'running');
         this.record({ runtimeId, event: 'healthy' });
         return { runtimeId, healthy: true };
       }
@@ -754,6 +791,7 @@ export class RuntimeManager {
     const state = this.stateFor(runtimeId);
     const warmup = runtime.warmup;
     if (!warmup?.url) return { runtimeId, warmed: false, reason: 'no-warmup' };
+    this.setStatus(runtimeId, 'warming', 'warmup');
     const startedAt = Date.now();
     try {
       const response = await fetch(warmup.url, {
@@ -777,6 +815,7 @@ export class RuntimeManager {
         event: 'warmup',
         bodyPreview: text.slice(0, 300)
       });
+      this.setStatus(runtimeId, 'running', response.ok ? null : 'warmup-failed');
       return result;
     } catch (error) {
       const result = {
@@ -787,6 +826,7 @@ export class RuntimeManager {
       };
       state.lastWarmup = result;
       this.record({ ...result, event: 'warmup' });
+      this.setStatus(runtimeId, 'running', 'warmup-failed');
       return result;
     }
   }
@@ -846,7 +886,7 @@ export class RuntimeManager {
           runtimeId,
           started: false,
           status: 'skipped',
-          reason: warning.startsWith('Runtime admission denied:') ? 'insufficient-memory' : 'start-failed',
+          reason: String(error?.code || '').startsWith('runtime_capacity_') ? 'insufficient-memory' : 'start-failed',
           warning
         };
         results.push(result);
@@ -884,9 +924,9 @@ export class RuntimeManager {
       const container = await dockerContainerState(runtime);
       if (!container.exists) return { runtimeId, stopped: false, reason: 'container-missing' };
       if (!container.running) return { runtimeId, stopped: false, reason: 'already-stopped' };
-      state.status = 'stopping';
+      this.setStatus(runtimeId, 'stopping', 'stop');
       const processResult = await dockerLifecycle('stop', runtime);
-      state.status = 'stopped';
+      this.setStatus(runtimeId, 'stopped');
       state.stops += 1;
       state.stoppedAt = nowIso();
       this.record({ runtimeId, event: 'docker-stop', processResult });

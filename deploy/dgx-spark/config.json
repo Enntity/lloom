@@ -22,9 +22,10 @@
   "runtimePolicy": {
     "enabled": true,
     "autoEvict": true,
-    "maxMemoryUtilization": 0.9,
+    "maxMemoryUtilization": 0.95,
     "protectActiveRequests": true,
-    "protectKeepWarm": false
+    "protectKeepWarm": true,
+    "admissionWaitMs": 120000
   },
   "backends": {
     "spark-vllm-8000": {

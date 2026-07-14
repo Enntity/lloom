@@ -5928,7 +5928,7 @@ if (autoBackendListened) {
     runtimes: {
       'warm-runtime': {
         enabled: true,
-        keepWarm: true,
+        keepWarm: false,
         memoryGb: 25,
         policy: {
           priority: 100

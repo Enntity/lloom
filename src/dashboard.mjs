@@ -568,7 +568,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
 
     // Higher values draw later (on top). Serving stays above idle hot/external cards
     // so overlaps favor live traffic; click temporarily overrides via topologyRaisedModelId.
-    const MODEL_CARD_STATE_Z = { cold: 0, warming: 1, evicting: 1, hot: 2, external: 2, serving: 3 };
+    const MODEL_CARD_STATE_Z = { cold: 0, queued: 1, warming: 1, evicting: 1, hot: 2, external: 2, serving: 3 };
     function modelCardZ(model) {
       if (state.topologyRaisedModelId && model.id === state.topologyRaisedModelId) return 1000;
       return MODEL_CARD_STATE_Z[model.state] ?? 0;
@@ -683,13 +683,13 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const entries = Object.entries(runtimes);
       $("#stat-runtimes").textContent = String(entries.length);
       $("#stat-active").textContent = String(entries.reduce((sum, [, runtime]) => sum + Number(runtime.activeRequests || 0), 0));
-      $("#stat-queued").textContent = String(entries.reduce((sum, [, runtime]) => sum + Number(runtime.queuedRequests || 0), 0));
+      $("#stat-queued").textContent = String(entries.reduce((sum, [, runtime]) => sum + Number(runtime.queuedRequests || 0) + Number(runtime.admissionQueuedRequests || 0), 0));
       $("#runtime-rows").innerHTML = entries.length ? entries.map(([id, runtime]) =>
         '<tr>' +
           '<td><code>' + escapeHtml(id) + '</code><div class="muted">' + escapeHtml(runtime.command || "") + '</div></td>' +
           '<td><span class="pill"><span class="dot ' + runtimeClass(runtime) + '"></span><span>' + escapeHtml(runtime.status || "idle") + '</span></span></td>' +
           '<td>' + escapeHtml(runtime.activeRequests || 0) + ' / ' + escapeHtml(runtime.maxConcurrency || 1) +
-            '<div class="muted">queue ' + escapeHtml(runtime.queuedRequests || 0) + '</div></td>' +
+            '<div class="muted">queue ' + escapeHtml(Number(runtime.queuedRequests || 0) + Number(runtime.admissionQueuedRequests || 0)) + '</div></td>' +
           '<td>' + escapeHtml(runtime.port || "-") + '</td>' +
           '<td><div class="actions">' +
             '<button data-action="start" data-runtime="' + escapeHtml(id) + '" type="button">Start</button>' +
@@ -1151,7 +1151,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       ctx.clearRect(0, 0, viewportWidth, viewportHeight);
       const modelCount = (state.topologyModels || []).length;
       const connectionCount = (state.topologyConnections || []).length;
-      const targetWorldScale = Math.max(1, Math.sqrt(Math.max(1, modelCount / 6)), Math.sqrt(Math.max(1, connectionCount / 14)));
+      // Keep the model rack anchored. Traffic comes and goes constantly and
+      // must not resize the world or make settled model cards jitter.
+      const targetWorldScale = Math.max(1, Math.sqrt(Math.max(1, modelCount / 6)));
       const worldEase = targetWorldScale > state.topologyWorldScale ? .18 : .06;
       state.topologyWorldScale += (targetWorldScale - state.topologyWorldScale) * worldEase;
       if (Math.abs(targetWorldScale - state.topologyWorldScale) < .002) state.topologyWorldScale = targetWorldScale;
@@ -1226,7 +1228,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const live = displayedLiveRate > .05;
         const serving = point.model.state === "serving";
         const external = point.model.state === "external";
-        const warming = point.model.state === "warming";
+        const warming = point.model.state === "warming" || point.model.state === "queued";
         const evicting = point.model.state === "evicting";
         const hot = point.model.state === "hot" || serving;
         const pulse = warming || evicting ? .35 + (Math.sin(now * .006) + 1) * .3 : 1;
@@ -1244,7 +1246,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         ctx.fillStyle = serving ? "#42d77d" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : evicting ? "#ff7e66" : "rgba(143,180,255,.7)";
         const displayedModelRate = live ? displayedLiveRate : point.model.averageRate;
         const modelRateText = displayedModelRate == null ? "" : formatRate(displayedModelRate) + " tok/s";
-        const modelStateText = serving ? "SERVING" : point.model.state.toUpperCase();
+        const modelStateText = point.model.state === "queued" ? "QUEUED" : serving ? "SERVING" : point.model.state.toUpperCase();
         ctx.fillText(fitCanvasText(ctx, modelStateText + (modelRateText ? " · " + modelRateText : ""), cardWidth - 22), cardLeft + 12, point.y + 23);
       }
       state.topologyHitCards = hitCards;
@@ -1412,7 +1414,19 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const activeInput = liveConnections.reduce((sum, item) => sum + item.inputTokens, 0);
         const activeOutput = liveConnections.reduce((sum, item) => sum + item.outputTokens, 0);
         const runtimeStatus = runtimeStates[model.runtime]?.status || "idle";
-        const stateLabel = liveConnections.length ? "serving" : !model.runtime ? "external" : runtimeStatus === "running" ? "hot" : runtimeStatus === "starting" ? "warming" : runtimeStatus === "stopping" ? "evicting" : "cold";
+        const transitioning = runtimeStatus === "starting" || runtimeStatus === "warming"
+          ? "warming"
+          : runtimeStatus === "queued"
+            ? "queued"
+            : runtimeStatus === "draining" || runtimeStatus === "stopping"
+              ? "evicting"
+              : null;
+        // Lifecycle truth wins over traffic. A queued request connected to a
+        // cold backend is not serving yet, and a draining backend remains
+        // visibly evicting until the process/container is actually gone.
+        const stateLabel = !model.runtime
+          ? "external"
+          : transitioning || (liveConnections.length ? "serving" : runtimeStatus === "running" ? "hot" : "cold");
         return { id: model.id, inputTokens: Number(data.inputTokens || 0) + activeInput, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveInputRate, liveOutputRate, averageRate: data.decodeTokensPerSecond == null ? null : Number(data.decodeTokensPerSecond), state: stateLabel };
       });
     }
@@ -1674,7 +1688,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     refresh();
     refreshActivity();
     setInterval(refreshActivity, 1000);
-    setInterval(refresh, 10000);
+    setInterval(refresh, 2000);
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) {
         refresh();

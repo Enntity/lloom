@@ -38,12 +38,13 @@ const runtimePolicyPlan = await createRuntimePolicyPlan(runtimePolicyConfig, {
   requestedRuntimeId: 'big',
   status: syntheticPolicyStatus
 });
-assert.equal(runtimePolicyPlan.admission.allowed, true);
+assert.equal(runtimePolicyPlan.admission.allowed, false);
 assert.deepEqual(
   runtimePolicyPlan.actions.map((action) => `${action.type}:${action.runtimeId}`),
-  ['stop:warm', 'start:big']
+  ['start:big']
 );
 assert.equal(runtimePolicyPlan.admission.projectedMemoryGb, 55);
+assert(runtimePolicyPlan.protected.some((entry) => entry.runtimeId === 'warm' && entry.protectedReasons.includes('keep-warm')));
 
 const predictiveConfig = {
   runtimePolicy: {
@@ -93,6 +94,28 @@ assert.deepEqual(
   ['start:requested']
 );
 
+const lruPlan = await createRuntimePolicyPlan(
+  {
+    runtimePolicy: { memoryBudgetGb: 60 },
+    runtimes: {
+      old: { enabled: true, memoryGb: 20, policy: { priority: 100 } },
+      recent: { enabled: true, memoryGb: 20, policy: { priority: 1 } },
+      requested: { enabled: true, memoryGb: 30 }
+    }
+  },
+  {
+    requestedRuntimeId: 'requested',
+    status: {
+      runtimes: {
+        old: { healthy: true, status: 'running', activeRequests: 0, lastRequestedAt: '2026-07-13T00:00:00Z' },
+        recent: { healthy: true, status: 'running', activeRequests: 0, lastRequestedAt: '2026-07-13T01:00:00Z' },
+        requested: { healthy: false, status: 'idle', activeRequests: 0 }
+      }
+    }
+  }
+);
+assert.equal(lruPlan.actions[0].runtimeId, 'old');
+
 const blockedPolicyPlan = await createRuntimePolicyPlan(runtimePolicyConfig, {
   requestedRuntimeId: 'big',
   status: {
@@ -113,6 +136,13 @@ assert(
 );
 
 const policyOperations = [];
+const evictablePolicyConfig = {
+  ...runtimePolicyConfig,
+  runtimes: {
+    ...runtimePolicyConfig.runtimes,
+    warm: { ...runtimePolicyConfig.runtimes.warm, keepWarm: false }
+  }
+};
 const fakePolicyManager = {
   async status() {
     return syntheticPolicyStatus;
@@ -141,7 +171,7 @@ await assert.rejects(
   /without yes=true/
 );
 
-const applied = await applyRuntimePolicyPlan(runtimePolicyConfig, fakePolicyManager, {
+const applied = await applyRuntimePolicyPlan(evictablePolicyConfig, fakePolicyManager, {
   requestedRuntimeId: 'big',
   dryRun: false,
   yes: true,
