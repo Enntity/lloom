@@ -62,6 +62,7 @@ LLooM currently fronts these local contracts:
 - `POST /v1/embeddings`
 - `POST /v1/messages`
 - `POST /v1/images/generations`
+- `POST /v1/videos/generations`
 - `POST /v1/audio/speech`
 - `POST /v1/audio/transcriptions`
 - `GET /gateway/onboarding/plan`

@@ -52,6 +52,10 @@
       "baseUrl": "http://192.168.1.131:8008/v1",
       "timeoutMs": 1800000
     },
+    "qwen36-unsloth-froggeric-vllm025": {
+      "baseUrl": "http://192.168.1.131:8009/v1",
+      "timeoutMs": 1800000
+    },
     "qwen3-embedding-4b": {
       "type": "openai",
       "baseUrl": "http://127.0.0.1:8002/v1",
@@ -115,6 +119,31 @@
         "image": "vllm/vllm-openai:v0.24.0",
         "createArgs": ["--restart", "unless-stopped", "--gpus", "all", "--ipc", "host", "-p", "192.168.1.131:8001:8000", "-e", "CUTE_DSL_ARCH=sm_121a", "-v", "/home/enntitysparkadmin/.cache/huggingface:/root/.cache/huggingface", "-v", "/home/enntitysparkadmin/.cache/vllm:/root/.cache/vllm"],
         "command": ["unsloth/Qwen3.6-35B-A3B-NVFP4-Fast", "--host", "0.0.0.0", "--port", "8000", "--tensor-parallel-size", "1", "--trust-remote-code", "--dtype", "bfloat16", "--kv-cache-dtype", "fp8", "--attention-backend", "flashinfer", "--gpu-memory-utilization", "0.4", "--max-model-len", "262144", "--max-num-seqs", "4", "--max-num-batched-tokens", "8192", "--enable-chunked-prefill", "--async-scheduling", "--enable-prefix-caching", "--load-format", "fastsafetensors", "--reasoning-parser", "qwen3", "--tool-call-parser", "qwen3_xml", "--enable-auto-tool-choice", "--speculative-config", "{\"method\":\"mtp\",\"num_speculative_tokens\":2}"]
+      }
+    },
+    "qwen36-unsloth-froggeric-vllm025": {
+      "enabled": true,
+      "adapter": "docker",
+      "management": "managed",
+      "containerName": "qwen36-unsloth-froggeric-vllm025",
+      "port": 8009,
+      "healthUrl": "http://192.168.1.131:8009/v1/models",
+      "maxConcurrency": 4,
+      "memoryGb": 64,
+      "keepWarm": false,
+      "startupTimeoutMs": 900000,
+      "policy": { "priority": 55, "evictable": true },
+      "recipe": {
+        "id": "dgx-spark-qwen36-nvfp4-froggeric-vllm025",
+        "version": 1,
+        "source": "https://huggingface.co/froggeric/Qwen-Fixed-Chat-Templates/commit/23a40b0bd4d197c31d39e3c442fd2cd6100b3971"
+      },
+      "behaviorOverrides": { "chatTemplate": "qwen-fixed-v21.3" },
+      "bootstrap": {
+        "adapter": "docker",
+        "image": "vllm/vllm-openai:v0.25.0",
+        "createArgs": ["--restart", "unless-stopped", "--gpus", "all", "--ipc", "host", "-p", "192.168.1.131:8009:8000", "-e", "CUTE_DSL_ARCH=sm_121a", "-v", "/home/enntitysparkadmin/.cache/huggingface:/root/.cache/huggingface", "-v", "/home/enntitysparkadmin/.cache/vllm:/root/.cache/vllm"],
+        "command": ["unsloth/Qwen3.6-35B-A3B-NVFP4", "--host", "0.0.0.0", "--port", "8000", "--tensor-parallel-size", "1", "--trust-remote-code", "--dtype", "bfloat16", "--kv-cache-dtype", "fp8", "--attention-backend", "flashinfer", "--gpu-memory-utilization", "0.4", "--max-model-len", "262144", "--max-num-seqs", "4", "--max-num-batched-tokens", "8192", "--enable-chunked-prefill", "--async-scheduling", "--enable-prefix-caching", "--load-format", "fastsafetensors", "--reasoning-parser", "qwen3", "--tool-call-parser", "qwen3_coder", "--enable-auto-tool-choice", "--speculative-config", "{\"method\":\"mtp\",\"num_speculative_tokens\":2}"]
       }
     },
     "qwen3-embedding-4b": {
@@ -308,6 +337,17 @@
       "backend": "spark-vllm-8001",
       "runtime": "qwen36-unsloth-fast",
       "upstreamModel": "unsloth/Qwen3.6-35B-A3B-NVFP4-Fast",
+      "contextWindow": 262144,
+      "maxPromptTokens": 255000,
+      "capabilities": ["chat", "streaming", "usage", "tools", "reasoning", "long-context", "batching", "speculative-decoding"]
+    },
+    {
+      "id": "unsloth/Qwen3.6-35B-A3B-NVFP4-Froggeric-vLLM025",
+      "name": "Qwen 3.6 35B A3B NVFP4 · Froggeric v21.3 · vLLM 0.25",
+      "kind": "chat",
+      "backend": "qwen36-unsloth-froggeric-vllm025",
+      "runtime": "qwen36-unsloth-froggeric-vllm025",
+      "upstreamModel": "unsloth/Qwen3.6-35B-A3B-NVFP4",
       "contextWindow": 262144,
       "maxPromptTokens": 255000,
       "capabilities": ["chat", "streaming", "usage", "tools", "reasoning", "long-context", "batching", "speculative-decoding"]

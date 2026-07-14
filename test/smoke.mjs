@@ -258,6 +258,7 @@ assert(!packageJson.files.includes('community/keys/lloom-dev-signing-private.pem
 assert(packageJson.keywords.includes('local-llm'));
 assert(packageJson.keywords.includes('ai-gateway'));
 assert(packageJson.files.includes('src/'));
+assert(packageJson.files.includes('assets/'));
 assert(packageJson.files.includes('schemas/'));
 assert(!packageJson.files.includes('data/'));
 assert(!packageJson.files.includes('logs/'));
@@ -794,6 +795,7 @@ assert.deepEqual(
     'apple-silicon-qwen36-35b-a3b-optiq',
     'apple-silicon-qwen36',
     'high-memory-local-image-generation',
+    'linux-nvidia-gb10-ltx23-dr34ml4y',
     'linux-nvidia-gb10-qwen36-unsloth-vllm',
     'linux-nvidia-gb10-thinkingcap-qwen36-27b-vllm',
     'linux-nvidia-qwen3-embedding-4b-vllm'
@@ -902,7 +904,7 @@ const recipeIndexReport = await buildRecipeIndexReport(config, {
 });
 assert.equal(recipeIndexReport.ok, true);
 assert.equal(recipeIndexReport.index.id, 'lloom-community-recipes');
-assert.equal(recipeIndexReport.recipes.length, 6);
+assert.equal(recipeIndexReport.recipes.length, 7);
 const indexedSparkRecipe = recipeIndexReport.recipes.find(
   (candidate) => candidate.id === 'linux-nvidia-gb10-qwen36-unsloth-vllm'
 );
@@ -936,7 +938,7 @@ const libraryCli = await runCommand(process.execPath, [
 ]);
 const libraryJson = JSON.parse(libraryCli.stdout);
 assert.equal(libraryJson.index.id, 'lloom-community-recipes');
-assert.equal(libraryJson.recipes[0].id, 'linux-nvidia-qwen3-embedding-4b-vllm');
+assert.equal(libraryJson.recipes[0].id, 'linux-nvidia-gb10-ltx23-dr34ml4y');
 if (process.platform === 'darwin' && process.arch === 'arm64') {
   assert.equal(libraryJson.selected.recipeId, 'apple-silicon-qwen36-35b-a3b-optiq');
 } else {
@@ -5103,7 +5105,7 @@ if (listened) {
       try {
         assert.equal(autoHostPlan.ok, true);
         assert(autoHostPlan.host.autoStarted.pid);
-        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, 12);
+        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, 13);
         assert.equal(autoHostPlan.plans[0].recommendation.id, 'apple-silicon-qwen36-35b-a3b-mtplx-pack');
         assert.equal(autoHostPlan.plans[0].plan.roots.recipesRoot, autoHostRecipesRoot);
         assert.equal(autoHostPlan.plans[0].plan.roots.benchmarksRoot, autoHostBenchmarksRoot);
@@ -6019,6 +6021,69 @@ if (autoBackendListened) {
     }
   }
   await closeServer(autoBackendServer);
+}
+
+const videoUpstream = http.createServer(async (req, res) => {
+  if (req.method !== 'POST' || req.url !== '/v1/videos/generations') {
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'not found' }));
+    return;
+  }
+  const body = await readJsonBody(req);
+  assert.equal(body.model, 'upstream-video-model');
+  assert.equal(body.prompt, 'A short synthetic clip.');
+  res.writeHead(200, { 'content-type': 'application/json' });
+  res.end(JSON.stringify({ created: 1, data: [{ b64_json: 'AAAA' }] }));
+});
+
+const videoListened = await tryListen(videoUpstream);
+if (videoListened) {
+  const videoPort = videoUpstream.address().port;
+  const videoConfig = structuredClone(config);
+  videoConfig.server = { host: '127.0.0.1', port: 0 };
+  videoConfig.defaults.videoModel = 'synthetic-video';
+  videoConfig.backends['synthetic-video'] = {
+    type: 'openai',
+    baseUrl: `http://127.0.0.1:${videoPort}/v1`,
+    apiKey: 'sk-test'
+  };
+  videoConfig.models.push({
+    id: 'synthetic-video',
+    name: 'Synthetic Video',
+    backend: 'synthetic-video',
+    upstreamModel: 'upstream-video-model',
+    kind: 'video',
+    input: ['text'],
+    output: ['video'],
+    capabilities: ['video-generation'],
+    advertise: true
+  });
+  const videoWrongKindModel = addSyntheticWrongKindChatModel(videoConfig, 'synthetic-video');
+  const videoApp = createLloomServer(videoConfig, { logger: { error() {} } });
+  const videoGatewayListened = await tryListen(videoApp.server);
+  if (videoGatewayListened) {
+    const { port } = videoApp.server.address();
+    try {
+      const videoResponse = await fetch(`http://127.0.0.1:${port}/v1/videos/generations`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: 'A short synthetic clip.' })
+      });
+      assert.equal(videoResponse.status, 200);
+      assert.equal((await videoResponse.json()).data[0].b64_json, 'AAAA');
+
+      const wrongKindResponse = await fetch(`http://127.0.0.1:${port}/v1/videos/generations`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ model: videoWrongKindModel, prompt: 'ignored' })
+      });
+      assert.equal(wrongKindResponse.status, 400);
+      assert.equal((await wrongKindResponse.json()).error.code, 'wrong_model_kind');
+    } finally {
+      await closeServer(videoApp.server);
+    }
+  }
+  await closeServer(videoUpstream);
 }
 
 const speechUpstream = http.createServer(async (req, res) => {

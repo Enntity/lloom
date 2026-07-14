@@ -156,6 +156,7 @@ function modelPathForRecipeModel(recipeModel, backendId, modelRoot) {
 
 function recipeModelKind(recipeModel) {
   const capabilities = new Set(asArray(recipeModel.capabilities));
+  if (capabilities.has('video-generation')) return 'video';
   if (capabilities.has('image-generation')) return 'image';
   if (capabilities.has('audio-speech') || capabilities.has('tts')) return 'audio_speech';
   if (capabilities.has('audio-transcription') || capabilities.has('stt')) return 'audio_transcription';
@@ -173,6 +174,7 @@ function recipeModelInput(recipeModel) {
 function recipeModelOutput(recipeModel) {
   if (Array.isArray(recipeModel.output)) return recipeModel.output;
   const capabilities = new Set(asArray(recipeModel.capabilities));
+  if (capabilities.has('video-generation')) return ['video'];
   if (capabilities.has('image-generation')) return ['image'];
   if (capabilities.has('audio-speech') || capabilities.has('tts')) return ['audio'];
   if (capabilities.has('audio-transcription') || capabilities.has('stt')) return ['text'];
@@ -593,6 +595,10 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
     if (!config.clientCatalog.modelOrder.includes(modelId)) {
       config.clientCatalog.modelOrder.push(modelId);
     }
+    if (recipeModel.role === 'default-video' && !config.defaults?.videoModel) {
+      config.defaults ??= {};
+      config.defaults.videoModel = modelId;
+    }
   }
 }
 
@@ -719,7 +725,7 @@ function restrictAdvertisedModelsToRecipe(config, recipe) {
     config.aliases[aliasId] = setAliasAdvertise(alias, selected);
   }
 
-  for (const key of ['chatModel', 'imageModel', 'embeddingModel', 'speechModel', 'transcriptionModel']) {
+  for (const key of ['chatModel', 'imageModel', 'videoModel', 'embeddingModel', 'speechModel', 'transcriptionModel']) {
     const modelId = config.defaults?.[key];
     if (modelId && !advertisedModelIds.has(modelId)) delete config.defaults[key];
   }

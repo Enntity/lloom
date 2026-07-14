@@ -11,7 +11,8 @@ import { cleanupPortListener, terminateProcessTree } from './process-control.mjs
 const execFileAsync = promisify(execFile);
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CHAT_TEMPLATE_OVERRIDES = new Map([
-  ['qwen3-xml-tool-reminder', path.join(packageRoot, 'assets', 'chat-templates', 'qwen3-xml-tool-reminder.jinja')]
+  ['qwen3-xml-tool-reminder', path.join(packageRoot, 'assets', 'chat-templates', 'qwen3-xml-tool-reminder.jinja')],
+  ['qwen-fixed-v21.3', path.join(packageRoot, 'assets', 'chat-templates', 'qwen-fixed-v21.3.jinja')]
 ]);
 const VLLM_CHAT_TEMPLATE_PATH = '/etc/lloom/chat-template.jinja';
 

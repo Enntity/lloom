@@ -16,7 +16,8 @@ function asArray(value) {
 
 function commandLine(step, variables = {}) {
   const args = asArray(step.args).map((arg) => expandTemplate(String(arg), variables));
-  return [step.command, ...args].filter(Boolean);
+  const command = step.command ? expandTemplate(String(step.command), variables) : step.command;
+  return [command, ...args].filter(Boolean);
 }
 
 function expandTemplate(value, variables) {

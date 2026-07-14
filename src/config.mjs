@@ -157,6 +157,7 @@ export async function loadConfig(
     defaults: {
       chatModel: undefined,
       imageModel: undefined,
+      videoModel: undefined,
       embeddingModel: undefined,
       speechModel: undefined,
       transcriptionModel: undefined,

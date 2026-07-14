@@ -416,6 +416,56 @@
       }
     },
     {
+      "id": "docker-ltx-video",
+      "name": "Docker LTX Video",
+      "kind": "video-server",
+      "description": "LLooM-managed LTX-2.3 audio/video generation runtime for NVIDIA CUDA hosts.",
+      "platforms": ["linux-x64", "linux-arm64"],
+      "features": ["video-generation", "text-to-video", "audio-video", "lora", "cuda", "blackwell", "dgx-spark", "docker"],
+      "commands": ["docker"],
+      "setup": [
+        {
+          "id": "check-docker",
+          "title": "Check Docker",
+          "action": "check-command",
+          "command": "docker",
+          "args": ["--version"]
+        },
+        {
+          "id": "create-huggingface-cli-environment",
+          "title": "Create the Hugging Face CLI environment",
+          "action": "python-venv",
+          "path": "${installRoot}/ltx-video/huggingface"
+        },
+        {
+          "id": "install-huggingface-cli",
+          "title": "Install the Hugging Face model download CLI",
+          "action": "pip-install",
+          "venv": "${installRoot}/ltx-video/huggingface",
+          "packages": ["huggingface-hub"]
+        },
+        {
+          "id": "link-huggingface-cli",
+          "title": "Expose the Hugging Face CLI through LLooM shims",
+          "action": "link-command",
+          "commandName": "hf",
+          "sourceCandidates": ["${installRoot}/ltx-video/huggingface/bin/hf"]
+        },
+        {
+          "id": "build-ltx-video-image",
+          "title": "Build the LLooM LTX-2.3 CUDA runtime image",
+          "action": "command",
+          "command": "docker",
+          "args": ["build", "-t", "lloom/ltx-video:2.3", "${repoRoot}/backends/ltx-video"]
+        }
+      ],
+      "server": {
+        "protocol": "openai-videos",
+        "healthPath": "/health",
+        "videoPath": "/v1/videos/generations"
+      }
+    },
+    {
       "id": "docker-vllm",
       "name": "Docker vLLM",
       "kind": "openai-compatible-server",

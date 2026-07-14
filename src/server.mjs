@@ -4,6 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { Agent as UndiciAgent } from 'undici';
 import {
   backendIds,
   defaultBackendVariables,
@@ -68,6 +69,10 @@ import { assertBindAllowed, authorizeRequest, corsHeaders, securityPublicStatus 
 const JSON_TYPE = 'application/json; charset=utf-8';
 const SSE_TYPE = 'text/event-stream; charset=utf-8';
 const execFileAsync = promisify(execFile);
+const longRunningMediaDispatcher = new UndiciAgent({
+  headersTimeout: 1800000,
+  bodyTimeout: 1800000
+});
 
 function createHostTelemetry({ sampleIntervalMs = 2000 } = {}) {
   let cached = null;
@@ -857,7 +862,7 @@ function finalizeMetricBucket(bucket) {
   };
 }
 
-async function fetchUpstream({ backend, path, body, headers = {}, signal }) {
+async function fetchUpstream({ backend, path, body, headers = {}, signal, dispatcher }) {
   const timeoutMs = backend.timeoutMs ?? 1800000;
   const fetchSignal = upstreamSignal(signal, timeoutMs);
   try {
@@ -865,7 +870,8 @@ async function fetchUpstream({ backend, path, body, headers = {}, signal }) {
       method: 'POST',
       headers: backendHeaders(backend, headers),
       body: JSON.stringify(body),
-      signal: fetchSignal
+      signal: fetchSignal,
+      dispatcher
     });
   } catch (error) {
     throw normalizeAbortError(error, fetchSignal, timeoutMs);
@@ -1652,6 +1658,50 @@ export function createLloomServer(
     );
   }
 
+  async function handleOpenAIVideos(req, res) {
+    const body = await readJson(req);
+    const modelId = body.model ?? config.defaults?.videoModel;
+    if (!modelId) {
+      sendJson(res, 400, errorBody('video request requires model', { code: 'missing_model' }));
+      return;
+    }
+    const resolved = registry.resolve(modelId);
+    if ((resolved.model.kind ?? 'chat') !== 'video') {
+      sendJson(
+        res,
+        400,
+        errorBody(`model ${resolved.requestedId} is not a video-generation model`, {
+          code: 'wrong_model_kind',
+          model: resolved.requestedId
+        })
+      );
+      return;
+    }
+    await recordModelRequest(
+      {
+        route: '/v1/videos/generations',
+        resolved,
+        stream: false,
+        req,
+        res
+      },
+      async ({ signal, timing }) => {
+        await ensureRuntime(resolved.model.runtime);
+        const upstream = await fetchUpstream({
+          backend: resolved.backend,
+          path: '/v1/videos/generations',
+          signal,
+          dispatcher: longRunningMediaDispatcher,
+          body: {
+            ...body,
+            model: resolved.model.upstreamModel
+          }
+        });
+        return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
+      }
+    );
+  }
+
   async function handleOpenAIEmbeddings(req, res) {
     const body = await readJson(req);
     const modelId = body.model ?? config.defaults?.embeddingModel;
@@ -2303,7 +2353,7 @@ export function createLloomServer(
         const manifest = buildClientIntegrationManifest(
           config,
           registry.clientModels({
-            kinds: ['chat', 'audio_speech', 'audio_transcription', 'image', 'embedding']
+            kinds: ['chat', 'audio_speech', 'audio_transcription', 'image', 'video', 'embedding']
           })
         );
         const validationErrors = validateClientIntegrationManifest(manifest);
@@ -2738,6 +2788,11 @@ export function createLloomServer(
 
       if (req.method === 'POST' && url.pathname === '/v1/images/generations') {
         await handleOpenAIImages(req, res);
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/v1/videos/generations') {
+        await handleOpenAIVideos(req, res);
         return;
       }
 

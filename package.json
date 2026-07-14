@@ -31,6 +31,7 @@
     "lloom-host": "bin/lloom-host.mjs"
   },
   "files": [
+    "assets/",
     "backends/",
     "benchmarks/community/",
     "bin/",
@@ -55,7 +56,7 @@
     "start": "node bin/lloom.mjs serve",
     "check": "npm run check:js && npm run check:python && npm run check:shell",
     "check:js": "node --check bin/lloom.mjs && node --check bin/lloom-host.mjs && node --check src/backend-catalog.mjs && node --check src/benchmarks.mjs && node --check src/bootstrap.mjs && node --check src/client-integrations.mjs && node --check src/community-client.mjs && node --check src/config.mjs && node --check src/dashboard.mjs && node --check src/doctor.mjs && node --check src/host-server.mjs && node --check src/init.mjs && node --check src/installer.mjs && node --check src/interchange.mjs && node --check src/machine-profile.mjs && node --check src/model-intake.mjs && node --check src/model-removal.mjs && node --check src/onboarding.mjs && node --check src/recipe-index.mjs && node --check src/recipe-pack-export.mjs && node --check src/recipe-pack.mjs && node --check src/registry.mjs && node --check src/recipes.mjs && node --check src/runtime-manager.mjs && node --check src/runtime-policy.mjs && node --check src/server.mjs && node --check src/setup.mjs && node --check src/setup-status.mjs && node --check src/process-control.mjs && node --check src/security.mjs && node --check src/tts-catalog.mjs && node --check src/voice-profiles.mjs && node --check src/protocol/text.mjs && node --check src/protocol/reasoning-normalize.mjs && node --check src/protocol/reasoning-effort.mjs && node --check src/protocol/responses.mjs && node --check src/protocol/anthropic.mjs && node --check src/protocol/sse.mjs && node --check src/protocol/stream-anthropic.mjs && node --check src/protocol/stream-responses.mjs && node --check src/protocol/index.mjs && node --check scripts/generate-client-configs.mjs && node --check scripts/check-interchange.mjs && node --check scripts/check-package.mjs && node --check test/reasoning-normalize.test.mjs && node --check test/reasoning-effort.test.mjs && node --check test/tts-catalog.test.mjs && node --check test/voice-profiles.test.mjs && node --check test/smoke.mjs",
-    "check:python": "python3 -m py_compile backends/mlx-audio/lloom_audio_server.py patches/apply_mtplx_longctx_fix.py",
+    "check:python": "python3 -m py_compile backends/mlx-audio/lloom_audio_server.py backends/ltx-video/lloom_ltx_video_server.py patches/apply_mtplx_longctx_fix.py",
     "check:shell": "bash -n backends/mlx-audio/install.sh clients/examples/lloom-claude clients/examples/lloom-codex clients/examples/lloom-hermes clients/examples/lloom-opencode clients/examples/lloom-zero",
     "generate:clients": "node scripts/generate-client-configs.mjs",
     "interchange:check": "node scripts/check-interchange.mjs",
@@ -75,5 +76,8 @@
     "@eslint/js": "^10.0.1",
     "eslint": "^10.6.0",
     "prettier": "^3.9.4"
+  },
+  "dependencies": {
+    "undici": "^7.28.0"
   }
 }

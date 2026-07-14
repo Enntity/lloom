@@ -48,7 +48,7 @@ Model entries should be specific enough for LLooM to create the local runtime wi
 - `gatewayModel`: the stable model ID LLooM advertises through `/v1/models` and client configs.
 - `runtime`: the stable local runtime ID to start, stop, warm, and report in `/gateway/status`.
 - `backendConfig`: optional stable backend config ID when the recipe should not use an auto-generated ID.
-- `input` and `output`: modalities such as `text`, `image`, `audio`, `embedding`, or `scores`.
+- `input` and `output`: modalities such as `text`, `image`, `video`, `audio`, `embedding`, or `scores`.
 - `capabilities`: the API contract the model supports, for example `responses`, `anthropic-messages`, `tools`, `reasoning`, `vision`, `mtp`, or `long-context`.
 - `settings`: runtime knobs consumed during config materialization, including `contextWindow`, `maxOutputTokens`, `maxActiveRequests`, `profile`, `draftDepth`, `reasoning`, `preserveThinking`, `batchingPreset`, `memoryGb`, `startupTimeoutMs`, `priority`, `evictable`, `keepWarm`, and session-cache fields.
 - `settings.runtime`: optional explicit launcher data for recipes that need backend-specific command lines or bootstrap-only managed containers. LLooM templates `command`, `args`, `env`, `bootstrap`, `healthPath` or `healthUrl`, `warmup`, and session-cache hints with variables such as `${modelRoot}`, `${modelPath}`, `${modelId}`, `${port}`, `${contextWindow}`, `${maxOutputTokens}`, `${maxActiveRequests}`, `${runtimeId}`, and `${sessionCacheDir}`. If it is absent, LLooM uses the built-in defaults for known backends.
