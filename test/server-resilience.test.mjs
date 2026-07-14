@@ -98,3 +98,21 @@ function close(server) {
 }
 
 console.log('server-resilience tests passed');
+
+// Gateway shutdown can leave managed runtimes alive for a fast service upgrade.
+{
+  let stopAllCalls = 0;
+  const runtimeManager = {
+    startKeepWarm: async () => {},
+    stopAll: async () => { stopAllCalls += 1; }
+  };
+  const config = {
+    server: { host: '127.0.0.1', port: 0 },
+    security: { allowMissingAuth: true, apiKeys: [] },
+    defaults: {}, backends: {}, models: [], runtimes: {}
+  };
+  const app = createLloomServer(config, { runtimeManager, logger: { error() {}, warn() {} } });
+  await app.listen();
+  await app.close({ stopRuntimes: false });
+  assert.equal(stopAllCalls, 0);
+}

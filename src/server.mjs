@@ -2951,13 +2951,15 @@ export function createLloomServer(
         });
       });
     },
-    async close() {
+    async close({ stopRuntimes = true } = {}) {
       if (configPath) unwatchFile(configPath, reloadConfig);
       let runtimeError = null;
-      try {
-        await runtimeManager.stopAll();
-      } catch (error) {
-        runtimeError = error;
+      if (stopRuntimes) {
+        try {
+          await runtimeManager.stopAll();
+        } catch (error) {
+          runtimeError = error;
+        }
       }
       await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
       if (runtimeError) throw runtimeError;

@@ -1246,7 +1246,9 @@ async function main() {
         if (shuttingDown) return;
         shuttingDown = true;
         try {
-          await app.close();
+          // Restarting the gateway must not tear down independently managed model
+          // containers. `lloom down` remains the explicit stop-all operation.
+          await app.close({ stopRuntimes: false });
           process.exitCode = 0;
         } catch (error) {
           console.error(`LLooM shutdown failed: ${error?.message ?? error}`);
