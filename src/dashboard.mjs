@@ -1111,23 +1111,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         node.vx += (node.targetX - node.x) * .004;
         node.vy += (node.targetY - node.y) * .004;
       }
-      // Targets are separated up front; this lightweight force only prevents
-      // cards from passing through each other while they animate to new seats.
-      for (let left = 0; left < nodes.length; left++) for (let right = left + 1; right < nodes.length; right++) {
-        const a = nodes[left], b = nodes[right];
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const xOverlap = 232 - Math.abs(dx), yOverlap = 80 - Math.abs(dy);
-        if (xOverlap <= 0 || yOverlap <= 0) continue;
-        if (xOverlap / 232 < yOverlap / 80) {
-          const direction = Math.sign(dx) || (left < right ? 1 : -1);
-          const force = .08 + xOverlap * .018;
-          a.vx -= direction * force; b.vx += direction * force;
-        } else {
-          const direction = Math.sign(dy) || (left < right ? 1 : -1);
-          const force = .08 + yOverlap * .018;
-          a.vy -= direction * force; b.vy += direction * force;
-        }
-      }
+      // Destination slots are already separated. Let cards pass through one
+      // another while reseating so a topology change cannot trap the rack in
+      // a locally ordered arrangement.
       const previousPositions = nodes.map(node => ({ x: node.x, y: node.y }));
       for (const node of nodes) {
         const halfWidth = 110, halfHeight = 34;
