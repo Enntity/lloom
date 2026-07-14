@@ -10,6 +10,8 @@ node_modules/
 .eslintcache
 .nyc_output/
 coverage/
+.cache/
+dist/
 __pycache__/
 *.pyc
 clients/generated/*
