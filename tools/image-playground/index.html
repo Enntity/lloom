@@ -3,173 +3,167 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>LLooM Image Playground</title>
+    <title>LLooM Media Playground</title>
     <style>
-      :root {
-        color-scheme: dark;
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      }
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        background: #07100f;
-        color: #d8fff5;
-        min-height: 100vh;
-      }
-      main {
-        width: min(1100px, 94vw);
-        margin: 32px auto;
-        display: grid;
-        gap: 22px;
-      }
-      h1 {
-        margin: 0;
-        color: #53f5cb;
-        font-size: clamp(24px, 4vw, 38px);
-      }
-      .sub {
-        color: #8bb8ad;
-        margin-top: 8px;
-      }
-      form {
-        display: grid;
-        gap: 12px;
-        padding: 18px;
-        border: 1px solid #1c685a;
-        background: #0b1917;
-        border-radius: 12px;
-      }
-      textarea {
-        width: 100%;
-        min-height: 125px;
-        resize: vertical;
-      }
-      textarea,
-      select,
-      button {
-        font: inherit;
-        color: inherit;
-        background: #07110f;
-        border: 1px solid #287767;
-        border-radius: 8px;
-        padding: 12px;
-      }
-      .row {
-        display: flex;
-        gap: 12px;
-        align-items: center;
-      }
-      select {
-        flex: 1;
-      }
-      button {
-        background: #22b994;
-        color: #02110d;
-        font-weight: 800;
-        cursor: pointer;
-        min-width: 150px;
-      }
-      button:disabled {
-        opacity: 0.45;
-        cursor: wait;
-      }
-      #status {
-        min-height: 22px;
-        color: #8bb8ad;
-      }
-      #status.error {
-        color: #ff8f9f;
-      }
-      .result {
-        display: none;
-        place-items: center;
-        min-height: 320px;
-        padding: 14px;
-        border: 1px solid #173c35;
-        border-radius: 12px;
-        background: #050a09;
-      }
-      .result.show {
-        display: grid;
-      }
-      img {
-        max-width: 100%;
-        max-height: 72vh;
-        border-radius: 8px;
-        box-shadow: 0 12px 44px #000b;
-      }
-      @media (max-width: 620px) {
-        .row {
-          align-items: stretch;
-          flex-direction: column;
-        }
-        button {
-          width: 100%;
-        }
-      }
+      :root { color-scheme: dark; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #07100f; color: #d8fff5; min-height: 100vh; }
+      main { width: min(1120px, 94vw); margin: 32px auto; display: grid; gap: 22px; }
+      h1 { margin: 0; color: #53f5cb; font-size: clamp(24px, 4vw, 38px); }
+      .sub, #model-detail { color: #8bb8ad; margin-top: 8px; }
+      form { display: grid; gap: 12px; padding: 18px; border: 1px solid #1c685a; background: #0b1917; border-radius: 12px; }
+      textarea { width: 100%; min-height: 145px; resize: vertical; line-height: 1.45; }
+      textarea, select, input, button { font: inherit; color: inherit; background: #07110f; border: 1px solid #287767; border-radius: 8px; padding: 12px; }
+      label { display: grid; gap: 6px; color: #9bc8bd; font-size: 13px; }
+      .row { display: flex; gap: 12px; align-items: end; }
+      .grow { flex: 1; }
+      button { background: #22b994; color: #02110d; font-weight: 800; cursor: pointer; min-width: 150px; }
+      button.secondary { background: #123a33; color: #8fffe1; }
+      button:disabled { opacity: 0.45; cursor: wait; }
+      #status { min-height: 22px; color: #8bb8ad; }
+      #status.error { color: #ff8f9f; }
+      .result { display: none; place-items: center; min-height: 320px; padding: 14px; border: 1px solid #173c35; border-radius: 12px; background: #050a09; }
+      .result.show { display: grid; }
+      img, video { max-width: 100%; max-height: 72vh; border-radius: 8px; box-shadow: 0 12px 44px #000b; }
+      .hidden { display: none !important; }
+      @media (max-width: 700px) { .row { align-items: stretch; flex-direction: column; } button { width: 100%; } }
     </style>
   </head>
   <body>
     <main>
       <header>
-        <h1>LLooM Image Playground</h1>
-        <div class="sub">CyberRealistic Pony v18 CoreShift · DGX Spark</div>
+        <h1>LLooM Media Playground</h1>
+        <div class="sub">Image + video generation · model-managed by LLooM on DGX Spark</div>
       </header>
       <form id="form">
-        <textarea id="prompt" required autofocus placeholder="Describe the image you want…"></textarea>
+        <label>Model<select id="model" required><option value="">Loading LLooM models…</option></select></label>
+        <div id="model-detail"></div>
+        <textarea id="prompt" required autofocus placeholder="Describe what you want to create…"></textarea>
         <div class="row">
-          <select id="size" aria-label="Image size">
-            <option value="832x1216">Portrait · 832×1216 (recommended)</option>
-            <option value="896x1152">Portrait · 896×1152</option>
-            <option value="768x1024">Portrait · 768×1024</option>
-            <option value="1024x768">Landscape · 1024×768</option>
-            <option value="1024x1024">Square · 1024×1024</option>
-            <option value="512x512">Fast square · 512×512</option>
-          </select>
+          <button id="enhance" class="secondary" type="button">✨ Enhance prompt</button>
+          <span class="grow"></span>
           <button id="submit" type="submit">Generate</button>
         </div>
-        <div id="status">Ready.</div>
+        <div class="row">
+          <label class="grow">Size<select id="size"></select></label>
+          <label id="duration-wrap" class="grow hidden">Duration<select id="frames">
+            <option value="49">2 seconds · 49 frames</option>
+            <option value="97" selected>4 seconds · 97 frames</option>
+            <option value="193">8 seconds · 193 frames</option>
+            <option value="241">10 seconds · 241 frames</option>
+          </select></label>
+          <label id="seed-wrap" class="grow hidden">Seed<input id="seed" type="number" value="42" step="1" /></label>
+        </div>
+        <div id="dev-quality-wrap" class="row hidden">
+          <label class="grow">Distill strength<input id="distill-strength" type="number" value="0.30" min="0.25" max="0.35" step="0.01" /></label>
+          <label class="grow">Inference steps<input id="inference-steps" type="number" value="30" min="20" max="50" step="1" /></label>
+          <label class="grow">Video CFG<input id="video-cfg" type="number" value="3.0" min="1" max="5" step="0.1" /></label>
+        </div>
+        <div id="status">Loading model catalog…</div>
       </form>
-      <section id="result" class="result"><img id="image" alt="Generated image" /></section>
+      <section id="result" class="result">
+        <img id="image" class="hidden" alt="Generated image" />
+        <video id="video" class="hidden" controls playsinline></video>
+      </section>
     </main>
     <script>
       const form = document.querySelector('#form');
+      const model = document.querySelector('#model');
+      const modelDetail = document.querySelector('#model-detail');
       const prompt = document.querySelector('#prompt');
       const size = document.querySelector('#size');
+      const frames = document.querySelector('#frames');
+      const seed = document.querySelector('#seed');
+      const durationWrap = document.querySelector('#duration-wrap');
+      const seedWrap = document.querySelector('#seed-wrap');
+      const devQualityWrap = document.querySelector('#dev-quality-wrap');
+      const distillStrength = document.querySelector('#distill-strength');
+      const inferenceSteps = document.querySelector('#inference-steps');
+      const videoCfg = document.querySelector('#video-cfg');
+      const enhance = document.querySelector('#enhance');
       const submit = document.querySelector('#submit');
       const status = document.querySelector('#status');
       const result = document.querySelector('#result');
       const image = document.querySelector('#image');
+      const video = document.querySelector('#video');
+      let models = [];
+      let mediaUrl;
 
-      form.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        submit.disabled = true;
-        status.className = '';
-        status.textContent = 'Generating on the Spark…';
+      const imageSizes = [
+        ['832x1216', 'Portrait · 832×1216 (recommended)'], ['896x1152', 'Portrait · 896×1152'],
+        ['768x1024', 'Portrait · 768×1024'], ['1024x768', 'Landscape · 1024×768'],
+        ['1024x1024', 'Square · 1024×1024'], ['512x512', 'Fast square · 512×512']
+      ];
+      const videoSizes = [
+        ['640x384', 'Landscape · 640×384 (recommended)'], ['512x320', 'Fast landscape · 512×320'],
+        ['768x512', 'Large landscape · 768×512']
+      ];
+
+      function selectedModel() { return models.find((item) => item.id === model.value); }
+      function setBusy(value) { submit.disabled = value; enhance.disabled = value; model.disabled = value; }
+      function setStatus(message, error = false) { status.className = error ? 'error' : ''; status.textContent = message; }
+      function refreshControls() {
+        const selected = selectedModel();
+        const isVideo = selected?.kind === 'video';
+        size.innerHTML = (isVideo ? videoSizes : imageSizes).map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
+        durationWrap.classList.toggle('hidden', !isVideo);
+        seedWrap.classList.toggle('hidden', !isVideo);
+        devQualityWrap.classList.toggle('hidden', !selected?.capabilities?.includes('two-stage'));
+        submit.textContent = isVideo ? 'Generate video' : 'Generate image';
+        modelDetail.textContent = selected ? `${selected.kind.toUpperCase()} · ${selected.name}` : '';
+      }
+
+      async function loadModels() {
+        try {
+          const response = await fetch('/models');
+          const data = await response.json();
+          if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);
+          models = data.data || [];
+          model.innerHTML = models.map((item) => `<option value="${item.id}">${item.kind === 'video' ? '🎬' : '🖼️'} ${item.name}</option>`).join('');
+          if (!models.length) throw new Error('LLooM reported no image or video models.');
+          refreshControls();
+          setStatus(`${models.length} LLooM media models ready.`);
+        } catch (error) { setStatus(error.message, true); }
+      }
+
+      model.addEventListener('change', refreshControls);
+      enhance.addEventListener('click', async () => {
+        if (!prompt.value.trim()) { setStatus('Enter a prompt before enhancing it.', true); return; }
+        setBusy(true); setStatus(`Enhancing for ${selectedModel()?.name || 'selected model'} with Qwen Froggeric…`);
         const started = performance.now();
         try {
-          const response = await fetch('/generate', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ prompt: prompt.value, size: size.value })
-          });
+          const response = await fetch('/enhance', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: model.value, prompt: prompt.value }) });
           const data = await response.json();
-          if (!response.ok || data.error)
-            throw new Error(data.error?.message || data.error || `HTTP ${response.status}`);
-          const item = data.data?.[0];
-          if (!item?.b64_json) throw new Error('LLooM returned no image.');
-          image.src = `data:image/png;base64,${item.b64_json}`;
-          result.classList.add('show');
-          status.textContent = `Done in ${((performance.now() - started) / 1000).toFixed(1)} seconds.`;
-        } catch (error) {
-          status.className = 'error';
-          status.textContent = error.message;
-        } finally {
-          submit.disabled = false;
-        }
+          if (!response.ok || data.error) throw new Error(data.error?.message || data.error || `HTTP ${response.status}`);
+          prompt.value = data.prompt;
+          setStatus(`Prompt enhanced in ${((performance.now() - started) / 1000).toFixed(1)} seconds.`);
+        } catch (error) { setStatus(error.message, true); } finally { setBusy(false); }
       });
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault(); setBusy(true); setStatus('Generating on the Spark…');
+        const started = performance.now();
+        try {
+          const response = await fetch('/generate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: model.value, prompt: prompt.value, size: size.value, num_frames: Number(frames.value), seed: Number(seed.value), distilled_lora_strength: Number(distillStrength.value), num_inference_steps: Number(inferenceSteps.value), video_cfg_guidance_scale: Number(videoCfg.value) }) });
+          const data = await response.json();
+          if (!response.ok || data.error) throw new Error(data.error?.message || data.error || `HTTP ${response.status}`);
+          const item = data.data?.[0];
+          if (!item?.b64_json) throw new Error('LLooM returned no media.');
+          if (mediaUrl) URL.revokeObjectURL(mediaUrl);
+          const isVideo = selectedModel()?.kind === 'video';
+          if (isVideo) {
+            const bytes = Uint8Array.from(atob(item.b64_json), (character) => character.charCodeAt(0));
+            mediaUrl = URL.createObjectURL(new Blob([bytes], { type: 'video/mp4' }));
+            video.src = mediaUrl; video.classList.remove('hidden'); image.classList.add('hidden');
+          } else {
+            image.src = `data:image/png;base64,${item.b64_json}`; image.classList.remove('hidden'); video.classList.add('hidden');
+          }
+          result.classList.add('show');
+          setStatus(`Done in ${((performance.now() - started) / 1000).toFixed(1)} seconds.`);
+        } catch (error) { setStatus(error.message, true); } finally { setBusy(false); }
+      });
+
+      loadModels();
     </script>
   </body>
 </html>

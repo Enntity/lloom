@@ -219,6 +219,145 @@
       }
     },
     {
+      "id": "llama-cpp-prism",
+      "name": "PrismML llama.cpp (ternary GGUF, native Metal)",
+      "kind": "openai-compatible-server",
+      "description": "PrismML llama.cpp fork with Q2_0_g128 ternary hybrid-attention kernels for Apple Silicon Metal (native process).",
+      "platforms": ["darwin-arm64"],
+      "features": ["chat", "streaming", "usage", "tools", "gguf", "long-context", "ternary", "vision", "metal"],
+      "commands": ["llama-server-prism"],
+      "setup": [
+        {
+          "id": "check-llama-server-prism",
+          "title": "Check PrismML llama-server",
+          "action": "check-command",
+          "command": "llama-server-prism",
+          "args": ["--version"]
+        },
+        {
+          "id": "check-cmake",
+          "title": "Check cmake",
+          "action": "check-command",
+          "command": "cmake",
+          "args": ["--version"]
+        },
+        {
+          "id": "clone-llama-cpp-prism",
+          "title": "Clone PrismML llama.cpp (prism branch)",
+          "action": "git-clone",
+          "description": "Clone the PrismML llama.cpp fork that ships Q2_0_g128 ternary and hybrid-attention kernels.",
+          "repo": "https://github.com/PrismML-Eng/llama.cpp.git",
+          "destination": "${installRoot}/llama.cpp-prism",
+          "ref": "prism",
+          "depth": 1
+        },
+        {
+          "id": "configure-llama-cpp-prism-metal",
+          "title": "Configure PrismML llama.cpp (Metal)",
+          "action": "cmake-configure",
+          "description": "Generate a Metal release build for Apple Silicon.",
+          "platforms": ["darwin-arm64"],
+          "source": "${installRoot}/llama.cpp-prism",
+          "build": "${installRoot}/llama.cpp-prism/build",
+          "skipIfExecutableExists": ["${installRoot}/llama.cpp-prism/build/bin/llama-server"],
+          "args": [
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DCMAKE_OSX_ARCHITECTURES=arm64",
+            "-DCMAKE_OSX_DEPLOYMENT_TARGET=14.0",
+            "-DGGML_METAL=ON",
+            "-DGGML_METAL_EMBED_LIBRARY=ON",
+            "-DBUILD_SHARED_LIBS=OFF",
+            "-DGGML_STATIC=ON",
+            "-DLLAMA_OPENSSL=OFF"
+          ]
+        },
+        {
+          "id": "build-llama-cpp-prism",
+          "title": "Build PrismML llama-server",
+          "action": "cmake-build",
+          "description": "Build llama-server from the PrismML fork.",
+          "build": "${installRoot}/llama.cpp-prism/build",
+          "skipIfExecutableExists": ["${installRoot}/llama.cpp-prism/build/bin/llama-server"],
+          "args": ["--config", "Release", "--parallel", "8"]
+        },
+        {
+          "id": "wrap-llama-server-prism",
+          "title": "Install llama-server-prism shim",
+          "action": "command",
+          "description": "Write a shim that execs the PrismML binary.",
+          "command": "bash",
+          "args": [
+            "-c",
+            "mkdir -p \"${shimDir}\" && BIN=\"${installRoot}/llama.cpp-prism/build/bin/llama-server\" && test -x \"$BIN\" && printf '%s\\n' '#!/bin/sh' \"BIN_DIR=\\\"${installRoot}/llama.cpp-prism/build/bin\\\"\" 'export DYLD_LIBRARY_PATH=\"$BIN_DIR${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}\"' 'exec \"$BIN_DIR/llama-server\" \"$@\"' > \"${shimDir}/llama-server-prism\" && chmod +x \"${shimDir}/llama-server-prism\""
+          ],
+          "skipIfExecutableExists": ["${shimDir}/llama-server-prism"]
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health",
+        "chatPath": "/v1/chat/completions"
+      }
+    },
+    {
+      "id": "llama-cpp-prism-docker",
+      "name": "PrismML llama.cpp (ternary GGUF, Docker CUDA)",
+      "kind": "openai-compatible-server",
+      "description": "LLooM-managed Docker image of PrismML llama.cpp with CUDA ternary kernels and DSpark support for DGX Spark / GB10.",
+      "platforms": ["linux-arm64", "linux-x64"],
+      "features": ["chat", "streaming", "usage", "tools", "gguf", "long-context", "ternary", "speculative-decoding", "vision", "cuda", "docker", "dgx-spark"],
+      "commands": ["docker"],
+      "setup": [
+        {
+          "id": "check-docker",
+          "title": "Check Docker",
+          "action": "check-command",
+          "command": "docker",
+          "args": ["--version"]
+        },
+        {
+          "id": "create-huggingface-cli-environment",
+          "title": "Create the Hugging Face CLI environment",
+          "action": "python-venv",
+          "path": "${installRoot}/llama-cpp-prism/huggingface"
+        },
+        {
+          "id": "install-huggingface-cli",
+          "title": "Install the Hugging Face model download CLI",
+          "action": "pip-install",
+          "venv": "${installRoot}/llama-cpp-prism/huggingface",
+          "packages": ["huggingface-hub"]
+        },
+        {
+          "id": "link-huggingface-cli",
+          "title": "Expose the Hugging Face CLI through LLooM shims",
+          "action": "link-command",
+          "commandName": "hf",
+          "sourceCandidates": ["${installRoot}/llama-cpp-prism/huggingface/bin/hf"]
+        },
+        {
+          "id": "build-llama-cpp-prism-cuda-image",
+          "title": "Build PrismML llama.cpp CUDA Docker image",
+          "action": "command",
+          "description": "Build lloom/llama-cpp-prism:cuda from backends/llama-cpp-prism/Dockerfile.cuda (includes sm_121 for GB10).",
+          "command": "docker",
+          "args": [
+            "build",
+            "-f",
+            "${repoRoot}/backends/llama-cpp-prism/Dockerfile.cuda",
+            "-t",
+            "lloom/llama-cpp-prism:cuda",
+            "${repoRoot}/backends/llama-cpp-prism"
+          ]
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health",
+        "chatPath": "/v1/chat/completions"
+      }
+    },
+    {
       "id": "ollama",
       "name": "Ollama",
       "kind": "openai-compatible-server",

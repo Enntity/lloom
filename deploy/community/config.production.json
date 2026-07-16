@@ -1,0 +1,19 @@
+{
+  "communityHost": {
+    "mode": "production",
+    "siteName": "LLooM Community",
+    "indexPath": "community/recipes/index.json",
+    "recipesRoot": "community/recipes",
+    "benchmarksRoot": "community/benchmarks",
+    "backendCatalogPath": "backends/catalog.json",
+    "publisher": "lloom-community",
+    "keyId": "lloom-community-2026",
+    "privateKeyPath": "/run/secrets/lloom_signing_private_key",
+    "publicKeyPath": "/run/secrets/lloom_signing_public_key",
+    "corsOrigins": ["https://${COMMUNITY_DOMAIN}"],
+    "maxRequestBytes": 1048576,
+    "rateLimitPerMinute": 120,
+    "trustProxy": true,
+    "contributionUrl": "https://github.com/Enntity/lloom/issues/new/choose"
+  }
+}

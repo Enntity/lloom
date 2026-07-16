@@ -36,7 +36,7 @@
     "hostUrl": "http://127.0.0.1:8110",
     "recipeFeedPath": "/v1/recipe-packs/recommended",
     "signingKeysPath": "/v1/keys",
-    "trustHostKeys": true,
+    "trustHostKeys": false,
     "leaderboardPath": "/v1/leaderboard",
     "submissionPath": "/v1/benchmarks",
     "recipePackSubmissionPath": "/v1/recipe-packs",
@@ -55,6 +55,7 @@
     "trustedKeys": []
   },
   "communityHost": {
+    "mode": "development",
     "indexPath": "community/recipes/index.json",
     "recipesRoot": "community/recipes",
     "benchmarksRoot": "community/benchmarks",

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "id": "linux-nvidia-gb10-ternary-bonsai-27b",
+  "name": "DGX Spark Ternary Bonsai 27B (native host CUDA — archived)",
+  "version": 1,
+  "summary": "Archived host-native PrismML llama.cpp path. Superseded by Docker-managed runtime (v2).",
+  "requirements": { "platforms": ["linux-arm64"] },
+  "backend": { "id": "llama-cpp-prism-docker" },
+  "setup": { "steps": [] },
+  "models": []
+}

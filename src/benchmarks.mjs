@@ -358,7 +358,10 @@ export function summarizeBenchmarksForRecipe(recipe, results) {
   );
   return asArray(recipe.models).map((model) => {
     const matching = recipeResults
-      .filter((result) => result.model === model.model || result.gatewayModel === model.gatewayModel)
+      .filter((result) => {
+        if (result.gatewayModel && model.gatewayModel) return result.gatewayModel === model.gatewayModel;
+        return result.model === model.model;
+      })
       .sort((a, b) => benchmarkScore(b) - benchmarkScore(a));
     const best = matching[0] ?? null;
     return {

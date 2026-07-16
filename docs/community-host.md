@@ -39,6 +39,19 @@ The interchange registry should conform to `https://lloom.dev/schemas/interchang
 
 For public publication, the host should reject hard validation errors and either reject or explicitly quarantine documents with `conformanceWarnings`. Local LLooM keeps those warnings non-fatal so developers can test draft packs, but community feeds should be stricter.
 
+## Production MVP
+
+The production MVP is a public, read-only catalog with a small browseable site at
+`/`. It serves signed packs and benchmark evidence but does **not** accept public
+HTTP contributions. Recipe and benchmark proposals enter through a GitHub pull
+request, are reviewed and reproduced in isolation, then are signed into a new
+release. See [`../deploy/community/README.md`](../deploy/community/README.md) for
+the isolated Hetzner deployment and key-pinning requirements.
+
+Remote clients must use HTTPS and a locally pinned trusted signing key. Keys
+fetched from the host itself are useful for development diagnostics only; they are
+not a production trust root.
+
 ## Static Development Host
 
 The repository includes a small `lloom-host` binary that serves the minimal API from local JSON files. It is useful for local development, demos, and validating the local gateway's community import path before a database-backed hosted service exists. In this checkout it serves seed community data from `community/` by default. Source checkouts can sign generated recipe packs with a local dev key under `community/keys/`; installed packages do not include private keys, so the static host generates a process-local ephemeral Ed25519 key for signed demo packs when no configured private key is present. `recipes/` remains the local import cache used by offline setup and by guarded imports.
@@ -63,7 +76,7 @@ Add `--key-id`, `--private-key`, and optional `--public-key` to override the con
 
 Local LLooM consumes `GET /v1/keys` automatically during community onboarding and imports. When `trustHostKeys` is enabled, keys from that feed are passed as trusted keys while validating the recommended recipe pack, so `signature.trusted` should be true for packs signed by the host's active key. Set `--no-trust-host-keys` or `trustHostKeys: false` to inspect a feed without treating host-published keys as trusted roots.
 
-The static host validates recipe-pack submissions at `POST /v1/recipe-packs` and benchmark submissions at `POST /v1/benchmarks`. Without `--submissions-root`, it returns an accepted validation receipt and discards the body. With `--submissions-root`, it persists accepted benchmark suites as JSON files and accepted recipe packs under `recipe-packs/` for review. A production `lloom-host` should replace those paths with durable storage, moderation, deduplication, publisher attribution, signing workflow, and eventual leaderboard or recommendation-feed publication.
+The static development host can validate recipe-pack submissions at `POST /v1/recipe-packs` and benchmark submissions at `POST /v1/benchmarks` only when `communityHost.submissionsEnabled` is explicitly true. It should never be exposed publicly in that mode. Production always disables those endpoints and uses reviewed GitHub pull requests instead.
 
 It also serves the interchange registry:
 

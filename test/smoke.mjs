@@ -183,7 +183,7 @@ const config = await loadConfig();
 assert.equal(config.community.hostUrl, 'http://127.0.0.1:8110');
 assert.equal(config.community.recipeFeedPath, '/v1/recipe-packs/recommended');
 assert.equal(config.community.signingKeysPath, '/v1/keys');
-assert.equal(config.community.trustHostKeys, true);
+assert.equal(config.community.trustHostKeys, false);
 assert.equal(config.community.submissionPath, '/v1/benchmarks');
 assert.equal(config.community.recipePackSubmissionPath, '/v1/recipe-packs');
 assert.equal(config.community.requireSignedPacks, true);
@@ -794,15 +794,18 @@ assert.deepEqual(
   [
     'apple-silicon-qwen36-35b-a3b-optiq',
     'apple-silicon-qwen36',
+    'apple-silicon-ternary-bonsai-27b',
     'high-memory-local-image-generation',
+    'linux-nvidia-gb10-ltx23-dr34ml4y-dev',
     'linux-nvidia-gb10-ltx23-dr34ml4y',
     'linux-nvidia-gb10-qwen36-unsloth-vllm',
+    'linux-nvidia-gb10-ternary-bonsai-27b',
     'linux-nvidia-gb10-thinkingcap-qwen36-27b-vllm',
     'linux-nvidia-qwen3-embedding-4b-vllm'
   ]
 );
 const benchmarkEvidence = await loadBenchmarkEvidence();
-assert.equal(benchmarkEvidence.length, 11);
+assert.equal(benchmarkEvidence.length, 17);
 assert.deepEqual(validateBenchmarkEvidence(benchmarkEvidence), []);
 const benchmarkSuite = JSON.parse(
   await fs.readFile(path.join(process.cwd(), 'benchmarks', 'community', 'apple-silicon-qwen36-m2max.json'), 'utf8')
@@ -821,6 +824,39 @@ assert.equal(
 );
 const benchmarkSummary = summarizeBenchmarksForRecipe(recipe, benchmarkEvidence);
 assert.equal(benchmarkSummary.length, 2);
+const sharedUpstreamSummary = summarizeBenchmarksForRecipe(
+  {
+    id: 'shared-upstream-recipe',
+    version: 1,
+    models: [
+      { role: 'plain', model: 'publisher/shared-model', gatewayModel: 'publisher/shared-model-plain' },
+      { role: 'speculative', model: 'publisher/shared-model', gatewayModel: 'publisher/shared-model-speculative' }
+    ]
+  },
+  [
+    {
+      id: 'plain-result',
+      recipeId: 'shared-upstream-recipe',
+      recipeVersion: 1,
+      model: 'publisher/shared-model',
+      gatewayModel: 'publisher/shared-model-plain',
+      metrics: { generationTokPerSec: 20 }
+    },
+    {
+      id: 'speculative-result',
+      recipeId: 'shared-upstream-recipe',
+      recipeVersion: 1,
+      model: 'publisher/shared-model',
+      gatewayModel: 'publisher/shared-model-speculative',
+      metrics: { generationTokPerSec: 10 }
+    }
+  ]
+);
+assert.equal(sharedUpstreamSummary.find((summary) => summary.role === 'plain')?.best?.id, 'plain-result');
+assert.equal(
+  sharedUpstreamSummary.find((summary) => summary.role === 'speculative')?.best?.id,
+  'speculative-result'
+);
 assert.equal(
   benchmarkSummary.find((summary) => summary.role === 'fastest-27b')?.best?.metrics.generationTokPerSec,
   25.47
@@ -904,13 +940,13 @@ const recipeIndexReport = await buildRecipeIndexReport(config, {
 });
 assert.equal(recipeIndexReport.ok, true);
 assert.equal(recipeIndexReport.index.id, 'lloom-community-recipes');
-assert.equal(recipeIndexReport.recipes.length, 7);
+assert.equal(recipeIndexReport.recipes.length, 10);
 const indexedSparkRecipe = recipeIndexReport.recipes.find(
   (candidate) => candidate.id === 'linux-nvidia-gb10-qwen36-unsloth-vllm'
 );
 assert.equal(indexedSparkRecipe.currentVersion, 2);
 assert.equal(indexedSparkRecipe.versions.length, 2);
-assert.equal(indexedSparkRecipe.models.find((model) => model.role === 'dense-quality')?.benchmark.count, 3);
+assert.equal(indexedSparkRecipe.models.find((model) => model.role === 'dense-quality')?.benchmark.count, 4);
 assert.equal(
   indexedSparkRecipe.models.find((model) => model.role === 'dense-quality')?.benchmark.best.recipeVersion,
   2
@@ -938,7 +974,7 @@ const libraryCli = await runCommand(process.execPath, [
 ]);
 const libraryJson = JSON.parse(libraryCli.stdout);
 assert.equal(libraryJson.index.id, 'lloom-community-recipes');
-assert.equal(libraryJson.recipes[0].id, 'linux-nvidia-gb10-ltx23-dr34ml4y');
+assert.equal(libraryJson.recipes[0].id, 'apple-silicon-ternary-bonsai-27b');
 if (process.platform === 'darwin' && process.arch === 'arm64') {
   assert.equal(libraryJson.selected.recipeId, 'apple-silicon-qwen36-35b-a3b-optiq');
 } else {
@@ -4346,7 +4382,11 @@ if (listened) {
     assert((await onboardingRefusedResponse.text()).includes('Refusing to onboard'));
 
     const hostSubmissionsRoot = path.join(tempDir, 'real-host-benchmark-submissions');
-    const realHost = createLloomHostServer(config, {
+    const localSubmissionHostConfig = {
+      ...config,
+      communityHost: { ...config.communityHost, submissionsEnabled: true }
+    };
+    const realHost = createLloomHostServer(localSubmissionHostConfig, {
       port: 0,
       submissionsRoot: hostSubmissionsRoot
     });
@@ -4964,6 +5004,7 @@ if (listened) {
         const realHostCommunityPlan = await createCommunityPlan(config, {
           hostUrl: realHostUrl,
           requireSignature: true,
+          trustHostKeys: true,
           profile: {
             platformId: 'darwin-arm64',
             platform: 'darwin',
@@ -5040,6 +5081,7 @@ if (listened) {
         const ephemeralCommunityPlan = await createCommunityPlan(config, {
           hostUrl: ephemeralKeyHostUrl,
           requireSignature: true,
+          trustHostKeys: true,
           profile: {
             platformId: 'darwin-arm64',
             platform: 'darwin',
@@ -5105,7 +5147,7 @@ if (listened) {
       try {
         assert.equal(autoHostPlan.ok, true);
         assert(autoHostPlan.host.autoStarted.pid);
-        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, 13);
+        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, 14);
         assert.equal(autoHostPlan.plans[0].recommendation.id, 'apple-silicon-qwen36-35b-a3b-mtplx-pack');
         assert.equal(autoHostPlan.plans[0].plan.roots.recipesRoot, autoHostRecipesRoot);
         assert.equal(autoHostPlan.plans[0].plan.roots.benchmarksRoot, autoHostBenchmarksRoot);

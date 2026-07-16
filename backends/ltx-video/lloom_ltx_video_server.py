@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Small OpenAI-shaped HTTP wrapper around the official LTX-2.3 distilled CLI."""
+"""Small OpenAI-shaped HTTP wrapper around official LTX-2.3 pipelines."""
 
 import base64
 import json
@@ -12,11 +12,18 @@ from pathlib import Path
 
 
 MODEL_ID = os.environ.get("LTX_MODEL_ID", "Lightricks/LTX-2.3-DR34ML4Y")
+PIPELINE = os.environ.get("LTX_PIPELINE", "distilled")
 CHECKPOINT = os.environ.get("LTX_CHECKPOINT", "/models/ltx-2.3-22b-distilled-1.1.safetensors")
 UPSCALER = os.environ.get("LTX_UPSCALER", "/models/ltx-2.3-spatial-upscaler-x2-1.1.safetensors")
 GEMMA_ROOT = os.environ.get("LTX_GEMMA_ROOT", "/models/gemma-3-12b")
 LORA = os.environ.get("LTX_LORA", "/models/DR34ML4Y_LT3X_V3.safetensors")
+DISTILLED_LORA = os.environ.get(
+    "LTX_DISTILLED_LORA", "/models/ltx-2.3-22b-distilled-lora-384-1.1.safetensors"
+)
 DEFAULT_LORA_STRENGTH = float(os.environ.get("LTX_LORA_STRENGTH", "0.7"))
+DEFAULT_DISTILLED_LORA_STRENGTH = float(os.environ.get("LTX_DISTILLED_LORA_STRENGTH", "0.3"))
+DEFAULT_INFERENCE_STEPS = int(os.environ.get("LTX_NUM_INFERENCE_STEPS", "30"))
+DEFAULT_VIDEO_CFG = float(os.environ.get("LTX_VIDEO_CFG_GUIDANCE_SCALE", "3.0"))
 DEFAULT_QUANTIZATION = os.environ.get("LTX_QUANTIZATION", "fp8-cast")
 DEFAULT_OFFLOAD = os.environ.get("LTX_OFFLOAD", "none")
 MAX_BODY_BYTES = 2 * 1024 * 1024
@@ -105,9 +112,7 @@ class Handler(BaseHTTPRequestHandler):
         started = time.time()
         with tempfile.TemporaryDirectory(prefix="lloom-ltx-") as temp_dir:
             output = Path(temp_dir) / "output.mp4"
-            command = [
-                "python3", "-m", "ltx_pipelines.distilled",
-                "--distilled-checkpoint-path", CHECKPOINT,
+            common = [
                 "--spatial-upsampler-path", UPSCALER,
                 "--gemma-root", GEMMA_ROOT,
                 "--lora", LORA, str(lora_strength),
@@ -119,6 +124,32 @@ class Handler(BaseHTTPRequestHandler):
                 "--frame-rate", str(frame_rate),
                 "--seed", str(seed),
             ]
+            if PIPELINE == "two-stage":
+                distilled_lora_strength = float(
+                    body.get("distilled_lora_strength", DEFAULT_DISTILLED_LORA_STRENGTH)
+                )
+                if not 0 <= distilled_lora_strength <= 1:
+                    self.write_long_response(error("distilled_lora_strength must be between 0 and 1"))
+                    return
+                inference_steps = int(body.get("num_inference_steps", DEFAULT_INFERENCE_STEPS))
+                video_cfg = float(body.get("video_cfg_guidance_scale", DEFAULT_VIDEO_CFG))
+                command = [
+                    "python3", "-m", "ltx_pipelines.ti2vid_two_stages",
+                    "--checkpoint-path", CHECKPOINT,
+                    "--distilled-lora", DISTILLED_LORA, str(distilled_lora_strength),
+                    "--num-inference-steps", str(inference_steps),
+                    "--video-cfg-guidance-scale", str(video_cfg),
+                    *common,
+                ]
+            else:
+                distilled_lora_strength = None
+                inference_steps = None
+                video_cfg = None
+                command = [
+                    "python3", "-m", "ltx_pipelines.distilled",
+                    "--distilled-checkpoint-path", CHECKPOINT,
+                    *common,
+                ]
             quantization = str(body.get("quantization", DEFAULT_QUANTIZATION)).strip()
             offload = str(body.get("offload", DEFAULT_OFFLOAD)).strip()
             if quantization and quantization != "none":
@@ -160,6 +191,10 @@ class Handler(BaseHTTPRequestHandler):
                     "seed": seed,
                     "lora": Path(LORA).name,
                     "lora_strength": lora_strength,
+                    "pipeline": PIPELINE,
+                    "distilled_lora_strength": distilled_lora_strength,
+                    "num_inference_steps": inference_steps,
+                    "video_cfg_guidance_scale": video_cfg,
                     "generation_seconds": round(time.time() - started, 3),
                 },
             })

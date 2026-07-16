@@ -11,7 +11,7 @@ The hosted LLooM service is a separate product surface. It owns the recipe datab
 
 > **Project status:** LLooM is pre-1.0 and under active development. The GitHub repository is currently the canonical distribution; the `lloom` npm package has not been published yet.
 
-The production community host is not live yet. URLs under the reserved `community.example` domain are placeholders for operators deploying their own host; source checkouts use the bundled loopback development host.
+The planned public community host is `https://lloom.enntity.com`; source checkouts use the bundled loopback development host. The `community.example` URLs elsewhere in this README remain generic examples for self-hosted operators.
 
 ## First-Class Platforms
 
@@ -374,7 +374,9 @@ lloom-host serve --port 8110
 lloom community --host http://127.0.0.1:8110 --no-require-signature
 ```
 
-The development host exposes `GET /v1/interchange`, `GET /.well-known/lloom-interchange`, `GET /v1/backends`, `GET /v1/recipes`, `GET /v1/leaderboard`, `GET/POST /v1/recipe-packs/recommended`, `GET /v1/recipe-packs/:id`, `GET /v1/keys`, validating `POST /v1/recipe-packs`, and validating `POST /v1/benchmarks`. The interchange registry uses `application/vnd.lloom.interchange-registry+json;version=1`; recommendation requests use `application/vnd.lloom.recommendation-request+json;version=1`; recommendation responses use `application/vnd.lloom.recommendation-response+json;version=1`; recipe packs use `application/vnd.lloom.recipe-pack+json;version=1`; recipe-pack submission receipts use `application/vnd.lloom.recipe-pack-submission-response+json;version=1`; benchmark submission receipts use `application/vnd.lloom.benchmark-submission-response+json;version=1`; validator output uses `application/vnd.lloom.validation-report+json;version=1`; non-2xx public errors use `application/vnd.lloom.error-response+json;version=1`. Pass `--submissions-root path` to the static host to persist accepted recipe packs and benchmark suites for review. The host is intentionally separate from the local gateway and never proxies model traffic.
+The development host exposes `GET /v1/interchange`, `GET /.well-known/lloom-interchange`, `GET /v1/backends`, `GET /v1/recipes`, `GET /v1/leaderboard`, `GET/POST /v1/recipe-packs/recommended`, `GET /v1/recipe-packs/:id`, and `GET /v1/keys`. Public production deployments intentionally return `405` for recipe-pack and benchmark submission endpoints: initial contributions are reviewed through GitHub pull requests, never anonymous HTTP writes. The interchange registry uses `application/vnd.lloom.interchange-registry+json;version=1`; recommendation requests use `application/vnd.lloom.recommendation-request+json;version=1`; recommendation responses use `application/vnd.lloom.recommendation-response+json;version=1`; recipe packs use `application/vnd.lloom.recipe-pack+json;version=1`; validator output uses `application/vnd.lloom.validation-report+json;version=1`; non-2xx public errors use `application/vnd.lloom.error-response+json;version=1`. The host is intentionally separate from the local gateway and never proxies model traffic.
+
+The production MVP and its dedicated-VM deployment instructions are in [`deploy/community/`](deploy/community/). Production requires an explicit persistent signing key, accepts no public submissions, rejects remote HTTP, and requires LLooM clients to pin a local trusted public key rather than trust keys supplied by the same remote host.
 
 ## Model IDs
 

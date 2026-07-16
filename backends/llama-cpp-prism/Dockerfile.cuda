@@ -1,0 +1,49 @@
+# PrismML llama.cpp (ternary Q2_0_g128 + hybrid attention + DSpark) for NVIDIA CUDA.
+# Targets DGX Spark / GB10 (sm_121). Override arches with --build-arg if needed.
+# Build: docker build -f Dockerfile.cuda -t lloom/llama-cpp-prism:cuda .
+
+FROM nvidia/cuda:13.0.0-devel-ubuntu24.04 AS build
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential cmake git ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# prism branch ships the ternary / hybrid-attention kernels
+RUN git clone --depth 1 --branch prism https://github.com/PrismML-Eng/llama.cpp.git /src
+WORKDIR /src
+
+# Default to GB10 (sm_121) only for fast Spark builds.
+#   --build-arg CUDA_ARCHITECTURES=80\;86\;89\;90\;100\;120a\;121
+ARG CUDA_ARCHITECTURES=121
+
+# Docker devel images ship libcuda as a stub under lib64/stubs. Without putting
+# that on the link path, llama-server fails with undefined cuMemMap / cuMemRelease.
+ENV LIBRARY_PATH=/usr/local/cuda/lib64/stubs:${LIBRARY_PATH}
+RUN ln -sf /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1 \
+ && echo "/usr/local/cuda/lib64/stubs" > /etc/ld.so.conf.d/cuda-stubs.conf \
+ && ldconfig
+
+RUN cmake -B build \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DGGML_CUDA=ON \
+      -DCMAKE_CUDA_ARCHITECTURES="${CUDA_ARCHITECTURES}" \
+      -DBUILD_SHARED_LIBS=ON \
+      -DCMAKE_EXE_LINKER_FLAGS="-L/usr/local/cuda/lib64/stubs -Wl,-rpath-link,/usr/local/cuda/lib64/stubs" \
+      -DCMAKE_SHARED_LINKER_FLAGS="-L/usr/local/cuda/lib64/stubs -Wl,-rpath-link,/usr/local/cuda/lib64/stubs" \
+    && cmake --build build --config Release --parallel "$(nproc)" --target llama-server
+
+FROM nvidia/cuda:13.0.0-runtime-ubuntu24.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libgomp1 ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /src/build/bin/llama-server /usr/local/bin/llama-server
+COPY --from=build /src/build/bin/lib*.so* /usr/local/lib/
+RUN ldconfig
+
+ENV LD_LIBRARY_PATH=/usr/local/lib:${LD_LIBRARY_PATH}
+EXPOSE 8000
+ENTRYPOINT ["llama-server"]
+CMD ["--host", "0.0.0.0", "--port", "8000"]

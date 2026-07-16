@@ -1,0 +1,331 @@
+{
+  "$schema": "https://lloom.dev/schemas/benchmark-suite.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "dgx-spark-27b-gateway-c1-20260715",
+  "name": "DGX Spark 27B LLooM Gateway Single-Stream Comparison",
+  "summary": "Gateway-only comparison of Ternary Bonsai 27B plain and DSpark lanes against Unsloth and ThinkingCap Qwen3.6 27B NVFP4, plus a longer Bonsai code/reasoning slice.",
+  "license": { "id": "CC0-1.0", "name": "CC0 1.0" },
+  "source": { "type": "local-measurement", "name": "LLooM gateway benchmark on ennspark01" },
+  "submittedAt": "2026-07-15T18:08:16.267Z",
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "LLooM OpenAI-compatible gateway benchmark harness",
+    "source": "reproducible local measurement"
+  },
+  "methodology": {
+    "harness": "custom LLooM gateway streaming harness",
+    "harnessVersion": "1",
+    "promptCorpus": "three deterministic generated common-token prompts; 2055 input tokens and 128 forced output tokens per request",
+    "warmupRuns": 1,
+    "measurementRuns": 3,
+    "streaming": true,
+    "temperature": 0,
+    "minP": 0,
+    "ignoreEos": true,
+    "concurrency": 1,
+    "runtimeControl": "model requests only; LLooM performed all admission and eviction"
+  },
+  "results": [
+    {
+      "id": "dgx-spark-bonsai-27b-plain-gateway-p2055-o128-c1",
+      "recipeId": "linux-nvidia-gb10-ternary-bonsai-27b",
+      "recipeVersion": 3,
+      "backendId": "llama-cpp-prism-docker",
+      "model": "prism-ml/Ternary-Bonsai-27B-gguf",
+      "gatewayModel": "prism-ml/Ternary-Bonsai-27B-Q2_0",
+      "machine": {
+        "platformId": "linux-arm64",
+        "chip": "NVIDIA DGX Spark / GB10",
+        "memoryGb": 128,
+        "accelerators": ["cuda", "nvidia-gpu", "blackwell"]
+      },
+      "settings": {
+        "runtimeVersion": "PrismML llama.cpp 62061f9",
+        "liveInstalledRecipeVersion": 2,
+        "effectiveRecipeVersion": 3,
+        "image": "lloom/llama-cpp-prism:cuda",
+        "quantization": "ternary Q2_0_g128",
+        "contextWindowPerSlot": 65536,
+        "serverContextTokens": 131072,
+        "parallelSlots": 2,
+        "flashAttention": true,
+        "requestMinP": 0
+      },
+      "workload": {
+        "type": "interactive-generation",
+        "category": "matched-deterministic",
+        "concurrency": 1,
+        "promptTokens": 2055,
+        "outputTokens": 128
+      },
+      "metrics": {
+        "generationTokPerSec": 17.060965080944623,
+        "outputThroughputTokPerSec": 17.060965080944623,
+        "timeToFirstTokenMs": 2900.497733,
+        "contextWindow": 65536,
+        "x-postFirstTokenTokPerSec": 27.70002102351525,
+        "x-backendGenerationTokPerSec": 27.691751860269154,
+        "x-backendPrefillTokPerSec": 871.6783434802913,
+        "x-minimumHostMemoryAvailableGb": 8.079532623291016
+      },
+      "x-runs": {
+        "outputThroughputTokPerSec": [17.14332491148791, 17.060965080944623, 16.221930195203832],
+        "timeToFirstTokenMs": [2845.527812, 2900.497733, 3186.785881],
+        "backendGenerationTokPerSec": [27.691751860269154, 27.81065808707865, 27.19803120251633]
+      }
+    },
+    {
+      "id": "dgx-spark-bonsai-27b-dspark-gateway-p2055-o128-c1",
+      "recipeId": "linux-nvidia-gb10-ternary-bonsai-27b",
+      "recipeVersion": 3,
+      "backendId": "llama-cpp-prism-docker",
+      "model": "prism-ml/Ternary-Bonsai-27B-gguf",
+      "gatewayModel": "prism-ml/Ternary-Bonsai-27B-Q2_0-dspark",
+      "machine": {
+        "platformId": "linux-arm64",
+        "chip": "NVIDIA DGX Spark / GB10",
+        "memoryGb": 128,
+        "accelerators": ["cuda", "nvidia-gpu", "blackwell"]
+      },
+      "settings": {
+        "runtimeVersion": "PrismML llama.cpp 62061f9",
+        "liveInstalledRecipeVersion": 2,
+        "effectiveRecipeVersion": 3,
+        "image": "lloom/llama-cpp-prism:cuda",
+        "quantization": "ternary Q2_0_g128",
+        "draftQuantization": "DSpark Q4_1",
+        "contextWindow": 16384,
+        "parallelSlots": 1,
+        "flashAttention": true,
+        "speculative": { "method": "draft-dspark", "numSpeculativeTokens": 4 },
+        "requestMinP": 0
+      },
+      "workload": {
+        "type": "interactive-generation",
+        "category": "matched-deterministic",
+        "concurrency": 1,
+        "promptTokens": 2055,
+        "outputTokens": 128
+      },
+      "metrics": {
+        "generationTokPerSec": 9.357852500644277,
+        "outputThroughputTokPerSec": 9.357852500644277,
+        "timeToFirstTokenMs": 5776.358889000003,
+        "contextWindow": 16384,
+        "x-postFirstTokenTokPerSec": 16.198445001393313,
+        "x-backendGenerationTokPerSec": 16.196627052416336,
+        "x-backendPrefillTokPerSec": 437.05066725195303,
+        "x-draftAcceptancePercent": 44.19889502762431,
+        "x-minimumHostMemoryAvailableGb": 5.576759338378906
+      },
+      "x-runs": {
+        "outputThroughputTokPerSec": [9.357852500644277, 9.592675000754332, 5.017401579705735],
+        "timeToFirstTokenMs": [5776.358889000003, 5763.675592, 16389.558039000003],
+        "backendGenerationTokPerSec": [16.196627052416336, 16.884988691014996, 14.030395536580421],
+        "draftAcceptancePercent": [44.19889502762431, 47.12643678160919, 37.3134328358209]
+      }
+    },
+    {
+      "id": "dgx-spark-unsloth-qwen36-27b-gateway-p2055-o128-c1",
+      "recipeId": "linux-nvidia-gb10-qwen36-unsloth-vllm",
+      "recipeVersion": 2,
+      "backendId": "docker-vllm",
+      "model": "unsloth/Qwen3.6-27B-NVFP4",
+      "gatewayModel": "unsloth/Qwen3.6-27B-NVFP4",
+      "machine": {
+        "platformId": "linux-arm64",
+        "chip": "NVIDIA DGX Spark / GB10",
+        "memoryGb": 128,
+        "accelerators": ["cuda", "nvidia-gpu", "blackwell"]
+      },
+      "settings": {
+        "runtimeVersion": "vLLM 0.25.0",
+        "image": "vllm/vllm-openai:v0.25.0",
+        "quantization": "mixed NVFP4/FP8",
+        "kvCacheDtype": "fp8",
+        "attentionBackend": "flashinfer",
+        "moeBackend": "flashinfer_b12x",
+        "contextWindow": 262144,
+        "maxNumSeqs": 8,
+        "maxNumBatchedTokens": 8192,
+        "speculative": { "method": "mtp", "numSpeculativeTokens": 2 }
+      },
+      "workload": {
+        "type": "interactive-generation",
+        "category": "matched-deterministic",
+        "concurrency": 1,
+        "promptTokens": 2055,
+        "outputTokens": 128
+      },
+      "metrics": {
+        "generationTokPerSec": 19.666791612610638,
+        "outputThroughputTokPerSec": 19.666791612610638,
+        "timeToFirstTokenMs": 1245.9171059999499,
+        "contextWindow": 262144,
+        "x-postFirstTokenTokPerSec": 25.07083382648858,
+        "x-minimumHostMemoryAvailableGb": 16.427337646484375
+      },
+      "x-runs": {
+        "outputThroughputTokPerSec": [19.666791612610638, 20.225777442980235, 19.389301660999646],
+        "timeToFirstTokenMs": [1403.5634850000206, 1223.0235019999964, 1245.9171059999499]
+      }
+    },
+    {
+      "id": "dgx-spark-thinkingcap-qwen36-27b-gateway-p2055-o128-c1",
+      "recipeId": "linux-nvidia-gb10-thinkingcap-qwen36-27b-vllm",
+      "recipeVersion": 1,
+      "backendId": "docker-vllm",
+      "model": "sakamakismile/ThinkingCap-Qwen3.6-27B-NVFP4",
+      "gatewayModel": "sakamakismile/ThinkingCap-Qwen3.6-27B-NVFP4",
+      "machine": {
+        "platformId": "linux-arm64",
+        "chip": "NVIDIA DGX Spark / GB10",
+        "memoryGb": 128,
+        "accelerators": ["cuda", "nvidia-gpu", "blackwell"]
+      },
+      "settings": {
+        "runtimeVersion": "vLLM 0.25.0",
+        "image": "vllm/vllm-openai:v0.25.0",
+        "quantization": "mixed NVFP4/BF16 MTP",
+        "kvCacheDtype": "fp8",
+        "attentionBackend": "flashinfer",
+        "contextWindow": 262144,
+        "maxNumSeqs": 8,
+        "maxNumBatchedTokens": 8192,
+        "speculative": { "method": "mtp", "numSpeculativeTokens": 3 }
+      },
+      "workload": {
+        "type": "interactive-generation",
+        "category": "matched-deterministic",
+        "concurrency": 1,
+        "promptTokens": 2055,
+        "outputTokens": 128
+      },
+      "metrics": {
+        "generationTokPerSec": 19.07318157268866,
+        "outputThroughputTokPerSec": 19.07318157268866,
+        "timeToFirstTokenMs": 1143.141828999971,
+        "contextWindow": 262144,
+        "x-postFirstTokenTokPerSec": 23.10259671358702,
+        "x-minimumHostMemoryAvailableGb": 18.07720184326172
+      },
+      "x-runs": {
+        "outputThroughputTokPerSec": [19.07318157268866, 18.7240023325713, 19.169340813172514],
+        "timeToFirstTokenMs": [1306.8519819999929, 1143.141828999971, 1136.82652100001]
+      }
+    },
+    {
+      "id": "dgx-spark-bonsai-27b-plain-code-o512-c1",
+      "recipeId": "linux-nvidia-gb10-ternary-bonsai-27b",
+      "recipeVersion": 3,
+      "backendId": "llama-cpp-prism-docker",
+      "model": "prism-ml/Ternary-Bonsai-27B-gguf",
+      "gatewayModel": "prism-ml/Ternary-Bonsai-27B-Q2_0",
+      "machine": {
+        "platformId": "linux-arm64",
+        "chip": "NVIDIA DGX Spark / GB10",
+        "memoryGb": 128,
+        "accelerators": ["cuda", "nvidia-gpu", "blackwell"]
+      },
+      "settings": {
+        "runtimeVersion": "PrismML llama.cpp 62061f9",
+        "liveInstalledRecipeVersion": 2,
+        "effectiveRecipeVersion": 3,
+        "image": "lloom/llama-cpp-prism:cuda",
+        "quantization": "ternary Q2_0_g128",
+        "contextWindowPerSlot": 65536,
+        "parallelSlots": 2,
+        "requestMinP": 0
+      },
+      "workload": {
+        "type": "interactive-generation",
+        "category": "code-reasoning",
+        "concurrency": 1,
+        "promptTokens": 54,
+        "outputTokens": 512
+      },
+      "metrics": {
+        "generationTokPerSec": 26.710663329143344,
+        "outputThroughputTokPerSec": 26.710663329143344,
+        "contextWindow": 65536,
+        "x-backendGenerationTokPerSec": 27.79469707580244,
+        "x-backendPrefillTokPerSec": 306.4194882794546
+      },
+      "notes": "Median end-to-end throughput excludes cold-start dominance naturally because three prompts were measured and only the first triggered admission/startup.",
+      "x-runs": {
+        "outputThroughputTokPerSec": [15.734620717955618, 26.710663329143344, 26.900111539673276],
+        "backendGenerationTokPerSec": [27.822318846817055, 27.572300414645394, 27.79469707580244]
+      }
+    },
+    {
+      "id": "dgx-spark-bonsai-27b-dspark-code-o512-c1",
+      "recipeId": "linux-nvidia-gb10-ternary-bonsai-27b",
+      "recipeVersion": 3,
+      "backendId": "llama-cpp-prism-docker",
+      "model": "prism-ml/Ternary-Bonsai-27B-gguf",
+      "gatewayModel": "prism-ml/Ternary-Bonsai-27B-Q2_0-dspark",
+      "machine": {
+        "platformId": "linux-arm64",
+        "chip": "NVIDIA DGX Spark / GB10",
+        "memoryGb": 128,
+        "accelerators": ["cuda", "nvidia-gpu", "blackwell"]
+      },
+      "settings": {
+        "runtimeVersion": "PrismML llama.cpp 62061f9",
+        "liveInstalledRecipeVersion": 2,
+        "effectiveRecipeVersion": 3,
+        "image": "lloom/llama-cpp-prism:cuda",
+        "quantization": "ternary Q2_0_g128",
+        "draftQuantization": "DSpark Q4_1",
+        "contextWindow": 16384,
+        "parallelSlots": 1,
+        "speculative": { "method": "draft-dspark", "numSpeculativeTokens": 4 },
+        "requestMinP": 0
+      },
+      "workload": {
+        "type": "interactive-generation",
+        "category": "code-reasoning",
+        "concurrency": 1,
+        "promptTokens": 54,
+        "outputTokens": 512
+      },
+      "metrics": {
+        "generationTokPerSec": 14.81352133079397,
+        "outputThroughputTokPerSec": 14.81352133079397,
+        "contextWindow": 16384,
+        "x-backendGenerationTokPerSec": 17.343016653123644,
+        "x-backendPrefillTokPerSec": 125.34497847871486,
+        "x-draftAcceptancePercent": 47.788873038516405
+      },
+      "x-runs": {
+        "outputThroughputTokPerSec": [14.81352133079397, 16.519139034138895, 14.46438571887024],
+        "backendGenerationTokPerSec": [19.567129240735767, 17.343016653123644, 15.082570148901203],
+        "draftAcceptancePercent": [57.69854132901134, 47.788873038516405, 38.26086956521739]
+      }
+    }
+  ],
+  "x-comparison": {
+    "matched2055x128": {
+      "endToEndOutputTokPerSec": {
+        "bonsaiPlain": 17.060965080944623,
+        "bonsaiDspark": 9.357852500644277,
+        "unsloth27b": 19.666791612610638,
+        "thinkingCap27b": 19.07318157268866
+      },
+      "postFirstTokenTokPerSec": {
+        "bonsaiPlain": 27.70002102351525,
+        "bonsaiDspark": 16.198445001393313,
+        "unsloth27b": 25.07083382648858,
+        "thinkingCap27b": 23.10259671358702
+      }
+    },
+    "codeReasoning512": {
+      "backendGenerationTokPerSec": {
+        "bonsaiPlain": 27.79469707580244,
+        "bonsaiDspark": 17.343016653123644
+      },
+      "dsparkMedianAcceptancePercent": 47.788873038516405
+    }
+  }
+}

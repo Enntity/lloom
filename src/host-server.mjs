@@ -43,8 +43,11 @@ import { createRecipePackExport } from './recipe-pack-export.mjs';
 import { loadRecipeIndex } from './recipe-index.mjs';
 import { repoRoot } from './config.mjs';
 import { loadRecipes, recipesRoot as defaultRecipesRoot } from './recipes.mjs';
+import { renderCommunitySite } from './community-site.mjs';
 
 const JSON_TYPE = 'application/json; charset=utf-8';
+const HTML_TYPE = 'text/html; charset=utf-8';
+const DEFAULT_MAX_REQUEST_BYTES = 1024 * 1024;
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -140,15 +143,38 @@ function hardwareDevicesFromQuery(searchParams) {
   }));
 }
 
-function sendJson(res, status, value, headers = {}) {
+function responseSecurityHeaders({ origin, corsOrigins = [] } = {}) {
+  const selectedOrigin = origin && corsOrigins.includes(origin) ? origin : null;
+  return {
+    'x-content-type-options': 'nosniff',
+    'x-frame-options': 'DENY',
+    'referrer-policy': 'no-referrer',
+    'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=()',
+    'content-security-policy':
+      "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'",
+    ...(selectedOrigin
+      ? {
+          'access-control-allow-origin': selectedOrigin,
+          'access-control-allow-methods': 'GET,POST,OPTIONS',
+          'access-control-allow-headers': 'content-type',
+          vary: 'Origin'
+        }
+      : {})
+  };
+}
+
+function sendJson(res, status, value, headers = {}, security = {}) {
   res.writeHead(status, {
     'content-type': JSON_TYPE,
-    'access-control-allow-origin': '*',
-    'access-control-allow-methods': 'GET,POST,OPTIONS',
-    'access-control-allow-headers': 'content-type',
+    ...responseSecurityHeaders(security),
     ...headers
   });
   res.end(`${JSON.stringify(value, null, 2)}\n`);
+}
+
+function sendHtml(res, status, value, security = {}) {
+  res.writeHead(status, { 'content-type': HTML_TYPE, ...responseSecurityHeaders(security) });
+  res.end(value);
 }
 
 function errorBody(message, { status = 500, endpoint, ...extra } = {}) {
@@ -162,10 +188,16 @@ function errorBody(message, { status = 500, endpoint, ...extra } = {}) {
   });
 }
 
-function sendError(res, status, message, extra = {}) {
-  sendJson(res, status, errorBody(message, { status, ...extra }), {
-    'content-type': `${ERROR_RESPONSE_MEDIA_TYPE}; charset=utf-8`
-  });
+function sendError(res, status, message, extra = {}, security = {}) {
+  sendJson(
+    res,
+    status,
+    errorBody(message, { status, ...extra }),
+    {
+      'content-type': `${ERROR_RESPONSE_MEDIA_TYPE}; charset=utf-8`
+    },
+    security
+  );
 }
 
 function requestError(message, extra = {}) {
@@ -177,9 +209,17 @@ function requestError(message, extra = {}) {
   return error;
 }
 
-async function readJson(req) {
+async function readJson(req, { maxBytes = DEFAULT_MAX_REQUEST_BYTES } = {}) {
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > maxBytes) {
+      req.resume();
+      throw requestError(`request body exceeds ${maxBytes} byte limit`, { status: 413, code: 'payload_too_large' });
+    }
+    chunks.push(chunk);
+  }
   const raw = Buffer.concat(chunks).toString('utf8');
   return raw ? JSON.parse(raw) : {};
 }
@@ -614,10 +654,13 @@ function createEphemeralSigningKey(keyId) {
   };
 }
 
-function resolveSigningKey({ keyId, privateKeyPath, publicKeyPath } = {}) {
+function resolveSigningKey({ keyId, privateKeyPath, publicKeyPath, requirePersistent = false } = {}) {
   const hasPrivateKeyPath = Boolean(privateKeyPath && existsSync(privateKeyPath));
   const hasPublicKeyPath = Boolean(publicKeyPath && existsSync(publicKeyPath));
   if (hasPrivateKeyPath) {
+    if (requirePersistent && !hasPublicKeyPath) {
+      throw new Error('production lloom-host requires a configured public signing key alongside the private key');
+    }
     return {
       keyId,
       privateKeyPath,
@@ -625,7 +668,87 @@ function resolveSigningKey({ keyId, privateKeyPath, publicKeyPath } = {}) {
       ephemeral: false
     };
   }
+  if (requirePersistent) {
+    throw new Error('production lloom-host requires a configured private signing key; refusing ephemeral signing');
+  }
   return createEphemeralSigningKey(keyId);
+}
+
+function positiveByteLimit(value, fallback = DEFAULT_MAX_REQUEST_BYTES) {
+  const parsed = Number(value ?? fallback);
+  if (!Number.isInteger(parsed) || parsed < 1024 || parsed > 10 * 1024 * 1024) {
+    throw new Error('community host maxRequestBytes must be an integer between 1024 and 10485760');
+  }
+  return parsed;
+}
+
+function positiveIntegerSetting(value, fallback, label, { min = 1, max = 100_000 } = {}) {
+  const parsed = Number(value ?? fallback);
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+    throw new Error(`${label} must be an integer from ${min} to ${max}`);
+  }
+  return parsed;
+}
+
+function requestClientId(req, { trustProxy = false } = {}) {
+  if (trustProxy) {
+    const forwarded = String(req.headers['x-forwarded-for'] ?? '')
+      .split(',')[0]
+      .trim();
+    if (/^[0-9a-fA-F:.]{1,64}$/.test(forwarded)) return forwarded;
+  }
+  return String(req.socket.remoteAddress ?? 'unknown').slice(0, 64);
+}
+
+function createRateLimiter({ enabled = false, limit = 120, windowMs = 60_000, trustProxy = false } = {}) {
+  const entries = new Map();
+  return {
+    check(req) {
+      if (!enabled) return { ok: true };
+      const now = Date.now();
+      const client = requestClientId(req, { trustProxy });
+      const entry = entries.get(client);
+      if (!entry || now >= entry.resetAt) {
+        if (entries.size >= 10_000) entries.delete(entries.keys().next().value);
+        entries.set(client, { count: 1, resetAt: now + windowMs });
+        return { ok: true };
+      }
+      if (entry.count >= limit) {
+        return { ok: false, retryAfterSeconds: Math.max(1, Math.ceil((entry.resetAt - now) / 1000)) };
+      }
+      entry.count += 1;
+      return { ok: true };
+    }
+  };
+}
+
+function hostSecurityOptions(hostData = {}) {
+  const production = hostData.mode === 'production';
+  const corsOrigins = asArray(hostData.corsOrigins)
+    .map((value) => String(value).replace(/\/$/, ''))
+    .filter((value) => /^https:\/\//.test(value));
+  if (production && hostData.submissionsEnabled === true) {
+    throw new Error(
+      'production lloom-host does not accept public submissions; use the reviewed GitHub contribution flow'
+    );
+  }
+  return {
+    production,
+    corsOrigins,
+    maxRequestBytes: positiveByteLimit(hostData.maxRequestBytes),
+    submissionsEnabled: !production && hostData.submissionsEnabled === true,
+    rateLimitPerMinute: positiveIntegerSetting(
+      hostData.rateLimitPerMinute,
+      production ? 120 : 0,
+      'rateLimitPerMinute',
+      {
+        min: 0
+      }
+    ),
+    trustProxy: production && hostData.trustProxy !== false,
+    contributionUrl: hostData.contributionUrl ?? 'https://github.com/Enntity/lloom/issues',
+    siteName: hostData.siteName ?? 'LLooM Community'
+  };
 }
 
 function safeFileName(value) {
@@ -752,6 +875,7 @@ export function createLloomHostServer(
   } = {}
 ) {
   const hostData = config.communityHost ?? {};
+  const security = hostSecurityOptions(hostData);
   const selectedRecipesRoot = resolveRepoPath(recipesRoot, hostData.recipesRoot ?? defaultRecipesRoot);
   const selectedBenchmarksRoot = resolveRepoPath(benchmarksRoot, hostData.benchmarksRoot ?? defaultBenchmarksRoot);
   const selectedIndexPath = resolveRepoPath(
@@ -769,7 +893,8 @@ export function createLloomHostServer(
   const signingKey = resolveSigningKey({
     keyId: selectedKeyId,
     privateKeyPath: selectedPrivateKeyPath,
-    publicKeyPath: selectedPublicKeyPath
+    publicKeyPath: selectedPublicKeyPath,
+    requirePersistent: security.production
   });
   const options = {
     indexPath: selectedIndexPath,
@@ -785,22 +910,58 @@ export function createLloomHostServer(
     publicKeyPath: signingKey.publicKeyPath,
     ephemeral: signingKey.ephemeral
   };
+  const rateLimiter = createRateLimiter({
+    enabled: security.rateLimitPerMinute > 0,
+    limit: security.rateLimitPerMinute,
+    trustProxy: security.trustProxy
+  });
 
   const server = http.createServer(async (req, res) => {
+    const responseSecurity = { origin: req.headers.origin, corsOrigins: security.corsOrigins };
     try {
       if (req.method === 'OPTIONS') {
-        sendJson(res, 204, {});
+        if (!responseSecurityHeaders(responseSecurity)['access-control-allow-origin']) {
+          sendError(res, 403, 'CORS origin is not allowed', { code: 'cors_forbidden' }, responseSecurity);
+          return;
+        }
+        sendJson(res, 204, {}, {}, responseSecurity);
         return;
       }
       const url = new URL(req.url, `http://${req.headers.host ?? `${host}:${port}`}`);
+      const rateLimit = rateLimiter.check(req);
+      if (!rateLimit.ok) {
+        sendError(res, 429, 'rate limit exceeded', { code: 'rate_limited', endpoint: url.pathname }, responseSecurity);
+        return;
+      }
 
-      if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/health')) {
-        sendJson(res, 200, {
-          ok: true,
-          service: 'lloom-host',
-          version: 1,
-          data: await hostDataSummary(options)
-        });
+      if (req.method === 'GET' && url.pathname === '/') {
+        sendHtml(
+          res,
+          200,
+          renderCommunitySite({
+            publisher: security.siteName,
+            contributionUrl: security.contributionUrl
+          }),
+          responseSecurity
+        );
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/health') {
+        sendJson(
+          res,
+          200,
+          {
+            ok: true,
+            service: 'lloom-host',
+            version: 1,
+            mode: security.production ? 'production' : 'development',
+            submissionsEnabled: security.submissionsEnabled,
+            data: await hostDataSummary(options)
+          },
+          {},
+          responseSecurity
+        );
         return;
       }
 
@@ -816,7 +977,8 @@ export function createLloomHostServer(
           }),
           {
             'content-type': `${INTERCHANGE_REGISTRY_MEDIA_TYPE}; charset=utf-8`
-          }
+          },
+          responseSecurity
         );
         return;
       }
@@ -839,7 +1001,8 @@ export function createLloomHostServer(
           }),
           {
             'content-type': `${SIGNING_KEYS_MEDIA_TYPE}; charset=utf-8`
-          }
+          },
+          responseSecurity
         );
         return;
       }
@@ -847,32 +1010,44 @@ export function createLloomHostServer(
       if (req.method === 'GET' && url.pathname === '/v1/backends') {
         const catalog = await loadBackendCatalog(options.backendCatalogPath);
         const validationErrors = validateBackendCatalog(catalog);
-        sendJson(res, 200, {
-          ok: validationErrors.length === 0,
-          schemaVersion: catalog.schemaVersion,
-          id: catalog.id ?? null,
-          name: catalog.name ?? null,
-          validationErrors,
-          count: catalog.backends.length,
-          data: catalog.backends.map((backend) => ({
-            id: backend.id,
-            name: backend.name,
-            kind: backend.kind,
-            description: backend.description,
-            platforms: backend.platforms ?? [],
-            features: backend.features ?? [],
-            commands: backend.commands ?? [],
-            server: backend.server ?? null
-          }))
-        });
+        sendJson(
+          res,
+          200,
+          {
+            ok: validationErrors.length === 0,
+            schemaVersion: catalog.schemaVersion,
+            id: catalog.id ?? null,
+            name: catalog.name ?? null,
+            validationErrors,
+            count: catalog.backends.length,
+            data: catalog.backends.map((backend) => ({
+              id: backend.id,
+              name: backend.name,
+              kind: backend.kind,
+              description: backend.description,
+              platforms: backend.platforms ?? [],
+              features: backend.features ?? [],
+              commands: backend.commands ?? [],
+              server: backend.server ?? null
+            }))
+          },
+          {},
+          responseSecurity
+        );
         return;
       }
 
       if (req.method === 'GET' && url.pathname === '/v1/backends/catalog') {
         const catalog = await loadBackendCatalog(options.backendCatalogPath);
-        sendJson(res, 200, catalog, {
-          'content-type': `${INTERCHANGE_MEDIA_TYPES.backendCatalog}; charset=utf-8`
-        });
+        sendJson(
+          res,
+          200,
+          catalog,
+          {
+            'content-type': `${INTERCHANGE_MEDIA_TYPES.backendCatalog}; charset=utf-8`
+          },
+          responseSecurity
+        );
         return;
       }
 
@@ -881,22 +1056,34 @@ export function createLloomHostServer(
         const recipes = await loadHostRecipes(options.recipesRoot);
         const recipeById = new Map(recipes.map((recipe) => [recipe.id, recipe]));
         const data = filterRecipes(index, recipeById, url.searchParams);
-        sendJson(res, 200, {
-          schemaVersion: 1,
-          count: data.length,
-          data
-        });
+        sendJson(
+          res,
+          200,
+          {
+            schemaVersion: 1,
+            count: data.length,
+            data
+          },
+          {},
+          responseSecurity
+        );
         return;
       }
 
       if (req.method === 'GET' && url.pathname === '/v1/leaderboard') {
         const evidence = await loadBenchmarkEvidence(options.benchmarksRoot);
         const data = filterLeaderboard(evidence, url.searchParams);
-        sendJson(res, 200, {
-          schemaVersion: 1,
-          count: data.length,
-          data
-        });
+        sendJson(
+          res,
+          200,
+          {
+            schemaVersion: 1,
+            count: data.length,
+            data
+          },
+          {},
+          responseSecurity
+        );
         return;
       }
 
@@ -915,13 +1102,14 @@ export function createLloomHostServer(
           }),
           {
             'content-type': `${RECOMMENDATION_RESPONSE_MEDIA_TYPE}; charset=utf-8`
-          }
+          },
+          responseSecurity
         );
         return;
       }
 
       if (req.method === 'POST' && url.pathname === '/v1/recipe-packs/recommended') {
-        const body = await readJson(req);
+        const body = await readJson(req, { maxBytes: security.maxRequestBytes });
         validateRecommendationRequestBody(body, req);
         const profile = machineProfileFromBody(body);
         const limit = positiveInteger(body.limit ?? body.request?.limit, 1, 'limit');
@@ -937,7 +1125,8 @@ export function createLloomHostServer(
           }),
           {
             'content-type': `${RECOMMENDATION_RESPONSE_MEDIA_TYPE}; charset=utf-8`
-          }
+          },
+          responseSecurity
         );
         return;
       }
@@ -948,20 +1137,45 @@ export function createLloomHostServer(
         const recipeId = packId.endsWith('-pack') ? packId.slice(0, -5) : packId;
         const recipes = await loadHostRecipes(options.recipesRoot);
         if (!recipes.some((recipe) => recipe.id === recipeId)) {
-          sendError(res, 404, `unknown recipe pack ${packId}`, {
-            code: 'not_found',
-            endpoint: url.pathname
-          });
+          sendError(
+            res,
+            404,
+            `unknown recipe pack ${packId}`,
+            {
+              code: 'not_found',
+              endpoint: url.pathname
+            },
+            responseSecurity
+          );
           return;
         }
-        sendJson(res, 200, await packForRecipe(config, recipeId, options), {
-          'content-type': `${RECIPE_PACK_MEDIA_TYPE}; charset=utf-8`
-        });
+        sendJson(
+          res,
+          200,
+          await packForRecipe(config, recipeId, options),
+          {
+            'content-type': `${RECIPE_PACK_MEDIA_TYPE}; charset=utf-8`
+          },
+          responseSecurity
+        );
         return;
       }
 
       if (req.method === 'POST' && url.pathname === '/v1/benchmarks') {
-        const body = await readJson(req);
+        if (!security.submissionsEnabled) {
+          sendError(
+            res,
+            405,
+            'public submissions are disabled; use the contribution URL',
+            {
+              code: 'submissions_disabled',
+              endpoint: url.pathname
+            },
+            responseSecurity
+          );
+          return;
+        }
+        const body = await readJson(req, { maxBytes: security.maxRequestBytes });
         const suites = Array.isArray(body) ? body : Array.isArray(body.suites) ? body.suites : [body];
         const validationErrors = suites.flatMap((suite) => validateBenchmarkSuite(suite));
         const submissions = validationErrors.length
@@ -995,18 +1209,34 @@ export function createLloomHostServer(
           }),
           {
             'content-type': `${BENCHMARK_SUBMISSION_RESPONSE_MEDIA_TYPE}; charset=utf-8`
-          }
+          },
+          responseSecurity
         );
         return;
       }
 
       if (req.method === 'POST' && url.pathname === '/v1/recipe-packs') {
-        const body = await readJson(req);
+        if (!security.submissionsEnabled) {
+          sendError(
+            res,
+            405,
+            'public submissions are disabled; use the contribution URL',
+            {
+              code: 'submissions_disabled',
+              endpoint: url.pathname
+            },
+            responseSecurity
+          );
+          return;
+        }
+        const body = await readJson(req, { maxBytes: security.maxRequestBytes });
         const plan = await createRecipePackPlan(body, config, {
           indexPath: options.indexPath,
           recipesRoot: options.recipesRoot,
           benchmarksRoot: options.benchmarksRoot,
-          requireSignature: false
+          // This compatibility path is development-only. Production submission
+          // endpoints are fail-closed above and never reach recipe validation.
+          requireSignature: security.production
         });
         const validationErrors = plan.validationErrors ?? [];
         const submissions = validationErrors.length
@@ -1050,24 +1280,42 @@ export function createLloomHostServer(
           }),
           {
             'content-type': `${RECIPE_PACK_SUBMISSION_RESPONSE_MEDIA_TYPE}; charset=utf-8`
-          }
+          },
+          responseSecurity
         );
         return;
       }
 
-      sendError(res, 404, `not found: ${url.pathname}`, {
-        code: 'not_found',
-        endpoint: url.pathname
-      });
+      sendError(
+        res,
+        404,
+        `not found: ${url.pathname}`,
+        {
+          code: 'not_found',
+          endpoint: url.pathname
+        },
+        responseSecurity
+      );
     } catch (error) {
       const status = Number.isInteger(error?.status) ? error.status : 500;
-      sendError(res, status, error?.message ?? String(error), {
-        code: error?.code ?? (status >= 500 ? 'internal_error' : 'bad_request'),
-        ...(error?.endpoint ? { endpoint: error.endpoint } : {}),
-        ...(error?.validationErrors ? { validationErrors: error.validationErrors } : {})
-      });
+      const message =
+        status >= 500 && security.production ? 'internal server error' : (error?.message ?? String(error));
+      sendError(
+        res,
+        status,
+        message,
+        {
+          code: error?.code ?? (status >= 500 ? 'internal_error' : 'bad_request'),
+          ...(error?.endpoint ? { endpoint: error.endpoint } : {}),
+          ...(error?.validationErrors ? { validationErrors: error.validationErrors } : {})
+        },
+        responseSecurity
+      );
     }
   });
+  server.headersTimeout = 10_000;
+  server.requestTimeout = 15_000;
+  server.keepAliveTimeout = 5_000;
 
   return {
     server,

@@ -166,6 +166,29 @@ export function isLoopbackCommunityHost(hostUrl) {
   return Boolean(url && url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname) && url.port);
 }
 
+export function assertSafeCommunityHost(
+  hostUrl,
+  { trustedKeys = [], trustHostKeys = false, requireSignature = true } = {}
+) {
+  const url = parsedHostUrl(hostUrl);
+  if (!url) throw new Error(`invalid community host URL ${hostUrl}`);
+  if (isLoopbackCommunityHost(hostUrl)) return url;
+  if (url.protocol !== 'https:') {
+    throw new Error(
+      'remote community hosts must use HTTPS; plain HTTP is allowed only for an explicit loopback development host'
+    );
+  }
+  if (trustHostKeys) {
+    throw new Error(
+      'remote community hosts must use a locally pinned trusted signing key; trustHostKeys is development-only'
+    );
+  }
+  if (requireSignature && !asArray(trustedKeys).length) {
+    throw new Error('remote signed community hosts require at least one locally pinned trusted signing key');
+  }
+  return url;
+}
+
 function fetchFailureCode(error) {
   return error?.cause?.code ?? error?.code ?? null;
 }
@@ -321,7 +344,7 @@ function communityOptions(config, options = {}) {
   const community = asObject(config.community);
   const trustedKeys = options.trustedKeys ?? community.trustedKeys ?? [];
   const hostUrl = options.hostUrl ?? community.hostUrl;
-  return {
+  const effective = {
     hostUrl,
     recipeFeedPath: options.recipeFeedPath ?? community.recipeFeedPath ?? '/v1/recipe-packs/recommended',
     signingKeysPath: options.signingKeysPath ?? community.signingKeysPath ?? '/v1/keys',
@@ -329,7 +352,7 @@ function communityOptions(config, options = {}) {
     recipesRoot: options.recipesRoot,
     benchmarksRoot: options.benchmarksRoot,
     trustedKeys: Array.isArray(trustedKeys) ? trustedKeys : [trustedKeys].filter(Boolean),
-    trustHostKeys: options.trustHostKeys ?? community.trustHostKeys ?? true,
+    trustHostKeys: options.trustHostKeys ?? community.trustHostKeys ?? false,
     requireSignature: options.requireSignature ?? community.requireSignedPacks ?? false,
     timeoutMs: options.timeoutMs ?? community.timeoutMs ?? 30000,
     limit: options.limit ?? 1,
@@ -341,6 +364,10 @@ function communityOptions(config, options = {}) {
     backendCatalogPath:
       options.backendCatalogPath ?? community.backendCatalogPath ?? hostPathUrl(hostUrl, '/v1/backends/catalog')
   };
+  if (hostUrl) {
+    assertSafeCommunityHost(hostUrl, effective);
+  }
+  return effective;
 }
 
 function normalizeHostSigningKeys(payload) {

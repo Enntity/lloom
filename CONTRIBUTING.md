@@ -47,6 +47,8 @@ Some smoke and package tests open temporary loopback ports. Make sure another LL
 
 Recipe changes should include clear provenance, hardware requirements, backend capabilities, and safe dry-run commands. Benchmark submissions should record the exact model, backend, settings, hardware, workload, and measurement method. Do not submit results that cannot be reproduced or whose model/runtime license prevents redistribution of the metadata.
 
+Community registry changes are reviewed through pull requests; the production host does not accept anonymous uploads. A proposed recipe must use immutable model revisions, container digests, package versions, and source commits where applicable. Do not add arbitrary shell commands, unreviewed executable URLs, mutable image tags, credentials, or new backend installers to a community recipe. Maintainers reproduce proposals in an isolated machine before promoting them to an experimental or stable signed release.
+
 ### Third-party code and patches
 
 Identify the upstream project and license for copied or adapted code. Preserve required copyright and NOTICE text, and add the material to `THIRD_PARTY_NOTICES.md` when needed. Do not submit code whose license is incompatible with distribution in this repository.

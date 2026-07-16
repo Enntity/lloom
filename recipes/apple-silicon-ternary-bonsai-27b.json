@@ -1,0 +1,180 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "apple-silicon-ternary-bonsai-27b",
+  "name": "Apple Silicon Ternary Bonsai 27B (PrismML Metal)",
+  "version": 1,
+  "summary": "Best on-device Ternary Bonsai 27B lane for Apple Silicon: PrismML llama.cpp Metal kernels + Q2_0_g128 GGUF (~7.2 GB), hybrid attention long context, tools/thinking. DSpark is omitted on Metal (batch-1 verify does not amortize yet).",
+  "license": {
+    "id": "Apache-2.0",
+    "name": "Apache License 2.0"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "https://huggingface.co/prism-ml/Ternary-Bonsai-27B-gguf and PrismML Bonsai-demo agent guide"
+  },
+  "links": [
+    {
+      "rel": "upstream-model",
+      "href": "https://huggingface.co/prism-ml/Ternary-Bonsai-27B-gguf",
+      "mediaType": "text/html"
+    },
+    {
+      "rel": "backend",
+      "href": "https://github.com/PrismML-Eng/llama.cpp",
+      "mediaType": "text/html"
+    },
+    {
+      "rel": "mlx-companion",
+      "href": "https://huggingface.co/prism-ml/Ternary-Bonsai-27B-mlx-2bit",
+      "mediaType": "text/html"
+    }
+  ],
+  "keywords": [
+    "apple-silicon",
+    "ternary",
+    "bonsai",
+    "prismml",
+    "gguf",
+    "llama-cpp",
+    "metal",
+    "qwen3.6",
+    "reasoning",
+    "long-context",
+    "on-device"
+  ],
+  "capabilities": [
+    "chat",
+    "streaming",
+    "usage",
+    "tools",
+    "reasoning",
+    "vision",
+    "long-context"
+  ],
+  "hardware": {
+    "family": "Apple Silicon",
+    "testedMachine": "Apple M-series with unified memory (M4/M5 class published; recipe targets ≥32 GB)",
+    "notes": [
+      "Publisher throughput: ~26 tok/s TG128 on M5 Pro Metal, ~44 tok/s on M5 Max, ~18 tok/s on M4 Pro.",
+      "Prefer PrismML Metal llama.cpp over stock mlx-lm for multi-turn: KV/prompt-cache reuse stays intact.",
+      "DSpark speculative decoding is CUDA-first; leave it off on Apple Silicon for now.",
+      "Generation defaults match PrismML benchmarks: temperature 0.7, top-p 0.95, top-k 20."
+    ]
+  },
+  "requirements": {
+    "platforms": ["darwin-arm64"],
+    "memoryGb": 24,
+    "diskGb": 20,
+    "commands": ["cmake", "git", "hf"],
+    "accelerators": ["apple-gpu", "metal"]
+  },
+  "backend": {
+    "id": "llama-cpp-prism",
+    "name": "PrismML llama.cpp (ternary GGUF)",
+    "type": "openai-compatible-server",
+    "features": ["metal", "gguf", "ternary", "openai-chat", "streaming", "tools", "long-context"]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-hf",
+        "title": "Check Hugging Face CLI",
+        "action": "check-command",
+        "command": "hf",
+        "args": ["version"]
+      },
+      {
+        "id": "download-ternary-bonsai-gguf",
+        "title": "Download Ternary Bonsai 27B Q2_0 GGUF + vision mmproj",
+        "action": "command",
+        "command": "hf",
+        "args": [
+          "download",
+          "prism-ml/Ternary-Bonsai-27B-gguf",
+          "Ternary-Bonsai-27B-Q2_0.gguf",
+          "Ternary-Bonsai-27B-mmproj-Q8_0.gguf",
+          "--local-dir",
+          "${modelRoot}/prism-ml--Ternary-Bonsai-27B-gguf"
+        ],
+        "skipIfPathExists": "${modelRoot}/prism-ml--Ternary-Bonsai-27B-gguf/Ternary-Bonsai-27B-Q2_0.gguf"
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "default",
+      "model": "prism-ml/Ternary-Bonsai-27B-gguf",
+      "gatewayModel": "prism-ml/Ternary-Bonsai-27B-Q2_0",
+      "name": "Ternary Bonsai 27B Q2_0 (Metal)",
+      "runtime": "ternary-bonsai-27b-metal",
+      "backendConfig": "ternary-bonsai-27b-metal",
+      "backend": "PrismML llama.cpp Metal",
+      "input": ["text", "image"],
+      "output": ["text"],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "usage",
+        "tools",
+        "reasoning",
+        "vision",
+        "long-context",
+        "gguf"
+      ],
+      "settings": {
+        "contextWindow": 131072,
+        "maxOutputTokens": 8192,
+        "maxActiveRequests": 2,
+        "memoryGb": 16,
+        "priority": 80,
+        "evictable": true,
+        "keepWarm": false,
+        "startupTimeoutMs": 600000,
+        "sessionCache": {
+          "kind": "llama-cpp-kv-cache",
+          "mode": "on",
+          "minPrefixTokens": 256
+        },
+        "runtime": {
+          "command": "llama-server-prism",
+          "args": [
+            "--model",
+            "${modelRoot}/prism-ml--Ternary-Bonsai-27B-gguf/Ternary-Bonsai-27B-Q2_0.gguf",
+            "--mmproj",
+            "${modelRoot}/prism-ml--Ternary-Bonsai-27B-gguf/Ternary-Bonsai-27B-mmproj-Q8_0.gguf",
+            "--mmproj-offload",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "${port}",
+            "--ctx-size",
+            "${contextWindow}",
+            "--n-gpu-layers",
+            "999",
+            "--flash-attn",
+            "on",
+            "--jinja",
+            "--parallel",
+            "2",
+            "--temp",
+            "0.7",
+            "--top-p",
+            "0.95",
+            "--top-k",
+            "20",
+            "--image-max-tokens",
+            "1024"
+          ],
+          "healthPath": "/health",
+          "warmupPath": "/v1/chat/completions"
+        }
+      },
+      "observed": {
+        "notes": "Publisher Metal TG128 ≈26 tok/s on M5 Pro / 44 on M5 Max / 18 on M4 Pro with custom ternary kernels. 100K context peaks ~15 GB without KV4."
+      }
+    }
+  ]
+}

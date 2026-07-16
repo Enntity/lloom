@@ -9,12 +9,65 @@
     "id": "MIT",
     "name": "Recipe metadata license"
   },
-  "updatedAt": "2026-07-13T20:45:00.000Z",
+  "updatedAt": "2026-07-15T16:42:21.000Z",
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated"
   },
   "recipes": [
+    {
+      "id": "apple-silicon-ternary-bonsai-27b",
+      "path": "apple-silicon-ternary-bonsai-27b.json",
+      "currentVersion": 1,
+      "versions": [
+        { "version": 1, "path": "apple-silicon-ternary-bonsai-27b.json", "status": "current" }
+      ],
+      "name": "Apple Silicon Ternary Bonsai 27B (PrismML Metal)",
+      "summary": "PrismML Metal llama.cpp + Ternary Bonsai 27B Q2_0_g128 for on-device 27B-class reasoning (~7.2 GB).",
+      "tags": ["apple-silicon", "ternary", "bonsai", "prismml", "gguf", "llama-cpp", "metal", "qwen3.6", "reasoning", "long-context"],
+      "recommendedFor": [
+        "M-series Macs with at least 24 GB unified memory",
+        "on-device 27B reasoning without DSpark (Metal)"
+      ],
+      "capabilities": ["chat", "streaming", "tools", "reasoning", "vision", "long-context"],
+      "source": { "type": "local", "url": "recipes/apple-silicon-ternary-bonsai-27b.json" }
+    },
+    {
+      "id": "linux-nvidia-gb10-ternary-bonsai-27b",
+      "path": "linux-nvidia-gb10-ternary-bonsai-27b.json",
+      "currentVersion": 3,
+      "versions": [
+        {
+          "version": 1,
+          "path": "archive/linux-nvidia-gb10-ternary-bonsai-27b/v1.json",
+          "status": "archived",
+          "archivedAt": "2026-07-15T02:00:00.000Z",
+          "notes": "Native host CUDA build; superseded by Docker-managed runtime matching Spark fleet convention."
+        },
+        {
+          "version": 2,
+          "path": "archive/linux-nvidia-gb10-ternary-bonsai-27b/v2.json",
+          "status": "archived",
+          "archivedAt": "2026-07-15T16:42:21.000Z",
+          "notes": "Docker image lloom/llama-cpp-prism:cuda with DSpark + prompt-cache lanes."
+        },
+        {
+          "version": 3,
+          "path": "linux-nvidia-gb10-ternary-bonsai-27b.json",
+          "status": "current",
+          "notes": "Aligns publisher sampling defaults and advertises the plain lane's true per-slot context window."
+        }
+      ],
+      "name": "DGX Spark Ternary Bonsai 27B (Docker PrismML CUDA + DSpark)",
+      "summary": "Docker-managed PrismML CUDA llama.cpp + Ternary Bonsai 27B with DSpark for GB10 / DGX Spark.",
+      "tags": ["linux", "nvidia", "dgx-spark", "gb10", "ternary", "bonsai", "prismml", "gguf", "llama-cpp", "cuda", "docker", "dspark", "speculative-decoding"],
+      "recommendedFor": [
+        "DGX Spark / GB10 systems wanting dense 27B quality at ~9 GB resident",
+        "single-stream decode with DSpark speculative acceleration in Docker like other Spark backends"
+      ],
+      "capabilities": ["chat", "streaming", "tools", "reasoning", "vision", "long-context", "speculative-decoding"],
+      "source": { "type": "local", "url": "recipes/linux-nvidia-gb10-ternary-bonsai-27b.json" }
+    },
     {
       "id": "linux-nvidia-gb10-ltx23-dr34ml4y",
       "path": "linux-nvidia-gb10-ltx23-dr34ml4y.json",
@@ -24,6 +77,16 @@
       "recommendedFor": ["DGX Spark users running local LTX-2.3 video generation through LLooM"],
       "capabilities": ["video-generation", "text-to-video", "audio-video", "lora"],
       "source": { "type": "local", "url": "recipes/linux-nvidia-gb10-ltx23-dr34ml4y.json" }
+    },
+    {
+      "id": "linux-nvidia-gb10-ltx23-dr34ml4y-dev",
+      "path": "linux-nvidia-gb10-ltx23-dr34ml4y-dev.json",
+      "name": "DGX Spark LTX-2.3 Dev + DR34ML4Y Quality",
+      "summary": "Author-recommended dev checkpoint with DR34ML4Y V3 and adjustable partial distillation.",
+      "tags": ["linux", "nvidia", "dgx-spark", "gb10", "ltx-2.3", "dev", "video-generation", "lora", "two-stage"],
+      "recommendedFor": ["Highest-quality DR34ML4Y generation on DGX Spark with reduced anatomy distortion"],
+      "capabilities": ["video-generation", "text-to-video", "audio-video", "lora", "cfg", "two-stage"],
+      "source": { "type": "local", "url": "recipes/linux-nvidia-gb10-ltx23-dr34ml4y-dev.json" }
     },
     {
       "id": "linux-nvidia-qwen3-embedding-4b-vllm",

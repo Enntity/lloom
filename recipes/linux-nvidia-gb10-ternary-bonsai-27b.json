@@ -1,0 +1,296 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-gb10-ternary-bonsai-27b",
+  "name": "DGX Spark Ternary Bonsai 27B (Docker PrismML CUDA + DSpark)",
+  "version": 3,
+  "summary": "Ternary Bonsai 27B lanes for NVIDIA GB10 / DGX Spark: an LLooM-managed Docker image of PrismML llama.cpp CUDA with Q2_0_g128 kernels, plus the paired DSpark Q4_1 drafter for workload-dependent speculative acceleration. Matches the Spark convention that all heavy backends run in containers.",
+  "license": {
+    "id": "Apache-2.0",
+    "name": "Apache License 2.0"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "https://huggingface.co/prism-ml/Ternary-Bonsai-27B-gguf, PrismML SPECULATIVE.md, and LLooM DGX Spark Docker runtime pattern"
+  },
+  "links": [
+    {
+      "rel": "upstream-model",
+      "href": "https://huggingface.co/prism-ml/Ternary-Bonsai-27B-gguf",
+      "mediaType": "text/html"
+    },
+    {
+      "rel": "backend",
+      "href": "https://github.com/PrismML-Eng/llama.cpp",
+      "mediaType": "text/html"
+    },
+    {
+      "rel": "speculative",
+      "href": "https://github.com/PrismML-Eng/Bonsai-demo/blob/main/SPECULATIVE.md",
+      "mediaType": "text/html"
+    }
+  ],
+  "keywords": [
+    "linux",
+    "nvidia",
+    "dgx-spark",
+    "gb10",
+    "ternary",
+    "bonsai",
+    "prismml",
+    "gguf",
+    "llama-cpp",
+    "cuda",
+    "docker",
+    "dspark",
+    "speculative-decoding",
+    "qwen3.6",
+    "reasoning"
+  ],
+  "capabilities": [
+    "chat",
+    "streaming",
+    "usage",
+    "tools",
+    "reasoning",
+    "vision",
+    "long-context",
+    "speculative-decoding"
+  ],
+  "hardware": {
+    "family": "NVIDIA GB10 / DGX Spark",
+    "testedMachine": "DGX Spark with 128 GB unified memory (sm_121)",
+    "notes": [
+      "All Spark chat/media backends in this fleet are Docker-managed; this recipe follows the same pattern.",
+      "PrismML does not publish aarch64 CUDA prebuilts — LLooM builds lloom/llama-cpp-prism:cuda from source with sm_121.",
+      "DSpark is the publisher-recommended CUDA acceleration path: --spec-type draft-dspark --spec-draft-n-max 4.",
+      "Speculative mode disables cross-request prompt-cache reuse and forces a single slot (-np 1).",
+      "Generation defaults match PrismML benchmarks and demo serving: temperature 0.7, top-p 0.95, top-k 20, min-p disabled."
+    ]
+  },
+  "requirements": {
+    "platforms": ["linux-arm64", "linux-x64"],
+    "memoryGb": 24,
+    "diskGb": 30,
+    "commands": ["docker"],
+    "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"]
+  },
+  "backend": {
+    "id": "llama-cpp-prism-docker",
+    "name": "PrismML llama.cpp Docker CUDA",
+    "type": "openai-compatible-server",
+    "features": ["cuda", "docker", "gguf", "ternary", "openai-chat", "streaming", "tools", "long-context", "speculative-decoding"]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-docker",
+        "title": "Check Docker",
+        "action": "check-command",
+        "command": "docker",
+        "args": ["--version"]
+      },
+      {
+        "id": "download-ternary-bonsai-gguf",
+        "title": "Download Ternary Bonsai 27B Q2_0 + DSpark Q4_1 + mmproj",
+        "action": "command",
+        "command": "hf",
+        "args": [
+          "download",
+          "prism-ml/Ternary-Bonsai-27B-gguf",
+          "Ternary-Bonsai-27B-Q2_0.gguf",
+          "Ternary-Bonsai-27B-dspark-Q4_1.gguf",
+          "Ternary-Bonsai-27B-mmproj-Q8_0.gguf",
+          "--local-dir",
+          "${modelRoot}/prism-ml--Ternary-Bonsai-27B-gguf"
+        ],
+        "skipIfPathExists": "${modelRoot}/prism-ml--Ternary-Bonsai-27B-gguf/Ternary-Bonsai-27B-Q2_0.gguf"
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "default",
+      "model": "prism-ml/Ternary-Bonsai-27B-gguf",
+      "gatewayModel": "prism-ml/Ternary-Bonsai-27B-Q2_0-dspark",
+      "name": "Ternary Bonsai 27B Q2_0 + DSpark (Docker CUDA)",
+      "runtime": "ternary-bonsai-27b-cuda-dspark",
+      "backendConfig": "ternary-bonsai-27b-cuda-dspark",
+      "backend": "PrismML llama.cpp Docker CUDA",
+      "input": ["text", "image"],
+      "output": ["text"],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "usage",
+        "tools",
+        "reasoning",
+        "vision",
+        "long-context",
+        "speculative-decoding",
+        "gguf"
+      ],
+      "settings": {
+        "contextWindow": 16384,
+        "maxOutputTokens": 8192,
+        "maxActiveRequests": 1,
+        "memoryGb": 20,
+        "priority": 85,
+        "evictable": true,
+        "keepWarm": false,
+        "startupTimeoutMs": 900000,
+        "sessionCache": false,
+        "runtime": {
+          "adapter": "docker",
+          "management": "managed",
+          "containerName": "ternary-bonsai-27b-dspark",
+          "healthUrl": "http://127.0.0.1:${port}/health",
+          "bootstrap": {
+            "adapter": "docker",
+            "image": "lloom/llama-cpp-prism:cuda",
+            "pull": false,
+            "createArgs": [
+              "--restart",
+              "unless-stopped",
+              "--gpus",
+              "all",
+              "--ipc",
+              "host",
+              "-p",
+              "127.0.0.1:${port}:8000",
+              "-v",
+              "${modelRoot}/prism-ml--Ternary-Bonsai-27B-gguf:/models:ro"
+            ],
+            "command": [
+              "--model",
+              "/models/Ternary-Bonsai-27B-Q2_0.gguf",
+              "--model-draft",
+              "/models/Ternary-Bonsai-27B-dspark-Q4_1.gguf",
+              "--spec-type",
+              "draft-dspark",
+              "--spec-draft-n-max",
+              "4",
+              "--mmproj",
+              "/models/Ternary-Bonsai-27B-mmproj-Q8_0.gguf",
+              "--mmproj-offload",
+              "--host",
+              "0.0.0.0",
+              "--port",
+              "8000",
+              "--ctx-size",
+              "16384",
+              "--n-gpu-layers",
+              "999",
+              "--n-gpu-layers-draft",
+              "999",
+              "--flash-attn",
+              "on",
+              "--jinja",
+              "--parallel",
+              "1",
+              "--temp",
+              "0.7",
+              "--top-p",
+              "0.95",
+              "--top-k",
+              "20",
+              "--min-p",
+              "0"
+            ]
+          }
+        }
+      },
+      "observed": {
+        "notes": "Publisher H100: ~98 tok/s TG128 without DSpark, ~132 with DSpark. Spark GB10 will differ; check response timings.draft_n / draft_n_accepted."
+      }
+    },
+    {
+      "role": "cached-multi-turn",
+      "model": "prism-ml/Ternary-Bonsai-27B-gguf",
+      "gatewayModel": "prism-ml/Ternary-Bonsai-27B-Q2_0",
+      "name": "Ternary Bonsai 27B Q2_0 (Docker CUDA, prompt-cache)",
+      "runtime": "ternary-bonsai-27b-cuda",
+      "backendConfig": "ternary-bonsai-27b-cuda",
+      "backend": "PrismML llama.cpp Docker CUDA",
+      "input": ["text", "image"],
+      "output": ["text"],
+      "capabilities": [
+        "chat",
+        "streaming",
+        "usage",
+        "tools",
+        "reasoning",
+        "vision",
+        "long-context",
+        "gguf"
+      ],
+      "settings": {
+        "contextWindow": 65536,
+        "maxOutputTokens": 8192,
+        "maxActiveRequests": 2,
+        "memoryGb": 18,
+        "priority": 70,
+        "evictable": true,
+        "keepWarm": false,
+        "startupTimeoutMs": 900000,
+        "sessionCache": false,
+        "runtime": {
+          "adapter": "docker",
+          "management": "managed",
+          "containerName": "ternary-bonsai-27b",
+          "healthUrl": "http://127.0.0.1:${port}/health",
+          "bootstrap": {
+            "adapter": "docker",
+            "image": "lloom/llama-cpp-prism:cuda",
+            "pull": false,
+            "createArgs": [
+              "--restart",
+              "unless-stopped",
+              "--gpus",
+              "all",
+              "--ipc",
+              "host",
+              "-p",
+              "127.0.0.1:${port}:8000",
+              "-v",
+              "${modelRoot}/prism-ml--Ternary-Bonsai-27B-gguf:/models:ro"
+            ],
+            "command": [
+              "--model",
+              "/models/Ternary-Bonsai-27B-Q2_0.gguf",
+              "--mmproj",
+              "/models/Ternary-Bonsai-27B-mmproj-Q8_0.gguf",
+              "--mmproj-offload",
+              "--host",
+              "0.0.0.0",
+              "--port",
+              "8000",
+              "--ctx-size",
+              "131072",
+              "--n-gpu-layers",
+              "999",
+              "--flash-attn",
+              "on",
+              "--jinja",
+              "--parallel",
+              "2",
+              "--temp",
+              "0.7",
+              "--top-p",
+              "0.95",
+              "--top-k",
+              "20",
+              "--min-p",
+              "0"
+            ]
+          }
+        }
+      },
+      "observed": {
+        "notes": "Non-speculative CUDA lane for multi-turn/agent work. The 131072-token server context is split across two parallel slots, so each request has a 65536-token context window."
+      }
+    }
+  ]
+}
