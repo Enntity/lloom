@@ -599,6 +599,10 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
       config.defaults ??= {};
       config.defaults.videoModel = modelId;
     }
+    if (recipeModel.role === 'embedding' && !config.defaults?.embeddingModel) {
+      config.defaults ??= {};
+      config.defaults.embeddingModel = modelId;
+    }
   }
 }
 
@@ -889,7 +893,12 @@ async function selectRecipe({ recipeId, recipes, profile, recipesRoot }) {
   if (recipeId) {
     return recipes.find((candidate) => candidate.id === recipeId) ?? loadRecipeById(recipeId, recipesRoot);
   }
-  const ranked = await rankRecipes(recipes, profile, { checkCommands: true });
+  // First-run onboarding selects a conversational baseline. Additive capability
+  // recipes (embeddings, image, video, audio) remain explicit installs and must
+  // not become the default merely because they have smaller requirements.
+  const ranked = await rankRecipes(recipes.filter((recipe) =>
+    (recipe.models ?? []).some(isChatRecipeModel)
+  ), profile, { checkCommands: true });
   const selected = ranked.find((candidate) => candidate.selectable);
   if (!selected) throw new Error('No selectable recipe for this machine');
   return recipes.find((recipe) => recipe.id === selected.recipeId);
