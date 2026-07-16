@@ -377,6 +377,10 @@ export async function evaluateRecipe(recipe, profile, { checkCommands = true } =
   const selectable = platformSupported && memorySupported !== false && acceleratorsSupported;
   const setupRequired = selectable && missingCommands.length > 0;
   const runnable = selectable && !setupRequired;
+  const primaryChat = (recipe.models ?? []).some((model) => {
+    const capabilities = new Set(Array.isArray(model?.capabilities) ? model.capabilities : []);
+    return capabilities.has('chat') || capabilities.has('responses') || capabilities.has('anthropic-messages');
+  });
   const score = [
     platformSupported ? 50 : 0,
     memorySupported === true ? 25 : memorySupported === null ? 8 : 0,
@@ -399,6 +403,7 @@ export async function evaluateRecipe(recipe, profile, { checkCommands = true } =
     selectable,
     setupRequired,
     runnable,
+    primaryChat,
     score,
     reasons: [
       ...(platformSupported ? [] : [`requires platform ${platforms.join(', ')}`]),
@@ -418,6 +423,7 @@ export async function rankRecipes(recipes, profile, options = {}) {
   return evaluations.sort((a, b) => {
     if (a.selectable !== b.selectable) return a.selectable ? -1 : 1;
     if (a.runnable !== b.runnable) return a.runnable ? -1 : 1;
+    if (a.primaryChat !== b.primaryChat) return a.primaryChat ? -1 : 1;
     if (a.score !== b.score) return b.score - a.score;
     return String(a.name).localeCompare(String(b.name));
   });

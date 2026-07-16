@@ -1,0 +1,102 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "apple-silicon-qwen3-embedding-4b-ollama",
+  "name": "Apple Silicon Qwen3 Embedding 4B Ollama",
+  "version": 1,
+  "summary": "A persistent Qwen3-Embedding-4B runtime for local semantic memory behind LLooM on Apple Silicon.",
+  "license": { "id": "Apache-2.0", "name": "Qwen3-Embedding-4B model license" },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "Qwen model card and Ollama embedding API documentation"
+  },
+  "links": [
+    {
+      "rel": "model",
+      "href": "https://ollama.com/library/qwen3-embedding:4b",
+      "mediaType": "text/html"
+    }
+  ],
+  "keywords": ["embedding", "continuity", "qwen3", "apple-silicon", "ollama", "multilingual"],
+  "capabilities": ["embedding", "embeddings", "batching", "multilingual", "long-context"],
+  "hardware": {
+    "family": "Apple Silicon",
+    "testedMachine": "Apple Silicon Mac with unified memory",
+    "notes": [
+      "The 4B quantized artifact is approximately 2.5 GB and is intended to remain resident beside a larger chat model.",
+      "Ollama exposes normalized vectors through its OpenAI-compatible embeddings endpoint."
+    ]
+  },
+  "requirements": {
+    "platforms": ["darwin-arm64"],
+    "memoryGb": 8,
+    "diskGb": 4,
+    "commands": ["ollama"],
+    "accelerators": ["apple-gpu"]
+  },
+  "backend": {
+    "id": "ollama",
+    "name": "Ollama",
+    "type": "openai-compatible-server",
+    "features": ["metal", "openai-embeddings", "batching", "model-management"]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-ollama",
+        "title": "Check Ollama CLI",
+        "action": "check-command",
+        "command": "ollama",
+        "args": ["--version"]
+      },
+      {
+        "id": "pull-qwen3-embedding-4b",
+        "title": "Pull Qwen3 Embedding 4B",
+        "action": "command",
+        "command": "ollama",
+        "args": ["pull", "qwen3-embedding:4b"]
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "embedding",
+      "model": "qwen3-embedding:4b",
+      "gatewayModel": "qwen3-embedding:4b",
+      "runtime": "ollama-qwen3-embedding-4b",
+      "backendConfig": "ollama-qwen3-embedding-4b",
+      "backend": "Ollama embeddings",
+      "input": ["text"],
+      "output": ["embedding"],
+      "capabilities": ["embedding", "embeddings", "batching", "multilingual", "long-context"],
+      "settings": {
+        "contextWindow": 40960,
+        "maxActiveRequests": 8,
+        "memoryGb": 4,
+        "priority": 200,
+        "evictable": false,
+        "keepWarm": true,
+        "startupTimeoutMs": 300000,
+        "runtime": {
+          "command": "ollama",
+          "args": ["serve"],
+          "env": {
+            "OLLAMA_HOST": "127.0.0.1:${port}",
+            "OLLAMA_KEEP_ALIVE": "-1"
+          },
+          "healthPath": "/api/tags",
+          "warmup": {
+            "url": "http://127.0.0.1:${port}/v1/embeddings",
+            "method": "POST",
+            "body": {
+              "model": "${modelId}",
+              "input": ["Continuity is the persistence of meaningful identity through time."]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

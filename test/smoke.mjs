@@ -792,6 +792,7 @@ const loadedRecipes = await loadRecipes();
 assert.deepEqual(
   loadedRecipes.map((candidate) => candidate.id),
   [
+    'apple-silicon-qwen3-embedding-4b-ollama',
     'apple-silicon-qwen36-35b-a3b-optiq',
     'apple-silicon-qwen36',
     'high-memory-local-image-generation',
@@ -904,7 +905,7 @@ const recipeIndexReport = await buildRecipeIndexReport(config, {
 });
 assert.equal(recipeIndexReport.ok, true);
 assert.equal(recipeIndexReport.index.id, 'lloom-community-recipes');
-assert.equal(recipeIndexReport.recipes.length, 7);
+assert.equal(recipeIndexReport.recipes.length, 8);
 const indexedSparkRecipe = recipeIndexReport.recipes.find(
   (candidate) => candidate.id === 'linux-nvidia-gb10-qwen36-unsloth-vllm'
 );
@@ -1869,6 +1870,7 @@ const additiveDerived = deriveUserConfig(additiveBase, embeddingRecipe, {
   additive: true
 });
 assert.equal(additiveDerived.defaults.chatModel, 'existing-chat');
+assert.equal(additiveDerived.defaults.embeddingModel, 'Qwen/Qwen3-Embedding-4B');
 assert.deepEqual(additiveDerived.models.map((model) => model.id).sort(), ['Qwen/Qwen3-Embedding-4B', 'existing-chat']);
 assert.equal(additiveDerived.runtimes['existing-runtime'].keepWarm, true);
 assert.equal(additiveDerived.runtimes['qwen3-embedding-4b'].keepWarm, true);
@@ -1887,6 +1889,24 @@ const retunedDerived = deriveUserConfig(additiveDerived, retunedEmbeddingRecipe,
   additive: true
 });
 assert.equal(retunedDerived.runtimes['qwen3-embedding-4b'].memoryGb, 13);
+const appleEmbeddingRecipe = await loadRecipeById('apple-silicon-qwen3-embedding-4b-ollama');
+const appleEmbeddingDerived = deriveUserConfig(additiveBase, appleEmbeddingRecipe, {
+  modelRoot: '/models',
+  additive: true
+});
+assert.equal(appleEmbeddingDerived.defaults.chatModel, 'existing-chat');
+assert.equal(appleEmbeddingDerived.defaults.embeddingModel, 'qwen3-embedding:4b');
+assert.equal(
+  appleEmbeddingDerived.models.find((model) => model.id === 'qwen3-embedding:4b').kind,
+  'embedding'
+);
+assert.equal(appleEmbeddingDerived.runtimes['ollama-qwen3-embedding-4b'].keepWarm, true);
+assert.equal(appleEmbeddingDerived.runtimes['ollama-qwen3-embedding-4b'].policy.evictable, false);
+assert.deepEqual(appleEmbeddingDerived.runtimes['ollama-qwen3-embedding-4b'].args, ['serve']);
+assert.equal(
+  appleEmbeddingDerived.runtimes['ollama-qwen3-embedding-4b'].warmup.url,
+  `http://127.0.0.1:${appleEmbeddingDerived.runtimes['ollama-qwen3-embedding-4b'].port}/v1/embeddings`
+);
 const singleModelRecipe = await loadRecipeById(
   'apple-silicon-qwen36-35b-a3b-mtplx',
   path.join(process.cwd(), 'community', 'recipes')
@@ -5105,7 +5125,7 @@ if (listened) {
       try {
         assert.equal(autoHostPlan.ok, true);
         assert(autoHostPlan.host.autoStarted.pid);
-        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, 13);
+        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, 14);
         assert.equal(autoHostPlan.plans[0].recommendation.id, 'apple-silicon-qwen36-35b-a3b-mtplx-pack');
         assert.equal(autoHostPlan.plans[0].plan.roots.recipesRoot, autoHostRecipesRoot);
         assert.equal(autoHostPlan.plans[0].plan.roots.benchmarksRoot, autoHostBenchmarksRoot);
