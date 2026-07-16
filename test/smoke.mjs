@@ -854,10 +854,7 @@ const sharedUpstreamSummary = summarizeBenchmarksForRecipe(
   ]
 );
 assert.equal(sharedUpstreamSummary.find((summary) => summary.role === 'plain')?.best?.id, 'plain-result');
-assert.equal(
-  sharedUpstreamSummary.find((summary) => summary.role === 'speculative')?.best?.id,
-  'speculative-result'
-);
+assert.equal(sharedUpstreamSummary.find((summary) => summary.role === 'speculative')?.best?.id, 'speculative-result');
 assert.equal(
   benchmarkSummary.find((summary) => summary.role === 'fastest-27b')?.best?.metrics.generationTokPerSec,
   25.47
@@ -1932,10 +1929,7 @@ const appleEmbeddingDerived = deriveUserConfig(additiveBase, appleEmbeddingRecip
 });
 assert.equal(appleEmbeddingDerived.defaults.chatModel, 'existing-chat');
 assert.equal(appleEmbeddingDerived.defaults.embeddingModel, 'qwen3-embedding:4b');
-assert.equal(
-  appleEmbeddingDerived.models.find((model) => model.id === 'qwen3-embedding:4b').kind,
-  'embedding'
-);
+assert.equal(appleEmbeddingDerived.models.find((model) => model.id === 'qwen3-embedding:4b').kind, 'embedding');
 assert.equal(appleEmbeddingDerived.runtimes['ollama-qwen3-embedding-4b'].keepWarm, true);
 assert.equal(appleEmbeddingDerived.runtimes['ollama-qwen3-embedding-4b'].policy.evictable, false);
 assert.deepEqual(appleEmbeddingDerived.runtimes['ollama-qwen3-embedding-4b'].args, ['serve']);

@@ -77,8 +77,8 @@
   "license": "MIT",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "eslint": "^10.6.0",
-    "prettier": "^3.9.4"
+    "eslint": "^10.7.0",
+    "prettier": "^3.9.5"
   },
   "dependencies": {
     "undici": "^7.28.0"

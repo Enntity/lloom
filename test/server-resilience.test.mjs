@@ -105,12 +105,17 @@ console.log('server-resilience tests passed');
   let stopAllCalls = 0;
   const runtimeManager = {
     startKeepWarm: async () => {},
-    stopAll: async () => { stopAllCalls += 1; }
+    stopAll: async () => {
+      stopAllCalls += 1;
+    }
   };
   const config = {
     server: { host: '127.0.0.1', port: 0 },
     security: { allowMissingAuth: true, apiKeys: [] },
-    defaults: {}, backends: {}, models: [], runtimes: {}
+    defaults: {},
+    backends: {},
+    models: [],
+    runtimes: {}
   };
   const app = createLloomServer(config, { runtimeManager, logger: { error() {}, warn() {} } });
   await app.listen();
@@ -124,12 +129,18 @@ console.log('server-resilience tests passed');
   const config = {
     server: { host: '127.0.0.1', port: 0 },
     security: { allowMissingAuth: true, apiKeys: [] },
-    defaults: {}, backends: {}, models: [], runtimes: {}
+    defaults: {},
+    backends: {},
+    models: [],
+    runtimes: {}
   };
   const app = createLloomServer(config, { runtimeManager, logger: { error() {}, warn() {} } });
   await app.listen();
   const socket = net.createConnection(app.server.address().port, '127.0.0.1');
-  await new Promise((resolve, reject) => { socket.once('connect', resolve); socket.once('error', reject); });
+  await new Promise((resolve, reject) => {
+    socket.once('connect', resolve);
+    socket.once('error', reject);
+  });
   socket.write('GET /health HTTP/1.1\r\nHost: localhost\r\n');
   const startedAt = Date.now();
   await app.close({ stopRuntimes: false, httpGraceMs: 25 });

@@ -1428,7 +1428,9 @@ export function createLloomServer(
               runtimeManager.markAdmissionQueued(runtimeId, true, 'waiting-for-capacity');
               queued = true;
             }
-            await new Promise((resolve) => setTimeout(resolve, Math.min(error.retryAfterSeconds * 1000, deadline - Date.now())));
+            await new Promise((resolve) =>
+              setTimeout(resolve, Math.min(error.retryAfterSeconds * 1000, deadline - Date.now()))
+            );
           }
         }
       } finally {

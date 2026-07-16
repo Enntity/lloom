@@ -403,7 +403,8 @@ export class RuntimeManager {
   markAdmissionQueued(runtimeId, queued, reason = 'capacity') {
     const state = this.stateFor(runtimeId);
     state.admissionQueuedRequests = Math.max(0, state.admissionQueuedRequests + (queued ? 1 : -1));
-    if (queued && !['running', 'starting', 'warming'].includes(state.status)) this.setStatus(runtimeId, 'queued', reason);
+    if (queued && !['running', 'starting', 'warming'].includes(state.status))
+      this.setStatus(runtimeId, 'queued', reason);
     if (!queued && state.admissionQueuedRequests === 0 && state.status === 'queued') this.setStatus(runtimeId, 'idle');
   }
 

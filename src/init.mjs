@@ -896,9 +896,11 @@ async function selectRecipe({ recipeId, recipes, profile, recipesRoot }) {
   // First-run onboarding selects a conversational baseline. Additive capability
   // recipes (embeddings, image, video, audio) remain explicit installs and must
   // not become the default merely because they have smaller requirements.
-  const ranked = await rankRecipes(recipes.filter((recipe) =>
-    (recipe.models ?? []).some(isChatRecipeModel)
-  ), profile, { checkCommands: true });
+  const ranked = await rankRecipes(
+    recipes.filter((recipe) => (recipe.models ?? []).some(isChatRecipeModel)),
+    profile,
+    { checkCommands: true }
+  );
   const selected = ranked.find((candidate) => candidate.selectable);
   if (!selected) throw new Error('No selectable recipe for this machine');
   return recipes.find((recipe) => recipe.id === selected.recipeId);

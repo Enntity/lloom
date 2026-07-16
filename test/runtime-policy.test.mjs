@@ -44,7 +44,11 @@ assert.deepEqual(
   ['start:big']
 );
 assert.equal(runtimePolicyPlan.admission.projectedMemoryGb, 55);
-assert(runtimePolicyPlan.protected.some((entry) => entry.runtimeId === 'warm' && entry.protectedReasons.includes('keep-warm')));
+assert(
+  runtimePolicyPlan.protected.some(
+    (entry) => entry.runtimeId === 'warm' && entry.protectedReasons.includes('keep-warm')
+  )
+);
 
 const predictiveConfig = {
   runtimePolicy: {
