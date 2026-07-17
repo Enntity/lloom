@@ -24,6 +24,12 @@ All notable changes to LLooM will be documented in this file. The format follows
 - Detached CLI runtime starts no longer keep the command process open through inherited output pipes.
 - Native chat-client artifacts remain chat-only while discovery APIs advertise all supported model kinds.
 
+## [0.2.2] - 2026-07-17
+
+### Added
+
+- Live-topology aging for cold models after 60 minutes without activity, with a fixed control to reveal the full inactive catalog.
+
 ## [0.2.1] - 2026-07-17
 
 ### Added
@@ -44,6 +50,7 @@ All notable changes to LLooM will be documented in this file. The format follows
 - Anthropic-compatible Messages support, including streaming and tool use.
 - Apple Silicon and NVIDIA DGX Spark backend and recipe coverage.
 
-[Unreleased]: https://github.com/enntity/lloom/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/enntity/lloom/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/enntity/lloom/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/enntity/lloom/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/enntity/lloom/releases/tag/v0.2.0

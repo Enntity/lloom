@@ -204,6 +204,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     .topology-hud-panel { padding:11px 13px; border:1px solid rgba(47,230,200,.24); background:rgba(7,11,12,.82); box-shadow:0 10px 35px rgba(0,0,0,.24); backdrop-filter:blur(12px); }
     .topology-hud-right { display:flex; align-items:flex-start; gap:10px; }
     .metrics-period { width:auto; min-height:34px; border-color:rgba(47,230,200,.24); background:rgba(7,11,12,.82); color:var(--accent); font:700 10px "SFMono-Regular",monospace; pointer-events:auto; }
+    .topology-model-filter { min-height:34px; border-color:rgba(47,230,200,.24); background:rgba(7,11,12,.82); color:var(--muted); font:700 10px "SFMono-Regular",monospace; pointer-events:auto; white-space:nowrap; }
+    .topology-model-filter[aria-pressed="true"] { color:var(--accent); border-color:rgba(47,230,200,.55); }
+    .topology-model-filter:disabled { opacity:.5; cursor:default; }
     .topology-hud .fabric-totals { padding:9px 12px; border:1px solid rgba(47,230,200,.24); background:rgba(7,11,12,.82); backdrop-filter:blur(12px); }
     .topology-hud #activity-state { pointer-events:auto; min-height:34px; background:rgba(7,11,12,.82); }
     .topology-canvas { display:block; width:100%; height:calc(100vh - 108px); min-height:640px; cursor:grab; touch-action:none; }
@@ -398,6 +401,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       <div class="topology-hud">
         <div class="topology-hud-panel"><div class="fabric-title">LLooM // LIVE TOPOLOGY</div><div class="muted mono">connections → gateway → models · <span id="metrics-scope">this process</span> · select a model for details</div></div>
         <div class="topology-hud-right">
+          <button id="topology-model-filter" class="topology-model-filter" type="button" aria-pressed="false" title="Cold models leave the live topology after 60 minutes without activity">ALL MODELS</button>
           <select id="metrics-period" class="metrics-period" aria-label="Metrics period"><option value="today">TODAY</option><option value="7d">7 DAYS</option><option value="30d">30 DAYS</option><option value="all" selected>ALL TIME</option></select>
           <div class="fabric-totals"><div class="fabric-total"><strong id="fabric-in">0</strong><span>tokens in</span></div><div class="fabric-total"><strong id="fabric-out">0</strong><span>tokens out</span></div><div class="fabric-total"><strong id="fabric-rate">—</strong><span id="fabric-rate-label">tok/s</span></div><div class="fabric-total"><strong id="fabric-active">0</strong><span>active</span></div></div>
           <span id="activity-state" class="pill"><span class="dot pulse"></span><span>connecting</span></span>
@@ -599,6 +603,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       topologyZoomAnchor: null,
       topologyRaisedModelId: null,
       selectedModelId: null,
+      showAllTopologyModels: false,
+      topologyAgedModelCount: 0,
+      topologyCatalogModels: [],
       topologyView: null,
       topologyHitCards: [],
       output: null,
@@ -607,6 +614,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     // Higher values draw later (on top). Serving stays above idle hot/external cards
     // so overlaps favor live traffic; click temporarily overrides via topologyRaisedModelId.
     const MODEL_CARD_STATE_Z = { cold: 0, queued: 1, warming: 1, evicting: 1, hot: 2, external: 2, serving: 3 };
+    const TOPOLOGY_COLD_MODEL_TTL_MS = 60 * 60 * 1000;
     function modelCardZ(model) {
       if (state.topologyRaisedModelId && model.id === state.topologyRaisedModelId) return 1000;
       return MODEL_CARD_STATE_Z[model.state] ?? 0;
@@ -749,6 +757,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         ["Input", formatCompact(topologyModel.inputTokens || 0) + " tokens"],
         ["Output", formatCompact(topologyModel.outputTokens || 0) + " tokens"],
         ["Live rate", formatRate(topologyModel.liveRate || 0) + " tok/s"],
+        ["Last activity", topologyModel.lastActiveAt ? new Date(topologyModel.lastActiveAt).toLocaleString() : "Never"],
         ["Port", runtime?.port || "—"]
       ];
       $("#model-inspector-details").innerHTML = details.map(([label, value]) => '<div class="model-detail"><span>' + escapeHtml(label) + '</span><strong>' + escapeHtml(value) + '</strong></div>').join("");
@@ -764,6 +773,26 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     function openModelInspector(modelId) {
       state.selectedModelId = modelId;
       state.topologyRaisedModelId = modelId;
+      renderModelInspector();
+    }
+
+    function renderTopologyModelFilter() {
+      const button = $("#topology-model-filter");
+      const count = state.topologyAgedModelCount || 0;
+      button.disabled = count === 0;
+      button.setAttribute("aria-pressed", String(state.showAllTopologyModels));
+      button.textContent = count === 0
+        ? "ALL MODELS"
+        : state.showAllTopologyModels
+          ? "LIVE VIEW · HIDE " + count
+          : "VIEW ALL · " + count + " INACTIVE";
+    }
+
+    function applyTopologyModelFilter(models = state.topologyCatalogModels || []) {
+      state.topologyAgedModelCount = models.filter(model => model.agedOut).length;
+      state.topologyModels = state.showAllTopologyModels ? models : models.filter(model => !model.agedOut);
+      if (state.selectedModelId && !state.topologyModels.some(model => model.id === state.selectedModelId)) closeModelInspector();
+      renderTopologyModelFilter();
       renderModelInspector();
     }
 
@@ -1516,7 +1545,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       }));
       const modelMetrics = new Map((metrics.models || []).map(model => [model.id, model]));
       const runtimeStates = state.status?.runtimeManager?.runtimes || {};
-      state.topologyModels = (state.models || []).map(model => {
+      const topologyModels = (state.models || []).map(model => {
         const data = modelMetrics.get(model.id) || {};
         const liveConnections = state.topologyConnections.filter(item => item.live && item.model === model.id);
         const liveInputRate = liveConnections.reduce((sum, item) => sum + item.inputRate, 0);
@@ -1538,9 +1567,13 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const stateLabel = !model.runtime
           ? "external"
           : transitioning || (liveConnections.length ? "serving" : runtimeStatus === "running" ? "hot" : "cold");
-        return { id: model.id, inputTokens: Number(data.inputTokens || 0) + activeInput, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveInputRate, liveOutputRate, averageRate: data.decodeTokensPerSecond == null ? null : Number(data.decodeTokensPerSecond), state: stateLabel };
+        const lastActiveAt = data.last?.at || runtimeStates[model.runtime]?.lastRequestedAt || null;
+        const lastActiveMs = Date.parse(lastActiveAt || "");
+        const agedOut = stateLabel === "cold" && (!Number.isFinite(lastActiveMs) || sampleAt - lastActiveMs > TOPOLOGY_COLD_MODEL_TTL_MS);
+        return { id: model.id, inputTokens: Number(data.inputTokens || 0) + activeInput, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveInputRate, liveOutputRate, averageRate: data.decodeTokensPerSecond == null ? null : Number(data.decodeTokensPerSecond), state: stateLabel, lastActiveAt, agedOut };
       });
-      renderModelInspector();
+      state.topologyCatalogModels = topologyModels;
+      applyTopologyModelFilter();
     }
 
     async function refreshActivity() {
@@ -1618,6 +1651,11 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       state.trafficSample = null;
       state.aggregateRateSamples = [];
       refreshActivity();
+    });
+    $("#topology-model-filter").addEventListener("click", () => {
+      if (!state.topologyAgedModelCount) return;
+      state.showAllTopologyModels = !state.showAllTopologyModels;
+      applyTopologyModelFilter();
     });
     function resetTopologyCamera() {
       state.topologyCamera.manual = 1;
