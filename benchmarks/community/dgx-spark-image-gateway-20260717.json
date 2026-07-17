@@ -1,0 +1,70 @@
+{
+  "$schema": "https://lloom.dev/schemas/benchmark-suite.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "dgx-spark-image-gateway-20260717",
+  "name": "DGX Spark LLooM Image Gateway Dogfood",
+  "summary": "OpenAI-compatible LLooM gateway measurements for local image generation and reference editing on NVIDIA GB10.",
+  "license": { "id": "CC0-1.0", "name": "CC0 1.0" },
+  "source": { "type": "local-measurement", "name": "LLooM gateway benchmark on ennspark01" },
+  "submittedAt": "2026-07-17T21:17:08Z",
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "LLooM OpenAI-compatible image gateway dogfood",
+    "source": "reproducible local measurement"
+  },
+  "methodology": {
+    "harness": "curl against the authenticated LLooM OpenAI-compatible gateway",
+    "harnessVersion": "1",
+    "promptCorpus": "1024x1024 cobalt teapot product photograph with exact ENNTITY tag text",
+    "warmupRuns": 1,
+    "measurementRuns": 1,
+    "streaming": false,
+    "runtimeControl": "model requests only; LLooM performed admission and eviction",
+    "referenceEdit": "preserve the teapot and tag while changing only environment and lighting"
+  },
+  "results": [
+    {
+      "id": "dgx-spark-flux2-klein-4b-q8-gateway-1024-warm",
+      "recipeId": "linux-nvidia-gb10-image-generation",
+      "recipeVersion": 1,
+      "backendId": "docker-stable-diffusion-cpp",
+      "model": "black-forest-labs/FLUX.2-klein-4B",
+      "gatewayModel": "black-forest-labs/FLUX.2-klein-4B",
+      "machine": {
+        "platformId": "linux-arm64",
+        "chip": "NVIDIA DGX Spark / GB10",
+        "memoryGb": 128,
+        "accelerators": ["cuda", "nvidia-gpu", "blackwell"]
+      },
+      "settings": {
+        "runtimeVersion": "stable-diffusion.cpp b5d812008eb7082a238fc589444544b3278187ae",
+        "image": "lloom/stable-diffusion.cpp:flux2-cuda",
+        "quantization": "Q8_0",
+        "width": 1024,
+        "height": 1024,
+        "steps": 4,
+        "cfgScale": 1,
+        "samplingMethod": "euler"
+      },
+      "workload": {
+        "type": "image-generation",
+        "category": "text-and-reference-adherence",
+        "concurrency": 1,
+        "images": 1
+      },
+      "metrics": {
+        "generationSeconds": 11.51,
+        "imagesPerMinute": 5.21,
+        "x-referenceEditSeconds": 35.88,
+        "x-coldMultiReferenceEditSeconds": 83.37
+      },
+      "x-artifacts": {
+        "generation": "/tmp/bench-flux4b-warm.png",
+        "referenceEdit": "/tmp/bench-flux4b-edit.png",
+        "multiReferenceEdit": "/tmp/bench-flux4b-multiref.png"
+      },
+      "notes": "Warm generation rendered ENNTITY exactly. Single- and two-reference edits preserved object identity, shape, color, and tag text while changing the background and lighting."
+    }
+  ]
+}

@@ -171,6 +171,12 @@
             },
             {
               "required": ["prefillTokPerSec"]
+            },
+            {
+              "required": ["generationSeconds"]
+            },
+            {
+              "required": ["imagesPerMinute"]
             }
           ],
           "properties": {
@@ -201,6 +207,14 @@
             "peakMemoryGb": {
               "type": "number",
               "minimum": 0
+            },
+            "generationSeconds": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "imagesPerMinute": {
+              "type": "number",
+              "exclusiveMinimum": 0
             }
           }
         },

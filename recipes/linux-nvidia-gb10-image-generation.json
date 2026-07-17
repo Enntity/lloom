@@ -2,15 +2,15 @@
   "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
   "schemaVersion": 1,
   "profile": "https://lloom.dev/profiles/interchange/v1",
-  "id": "high-memory-local-image-generation",
-  "name": "High-memory local image generation",
-  "version": 2,
-  "summary": "FLUX.2 Klein 4B for fast generation and reference editing, Qwen-Image-2512 for maximum generation quality, and Qwen-Image-Edit-2511 for reference-faithful editing on 96–128 GB Apple Silicon or NVIDIA systems.",
+  "id": "linux-nvidia-gb10-image-generation",
+  "name": "DGX Spark FLUX.2 Klein 4B + Qwen Image",
+  "version": 1,
+  "summary": "LLooM-managed Docker lanes for fast Apache-2.0 FLUX.2 Klein 4B generation/editing, Qwen-Image-2512 generation, and Qwen-Image-Edit-2511 reference editing on NVIDIA GB10.",
   "license": { "id": "Apache-2.0", "name": "Model and recipe license" },
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "Official Black Forest Labs and Qwen model cards plus stable-diffusion.cpp documentation"
+    "source": "Official Black Forest Labs and Qwen checkpoints served by stable-diffusion.cpp"
   },
   "links": [
     { "rel": "model", "href": "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B", "mediaType": "text/html" },
@@ -19,38 +19,39 @@
     { "rel": "runtime", "href": "https://github.com/leejet/stable-diffusion.cpp", "mediaType": "text/html" }
   ],
   "keywords": [
-    "image-generation",
-    "text-to-image",
-    "apple-silicon",
+    "linux",
     "nvidia",
+    "dgx-spark",
     "gb10",
+    "image-generation",
+    "image-editing",
     "flux2",
     "qwen-image",
-    "stable-diffusion-cpp"
+    "docker"
   ],
   "capabilities": ["image-generation", "image-editing"],
   "hardware": {
-    "family": "High-memory Apple Silicon and NVIDIA CUDA",
-    "testedMachine": "Apple Silicon 96–128 GB and DGX Spark / GB10 128 GB class",
+    "family": "NVIDIA GB10 / DGX Spark",
+    "testedMachine": "DGX Spark with 128 GB unified memory",
     "notes": [
-      "FLUX.2 Klein 4B is the fast Apache-2.0 default: four-step generation, strong prompt adherence, and editing support.",
-      "Qwen-Image-2512 is the slower quality lane, especially for realism, natural detail, bilingual text, and layout.",
-      "Qwen-Image-Edit-2511 is the reference lane for single- and multi-image editing, character consistency, and precise text changes.",
-      "The stable-diffusion.cpp backend builds Metal on macOS and CUDA on Linux automatically through LLooM's backend catalog."
+      "All lanes are cold/on-demand and LLooM admission may evict other large runtimes before generation.",
+      "FLUX.2 Klein 4B is the four-step interactive default and supports one or more reference images.",
+      "Qwen-Image-2512 is the quality text-to-image lane; Qwen-Image-Edit-2511 is the reference-faithful edit lane.",
+      "Qwen-Image-Edit-2511 requires qwen_image_zero_cond_t=true; omitting it substantially degrades edit quality."
     ]
   },
   "requirements": {
-    "platforms": ["darwin-arm64", "linux-arm64", "linux-x64"],
-    "memoryGb": 64,
+    "platforms": ["linux-arm64"],
+    "memoryGb": 96,
     "diskGb": 96,
-    "commands": ["hf", "sd-server"],
-    "accelerators": ["apple-gpu", "cuda", "nvidia-gpu"]
+    "commands": ["docker", "hf"],
+    "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"]
   },
   "backend": {
-    "id": "stable-diffusion-cpp",
-    "name": "stable-diffusion.cpp",
+    "id": "docker-stable-diffusion-cpp",
+    "name": "stable-diffusion.cpp CUDA container",
     "type": "openai-images-server",
-    "features": ["metal", "cuda", "openai-images", "flux2", "qwen-image"]
+    "features": ["cuda", "blackwell", "openai-images", "image-generation", "image-editing", "flux2", "qwen-image"]
   },
   "setup": {
     "steps": [
@@ -143,43 +144,46 @@
       "role": "default-image",
       "model": "black-forest-labs/FLUX.2-klein-4B",
       "gatewayModel": "black-forest-labs/FLUX.2-klein-4B",
+      "name": "FLUX.2 Klein 4B Q8",
+      "setDefault": true,
       "runtime": "flux2-klein-4b-sdcpp",
       "backendConfig": "flux2-klein-4b-sdcpp",
-      "backend": "stable-diffusion.cpp Metal/CUDA",
+      "backend": "stable-diffusion.cpp CUDA",
       "input": ["text", "image"],
       "output": ["image"],
       "capabilities": ["image-generation", "image-editing"],
       "settings": {
         "maxActiveRequests": 1,
-        "memoryGb": 32,
+        "memoryGb": 24,
         "priority": 70,
         "evictable": true,
         "keepWarm": false,
         "startupTimeoutMs": 900000,
+        "timeoutMs": 1800000,
         "runtime": {
-          "command": "sd-server",
-          "args": [
-            "--listen-ip",
-            "127.0.0.1",
-            "--listen-port",
-            "${port}",
-            "--diffusion-model",
-            "${modelRoot}/lloom-flux2-klein-4b/flux-2-klein-4b-Q8_0.gguf",
-            "--llm",
-            "${modelRoot}/lloom-flux2-klein-4b/split_files/text_encoders/qwen_3_4b.safetensors",
-            "--vae",
-            "${modelRoot}/lloom-flux2-klein-4b/split_files/vae/flux2-vae.safetensors",
-            "--cfg-scale",
-            "1.0",
-            "--steps",
-            "4",
-            "--sampling-method",
-            "euler",
-            "--diffusion-fa"
-          ],
-          "baseUrlPath": "/v1",
-          "healthPath": "/v1/models",
-          "warmup": false
+          "adapter": "docker",
+          "management": "managed",
+          "containerName": "flux2-klein-4b-sdcpp",
+          "healthUrl": "http://127.0.0.1:${port}/v1/models",
+          "warmup": false,
+          "bootstrap": {
+            "adapter": "docker",
+            "image": "lloom/stable-diffusion.cpp:flux2-cuda",
+            "pull": false,
+            "createArgs": [
+              "--restart", "unless-stopped", "--gpus", "all", "--ipc", "host",
+              "-p", "127.0.0.1:${port}:8000",
+              "--entrypoint", "/sd-server",
+              "-v", "${modelRoot}:/models:ro"
+            ],
+            "command": [
+              "--listen-ip", "0.0.0.0", "--listen-port", "8000",
+              "--diffusion-model", "/models/lloom-flux2-klein-4b/flux-2-klein-4b-Q8_0.gguf",
+              "--llm", "/models/lloom-flux2-klein-4b/split_files/text_encoders/qwen_3_4b.safetensors",
+              "--vae", "/models/lloom-flux2-klein-4b/split_files/vae/flux2-vae.safetensors",
+              "--cfg-scale", "1.0", "--steps", "4", "--sampling-method", "euler", "--diffusion-fa"
+            ]
+          }
         }
       }
     },
@@ -187,45 +191,45 @@
       "role": "quality-image",
       "model": "Qwen/Qwen-Image-2512",
       "gatewayModel": "Qwen/Qwen-Image-2512",
+      "name": "Qwen-Image-2512 Q8",
       "runtime": "qwen-image-2512-sdcpp",
       "backendConfig": "qwen-image-2512-sdcpp",
-      "backend": "stable-diffusion.cpp Metal/CUDA",
+      "backend": "stable-diffusion.cpp CUDA",
       "input": ["text"],
       "output": ["image"],
       "capabilities": ["image-generation"],
       "settings": {
         "maxActiveRequests": 1,
-        "memoryGb": 48,
+      "memoryGb": 44,
         "priority": 65,
         "evictable": true,
         "keepWarm": false,
         "startupTimeoutMs": 1200000,
+        "timeoutMs": 1800000,
         "runtime": {
-          "command": "sd-server",
-          "args": [
-            "--listen-ip",
-            "127.0.0.1",
-            "--listen-port",
-            "${port}",
-            "--diffusion-model",
-            "${modelRoot}/lloom-qwen-image-2512/qwen-image-2512-Q8_0.gguf",
-            "--llm",
-            "${modelRoot}/lloom-qwen-image-shared/split_files/text_encoders/qwen_2.5_vl_7b.safetensors",
-            "--vae",
-            "${modelRoot}/lloom-qwen-image-shared/split_files/vae/qwen_image_vae.safetensors",
-            "--cfg-scale",
-            "4.0",
-            "--steps",
-            "50",
-            "--sampling-method",
-            "euler",
-            "--flow-shift",
-            "3",
-            "--diffusion-fa"
-          ],
-          "baseUrlPath": "/v1",
-          "healthPath": "/v1/models",
-          "warmup": false
+          "adapter": "docker",
+          "management": "managed",
+          "containerName": "qwen-image-2512-sdcpp",
+          "healthUrl": "http://127.0.0.1:${port}/v1/models",
+          "warmup": false,
+          "bootstrap": {
+            "adapter": "docker",
+            "image": "lloom/stable-diffusion.cpp:flux2-cuda",
+            "pull": false,
+            "createArgs": [
+              "--restart", "unless-stopped", "--gpus", "all", "--ipc", "host",
+              "-p", "127.0.0.1:${port}:8000",
+              "--entrypoint", "/sd-server",
+              "-v", "${modelRoot}:/models:ro"
+            ],
+            "command": [
+              "--listen-ip", "0.0.0.0", "--listen-port", "8000",
+              "--diffusion-model", "/models/lloom-qwen-image-2512/qwen-image-2512-Q8_0.gguf",
+              "--llm", "/models/lloom-qwen-image-shared/split_files/text_encoders/qwen_2.5_vl_7b.safetensors",
+              "--vae", "/models/lloom-qwen-image-shared/split_files/vae/qwen_image_vae.safetensors",
+              "--cfg-scale", "4.0", "--steps", "20", "--sampling-method", "euler", "--flow-shift", "3", "--diffusion-fa"
+            ]
+          }
         }
       }
     },
@@ -233,47 +237,46 @@
       "role": "quality-image-edit",
       "model": "Qwen/Qwen-Image-Edit-2511",
       "gatewayModel": "Qwen/Qwen-Image-Edit-2511",
+      "name": "Qwen-Image-Edit-2511 Q8",
       "runtime": "qwen-image-edit-2511-sdcpp",
       "backendConfig": "qwen-image-edit-2511-sdcpp",
-      "backend": "stable-diffusion.cpp Metal/CUDA",
+      "backend": "stable-diffusion.cpp CUDA",
       "input": ["text", "image"],
       "output": ["image"],
       "capabilities": ["image-editing"],
       "settings": {
         "maxActiveRequests": 1,
-        "memoryGb": 56,
+      "memoryGb": 44,
         "priority": 66,
         "evictable": true,
         "keepWarm": false,
         "startupTimeoutMs": 1200000,
+        "timeoutMs": 1800000,
         "runtime": {
-          "command": "sd-server",
-          "args": [
-            "--listen-ip",
-            "127.0.0.1",
-            "--listen-port",
-            "${port}",
-            "--diffusion-model",
-            "${modelRoot}/lloom-qwen-image-edit-2511/qwen-image-edit-2511-Q8_0.gguf",
-            "--llm",
-            "${modelRoot}/lloom-qwen-image-shared/split_files/text_encoders/qwen_2.5_vl_7b.safetensors",
-            "--vae",
-            "${modelRoot}/lloom-qwen-image-shared/split_files/vae/qwen_image_vae.safetensors",
-            "--cfg-scale",
-            "2.5",
-            "--steps",
-            "40",
-            "--sampling-method",
-            "euler",
-            "--flow-shift",
-            "3",
-            "--model-args",
-            "qwen_image_zero_cond_t=true",
-            "--diffusion-fa"
-          ],
-          "baseUrlPath": "/v1",
-          "healthPath": "/v1/models",
-          "warmup": false
+          "adapter": "docker",
+          "management": "managed",
+          "containerName": "qwen-image-edit-2511-sdcpp",
+          "healthUrl": "http://127.0.0.1:${port}/v1/models",
+          "warmup": false,
+          "bootstrap": {
+            "adapter": "docker",
+            "image": "lloom/stable-diffusion.cpp:flux2-cuda",
+            "pull": false,
+            "createArgs": [
+              "--restart", "unless-stopped", "--gpus", "all", "--ipc", "host",
+              "-p", "127.0.0.1:${port}:8000",
+              "--entrypoint", "/sd-server",
+              "-v", "${modelRoot}:/models:ro"
+            ],
+            "command": [
+              "--listen-ip", "0.0.0.0", "--listen-port", "8000",
+              "--diffusion-model", "/models/lloom-qwen-image-edit-2511/qwen-image-edit-2511-Q8_0.gguf",
+              "--llm", "/models/lloom-qwen-image-shared/split_files/text_encoders/qwen_2.5_vl_7b.safetensors",
+              "--vae", "/models/lloom-qwen-image-shared/split_files/vae/qwen_image_vae.safetensors",
+              "--cfg-scale", "2.5", "--steps", "20", "--sampling-method", "euler", "--flow-shift", "3",
+              "--model-args", "qwen_image_zero_cond_t=true", "--diffusion-fa"
+            ]
+          }
         }
       }
     }

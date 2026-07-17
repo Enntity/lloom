@@ -23,7 +23,9 @@
   },
   "logging": {
     "requestLog": false,
-    "requestLogPath": null
+    "requestLogPath": null,
+    "metricsPersistence": true,
+    "metricsPath": null
   },
   "runtimePolicy": {
     "enabled": true,

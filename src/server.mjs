@@ -1,5 +1,14 @@
 import http from 'node:http';
-import { appendFileSync, mkdirSync, unwatchFile, watchFile } from 'node:fs';
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  unwatchFile,
+  watchFile,
+  writeFileSync
+} from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
@@ -651,13 +660,105 @@ function requestCallerLabel(req) {
   return family ?? safeCallerPart(req.headers['x-stainless-lang']);
 }
 
-function createMetricsStore({ maxRecent = 200 } = {}) {
+function restoreMetricBucket(target, source) {
+  if (!source || typeof source !== 'object') return target;
+  for (const key of Object.keys(target)) {
+    if (key === 'id') continue;
+    if (key === 'recentDecodeRates') {
+      target[key] = Array.isArray(source[key]) ? source[key].slice(-10).map(Number).filter(Number.isFinite) : [];
+      continue;
+    }
+    if (key === 'last') {
+      target[key] = source[key] && typeof source[key] === 'object' ? source[key] : null;
+      continue;
+    }
+    if (source[key] != null && Number.isFinite(Number(source[key]))) target[key] = Number(source[key]);
+  }
+  return target;
+}
+
+function restoreMetricMap(entries) {
+  return new Map(
+    (Array.isArray(entries) ? entries : [])
+      .filter((entry) => entry?.id)
+      .map((entry) => [entry.id, restoreMetricBucket(emptyMetricBucket(entry.id), entry)])
+  );
+}
+
+function createMetricGroup(id = 'all') {
+  return { totals: emptyMetricBucket(id), models: new Map(), routes: new Map() };
+}
+
+function restoreMetricGroup(source, id = 'all') {
+  return {
+    totals: restoreMetricBucket(emptyMetricBucket(id), source?.totals),
+    models: restoreMetricMap(source?.models),
+    routes: restoreMetricMap(source?.routes)
+  };
+}
+
+function mergeMetricBucket(target, source) {
+  if (!source) return target;
+  for (const key of [
+    'requests',
+    'errors',
+    'streams',
+    'durationMs',
+    'responseBytes',
+    'firstContentCount',
+    'firstContentMs',
+    'generationDurationMs',
+    'decodeTokens',
+    'decodeSamples',
+    'estimatedDecodeSamples',
+    'inputTokens',
+    'outputTokens',
+    'totalTokens'
+  ]) {
+    target[key] += Number(source[key] || 0);
+  }
+  if (source.minFirstContentMs != null) {
+    target.minFirstContentMs =
+      target.minFirstContentMs == null
+        ? Number(source.minFirstContentMs)
+        : Math.min(target.minFirstContentMs, Number(source.minFirstContentMs));
+  }
+  if (source.maxFirstContentMs != null) {
+    target.maxFirstContentMs = Math.max(target.maxFirstContentMs ?? 0, Number(source.maxFirstContentMs));
+  }
+  target.recentDecodeRates = target.recentDecodeRates.concat(source.recentDecodeRates || []).slice(-10);
+  if (source.last && (!target.last || String(source.last.at || '') >= String(target.last.at || '')))
+    target.last = source.last;
+  return target;
+}
+
+function mergeMetricMaps(target, source) {
+  for (const [id, bucket] of source.entries()) {
+    if (!target.has(id)) target.set(id, emptyMetricBucket(id));
+    mergeMetricBucket(target.get(id), bucket);
+  }
+}
+
+function serializeMetricGroup(group) {
+  return {
+    totals: finalizeMetricBucket(group.totals),
+    models: [...group.models.values()].map(finalizeMetricBucket).sort((a, b) => a.id.localeCompare(b.id)),
+    routes: [...group.routes.values()].map(finalizeMetricBucket).sort((a, b) => a.id.localeCompare(b.id))
+  };
+}
+
+export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } = {}) {
   const recent = [];
   const active = new Map();
   let nextConnectionId = 1;
-  const totals = emptyMetricBucket('all');
-  const models = new Map();
-  const routes = new Map();
+  const totals = restoreMetricBucket(emptyMetricBucket('all'), initialSnapshot?.totals);
+  const models = restoreMetricMap(initialSnapshot?.models);
+  const routes = restoreMetricMap(initialSnapshot?.routes);
+  const days = new Map(
+    (Array.isArray(initialSnapshot?.history?.days) ? initialSnapshot.history.days : [])
+      .filter((entry) => /^\d{4}-\d{2}-\d{2}$/.test(entry?.date || ''))
+      .map((entry) => [entry.date, restoreMetricGroup(entry, entry.date)])
+  );
 
   function bucketFor(map, key) {
     if (!map.has(key)) map.set(key, emptyMetricBucket(key));
@@ -766,21 +867,44 @@ function createMetricsStore({ maxRecent = 200 } = {}) {
       apply(totals, entry);
       if (entry.model) apply(bucketFor(models, entry.model), entry);
       if (entry.route) apply(bucketFor(routes, entry.route), entry);
+      const dayId = entry.at.slice(0, 10);
+      if (!days.has(dayId)) days.set(dayId, createMetricGroup(dayId));
+      const day = days.get(dayId);
+      apply(day.totals, entry);
+      if (entry.model) apply(bucketFor(day.models, entry.model), entry);
+      if (entry.route) apply(bucketFor(day.routes, entry.route), entry);
+      while (days.size > 400) days.delete([...days.keys()].sort()[0]);
     },
-    snapshot({ model } = {}) {
-      const selectedModel = model ? (models.get(model) ?? null) : null;
+    snapshot({ model, period = 'all' } = {}) {
+      const normalizedPeriod = ['today', '7d', '30d', 'all'].includes(period) ? period : 'all';
+      let selectedGroup = { totals, models, routes };
+      if (normalizedPeriod !== 'all') {
+        const dayCount = normalizedPeriod === 'today' ? 1 : Number.parseInt(normalizedPeriod, 10);
+        const cutoff = new Date();
+        cutoff.setUTCHours(0, 0, 0, 0);
+        cutoff.setUTCDate(cutoff.getUTCDate() - dayCount + 1);
+        selectedGroup = createMetricGroup(normalizedPeriod);
+        for (const [date, day] of days) {
+          if (Date.parse(`${date}T00:00:00Z`) < cutoff.getTime()) continue;
+          mergeMetricBucket(selectedGroup.totals, day.totals);
+          mergeMetricMaps(selectedGroup.models, day.models);
+          mergeMetricMaps(selectedGroup.routes, day.routes);
+        }
+      }
+      const selectedModel = model ? (selectedGroup.models.get(model) ?? null) : null;
       const now = Date.now();
       const rolling = rollingMetricWindows(recent, now, model);
       return {
         object: 'gateway.metrics',
         generatedAt: new Date().toISOString(),
-        totals: finalizeMetricBucket(totals),
+        period: normalizedPeriod,
+        totals: finalizeMetricBucket(selectedGroup.totals),
         models: model
           ? selectedModel
             ? [finalizeMetricBucket(selectedModel)]
             : []
-          : [...models.values()].map(finalizeMetricBucket).sort((a, b) => a.id.localeCompare(b.id)),
-        routes: [...routes.values()].map(finalizeMetricBucket).sort((a, b) => a.id.localeCompare(b.id)),
+          : [...selectedGroup.models.values()].map(finalizeMetricBucket).sort((a, b) => a.id.localeCompare(b.id)),
+        routes: [...selectedGroup.routes.values()].map(finalizeMetricBucket).sort((a, b) => a.id.localeCompare(b.id)),
         active: [...active.values()].map((entry) => ({
           ...entry,
           elapsedMs: Math.max(0, Date.now() - Date.parse(entry.startedAt))
@@ -788,6 +912,98 @@ function createMetricsStore({ maxRecent = 200 } = {}) {
         rolling,
         recent: recent.filter((entry) => !model || entry.model === model).slice(-50)
       };
+    },
+    persistenceSnapshot() {
+      return {
+        ...serializeMetricGroup({ totals, models, routes }),
+        history: {
+          days: [...days.entries()]
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([date, group]) => ({
+              date,
+              ...serializeMetricGroup(group)
+            }))
+        }
+      };
+    }
+  };
+}
+
+function defaultMetricsHistoryPath() {
+  const home = process.env.HOME ? `${process.env.HOME}/.lloom` : './.lloom';
+  return `${home}/metrics-history.json`;
+}
+
+export function createMetricsPersistence(config, { logger = console } = {}) {
+  const enabled = config.logging?.metricsPersistence !== false && process.env.LLOOM_METRICS_PERSISTENCE !== '0';
+  const filePath = config.logging?.metricsPath || process.env.LLOOM_METRICS_PATH || defaultMetricsHistoryPath();
+  let latestSnapshot = null;
+  let flushTimer = null;
+  let createdAt = new Date().toISOString();
+
+  function loadSnapshot() {
+    if (!enabled || !existsSync(filePath)) return null;
+    try {
+      const document = JSON.parse(readFileSync(filePath, 'utf8'));
+      if (document.version !== 1 || !document.metrics?.totals) throw new Error('unsupported metrics history format');
+      createdAt = document.createdAt || createdAt;
+      return document.metrics;
+    } catch (error) {
+      logger.error?.(`could not load LLooM metrics history ${filePath}: ${error?.message ?? error}`);
+      return null;
+    }
+  }
+
+  function flush() {
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+    if (!enabled || !latestSnapshot) return;
+    try {
+      mkdirSync(path.dirname(filePath), { recursive: true });
+      const temporaryPath = `${filePath}.tmp`;
+      writeFileSync(
+        temporaryPath,
+        `${JSON.stringify(
+          {
+            version: 1,
+            createdAt,
+            updatedAt: new Date().toISOString(),
+            metrics: {
+              totals: latestSnapshot.totals,
+              models: latestSnapshot.models,
+              routes: latestSnapshot.routes,
+              history: latestSnapshot.history
+            }
+          },
+          null,
+          2
+        )}\n`,
+        { mode: 0o600 }
+      );
+      renameSync(temporaryPath, filePath);
+    } catch (error) {
+      logger.error?.(`could not persist LLooM metrics history ${filePath}: ${error?.message ?? error}`);
+    }
+  }
+
+  function schedule(snapshot) {
+    if (!enabled) return;
+    latestSnapshot = snapshot;
+    if (flushTimer) return;
+    flushTimer = setTimeout(flush, 1000);
+    flushTimer.unref?.();
+  }
+
+  return {
+    enabled,
+    filePath,
+    loadSnapshot,
+    schedule,
+    flush,
+    metadata() {
+      return { enabled, scope: enabled ? 'all-time' : 'process', since: createdAt };
     }
   };
 }
@@ -878,7 +1094,7 @@ async function fetchUpstream({ backend, path, body, headers = {}, signal, dispat
   }
 }
 
-async function fetchRawUpstream({ backend, path, body, headers = {}, signal }) {
+async function fetchRawUpstream({ backend, path, body, headers = {}, signal, dispatcher }) {
   const timeoutMs = backend.timeoutMs ?? 1800000;
   const fetchSignal = upstreamSignal(signal, timeoutMs);
   try {
@@ -886,7 +1102,8 @@ async function fetchRawUpstream({ backend, path, body, headers = {}, signal }) {
       method: 'POST',
       headers: backendHeaders(backend, headers),
       body,
-      signal: fetchSignal
+      signal: fetchSignal,
+      dispatcher
     });
   } catch (error) {
     throw normalizeAbortError(error, fetchSignal, timeoutMs);
@@ -1376,7 +1593,8 @@ export function createLloomServer(
     }
   }
 
-  const baseMetrics = createMetricsStore();
+  const metricsPersistence = createMetricsPersistence(config, { logger });
+  const baseMetrics = createMetricsStore({ initialSnapshot: metricsPersistence.loadSnapshot() });
   const hostTelemetry = createHostTelemetry();
   const metrics = {
     begin(entry) {
@@ -1397,11 +1615,18 @@ export function createLloomServer(
         durationMs: entry.durationMs,
         firstContentMs: entry.firstContentMs,
         stream: entry.stream === true,
+        inputTokens: entry.usage?.input_tokens ?? 0,
+        outputTokens: metricOutputTokens(entry),
+        totalTokens: entry.usage?.total_tokens ?? (entry.usage?.input_tokens ?? 0) + metricOutputTokens(entry),
         error: entry.ok === false ? (entry.error ?? entry.status) : undefined
       });
+      metricsPersistence.schedule(baseMetrics.persistenceSnapshot());
     },
     snapshot(...args) {
-      return baseMetrics.snapshot(...args);
+      return { ...baseMetrics.snapshot(...args), persistence: metricsPersistence.metadata() };
+    },
+    flush() {
+      metricsPersistence.flush();
     }
   };
 
@@ -1650,10 +1875,90 @@ export function createLloomServer(
           backend: resolved.backend,
           path: '/v1/images/generations',
           signal,
+          dispatcher: longRunningMediaDispatcher,
           body: {
             ...body,
             model: resolved.model.upstreamModel
           }
+        });
+        return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
+      }
+    );
+  }
+
+  async function handleOpenAIImageEdits(req, res) {
+    const type = contentType(req);
+    if (!/^multipart\/form-data\b/i.test(type)) {
+      sendJson(
+        res,
+        400,
+        errorBody('image edit request must use multipart/form-data', {
+          code: 'invalid_content_type'
+        })
+      );
+      return;
+    }
+
+    const raw = await readBodyBuffer(req);
+    const modelId = multipartTextField(raw, type, 'model') ?? config.defaults?.imageModel;
+    const resolved = registry.resolve(modelId);
+    if ((resolved.model.kind ?? 'chat') !== 'image') {
+      sendJson(
+        res,
+        400,
+        errorBody(`model ${resolved.requestedId} is not an image-generation model`, {
+          code: 'wrong_model_kind',
+          model: resolved.requestedId
+        })
+      );
+      return;
+    }
+    const modelInputs = new Set(resolved.model.input ?? []);
+    const modelCapabilities = new Set(resolved.model.capabilities ?? []);
+    if (!modelInputs.has('image') && !modelCapabilities.has('image-editing')) {
+      sendJson(
+        res,
+        400,
+        errorBody(`model ${resolved.requestedId} does not support image editing`, {
+          code: 'unsupported_model_capability',
+          model: resolved.requestedId,
+          capability: 'image-editing'
+        })
+      );
+      return;
+    }
+
+    let upstreamBody;
+    try {
+      upstreamBody = multipartWithTextField(raw, type, 'model', resolved.model.upstreamModel);
+    } catch (error) {
+      sendJson(
+        res,
+        400,
+        errorBody(error?.message ?? 'invalid multipart request', {
+          code: 'invalid_multipart'
+        })
+      );
+      return;
+    }
+
+    await recordModelRequest(
+      {
+        route: '/v1/images/edits',
+        resolved,
+        stream: false,
+        req,
+        res
+      },
+      async ({ signal, timing }) => {
+        await ensureRuntime(resolved.model.runtime);
+        const upstream = await fetchRawUpstream({
+          backend: resolved.backend,
+          path: '/v1/images/edits',
+          signal,
+          dispatcher: longRunningMediaDispatcher,
+          headers: { 'content-type': type },
+          body: upstreamBody
         });
         return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
       }
@@ -2391,7 +2696,8 @@ export function createLloomServer(
 
       if (req.method === 'GET' && url.pathname === '/gateway/metrics') {
         const snapshot = metrics.snapshot({
-          model: firstQueryParam(url.searchParams, ['model'])
+          model: firstQueryParam(url.searchParams, ['model']),
+          period: firstQueryParam(url.searchParams, ['period']) ?? 'all'
         });
         snapshot.host = await hostTelemetry.snapshot();
         sendJson(res, 200, snapshot);
@@ -2404,7 +2710,8 @@ export function createLloomServer(
           res,
           200,
           metrics.snapshot({
-            model: decodeURIComponent(metricsModelMatch[1])
+            model: decodeURIComponent(metricsModelMatch[1]),
+            period: firstQueryParam(url.searchParams, ['period']) ?? 'all'
           })
         );
         return;
@@ -2793,6 +3100,11 @@ export function createLloomServer(
         return;
       }
 
+      if (req.method === 'POST' && url.pathname === '/v1/images/edits') {
+        await handleOpenAIImageEdits(req, res);
+        return;
+      }
+
       if (req.method === 'POST' && url.pathname === '/v1/videos/generations') {
         await handleOpenAIVideos(req, res);
         return;
@@ -2955,6 +3267,7 @@ export function createLloomServer(
     },
     async close({ stopRuntimes = true, httpGraceMs = 5000 } = {}) {
       if (configPath) unwatchFile(configPath, reloadConfig);
+      metrics.flush();
       let runtimeError = null;
       if (stopRuntimes) {
         try {
@@ -2973,6 +3286,7 @@ export function createLloomServer(
         });
         server.closeIdleConnections?.();
       });
+      metrics.flush();
       if (runtimeError) throw runtimeError;
     }
   };

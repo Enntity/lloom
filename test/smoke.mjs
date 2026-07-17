@@ -797,6 +797,7 @@ assert.deepEqual(
     'apple-silicon-qwen36',
     'apple-silicon-ternary-bonsai-27b',
     'high-memory-local-image-generation',
+    'linux-nvidia-gb10-image-generation',
     'linux-nvidia-gb10-ltx23-dr34ml4y-dev',
     'linux-nvidia-gb10-ltx23-dr34ml4y',
     'linux-nvidia-gb10-qwen36-unsloth-vllm',
@@ -806,12 +807,25 @@ assert.deepEqual(
   ]
 );
 const benchmarkEvidence = await loadBenchmarkEvidence();
-assert.equal(benchmarkEvidence.length, 17);
+assert.equal(benchmarkEvidence.length, 18);
 assert.deepEqual(validateBenchmarkEvidence(benchmarkEvidence), []);
 const benchmarkSuite = JSON.parse(
   await fs.readFile(path.join(process.cwd(), 'benchmarks', 'community', 'apple-silicon-qwen36-m2max.json'), 'utf8')
 );
 assert.deepEqual(validateBenchmarkSuite(benchmarkSuite), []);
+assert.deepEqual(
+  validateBenchmarkEvidence([
+    {
+      id: 'synthetic-image-generation',
+      recipeId: 'synthetic-image-recipe',
+      backendId: 'stable-diffusion-cpp',
+      model: 'publisher/image-model',
+      machine: { platformId: `${process.platform}-${process.arch}` },
+      metrics: { generationSeconds: 12, imagesPerMinute: 5 }
+    }
+  ]),
+  []
+);
 const benchmarkRanking = benchmarkOverview(benchmarkEvidence);
 assert.equal(benchmarkRanking[0].model, 'Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16');
 assert.equal(
@@ -938,7 +952,7 @@ const recipeIndexReport = await buildRecipeIndexReport(config, {
 });
 assert.equal(recipeIndexReport.ok, true);
 assert.equal(recipeIndexReport.index.id, 'lloom-community-recipes');
-assert.equal(recipeIndexReport.recipes.length, 11);
+assert.equal(recipeIndexReport.recipes.length, 12);
 const indexedSparkRecipe = recipeIndexReport.recipes.find(
   (candidate) => candidate.id === 'linux-nvidia-gb10-qwen36-unsloth-vllm'
 );
@@ -2270,6 +2284,13 @@ assert(initPlan.next.apply.includes("--model-root '/models'"));
 assert(initPlan.next.apply.includes("--client 'omp'"));
 
 const imageRecipe = await loadRecipeById('high-memory-local-image-generation');
+const standaloneImageInstall = await applyRecipe(imageRecipe, config, {
+  dryRun: true,
+  modelRoot: '/models',
+  statePath: path.join(tempDir, 'image-install-state.json')
+});
+assert.equal(standaloneImageInstall.plan.validationErrors.length, 0);
+assert.equal(standaloneImageInstall.results.length, 5);
 const imageConfig = deriveUserConfig(config, imageRecipe, { modelRoot: '/models' });
 assert(
   imageConfig.runtimes['flux2-klein-4b-sdcpp'].args.includes('/models/lloom-flux2-klein-4b/flux-2-klein-4b-Q8_0.gguf')
@@ -2277,7 +2298,44 @@ assert(
 assert(
   imageConfig.runtimes['qwen-image-2512-sdcpp'].args.includes('/models/lloom-qwen-image-2512/qwen-image-2512-Q8_0.gguf')
 );
+assert(
+  imageConfig.runtimes['qwen-image-2512-sdcpp'].args.includes(
+    '/models/lloom-qwen-image-shared/split_files/text_encoders/qwen_2.5_vl_7b.safetensors'
+  )
+);
+assert(
+  imageConfig.runtimes['qwen-image-edit-2511-sdcpp'].args.includes(
+    '/models/lloom-qwen-image-edit-2511/qwen-image-edit-2511-Q8_0.gguf'
+  )
+);
+assert(imageConfig.runtimes['qwen-image-edit-2511-sdcpp'].args.includes('qwen_image_zero_cond_t=true'));
 assert.equal(imageConfig.runtimes['flux2-klein-4b-sdcpp'].keepWarm, false);
+
+const sparkImageRecipe = await loadRecipeById('linux-nvidia-gb10-image-generation');
+const sparkImageConfig = deriveUserConfig(config, sparkImageRecipe, { modelRoot: '/models' });
+assert.equal(sparkImageConfig.defaults.imageModel, 'black-forest-labs/FLUX.2-klein-4B');
+const additiveSparkImageBase = structuredClone(config);
+additiveSparkImageBase.defaults.imageModel = 'existing-image-model';
+const additiveSparkImageConfig = deriveUserConfig(additiveSparkImageBase, sparkImageRecipe, {
+  modelRoot: '/models',
+  additive: true
+});
+assert.equal(additiveSparkImageConfig.defaults.imageModel, 'black-forest-labs/FLUX.2-klein-4B');
+assert.equal(sparkImageConfig.runtimes['flux2-klein-4b-sdcpp'].adapter, 'docker');
+assert.equal(
+  sparkImageConfig.runtimes['qwen-image-edit-2511-sdcpp'].bootstrap.image,
+  'lloom/stable-diffusion.cpp:flux2-cuda'
+);
+assert(
+  sparkImageConfig.runtimes['qwen-image-edit-2511-sdcpp'].bootstrap.command.includes('qwen_image_zero_cond_t=true')
+);
+assert.equal(sparkImageConfig.models.find((model) => model.id === 'Qwen/Qwen-Image-Edit-2511')?.kind, 'image');
+const staleSparkImageConfig = structuredClone(sparkImageConfig);
+staleSparkImageConfig.models.find((model) => model.id === 'Qwen/Qwen-Image-Edit-2511').kind = 'chat';
+const refreshedSparkImageConfig = deriveUserConfig(staleSparkImageConfig, sparkImageRecipe, {
+  modelRoot: '/models'
+});
+assert.equal(refreshedSparkImageConfig.models.find((model) => model.id === 'Qwen/Qwen-Image-Edit-2511')?.kind, 'image');
 
 const sparkRecipe = await loadRecipeById('linux-nvidia-gb10-qwen36-unsloth-vllm');
 const sparkConfig = deriveUserConfig(config, sparkRecipe, { modelRoot: '/models' });
@@ -2665,7 +2723,7 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
 
   await runLLooM(['runtime-start', 'synthetic-runtime']);
   const cliDown = JSON.parse((await runLLooM(['down', '--json'])).stdout);
-  assert.equal(cliDown.gateway.status, 'not-running');
+  assert(['not-running', 'not-managed'].includes(cliDown.gateway.status));
   assert.equal(cliDown.runtimes.stopped, 1);
   assert.equal(cliDown.runtimes.total, 1);
   assert.equal(cliDown.runtimes.results[0].runtimeId, 'synthetic-runtime');
@@ -4332,7 +4390,9 @@ if (listened) {
 
     const dashboardAliasResponse = await fetch(`http://127.0.0.1:${port}/gateway/dashboard`);
     assert.equal(dashboardAliasResponse.status, 200);
-    assert((await dashboardAliasResponse.text()).includes('Gateway summary'));
+    const dashboardAliasHtml = await dashboardAliasResponse.text();
+    assert(dashboardAliasHtml.includes('Live LLooM connection and model topology'));
+    assert(dashboardAliasHtml.includes('class="operations-dock"'));
 
     const staleResponse = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
       method: 'POST',
@@ -5161,7 +5221,7 @@ if (listened) {
       try {
         assert.equal(autoHostPlan.ok, true);
         assert(autoHostPlan.host.autoStarted.pid);
-        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, 17);
+        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, 18);
         assert.equal(autoHostPlan.plans[0].recommendation.id, 'apple-silicon-qwen36-35b-a3b-mtplx-pack');
         assert.equal(autoHostPlan.plans[0].plan.roots.recipesRoot, autoHostRecipesRoot);
         assert.equal(autoHostPlan.plans[0].plan.roots.benchmarksRoot, autoHostBenchmarksRoot);
@@ -6077,6 +6137,94 @@ if (autoBackendListened) {
     }
   }
   await closeServer(autoBackendServer);
+}
+
+const imageEditUpstream = http.createServer(async (req, res) => {
+  if (req.method !== 'POST' || req.url !== '/v1/images/edits') {
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'not found' }));
+    return;
+  }
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  const raw = Buffer.concat(chunks).toString('latin1');
+  assert.match(req.headers['content-type'], /^multipart\/form-data; boundary=/);
+  assert(raw.includes('name="model"'));
+  assert(raw.includes('upstream-image-edit-model'));
+  assert(!raw.includes('synthetic-image-edit'));
+  assert(raw.includes('name="image[]"; filename="reference.png"'));
+  assert(raw.includes('synthetic reference image'));
+  assert(raw.includes('name="prompt"'));
+  assert(raw.includes('Preserve the subject and change the background.'));
+  res.writeHead(200, { 'content-type': 'application/json' });
+  res.end(JSON.stringify({ created: 1, data: [{ b64_json: 'EDITED' }] }));
+});
+
+const imageEditListened = await tryListen(imageEditUpstream);
+if (imageEditListened) {
+  const imageEditPort = imageEditUpstream.address().port;
+  const imageEditConfig = structuredClone(config);
+  imageEditConfig.server = { host: '127.0.0.1', port: 0 };
+  imageEditConfig.defaults.imageModel = 'synthetic-image-edit';
+  imageEditConfig.backends['synthetic-image-edit'] = {
+    type: 'openai',
+    baseUrl: `http://127.0.0.1:${imageEditPort}/v1`,
+    apiKey: 'sk-test'
+  };
+  imageEditConfig.models.push(
+    {
+      id: 'synthetic-image-edit',
+      name: 'Synthetic Image Edit',
+      backend: 'synthetic-image-edit',
+      upstreamModel: 'upstream-image-edit-model',
+      kind: 'image',
+      input: ['text', 'image'],
+      output: ['image'],
+      capabilities: ['image-editing'],
+      advertise: true
+    },
+    {
+      id: 'synthetic-image-generation-only',
+      name: 'Synthetic Image Generation Only',
+      backend: 'synthetic-image-edit',
+      upstreamModel: 'upstream-generation-model',
+      kind: 'image',
+      input: ['text'],
+      output: ['image'],
+      capabilities: ['image-generation'],
+      advertise: true
+    }
+  );
+  const imageEditApp = createLloomServer(imageEditConfig, { logger: { error() {} } });
+  const imageEditGatewayListened = await tryListen(imageEditApp.server);
+  if (imageEditGatewayListened) {
+    const { port } = imageEditApp.server.address();
+    try {
+      const form = new FormData();
+      form.append('prompt', 'Preserve the subject and change the background.');
+      form.append('image[]', new Blob(['synthetic reference image'], { type: 'image/png' }), 'reference.png');
+      const editResponse = await fetch(`http://127.0.0.1:${port}/v1/images/edits`, {
+        method: 'POST',
+        body: form
+      });
+      assert.equal(editResponse.status, 200);
+      assert.equal((await editResponse.json()).data[0].b64_json, 'EDITED');
+
+      const unsupportedForm = new FormData();
+      unsupportedForm.append('model', 'synthetic-image-generation-only');
+      unsupportedForm.append('prompt', 'Ignored.');
+      unsupportedForm.append('image', new Blob(['ignored'], { type: 'image/png' }), 'ignored.png');
+      const unsupportedResponse = await fetch(`http://127.0.0.1:${port}/v1/images/edits`, {
+        method: 'POST',
+        body: unsupportedForm
+      });
+      assert.equal(unsupportedResponse.status, 400);
+      assert.equal((await unsupportedResponse.json()).error.code, 'unsupported_model_capability');
+    } finally {
+      await closeServer(imageEditApp.server);
+    }
+  }
+  await closeServer(imageEditUpstream);
 }
 
 const videoUpstream = http.createServer(async (req, res) => {

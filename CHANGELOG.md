@@ -24,6 +24,17 @@ All notable changes to LLooM will be documented in this file. The format follows
 - Detached CLI runtime starts no longer keep the command process open through inherited output pipes.
 - Native chat-client artifacts remain chat-only while discovery APIs advertise all supported model kinds.
 
+## [0.2.1] - 2026-07-17
+
+### Added
+
+- Persistent aggregate gateway metrics with daily rollups, restart recovery, and Today / 7 Days / 30 Days / All Time dashboard periods.
+- Image-edit routing and long-running media request handling for the DGX Spark image lanes.
+
+### Changed
+
+- The dashboard is now centered on the live topology with fixed overlays, model inspection and controls, and an explicit active-compute animation.
+
 ## [0.2.0] - 2026-07-08
 
 ### Added
@@ -33,5 +44,6 @@ All notable changes to LLooM will be documented in this file. The format follows
 - Anthropic-compatible Messages support, including streaming and tool use.
 - Apple Silicon and NVIDIA DGX Spark backend and recipe coverage.
 
-[Unreleased]: https://github.com/enntity/lloom/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/enntity/lloom/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/enntity/lloom/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/enntity/lloom/releases/tag/v0.2.0

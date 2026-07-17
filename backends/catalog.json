@@ -475,7 +475,7 @@
       "kind": "image-server",
       "description": "Local C/C++ image generation runtime for Flux and Stable Diffusion style models.",
       "platforms": ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"],
-      "features": ["image-generation", "flux", "stable-diffusion"],
+      "features": ["image-generation", "image-editing", "flux", "stable-diffusion"],
       "commands": ["sd-server"],
       "setup": [
         {
@@ -550,8 +550,40 @@
       ],
       "server": {
         "protocol": "openai-images",
-        "healthPath": "/health",
-        "imagePath": "/v1/images/generations"
+        "healthPath": "/v1/models",
+        "imagePath": "/v1/images/generations",
+        "imageEditPath": "/v1/images/edits"
+      }
+    },
+    {
+      "id": "docker-stable-diffusion-cpp",
+      "name": "stable-diffusion.cpp CUDA container",
+      "kind": "image-server",
+      "description": "LLooM-managed stable-diffusion.cpp CUDA container for image generation and reference editing on NVIDIA systems.",
+      "platforms": ["linux-x64", "linux-arm64"],
+      "features": ["image-generation", "image-editing", "flux", "qwen-image", "cuda", "docker"],
+      "commands": ["docker"],
+      "setup": [
+        {
+          "id": "check-docker",
+          "title": "Check Docker",
+          "action": "check-command",
+          "command": "docker",
+          "args": ["--version"]
+        },
+        {
+          "id": "check-stable-diffusion-cpp-cuda-image",
+          "title": "Check the LLooM stable-diffusion.cpp CUDA image",
+          "action": "check-command",
+          "command": "docker",
+          "args": ["image", "inspect", "lloom/stable-diffusion.cpp:flux2-cuda"]
+        }
+      ],
+      "server": {
+        "protocol": "openai-images",
+        "healthPath": "/v1/models",
+        "imagePath": "/v1/images/generations",
+        "imageEditPath": "/v1/images/edits"
       }
     },
     {

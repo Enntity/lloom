@@ -307,7 +307,7 @@ export async function applyRecipe(
     throw new Error('Refusing to execute recipe without yes=true. Re-run with --yes after reviewing the dry-run plan.');
   }
 
-  const plan = planRecipe(recipe, config, { modelRoot });
+  const plan = planRecipe(recipe, config, { modelRoot, checkLocalReferences: false });
   if (plan.validationErrors.length) {
     throw new Error(
       `Recipe ${recipe.id} is invalid:\n${plan.validationErrors.map((error) => `- ${error}`).join('\n')}`

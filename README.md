@@ -92,7 +92,7 @@ Then open OMP normally. The generated OMP config points at `http://127.0.0.1:810
 
 ## What You Get
 
-- OpenAI-compatible `/v1/models`, `/v1/chat/completions`, `/v1/responses`, embeddings, image generation, speech, and transcription routes.
+- OpenAI-compatible `/v1/models`, `/v1/chat/completions`, `/v1/responses`, embeddings, image generation and reference editing, speech, and transcription routes.
 - Anthropic-compatible `/v1/messages`, including tool-use and streaming deltas.
 - Runtime start, health checks, stop, warmup, keep-warm bootstrapping, per-runtime concurrency slots, and conservative memory admission planning.
 - Backend recipes for vLLM, SGLang, MTPLX, MLX LM, llama.cpp, Ollama, OptiQ, and stable-diffusion.cpp, with dedicated DGX Spark / GB10 and Apple Silicon recipes.

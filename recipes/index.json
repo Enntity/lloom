@@ -189,8 +189,8 @@
       "id": "high-memory-local-image-generation",
       "path": "high-memory-local-image-generation.json",
       "name": "High-memory local image generation",
-      "summary": "FLUX.2 Klein 4B fast generation plus Qwen-Image-2512 quality generation for Apple Silicon and NVIDIA.",
-      "tags": ["image-generation", "apple-silicon", "nvidia", "gb10", "flux2", "qwen-image", "stable-diffusion-cpp"],
+      "summary": "FLUX.2 Klein 4B fast generation/editing plus Qwen-Image-2512 generation and Qwen-Image-Edit-2511 reference editing for Apple Silicon and NVIDIA.",
+      "tags": ["image-generation", "image-editing", "apple-silicon", "nvidia", "gb10", "flux2", "qwen-image", "stable-diffusion-cpp"],
       "recommendedFor": [
         "Apple Silicon 96–128 GB",
         "DGX Spark / GB10 128 GB",
@@ -198,6 +198,19 @@
       ],
       "capabilities": ["image-generation", "image-editing"],
       "source": { "type": "local", "url": "recipes/high-memory-local-image-generation.json" }
+    },
+    {
+      "id": "linux-nvidia-gb10-image-generation",
+      "path": "linux-nvidia-gb10-image-generation.json",
+      "name": "DGX Spark FLUX.2 Klein 4B + Qwen Image",
+      "summary": "LLooM-managed Docker lanes for fast FLUX.2 Klein 4B generation/editing, Qwen-Image-2512 generation, and Qwen-Image-Edit-2511 reference editing on NVIDIA GB10.",
+      "tags": ["linux", "nvidia", "dgx-spark", "gb10", "image-generation", "image-editing", "flux2", "qwen-image", "docker"],
+      "recommendedFor": [
+        "DGX Spark / GB10 128 GB",
+        "local image generation and reference editing through LLooM"
+      ],
+      "capabilities": ["image-generation", "image-editing"],
+      "source": { "type": "local", "url": "recipes/linux-nvidia-gb10-image-generation.json" }
     },
     {
       "id": "apple-silicon-qwen36",

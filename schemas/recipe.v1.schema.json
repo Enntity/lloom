@@ -186,6 +186,10 @@
           "gatewayModel": {
             "type": "string"
           },
+          "setDefault": {
+            "type": "boolean",
+            "description": "Explicitly select this model as the installed default for its output modality."
+          },
           "runtime": {
             "type": "string",
             "minLength": 1

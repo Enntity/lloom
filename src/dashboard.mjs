@@ -68,11 +68,11 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       white-space: nowrap;
     }
     main {
-      width: min(1480px, 100%);
+      width: 100%;
       margin: 0 auto;
-      padding: 28px;
+      padding: 14px;
       display: grid;
-      gap: 22px;
+      gap: 14px;
     }
     .topline {
       display: flex;
@@ -198,14 +198,45 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     .connection .connection-stats { margin:0; padding:0 14px 12px; }
     .connection .token-canvas { height:125px; }
     .connection-id { color:var(--accent-2); font:700 11px "SFMono-Regular",monospace; letter-spacing:.04em; }
-    .topology { position:relative; min-height:560px; overflow:hidden; background:#070b0c; border:1px solid rgba(47,230,200,.38); box-shadow:inset 0 0 90px rgba(47,230,200,.04); }
+    .topology { position:relative; min-height:calc(100vh - 108px); overflow:hidden; background:#070b0c; border:1px solid rgba(47,230,200,.38); box-shadow:inset 0 0 120px rgba(47,230,200,.055),0 16px 60px rgba(0,0,0,.32); }
     .topology::before { content:""; position:absolute; inset:0; pointer-events:none; background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(47,230,200,.022) 4px); }
-    .topology-head { position:absolute; z-index:2; left:16px; right:16px; top:14px; display:flex; justify-content:space-between; align-items:flex-start; gap:18px; pointer-events:none; }
-    .topology-canvas { display:block; width:100%; height:560px; cursor:grab; touch-action:none; }
+    .topology-hud { position:absolute; z-index:3; left:14px; right:14px; top:14px; display:flex; justify-content:space-between; align-items:flex-start; gap:18px; pointer-events:none; }
+    .topology-hud-panel { padding:11px 13px; border:1px solid rgba(47,230,200,.24); background:rgba(7,11,12,.82); box-shadow:0 10px 35px rgba(0,0,0,.24); backdrop-filter:blur(12px); }
+    .topology-hud-right { display:flex; align-items:flex-start; gap:10px; }
+    .metrics-period { width:auto; min-height:34px; border-color:rgba(47,230,200,.24); background:rgba(7,11,12,.82); color:var(--accent); font:700 10px "SFMono-Regular",monospace; pointer-events:auto; }
+    .topology-hud .fabric-totals { padding:9px 12px; border:1px solid rgba(47,230,200,.24); background:rgba(7,11,12,.82); backdrop-filter:blur(12px); }
+    .topology-hud #activity-state { pointer-events:auto; min-height:34px; background:rgba(7,11,12,.82); }
+    .topology-canvas { display:block; width:100%; height:calc(100vh - 108px); min-height:640px; cursor:grab; touch-action:none; }
     .topology-canvas.is-panning { cursor:grabbing; }
     .topology-zoom { position:absolute; z-index:3; right:14px; bottom:14px; display:flex; align-items:center; gap:5px; padding:5px; border:1px solid rgba(47,230,200,.28); background:rgba(7,11,12,.88); backdrop-filter:blur(8px); }
     .topology-zoom button { min-width:30px; min-height:28px; padding:2px 8px; font:700 14px "SFMono-Regular",monospace; }
     .topology-zoom-output { min-width:48px; color:var(--muted); text-align:center; font:700 10px "SFMono-Regular",monospace; }
+    .topology-key { position:absolute; z-index:3; left:14px; bottom:14px; display:flex; gap:14px; padding:8px 11px; border:1px solid rgba(47,230,200,.24); background:rgba(7,11,12,.86); color:var(--muted); font:700 10px "SFMono-Regular",monospace; backdrop-filter:blur(10px); pointer-events:none; }
+    .topology-key span { display:flex; align-items:center; gap:6px; }
+    .topology-key i { width:7px; height:7px; border-radius:50%; box-shadow:0 0 10px currentColor; }
+    .topology-key .input { color:var(--accent-2); }
+    .topology-key .output { color:var(--accent); }
+    .topology-key .compute { color:var(--warn); }
+    .model-inspector { position:absolute; z-index:5; top:92px; right:14px; width:min(360px,calc(100% - 28px)); max-height:calc(100% - 160px); overflow:auto; border:1px solid rgba(47,230,200,.38); background:rgba(10,14,17,.94); box-shadow:0 24px 80px rgba(0,0,0,.52),inset 3px 0 var(--accent); backdrop-filter:blur(18px); transform:translateX(calc(100% + 28px)); opacity:0; pointer-events:none; transition:transform .22s ease,opacity .18s ease; }
+    .model-inspector.open { transform:translateX(0); opacity:1; pointer-events:auto; }
+    .model-inspector-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:16px; border-bottom:1px solid var(--line); }
+    .model-inspector-title { margin-top:5px; font-size:17px; font-weight:800; overflow-wrap:anywhere; }
+    .model-inspector-body { padding:16px; display:grid; gap:16px; }
+    .model-detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .model-detail { min-width:0; padding:10px; border:1px solid rgba(143,180,255,.16); background:rgba(143,180,255,.035); }
+    .model-detail span { display:block; color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.08em; }
+    .model-detail strong { display:block; margin-top:3px; overflow-wrap:anywhere; }
+    .model-inspector-actions { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+    .model-inspector-actions button { min-width:0; }
+    .model-inspector-actions button:disabled { opacity:.35; cursor:not-allowed; }
+    .operations-dock { border:1px solid var(--line); background:rgba(22,25,30,.92); box-shadow:var(--shadow); }
+    .operations-dock > summary { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:13px 16px; cursor:pointer; list-style:none; }
+    .operations-dock > summary::-webkit-details-marker { display:none; }
+    .operations-dock > summary::after { content:"＋"; color:var(--accent); font:700 16px monospace; }
+    .operations-dock[open] > summary::after { content:"−"; }
+    .operations-summary { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+    .operations-content { padding:0 14px 14px; display:grid; gap:14px; border-top:1px solid var(--line); }
+    .operations-content > :first-child { margin-top:14px; }
     .pulse { animation:pulse 1.4s ease-in-out infinite; }
     @keyframes pulse { 50% { opacity:.35; transform:scale(.78); } }
     .pill {
@@ -326,18 +357,22 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       header { align-items: flex-start; flex-direction: column; }
       .topline { justify-content: flex-start; }
       .grid.two, .split, .stats, .live-grid { grid-template-columns: 1fr; }
-      main { padding: 18px; }
+      main { padding: 10px; }
     }
     @media (max-width: 640px) {
       header { padding: 16px; }
-      main { padding: 12px; }
+      main { padding: 7px; }
       .form-grid { grid-template-columns: 1fr; }
       .band-head { align-items: flex-start; flex-direction: column; }
       .fabric-head { flex-direction:column; }
       .fabric-totals { justify-content:flex-start; }
-      .topology { min-height:470px; }
-      .topology-canvas { height:470px; }
-      .topology-head { position:relative; padding-bottom:8px; flex-direction:column; }
+      .topology { min-height:calc(100vh - 95px); }
+      .topology-canvas { height:calc(100vh - 95px); min-height:540px; }
+      .topology-hud { left:8px; right:8px; top:8px; }
+      .topology-hud-right .fabric-totals { display:none; }
+      .topology-key { left:8px; bottom:8px; }
+      .topology-zoom { right:8px; bottom:8px; }
+      .model-inspector { top:72px; right:8px; width:calc(100% - 16px); max-height:calc(100% - 128px); }
     }
   </style>
 </head>
@@ -359,28 +394,27 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     </div>
   </header>
   <main>
-    <section class="stats" aria-label="Gateway summary">
-      <div class="stat"><span>Models</span><strong id="stat-models">-</strong></div>
-      <div class="stat"><span>Runtimes</span><strong id="stat-runtimes">-</strong></div>
-      <div class="stat"><span>Active</span><strong id="stat-active">-</strong></div>
-      <div class="stat"><span>Queued</span><strong id="stat-queued">-</strong></div>
+    <section class="topology" aria-label="Live LLooM connection and model topology">
+      <div class="topology-hud">
+        <div class="topology-hud-panel"><div class="fabric-title">LLooM // LIVE TOPOLOGY</div><div class="muted mono">connections → gateway → models · <span id="metrics-scope">this process</span> · select a model for details</div></div>
+        <div class="topology-hud-right">
+          <select id="metrics-period" class="metrics-period" aria-label="Metrics period"><option value="today">TODAY</option><option value="7d">7 DAYS</option><option value="30d">30 DAYS</option><option value="all" selected>ALL TIME</option></select>
+          <div class="fabric-totals"><div class="fabric-total"><strong id="fabric-in">0</strong><span>tokens in</span></div><div class="fabric-total"><strong id="fabric-out">0</strong><span>tokens out</span></div><div class="fabric-total"><strong id="fabric-rate">—</strong><span id="fabric-rate-label">tok/s</span></div><div class="fabric-total"><strong id="fabric-active">0</strong><span>active</span></div></div>
+          <span id="activity-state" class="pill"><span class="dot pulse"></span><span>connecting</span></span>
+        </div>
+      </div>
+      <canvas id="topology-canvas" class="topology-canvas" aria-label="Animated connections flowing through LLooM to configured models"></canvas>
+      <div class="topology-key" aria-label="Topology legend"><span class="input"><i></i>INPUT</span><span class="output"><i></i>OUTPUT</span><span class="compute"><i></i>COMPUTE</span></div>
+      <div class="topology-zoom" aria-label="Topology zoom and pan controls"><button id="topology-zoom-out" type="button" aria-label="Zoom out">−</button><span id="topology-zoom-output" class="topology-zoom-output">100%</span><button id="topology-zoom-in" type="button" aria-label="Zoom in">+</button><button id="topology-zoom-reset" type="button" aria-label="Reset view">↺</button></div>
+      <aside id="model-inspector" class="model-inspector" aria-label="Selected model details" aria-hidden="true">
+        <div class="model-inspector-head"><div><div id="model-inspector-state" class="pill"><span class="dot"></span><span>model</span></div><div id="model-inspector-title" class="model-inspector-title">Model</div></div><button id="model-inspector-close" type="button" aria-label="Close model details">×</button></div>
+        <div class="model-inspector-body"><div id="model-inspector-details" class="model-detail-grid"></div><div id="model-inspector-tags"></div><div class="model-inspector-actions"><button id="model-start" data-action="start" type="button">Start</button><button id="model-warm" data-action="warmup" class="primary" type="button">Warm</button><button id="model-stop" data-action="stop" class="danger" type="button">Stop</button></div></div>
+      </aside>
     </section>
 
-    <section class="band" aria-label="Live activity">
-      <div class="band-head">
-        <div><h2>Live Activity</h2><div class="muted">Streaming gateway telemetry · updates every second</div></div>
-        <span id="activity-state" class="pill"><span class="dot pulse"></span><span>connecting</span></span>
-      </div>
-      <div class="band-body grid">
-        <article class="topology" aria-label="Live LLooM connection and model topology">
-          <div class="topology-head"><div><div class="fabric-title">LLooM // LIVE TOPOLOGY</div><div class="muted mono">connections → gateway → models</div></div>
-            <div class="fabric-totals"><div class="fabric-total"><strong id="fabric-in">0</strong><span>tokens in</span></div><div class="fabric-total"><strong id="fabric-out">0</strong><span>tokens out</span></div><div class="fabric-total"><strong id="fabric-rate">—</strong><span id="fabric-rate-label">tok/s</span></div><div class="fabric-total"><strong id="fabric-active">0</strong><span>active</span></div></div>
-          </div>
-          <canvas id="topology-canvas" class="topology-canvas" aria-label="Animated connections flowing through LLooM to configured models"></canvas>
-          <div class="topology-zoom" aria-label="Topology zoom and pan controls"><button id="topology-zoom-out" type="button" aria-label="Zoom out">−</button><span id="topology-zoom-output" class="topology-zoom-output">100%</span><button id="topology-zoom-in" type="button" aria-label="Zoom in">+</button><button id="topology-zoom-reset" type="button" aria-label="Reset view">↺</button></div>
-        </article>
-      </div>
-    </section>
+    <details class="operations-dock">
+      <summary><div><strong>Operations</strong><div class="muted">Runtime, model, backend, and setup controls</div></div><div class="operations-summary"><span class="pill"><span id="stat-models">-</span>&nbsp;models</span><span class="pill"><span id="stat-runtimes">-</span>&nbsp;runtimes</span><span class="pill"><span class="dot ok"></span><span id="stat-active">-</span>&nbsp;active</span><span class="pill"><span id="stat-queued">-</span>&nbsp;queued</span></div></summary>
+      <div class="operations-content">
 
     <section class="grid two">
       <div class="band">
@@ -532,6 +566,8 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         <pre id="output">Waiting for data.</pre>
       </div>
     </section>
+      </div>
+    </details>
   </main>
   <script>
     const state = {
@@ -541,6 +577,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       library: null,
       security: null,
       metrics: null,
+      metricsPeriod: "all",
       throughput: [],
       flows: new Map(),
       trafficSample: null,
@@ -561,6 +598,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       topologyPanDrag: null,
       topologyZoomAnchor: null,
       topologyRaisedModelId: null,
+      selectedModelId: null,
       topologyView: null,
       topologyHitCards: [],
       output: null,
@@ -676,6 +714,57 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           '<td>' + tags(model.capabilities || model.tags) + '</td>' +
         '</tr>'
       ).join("") : '<tr><td colspan="5"><div class="empty">No models.</div></td></tr>';
+    }
+
+    function closeModelInspector() {
+      state.selectedModelId = null;
+      state.topologyRaisedModelId = null;
+      const inspector = $("#model-inspector");
+      inspector.classList.remove("open");
+      inspector.setAttribute("aria-hidden", "true");
+    }
+
+    function renderModelInspector() {
+      const inspector = $("#model-inspector");
+      const model = (state.models || []).find(item => item.id === state.selectedModelId);
+      if (!model) {
+        if (state.selectedModelId) closeModelInspector();
+        return;
+      }
+      const topologyModel = (state.topologyModels || []).find(item => item.id === model.id) || {};
+      const runtime = model.runtime ? state.status?.runtimeManager?.runtimes?.[model.runtime] : null;
+      const modelState = topologyModel.state || (!model.runtime ? "external" : runtime?.status || "cold");
+      const marker = $("#model-inspector-state");
+      const stateClass = modelState === "serving" || modelState === "hot" || modelState === "external" ? "ok" : modelState === "warming" || modelState === "queued" ? "warn" : modelState === "evicting" || modelState === "failed" ? "bad" : "";
+      marker.querySelector(".dot").className = "dot " + stateClass + (modelState === "serving" ? " pulse" : "");
+      marker.querySelector("span:last-child").textContent = modelState === "serving" ? "GPU compute active" : modelState;
+      $("#model-inspector-title").textContent = model.name || model.id;
+      const details = [
+        ["Gateway model", model.id],
+        ["Runtime", model.runtime || "external"],
+        ["Runtime state", runtime?.status || modelState],
+        ["Context", model.contextWindow ? formatNumber(model.contextWindow) : "—"],
+        ["Concurrency", runtime ? Number(runtime.activeRequests || 0) + " / " + Number(runtime.maxConcurrency || 1) : "managed upstream"],
+        ["Queue", runtime ? Number(runtime.queuedRequests || 0) + Number(runtime.admissionQueuedRequests || 0) : "—"],
+        ["Input", formatCompact(topologyModel.inputTokens || 0) + " tokens"],
+        ["Output", formatCompact(topologyModel.outputTokens || 0) + " tokens"],
+        ["Live rate", formatRate(topologyModel.liveRate || 0) + " tok/s"],
+        ["Port", runtime?.port || "—"]
+      ];
+      $("#model-inspector-details").innerHTML = details.map(([label, value]) => '<div class="model-detail"><span>' + escapeHtml(label) + '</span><strong>' + escapeHtml(value) + '</strong></div>').join("");
+      $("#model-inspector-tags").innerHTML = tags(model.capabilities || model.tags) || '<span class="muted">No declared capabilities</span>';
+      for (const button of inspector.querySelectorAll("button[data-action]")) {
+        button.dataset.runtime = model.runtime || "";
+        button.disabled = !model.runtime;
+      }
+      inspector.classList.add("open");
+      inspector.setAttribute("aria-hidden", "false");
+    }
+
+    function openModelInspector(modelId) {
+      state.selectedModelId = modelId;
+      state.topologyRaisedModelId = modelId;
+      renderModelInspector();
     }
 
     function renderRuntimes() {
@@ -1180,9 +1269,6 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       ctx.translate(viewportWidth / 2 + panX, viewportHeight / 2 + panY);
       ctx.scale(zoom, zoom);
       ctx.translate(-width / 2, -height / 2);
-      ctx.font = '10px "SFMono-Regular",monospace'; ctx.textAlign = "left";
-      ctx.fillStyle = "#8fb4ff"; ctx.beginPath(); ctx.arc(50, 91, 3, 0, Math.PI * 2); ctx.fill(); ctx.fillText("INPUT  →", 59, 95);
-      ctx.fillStyle = "#2fe6c8"; ctx.beginPath(); ctx.arc(132, 91, 3, 0, Math.PI * 2); ctx.fill(); ctx.fillText("←  OUTPUT", 141, 95);
       const models = state.topologyModels || [];
       const rackFraction = Math.min(.5, .27 + Math.max(0, models.length - 3) * .045);
       const modelField = { left: width * (1 - rackFraction), right: width - 18, top: 105, bottom: height - 28 };
@@ -1236,7 +1322,25 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         ctx.fillStyle = hot ? "rgba(7,18,17,.98)" : external ? "rgba(15,10,24,.96)" : warming ? "rgba(24,19,9,.97)" : evicting ? "rgba(25,11,9,.97)" : "rgba(8,10,15,.94)";
         const cardWidth = point.cardWidth, cardLeft = point.x - cardWidth / 2, cardTop = point.y - 34;
         hitCards.push({ id: point.model.id, left: cardLeft, top: cardTop, width: cardWidth, height: 68 });
+        if (serving) {
+          const computePulse = .45 + (Math.sin(now * .009 + hashUnit(point.model.id.length) * 6) + 1) * .22;
+          ctx.save();
+          ctx.strokeStyle = "rgba(243,189,79," + computePulse + ")";
+          ctx.lineWidth = 2;
+          ctx.setLineDash([8, 5]);
+          ctx.lineDashOffset = -now * .035;
+          ctx.shadowColor = "rgba(243,189,79,.72)";
+          ctx.shadowBlur = 13;
+          ctx.beginPath(); ctx.roundRect(cardLeft - 5, cardTop - 5, cardWidth + 10, 78, 8); ctx.stroke();
+          ctx.restore();
+        }
         ctx.beginPath(); ctx.roundRect(cardLeft, cardTop, cardWidth, 68, 5); ctx.fill(); ctx.stroke();
+        if (serving) {
+          const scanX = cardLeft + ((now * .08) % (cardWidth + 36)) - 18;
+          const scan = ctx.createLinearGradient(scanX - 16, 0, scanX + 16, 0);
+          scan.addColorStop(0, "rgba(243,189,79,0)"); scan.addColorStop(.5, "rgba(243,189,79,.13)"); scan.addColorStop(1, "rgba(243,189,79,0)");
+          ctx.save(); ctx.beginPath(); ctx.roundRect(cardLeft, cardTop, cardWidth, 68, 5); ctx.clip(); ctx.fillStyle = scan; ctx.fillRect(scanX - 16, cardTop, 32, 68); ctx.restore();
+        }
         ctx.fillStyle = serving ? "#42d77d" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : evicting ? "#ff7e66" : "#8fb4ff"; ctx.fillRect(cardLeft, cardTop, 4, 68);
         ctx.fillStyle = "rgba(242,245,247,.92)"; ctx.fillText(fitCanvasText(ctx, shortModel(point.model.id), cardWidth - 68), cardLeft + 12, point.y - 15);
         const vendor = modelVendor(point.model.id).toUpperCase();
@@ -1246,7 +1350,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         ctx.fillStyle = serving ? "#42d77d" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : evicting ? "#ff7e66" : "rgba(143,180,255,.7)";
         const displayedModelRate = live ? displayedLiveRate : point.model.averageRate;
         const modelRateText = displayedModelRate == null ? "" : formatRate(displayedModelRate) + " tok/s";
-        const modelStateText = point.model.state === "queued" ? "QUEUED" : serving ? "SERVING" : point.model.state.toUpperCase();
+        const modelStateText = point.model.state === "queued" ? "QUEUED" : serving ? "COMPUTE ACTIVE" : point.model.state.toUpperCase();
         ctx.fillText(fitCanvasText(ctx, modelStateText + (modelRateText ? " · " + modelRateText : ""), cardWidth - 22), cardLeft + 12, point.y + 23);
       }
       state.topologyHitCards = hitCards;
@@ -1338,6 +1442,13 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const totals = metrics.totals || {};
       const active = metrics.active || [];
       const sampleAt = Date.parse(metrics.generatedAt) || Date.now();
+      const persistence = metrics.persistence || {};
+      const periodLabels = { today: "today (UTC)", "7d": "last 7 days", "30d": "last 30 days" };
+      $("#metrics-scope").textContent = metrics.period === "all"
+        ? persistence.enabled
+          ? "all-time totals since " + new Date(persistence.since).toLocaleDateString(undefined, { timeZone: "UTC" })
+          : "this process"
+        : periodLabels[metrics.period] || metrics.period;
       const previous = state.trafficSample;
       const intervalSeconds = previous ? Math.max(.25, (sampleAt - previous.at) / 1000) : 1;
       const previousActive = previous?.active ?? new Map();
@@ -1429,11 +1540,12 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           : transitioning || (liveConnections.length ? "serving" : runtimeStatus === "running" ? "hot" : "cold");
         return { id: model.id, inputTokens: Number(data.inputTokens || 0) + activeInput, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveInputRate, liveOutputRate, averageRate: data.decodeTokensPerSecond == null ? null : Number(data.decodeTokensPerSecond), state: stateLabel };
       });
+      renderModelInspector();
     }
 
     async function refreshActivity() {
       try {
-        state.metrics = await getJson("/gateway/metrics");
+        state.metrics = await getJson("/gateway/metrics?period=" + encodeURIComponent(state.metricsPeriod));
         renderActivity();
         const marker = $("#activity-state");
         marker.querySelector(".dot").className = "dot ok pulse";
@@ -1501,6 +1613,12 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     }
 
     $("#refresh").addEventListener("click", refresh);
+    $("#metrics-period").addEventListener("change", event => {
+      state.metricsPeriod = event.currentTarget.value;
+      state.trafficSample = null;
+      state.aggregateRateSamples = [];
+      refreshActivity();
+    });
     function resetTopologyCamera() {
       state.topologyCamera.manual = 1;
       state.topologyCamera.panX = 0;
@@ -1566,8 +1684,12 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     });
     $("#topology-canvas").addEventListener("pointermove", event => {
       const drag = state.topologyPanDrag;
-      if (!drag || drag.pointerId !== event.pointerId) return;
       const canvas = event.currentTarget;
+      if (!drag || drag.pointerId !== event.pointerId) {
+        const point = topologyScreenPoint(event, canvas);
+        canvas.style.cursor = hitTopologyModelCard(point.x, point.y) ? "pointer" : "grab";
+        return;
+      }
       const point = topologyScreenPoint(event, canvas);
       const dx = point.x - drag.startX, dy = point.y - drag.startY;
       if (!drag.moved && (dx * dx + dy * dy) < 25) return;
@@ -1585,10 +1707,13 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       state.topologyPanDrag = null;
       if (drag.moved) return;
       const point = topologyScreenPoint(event, canvas);
-      state.topologyRaisedModelId = hitTopologyModelCard(point.x, point.y);
+      const modelId = hitTopologyModelCard(point.x, point.y);
+      if (modelId) openModelInspector(modelId);
+      else closeModelInspector();
     }
     $("#topology-canvas").addEventListener("pointerup", endTopologyPan);
     $("#topology-canvas").addEventListener("pointercancel", endTopologyPan);
+    $("#model-inspector-close").addEventListener("click", closeModelInspector);
     $("#copy-output").addEventListener("click", async () => {
       await navigator.clipboard.writeText($("#output").textContent);
     });

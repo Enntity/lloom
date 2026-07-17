@@ -329,11 +329,19 @@ export function validateBenchmarkResult(result) {
   if (!result.metrics) errors.push(`benchmark ${result.id ?? '(missing)'} is missing metrics`);
   const generation = numberOrNull(result.metrics?.generationTokPerSec);
   const prefill = numberOrNull(result.metrics?.prefillTokPerSec);
-  if (generation == null && prefill == null) {
-    errors.push(`benchmark ${result.id ?? '(missing)'} needs generationTokPerSec or prefillTokPerSec`);
+  const generationSeconds = numberOrNull(result.metrics?.generationSeconds);
+  const imagesPerMinute = numberOrNull(result.metrics?.imagesPerMinute);
+  if (generation == null && prefill == null && generationSeconds == null && imagesPerMinute == null) {
+    errors.push(`benchmark ${result.id ?? '(missing)'} needs token-throughput or image-generation timing metrics`);
   }
   if (generation != null && generation < 0) errors.push(`benchmark ${result.id} generationTokPerSec must be positive`);
   if (prefill != null && prefill < 0) errors.push(`benchmark ${result.id} prefillTokPerSec must be positive`);
+  if (generationSeconds != null && generationSeconds <= 0) {
+    errors.push(`benchmark ${result.id} generationSeconds must be positive`);
+  }
+  if (imagesPerMinute != null && imagesPerMinute <= 0) {
+    errors.push(`benchmark ${result.id} imagesPerMinute must be positive`);
+  }
   return errors;
 }
 
@@ -345,7 +353,10 @@ export function benchmarkScore(result) {
   const generation = numberOrNull(result.metrics?.generationTokPerSec) ?? 0;
   const prefill = numberOrNull(result.metrics?.prefillTokPerSec) ?? 0;
   const context = numberOrNull(result.metrics?.contextWindow) ?? 0;
-  return generation * 1000 + prefill + context / 100000;
+  const imagesPerMinute =
+    numberOrNull(result.metrics?.imagesPerMinute) ??
+    (numberOrNull(result.metrics?.generationSeconds) > 0 ? 60 / Number(result.metrics.generationSeconds) : 0);
+  return generation * 1000 + imagesPerMinute * 1000 + prefill + context / 100000;
 }
 
 export function summarizeBenchmarksForRecipe(recipe, results) {

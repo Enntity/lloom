@@ -28,15 +28,17 @@ OpenAI Responses and Anthropic Messages bridges live in pure modules under `src/
 
 ## Security Defaults
 
-| Setting | Default | Meaning |
-|---------|---------|---------|
-| `security.allowMissingAuth` | `true` | On loopback only, inference may omit the API key |
-| `security.allowRemoteAdmin` | `false` | Block `POST /gateway/*` when bound off loopback |
-| `security.allowNonLoopbackBind` | `false` | Refuse `listen()` on non-loopback hosts unless true |
-| `security.allowWildcardCors` | `false` | Non-loopback CORS origin is `null` unless enabled |
-| `security.apiKeys` | `["sk-lloom-local"]` in default config | Inference Bearer / `x-api-key` values |
-| `security.adminApiKeys` | `[]` | When non-empty, admin routes require these keys even on loopback |
-| `logging.requestLog` | `false` | Append NDJSON request lines to `~/.lloom/logs/requests.ndjson` (or `LLOOM_REQUEST_LOG=1`) |
+| Setting                         | Default                                | Meaning                                                                                           |
+| ------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `security.allowMissingAuth`     | `true`                                 | On loopback only, inference may omit the API key                                                  |
+| `security.allowRemoteAdmin`     | `false`                                | Block `POST /gateway/*` when bound off loopback                                                   |
+| `security.allowNonLoopbackBind` | `false`                                | Refuse `listen()` on non-loopback hosts unless true                                               |
+| `security.allowWildcardCors`    | `false`                                | Non-loopback CORS origin is `null` unless enabled                                                 |
+| `security.apiKeys`              | `["sk-lloom-local"]` in default config | Inference Bearer / `x-api-key` values                                                             |
+| `security.adminApiKeys`         | `[]`                                   | When non-empty, admin routes require these keys even on loopback                                  |
+| `logging.requestLog`            | `false`                                | Append NDJSON request lines to `~/.lloom/logs/requests.ndjson` (or `LLOOM_REQUEST_LOG=1`)         |
+| `logging.metricsPersistence`    | `true`                                 | Persist aggregate gateway metrics across restarts (or disable with `LLOOM_METRICS_PERSISTENCE=0`) |
+| `logging.metricsPath`           | `null`                                 | Override `~/.lloom/metrics-history.json` (or set `LLOOM_METRICS_PATH`)                            |
 
 Prefer binding `server.host` to `127.0.0.1`. If you expose the gateway on a LAN or public interface, set `allowNonLoopbackBind`, strong API keys, keep `allowRemoteAdmin` false unless you intentionally operate remote admin, and treat install/start endpoints as privileged. `GET /gateway/security` returns public auth metadata (no secrets) for dashboards.
 
@@ -62,6 +64,7 @@ LLooM currently fronts these local contracts:
 - `POST /v1/embeddings`
 - `POST /v1/messages`
 - `POST /v1/images/generations`
+- `POST /v1/images/edits`
 - `POST /v1/videos/generations`
 - `POST /v1/audio/speech`
 - `POST /v1/audio/transcriptions`
@@ -75,6 +78,8 @@ LLooM currently fronts these local contracts:
 - `POST /gateway/recipe-packs/import`
 
 `/v1/chat/completions` is an OpenAI-compatible chat bridge. LLooM rewrites the request model to the selected backend `upstreamModel`, but non-streaming JSON responses and streaming chat chunks expose the originally requested gateway model ID back to the client. That keeps local aliases and community recipe IDs stable for tools while still letting recipes target backend-specific model names. Upstream usage fields are preserved for responses and parsed from streaming usage chunks for metrics.
+
+`/v1/images/edits` accepts the OpenAI-compatible multipart contract: one or more `image[]` file parts (or legacy `image`), a required `prompt`, and optional `mask`, `model`, `n`, `size`, and output fields. LLooM resolves and admits the selected image-editing runtime, rewrites only the multipart `model` field, and proxies image bytes without JSON or text transcoding. Models must advertise image input or the `image-editing` capability.
 
 `/v1/responses` is implemented as a bridge over chat-completions backends. It normalizes `input`, `instructions`, `max_output_tokens`, `output_text`, `tools`, `tool_choice`, function-call outputs, reasoning hints, and usage fields, and translates chat SSE into Responses-style streaming events with ordered `sequence_number` fields, reasoning text deltas, function-call argument deltas, and `response.incomplete` events for output-cap truncation.
 
@@ -115,7 +120,9 @@ The gateway expands `voice: "jinx"` into the profile model, on-disk `ref_audio`,
 
 `/gateway/doctor` wraps setup status into a product-readiness report. It separates hard `blockers` from non-fatal `warnings`, groups install state into registry, recipe, backend, models, client, runtime, and benchmark phases, and returns ordered next actions that a UI can show directly.
 
-`/gateway/metrics` is an in-memory operational feed for dashboards, local tuning, and recipe evidence gathering. Model-facing routes record requested model ID, resolved model ID, upstream model ID, kind, backend, runtime, status, stream flag, duration, first-content latency, last-content latency, response bytes, and normalized usage when the upstream reports it. Each completed streaming decode measurement follows the Spark Arena / `llama-benchy` timing convention: `(generated tokens - 1) / (last content token time - first content token time)`. Separately, the dashboard header averages its latest ten nonzero aggregate streaming-output-rate samples, where each sample is total observed streaming output tok/s across all active generative connections during one telemetry interval. Completed embedding and non-streaming payload updates never enter this rate. This moves during long-running streams and remains visible while idle; the instantaneous aggregate rates appear in the LLooM topology card. LLooM uses reported output tokens when available and otherwise estimates them from observed output characters. Embedding responses have no generative token count, so their output contribution is estimated from observed response bytes for cumulative volume only. `estimatedDecodeSamples` makes estimated decode samples explicit. Non-streaming generative responses are excluded from decode speed because LLooM cannot observe their token-by-token decode interval; their tokens and end-to-end duration remain available in the other aggregate fields. Connection telemetry derives a short caller label from explicit client-name headers, recognized User-Agent families, or the SDK language header, but never stores raw headers or client IPs; unknown callers retain `conn_N`. Client disconnects before completion are recorded as status `499` so local timeouts do not look like backend crashes. The endpoint aggregates totals by model and route while retaining a bounded recent-request window; it is intentionally process-local so fresh benchmark submissions still come from explicit recipe/benchmark artifacts.
+`/gateway/metrics` is the operational feed for dashboards, local tuning, and recipe evidence gathering. Aggregate totals plus 400 days of daily rollups are persisted by default in `~/.lloom/metrics-history.json` with atomic replacement and restored when the gateway starts, while active connections, rolling windows, and the bounded recent-request list remain process-local. `period=today|7d|30d|all` selects the durable window, and the topology HUD exposes the same choices. The persistence file contains aggregate counts and timing only—never prompts, responses, raw headers, callers, or client IPs. Before the first persistence-aware deployment, `node scripts/capture-live-metrics.mjs` can capture the old gateway's in-memory snapshot so its counters become the initial durable baseline.
+
+Model-facing routes record requested model ID, resolved model ID, upstream model ID, kind, backend, runtime, status, stream flag, duration, first-content latency, last-content latency, response bytes, and normalized usage when the upstream reports it. Each completed streaming decode measurement follows the Spark Arena / `llama-benchy` timing convention: `(generated tokens - 1) / (last content token time - first content token time)`. Separately, the dashboard header averages its latest ten nonzero aggregate streaming-output-rate samples, where each sample is total observed streaming output tok/s across all active generative connections during one telemetry interval. Completed embedding and non-streaming payload updates never enter this rate. This moves during long-running streams and remains visible while idle; the instantaneous aggregate rates appear in the LLooM topology card. LLooM uses reported output tokens when available and otherwise estimates them from observed output characters. Embedding responses have no generative token count, so their output contribution is estimated from observed response bytes for cumulative volume only. `estimatedDecodeSamples` makes estimated decode samples explicit. Non-streaming generative responses are excluded from decode speed because LLooM cannot observe their token-by-token decode interval; their tokens and end-to-end duration remain available in the other aggregate fields. Connection telemetry derives a short caller label from explicit client-name headers, recognized User-Agent families, or the SDK language header, but never stores raw headers or client IPs; unknown callers retain `conn_N`. Client disconnects before completion are recorded as status `499` so local timeouts do not look like backend crashes. The endpoint aggregates durable totals by model and route while retaining live-only rolling and recent windows.
 
 ## CLI Surface
 

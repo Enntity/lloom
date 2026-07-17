@@ -2034,6 +2034,7 @@ async function main() {
           planRecipe(recipe, config, {
             modelRoot,
             backendIds: backendIds(catalog),
+            checkLocalReferences: false,
             benchmarkEvidence,
             benchmarksRoot,
             benchmarkValidationErrors

@@ -117,6 +117,8 @@ export async function loadConfig(
     logging: {
       requestLog: false,
       requestLogPath: null,
+      metricsPersistence: true,
+      metricsPath: null,
       ...asObject(expanded.logging),
       ...(envBoolean(env, 'LLOOM_REQUEST_LOG') == null
         ? {}

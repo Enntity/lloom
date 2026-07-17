@@ -157,7 +157,7 @@ function modelPathForRecipeModel(recipeModel, backendId, modelRoot) {
 function recipeModelKind(recipeModel) {
   const capabilities = new Set(asArray(recipeModel.capabilities));
   if (capabilities.has('video-generation')) return 'video';
-  if (capabilities.has('image-generation')) return 'image';
+  if (capabilities.has('image-generation') || capabilities.has('image-editing')) return 'image';
   if (capabilities.has('audio-speech') || capabilities.has('tts')) return 'audio_speech';
   if (capabilities.has('audio-transcription') || capabilities.has('stt')) return 'audio_transcription';
   if (capabilities.has('embedding')) return 'embedding';
@@ -570,30 +570,43 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
       if (runtime) config.runtimes[runtimeId] = runtime;
     }
 
+    const materializedModel = {
+      id: modelId,
+      name: recipeModel.name ?? modelId.split('/').at(-1),
+      backend: backendConfigId,
+      ...(config.runtimes[runtimeId] ? { runtime: runtimeId } : {}),
+      upstreamModel: recipeModel.model,
+      kind: recipeModelKind(recipeModel),
+      input: recipeModelInput(recipeModel),
+      output: recipeModelOutput(recipeModel),
+      capabilities: asArray(recipeModel.capabilities),
+      reasoning: asArray(recipeModel.capabilities).includes('reasoning') || undefined,
+      supportsTools: asArray(recipeModel.capabilities).includes('tools') || undefined,
+      contextWindow: positiveInteger(asObject(recipeModel.settings).contextWindow, 32768),
+      maxOutputTokens: positiveInteger(asObject(recipeModel.settings).maxOutputTokens, 8192),
+      advertise: true,
+      tags: [
+        ...new Set([recipe.backend?.id, ...asArray(recipe.keywords), ...asArray(recipe.capabilities)].filter(Boolean))
+      ]
+    };
     if (!existingModel) {
-      config.models.push({
-        id: modelId,
-        name: recipeModel.name ?? modelId.split('/').at(-1),
-        backend: backendConfigId,
-        ...(config.runtimes[runtimeId] ? { runtime: runtimeId } : {}),
-        upstreamModel: recipeModel.model,
-        kind: recipeModelKind(recipeModel),
-        input: recipeModelInput(recipeModel),
-        output: recipeModelOutput(recipeModel),
-        capabilities: asArray(recipeModel.capabilities),
-        reasoning: asArray(recipeModel.capabilities).includes('reasoning') || undefined,
-        supportsTools: asArray(recipeModel.capabilities).includes('tools') || undefined,
-        contextWindow: positiveInteger(asObject(recipeModel.settings).contextWindow, 32768),
-        maxOutputTokens: positiveInteger(asObject(recipeModel.settings).maxOutputTokens, 8192),
-        advertise: true,
-        tags: [
-          ...new Set([recipe.backend?.id, ...asArray(recipe.keywords), ...asArray(recipe.capabilities)].filter(Boolean))
-        ]
-      });
+      config.models.push(materializedModel);
+    } else if (config.runtimes[runtimeId]?.recipe?.id === recipe.id) {
+      Object.assign(existingModel, materializedModel);
     }
 
     if (!config.clientCatalog.modelOrder.includes(modelId)) {
       config.clientCatalog.modelOrder.push(modelId);
+    }
+    if (recipeModel.setDefault === true) {
+      config.defaults ??= {};
+      const kind = materializedModel.kind;
+      if (kind === 'image') config.defaults.imageModel = modelId;
+      else if (kind === 'video') config.defaults.videoModel = modelId;
+      else if (kind === 'embedding') config.defaults.embeddingModel = modelId;
+      else if (kind === 'audio_speech') config.defaults.speechModel = modelId;
+      else if (kind === 'audio_transcription') config.defaults.transcriptionModel = modelId;
+      else config.defaults.chatModel = modelId;
     }
     if (recipeModel.role === 'default-video' && !config.defaults?.videoModel) {
       config.defaults ??= {};
