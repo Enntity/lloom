@@ -4387,8 +4387,10 @@ if (listened) {
     assert(dashboardHtml.includes('/gateway/recipe-packs/plan'));
     assert(dashboardHtml.includes('/gateway/recipe-packs/import'));
     assert(dashboardHtml.includes('id="topology-model-filter"'));
+    assert(dashboardHtml.includes('class="topology-metrics"'));
     assert(dashboardHtml.includes('Cold models leave the live topology after 60 minutes without activity'));
     assert(dashboardHtml.includes('const TOPOLOGY_COLD_MODEL_TTL_MS = 60 * 60 * 1000'));
+    assert(dashboardHtml.includes('function fitTopologyCameraToModels('));
     assert(!dashboardHtml.toLowerCase().includes('switchyard'));
 
     const dashboardAliasResponse = await fetch(`http://127.0.0.1:${port}/gateway/dashboard`);

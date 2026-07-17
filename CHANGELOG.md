@@ -24,6 +24,12 @@ All notable changes to LLooM will be documented in this file. The format follows
 - Detached CLI runtime starts no longer keep the command process open through inherited output pipes.
 - Native chat-client artifacts remain chat-only while discovery APIs advertise all supported model kinds.
 
+## [0.2.3] - 2026-07-17
+
+### Changed
+
+- Compacted the live-topology HUD into a single-line period and metrics cluster, moved live status beside the title, automatically refit the camera when switching model scopes, and accelerated model-card settling.
+
 ## [0.2.2] - 2026-07-17
 
 ### Added
@@ -50,7 +56,8 @@ All notable changes to LLooM will be documented in this file. The format follows
 - Anthropic-compatible Messages support, including streaming and tool use.
 - Apple Silicon and NVIDIA DGX Spark backend and recipe coverage.
 
-[Unreleased]: https://github.com/enntity/lloom/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/enntity/lloom/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/enntity/lloom/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/enntity/lloom/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/enntity/lloom/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/enntity/lloom/releases/tag/v0.2.0

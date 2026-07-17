@@ -201,14 +201,19 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     .topology { position:relative; min-height:calc(100vh - 108px); overflow:hidden; background:#070b0c; border:1px solid rgba(47,230,200,.38); box-shadow:inset 0 0 120px rgba(47,230,200,.055),0 16px 60px rgba(0,0,0,.32); }
     .topology::before { content:""; position:absolute; inset:0; pointer-events:none; background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(47,230,200,.022) 4px); }
     .topology-hud { position:absolute; z-index:3; left:14px; right:14px; top:14px; display:flex; justify-content:space-between; align-items:flex-start; gap:18px; pointer-events:none; }
-    .topology-hud-panel { padding:11px 13px; border:1px solid rgba(47,230,200,.24); background:rgba(7,11,12,.82); box-shadow:0 10px 35px rgba(0,0,0,.24); backdrop-filter:blur(12px); }
-    .topology-hud-right { display:flex; align-items:flex-start; gap:10px; }
-    .metrics-period { width:auto; min-height:34px; border-color:rgba(47,230,200,.24); background:rgba(7,11,12,.82); color:var(--accent); font:700 10px "SFMono-Regular",monospace; pointer-events:auto; }
-    .topology-model-filter { min-height:34px; border-color:rgba(47,230,200,.24); background:rgba(7,11,12,.82); color:var(--muted); font:700 10px "SFMono-Regular",monospace; pointer-events:auto; white-space:nowrap; }
+    .topology-hud-panel { flex:1 1 auto; min-width:0; padding:11px 13px; border:1px solid rgba(47,230,200,.24); background:rgba(7,11,12,.82); box-shadow:0 10px 35px rgba(0,0,0,.24); backdrop-filter:blur(12px); }
+    .topology-title-line { display:flex; align-items:center; gap:10px; }
+    .topology-hud-right { flex:0 0 auto; display:flex; align-items:flex-start; gap:8px; }
+    .topology-metrics { display:flex; align-items:stretch; min-height:46px; border:1px solid rgba(47,230,200,.24); background:rgba(7,11,12,.82); backdrop-filter:blur(12px); pointer-events:auto; }
+    .metrics-period { width:auto; min-height:44px; padding:7px 24px 7px 10px; border:0; border-right:1px solid rgba(47,230,200,.18); background:transparent; color:var(--accent); font:700 10px "SFMono-Regular",monospace; }
+    .topology-model-filter { min-height:46px; padding:7px 10px; border-color:rgba(47,230,200,.24); background:rgba(7,11,12,.82); color:var(--muted); font:700 10px "SFMono-Regular",monospace; pointer-events:auto; white-space:nowrap; }
     .topology-model-filter[aria-pressed="true"] { color:var(--accent); border-color:rgba(47,230,200,.55); }
     .topology-model-filter:disabled { opacity:.5; cursor:default; }
-    .topology-hud .fabric-totals { padding:9px 12px; border:1px solid rgba(47,230,200,.24); background:rgba(7,11,12,.82); backdrop-filter:blur(12px); }
-    .topology-hud #activity-state { pointer-events:auto; min-height:34px; background:rgba(7,11,12,.82); }
+    .topology-hud .fabric-totals { flex-wrap:nowrap; align-items:center; gap:clamp(10px,1.2vw,20px); padding:6px 11px; }
+    .topology-hud .fabric-total { min-width:max-content; }
+    .topology-hud .fabric-total strong { font-size:clamp(14px,1.25vw,19px); line-height:1.05; }
+    .topology-hud .fabric-total span { font-size:9px; white-space:nowrap; }
+    .topology-hud #activity-state { min-height:22px; padding:2px 7px; border-color:rgba(47,230,200,.18); background:rgba(7,11,12,.58); pointer-events:auto; font-size:10px; }
     .topology-canvas { display:block; width:100%; height:calc(100vh - 108px); min-height:640px; cursor:grab; touch-action:none; }
     .topology-canvas.is-panning { cursor:grabbing; }
     .topology-zoom { position:absolute; z-index:3; right:14px; bottom:14px; display:flex; align-items:center; gap:5px; padding:5px; border:1px solid rgba(47,230,200,.28); background:rgba(7,11,12,.88); backdrop-filter:blur(8px); }
@@ -372,6 +377,11 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       .topology { min-height:calc(100vh - 95px); }
       .topology-canvas { height:calc(100vh - 95px); min-height:540px; }
       .topology-hud { left:8px; right:8px; top:8px; }
+      .topology-hud-panel { padding:9px 10px; }
+      .topology-hud-panel > .muted { display:none; }
+      .topology-model-filter { min-height:40px; }
+      .topology-metrics { min-height:40px; }
+      .metrics-period { min-height:38px; }
       .topology-hud-right .fabric-totals { display:none; }
       .topology-key { left:8px; bottom:8px; }
       .topology-zoom { right:8px; bottom:8px; }
@@ -399,12 +409,10 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
   <main>
     <section class="topology" aria-label="Live LLooM connection and model topology">
       <div class="topology-hud">
-        <div class="topology-hud-panel"><div class="fabric-title">LLooM // LIVE TOPOLOGY</div><div class="muted mono">connections → gateway → models · <span id="metrics-scope">this process</span> · select a model for details</div></div>
+        <div class="topology-hud-panel"><div class="topology-title-line"><div class="fabric-title">LLooM // LIVE TOPOLOGY</div><span id="activity-state" class="pill"><span class="dot pulse"></span><span>connecting</span></span></div><div class="muted mono">connections → gateway → models · <span id="metrics-scope">this process</span> · select a model for details</div></div>
         <div class="topology-hud-right">
           <button id="topology-model-filter" class="topology-model-filter" type="button" aria-pressed="false" title="Cold models leave the live topology after 60 minutes without activity">ALL MODELS</button>
-          <select id="metrics-period" class="metrics-period" aria-label="Metrics period"><option value="today">TODAY</option><option value="7d">7 DAYS</option><option value="30d">30 DAYS</option><option value="all" selected>ALL TIME</option></select>
-          <div class="fabric-totals"><div class="fabric-total"><strong id="fabric-in">0</strong><span>tokens in</span></div><div class="fabric-total"><strong id="fabric-out">0</strong><span>tokens out</span></div><div class="fabric-total"><strong id="fabric-rate">—</strong><span id="fabric-rate-label">tok/s</span></div><div class="fabric-total"><strong id="fabric-active">0</strong><span>active</span></div></div>
-          <span id="activity-state" class="pill"><span class="dot pulse"></span><span>connecting</span></span>
+          <div class="topology-metrics"><select id="metrics-period" class="metrics-period" aria-label="Metrics period"><option value="today">TODAY</option><option value="7d">7 DAYS</option><option value="30d">30 DAYS</option><option value="all" selected>ALL TIME</option></select><div class="fabric-totals"><div class="fabric-total"><strong id="fabric-in">0</strong><span>tokens in</span></div><div class="fabric-total"><strong id="fabric-out">0</strong><span>tokens out</span></div><div class="fabric-total"><strong id="fabric-rate">—</strong><span id="fabric-rate-label">tok/s</span></div><div class="fabric-total"><strong id="fabric-active">0</strong><span>active</span></div></div></div>
         </div>
       </div>
       <canvas id="topology-canvas" class="topology-canvas" aria-label="Animated connections flowing through LLooM to configured models"></canvas>
@@ -606,6 +614,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       showAllTopologyModels: false,
       topologyAgedModelCount: 0,
       topologyCatalogModels: [],
+      topologyVisibleModelKey: "",
       topologyView: null,
       topologyHitCards: [],
       output: null,
@@ -781,16 +790,22 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const count = state.topologyAgedModelCount || 0;
       button.disabled = count === 0;
       button.setAttribute("aria-pressed", String(state.showAllTopologyModels));
+      button.setAttribute("aria-label", state.showAllTopologyModels ? "Show live topology only" : "Show all configured models");
       button.textContent = count === 0
-        ? "ALL MODELS"
+        ? "ALL"
         : state.showAllTopologyModels
-          ? "LIVE VIEW · HIDE " + count
-          : "VIEW ALL · " + count + " INACTIVE";
+          ? "LIVE −" + count
+          : "ALL +" + count;
     }
 
     function applyTopologyModelFilter(models = state.topologyCatalogModels || []) {
       state.topologyAgedModelCount = models.filter(model => model.agedOut).length;
-      state.topologyModels = state.showAllTopologyModels ? models : models.filter(model => !model.agedOut);
+      const visibleModels = state.showAllTopologyModels ? models : models.filter(model => !model.agedOut);
+      const visibleModelKey = visibleModels.map(model => model.id).sort().join("|");
+      const topologyChanged = visibleModelKey !== state.topologyVisibleModelKey;
+      state.topologyVisibleModelKey = visibleModelKey;
+      state.topologyModels = visibleModels;
+      if (topologyChanged) fitTopologyCameraToModels(visibleModels.length);
       if (state.selectedModelId && !state.topologyModels.some(model => model.id === state.selectedModelId)) closeModelInspector();
       renderTopologyModelFilter();
       renderModelInspector();
@@ -1226,8 +1241,8 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       if (state.modelLayoutSettled) return;
       const nodes = models.map(model => state.modelNodes.get(model.id));
       for (const node of nodes) {
-        node.vx += (node.targetX - node.x) * .004;
-        node.vy += (node.targetY - node.y) * .004;
+        node.vx += (node.targetX - node.x) * .024;
+        node.vy += (node.targetY - node.y) * .024;
       }
       // Destination slots are already separated. Let cards pass through one
       // another while reseating so a topology change cannot trap the rack in
@@ -1239,15 +1254,15 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         if (node.x > layoutField.right - halfWidth) node.vx -= (node.x - layoutField.right + halfWidth) * .03;
         if (node.y < layoutField.top + halfHeight) node.vy += (layoutField.top + halfHeight - node.y) * .03;
         if (node.y > layoutField.bottom - halfHeight) node.vy -= (node.y - layoutField.bottom + halfHeight) * .03;
-        node.vx *= .78; node.vy *= .78;
+        node.vx *= .70; node.vy *= .70;
         node.x += node.vx; node.y += node.vy;
         node.x = Math.max(layoutField.left + halfWidth, Math.min(layoutField.right - halfWidth, node.x));
         node.y = Math.max(layoutField.top + halfHeight, Math.min(layoutField.bottom - halfHeight, node.y));
       }
       const maxMovement = nodes.reduce((maximum, node, index) => Math.max(maximum, Math.abs(node.x - previousPositions[index].x), Math.abs(node.y - previousPositions[index].y)), 0);
       const maxTargetError = nodes.reduce((maximum, node) => Math.max(maximum, Math.hypot(node.targetX - node.x, node.targetY - node.y)), 0);
-      state.modelLayoutStableFrames = maxMovement < .035 && maxTargetError < 8 ? state.modelLayoutStableFrames + 1 : 0;
-      if (state.modelLayoutStableFrames >= 24) {
+      state.modelLayoutStableFrames = maxMovement < .08 && maxTargetError < 5 ? state.modelLayoutStableFrames + 1 : 0;
+      if (state.modelLayoutStableFrames >= 8) {
         for (const node of nodes) {
           node.x = Math.round(node.targetX);
           node.y = Math.round(node.targetY);
@@ -1582,7 +1597,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         renderActivity();
         const marker = $("#activity-state");
         marker.querySelector(".dot").className = "dot ok pulse";
-        marker.querySelector("span:last-child").textContent = "live · " + new Date().toLocaleTimeString();
+        marker.querySelector("span:last-child").textContent = "live";
       } catch (error) {
         const marker = $("#activity-state");
         marker.querySelector(".dot").className = "dot bad";
@@ -1657,11 +1672,17 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       state.showAllTopologyModels = !state.showAllTopologyModels;
       applyTopologyModelFilter();
     });
-    function resetTopologyCamera() {
+    function fitTopologyCameraToModels(modelCount = (state.topologyModels || []).length) {
+      const worldScale = Math.max(1, Math.sqrt(Math.max(1, modelCount / 6)));
       state.topologyCamera.manual = 1;
+      state.topologyCamera.current = 1 / worldScale;
       state.topologyCamera.panX = 0;
       state.topologyCamera.panY = 0;
       state.topologyZoomAnchor = null;
+      state.topologyWorldScale = worldScale;
+    }
+    function resetTopologyCamera() {
+      fitTopologyCameraToModels();
     }
     function adjustTopologyZoom(delta, anchor) {
       const camera = state.topologyCamera;

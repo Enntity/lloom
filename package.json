@@ -1,6 +1,6 @@
 {
   "name": "lloom",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Local-first gateway for running and routing open model backends through OpenAI and Anthropic-compatible APIs.",
   "type": "module",
   "private": false,
