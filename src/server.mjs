@@ -280,11 +280,37 @@ function endResponseWithError(res, error, { stream = false, config = {}, status 
   }
 }
 
+const DEFAULT_IMAGE_TOKEN_ESTIMATE = 4096;
+const LOW_DETAIL_IMAGE_TOKEN_ESTIMATE = 1024;
+
+function estimateImageTokens(value) {
+  if (!value || typeof value !== 'object') return null;
+  const type = String(value.type ?? '').toLowerCase();
+  const source = value.source && typeof value.source === 'object' ? value.source : null;
+  const hasImagePayload =
+    type === 'image' ||
+    type === 'image_url' ||
+    type === 'input_image' ||
+    value.image_url != null ||
+    (source && (source.type === 'base64' || String(source.media_type ?? '').startsWith('image/')));
+  if (!hasImagePayload) return null;
+  const detail = String(value.detail ?? value.image_url?.detail ?? '').toLowerCase();
+  return detail === 'low' ? LOW_DETAIL_IMAGE_TOKEN_ESTIMATE : DEFAULT_IMAGE_TOKEN_ESTIMATE;
+}
+
 function estimateMessageTokens(value) {
   if (value == null) return 0;
-  if (typeof value === 'string') return Math.ceil(value.length / 3.5);
+  if (typeof value === 'string') {
+    // Base64 is opaque media, not prompt text. Counting every encoded byte as
+    // language tokens rejects normal multimodal requests before the backend's
+    // vision processor can turn pixels into its much smaller token sequence.
+    if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(value)) return DEFAULT_IMAGE_TOKEN_ESTIMATE;
+    return Math.ceil(value.length / 3.5);
+  }
   if (Array.isArray(value)) return value.reduce((sum, item) => sum + estimateMessageTokens(item), 0);
   if (typeof value === 'object') {
+    const imageTokens = estimateImageTokens(value);
+    if (imageTokens != null) return imageTokens;
     if (typeof value.text === 'string') return estimateMessageTokens(value.text);
     if (typeof value.content === 'string' || Array.isArray(value.content)) {
       return estimateMessageTokens(value.content);
@@ -297,7 +323,7 @@ function estimateMessageTokens(value) {
   return Math.ceil(String(value).length / 3.5);
 }
 
-function estimateRequestPromptTokens(body = {}) {
+export function estimateRequestPromptTokens(body = {}) {
   const parts = [body.messages, body.input, body.instructions, body.system, body.prompt];
   return parts.reduce((sum, part) => sum + estimateMessageTokens(part), 0);
 }

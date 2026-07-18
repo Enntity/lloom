@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import net from 'node:net';
-import { createLloomServer } from '../src/server.mjs';
+import { createLloomServer, estimateRequestPromptTokens } from '../src/server.mjs';
 
 function listen(server) {
   return new Promise((resolve, reject) => {
@@ -12,6 +12,38 @@ function listen(server) {
 
 function close(server) {
   return new Promise((resolve) => server.close(() => resolve()));
+}
+
+// Prompt admission counts visual tokens, not opaque base64 bytes.
+{
+  const encoded = 'a'.repeat(2_000_000);
+  const chatEstimate = estimateRequestPromptTokens({
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: `data:image/png;base64,${encoded}`, detail: 'high' } },
+          { type: 'text', text: 'Describe this image.' }
+        ]
+      }
+    ]
+  });
+  assert(chatEstimate >= 4096 && chatEstimate < 5000);
+
+  const responsesEstimate = estimateRequestPromptTokens({
+    input: [{ role: 'user', content: [{ type: 'input_image', image_url: `data:image/png;base64,${encoded}` }] }]
+  });
+  assert.equal(responsesEstimate, 4096);
+
+  const anthropicEstimate = estimateRequestPromptTokens({
+    messages: [
+      {
+        role: 'user',
+        content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: encoded } }]
+      }
+    ]
+  });
+  assert.equal(anthropicEstimate, 4096);
 }
 
 // Upstream dies after opening an SSE stream: gateway must not crash, must end response.
