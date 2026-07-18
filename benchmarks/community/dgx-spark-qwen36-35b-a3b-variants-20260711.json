@@ -1,0 +1,212 @@
+{
+  "$schema": "https://lloom.dev/schemas/benchmark-suite.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "dgx-spark-qwen36-35b-a3b-variants-20260711",
+  "name": "DGX Spark Qwen3.6 35B-A3B NVFP4 checkpoint comparison",
+  "summary": "Recovered direct-backend measurements comparing the original and Fast Unsloth Qwen3.6 35B-A3B NVFP4 checkpoints on one DGX Spark.",
+  "license": { "id": "CC0-1.0", "name": "CC0 1.0" },
+  "source": {
+    "type": "local-measurement",
+    "name": "Preserved LLooM DGX Spark tuning transcript",
+    "capturedAt": "2026-07-11T08:08:22Z"
+  },
+  "submittedAt": "2026-07-11T08:08:22Z",
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "OpenAI-compatible completions wall-clock harness",
+    "source": "Recovered verbatim from the preserved 2026-07-11 benchmark transcript; raw run values are retained in x-runs."
+  },
+  "methodology": {
+    "harness": "Python urllib.request + time.perf_counter against the direct vLLM OpenAI-compatible completions endpoint",
+    "harnessVersion": "Python 3 standard library",
+    "promptCorpus": "The sentence 'The quick brown fox jumps over the lazy dog. Explain the engineering tradeoffs of unified memory inference in detail.' repeated 64 times; server-reported 1,409 prompt tokens",
+    "streaming": false,
+    "command": ["POST", "/v1/completions", "temperature=0", "ignore_eos=true", "max_tokens=256"]
+  },
+  "results": [
+    {
+      "id": "dgx-spark-unsloth-qwen36-35b-a3b-original-c1",
+      "recipeId": "linux-nvidia-gb10-qwen36-unsloth-vllm",
+      "recipeVersion": 1,
+      "backendId": "docker-vllm",
+      "model": "unsloth/Qwen3.6-35B-A3B-NVFP4",
+      "gatewayModel": "unsloth/Qwen3.6-35B-A3B-NVFP4",
+      "machine": {
+        "platformId": "linux-arm64",
+        "chip": "NVIDIA DGX Spark / GB10",
+        "memoryGb": 128,
+        "accelerators": ["cuda", "nvidia-gpu", "blackwell"]
+      },
+      "settings": {
+        "runtimeVersion": "vLLM 0.24.0",
+        "quantization": "mixed NVFP4/FP8",
+        "dtype": "bfloat16",
+        "kvCacheDtype": "fp8",
+        "attentionBackend": "flashinfer",
+        "contextWindow": 262144,
+        "maxNumSeqs": 4,
+        "maxNumBatchedTokens": 8192,
+        "chunkedPrefill": true,
+        "prefixCaching": true,
+        "asyncScheduling": true,
+        "loadFormat": "fastsafetensors"
+      },
+      "workload": {
+        "type": "interactive-generation",
+        "category": "fixed-text",
+        "concurrency": 1,
+        "promptTokens": 1409,
+        "outputTokens": 256
+      },
+      "metrics": {
+        "generationTokPerSec": 66.45,
+        "outputThroughputTokPerSec": 66.45,
+        "generationSeconds": 3.853,
+        "contextWindow": 262144
+      },
+      "x-rankingEligible": false,
+      "notes": "Run 1 was treated as warmup. The reported value is the median of runs 2-4.",
+      "x-runs": [
+        { "run": 1, "warmup": true, "seconds": 4.058, "outputTokPerSec": 63.08 },
+        { "run": 2, "warmup": false, "seconds": 3.853, "outputTokPerSec": 66.45 },
+        { "run": 3, "warmup": false, "seconds": 3.865, "outputTokPerSec": 66.23 },
+        { "run": 4, "warmup": false, "seconds": 3.851, "outputTokPerSec": 66.48 }
+      ]
+    },
+    {
+      "id": "dgx-spark-unsloth-qwen36-35b-a3b-fast-c1",
+      "recipeId": "linux-nvidia-gb10-qwen36-unsloth-vllm",
+      "recipeVersion": 1,
+      "backendId": "docker-vllm",
+      "model": "unsloth/Qwen3.6-35B-A3B-NVFP4-Fast",
+      "gatewayModel": "unsloth/Qwen3.6-35B-A3B-NVFP4-Fast",
+      "machine": {
+        "platformId": "linux-arm64",
+        "chip": "NVIDIA DGX Spark / GB10",
+        "memoryGb": 128,
+        "accelerators": ["cuda", "nvidia-gpu", "blackwell"]
+      },
+      "settings": {
+        "runtimeVersion": "vLLM nightly 3d99b0499aff7ce3b91942b0385558dab4eecf76",
+        "runtimeImage": "vllm/vllm-openai:nightly",
+        "quantization": "block-scaled NVFP4 MoE with mixed FP8 projections",
+        "dtype": "bfloat16",
+        "kvCacheDtype": "fp8",
+        "attentionBackend": "flashinfer",
+        "moeBackend": "flashinfer_b12x",
+        "contextWindow": 262144,
+        "maxNumSeqs": 4,
+        "maxNumBatchedTokens": 8192,
+        "chunkedPrefill": true,
+        "prefixCaching": true,
+        "asyncScheduling": true,
+        "loadFormat": "fastsafetensors",
+        "speculativeDecoding": false
+      },
+      "workload": {
+        "type": "interactive-generation",
+        "category": "fixed-text",
+        "concurrency": 1,
+        "promptTokens": 1409,
+        "outputTokens": 256
+      },
+      "metrics": {
+        "generationTokPerSec": 69.37,
+        "outputThroughputTokPerSec": 69.37,
+        "generationSeconds": 3.691,
+        "contextWindow": 262144
+      },
+      "x-rankingEligible": false,
+      "notes": "Runs 1-2 were treated as warmup. The reported value is the median of runs 3-6.",
+      "x-runs": [
+        { "run": 1, "warmup": true, "seconds": 3.91, "outputTokPerSec": 65.47, "totalTokPerSec": 425.84 },
+        { "run": 2, "warmup": true, "seconds": 3.693, "outputTokPerSec": 69.32, "totalTokPerSec": 450.87 },
+        { "run": 3, "warmup": false, "seconds": 3.688, "outputTokPerSec": 69.41, "totalTokPerSec": 451.43 },
+        { "run": 4, "warmup": false, "seconds": 3.692, "outputTokPerSec": 69.34, "totalTokPerSec": 450.95 },
+        { "run": 5, "warmup": false, "seconds": 3.689, "outputTokPerSec": 69.39, "totalTokPerSec": 451.32 },
+        { "run": 6, "warmup": false, "seconds": 3.712, "outputTokPerSec": 68.96, "totalTokPerSec": 448.51 }
+      ]
+    },
+    {
+      "id": "dgx-spark-unsloth-qwen36-35b-a3b-fast-c4",
+      "recipeId": "linux-nvidia-gb10-qwen36-unsloth-vllm",
+      "recipeVersion": 1,
+      "backendId": "docker-vllm",
+      "model": "unsloth/Qwen3.6-35B-A3B-NVFP4-Fast",
+      "gatewayModel": "unsloth/Qwen3.6-35B-A3B-NVFP4-Fast",
+      "machine": {
+        "platformId": "linux-arm64",
+        "chip": "NVIDIA DGX Spark / GB10",
+        "memoryGb": 128,
+        "accelerators": ["cuda", "nvidia-gpu", "blackwell"]
+      },
+      "settings": {
+        "runtimeVersion": "vLLM nightly 3d99b0499aff7ce3b91942b0385558dab4eecf76",
+        "runtimeImage": "vllm/vllm-openai:nightly",
+        "quantization": "block-scaled NVFP4 MoE with mixed FP8 projections",
+        "dtype": "bfloat16",
+        "kvCacheDtype": "fp8",
+        "attentionBackend": "flashinfer",
+        "moeBackend": "flashinfer_b12x",
+        "contextWindow": 262144,
+        "maxNumSeqs": 4,
+        "maxNumBatchedTokens": 8192,
+        "chunkedPrefill": true,
+        "prefixCaching": true,
+        "asyncScheduling": true,
+        "loadFormat": "fastsafetensors",
+        "speculativeDecoding": false
+      },
+      "workload": {
+        "type": "interactive-generation",
+        "category": "fixed-text",
+        "concurrency": 4,
+        "promptTokens": 1409,
+        "outputTokens": 256
+      },
+      "metrics": {
+        "generationTokPerSec": 155.3,
+        "outputThroughputTokPerSec": 155.3,
+        "generationSeconds": 6.595,
+        "contextWindow": 262144
+      },
+      "x-rankingEligible": false,
+      "notes": "Aggregate throughput is the median of two four-request batches; each request generated 256 tokens.",
+      "x-runs": [
+        {
+          "batch": 1,
+          "wallSeconds": 6.659,
+          "aggregateOutputTokPerSec": 153.78,
+          "aggregateTotalTokPerSec": 1000.76,
+          "requestSeconds": [6.648, 6.648, 6.624, 6.647]
+        },
+        {
+          "batch": 2,
+          "wallSeconds": 6.53,
+          "aggregateOutputTokPerSec": 156.82,
+          "aggregateTotalTokPerSec": 1020.53,
+          "requestSeconds": [6.528, 6.529, 6.506, 6.528]
+        }
+      ]
+    }
+  ],
+  "x-comparability": {
+    "directBackend": true,
+    "normalGatewayPath": false,
+    "matchedWithinSuite": true,
+    "comparableTo27BReferenceSuite": false,
+    "notes": "The 27B reference suite uses vllm bench serve, 2,048-token random prompts, 128-token outputs, streaming, and different runtime settings. Do not use these suites for a direct 27B-versus-35B speed ranking."
+  },
+  "x-operational-followup": {
+    "model": "unsloth/Qwen3.6-35B-A3B-NVFP4-Froggeric-vLLM025",
+    "requests": 2510,
+    "errors": 4,
+    "streams": 1931,
+    "inputTokens": 975048,
+    "outputTokens": 1241372,
+    "decodeSamples": 1781,
+    "decodeTokensPerSecond": 36.35,
+    "notes": "Retained LLooM aggregate telemetry from a later real workload. This is operational evidence, not a controlled benchmark result, and is intentionally excluded from results[]."
+  }
+}

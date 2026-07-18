@@ -807,8 +807,16 @@ assert.deepEqual(
   ]
 );
 const benchmarkEvidence = await loadBenchmarkEvidence();
-assert.equal(benchmarkEvidence.length, 18);
+assert.equal(benchmarkEvidence.length, 21);
 assert.deepEqual(validateBenchmarkEvidence(benchmarkEvidence), []);
+const spark35bEvidence = benchmarkEvidence.filter(
+  (result) => result.suite?.id === 'dgx-spark-qwen36-35b-a3b-variants-20260711'
+);
+assert.deepEqual(
+  spark35bEvidence.map((result) => result.metrics.generationTokPerSec),
+  [66.45, 69.37, 155.3]
+);
+assert.ok(spark35bEvidence.every((result) => result['x-rankingEligible'] === false));
 const benchmarkSuite = JSON.parse(
   await fs.readFile(path.join(process.cwd(), 'benchmarks', 'community', 'apple-silicon-qwen36-m2max.json'), 'utf8')
 );
@@ -828,6 +836,11 @@ assert.deepEqual(
 );
 const benchmarkRanking = benchmarkOverview(benchmarkEvidence);
 assert.equal(benchmarkRanking[0].model, 'Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16');
+assert.ok(
+  benchmarkRanking
+    .filter((result) => result.id.startsWith('dgx-spark-unsloth-qwen36-35b-a3b-'))
+    .every((result) => result.rankingEligible === false)
+);
 assert.equal(
   benchmarkRanking.find((result) => result.id === 'qwen36-27b-mtplx-speed-m2max-d3')?.model,
   'Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed'

@@ -130,7 +130,13 @@ async function validateRecipeCollection({ label, indexPath, recipesRoot, benchma
         );
       }
       const modelIds = recipeModelsById(recipe);
-      if (result?.model && result?.gatewayModel && !modelIds.has(result.model) && !modelIds.has(result.gatewayModel)) {
+      if (
+        result?.['x-rankingEligible'] !== false &&
+        result?.model &&
+        result?.gatewayModel &&
+        !modelIds.has(result.model) &&
+        !modelIds.has(result.gatewayModel)
+      ) {
         errors.push(
           `${label}: benchmark ${result.id ?? '(missing)'} model ${result.model} is not in recipe ${recipe.id}`
         );

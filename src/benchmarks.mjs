@@ -359,9 +359,14 @@ export function benchmarkScore(result) {
   return generation * 1000 + imagesPerMinute * 1000 + prefill + context / 100000;
 }
 
+export function benchmarkRankingEligible(result) {
+  return result?.['x-rankingEligible'] !== false;
+}
+
 export function summarizeBenchmarksForRecipe(recipe, results) {
   const recipeResults = asArray(results).filter(
     (result) =>
+      benchmarkRankingEligible(result) &&
       result.recipeId === recipe.id &&
       (recipe.version === 1
         ? result.recipeVersion == null || result.recipeVersion === 1
@@ -411,8 +416,9 @@ export function benchmarkOverview(results) {
       settings: result.settings ?? {},
       metrics: result.metrics,
       score: benchmarkScore(result),
+      rankingEligible: benchmarkRankingEligible(result),
       source: result.suite?.source ?? result.source,
       submittedAt: result.suite?.submittedAt ?? result.submittedAt
     }))
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => Number(b.rankingEligible) - Number(a.rankingEligible) || b.score - a.score);
 }

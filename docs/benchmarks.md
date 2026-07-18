@@ -53,8 +53,17 @@ Each result should include:
 - `metrics.contextWindow`: validated context window.
 - `metrics.firstContentMs`: first streamed content latency, when captured from gateway metrics.
 - `metrics.decodeTokensPerSecond`: mean of the latest ten Spark Arena-style streaming decode measurements, each calculated as `(generated tokens - 1) / (last content token time - first content token time)`. Reported token usage is preferred; otherwise LLooM estimates tokens from observed output characters and increments `estimatedDecodeSamples`. Non-streaming and zero-output requests are excluded.
+- `x-rankingEligible: false`: retain historical, unmatched, or ecological evidence for inspection without allowing it to drive recipe recommendations or outrank matched benchmark suites. The interchange consistency check permits such evidence to name a retired gateway model that is no longer present in the current recipe, but the recipe and backend must still exist.
 
 The current score favors interactive generation first, then prefill and context size. That is intentionally simple while the community format is young; recipe authors should still include raw metrics and settings so rankings can improve without losing evidence. The gateway's `/gateway/metrics` feed is useful for local evidence collection because it separates first-content latency from decode throughput before a formal benchmark suite is submitted.
+
+## DGX Spark Qwen3.6 35B-A3B reference comparison
+
+The bundled `dgx-spark-qwen36-35b-a3b-variants-20260711` suite preserves the original July 11 Spark comparison instead of leaving the measurements in an operator transcript. It used a fixed 1,409-token prompt, forced 256 output tokens, temperature 0, ignored EOS, and direct vLLM completion endpoints.
+
+At concurrency 1, the original Unsloth 35B-A3B checkpoint measured a median 66.45 output tok/s after warmup. The block-scaled `-Fast` checkpoint on the matching nightly vLLM/FlashInfer B12x path measured 69.37 output tok/s. Two four-request `-Fast` batches measured 153.78 and 156.82 aggregate output tok/s, or a 155.30 tok/s median.
+
+The suite contains every raw timing used in those medians and marks later Froggeric aggregate telemetry as operational follow-up rather than a controlled benchmark. It also records an important limit: this was a direct-backend, non-streaming harness. Its workload is not matched to the later 27B suite and must not be used as a direct 27B-versus-35B speed ranking. Its results therefore set `x-rankingEligible: false`: they remain inspectable evidence but do not drive recipe recommendations or displace matched suites in the benchmark overview.
 
 ## DGX Spark Qwen3.6 27B reference shootout
 
