@@ -15,6 +15,20 @@ const qwenVllm = {
   runtime: { bootstrap: { image: 'vllm/vllm-openai:v0.24.0' } }
 };
 
+const qwenVllmWithTemplateProfile = {
+  ...qwenVllm,
+  runtime: {
+    ...qwenVllm.runtime,
+    behaviorOverrides: {
+      chatTemplate: 'qwen-fixed-v21.3',
+      chatTemplateKwargs: {
+        auto_disable_thinking_with_tools: false,
+        preserve_thinking: true
+      }
+    }
+  }
+};
+
 {
   assert.equal(isQwenVllm(qwenVllm), true);
   assert.equal(isQwenVllm({ ...qwenVllm, model: { id: 'meta-llama/Llama-3.3-70B' } }), false);
@@ -70,6 +84,33 @@ const qwenVllm = {
 {
   const untouched = { reasoning_effort: 'minimal', model: 'llama' };
   assert.strictEqual(translateReasoningEffortForBackend(untouched, { model: { id: 'llama' } }), untouched);
+}
+
+{
+  const translated = translateReasoningEffortForBackend(
+    {
+      model: 'unsloth/Qwen3.6-27B-NVFP4',
+      reasoning_effort: 'low',
+      chat_template_kwargs: { preserve_thinking: false }
+    },
+    qwenVllmWithTemplateProfile
+  );
+  assert.equal(translated.reasoning_effort, undefined);
+  assert.equal(translated.thinking_token_budget, QWEN_VLLM_THINKING_BUDGETS.low);
+  assert.deepEqual(translated.chat_template_kwargs, {
+    auto_disable_thinking_with_tools: false,
+    preserve_thinking: false,
+    enable_thinking: true
+  });
+
+  const withoutEffort = translateReasoningEffortForBackend(
+    { model: 'unsloth/Qwen3.6-27B-NVFP4' },
+    qwenVllmWithTemplateProfile
+  );
+  assert.deepEqual(withoutEffort.chat_template_kwargs, {
+    auto_disable_thinking_with_tools: false,
+    preserve_thinking: true
+  });
 }
 
 {

@@ -2612,6 +2612,23 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
     /unknown chat template behavior override/
   );
 
+  const sparkDeployConfig = JSON.parse(
+    await fs.readFile(new URL('../deploy/dgx-spark/config.json', import.meta.url), 'utf8')
+  );
+  const qwen27Runtime = sparkDeployConfig.runtimes['unsloth-qwen36-27b-nvfp4'];
+  assert.equal(qwen27Runtime.recipe.version, 3);
+  assert.deepEqual(qwen27Runtime.behaviorOverrides, {
+    chatTemplate: 'qwen-fixed-v21.3',
+    chatTemplateKwargs: {
+      auto_disable_thinking_with_tools: false,
+      preserve_thinking: true
+    }
+  });
+  assert(qwen27Runtime.bootstrap.command.includes('qwen3_coder'));
+  const qwen27CreateArgs = dockerCreateArgs(qwen27Runtime);
+  assert(qwen27CreateArgs.some((arg) => arg.includes('qwen-fixed-v21.3.jinja') && arg.endsWith(',readonly')));
+  assert.deepEqual(qwen27CreateArgs.slice(-2), ['--chat-template', '/etc/lloom/chat-template.jinja']);
+
   const limiterManager = new RuntimeManager(
     {
       runtimes: {

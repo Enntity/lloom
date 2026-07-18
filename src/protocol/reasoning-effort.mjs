@@ -65,6 +65,18 @@ function removeGatewayEffort(body) {
   return next;
 }
 
+function applyChatTemplateBehaviorOverrides(body = {}, resolved = {}) {
+  const configured = resolved.runtime?.behaviorOverrides?.chatTemplateKwargs;
+  if (!isObject(configured) || !Object.keys(configured).length) return body;
+  const requested = isObject(body.chat_template_kwargs) ? body.chat_template_kwargs : {};
+  return {
+    ...body,
+    // Runtime values are profile defaults. An explicit caller value remains
+    // authoritative so low-level tests and emergency overrides stay possible.
+    chat_template_kwargs: { ...configured, ...requested }
+  };
+}
+
 /**
  * Return the exact upstream request for the resolved backend.
  *
@@ -73,13 +85,14 @@ function removeGatewayEffort(body) {
  * set `chat_template_kwargs.enable_thinking`.
  */
 export function translateReasoningEffortForBackend(body = {}, resolved = {}) {
-  const effort = normalizedEffort(body);
-  if (!effort || !isQwenVllm(resolved)) return body;
+  const profiledBody = applyChatTemplateBehaviorOverrides(body, resolved);
+  const effort = normalizedEffort(profiledBody);
+  if (!effort || !isQwenVllm(resolved)) return profiledBody;
 
-  const next = removeGatewayEffort(body);
-  const templateKwargs = isObject(body.chat_template_kwargs) ? body.chat_template_kwargs : {};
+  const next = removeGatewayEffort(profiledBody);
+  const templateKwargs = isObject(profiledBody.chat_template_kwargs) ? profiledBody.chat_template_kwargs : {};
   const hasThinkingOverride = Object.hasOwn(templateKwargs, 'enable_thinking');
-  const hasBudgetOverride = Object.hasOwn(body, 'thinking_token_budget');
+  const hasBudgetOverride = Object.hasOwn(profiledBody, 'thinking_token_budget');
 
   if (hasThinkingOverride && templateKwargs.enable_thinking === false) return next;
 
