@@ -47,6 +47,7 @@ function compactRuntime(runtimeId, runtime) {
     port: runtime.port,
     healthUrl: runtime.healthUrl,
     startupTimeoutMs: runtime.startupTimeoutMs,
+    watchdog: runtimeWatchdogConfig(runtime),
     sessionCache: runtime.sessionCache ?? null,
     adapter: runtimeAdapter(runtime),
     management: runtime.management ?? (runtime.managed === false ? 'external' : 'managed'),
@@ -197,6 +198,58 @@ async function healthOk(url, timeoutMs = 1500) {
 function runtimeMaxConcurrency(runtime) {
   const value = Number(runtime?.maxConcurrency ?? 1);
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : 1;
+}
+
+function integerAtLeast(value, fallback, minimum) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= minimum ? Math.floor(number) : fallback;
+}
+
+export function runtimeWatchdogConfig(runtime) {
+  const configured = runtime?.watchdog;
+  const failureStatuses = Array.isArray(configured?.failureStatuses)
+    ? configured.failureStatuses
+        .map(Number)
+        .filter((status) => Number.isInteger(status) && status >= 400 && status <= 599)
+    : [499, 502, 504];
+  return {
+    enabled: configured?.enabled === true && runtimeManagement(runtime) === 'managed',
+    failureThreshold: integerAtLeast(configured?.failureThreshold, 2, 1),
+    failureWindowMs: integerAtLeast(configured?.failureWindowMs, 600000, 1),
+    minNoProgressMs: integerAtLeast(configured?.minNoProgressMs, 120000, 0),
+    cooldownMs: integerAtLeast(configured?.cooldownMs, 600000, 0),
+    drainTimeoutMs: integerAtLeast(configured?.drainTimeoutMs, 30000, 0),
+    failureStatuses: failureStatuses.length > 0 ? failureStatuses : [499, 502, 504]
+  };
+}
+
+export function classifyRuntimeWatchdogOutcome(runtime, outcome = {}) {
+  const watchdog = runtimeWatchdogConfig(runtime);
+  if (!watchdog.enabled) return { kind: 'disabled', watchdog };
+  const firstContentMs = outcome.firstContentMs == null ? null : Number(outcome.firstContentMs);
+  const lastContentMs = outcome.lastContentMs == null ? null : Number(outcome.lastContentMs);
+  const responseBytes = Number(outcome.responseBytes ?? 0);
+  const madeProgress =
+    (firstContentMs != null && Number.isFinite(firstContentMs) && firstContentMs >= 0) ||
+    (lastContentMs != null && Number.isFinite(lastContentMs) && lastContentMs >= 0) ||
+    (Number.isFinite(responseBytes) && responseBytes > 0);
+  if (outcome.ok === true || madeProgress) {
+    return { kind: 'progress', watchdog };
+  }
+  const status = Number(outcome.status);
+  const durationMs = Number(outcome.durationMs ?? 0);
+  if (!watchdog.failureStatuses.includes(status) || !Number.isFinite(durationMs)) {
+    return { kind: 'ignored', watchdog };
+  }
+  if (durationMs < watchdog.minNoProgressMs) {
+    return { kind: 'ignored', watchdog };
+  }
+  return {
+    kind: 'no-progress-failure',
+    watchdog,
+    status,
+    durationMs
+  };
 }
 
 function commandName(command) {
@@ -354,6 +407,7 @@ export class RuntimeManager {
     this.queues = new Map();
     this.pausedRuntimes = new Set();
     this.lifecycleQueues = new Map();
+    this.watchdogOperations = new Map();
     this.admissionQueue = Promise.resolve();
     this.events = [];
   }
@@ -375,7 +429,17 @@ export class RuntimeManager {
         stoppedAt: null,
         lastWarmup: null,
         lastError: null,
-        lastStderr: null
+        lastStderr: null,
+        watchdog: {
+          consecutiveFailures: 0,
+          lastFailureAt: null,
+          restartPending: false,
+          restartRequestedAt: null,
+          lastRestartAt: null,
+          restarts: 0,
+          restartFailures: 0,
+          lastError: null
+        }
       });
     }
     return this.state.get(runtimeId);
@@ -495,6 +559,10 @@ export class RuntimeManager {
         stoppedAt: state.stoppedAt,
         lastWarmup: state.lastWarmup,
         lastError: state.lastError,
+        watchdog: {
+          ...runtimeWatchdogConfig(runtime),
+          ...state.watchdog
+        },
         container
       };
     }
@@ -511,6 +579,131 @@ export class RuntimeManager {
     } finally {
       release();
     }
+  }
+
+  noteRequestOutcome(runtimeId, outcome = {}) {
+    if (!runtimeId) return { runtimeId, action: 'ignored', reason: 'no-runtime' };
+    const runtime = this.getRuntime(runtimeId);
+    if (!runtime) return { runtimeId, action: 'ignored', reason: 'unknown-runtime' };
+    const classification = classifyRuntimeWatchdogOutcome(runtime, outcome);
+    if (classification.kind === 'disabled') {
+      return { runtimeId, action: 'ignored', reason: 'watchdog-disabled' };
+    }
+    const state = this.stateFor(runtimeId);
+    const watchdogState = state.watchdog;
+    if (classification.kind === 'progress') {
+      if (watchdogState.consecutiveFailures > 0) {
+        this.record({
+          runtimeId,
+          event: 'watchdog-recovered',
+          clearedFailures: watchdogState.consecutiveFailures
+        });
+      }
+      watchdogState.consecutiveFailures = 0;
+      watchdogState.lastFailureAt = null;
+      return { runtimeId, action: 'reset', reason: 'request-progress' };
+    }
+    if (classification.kind !== 'no-progress-failure') {
+      return { runtimeId, action: 'ignored', reason: 'not-a-no-progress-failure' };
+    }
+
+    const now = Date.now();
+    const previousFailureAt = Date.parse(watchdogState.lastFailureAt ?? '');
+    if (!Number.isFinite(previousFailureAt) || now - previousFailureAt > classification.watchdog.failureWindowMs) {
+      watchdogState.consecutiveFailures = 0;
+    }
+    watchdogState.consecutiveFailures += 1;
+    watchdogState.lastFailureAt = new Date(now).toISOString();
+    this.record({
+      runtimeId,
+      event: 'watchdog-no-progress',
+      status: classification.status,
+      durationMs: classification.durationMs,
+      consecutiveFailures: watchdogState.consecutiveFailures,
+      failureThreshold: classification.watchdog.failureThreshold
+    });
+
+    if (watchdogState.consecutiveFailures < classification.watchdog.failureThreshold) {
+      return { runtimeId, action: 'observed', reason: 'below-threshold' };
+    }
+    if (watchdogState.restartPending || this.watchdogOperations.has(runtimeId)) {
+      return { runtimeId, action: 'observed', reason: 'restart-pending' };
+    }
+    const lastRestartAt = Date.parse(watchdogState.restartRequestedAt ?? watchdogState.lastRestartAt ?? '');
+    if (Number.isFinite(lastRestartAt) && now - lastRestartAt < classification.watchdog.cooldownMs) {
+      this.record({
+        runtimeId,
+        event: 'watchdog-restart-suppressed',
+        reason: 'cooldown',
+        cooldownRemainingMs: classification.watchdog.cooldownMs - (now - lastRestartAt)
+      });
+      return { runtimeId, action: 'observed', reason: 'cooldown' };
+    }
+
+    watchdogState.consecutiveFailures = 0;
+    watchdogState.restartPending = true;
+    watchdogState.restartRequestedAt = new Date(now).toISOString();
+    watchdogState.lastError = null;
+    this.pausedRuntimes.add(runtimeId);
+    this.setStatus(runtimeId, 'draining', 'watchdog');
+    this.record({
+      runtimeId,
+      event: 'watchdog-restart-requested',
+      status: classification.status,
+      durationMs: classification.durationMs
+    });
+    const operation = this.withRuntimeLifecycleLock(runtimeId, () =>
+      this.restartForWatchdogUnlocked(runtimeId, classification.watchdog)
+    )
+      .then((result) => {
+        watchdogState.restarts += 1;
+        watchdogState.lastRestartAt = nowIso();
+        watchdogState.lastError = null;
+        this.record({ runtimeId, event: 'watchdog-restart-completed', result });
+        return result;
+      })
+      .catch((error) => {
+        watchdogState.restartFailures += 1;
+        watchdogState.lastError = error?.message ?? String(error);
+        this.record({
+          runtimeId,
+          event: 'watchdog-restart-failed',
+          message: watchdogState.lastError
+        });
+        this.logger.error?.(`Runtime watchdog restart failed for ${runtimeId}: ${watchdogState.lastError}`);
+        return { runtimeId, restarted: false, error: watchdogState.lastError };
+      })
+      .finally(() => {
+        watchdogState.restartPending = false;
+        this.watchdogOperations.delete(runtimeId);
+        this.resumeRuntime(runtimeId);
+      });
+    this.watchdogOperations.set(runtimeId, operation);
+    return { runtimeId, action: 'restart-requested', reason: 'failure-threshold' };
+  }
+
+  async restartForWatchdogUnlocked(runtimeId, watchdog) {
+    const state = this.stateFor(runtimeId);
+    const deadline = Date.now() + watchdog.drainTimeoutMs;
+    while (state.activeRequests > 0 && Date.now() < deadline) {
+      await delay(50);
+    }
+    const forced = state.activeRequests > 0;
+    if (forced) {
+      this.record({
+        runtimeId,
+        event: 'watchdog-drain-timeout',
+        activeRequests: state.activeRequests,
+        drainTimeoutMs: watchdog.drainTimeoutMs
+      });
+    }
+    const stop = await this.stopUnlocked(runtimeId);
+    const start = await this.startUnlocked(runtimeId, {
+      force: true,
+      warmup: true,
+      reason: 'watchdog-restart'
+    });
+    return { runtimeId, restarted: true, forced, stop, start };
   }
 
   acquireSlot(runtimeId) {

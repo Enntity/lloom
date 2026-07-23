@@ -130,6 +130,76 @@ function close(server) {
   await close(upstream);
 }
 
+// Completed model requests feed runtime-scoped evidence to the watchdog hook.
+{
+  const upstream = http.createServer((_req, res) => {
+    const body = JSON.stringify({
+      id: 'completion-1',
+      object: 'chat.completion',
+      choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }
+    });
+    res.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
+    res.end(body);
+  });
+  const upstreamPort = await listen(upstream);
+  const outcomes = [];
+  const runtimeManager = {
+    ensure: async () => ({ healthy: true }),
+    withSlot: async (_runtimeId, fn) => fn(),
+    noteRequestOutcome(runtimeId, outcome) {
+      outcomes.push({ runtimeId, outcome });
+    }
+  };
+  const config = {
+    name: 'watchdog-observation-test',
+    server: { host: '127.0.0.1', port: 0 },
+    security: { allowMissingAuth: true, apiKeys: [] },
+    defaults: { chatModel: 'test-model' },
+    backends: {
+      local: {
+        type: 'openai',
+        baseUrl: `http://127.0.0.1:${upstreamPort}/v1`,
+        timeoutMs: 5000
+      }
+    },
+    models: [
+      {
+        id: 'test-model',
+        backend: 'local',
+        upstreamModel: 'upstream-model',
+        runtime: 'test-runtime',
+        kind: 'chat',
+        contextWindow: 8192,
+        maxPromptTokens: 1000
+      }
+    ],
+    runtimes: {
+      'test-runtime': { enabled: true }
+    }
+  };
+  const app = createLloomServer(config, { runtimeManager, logger: { error() {}, warn() {} } });
+  const port = await listen(app.server);
+  const response = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'hello' }],
+      max_tokens: 8
+    })
+  });
+  assert.equal(response.status, 200);
+  await response.arrayBuffer();
+  assert.equal(outcomes.length, 1);
+  assert.equal(outcomes[0].runtimeId, 'test-runtime');
+  assert.equal(outcomes[0].outcome.ok, true);
+  assert(outcomes[0].outcome.responseBytes > 0);
+
+  await close(app.server);
+  await close(upstream);
+}
+
 console.log('server-resilience tests passed');
 
 // Gateway shutdown can leave managed runtimes alive for a fast service upgrade.

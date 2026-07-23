@@ -342,6 +342,7 @@ function buildExplicitRecipeRuntime({
       ? { containerName: templateString(runtimeSettings.containerName, variables) }
       : {}),
     ...(runtimeSettings.bootstrap ? { bootstrap: templateValue(asObject(runtimeSettings.bootstrap), variables) } : {}),
+    ...(runtimeSettings.watchdog ? { watchdog: templateValue(asObject(runtimeSettings.watchdog), variables) } : {}),
     recipe: {
       id: recipe.id,
       version: recipe.version ?? 1,
