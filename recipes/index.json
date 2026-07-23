@@ -152,7 +152,7 @@
     {
       "id": "linux-nvidia-gb10-qwen36-unsloth-vllm",
       "path": "linux-nvidia-gb10-qwen36-unsloth-vllm.json",
-      "currentVersion": 3,
+      "currentVersion": 2,
       "versions": [
         {
           "version": 1,
@@ -163,16 +163,9 @@
         },
         {
           "version": 2,
-          "path": "archive/linux-nvidia-gb10-qwen36-unsloth-vllm/v2.json",
-          "status": "archived",
-          "archivedAt": "2026-07-23T06:30:38.000Z",
-          "notes": "Released vLLM 0.25.0 profile with MTP and asynchronous scheduling retained for reproducibility after a live no-progress failure."
-        },
-        {
-          "version": 3,
           "path": "linux-nvidia-gb10-qwen36-unsloth-vllm.json",
           "status": "current",
-          "notes": "Uses the released vLLM 0.25.0 dense lane without MTP or asynchronous scheduling until the combination is proven stable."
+          "notes": "Promotes released vLLM 0.25.0 for the measured 27B dense GB10 lane."
         }
       ],
       "name": "DGX Spark Qwen3.6 Unsloth NVFP4 vLLM",
