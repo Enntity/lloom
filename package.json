@@ -50,7 +50,9 @@
     "schemas/",
     "scripts/",
     "src/",
-    "THIRD_PARTY_NOTICES.md"
+    "THIRD_PARTY_NOTICES.md",
+    "!**/__pycache__/**",
+    "!**/*.py[cod]"
   ],
   "scripts": {
     "start": "node bin/lloom.mjs serve",

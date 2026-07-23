@@ -65,6 +65,7 @@ const requiredFiles = [
 ];
 
 const forbiddenPrefixes = ['.lloom/', 'clients/generated/', 'data/', 'logs/', 'node_modules/', 'test/'];
+const forbiddenGeneratedFiles = [/(^|\/)__pycache__\//, /\.py[cod]$/i];
 
 function parsePackJson(stdout) {
   try {
@@ -234,6 +235,9 @@ if (missing.length) fail('LLooM package is missing required install/runtime file
 
 const forbidden = files.filter((file) => forbiddenPrefixes.some((prefix) => file.startsWith(prefix)));
 if (forbidden.length) fail('LLooM package includes generated or local-only files', forbidden);
+
+const generated = files.filter((file) => forbiddenGeneratedFiles.some((pattern) => pattern.test(file)));
+if (generated.length) fail('LLooM package includes generated Python bytecode', generated);
 
 const privateKeys = files.filter((file) => /private.*\.pem$/i.test(file));
 if (privateKeys.length) fail('LLooM package must not include private key material', privateKeys);
