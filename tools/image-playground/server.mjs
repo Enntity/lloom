@@ -80,13 +80,13 @@ async function mediaModels() {
 
 function enhancerInstructions(model) {
   const identity = `${model.id} ${model.name} ${model.capabilities.join(' ')} ${model.tags.join(' ')}`.toLowerCase();
-  if (model.kind === 'video' || identity.includes('ltx')) {
-    return `/no_think Rewrite the user's idea as one literal, flowing LTX-2 video prompt of at most 180 words. Start directly with the main visible action. Describe events chronologically, including precise subject appearance, gestures and movement, environment, camera angle and continuous camera movement, lighting and color changes, and synchronized audible ambience or sounds. Prefer one coherent shot, concrete cinematic language, and physically plausible motion. Do not use headings, bullets, negative prompts, meta-commentary, quotation marks, or parameters. Preserve the user's intent.`;
+  if (model.kind === 'video') {
+    return `/no_think Rewrite the user's idea as one literal, flowing video prompt of at most 180 words. Start directly with the main visible action. Describe events chronologically, including precise subject appearance, gestures and movement, environment, camera angle and continuous camera movement, lighting and color changes, and synchronized audible ambience or sounds. Prefer one coherent shot, concrete cinematic language, and physically plausible motion. Do not use headings, bullets, negative prompts, meta-commentary, quotation marks, or parameters. Preserve the user's intent.`;
   }
   if (identity.includes('flux')) {
     return `/no_think Rewrite the user's idea as a polished FLUX.2 image prompt in natural language. Organize it as subject, action, style, then context. Be concrete about composition, spatial relationships, lighting, atmosphere, materials and colors. For photorealism include an appropriate camera and lens reference. Describe only what should appear; FLUX.2 does not use negative prompts, so convert exclusions into positive desired states. Return only the final prompt, with no headings, bullets, quotation marks, parameters, or commentary. Preserve the user's intent.`;
   }
-  return `/no_think Rewrite the user's idea for CyberRealistic Pony, a photorealistic Pony XL image model. Return one comma-separated positive prompt. Begin with: score_9, score_8_up, score_7_up, source_photo. Then order tags and concise phrases as subject count and identity, explicitly provided appearance, action and pose, wardrobe or key objects, environment, composition and camera angle, lighting, lens or depth of field, and fine photographic detail. Never change, guess, or invent a subject's age, ethnicity, skin color, gender, identity, anatomy, or other personal attributes. Do not sexualize the request. Do not add a negative prompt, headings, BREAK, quotation marks, parameters, or commentary. Preserve every explicit detail and the user's intent.`;
+  return `/no_think Rewrite the user's idea as a polished image-generation prompt. Organize it as subject, action, style, then context. Be concrete about composition, spatial relationships, lighting, atmosphere, materials, colors, and appropriate camera or lens details for photorealism. Describe only what should appear. Do not add a negative prompt, headings, bullets, quotation marks, parameters, or commentary. Preserve the user's intent.`;
 }
 
 createServer(async (req, res) => {

@@ -798,8 +798,6 @@ assert.deepEqual(
     'apple-silicon-ternary-bonsai-27b',
     'high-memory-local-image-generation',
     'linux-nvidia-gb10-image-generation',
-    'linux-nvidia-gb10-ltx23-dr34ml4y-dev',
-    'linux-nvidia-gb10-ltx23-dr34ml4y',
     'linux-nvidia-gb10-qwen36-unsloth-vllm',
     'linux-nvidia-gb10-ternary-bonsai-27b',
     'linux-nvidia-gb10-thinkingcap-qwen36-27b-vllm',
@@ -965,7 +963,7 @@ const recipeIndexReport = await buildRecipeIndexReport(config, {
 });
 assert.equal(recipeIndexReport.ok, true);
 assert.equal(recipeIndexReport.index.id, 'lloom-community-recipes');
-assert.equal(recipeIndexReport.recipes.length, 12);
+assert.equal(recipeIndexReport.recipes.length, 10);
 const indexedSparkRecipe = recipeIndexReport.recipes.find(
   (candidate) => candidate.id === 'linux-nvidia-gb10-qwen36-unsloth-vllm'
 );
@@ -5256,7 +5254,7 @@ if (listened) {
       try {
         assert.equal(autoHostPlan.ok, true);
         assert(autoHostPlan.host.autoStarted.pid);
-        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, 18);
+        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, 15);
         assert.equal(autoHostPlan.plans[0].recommendation.id, 'apple-silicon-qwen36-35b-a3b-mtplx-pack');
         assert.equal(autoHostPlan.plans[0].plan.roots.recipesRoot, autoHostRecipesRoot);
         assert.equal(autoHostPlan.plans[0].plan.roots.benchmarksRoot, autoHostBenchmarksRoot);

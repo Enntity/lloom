@@ -18,7 +18,7 @@ LLooM intentionally has two catalog tiers:
 - `recipes/` is the small offline library: one or two high-confidence ways to get productive on each supported hardware class without contacting a community host.
 - `community/recipes/` contains broader, specialized, experimental, and opt-in choices. `lloom-host` automatically merges the bundled library into its configured host library, with host entries overriding duplicate IDs, so the host is always a strict superset.
 
-The current high-memory defaults include Apple Silicon Qwen3.6 lanes, Unsloth Qwen3.6 35B-A3B and 27B NVFP4 lanes for NVIDIA GB10, FLUX.2 Klein 4B for fast conventional image generation and reference editing, Qwen-Image-2512 for higher-quality generation, and Qwen-Image-Edit-2511 for reference-faithful edits. Adult-content-capable CyberRealistic Pony and FLUX.2 community merges remain host-only and opt-in.
+The current high-memory defaults include Apple Silicon Qwen3.6 lanes, Unsloth Qwen3.6 35B-A3B and 27B NVFP4 lanes for NVIDIA GB10, FLUX.2 Klein 4B for fast conventional image generation and reference editing, Qwen-Image-2512 for higher-quality generation, and Qwen-Image-Edit-2511 for reference-faithful edits.
 
 DGX Spark uses the dedicated `linux-nvidia-gb10-image-generation` recipe. It materializes three additive, on-demand Docker runtimes backed by LLooM's stable-diffusion.cpp CUDA image, so the host does not need a separate CUDA compiler toolchain. The cross-platform `high-memory-local-image-generation` recipe remains the source-build path for Apple Silicon and CUDA development hosts.
 

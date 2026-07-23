@@ -236,18 +236,6 @@
       }
     },
     {
-      "id": "high-memory-nsfw-image-generation",
-      "path": "high-memory-nsfw-image-generation.json",
-      "name": "High-memory NSFW image generation",
-      "summary": "Opt-in CyberRealistic Pony v18 and Aisha V96 FLUX.2 Klein 9B NSFW image lanes.",
-      "tags": ["image-generation", "nsfw", "sdxl", "pony", "flux2", "stable-diffusion-cpp", "host-only"],
-      "recommendedFor": [
-        "High-memory local systems where users explicitly want adult-content-capable community models"
-      ],
-      "capabilities": ["image-generation"],
-      "source": { "type": "lloom-host-seed", "url": "community/recipes/high-memory-nsfw-image-generation.json" }
-    },
-    {
       "id": "linux-nvidia-qwen36-27b-sglang",
       "path": "linux-nvidia-qwen36-27b-sglang.json",
       "name": "Linux NVIDIA Qwen3.6 27B SGLang",

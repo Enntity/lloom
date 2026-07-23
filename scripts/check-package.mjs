@@ -21,8 +21,6 @@ const requiredFiles = [
   'backends/catalog.json',
   'backends/mlx-audio/install.sh',
   'backends/mlx-audio/lloom_audio_server.py',
-  'backends/ltx-video/Dockerfile',
-  'backends/ltx-video/lloom_ltx_video_server.py',
   'config/default.json',
   'assets/chat-templates/qwen3-xml-tool-reminder.jinja',
   'assets/chat-templates/qwen-fixed-v21.3.jinja',
@@ -332,7 +330,7 @@ try {
     LLOOM_HOME: path.join(homeRoot, '.lloom')
   });
   const health = await waitForHostHealth(baseUrl);
-  if (health?.data?.recipeCount !== 18 || health?.data?.benchmarkCount !== 12) {
+  if (health?.data?.recipeCount !== 15 || health?.data?.benchmarkCount !== 12) {
     fail('installed lloom-host is not serving packaged seed community data', [JSON.stringify(health?.data ?? null)]);
   }
 
