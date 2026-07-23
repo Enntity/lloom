@@ -192,6 +192,14 @@
           "management": "managed",
           "containerName": "lloom-qwen36-27b-nvfp4",
           "healthUrl": "http://127.0.0.1:${port}/health",
+          "watchdog": {
+            "enabled": true,
+            "failureThreshold": 2,
+            "failureWindowMs": 600000,
+            "minNoProgressMs": 120000,
+            "cooldownMs": 600000,
+            "drainTimeoutMs": 30000
+          },
           "bootstrap": {
             "adapter": "docker",
             "image": "vllm/vllm-openai:v0.25.0",

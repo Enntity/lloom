@@ -1691,6 +1691,14 @@ export function createLloomServer(
     return runtimeManager.ensure(runtimeId);
   }
 
+  function noteRuntimeRequestOutcome(runtimeId, outcome) {
+    try {
+      runtimeManager.noteRequestOutcome?.(runtimeId, outcome);
+    } catch (error) {
+      logger.error?.(`Runtime watchdog observation failed for ${runtimeId}: ${error?.message ?? error}`);
+    }
+  }
+
   async function recordModelRequest({ route, resolved, stream, req, res }, fn) {
     const started = Date.now();
     const requestBytes = Number(req.headers['content-length']) || 0;
@@ -1718,7 +1726,7 @@ export function createLloomServer(
         })
       );
       const status = result?.status ?? 200;
-      metrics.record({
+      const outcome = {
         id: connectionId,
         route,
         model: resolved.model.id,
@@ -1737,13 +1745,15 @@ export function createLloomServer(
         responseBytes: result?.responseBytes ?? 0,
         requestBytes,
         usage: result?.usage ?? null
-      });
+      };
+      metrics.record(outcome);
+      noteRuntimeRequestOutcome(resolved.model.runtime, outcome);
       return result;
     } catch (error) {
       const status = client.closed
         ? 499
         : clientClosedStatus(error) || (error instanceof PromptTooLargeError ? error.statusCode : 0) || 502;
-      metrics.record({
+      const outcome = {
         id: connectionId,
         route,
         model: resolved.model.id,
@@ -1759,9 +1769,12 @@ export function createLloomServer(
         durationMs: Date.now() - started,
         firstContentMs: timing.firstContentMs,
         lastContentMs: timing.lastContentMs,
+        responseBytes: 0,
         requestBytes,
         error: error?.message ?? String(error)
-      });
+      };
+      metrics.record(outcome);
+      noteRuntimeRequestOutcome(resolved.model.runtime, outcome);
       if (status === 499 || isClientClosedError(error)) {
         endResponseWithError(res, error, { stream, config, status: 499 });
         return {

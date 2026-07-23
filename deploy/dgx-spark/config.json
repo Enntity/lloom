@@ -219,6 +219,14 @@
       "memoryGb": 64,
       "keepWarm": false,
       "startupTimeoutMs": 900000,
+      "watchdog": {
+        "enabled": true,
+        "failureThreshold": 2,
+        "failureWindowMs": 600000,
+        "minNoProgressMs": 120000,
+        "cooldownMs": 600000,
+        "drainTimeoutMs": 30000
+      },
       "policy": { "priority": 85, "evictable": true },
       "recipe": {
         "id": "unsloth-hf-qwen36-27b-nvfp4-dgx-spark",

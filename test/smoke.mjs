@@ -2353,6 +2353,14 @@ const sparkConfig = deriveUserConfig(config, sparkRecipe, { modelRoot: '/models'
 assert.equal(sparkConfig.runtimes['unsloth-qwen36-35b-a3b-nvfp4'].adapter, 'docker');
 assert.equal(sparkConfig.runtimes['unsloth-qwen36-35b-a3b-nvfp4'].keepWarm, false);
 assert.equal(sparkConfig.runtimes['unsloth-qwen36-27b-nvfp4'].keepWarm, false);
+assert.deepEqual(sparkConfig.runtimes['unsloth-qwen36-27b-nvfp4'].watchdog, {
+  enabled: true,
+  failureThreshold: 2,
+  failureWindowMs: 600000,
+  minNoProgressMs: 120000,
+  cooldownMs: 600000,
+  drainTimeoutMs: 30000
+});
 
 const initPlanWithDefaultModelRoot = await createInitPlan(config, {
   recipeId: 'apple-silicon-qwen36',

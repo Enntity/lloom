@@ -41,6 +41,15 @@ Community orchestration notes (Spark forums / sparkrun / spark-vllm-docker) conv
 
 The Unsloth 27B and ThinkingCap candidate lanes are pinned to `vllm/vllm-openai:v0.25.0`; the two NVIDIA-source experimental lanes remain on nightly. These on-demand lanes share the host Hugging Face/vLLM caches and set `keepWarm: false`. Adding the config advertises the models but does not load them. The first request (or `lloom runtime-start <runtime-id>`) lets LLooM admit the runtime, pull the image/checkpoint when absent, create the container, and wait for its health endpoint. When flags or images change, archive the prior recipe and increment the active recipe version. ThinkingCap remains a candidate—not the default—until matched Spark throughput, reasoning-token efficiency, tool use, long-context, and vision checks are recorded as benchmark evidence.
 
+After starting or changing a chat lane, use the synthetic canary before routing entity cognition to it. The canary sends no entity or continuity content, exercises representative prompt and tool-schema load, requires timely streamed content, and verifies the backend returns to idle:
+
+```bash
+node scripts/chat-lane-canary.mjs \
+  --config ~/.lloom/config.json \
+  --model unsloth/Qwen3.6-27B-NVFP4 \
+  --backend-metrics-url http://192.168.1.131:8005/metrics
+```
+
 Generic `pip install vllm` / `pip install sglang` often **fails or is suboptimal** on Spark (ARM64 Grace + Blackwell sm_121). Prefer:
 
 1. **NVIDIA / community Docker** (most reliable day-1 path)  
