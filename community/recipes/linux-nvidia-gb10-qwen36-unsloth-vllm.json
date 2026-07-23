@@ -4,8 +4,8 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-gb10-qwen36-unsloth-vllm",
   "name": "DGX Spark Qwen3.6 Unsloth NVFP4 vLLM",
-  "version": 2,
-  "summary": "The curated Qwen3.6 27B dense and 35B-A3B MoE NVFP4 lanes for 128 GB NVIDIA GB10 systems; the dense lane defaults to released vLLM 0.25.",
+  "version": 3,
+  "summary": "The curated Qwen3.6 27B dense and 35B-A3B MoE NVFP4 lanes for 128 GB NVIDIA GB10 systems; the dense lane uses a stability-first released vLLM 0.25 profile.",
   "license": { "id": "Apache-2.0", "name": "Qwen model license" },
   "provenance": {
     "createdBy": "lloom",
@@ -34,7 +34,8 @@
     "testedMachine": "DGX Spark with 128 GB unified memory",
     "notes": [
       "The 35B-A3B MoE lane is the fast general default; the 27B dense lane is the quality-oriented alternative.",
-      "Both are on-demand and sized so LLooM can admit one large chat runtime at a time alongside a small embedding runtime."
+      "Both are on-demand and sized so LLooM can admit one large chat runtime at a time alongside a small embedding runtime.",
+      "The dense lane leaves MTP and asynchronous scheduling disabled after a sustained-traffic no-progress failure on vLLM 0.25.0; speculative decoding remains an explicitly experimental profile."
     ]
   },
   "requirements": {
@@ -174,7 +175,6 @@
         "usage",
         "tools",
         "reasoning",
-        "mtp",
         "batching",
         "long-context"
       ],
@@ -235,7 +235,6 @@
               "--max-num-batched-tokens",
               "8192",
               "--enable-chunked-prefill",
-              "--async-scheduling",
               "--enable-prefix-caching",
               "--load-format",
               "fastsafetensors",
@@ -243,9 +242,7 @@
               "qwen3",
               "--tool-call-parser",
               "qwen3_xml",
-              "--enable-auto-tool-choice",
-              "--speculative-config",
-              "{\"method\":\"mtp\",\"num_speculative_tokens\":2}"
+              "--enable-auto-tool-choice"
             ]
           }
         }
