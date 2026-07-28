@@ -185,6 +185,7 @@ export function responsesToOpenAIChat(body, resolvedModel) {
     stream_options: body.stream === true ? { include_usage: true } : undefined,
     tools: responsesToolsToOpenAI(body.tools),
     tool_choice: responsesToolChoiceToOpenAI(body.tool_choice),
+    ...(body.lloom ? { lloom: body.lloom } : {}),
     ...(body.reasoning ? { reasoning: body.reasoning } : {}),
     ...(effort ? { reasoning_effort: effort } : {})
   };

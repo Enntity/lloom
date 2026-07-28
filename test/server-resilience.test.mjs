@@ -200,6 +200,131 @@ function close(server) {
   await close(upstream);
 }
 
+// LLooM owns structured-output backend translation for both public text protocols.
+{
+  const requests = [];
+  const upstream = http.createServer(async (req, res) => {
+    let raw = '';
+    for await (const chunk of req) raw += chunk;
+    const request = JSON.parse(raw);
+    requests.push(request);
+    const body = JSON.stringify({
+      id: `completion-${requests.length}`,
+      object: 'chat.completion',
+      choices: [
+        {
+          index: 0,
+          message: request.tools
+            ? {
+                role: 'assistant',
+                content: null,
+                tool_calls: [
+                  {
+                    type: 'function',
+                    function: { name: 'answer', arguments: '{"answer":"ok"}' }
+                  }
+                ]
+              }
+            : { role: 'assistant', content: '{"answer":"ok"}' },
+          finish_reason: request.tools ? 'tool_calls' : 'stop'
+        }
+      ],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }
+    });
+    res.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
+    res.end(body);
+  });
+  const upstreamPort = await listen(upstream);
+  const config = {
+    name: 'structured-output-test',
+    server: { host: '127.0.0.1', port: 0 },
+    security: { allowMissingAuth: true, apiKeys: [] },
+    defaults: { chatModel: 'test-model' },
+    backends: {
+      local: {
+        type: 'openai',
+        baseUrl: `http://127.0.0.1:${upstreamPort}/v1`,
+        timeoutMs: 5000,
+        structuredOutput: { requireParameters: true }
+      }
+    },
+    models: [
+      {
+        id: 'test-model',
+        backend: 'local',
+        upstreamModel: 'upstream-model',
+        kind: 'chat',
+        supportsTools: true,
+        capabilities: ['chat', 'tools'],
+        contextWindow: 8192,
+        maxPromptTokens: 1000
+      }
+    ],
+    runtimes: {}
+  };
+  const schema = {
+    type: 'object',
+    additionalProperties: false,
+    properties: { answer: { type: 'string' } },
+    required: ['answer']
+  };
+  const app = createLloomServer(config, { logger: { error() {}, warn() {} } });
+  const port = await listen(app.server);
+
+  const chat = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'hello' }],
+      lloom: { outputSchema: { name: 'answer', schema, strict: true } }
+    })
+  });
+  assert.equal(chat.status, 200);
+  assert.equal((await chat.json()).choices[0].message.content, '{"answer":"ok"}');
+
+  const responses = await fetch(`http://127.0.0.1:${port}/v1/responses`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: 'test-model',
+      input: 'hello',
+      lloom: { outputSchema: { name: 'answer', schema, strict: true } }
+    })
+  });
+  assert.equal(responses.status, 200);
+  assert.equal((await responses.json()).output_text, '{"answer":"ok"}');
+
+  assert.equal(requests.length, 2);
+  for (const request of requests) {
+    assert.equal(request.lloom, undefined);
+    assert.equal(request.response_format, undefined);
+    assert.equal(request.tools[0].function.name, 'answer');
+    assert.deepEqual(request.tools[0].function.parameters, schema);
+    assert.deepEqual(request.tool_choice, {
+      type: 'function',
+      function: { name: 'answer' }
+    });
+    assert.deepEqual(request.provider, { require_parameters: true });
+  }
+
+  const invalid = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'hello' }],
+      lloom: { outputSchema: { name: 'answer' } }
+    })
+  });
+  assert.equal(invalid.status, 400);
+  assert.equal((await invalid.json()).error.code, 'invalid_structured_output');
+  assert.equal(requests.length, 2);
+
+  await close(app.server);
+  await close(upstream);
+}
+
 console.log('server-resilience tests passed');
 
 // Gateway shutdown can leave managed runtimes alive for a fast service upgrade.

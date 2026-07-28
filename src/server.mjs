@@ -59,15 +59,18 @@ import {
   metricUsageFromOpenAI,
   normalizeOpenAIChatCompletionBody,
   normalizeOpenAIChatCompletionChunk,
+  normalizeStructuredOutputChatCompletion,
   normalizeOpenAIChatRequestBody,
   translateReasoningEffortForBackend,
   openAIStreamChunkHasContent,
   openAIToAnthropic,
   openAIToResponses,
   parseSseBlock,
+  prepareStructuredOutputForBackend,
   readSseEvents,
   responsesToOpenAIChat,
   rewriteJsonModelText,
+  StructuredOutputError,
   streamAnthropicFromOpenAI,
   streamResponsesFromOpenAI,
   usageFromJsonBuffer,
@@ -1223,7 +1226,12 @@ async function proxyRawResponse(res, upstream, { signal, timing, corsConfig } = 
   };
 }
 
-async function proxyOpenAIChatResponse(res, upstream, requestedModel, { signal, timing, progress, corsConfig } = {}) {
+async function proxyOpenAIChatResponse(
+  res,
+  upstream,
+  requestedModel,
+  { signal, timing, progress, corsConfig, structuredOutput = null } = {}
+) {
   const body = Buffer.from(await upstream.arrayBuffer());
   throwIfClientClosed(signal, res);
   const headers = copyResponseHeaders(upstream);
@@ -1234,6 +1242,7 @@ async function proxyOpenAIChatResponse(res, upstream, requestedModel, { signal, 
     let value = rewritten.value;
     if (value && typeof value === 'object') {
       value = normalizeOpenAIChatCompletionBody(value);
+      value = normalizeStructuredOutputChatCompletion(value, structuredOutput);
     }
     if (value && typeof value === 'object') {
       const text = `${JSON.stringify(value)}\n`;
@@ -1752,7 +1761,9 @@ export function createLloomServer(
     } catch (error) {
       const status = client.closed
         ? 499
-        : clientClosedStatus(error) || (error instanceof PromptTooLargeError ? error.statusCode : 0) || 502;
+        : clientClosedStatus(error) ||
+          (error instanceof PromptTooLargeError || error instanceof StructuredOutputError ? error.statusCode : 0) ||
+          502;
       const outcome = {
         id: connectionId,
         route,
@@ -1790,10 +1801,10 @@ export function createLloomServer(
         endResponseWithError(res, error, {
           stream: true,
           config,
-          status: error instanceof PromptTooLargeError ? 400 : 502
+          status: error instanceof PromptTooLargeError || error instanceof StructuredOutputError ? 400 : 502
         });
         return {
-          status: error instanceof PromptTooLargeError ? 400 : 502,
+          status: error instanceof PromptTooLargeError || error instanceof StructuredOutputError ? 400 : 502,
           stream: true,
           responseBytes: 0,
           usage: null,
@@ -1849,13 +1860,16 @@ export function createLloomServer(
       async ({ signal, timing, progress }) => {
         await ensureRuntime(resolved.model.runtime);
         // Normalize history so reasoning_content is OpenAI-shaped before MTPLX render.
-        const normalizedRequest = translateReasoningEffortForBackend(normalizeOpenAIChatRequestBody(body), resolved);
+        const normalizedRequest = prepareStructuredOutputForBackend(
+          translateReasoningEffortForBackend(normalizeOpenAIChatRequestBody(body), resolved),
+          resolved
+        );
         const upstream = await fetchUpstream({
           backend: resolved.backend,
           path: '/v1/chat/completions',
           signal,
           body: {
-            ...normalizedRequest,
+            ...normalizedRequest.body,
             model: resolved.model.upstreamModel
           }
         });
@@ -1879,6 +1893,7 @@ export function createLloomServer(
               signal,
               timing,
               progress,
+              structuredOutput: normalizedRequest.output,
               corsConfig: config
             });
       }
@@ -2490,11 +2505,12 @@ export function createLloomServer(
       },
       async ({ signal, timing }) => {
         await ensureRuntime(resolved.model.runtime);
+        const normalizedRequest = prepareStructuredOutputForBackend(responsesToOpenAIChat(body, resolved), resolved);
         const upstream = await fetchUpstream({
           backend: resolved.backend,
           path: '/v1/chat/completions',
           signal,
-          body: responsesToOpenAIChat(body, resolved)
+          body: normalizedRequest.body
         });
         if (body.stream === true) {
           if (!upstream.ok) return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
@@ -2521,7 +2537,7 @@ export function createLloomServer(
             usage: usageFromJsonText(text)
           };
         }
-        const responseJson = JSON.parse(text);
+        const responseJson = normalizeStructuredOutputChatCompletion(JSON.parse(text), normalizedRequest.output);
         sendJson(res, 200, openAIToResponses(responseJson, resolved.requestedId));
         return {
           status: 200,
@@ -3236,6 +3252,16 @@ export function createLloomServer(
             type: error.type,
             code: error.code,
             model: error.model
+          })
+        );
+        return;
+      }
+      if (error instanceof StructuredOutputError) {
+        sendJson(
+          res,
+          error.statusCode,
+          errorBody(error.message, {
+            code: error.code
           })
         );
         return;

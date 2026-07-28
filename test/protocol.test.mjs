@@ -3,12 +3,138 @@ import {
   anthropicMessagesToOpenAI,
   openAIToAnthropic,
   openAIToResponses,
+  normalizeStructuredOutputChatCompletion,
+  prepareStructuredOutputForBackend,
   responsesToOpenAIChat,
   responseStatusFromFinishReason,
-  rewriteJsonModelText
+  rewriteJsonModelText,
+  StructuredOutputError,
+  translateStructuredOutputForBackend
 } from '../src/protocol/index.mjs';
 
 const resolved = { model: { upstreamModel: 'upstream-qwen' } };
+
+// LLooM output contract → explicit backend protocol
+{
+  const schema = {
+    type: 'object',
+    additionalProperties: false,
+    properties: { answer: { type: 'string' } },
+    required: ['answer']
+  };
+  const translated = translateStructuredOutputForBackend(
+    {
+      model: 'gateway-model',
+      messages: [{ role: 'user', content: 'hello' }],
+      lloom: {
+        outputSchema: {
+          name: 'answer',
+          schema,
+          strict: true
+        },
+        trace: { enabled: true }
+      }
+    },
+    {
+      requestedId: 'gateway-model',
+      backend: {
+        type: 'openai',
+        structuredOutput: { requireParameters: true }
+      }
+    }
+  );
+  assert.equal(translated.lloom.outputSchema, undefined);
+  assert.deepEqual(translated.lloom.trace, { enabled: true });
+  assert.deepEqual(translated.response_format, {
+    type: 'json_schema',
+    json_schema: {
+      name: 'answer',
+      strict: true,
+      schema
+    }
+  });
+  assert.deepEqual(translated.provider, { require_parameters: true });
+
+  assert.throws(
+    () =>
+      translateStructuredOutputForBackend(
+        {
+          lloom: { outputSchema: { name: 'answer', schema } },
+          response_format: { type: 'json_object' }
+        },
+        { requestedId: 'gateway-model', backend: { type: 'openai' } }
+      ),
+    (error) => error instanceof StructuredOutputError && error.code === 'structured_output_conflict'
+  );
+
+  assert.throws(
+    () =>
+      translateStructuredOutputForBackend(
+        { lloom: { outputSchema: { name: 'answer', schema } } },
+        {
+          requestedId: 'gateway-model',
+          backend: { type: 'openai', structuredOutput: { enabled: false } }
+        }
+      ),
+    (error) => error instanceof StructuredOutputError && error.code === 'structured_output_unsupported'
+  );
+
+  const toolPrepared = prepareStructuredOutputForBackend(
+    {
+      messages: [{ role: 'user', content: 'hello' }],
+      lloom: { outputSchema: { name: 'answer', schema } }
+    },
+    {
+      requestedId: 'tool-model',
+      model: { capabilities: ['tools'] },
+      backend: { type: 'openai' }
+    }
+  );
+  assert.equal(toolPrepared.output.adapter, 'tool');
+  assert.equal(toolPrepared.body.tools[0].function.name, 'answer');
+  assert.deepEqual(toolPrepared.body.tools[0].function.parameters, schema);
+  assert.deepEqual(toolPrepared.body.tool_choice, {
+    type: 'function',
+    function: { name: 'answer' }
+  });
+  assert.equal(toolPrepared.body.response_format, undefined);
+
+  const normalized = normalizeStructuredOutputChatCompletion(
+    {
+      choices: [
+        {
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                type: 'function',
+                function: { name: 'answer', arguments: '{"answer":"ready"}' }
+              }
+            ]
+          },
+          finish_reason: 'tool_calls'
+        }
+      ]
+    },
+    toolPrepared.output
+  );
+  assert.equal(normalized.choices[0].message.content, '{"answer":"ready"}');
+  assert.equal(normalized.choices[0].message.tool_calls, undefined);
+  assert.equal(normalized.choices[0].finish_reason, 'stop');
+
+  assert.throws(
+    () =>
+      prepareStructuredOutputForBackend(
+        {
+          stream: true,
+          lloom: { outputSchema: { name: 'answer', schema } }
+        },
+        { requestedId: 'tool-model', model: { capabilities: ['tools'] }, backend: { type: 'openai' } }
+      ),
+    (error) => error instanceof StructuredOutputError && error.code === 'structured_output_streaming'
+  );
+}
 
 // Responses → chat
 {
@@ -33,6 +159,12 @@ const resolved = { model: { upstreamModel: 'upstream-qwen' } };
         }
       ],
       tool_choice: { type: 'function', name: 'lookup' },
+      lloom: {
+        outputSchema: {
+          name: 'answer',
+          schema: { type: 'object' }
+        }
+      },
       stream: true
     },
     resolved
@@ -47,6 +179,7 @@ const resolved = { model: { upstreamModel: 'upstream-qwen' } };
   assert.deepEqual(body.tool_choice, { type: 'function', function: { name: 'lookup' } });
   assert.equal(body.stream, true);
   assert.deepEqual(body.stream_options, { include_usage: true });
+  assert.equal(body.lloom.outputSchema.name, 'answer');
 }
 
 // Chat → Responses

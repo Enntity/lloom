@@ -4,6 +4,7 @@ export * from './anthropic.mjs';
 export * from './sse.mjs';
 export * from './reasoning-normalize.mjs';
 export * from './reasoning-effort.mjs';
+export * from './structured-output.mjs';
 export {
   createAnthropicStreamTranslator,
   streamAnthropicFromOpenAI,

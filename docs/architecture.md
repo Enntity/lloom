@@ -26,6 +26,17 @@ The gateway never guesses a stale model ID. If a client asks for an unknown mode
 
 OpenAI Responses and Anthropic Messages bridges live in pure modules under `src/protocol/` so request/response transforms can be unit-tested without the HTTP server.
 
+Clients that need a schema-bound result may send `lloom.outputSchema` with
+`name`, `schema`, and optional `strict` fields. This is LLooM's stable semantic
+contract: the gateway removes it before dispatch and translates it into the
+selected backend protocol. Tool-capable models default to a forced schema tool,
+whose arguments LLooM returns as ordinary JSON text; other models use native
+JSON Schema output. A backend can explicitly select `adapter: "tool"` or
+`adapter: "json-schema"` and request mandatory parameter routing under
+`backends.<id>.structuredOutput`. LLooM never infers behavior from provider
+URLs, model names, or prompt text. Schema-bound calls are currently buffered
+(`stream: false`) so LLooM can normalize and verify the complete result.
+
 ## Security Defaults
 
 | Setting                         | Default                                | Meaning                                                                                           |
