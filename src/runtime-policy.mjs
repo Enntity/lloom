@@ -1,5 +1,5 @@
 import os from 'node:os';
-import fs from 'node:fs/promises';
+import { readHostMemory } from './host-memory.mjs';
 import { RuntimeManager } from './runtime-manager.mjs';
 
 export class RuntimeAdmissionError extends Error {
@@ -48,27 +48,11 @@ function isRuntimeLoaded(status) {
 
 async function liveMemoryProfile(profile = {}) {
   if (numberOrNull(profile.totalMemoryGb) != null && numberOrNull(profile.availableMemoryGb) != null) return profile;
-  if (process.platform === 'linux') {
-    try {
-      const meminfo = await fs.readFile('/proc/meminfo', 'utf8');
-      const values = Object.fromEntries(
-        [...meminfo.matchAll(/^(MemTotal|MemAvailable):\s+(\d+)\s+kB$/gm)].map((match) => [match[1], Number(match[2])])
-      );
-      if (values.MemTotal && values.MemAvailable != null) {
-        return {
-          ...profile,
-          totalMemoryGb: values.MemTotal / 1024 / 1024,
-          availableMemoryGb: values.MemAvailable / 1024 / 1024
-        };
-      }
-    } catch {
-      // Fall through to the portable process-level values.
-    }
-  }
+  const memory = await readHostMemory();
   return {
     ...profile,
-    totalMemoryGb: numberOrNull(profile.totalMemoryGb) ?? os.totalmem() / 1024 / 1024 / 1024,
-    availableMemoryGb: numberOrNull(profile.availableMemoryGb) ?? os.freemem() / 1024 / 1024 / 1024
+    totalMemoryGb: numberOrNull(profile.totalMemoryGb) ?? memory.totalBytes / 1024 / 1024 / 1024,
+    availableMemoryGb: numberOrNull(profile.availableMemoryGb) ?? memory.availableBytes / 1024 / 1024 / 1024
   };
 }
 

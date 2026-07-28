@@ -4424,7 +4424,19 @@ if (listened) {
     assert(dashboardHtml.includes('/gateway/recipe-packs/import'));
     assert(dashboardHtml.includes('id="topology-model-filter"'));
     assert(dashboardHtml.includes('class="topology-metrics"'));
-    assert(dashboardHtml.includes('Cold models leave the live topology after 60 minutes without activity'));
+    assert(dashboardHtml.includes('tabindex="0"'));
+    assert(dashboardHtml.includes('CLICK TO PAN / ZOOM'));
+    assert(dashboardHtml.includes('if (!state.topologyInteractionFocused) return'));
+    assert(dashboardHtml.includes('event.key === "Escape"'));
+    assert(dashboardHtml.includes('showAllTopologyModels: false'));
+    assert(dashboardHtml.includes('Show all configured models, including inactive cold models'));
+    assert(dashboardHtml.includes('(models.models || []).filter(model => !model.alias)'));
+    assert(dashboardHtml.includes('["GPU", host.gpu?.utilization]'));
+    assert(
+      dashboardHtml.includes(
+        'runtimeState.healthy === true || runtimeStatus === "running" || runtimeStatus === "external"'
+      )
+    );
     assert(dashboardHtml.includes('const TOPOLOGY_COLD_MODEL_TTL_MS = 60 * 60 * 1000'));
     assert(dashboardHtml.includes('function fitTopologyCameraToModels('));
     assert(!dashboardHtml.toLowerCase().includes('switchyard'));
@@ -8003,6 +8015,10 @@ if (mockListened) {
       assert.equal(metricsResponse.status, 200);
       const metricsJson = await metricsResponse.json();
       assert(metricsJson.host?.memory?.totalBytes > 0);
+      assert(metricsJson.host?.memory?.freeBytes >= 0);
+      assert(metricsJson.host?.memory?.availableBytes >= 0);
+      assert.equal(typeof metricsJson.host?.memory?.pressureUtilization, 'number');
+      assert(['linux-memavailable', 'macos-memory-pressure', 'os-freemem'].includes(metricsJson.host?.memory?.source));
       assert.equal(typeof metricsJson.host?.cpu?.logicalCpus, 'number');
       const modelMetrics = metricsJson.models.find(
         (model) => model.id === 'Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed'

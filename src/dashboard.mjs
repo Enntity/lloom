@@ -214,11 +214,15 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     .topology-hud .fabric-total strong { font-size:clamp(14px,1.25vw,19px); line-height:1.05; }
     .topology-hud .fabric-total span { font-size:9px; white-space:nowrap; }
     .topology-hud #activity-state { min-height:22px; padding:2px 7px; border-color:rgba(47,230,200,.18); background:rgba(7,11,12,.58); pointer-events:auto; font-size:10px; }
-    .topology-canvas { display:block; width:100%; height:calc(100vh - 108px); min-height:640px; cursor:grab; touch-action:none; }
+    .topology-canvas { display:block; width:100%; height:calc(100vh - 108px); min-height:640px; cursor:default; touch-action:pan-y; outline:none; }
+    .topology-canvas.interaction-focused { cursor:grab; touch-action:none; box-shadow:inset 0 0 0 1px rgba(47,230,200,.45),inset 0 0 80px rgba(47,230,200,.035); }
+    .topology-canvas:focus-visible { box-shadow:inset 0 0 0 2px rgba(47,230,200,.72),inset 0 0 80px rgba(47,230,200,.05); }
     .topology-canvas.is-panning { cursor:grabbing; }
     .topology-zoom { position:absolute; z-index:3; right:14px; bottom:14px; display:flex; align-items:center; gap:5px; padding:5px; border:1px solid rgba(47,230,200,.28); background:rgba(7,11,12,.88); backdrop-filter:blur(8px); }
     .topology-zoom button { min-width:30px; min-height:28px; padding:2px 8px; font:700 14px "SFMono-Regular",monospace; }
     .topology-zoom-output { min-width:48px; color:var(--muted); text-align:center; font:700 10px "SFMono-Regular",monospace; }
+    .topology-interaction-state { padding:0 7px; color:var(--muted); font:700 9px "SFMono-Regular",monospace; white-space:nowrap; }
+    .topology-interaction-state.active { color:var(--accent); }
     .topology-key { position:absolute; z-index:3; left:14px; bottom:14px; display:flex; gap:14px; padding:8px 11px; border:1px solid rgba(47,230,200,.24); background:rgba(7,11,12,.86); color:var(--muted); font:700 10px "SFMono-Regular",monospace; backdrop-filter:blur(10px); pointer-events:none; }
     .topology-key span { display:flex; align-items:center; gap:6px; }
     .topology-key i { width:7px; height:7px; border-radius:50%; box-shadow:0 0 10px currentColor; }
@@ -411,13 +415,13 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       <div class="topology-hud">
         <div class="topology-hud-panel"><div class="topology-title-line"><div class="fabric-title">LLooM // LIVE TOPOLOGY</div><span id="activity-state" class="pill"><span class="dot pulse"></span><span>connecting</span></span></div><div class="muted mono">connections → gateway → models · <span id="metrics-scope">this process</span> · select a model for details</div></div>
         <div class="topology-hud-right">
-          <button id="topology-model-filter" class="topology-model-filter" type="button" aria-pressed="false" title="Cold models leave the live topology after 60 minutes without activity">ALL MODELS</button>
+          <button id="topology-model-filter" class="topology-model-filter" type="button" aria-pressed="false" title="Show all configured models, including inactive cold models">ALL MODELS</button>
           <div class="topology-metrics"><select id="metrics-period" class="metrics-period" aria-label="Metrics period"><option value="today">TODAY</option><option value="7d">7 DAYS</option><option value="30d">30 DAYS</option><option value="all" selected>ALL TIME</option></select><div class="fabric-totals"><div class="fabric-total"><strong id="fabric-in">0</strong><span>tokens in</span></div><div class="fabric-total"><strong id="fabric-out">0</strong><span>tokens out</span></div><div class="fabric-total"><strong id="fabric-rate">—</strong><span id="fabric-rate-label">tok/s</span></div><div class="fabric-total"><strong id="fabric-active">0</strong><span>active</span></div></div></div>
         </div>
       </div>
-      <canvas id="topology-canvas" class="topology-canvas" aria-label="Animated connections flowing through LLooM to configured models"></canvas>
+      <canvas id="topology-canvas" class="topology-canvas" tabindex="0" aria-label="Animated connections flowing through LLooM to configured models. Click to enable pan and wheel zoom; press Escape to release."></canvas>
       <div class="topology-key" aria-label="Topology legend"><span class="input"><i></i>INPUT</span><span class="output"><i></i>OUTPUT</span><span class="compute"><i></i>COMPUTE</span></div>
-      <div class="topology-zoom" aria-label="Topology zoom and pan controls"><button id="topology-zoom-out" type="button" aria-label="Zoom out">−</button><span id="topology-zoom-output" class="topology-zoom-output">100%</span><button id="topology-zoom-in" type="button" aria-label="Zoom in">+</button><button id="topology-zoom-reset" type="button" aria-label="Reset view">↺</button></div>
+      <div class="topology-zoom" aria-label="Topology zoom and pan controls"><span id="topology-interaction-state" class="topology-interaction-state">CLICK TO PAN / ZOOM</span><button id="topology-zoom-out" type="button" aria-label="Zoom out">−</button><span id="topology-zoom-output" class="topology-zoom-output">100%</span><button id="topology-zoom-in" type="button" aria-label="Zoom in">+</button><button id="topology-zoom-reset" type="button" aria-label="Reset view">↺</button></div>
       <aside id="model-inspector" class="model-inspector" aria-label="Selected model details" aria-hidden="true">
         <div class="model-inspector-head"><div><div id="model-inspector-state" class="pill"><span class="dot"></span><span>model</span></div><div id="model-inspector-title" class="model-inspector-title">Model</div></div><button id="model-inspector-close" type="button" aria-label="Close model details">×</button></div>
         <div class="model-inspector-body"><div id="model-inspector-details" class="model-detail-grid"></div><div id="model-inspector-tags"></div><div class="model-inspector-actions"><button id="model-start" data-action="start" type="button">Start</button><button id="model-warm" data-action="warmup" class="primary" type="button">Warm</button><button id="model-stop" data-action="stop" class="danger" type="button">Stop</button></div></div>
@@ -610,6 +614,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       topologyPanDrag: null,
       topologyZoomAnchor: null,
       topologyRaisedModelId: null,
+      topologyInteractionFocused: false,
       selectedModelId: null,
       showAllTopologyModels: false,
       topologyAgedModelCount: 0,
@@ -788,14 +793,18 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     function renderTopologyModelFilter() {
       const button = $("#topology-model-filter");
       const count = state.topologyAgedModelCount || 0;
+      const total = state.topologyCatalogModels?.length || 0;
       button.disabled = count === 0;
       button.setAttribute("aria-pressed", String(state.showAllTopologyModels));
       button.setAttribute("aria-label", state.showAllTopologyModels ? "Show live topology only" : "Show all configured models");
-      button.textContent = count === 0
-        ? "ALL"
-        : state.showAllTopologyModels
-          ? "LIVE −" + count
-          : "ALL +" + count;
+      button.title = state.showAllTopologyModels
+        ? "Showing all configured models; click to show recent and live models only"
+        : "Showing recent and live models; click to show all configured models";
+      button.textContent = state.showAllTopologyModels
+        ? "ALL " + total
+        : count
+          ? "ALL +" + count
+          : "ALL " + total;
     }
 
     function applyTopologyModelFilter(models = state.topologyCatalogModels || []) {
@@ -1568,7 +1577,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const liveRate = liveOutputRate;
         const activeInput = liveConnections.reduce((sum, item) => sum + item.inputTokens, 0);
         const activeOutput = liveConnections.reduce((sum, item) => sum + item.outputTokens, 0);
-        const runtimeStatus = runtimeStates[model.runtime]?.status || "idle";
+        const runtimeState = runtimeStates[model.runtime] || {};
+        const runtimeStatus = runtimeState.status || "idle";
+        const runtimeLoaded = runtimeState.healthy === true || runtimeStatus === "running" || runtimeStatus === "external";
         const transitioning = runtimeStatus === "starting" || runtimeStatus === "warming"
           ? "warming"
           : runtimeStatus === "queued"
@@ -1581,7 +1592,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         // visibly evicting until the process/container is actually gone.
         const stateLabel = !model.runtime
           ? "external"
-          : transitioning || (liveConnections.length ? "serving" : runtimeStatus === "running" ? "hot" : "cold");
+          : transitioning || (liveConnections.length ? "serving" : runtimeLoaded ? "hot" : "cold");
         const lastActiveAt = data.last?.at || runtimeStates[model.runtime]?.lastRequestedAt || null;
         const lastActiveMs = Date.parse(lastActiveAt || "");
         const agedOut = stateLabel === "cold" && (!Number.isFinite(lastActiveMs) || sampleAt - lastActiveMs > TOPOLOGY_COLD_MODEL_TTL_MS);
@@ -1625,7 +1636,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           getJson("/gateway/library").catch(error => ({ error: error.message })),
           getJson("/gateway/backends").catch(error => ({ backends: [], error: error.message })),
         ]);
-        state.models = models.models || [];
+        // Routing aliases are client conveniences, not additional configured
+        // model processes. Keep the topology and model count physical.
+        state.models = (models.models || []).filter(model => !model.alias);
         state.status = status;
         state.library = library;
         state.backends = backends.backends || [];
@@ -1684,6 +1697,19 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     function resetTopologyCamera() {
       fitTopologyCameraToModels();
     }
+    function setTopologyInteractionFocused(focused, { focusCanvas = false } = {}) {
+      const canvas = $("#topology-canvas");
+      const interactionState = $("#topology-interaction-state");
+      state.topologyInteractionFocused = Boolean(focused);
+      canvas.classList.toggle("interaction-focused", state.topologyInteractionFocused);
+      interactionState.classList.toggle("active", state.topologyInteractionFocused);
+      interactionState.textContent = state.topologyInteractionFocused ? "PAN / ZOOM ON · ESC" : "CLICK TO PAN / ZOOM";
+      if (state.topologyInteractionFocused && focusCanvas && document.activeElement !== canvas) {
+        canvas.focus({ preventScroll: true });
+      } else if (!state.topologyInteractionFocused && document.activeElement === canvas) {
+        canvas.blur();
+      }
+    }
     function adjustTopologyZoom(delta, anchor) {
       const camera = state.topologyCamera;
       const view = state.topologyView;
@@ -1719,10 +1745,17 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       }
       return null;
     }
-    $("#topology-zoom-out").addEventListener("click", () => adjustTopologyZoom(-.1));
-    $("#topology-zoom-in").addEventListener("click", () => adjustTopologyZoom(.1));
+    $("#topology-zoom-out").addEventListener("click", () => {
+      setTopologyInteractionFocused(true, { focusCanvas: true });
+      adjustTopologyZoom(-.1);
+    });
+    $("#topology-zoom-in").addEventListener("click", () => {
+      setTopologyInteractionFocused(true, { focusCanvas: true });
+      adjustTopologyZoom(.1);
+    });
     $("#topology-zoom-reset").addEventListener("click", resetTopologyCamera);
     $("#topology-canvas").addEventListener("wheel", event => {
+      if (!state.topologyInteractionFocused) return;
       event.preventDefault();
       const canvas = event.currentTarget;
       adjustTopologyZoom(event.deltaY > 0 ? -.08 : .08, topologyScreenPoint(event, canvas));
@@ -1730,6 +1763,8 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     $("#topology-canvas").addEventListener("pointerdown", event => {
       if (event.button !== 0) return;
       const canvas = event.currentTarget;
+      const wasFocused = state.topologyInteractionFocused;
+      setTopologyInteractionFocused(true, { focusCanvas: true });
       const point = topologyScreenPoint(event, canvas);
       state.topologyPanDrag = {
         pointerId: event.pointerId,
@@ -1737,18 +1772,20 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         startY: point.y,
         originPanX: state.topologyCamera.panX || 0,
         originPanY: state.topologyCamera.panY || 0,
+        pannable: wasFocused,
         moved: false
       };
-      canvas.setPointerCapture(event.pointerId);
+      if (wasFocused) canvas.setPointerCapture(event.pointerId);
     });
     $("#topology-canvas").addEventListener("pointermove", event => {
       const drag = state.topologyPanDrag;
       const canvas = event.currentTarget;
       if (!drag || drag.pointerId !== event.pointerId) {
         const point = topologyScreenPoint(event, canvas);
-        canvas.style.cursor = hitTopologyModelCard(point.x, point.y) ? "pointer" : "grab";
+        canvas.style.cursor = hitTopologyModelCard(point.x, point.y) ? "pointer" : state.topologyInteractionFocused ? "grab" : "default";
         return;
       }
+      if (!drag.pannable) return;
       const point = topologyScreenPoint(event, canvas);
       const dx = point.x - drag.startX, dy = point.y - drag.startY;
       if (!drag.moved && (dx * dx + dy * dy) < 25) return;
@@ -1772,6 +1809,22 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     }
     $("#topology-canvas").addEventListener("pointerup", endTopologyPan);
     $("#topology-canvas").addEventListener("pointercancel", endTopologyPan);
+    $("#topology-canvas").addEventListener("focus", () => setTopologyInteractionFocused(true));
+    $("#topology-canvas").addEventListener("blur", event => {
+      if (!event.relatedTarget || !$(".topology").contains(event.relatedTarget)) {
+        setTopologyInteractionFocused(false);
+      }
+    });
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape" && state.topologyInteractionFocused) {
+        setTopologyInteractionFocused(false);
+      }
+    });
+    document.addEventListener("pointerdown", event => {
+      if (state.topologyInteractionFocused && !$(".topology").contains(event.target)) {
+        setTopologyInteractionFocused(false);
+      }
+    }, true);
     $("#model-inspector-close").addEventListener("click", closeModelInspector);
     $("#copy-output").addEventListener("click", async () => {
       await navigator.clipboard.writeText($("#output").textContent);

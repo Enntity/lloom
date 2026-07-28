@@ -38,6 +38,7 @@ import {
 } from './community-client.mjs';
 import { defaultLloomHome, loadConfig } from './config.mjs';
 import { createDoctorReport } from './doctor.mjs';
+import { readHostMemory } from './host-memory.mjs';
 import { MACHINE_PROFILE_MEDIA_TYPE, profileMachine, rankRecipes, validateMachineProfile } from './machine-profile.mjs';
 import { applyModelImport, createModelImportPlan } from './model-intake.mjs';
 import { applyOnboarding, createOnboardingPlan } from './onboarding.mjs';
@@ -148,8 +149,10 @@ function createHostTelemetry({ sampleIntervalMs = 2000 } = {}) {
     } catch {
       // NVIDIA telemetry is optional on non-CUDA hosts.
     }
+    const availableMemory = await readHostMemory();
     const totalMemory = os.totalmem();
     const freeMemory = os.freemem();
+    const usedMemory = Math.max(0, totalMemory - freeMemory);
     return {
       sampledAt: new Date().toISOString(),
       cpu: {
@@ -157,9 +160,13 @@ function createHostTelemetry({ sampleIntervalMs = 2000 } = {}) {
         logicalCpus: os.cpus().length
       },
       memory: {
-        usedBytes: totalMemory - freeMemory,
+        usedBytes: usedMemory,
+        freeBytes: freeMemory,
+        availableBytes: availableMemory.availableBytes,
         totalBytes: totalMemory,
-        utilization: totalMemory > 0 ? ((totalMemory - freeMemory) / totalMemory) * 100 : 0
+        utilization: totalMemory > 0 ? (usedMemory / totalMemory) * 100 : 0,
+        pressureUtilization: availableMemory.utilization,
+        source: availableMemory.source
       },
       gpu
     };
