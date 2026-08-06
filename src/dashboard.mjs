@@ -1308,10 +1308,11 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const ctx = canvas.getContext("2d");
       ctx.clearRect(0, 0, viewportWidth, viewportHeight);
       const modelCount = (state.topologyModels || []).length;
+      const clusterNodes = state.status?.cluster?.enabled ? Object.values(state.status?.cluster?.nodes || {}) : [];
       const connectionCount = (state.topologyConnections || []).length;
       // Keep the model rack anchored. Traffic comes and goes constantly and
       // must not resize the world or make settled model cards jitter.
-      const targetWorldScale = Math.max(1, Math.sqrt(Math.max(1, modelCount / 6)));
+      const targetWorldScale = Math.max(1, Math.sqrt(Math.max(1, modelCount / 6, clusterNodes.length / 5)));
       const worldEase = targetWorldScale > state.topologyWorldScale ? .18 : .06;
       state.topologyWorldScale += (targetWorldScale - state.topologyWorldScale) * worldEase;
       if (Math.abs(targetWorldScale - state.topologyWorldScale) < .002) state.topologyWorldScale = targetWorldScale;
@@ -1341,7 +1342,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const models = state.topologyModels || [];
       const rackFraction = Math.min(.5, .27 + Math.max(0, models.length - 3) * .045);
       const modelField = { left: width * (1 - rackFraction), right: width - 18, top: 105, bottom: height - 28 };
-      const center = { x: modelField.left - 105, y: height * .53 };
+      const center = { x: modelField.left - (clusterNodes.length ? 290 : 105), y: height * .53 };
       const gate = { left: center.x - 82, right: center.x + 82, top: center.y - 170, bottom: center.y + 170 };
       updateModelLayout(models, modelField);
       const modelPoints = new Map(models.map(model => {
@@ -1351,16 +1352,30 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       ctx.font = '11px "SFMono-Regular",monospace';
       ctx.textAlign = "left";
       const modelList = [...modelPoints.values()].sort((a, b) => a.y - b.y);
+      const nodeX = gate.right + Math.max(78, (modelField.left - gate.right) * .48);
+      const nodeGap = Math.min(92, Math.max(58, (height - 190) / Math.max(1, clusterNodes.length)));
+      const nodePoints = new Map(clusterNodes.map((node, index) => [node.id, {
+        x: nodeX,
+        y: center.y - (clusterNodes.length - 1) * nodeGap / 2 + index * nodeGap,
+        node
+      }]));
+      for (const point of nodePoints.values()) {
+        ctx.strokeStyle = point.node.reachable === false ? "rgba(255,111,125,.45)" : "rgba(47,230,200,.38)";
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(gate.right, center.y); ctx.lineTo(point.x - 70, point.y); ctx.stroke();
+      }
       modelList.forEach((point, index) => {
         const portY = center.y - Math.min(94, (modelList.length - 1) * 32) / 2 + index * Math.min(47, 94 / Math.max(1, modelList.length - 1));
-        const from = { x: gate.right, y: portY }, to = { x: point.x - point.cardWidth / 2, y: point.y };
+        const targetNodes = (point.model.nodes || []).map(id => nodePoints.get(id)).filter(Boolean);
+        const sources = targetNodes.length ? targetNodes.map(item => ({ x: item.x + 70, y: item.y })) : [{ x: gate.right, y: portY }];
+        const from = sources[0], to = { x: point.x - point.cardWidth / 2, y: point.y };
         const inputSignal = promptPulseIntensity(point.model.promptTokens, point.model.promptPulseAt, now);
         const outputRate = smoothRate("model:" + point.model.id + ":out", point.model.liveOutputRate, now);
         const rate = Math.max(inputSignal, outputRate);
         const cumulative = Number(point.model.inputTokens || 0) + Number(point.model.outputTokens || 0);
         ctx.strokeStyle = rate > 0 ? "rgba(47,230,200,.82)" : cumulative > 0 ? "rgba(47,230,200,.32)" : "rgba(153,163,176,.15)";
         ctx.lineWidth = 1 + Math.min(2.5, Math.sqrt(rate) / 8);
-        ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke();
+        for (const source of sources) { ctx.beginPath(); ctx.moveTo(source.x, source.y); ctx.lineTo(to.x, to.y); ctx.stroke(); }
         [[inputSignal, false, "rgba(143,180,255,.94)"], [outputRate, true, "rgba(47,230,200,.94)"]].forEach(([directionRate, reverse, color], direction) => {
           const particles = directionRate > 0 ? Math.min(12, Math.max(2, Math.ceil(Math.sqrt(directionRate)))) : 0;
           for (let particle = 0; particle < particles; particle++) {
@@ -1371,6 +1386,31 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           }
         });
       });
+      for (const point of nodePoints.values()) {
+        const node = point.node;
+        const telemetry = node.telemetry || {};
+        const ram = telemetry.memory?.pressureUtilization ?? telemetry.memory?.utilization;
+        const gpu = telemetry.gpu?.utilization;
+        const cardLeft = point.x - 70, cardTop = point.y - 30;
+        ctx.fillStyle = node.reachable === false ? "rgba(25,11,15,.96)" : "rgba(7,18,17,.97)";
+        ctx.strokeStyle = node.local ? "rgba(143,180,255,.72)" : node.reachable === false ? "rgba(255,111,125,.72)" : "rgba(47,230,200,.62)";
+        ctx.lineWidth = node.local ? 2 : 1;
+        ctx.beginPath(); ctx.roundRect(cardLeft, cardTop, 140, 60, 5); ctx.fill(); ctx.stroke();
+        ctx.textAlign = "left"; ctx.font = '700 10px "SFMono-Regular",monospace';
+        ctx.fillStyle = node.reachable === false ? "#ff6f7d" : "#e9fffb";
+        ctx.fillText(fitCanvasText(ctx, node.name || node.id, 94), cardLeft + 10, point.y - 11);
+        ctx.textAlign = "right"; ctx.fillStyle = node.local ? "#8fb4ff" : "rgba(153,163,176,.9)";
+        ctx.fillText(node.local ? "LOCAL" : node.reachable === false ? "OFFLINE" : "NODE", cardLeft + 130, point.y - 11);
+        const resources = [["RAM", ram], ["GPU", gpu]];
+        ctx.font = '9px "SFMono-Regular",monospace';
+        resources.forEach((row, rowIndex) => {
+          const y = point.y + 7 + rowIndex * 14;
+          ctx.textAlign = "left"; ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.fillText(row[0], cardLeft + 10, y);
+          ctx.fillStyle = "rgba(143,180,255,.13)"; ctx.fillRect(cardLeft + 39, y - 7, 62, 6);
+          if (row[1] != null) { ctx.fillStyle = row[1] > 90 ? "#ff6f7d" : row[1] > 70 ? "#f3bd4f" : "#2fe6c8"; ctx.fillRect(cardLeft + 39, y - 7, 62 * Math.max(0, Math.min(100, row[1])) / 100, 6); }
+          ctx.textAlign = "right"; ctx.fillStyle = "rgba(242,245,247,.9)"; ctx.fillText(row[1] == null ? "–" : Math.round(row[1]) + "%", cardLeft + 130, y);
+        });
+      }
       const cardDrawList = [...modelPoints.values()].sort((a, b) => {
         const zDiff = modelCardZ(a.model) - modelCardZ(b.model);
         if (zDiff !== 0) return zDiff;
@@ -1616,7 +1656,18 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const inputEstimated = liveConnections.some(item => item.inputEstimated);
         const activeInput = liveConnections.reduce((sum, item) => sum + item.inputTokens, 0);
         const activeOutput = liveConnections.reduce((sum, item) => sum + item.outputTokens, 0);
-        const runtimeState = runtimeStates[model.runtime] || {};
+        const runtimeIds = [...new Set([model.runtime, ...(model.targets || []).map(target => target.runtime)].filter(Boolean))];
+        const targetRuntimeStates = runtimeIds.map(runtimeId => runtimeStates[runtimeId] || {});
+        const runtimeState = model.runtime
+          ? runtimeStates[model.runtime] || {}
+          : {
+              healthy: targetRuntimeStates.some(item => item.healthy === true),
+              status: targetRuntimeStates.some(item => ["running", "external"].includes(item.status))
+                ? "running"
+                : targetRuntimeStates.find(item => ["queued", "starting", "warming", "draining", "stopping"].includes(item.status))?.status || "idle",
+              members: targetRuntimeStates.flatMap(item => item.members || []),
+              lastRequestedAt: targetRuntimeStates.map(item => item.lastRequestedAt).filter(Boolean).sort().at(-1) || null
+            };
         const runtimeStatus = runtimeState.status || "idle";
         const runtimeLoaded = runtimeState.healthy === true || runtimeStatus === "running" || runtimeStatus === "external";
         const transitioning = runtimeStatus === "starting" || runtimeStatus === "warming"
@@ -1629,13 +1680,18 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         // Lifecycle truth wins over traffic. A queued request connected to a
         // cold backend is not serving yet, and a draining backend remains
         // visibly evicting until the process/container is actually gone.
-        const stateLabel = !model.runtime
+        const stateLabel = !runtimeIds.length
           ? liveConnections.length ? "external-processing" : "external"
           : transitioning || (liveConnections.length ? "serving" : runtimeLoaded ? "hot" : "cold");
-        const lastActiveAt = data.last?.at || runtimeStates[model.runtime]?.lastRequestedAt || null;
+        const lastActiveAt = data.last?.at || runtimeState.lastRequestedAt || null;
         const lastActiveMs = Date.parse(lastActiveAt || "");
         const agedOut = stateLabel === "cold" && (!Number.isFinite(lastActiveMs) || sampleAt - lastActiveMs > TOPOLOGY_COLD_MODEL_TTL_MS);
-        return { id: model.id, inputTokens: Number(data.inputTokens || 0) + activeInput, inputEstimated, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveOutputRate, promptTokens: modelPromptTokens, promptPulseAt: modelPromptPulseAt, averageRate: data.decodeTokensPerSecond == null ? null : Number(data.decodeTokensPerSecond), state: stateLabel, lastActiveAt, agedOut };
+        const nodes = [...new Set([
+          ...((model.targets || []).map(target => target.node).filter(Boolean)),
+          ...(runtimeState.members || []).map(member => member.node).filter(Boolean),
+          runtimeState.node
+        ].filter(Boolean))];
+        return { id: model.id, nodes, inputTokens: Number(data.inputTokens || 0) + activeInput, inputEstimated, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveOutputRate, promptTokens: modelPromptTokens, promptPulseAt: modelPromptPulseAt, averageRate: data.decodeTokensPerSecond == null ? null : Number(data.decodeTokensPerSecond), state: stateLabel, lastActiveAt, agedOut };
       });
       state.topologyCatalogModels = topologyModels;
       applyTopologyModelFilter();

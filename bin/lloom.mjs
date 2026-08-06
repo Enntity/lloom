@@ -36,6 +36,7 @@ import {
 } from '../src/community-client.mjs';
 import { loadConfig } from '../src/config.mjs';
 import { createDoctorReport } from '../src/doctor.mjs';
+import { validateClusterConfig } from '../src/cluster.mjs';
 import { applyInit, defaultUserConfigPath } from '../src/init.mjs';
 import { applyBackend, applyRecipe } from '../src/installer.mjs';
 import { createInterchangeRegistry, createInterchangeValidationReport } from '../src/interchange.mjs';
@@ -87,6 +88,7 @@ const COMMAND_REGISTRY = [
   { name: 'backend-plan', aliases: [], tier: 'advanced', needsInstalledConfig: false },
   { name: 'backend-install', aliases: [], tier: 'advanced', needsInstalledConfig: false },
   { name: 'runtimes', aliases: ['runtime-status'], tier: 'advanced', needsInstalledConfig: true },
+  { name: 'cluster', aliases: ['cluster-status'], tier: 'advanced', needsInstalledConfig: true },
   { name: 'runtime-plan', aliases: ['runtime-policy'], tier: 'advanced', needsInstalledConfig: true },
   { name: 'runtime-admit', aliases: [], tier: 'advanced', needsInstalledConfig: true },
   { name: 'runtime-start', aliases: [], tier: 'advanced', needsInstalledConfig: true },
@@ -170,6 +172,7 @@ Serving and discovery:
 
 Backends and runtimes:
   lloom down
+  lloom cluster [doctor] [--json]
   lloom backends [backend-id|all]
   lloom backend-plan <backend-id>
   lloom backend-install <backend-id> [--apply --yes] [--step step-id]
@@ -241,6 +244,8 @@ function commandLine(command, parts = []) {
 const INSTALLED_CONFIG_COMMANDS = new Set([
   'add-model',
   'bootstrap',
+  'cluster',
+  'cluster-status',
   'doctor',
   'down',
   'integrate',
@@ -265,6 +270,8 @@ const INSTALLED_CONFIG_COMMANDS = new Set([
 
 const OPERATIONAL_CONFIG_COMMANDS = new Set([
   'add-model',
+  'cluster',
+  'cluster-status',
   'doctor',
   'down',
   'integrate',
@@ -953,6 +960,10 @@ function gatewayUrlFor(config) {
   return `http://${host}:${port}`;
 }
 
+function clusterConfigured(config) {
+  return Object.keys(config.cluster?.nodes ?? {}).length > 0;
+}
+
 async function gatewayHealth(config) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 1000);
@@ -974,13 +985,17 @@ function gatewayAdminHeaders(config) {
   return key ? { authorization: `Bearer ${key}` } : {};
 }
 
-async function gatewayRequest(config, pathname, { method = 'GET' } = {}) {
+async function gatewayRequest(config, pathname, { method = 'GET', body, timeoutMs = 2000 } = {}) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 2000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(`${gatewayUrlFor(config)}${pathname}`, {
       method,
-      headers: gatewayAdminHeaders(config),
+      headers: {
+        ...gatewayAdminHeaders(config),
+        ...(body == null ? {} : { 'content-type': 'application/json' })
+      },
+      body: body == null ? undefined : JSON.stringify(body),
       signal: controller.signal
     });
     if (!response.ok) return null;
@@ -2109,7 +2124,8 @@ async function main() {
     runtimes: async ({ args, config, command: _command }) => {
       const runtimeId = positional(args)[1] ?? 'all';
       const manager = runtimeManagerForCli(config);
-      const status = await manager.status();
+      const gatewayStatus = clusterConfigured(config) ? await gatewayRequest(config, '/gateway/status') : null;
+      const status = gatewayStatus?.runtimeManager ?? (await manager.status());
       const runtimes = runtimeId === 'all' ? status.runtimes : { [runtimeId]: status.runtimes[runtimeId] };
       if (runtimeId !== 'all' && !status.runtimes[runtimeId]) {
         throw new Error(`Unknown runtime ${runtimeId}`);
@@ -2128,13 +2144,56 @@ async function main() {
         )
       );
     },
+    cluster: async ({ args, config, command: _command }) => {
+      const response = await gatewayRequest(config, '/gateway/cluster');
+      if (!response?.cluster) {
+        throw new Error(
+          `LLooM gateway at ${gatewayUrlFor(config)} is not reachable; cluster status requires a running gateway`
+        );
+      }
+      const action = positional(args)[1] ?? 'status';
+      if (action !== 'status' && action !== 'doctor') throw new Error('Usage: lloom cluster [doctor] [--json]');
+      if (action === 'doctor') {
+        const validationErrors = validateClusterConfig(config);
+        const nodeChecks = Object.values(response.cluster.nodes ?? {}).map((node) => ({
+          id: node.id,
+          ok: node.reachable !== false && Boolean(node.telemetry?.memory),
+          reachable: node.reachable !== false,
+          telemetry: Boolean(node.telemetry?.memory),
+          error: node.error ?? null
+        }));
+        console.log(
+          JSON.stringify(
+            {
+              ok: validationErrors.length === 0 && nodeChecks.every((check) => check.ok),
+              cluster: response.cluster.id,
+              leaderNode: response.cluster.leaderNode,
+              validationErrors,
+              nodes: nodeChecks
+            },
+            null,
+            2
+          )
+        );
+        return;
+      }
+      console.log(JSON.stringify(response, null, 2));
+    },
     'runtime-plan': async ({ args, config, command: _command }) => {
       const requestedRuntimeId = positional(args)[1];
+      const livePlan = clusterConfigured(config)
+        ? await gatewayRequest(
+            config,
+            `/gateway/runtimes/plan${requestedRuntimeId ? `?runtime=${encodeURIComponent(requestedRuntimeId)}` : ''}`,
+            { timeoutMs: 10000 }
+          )
+        : null;
       console.log(
         JSON.stringify(
-          await createRuntimePolicyPlan(config, {
-            requestedRuntimeId
-          }),
+          livePlan ??
+            (await createRuntimePolicyPlan(config, {
+              requestedRuntimeId
+            })),
           null,
           2
         )
@@ -2143,6 +2202,21 @@ async function main() {
     'runtime-admit': async ({ args, config, command }) => {
       const runtimeId = requireRuntimeId(args, command);
       if (!runtimeId) return;
+      if (clusterConfigured(config)) {
+        const result = await gatewayRequest(config, `/gateway/runtimes/${encodeURIComponent(runtimeId)}/admit`, {
+          method: 'POST',
+          body: {
+            apply: hasFlag(args, '--apply'),
+            yes: hasFlag(args, '--yes'),
+            force: !hasFlag(args, '--no-force'),
+            warmup: !hasFlag(args, '--no-warmup')
+          },
+          timeoutMs: 1800000
+        });
+        if (!result) throw new Error(`cluster runtime admission failed through ${gatewayUrlFor(config)}`);
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
       const manager = runtimeManagerForCli(config);
       console.log(
         JSON.stringify(
@@ -2162,6 +2236,19 @@ async function main() {
     'runtime-start': async ({ args, config, command }) => {
       const runtimeId = requireRuntimeId(args, command);
       if (!runtimeId) return;
+      if (clusterConfigured(config)) {
+        const result = await gatewayRequest(config, `/gateway/runtimes/${encodeURIComponent(runtimeId)}/start`, {
+          method: 'POST',
+          body: {
+            force: !hasFlag(args, '--no-force'),
+            warmup: !hasFlag(args, '--no-warmup')
+          },
+          timeoutMs: 1800000
+        });
+        if (!result) throw new Error(`cluster runtime start failed through ${gatewayUrlFor(config)}`);
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
       const manager = runtimeManagerForCli(config);
       console.log(
         JSON.stringify(
@@ -2178,20 +2265,50 @@ async function main() {
     'runtime-warmup': async ({ args, config, command }) => {
       const runtimeId = requireRuntimeId(args, command);
       if (!runtimeId) return;
+      if (clusterConfigured(config)) {
+        const result = await gatewayRequest(config, `/gateway/runtimes/${encodeURIComponent(runtimeId)}/warmup`, {
+          method: 'POST',
+          body: {},
+          timeoutMs: 1800000
+        });
+        if (!result) throw new Error(`cluster runtime warmup failed through ${gatewayUrlFor(config)}`);
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
       const manager = runtimeManagerForCli(config);
       console.log(JSON.stringify(await manager.warmupById(runtimeId), null, 2));
     },
     'runtime-stop': async ({ args, config, command }) => {
       const runtimeId = requireRuntimeId(args, command);
       if (!runtimeId) return;
+      if (clusterConfigured(config)) {
+        const result = await gatewayRequest(config, `/gateway/runtimes/${encodeURIComponent(runtimeId)}/stop`, {
+          method: 'POST',
+          body: {},
+          timeoutMs: 120000
+        });
+        if (!result) throw new Error(`cluster runtime stop failed through ${gatewayUrlFor(config)}`);
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
       const manager = runtimeManagerForCli(config);
       console.log(JSON.stringify(await manager.stop(runtimeId), null, 2));
     },
     down: async ({ args, config, command }) => {
       const configPath = installedConfigPath(args, command);
-      const gateway = await stopGatewayBackground(configPath, config);
       let runtimes = null;
-      if (!['stopped', 'cleaned-stale-pid'].includes(gateway.status)) {
+      if (clusterConfigured(config) && (await gatewayHealth(config))?.ok) {
+        runtimes = await gatewayRequest(config, '/gateway/runtimes/stop-all', {
+          method: 'POST',
+          body: {},
+          timeoutMs: 1800000
+        });
+        if (!runtimes) {
+          throw new Error('cluster runtimes could not be stopped; leaving the gateway running for recovery');
+        }
+      }
+      const gateway = await stopGatewayBackground(configPath, config);
+      if (!runtimes && !clusterConfigured(config) && !['stopped', 'cleaned-stale-pid'].includes(gateway.status)) {
         runtimes = await runtimeManagerForCli(config).stopAll();
       }
       const report = { ok: gateway.status !== 'still-running', gateway, runtimes };
@@ -2207,6 +2324,16 @@ async function main() {
       if (!report.ok) process.exitCode = 1;
     },
     'keep-warm': async ({ config }) => {
+      if (clusterConfigured(config)) {
+        const result = await gatewayRequest(config, '/gateway/runtimes/keep-warm', {
+          method: 'POST',
+          body: {},
+          timeoutMs: 1800000
+        });
+        if (!result) throw new Error(`cluster keep-warm failed through ${gatewayUrlFor(config)}`);
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
       const manager = runtimeManagerForCli(config);
       console.log(
         JSON.stringify(
@@ -2268,6 +2395,7 @@ async function main() {
   handlers['pack-submit'] = handlers['recipe-submit'];
   handlers['model-add'] = handlers['add-model'];
   handlers['runtime-status'] = handlers['runtimes'];
+  handlers['cluster-status'] = handlers['cluster'];
   handlers['runtime-policy'] = handlers['runtime-plan'];
   handlers['voice-list'] = handlers['voices'];
   handlers['install-voice'] = handlers['voice-install'];

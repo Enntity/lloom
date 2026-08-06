@@ -7,6 +7,7 @@ import {
   speechSchemaForModel,
   transcriptionSchemaForModel
 } from './tts-catalog.mjs';
+import { modelTargets } from './cluster.mjs';
 
 export class UnknownModelError extends Error {
   constructor(modelId) {
@@ -27,8 +28,8 @@ function advertised(value) {
 }
 
 function runtimeEnabled(config, model) {
-  if (!model?.runtime) return true;
-  return config.runtimes?.[model.runtime]?.enabled !== false;
+  const targets = modelTargets(model);
+  return targets.some((target) => !target.runtime || config.runtimes?.[target.runtime]?.enabled !== false);
 }
 
 function publiclyAvailable(config, model, { requireRuntimeEnabled = true } = {}) {
@@ -78,15 +79,23 @@ export function createRegistry(config) {
     const model = modelMap.get(targetId);
     if (!model) throw new UnknownModelError(requestedId);
     if (!runtimeEnabled(config, model)) throw new UnknownModelError(requestedId);
-    const backend = config.backends?.[model.backend];
-    if (!backend) throw new Error(`model ${model.id} references missing backend ${model.backend}`);
+    const target = modelTargets(model).find(
+      (candidate) => !candidate.runtime || config.runtimes?.[candidate.runtime]?.enabled !== false
+    );
+    const backend = config.backends?.[target?.backend];
+    if (!backend) throw new Error(`model ${model.id} references missing backend ${target?.backend ?? '(missing)'}`);
+    const resolvedModel = {
+      ...model,
+      backend: target.backend,
+      ...(target.runtime ? { runtime: target.runtime } : {})
+    };
     return {
       requestedId,
       resolvedId: model.id,
       alias: alias ? clone(alias) : null,
-      model: clone(model),
+      model: clone(resolvedModel),
       backend: clone(backend),
-      runtime: model.runtime ? clone(config.runtimes?.[model.runtime] ?? null) : null
+      runtime: target.runtime ? clone(config.runtimes?.[target.runtime] ?? null) : null
     };
   }
 

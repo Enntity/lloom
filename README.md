@@ -20,7 +20,7 @@ The planned public community host is `https://lloom.enntity.com`; source checkou
 | CUDA, Blackwell, DGX Spark / GB10, and Linux NVIDIA hosts                              | M-series Macs with unified memory                                                 |
 | vLLM and SGLang are the primary high-throughput backends                               | MLX, MTPLX, OptiQ, and llama.cpp are the primary native backends                  |
 | Managed Docker runtimes, GPU-memory admission, warm/on-demand lanes, and Spark recipes | Native processes, unified-memory-aware recipes, model-root reuse, and Mac recipes |
-| See [`docs/dgx-spark.md`](docs/dgx-spark.md)                                           | See the bundled `apple-silicon-*` recipes                                         |
+| See [`docs/dgx-spark.md`](docs/dgx-spark.md) and [`docs/clusters.md`](docs/clusters.md) | See the bundled `apple-silicon-*` recipes                                         |
 
 Both platforms get the same gateway APIs, runtime policy, per-connection telemetry, live dashboard, client integrations, external-provider passthrough, and community recipe/benchmark workflow.
 

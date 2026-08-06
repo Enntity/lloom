@@ -382,7 +382,15 @@ function buildRecipeRuntime({
     policy: {
       priority: positiveInteger(settings.priority, 50),
       evictable: settings.evictable !== false
-    }
+    },
+    recipe: {
+      id: recipe.id,
+      version: recipe.version ?? 1,
+      source: recipe.filePath ?? null
+    },
+    ...(settings.placement?.mode === 'distributed'
+      ? { placement: templateValue(asObject(settings.placement), primitiveSettings(settings)) }
+      : {})
   };
 
   const explicitRuntime = buildExplicitRecipeRuntime({
@@ -539,13 +547,72 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
     if (!modelId) continue;
     const modelSlug = slug(modelId);
     const existingModel = config.models.find((model) => model.id === modelId);
+    const settings = asObject(recipeModel.settings);
+    const placement = asObject(settings.placement);
+    if (placement.mode === 'replicated') {
+      const configuredNodeIds = Object.keys(config.cluster?.nodes ?? {});
+      const nodeIds = Array.isArray(placement.nodes) ? placement.nodes : configuredNodeIds;
+      if (!nodeIds.length)
+        throw new Error(`recipe model ${modelId} requests replicated placement but no cluster nodes are configured`);
+      const targets = [];
+      const modelPath = modelPathForRecipeModel(recipeModel, backendId, modelRoot);
+      for (const nodeId of nodeIds) {
+        const node = config.cluster?.nodes?.[nodeId];
+        if (!node) throw new Error(`recipe model ${modelId} references unknown cluster node ${nodeId}`);
+        if (!node.backendHost)
+          throw new Error(`cluster node ${nodeId} requires private backendHost for replicated recipes`);
+        const suffix = slug(nodeId);
+        const runtimeId = `${recipeModel.runtime ?? `${backendId}-${modelSlug}`}-${suffix}`;
+        const backendConfigId = `${recipeModel.backendConfig ?? `${backendId}-${modelSlug}`}-${suffix}`;
+        const port = Number(config.runtimes?.[runtimeId]?.port) || nextBackendPort(config);
+        const backendOrigin = clusterNodeBackendOrigin(node);
+        const baseUrlPath = asObject(settings.runtime).baseUrlPath ?? settings.baseUrlPath ?? '/v1';
+        config.backends[backendConfigId] = {
+          type: 'openai',
+          baseUrl: `${backendOrigin}:${port}${baseUrlPath.startsWith('/') ? baseUrlPath : `/${baseUrlPath}`}`,
+          apiKey: settings.apiKey ?? 'sk-local-llm',
+          timeoutMs: positiveInteger(settings.timeoutMs, 1800000)
+        };
+        const existingRuntime = config.runtimes[runtimeId];
+        if (!existingRuntime || existingRuntime.recipe?.id === recipe.id) {
+          const runtime = buildRecipeRuntime({
+            recipe,
+            recipeModel,
+            backendId,
+            runtimeId,
+            modelPath,
+            modelRoot,
+            modelId,
+            port,
+            sessionCacheRoot
+          });
+          if (runtime) {
+            runtime.node = nodeId;
+            replaceArgValue(runtime.args, '--host', node.backendHost);
+            replaceArgValue(runtime.bootstrap?.command, '--host', node.backendHost);
+            runtime.healthUrl = rewriteUrlOrigin(runtime.healthUrl, backendOrigin);
+            if (runtime.warmup?.url) runtime.warmup.url = rewriteUrlOrigin(runtime.warmup.url, backendOrigin);
+            config.runtimes[runtimeId] = runtime;
+          }
+        }
+        targets.push({ id: nodeId, node: nodeId, backend: backendConfigId, runtime: runtimeId });
+      }
+      const materializedModel = materializedRecipeModel(recipe, recipeModel, modelId, {
+        backend: targets[0].backend,
+        runtime: targets[0].runtime,
+        targets
+      });
+      if (!existingModel) config.models.push(materializedModel);
+      else Object.assign(existingModel, materializedModel);
+      finishRecipeModelConfig(config, recipeModel, materializedModel, modelId);
+      continue;
+    }
     const runtimeId = existingModel?.runtime ?? recipeModel.runtime ?? `${backendId}-${modelSlug}`;
     const backendConfigId = existingModel?.backend ?? recipeModel.backendConfig ?? `${backendId}-${modelSlug}`;
     const port = Number(config.runtimes?.[runtimeId]?.port) || nextBackendPort(config);
     const modelPath = modelPathForRecipeModel(recipeModel, backendId, modelRoot);
 
     if (!config.backends[backendConfigId]) {
-      const settings = asObject(recipeModel.settings);
       const runtimeSettings = asObject(settings.runtime);
       config.backends[backendConfigId] = {
         type: 'openai',
@@ -571,52 +638,80 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
       if (runtime) config.runtimes[runtimeId] = runtime;
     }
 
-    const materializedModel = {
-      id: modelId,
-      name: recipeModel.name ?? modelId.split('/').at(-1),
+    const materializedModel = materializedRecipeModel(recipe, recipeModel, modelId, {
       backend: backendConfigId,
-      ...(config.runtimes[runtimeId] ? { runtime: runtimeId } : {}),
-      upstreamModel: recipeModel.model,
-      kind: recipeModelKind(recipeModel),
-      input: recipeModelInput(recipeModel),
-      output: recipeModelOutput(recipeModel),
-      capabilities: asArray(recipeModel.capabilities),
-      reasoning: asArray(recipeModel.capabilities).includes('reasoning') || undefined,
-      supportsTools: asArray(recipeModel.capabilities).includes('tools') || undefined,
-      contextWindow: positiveInteger(asObject(recipeModel.settings).contextWindow, 32768),
-      maxOutputTokens: positiveInteger(asObject(recipeModel.settings).maxOutputTokens, 8192),
-      advertise: true,
-      tags: [
-        ...new Set([recipe.backend?.id, ...asArray(recipe.keywords), ...asArray(recipe.capabilities)].filter(Boolean))
-      ]
-    };
+      ...(config.runtimes[runtimeId] ? { runtime: runtimeId } : {})
+    });
     if (!existingModel) {
       config.models.push(materializedModel);
     } else if (config.runtimes[runtimeId]?.recipe?.id === recipe.id) {
       Object.assign(existingModel, materializedModel);
     }
 
-    if (!config.clientCatalog.modelOrder.includes(modelId)) {
-      config.clientCatalog.modelOrder.push(modelId);
-    }
-    if (recipeModel.setDefault === true) {
-      config.defaults ??= {};
-      const kind = materializedModel.kind;
-      if (kind === 'image') config.defaults.imageModel = modelId;
-      else if (kind === 'video') config.defaults.videoModel = modelId;
-      else if (kind === 'embedding') config.defaults.embeddingModel = modelId;
-      else if (kind === 'audio_speech') config.defaults.speechModel = modelId;
-      else if (kind === 'audio_transcription') config.defaults.transcriptionModel = modelId;
-      else config.defaults.chatModel = modelId;
-    }
-    if (recipeModel.role === 'default-video' && !config.defaults?.videoModel) {
-      config.defaults ??= {};
-      config.defaults.videoModel = modelId;
-    }
-    if (recipeModel.role === 'embedding' && !config.defaults?.embeddingModel) {
-      config.defaults ??= {};
-      config.defaults.embeddingModel = modelId;
-    }
+    finishRecipeModelConfig(config, recipeModel, materializedModel, modelId);
+  }
+}
+
+function materializedRecipeModel(recipe, recipeModel, modelId, placement) {
+  return {
+    id: modelId,
+    name: recipeModel.name ?? modelId.split('/').at(-1),
+    ...placement,
+    upstreamModel: recipeModel.model,
+    kind: recipeModelKind(recipeModel),
+    input: recipeModelInput(recipeModel),
+    output: recipeModelOutput(recipeModel),
+    capabilities: asArray(recipeModel.capabilities),
+    reasoning: asArray(recipeModel.capabilities).includes('reasoning') || undefined,
+    supportsTools: asArray(recipeModel.capabilities).includes('tools') || undefined,
+    contextWindow: positiveInteger(asObject(recipeModel.settings).contextWindow, 32768),
+    maxOutputTokens: positiveInteger(asObject(recipeModel.settings).maxOutputTokens, 8192),
+    advertise: true,
+    tags: [
+      ...new Set([recipe.backend?.id, ...asArray(recipe.keywords), ...asArray(recipe.capabilities)].filter(Boolean))
+    ]
+  };
+}
+
+function finishRecipeModelConfig(config, recipeModel, materializedModel, modelId) {
+  if (!config.clientCatalog.modelOrder.includes(modelId)) {
+    config.clientCatalog.modelOrder.push(modelId);
+  }
+  if (recipeModel.setDefault === true) {
+    config.defaults ??= {};
+    const kind = materializedModel.kind;
+    if (kind === 'image') config.defaults.imageModel = modelId;
+    else if (kind === 'video') config.defaults.videoModel = modelId;
+    else if (kind === 'embedding') config.defaults.embeddingModel = modelId;
+    else if (kind === 'audio_speech') config.defaults.speechModel = modelId;
+    else if (kind === 'audio_transcription') config.defaults.transcriptionModel = modelId;
+    else config.defaults.chatModel = modelId;
+  }
+  if (recipeModel.role === 'default-video' && !config.defaults?.videoModel) {
+    config.defaults ??= {};
+    config.defaults.videoModel = modelId;
+  }
+  if (recipeModel.role === 'embedding' && !config.defaults?.embeddingModel) {
+    config.defaults ??= {};
+    config.defaults.embeddingModel = modelId;
+  }
+}
+
+function clusterNodeBackendOrigin(node) {
+  const protocol = node.backendProtocol ?? 'http:';
+  return `${String(protocol).replace(/:?$/, ':')}//${node.backendHost}`;
+}
+
+function rewriteUrlOrigin(value, origin) {
+  if (!value) return value;
+  try {
+    const url = new URL(value);
+    const target = new URL(origin);
+    url.protocol = target.protocol;
+    url.hostname = target.hostname;
+    return url.toString();
+  } catch {
+    return value;
   }
 }
 
@@ -698,9 +793,12 @@ function retargetGatewayPort(config, gatewayPort) {
 function backendIdsForRuntime(config, runtimeId) {
   return [
     ...new Set(
-      (config.models ?? [])
-        .filter((model) => model.runtime === runtimeId && model.backend)
-        .map((model) => model.backend)
+      (config.models ?? []).flatMap((model) => [
+        ...(model.runtime === runtimeId && model.backend ? [model.backend] : []),
+        ...(model.targets ?? [])
+          .filter((target) => target.runtime === runtimeId && target.backend)
+          .map((target) => target.backend)
+      ])
     )
   ];
 }
@@ -822,7 +920,7 @@ export function deriveUserConfig(
 ) {
   const sourceTemplate = config.sourceTemplate;
   const derived = stripRuntimeFields(config);
-  const runtimeIds = recipeRuntimeIds(recipe);
+  let runtimeIds = recipeRuntimeIds(recipe);
   if (additive) {
     derived.clientCatalog ??= {};
     derived.clientCatalog.modelOrder ??= [];
@@ -836,6 +934,10 @@ export function deriveUserConfig(
     modelRoot,
     sessionCacheRoot
   });
+  const materializedRuntimeIds = Object.entries(derived.runtimes ?? {})
+    .filter(([, runtime]) => runtime.recipe?.id === recipe.id)
+    .map(([runtimeId]) => runtimeId);
+  if (materializedRuntimeIds.length) runtimeIds = materializedRuntimeIds;
   const preferredModel = preferredRecipeModel(derived, recipe);
   if (!additive && preferredModel?.gatewayModel) {
     derived.defaults = {
@@ -848,8 +950,12 @@ export function deriveUserConfig(
     .filter(([, runtime]) => runtime.keepWarm === true)
     .map(([runtimeId]) => runtimeId);
   const requestedRecipeKeepWarm = (recipe.models ?? [])
-    .filter((model) => model.settings?.keepWarm === true && model.runtime)
-    .map((model) => model.runtime);
+    .filter((model) => model.settings?.keepWarm === true)
+    .flatMap((model) => {
+      const modelId = model.gatewayModel ?? model.model;
+      const materialized = derived.models?.find((candidate) => candidate.id === modelId);
+      return [materialized?.runtime, ...(materialized?.targets ?? []).map((target) => target.runtime)].filter(Boolean);
+    });
   const recipeHasExplicitKeepWarm = (recipe.models ?? []).some(
     (model) => typeof model.settings?.keepWarm === 'boolean'
   );
