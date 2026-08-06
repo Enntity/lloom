@@ -792,6 +792,7 @@ const loadedRecipes = await loadRecipes();
 assert.deepEqual(
   loadedRecipes.map((candidate) => candidate.id),
   [
+    'apple-silicon-qwen3-embedding-4b-fp16-ollama',
     'apple-silicon-qwen3-embedding-4b-ollama',
     'apple-silicon-qwen36-35b-a3b-optiq',
     'apple-silicon-qwen36',
@@ -963,7 +964,7 @@ const recipeIndexReport = await buildRecipeIndexReport(config, {
 });
 assert.equal(recipeIndexReport.ok, true);
 assert.equal(recipeIndexReport.index.id, 'lloom-community-recipes');
-assert.equal(recipeIndexReport.recipes.length, 10);
+assert.equal(recipeIndexReport.recipes.length, 11);
 const indexedSparkRecipe = recipeIndexReport.recipes.find(
   (candidate) => candidate.id === 'linux-nvidia-gb10-qwen36-unsloth-vllm'
 );
@@ -1962,6 +1963,19 @@ assert.equal(
   appleEmbeddingDerived.runtimes['ollama-qwen3-embedding-4b'].warmup.url,
   `http://127.0.0.1:${appleEmbeddingDerived.runtimes['ollama-qwen3-embedding-4b'].port}/v1/embeddings`
 );
+const appleEmbeddingFp16Recipe = await loadRecipeById('apple-silicon-qwen3-embedding-4b-fp16-ollama');
+const appleEmbeddingFp16Derived = deriveUserConfig(additiveBase, appleEmbeddingFp16Recipe, {
+  modelRoot: '/models',
+  additive: true
+});
+assert.equal(appleEmbeddingFp16Derived.defaults.embeddingModel, 'qwen3-embedding:4b-fp16');
+assert.equal(
+  appleEmbeddingFp16Derived.models.find((model) => model.id === 'qwen3-embedding:4b-fp16').kind,
+  'embedding'
+);
+assert.equal(appleEmbeddingFp16Derived.runtimes['ollama-qwen3-embedding-4b-fp16'].keepWarm, true);
+assert.equal(appleEmbeddingFp16Derived.runtimes['ollama-qwen3-embedding-4b-fp16'].policy.evictable, false);
+assert.deepEqual(appleEmbeddingFp16Derived.runtimes['ollama-qwen3-embedding-4b-fp16'].args, ['serve']);
 const singleModelRecipe = await loadRecipeById(
   'apple-silicon-qwen36-35b-a3b-mtplx',
   path.join(process.cwd(), 'community', 'recipes')
@@ -2634,6 +2648,34 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
   const sparkDeployConfig = JSON.parse(
     await fs.readFile(new URL('../deploy/dgx-spark/config.json', import.meta.url), 'utf8')
   );
+  assert.deepEqual(sparkDeployConfig.backends['openai-compatible-openrouter-qwen3-embedding-4b'], {
+    type: 'openai',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    apiKeyEnv: 'OPENROUTER_API_KEY',
+    timeoutMs: 1800000
+  });
+  const sparkCloudEmbedding = sparkDeployConfig.models.find(
+    (model) => model.id === 'cloud/openrouter/qwen3-embedding-4b'
+  );
+  assert.equal(sparkCloudEmbedding.kind, 'embedding');
+  assert.equal(sparkCloudEmbedding.backend, 'openai-compatible-openrouter-qwen3-embedding-4b');
+  assert.equal(sparkCloudEmbedding.upstreamModel, 'qwen/qwen3-embedding-4b');
+  assert.equal(sparkCloudEmbedding.runtime, undefined);
+  assert.deepEqual(sparkCloudEmbedding.tags, ['cloud', 'external', 'openrouter', 'qwen']);
+  assert.deepEqual(sparkDeployConfig.backends['openai-compatible-google-gemini-3-1-flash-lite'], {
+    type: 'openai',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    apiKeyEnv: 'OPENROUTER_API_KEY',
+    timeoutMs: 1800000
+  });
+  const sparkGeminiFlashLite = sparkDeployConfig.models.find((model) => model.id === 'google/gemini-3.1-flash-lite');
+  assert.equal(sparkGeminiFlashLite.kind, 'chat');
+  assert.equal(sparkGeminiFlashLite.backend, 'openai-compatible-google-gemini-3-1-flash-lite');
+  assert.equal(sparkGeminiFlashLite.upstreamModel, 'google/gemini-3.1-flash-lite');
+  assert.equal(sparkGeminiFlashLite.contextWindow, 1048576);
+  assert.equal(sparkGeminiFlashLite.maxOutputTokens, 65536);
+  assert.equal(sparkGeminiFlashLite.runtime, undefined);
+  assert.deepEqual(sparkGeminiFlashLite.tags, ['cloud', 'external', 'openrouter', 'google', 'gemini']);
   const qwen27Runtime = sparkDeployConfig.runtimes['unsloth-qwen36-27b-nvfp4'];
   assert.equal(qwen27Runtime.recipe.version, 3);
   assert.deepEqual(qwen27Runtime.behaviorOverrides, {
@@ -4438,6 +4480,18 @@ if (listened) {
       )
     );
     assert(dashboardHtml.includes('const TOPOLOGY_COLD_MODEL_TTL_MS = 60 * 60 * 1000'));
+    assert(dashboardHtml.includes('const PROMPT_PULSE_MS = 800'));
+    assert(dashboardHtml.includes('function promptPulseIntensity('));
+    assert(
+      dashboardHtml.includes(
+        '["PROMPT", promptTokens > 0 ? (summary.promptEstimated ? "~" : "") + formatCompact(Math.round(promptTokens)) + " tok" : "—"]'
+      )
+    );
+    assert(!dashboardHtml.includes('smoothRate("summary:input"'));
+    assert(!dashboardHtml.includes('liveInputRate'));
+    assert(dashboardHtml.includes('"external-processing": 3'));
+    assert(dashboardHtml.includes('liveConnections.length ? "external-processing" : "external"'));
+    assert(dashboardHtml.includes('externalProcessing ? "EXTERNAL PROCESSING"'));
     assert(dashboardHtml.includes('function fitTopologyCameraToModels('));
     assert(!dashboardHtml.toLowerCase().includes('switchyard'));
 
@@ -5274,7 +5328,7 @@ if (listened) {
       try {
         assert.equal(autoHostPlan.ok, true);
         assert(autoHostPlan.host.autoStarted.pid);
-        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, 15);
+        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, 16);
         assert.equal(autoHostPlan.plans[0].recommendation.id, 'apple-silicon-qwen36-35b-a3b-mtplx-pack');
         assert.equal(autoHostPlan.plans[0].plan.roots.recipesRoot, autoHostRecipesRoot);
         assert.equal(autoHostPlan.plans[0].plan.roots.benchmarksRoot, autoHostBenchmarksRoot);

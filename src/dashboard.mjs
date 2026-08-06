@@ -627,8 +627,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
 
     // Higher values draw later (on top). Serving stays above idle hot/external cards
     // so overlaps favor live traffic; click temporarily overrides via topologyRaisedModelId.
-    const MODEL_CARD_STATE_Z = { cold: 0, queued: 1, warming: 1, evicting: 1, hot: 2, external: 2, serving: 3 };
+    const MODEL_CARD_STATE_Z = { cold: 0, queued: 1, warming: 1, evicting: 1, hot: 2, external: 2, "external-processing": 3, serving: 3 };
     const TOPOLOGY_COLD_MODEL_TTL_MS = 60 * 60 * 1000;
+    const PROMPT_PULSE_MS = 800;
     function modelCardZ(model) {
       if (state.topologyRaisedModelId && model.id === state.topologyRaisedModelId) return 1000;
       return MODEL_CARD_STATE_Z[model.state] ?? 0;
@@ -1115,6 +1116,21 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       return sample.value;
     }
 
+    function promptPulseIntensity(tokens, pulseAt, now) {
+      if (!Number.isFinite(pulseAt)) return 0;
+      const elapsed = Math.max(0, now - pulseAt);
+      if (elapsed >= PROMPT_PULSE_MS) return 0;
+      const volume = Math.max(0, Number(tokens || 0));
+      const envelope = Math.sin((elapsed / PROMPT_PULSE_MS) * Math.PI);
+      return Math.min(180, 12 + Math.sqrt(volume) * .8) * envelope;
+    }
+
+    function visiblePromptTokens(tokens, pulseAt, now) {
+      return Number.isFinite(pulseAt) && now - pulseAt < PROMPT_PULSE_MS
+        ? Math.max(0, Number(tokens || 0))
+        : 0;
+    }
+
     function hashUnit(seed) {
       const value = Math.sin(seed * 91.733) * 43758.5453;
       return value - Math.floor(value);
@@ -1338,14 +1354,14 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       modelList.forEach((point, index) => {
         const portY = center.y - Math.min(94, (modelList.length - 1) * 32) / 2 + index * Math.min(47, 94 / Math.max(1, modelList.length - 1));
         const from = { x: gate.right, y: portY }, to = { x: point.x - point.cardWidth / 2, y: point.y };
-        const inputRate = smoothRate("model:" + point.model.id + ":in", point.model.liveInputRate, now);
+        const inputSignal = promptPulseIntensity(point.model.promptTokens, point.model.promptPulseAt, now);
         const outputRate = smoothRate("model:" + point.model.id + ":out", point.model.liveOutputRate, now);
-        const rate = Math.max(inputRate, outputRate);
+        const rate = Math.max(inputSignal, outputRate);
         const cumulative = Number(point.model.inputTokens || 0) + Number(point.model.outputTokens || 0);
         ctx.strokeStyle = rate > 0 ? "rgba(47,230,200,.82)" : cumulative > 0 ? "rgba(47,230,200,.32)" : "rgba(153,163,176,.15)";
         ctx.lineWidth = 1 + Math.min(2.5, Math.sqrt(rate) / 8);
         ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke();
-        [[inputRate, false, "rgba(143,180,255,.94)"], [outputRate, true, "rgba(47,230,200,.94)"]].forEach(([directionRate, reverse, color], direction) => {
+        [[inputSignal, false, "rgba(143,180,255,.94)"], [outputRate, true, "rgba(47,230,200,.94)"]].forEach(([directionRate, reverse, color], direction) => {
           const particles = directionRate > 0 ? Math.min(12, Math.max(2, Math.ceil(Math.sqrt(directionRate)))) : 0;
           for (let particle = 0; particle < particles; particle++) {
             let progress = (now * (.00012 + Math.min(directionRate, 180) * .0000015) + hashUnit(particle + index * 31 + direction * 71)) % 1;
@@ -1366,44 +1382,48 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const displayedLiveRate = smoothRate("model:" + point.model.id + ":display", point.model.liveRate, now);
         const live = displayedLiveRate > .05;
         const serving = point.model.state === "serving";
-        const external = point.model.state === "external";
+        const externalProcessing = point.model.state === "external-processing";
+        const processing = serving || externalProcessing;
+        const external = point.model.state === "external" || externalProcessing;
         const warming = point.model.state === "warming" || point.model.state === "queued";
         const evicting = point.model.state === "evicting";
         const hot = point.model.state === "hot" || serving;
         const pulse = warming || evicting ? .35 + (Math.sin(now * .006) + 1) * .3 : 1;
-        ctx.strokeStyle = serving ? "rgba(47,230,200,.95)" : external ? "rgba(192,153,255,.65)" : hot ? "rgba(47,230,200,.6)" : warming ? "rgba(243,189,79," + pulse + ")" : evicting ? "rgba(255,126,102," + pulse + ")" : "rgba(143,180,255,.22)";
+        ctx.strokeStyle = serving ? "rgba(47,230,200,.95)" : externalProcessing ? "rgba(192,153,255,.95)" : external ? "rgba(192,153,255,.65)" : hot ? "rgba(47,230,200,.6)" : warming ? "rgba(243,189,79," + pulse + ")" : evicting ? "rgba(255,126,102," + pulse + ")" : "rgba(143,180,255,.22)";
         ctx.fillStyle = hot ? "rgba(7,18,17,.98)" : external ? "rgba(15,10,24,.96)" : warming ? "rgba(24,19,9,.97)" : evicting ? "rgba(25,11,9,.97)" : "rgba(8,10,15,.94)";
         const cardWidth = point.cardWidth, cardLeft = point.x - cardWidth / 2, cardTop = point.y - 34;
         hitCards.push({ id: point.model.id, left: cardLeft, top: cardTop, width: cardWidth, height: 68 });
-        if (serving) {
+        if (processing) {
           const computePulse = .45 + (Math.sin(now * .009 + hashUnit(point.model.id.length) * 6) + 1) * .22;
+          const processingRgb = externalProcessing ? "192,153,255" : "243,189,79";
           ctx.save();
-          ctx.strokeStyle = "rgba(243,189,79," + computePulse + ")";
+          ctx.strokeStyle = "rgba(" + processingRgb + "," + computePulse + ")";
           ctx.lineWidth = 2;
           ctx.setLineDash([8, 5]);
           ctx.lineDashOffset = -now * .035;
-          ctx.shadowColor = "rgba(243,189,79,.72)";
+          ctx.shadowColor = "rgba(" + processingRgb + ",.72)";
           ctx.shadowBlur = 13;
           ctx.beginPath(); ctx.roundRect(cardLeft - 5, cardTop - 5, cardWidth + 10, 78, 8); ctx.stroke();
           ctx.restore();
         }
         ctx.beginPath(); ctx.roundRect(cardLeft, cardTop, cardWidth, 68, 5); ctx.fill(); ctx.stroke();
-        if (serving) {
+        if (processing) {
           const scanX = cardLeft + ((now * .08) % (cardWidth + 36)) - 18;
           const scan = ctx.createLinearGradient(scanX - 16, 0, scanX + 16, 0);
-          scan.addColorStop(0, "rgba(243,189,79,0)"); scan.addColorStop(.5, "rgba(243,189,79,.13)"); scan.addColorStop(1, "rgba(243,189,79,0)");
+          const scanRgb = externalProcessing ? "192,153,255" : "243,189,79";
+          scan.addColorStop(0, "rgba(" + scanRgb + ",0)"); scan.addColorStop(.5, "rgba(" + scanRgb + ",.13)"); scan.addColorStop(1, "rgba(" + scanRgb + ",0)");
           ctx.save(); ctx.beginPath(); ctx.roundRect(cardLeft, cardTop, cardWidth, 68, 5); ctx.clip(); ctx.fillStyle = scan; ctx.fillRect(scanX - 16, cardTop, 32, 68); ctx.restore();
         }
-        ctx.fillStyle = serving ? "#42d77d" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : evicting ? "#ff7e66" : "#8fb4ff"; ctx.fillRect(cardLeft, cardTop, 4, 68);
+        ctx.fillStyle = serving ? "#42d77d" : externalProcessing ? "#f3bd4f" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : evicting ? "#ff7e66" : "#8fb4ff"; ctx.fillRect(cardLeft, cardTop, 4, 68);
         ctx.fillStyle = "rgba(242,245,247,.92)"; ctx.fillText(fitCanvasText(ctx, shortModel(point.model.id), cardWidth - 68), cardLeft + 12, point.y - 15);
         const vendor = modelVendor(point.model.id).toUpperCase();
         ctx.textAlign = "right"; ctx.fillStyle = "rgba(143,180,255,.78)"; ctx.fillText(fitCanvasText(ctx, vendor, 54), cardLeft + cardWidth - 10, point.y - 15); ctx.textAlign = "left";
         ctx.fillStyle = "rgba(153,163,176,.9)";
-        ctx.fillText(formatCompact(point.model.inputTokens) + " in · " + formatCompact(point.model.outputTokens) + " out", cardLeft + 12, point.y + 4);
-        ctx.fillStyle = serving ? "#42d77d" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : evicting ? "#ff7e66" : "rgba(143,180,255,.7)";
+        ctx.fillText((point.model.inputEstimated ? "~" : "") + formatCompact(point.model.inputTokens) + " in · " + formatCompact(point.model.outputTokens) + " out", cardLeft + 12, point.y + 4);
+        ctx.fillStyle = serving ? "#42d77d" : externalProcessing ? "#f3bd4f" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : evicting ? "#ff7e66" : "rgba(143,180,255,.7)";
         const displayedModelRate = live ? displayedLiveRate : point.model.averageRate;
         const modelRateText = displayedModelRate == null ? "" : formatRate(displayedModelRate) + " tok/s";
-        const modelStateText = point.model.state === "queued" ? "QUEUED" : serving ? "COMPUTE ACTIVE" : point.model.state.toUpperCase();
+        const modelStateText = point.model.state === "queued" ? "QUEUED" : serving ? "COMPUTE ACTIVE" : externalProcessing ? "EXTERNAL PROCESSING" : point.model.state.toUpperCase();
         ctx.fillText(fitCanvasText(ctx, modelStateText + (modelRateText ? " · " + modelRateText : ""), cardWidth - 22), cardLeft + 12, point.y + 23);
       }
       state.topologyHitCards = hitCards;
@@ -1424,14 +1444,14 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const ingress = { x: gate.left, y: slotY };
         const controlOne = { x: from.x + (ingress.x - from.x) * .38, y: from.y };
         const controlTwo = { x: from.x + (ingress.x - from.x) * .72, y: ingress.y };
-        const inputRate = smoothRate("connection:" + connection.id + ":in", connection.inputRate, now);
+        const inputSignal = promptPulseIntensity(connection.promptTokens, connection.promptPulseAt, now);
         const outputRate = smoothRate("connection:" + connection.id + ":out", connection.outputRate, now);
-        const rate = Math.max(inputRate, outputRate);
+        const rate = Math.max(inputSignal, outputRate);
         const alpha = connection.live ? 1 : Math.max(0, 1 - (now - connection.fadeStartedAt) / 22500);
         ctx.strokeStyle = rate > 0 ? "rgba(47,230,200," + (.2 + alpha * .55) + ")" : "rgba(153,163,176," + alpha * .22 + ")";
         ctx.lineWidth = 1 + Math.min(2.5, Math.sqrt(rate) / 8);
         ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.bezierCurveTo(controlOne.x, controlOne.y, controlTwo.x, controlTwo.y, ingress.x, ingress.y); ctx.stroke();
-        [[inputRate, false, "rgba(143,180,255," + alpha * .94 + ")"], [outputRate, true, "rgba(47,230,200," + alpha * .94 + ")"]].forEach(([directionRate, reverse, color], direction) => {
+        [[inputSignal, false, "rgba(143,180,255," + alpha * .94 + ")"], [outputRate, true, "rgba(47,230,200," + alpha * .94 + ")"]].forEach(([directionRate, reverse, color], direction) => {
           const particles = directionRate > 0 ? Math.min(10, Math.max(2, Math.ceil(Math.sqrt(directionRate)))) : 0;
           for (let particle = 0; particle < particles; particle++) {
             let progress = (now * (.00009 + Math.min(directionRate, 150) * .0000014) + hashUnit(particle + index * 17 + direction * 59)) % 1;
@@ -1449,7 +1469,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         ctx.fillStyle = "rgba(153,163,176," + alpha * .9 + ")";
         const connectionRate = outputRate > .05 ? formatRate(outputRate) + " ~tok/s" : formatRate(connection.averageRate) + " avg tok/s";
         const liveStats = connection.outputPending ? " · awaiting JSON" : " · " + connectionRate;
-        ctx.fillText(formatNumber(connection.inputTokens) + " in · " + formatNumber(connection.outputTokens) + " out" + liveStats, from.x + 10, from.y + 13);
+        ctx.fillText((connection.inputEstimated ? "~" : "") + formatNumber(connection.inputTokens) + " in · " + formatNumber(connection.outputTokens) + " out" + liveStats, from.x + 10, from.y + 13);
       });
       ctx.textAlign = "center";
       const chassis = ctx.createLinearGradient(gate.left, 0, gate.right, 0);
@@ -1461,9 +1481,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       ctx.fillStyle = "#e9fffb"; ctx.font = '700 18px "SFMono-Regular",monospace'; ctx.fillText("LLooM", center.x, gate.top + 39);
       ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.font = '10px "SFMono-Regular",monospace'; ctx.fillText("ROUTING LOOM", center.x, gate.top + 57);
       const summary = state.topologySummary || {};
-      const smoothedInputRate = smoothRate("summary:input", summary.inputRate, now);
+      const promptTokens = visiblePromptTokens(summary.promptTokens, summary.promptPulseAt, now);
       const smoothedOutputRate = smoothRate("summary:output", summary.outputRate, now);
-      const statRows = [["ACTIVE", summary.active || 0], ["INPUT", formatRate(smoothedInputRate) + " ~t/s"], ["OUTPUT", formatRate(smoothedOutputRate) + " ~t/s"], ["ERRORS", summary.errors || 0]];
+      const statRows = [["ACTIVE", summary.active || 0], ["PROMPT", promptTokens > 0 ? (summary.promptEstimated ? "~" : "") + formatCompact(Math.round(promptTokens)) + " tok" : "—"], ["OUTPUT", formatRate(smoothedOutputRate) + " ~t/s"], ["ERRORS", summary.errors || 0]];
       ctx.font = '11px "SFMono-Regular",monospace';
       statRows.forEach((row, index) => { const y = gate.top + 94 + index * 27; ctx.textAlign = "left"; ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.fillText(row[0], gate.left + 18, y); ctx.textAlign = "right"; ctx.fillStyle = "rgba(242,245,247,.95)"; ctx.fillText(String(row[1]), gate.right - 18, y); });
       const host = summary.host || {};
@@ -1506,15 +1526,18 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const intervalSeconds = previous ? Math.max(.25, (sampleAt - previous.at) / 1000) : 1;
       const previousActive = previous?.active ?? new Map();
       const activeIds = new Set(active.map(item => item.id));
-      const completedEstimate = [...previousActive.entries()].filter(([id]) => !activeIds.has(id)).reduce((sum, [, item]) => ({
-        input: sum.input + Number(item.requestBytes || 0) / 4
-      }), { input: 0 });
-      const inputRate = previous ? Math.max(0, Number(totals.inputTokens || 0) - previous.inputTokens - completedEstimate.input) / intervalSeconds : 0;
-      const activeRates = new Map(active.map(item => {
+      const completedPromptBursts = new Map(previous ? (metrics.recent || [])
+        .filter(item => Date.parse(item.at) > previous.at && !previousActive.has(item.id))
+        .map(item => [item.id, {
+          tokens: Number(item.usage?.input_tokens || (item.requestBytes || 0) / 4),
+          estimated: item.usage?.input_tokens == null
+        }]) : []);
+      const activeTraffic = new Map(active.map(item => {
         const prior = previousActive.get(item.id);
         return [item.id, {
-          input: prior ? 0 : Number(item.requestBytes || 0) / 4 / intervalSeconds,
-          output: Math.max(0, Number(item.outputChars || 0) - Number(prior?.outputChars || 0)) / 4 / intervalSeconds
+          promptTokens: prior ? 0 : Number(item.requestBytes || 0) / 4,
+          promptEstimated: !prior,
+          outputRate: Math.max(0, Number(item.outputChars || 0) - Number(prior?.outputChars || 0)) / 4 / intervalSeconds
         }];
       }));
       state.trafficSample = {
@@ -1525,10 +1548,14 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       };
       $("#fabric-in").textContent = formatCompact(Math.round(Number(totals.inputTokens || 0)));
       $("#fabric-out").textContent = formatCompact(Math.round(Number(totals.outputTokens || 0)));
-      const liveInputRate = inputRate + [...activeRates.values()].reduce((sum, item) => sum + item.input, 0);
+      const promptTokens = [...activeTraffic.values()].reduce((sum, item) => sum + item.promptTokens, 0)
+        + [...completedPromptBursts.values()].reduce((sum, item) => sum + item.tokens, 0);
+      const promptEstimated = [...activeTraffic.values()].some(item => item.promptTokens > 0 && item.promptEstimated)
+        || [...completedPromptBursts.values()].some(item => item.tokens > 0 && item.estimated);
+      const activityRenderedAt = performance.now();
       // Completed totals include one-shot embedding and non-streaming payload estimates.
       // They count toward cumulative output volume, but are not generative decode throughput.
-      const liveOutputRate = [...activeRates.values()].reduce((sum, item) => sum + item.output, 0);
+      const liveOutputRate = [...activeTraffic.values()].reduce((sum, item) => sum + item.outputRate, 0);
       const totalDurationSeconds = Math.max(.001, Number(totals.durationMs || 0) / 1000);
       const averageInputRate = Number(totals.inputTokens || 0) / totalDurationSeconds;
       if (liveOutputRate > 0) {
@@ -1542,7 +1569,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       $("#fabric-active").textContent = formatNumber(active.length);
       state.topologySummary = {
         active: active.length,
-        inputRate: liveInputRate,
+        promptTokens,
+        promptEstimated,
+        promptPulseAt: promptTokens > 0 ? activityRenderedAt : null,
         outputRate: liveOutputRate,
         averageInputRate,
         averageOutputRate: aggregateOutputRate || 0,
@@ -1557,24 +1586,34 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const inactiveCapacity = Math.max(0, fieldCapacity - active.length);
       const fading = [...recentById.values()].filter(item => !activeIds.has(item.id) && sampleAt - Date.parse(item.at) < 22500).slice(0, inactiveCapacity);
       const connections = active.map(item => ({ ...item, live: true, ageMs: 0 })).concat(fading.map(item => ({ ...item, ageMs: Math.max(0, sampleAt - Date.parse(item.at)) })));
-      state.topologyConnections = connections.map(item => ({
-        ...item,
-        fadeStartedAt: item.live ? performance.now() : performance.now() - item.ageMs,
-        inputTokens: Math.round(Number(item.usage?.input_tokens || (item.requestBytes || 0) / 4)),
-        outputTokens: Math.round(Number(item.usage?.output_tokens || item.outputChars / 4 || 0)),
-        averageRate: Number(item.durationMs || item.elapsedMs) > 0 ? Number(item.usage?.output_tokens || item.outputChars / 4 || 0) / (Number(item.durationMs || item.elapsedMs) / 1000) : 0,
-        inputRate: item.live ? activeRates.get(item.id)?.input || 0 : 0,
-        outputRate: item.live ? activeRates.get(item.id)?.output || 0 : 0,
-        outputPending: item.live === true && !item.stream && !item.responseBytes
-      }));
+      state.topologyConnections = connections.map(item => {
+        const completedPrompt = completedPromptBursts.get(item.id);
+        const connectionPromptTokens = item.live ? activeTraffic.get(item.id)?.promptTokens || 0 : completedPrompt?.tokens || 0;
+        const inputEstimated = item.live ? true : item.usage?.input_tokens == null;
+        return {
+          ...item,
+          fadeStartedAt: item.live ? activityRenderedAt : activityRenderedAt - item.ageMs,
+          inputTokens: Math.round(Number(item.usage?.input_tokens || (item.requestBytes || 0) / 4)),
+          outputTokens: Math.round(Number(item.usage?.output_tokens || item.outputChars / 4 || 0)),
+          averageRate: Number(item.durationMs || item.elapsedMs) > 0 ? Number(item.usage?.output_tokens || item.outputChars / 4 || 0) / (Number(item.durationMs || item.elapsedMs) / 1000) : 0,
+          inputEstimated,
+          promptTokens: connectionPromptTokens,
+          promptPulseAt: connectionPromptTokens > 0 ? activityRenderedAt : null,
+          outputRate: item.live ? activeTraffic.get(item.id)?.outputRate || 0 : 0,
+          outputPending: item.live === true && !item.stream && !item.responseBytes
+        };
+      });
       const modelMetrics = new Map((metrics.models || []).map(model => [model.id, model]));
       const runtimeStates = state.status?.runtimeManager?.runtimes || {};
       const topologyModels = (state.models || []).map(model => {
         const data = modelMetrics.get(model.id) || {};
+        const modelConnections = state.topologyConnections.filter(item => item.model === model.id);
         const liveConnections = state.topologyConnections.filter(item => item.live && item.model === model.id);
-        const liveInputRate = liveConnections.reduce((sum, item) => sum + item.inputRate, 0);
         const liveOutputRate = liveConnections.reduce((sum, item) => sum + item.outputRate, 0);
         const liveRate = liveOutputRate;
+        const modelPromptTokens = modelConnections.reduce((sum, item) => sum + item.promptTokens, 0);
+        const modelPromptPulseAt = modelConnections.reduce((latest, item) => Math.max(latest, item.promptPulseAt || 0), 0) || null;
+        const inputEstimated = liveConnections.some(item => item.inputEstimated);
         const activeInput = liveConnections.reduce((sum, item) => sum + item.inputTokens, 0);
         const activeOutput = liveConnections.reduce((sum, item) => sum + item.outputTokens, 0);
         const runtimeState = runtimeStates[model.runtime] || {};
@@ -1591,12 +1630,12 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         // cold backend is not serving yet, and a draining backend remains
         // visibly evicting until the process/container is actually gone.
         const stateLabel = !model.runtime
-          ? "external"
+          ? liveConnections.length ? "external-processing" : "external"
           : transitioning || (liveConnections.length ? "serving" : runtimeLoaded ? "hot" : "cold");
         const lastActiveAt = data.last?.at || runtimeStates[model.runtime]?.lastRequestedAt || null;
         const lastActiveMs = Date.parse(lastActiveAt || "");
         const agedOut = stateLabel === "cold" && (!Number.isFinite(lastActiveMs) || sampleAt - lastActiveMs > TOPOLOGY_COLD_MODEL_TTL_MS);
-        return { id: model.id, inputTokens: Number(data.inputTokens || 0) + activeInput, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveInputRate, liveOutputRate, averageRate: data.decodeTokensPerSecond == null ? null : Number(data.decodeTokensPerSecond), state: stateLabel, lastActiveAt, agedOut };
+        return { id: model.id, inputTokens: Number(data.inputTokens || 0) + activeInput, inputEstimated, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveOutputRate, promptTokens: modelPromptTokens, promptPulseAt: modelPromptPulseAt, averageRate: data.decodeTokensPerSecond == null ? null : Number(data.decodeTokensPerSecond), state: stateLabel, lastActiveAt, agedOut };
       });
       state.topologyCatalogModels = topologyModels;
       applyTopologyModelFilter();

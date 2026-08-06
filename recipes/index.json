@@ -9,7 +9,7 @@
     "id": "MIT",
     "name": "Recipe metadata license"
   },
-  "updatedAt": "2026-07-15T16:42:21.000Z",
+  "updatedAt": "2026-07-28T05:52:41.000Z",
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated"
@@ -87,6 +87,16 @@
       "recommendedFor": ["Apple Silicon Macs needing a co-resident local semantic-memory embedding service"],
       "capabilities": ["embedding", "embeddings", "batching", "multilingual"],
       "source": { "type": "local", "url": "recipes/apple-silicon-qwen3-embedding-4b-ollama.json" }
+    },
+    {
+      "id": "apple-silicon-qwen3-embedding-4b-fp16-ollama",
+      "path": "apple-silicon-qwen3-embedding-4b-fp16-ollama.json",
+      "name": "Apple Silicon Qwen3 Embedding 4B FP16 Ollama",
+      "summary": "High-fidelity FP16 Qwen3-Embedding-4B runtime for cross-host semantic-memory labs.",
+      "tags": ["apple-silicon", "embedding", "qwen3", "ollama", "fp16", "continuity"],
+      "recommendedFor": ["Apple Silicon labs matching a BF16 Qwen3-Embedding-4B service as closely as possible"],
+      "capabilities": ["embedding", "embeddings", "batching", "multilingual"],
+      "source": { "type": "local", "url": "recipes/apple-silicon-qwen3-embedding-4b-fp16-ollama.json" }
     },
     {
       "id": "apple-silicon-qwen36-35b-a3b-optiq",

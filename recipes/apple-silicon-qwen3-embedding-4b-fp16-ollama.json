@@ -1,0 +1,102 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "apple-silicon-qwen3-embedding-4b-fp16-ollama",
+  "name": "Apple Silicon Qwen3 Embedding 4B FP16 Ollama",
+  "version": 1,
+  "summary": "A high-fidelity FP16 Qwen3-Embedding-4B runtime for local semantic-memory labs on Apple Silicon.",
+  "license": { "id": "Apache-2.0", "name": "Qwen3-Embedding-4B model license" },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "Qwen model card and Ollama qwen3-embedding tag catalog"
+  },
+  "links": [
+    {
+      "rel": "model",
+      "href": "https://ollama.com/library/qwen3-embedding:4b-fp16",
+      "mediaType": "text/html"
+    }
+  ],
+  "keywords": ["embedding", "continuity", "qwen3", "apple-silicon", "ollama", "fp16", "lab"],
+  "capabilities": ["embedding", "embeddings", "batching", "multilingual", "long-context"],
+  "hardware": {
+    "family": "Apple Silicon",
+    "testedMachine": "Apple Silicon Mac with unified memory",
+    "notes": [
+      "The 4B FP16 artifact is approximately 8 GB and minimizes representation drift from BF16 Qwen3-Embedding-4B services.",
+      "Use this higher-memory lane when cross-host embedding fidelity matters more than minimum residency."
+    ]
+  },
+  "requirements": {
+    "platforms": ["darwin-arm64"],
+    "memoryGb": 12,
+    "diskGb": 10,
+    "commands": ["ollama"],
+    "accelerators": ["apple-gpu"]
+  },
+  "backend": {
+    "id": "ollama",
+    "name": "Ollama",
+    "type": "openai-compatible-server",
+    "features": ["metal", "openai-embeddings", "batching", "model-management"]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-ollama",
+        "title": "Check Ollama CLI",
+        "action": "check-command",
+        "command": "ollama",
+        "args": ["--version"]
+      },
+      {
+        "id": "pull-qwen3-embedding-4b-fp16",
+        "title": "Pull Qwen3 Embedding 4B FP16",
+        "action": "command",
+        "command": "ollama",
+        "args": ["pull", "qwen3-embedding:4b-fp16"]
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "embedding",
+      "model": "qwen3-embedding:4b-fp16",
+      "gatewayModel": "qwen3-embedding:4b-fp16",
+      "runtime": "ollama-qwen3-embedding-4b-fp16",
+      "backendConfig": "ollama-qwen3-embedding-4b-fp16",
+      "backend": "Ollama embeddings FP16",
+      "input": ["text"],
+      "output": ["embedding"],
+      "capabilities": ["embedding", "embeddings", "batching", "multilingual", "long-context"],
+      "settings": {
+        "contextWindow": 40960,
+        "maxActiveRequests": 8,
+        "memoryGb": 10,
+        "priority": 210,
+        "evictable": false,
+        "keepWarm": true,
+        "startupTimeoutMs": 600000,
+        "runtime": {
+          "command": "ollama",
+          "args": ["serve"],
+          "env": {
+            "OLLAMA_HOST": "127.0.0.1:${port}",
+            "OLLAMA_KEEP_ALIVE": "-1"
+          },
+          "healthPath": "/api/tags",
+          "warmup": {
+            "url": "http://127.0.0.1:${port}/v1/embeddings",
+            "method": "POST",
+            "body": {
+              "model": "${modelId}",
+              "input": ["Continuity is the persistence of meaningful identity through time."]
+            }
+          }
+        }
+      }
+    }
+  ]
+}
