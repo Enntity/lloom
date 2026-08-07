@@ -633,7 +633,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
 
     // Higher values draw later (on top). Serving stays above idle hot/external cards
     // so overlaps favor live traffic; click temporarily overrides via topologyRaisedModelId.
-    const MODEL_CARD_STATE_Z = { cold: 0, queued: 1, warming: 1, evicting: 1, hot: 2, external: 2, "external-processing": 3, serving: 3 };
+    const MODEL_CARD_STATE_Z = { cold: 0, failed: 0, unreachable: 0, queued: 1, warming: 1, evicting: 1, hot: 2, external: 2, "external-processing": 3, serving: 3 };
     const TOPOLOGY_COLD_MODEL_TTL_MS = 60 * 60 * 1000;
     const PROMPT_PULSE_MS = 800;
     function modelCardZ(model) {
@@ -814,22 +814,23 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const runtime = model.runtime ? state.status?.runtimeManager?.runtimes?.[model.runtime] : null;
       const modelState = topologyModel.state || (!model.runtime ? "external" : runtime?.status || "cold");
       const marker = $("#model-inspector-state");
-      const stateClass = modelState === "serving" || modelState === "hot" || modelState === "external" ? "ok" : modelState === "warming" || modelState === "queued" ? "warn" : modelState === "evicting" || modelState === "failed" ? "bad" : "";
+      const stateClass = modelState === "serving" || modelState === "hot" || modelState === "external" || modelState === "external-processing" ? "ok" : modelState === "warming" || modelState === "queued" ? "warn" : modelState === "evicting" || modelState === "failed" || modelState === "unreachable" ? "bad" : "";
       marker.querySelector(".dot").className = "dot " + stateClass + (modelState === "serving" ? " pulse" : "");
       marker.querySelector("span:last-child").textContent = modelState === "serving" ? "GPU compute active" : modelState;
       $("#model-inspector-title").textContent = model.name || model.id;
+      const observedRuntime = runtime || topologyModel.runtimeStatus || null;
       const details = [
         ["Gateway model", model.id],
-        ["Runtime", model.runtime || "external"],
-        ["Runtime state", runtime?.status || modelState],
+        ["Runtime", model.runtime || topologyModel.runtimeIds?.join(", ") || "external"],
+        ["Runtime state", observedRuntime?.status || modelState],
         ["Context", model.contextWindow ? formatNumber(model.contextWindow) : "—"],
-        ["Concurrency", runtime ? Number(runtime.activeRequests || 0) + " / " + Number(runtime.maxConcurrency || 1) : "managed upstream"],
-        ["Queue", runtime ? Number(runtime.queuedRequests || 0) + Number(runtime.admissionQueuedRequests || 0) : "—"],
+        ["Concurrency", observedRuntime ? Number(observedRuntime.activeRequests || 0) + " / " + Number(observedRuntime.maxConcurrency || 1) : "managed upstream"],
+        ["Queue", observedRuntime ? Number(observedRuntime.queuedRequests || 0) + Number(observedRuntime.admissionQueuedRequests || 0) : "—"],
         ["Input", formatCompact(topologyModel.inputTokens || 0) + " tokens"],
         ["Output", formatCompact(topologyModel.outputTokens || 0) + " tokens"],
         ["Live rate", formatRate(topologyModel.liveRate || 0) + " tok/s"],
         ["Last activity", topologyModel.lastActiveAt ? new Date(topologyModel.lastActiveAt).toLocaleString() : "Never"],
-        ["Port", runtime?.port || "—"]
+        ["Port", observedRuntime?.port || "—"]
       ];
       $("#model-inspector-details").innerHTML = details.map(([label, value]) => '<div class="model-detail"><span>' + escapeHtml(label) + '</span><strong>' + escapeHtml(value) + '</strong></div>').join("");
       $("#model-inspector-tags").innerHTML = tags(model.capabilities || model.tags) || '<span class="muted">No declared capabilities</span>';
@@ -1544,10 +1545,11 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const external = point.model.state === "external" || externalProcessing;
         const warming = point.model.state === "warming" || point.model.state === "queued";
         const evicting = point.model.state === "evicting";
+        const unavailable = point.model.state === "failed" || point.model.state === "unreachable";
         const hot = point.model.state === "hot" || serving;
         const pulse = warming || evicting ? .35 + (Math.sin(now * .006) + 1) * .3 : 1;
-        ctx.strokeStyle = serving ? "rgba(47,230,200,.95)" : externalProcessing ? "rgba(192,153,255,.95)" : external ? "rgba(192,153,255,.65)" : hot ? "rgba(47,230,200,.6)" : warming ? "rgba(243,189,79," + pulse + ")" : evicting ? "rgba(255,126,102," + pulse + ")" : "rgba(143,180,255,.22)";
-        ctx.fillStyle = hot ? "rgba(7,18,17,.98)" : external ? "rgba(15,10,24,.96)" : warming ? "rgba(24,19,9,.97)" : evicting ? "rgba(25,11,9,.97)" : "rgba(8,10,15,.94)";
+        ctx.strokeStyle = serving ? "rgba(47,230,200,.95)" : externalProcessing ? "rgba(192,153,255,.95)" : external ? "rgba(192,153,255,.65)" : hot ? "rgba(47,230,200,.6)" : warming ? "rgba(243,189,79," + pulse + ")" : evicting ? "rgba(255,126,102," + pulse + ")" : unavailable ? "rgba(255,111,125,.7)" : "rgba(143,180,255,.22)";
+        ctx.fillStyle = hot ? "rgba(7,18,17,.98)" : external ? "rgba(15,10,24,.96)" : warming ? "rgba(24,19,9,.97)" : evicting || unavailable ? "rgba(25,11,9,.97)" : "rgba(8,10,15,.94)";
         const cardWidth = point.cardWidth, cardLeft = point.x - cardWidth / 2, cardTop = point.y - 34;
         hitCards.push({ id: point.model.id, left: cardLeft, top: cardTop, width: cardWidth, height: 68 });
         if (processing) {
@@ -1571,7 +1573,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           scan.addColorStop(0, "rgba(" + scanRgb + ",0)"); scan.addColorStop(.5, "rgba(" + scanRgb + ",.13)"); scan.addColorStop(1, "rgba(" + scanRgb + ",0)");
           ctx.save(); ctx.beginPath(); ctx.roundRect(cardLeft, cardTop, cardWidth, 68, 5); ctx.clip(); ctx.fillStyle = scan; ctx.fillRect(scanX - 16, cardTop, 32, 68); ctx.restore();
         }
-        ctx.fillStyle = serving ? "#42d77d" : externalProcessing ? "#f3bd4f" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : evicting ? "#ff7e66" : "#8fb4ff"; ctx.fillRect(cardLeft, cardTop, 4, 68);
+        ctx.fillStyle = serving ? "#42d77d" : externalProcessing ? "#f3bd4f" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : evicting ? "#ff7e66" : unavailable ? "#ff6f7d" : "#8fb4ff"; ctx.fillRect(cardLeft, cardTop, 4, 68);
         ctx.textAlign = "left"; ctx.font = '11px "SFMono-Regular",monospace';
         const vendor = modelFamily(point.model.id).toUpperCase();
         const vendorText = fitCanvasText(ctx, vendor, 54);
@@ -1580,7 +1582,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         ctx.textAlign = "right"; ctx.fillStyle = "rgba(143,180,255,.78)"; ctx.fillText(vendorText, cardLeft + cardWidth - 10, point.y - 15); ctx.textAlign = "left";
         ctx.fillStyle = "rgba(153,163,176,.9)";
         ctx.fillText((point.model.inputEstimated ? "~" : "") + formatCompact(point.model.inputTokens) + " in · " + formatCompact(point.model.outputTokens) + " out", cardLeft + 12, point.y + 4);
-        ctx.fillStyle = serving ? "#42d77d" : externalProcessing ? "#f3bd4f" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : evicting ? "#ff7e66" : "rgba(143,180,255,.7)";
+        ctx.fillStyle = serving ? "#42d77d" : externalProcessing ? "#f3bd4f" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : evicting ? "#ff7e66" : unavailable ? "#ff6f7d" : "rgba(143,180,255,.7)";
         const displayedModelRate = live ? displayedLiveRate : point.model.averageRate;
         const modelRateText = displayedModelRate == null ? "" : formatRate(displayedModelRate) + " tok/s";
         const modelStateText = point.model.state === "queued" ? "QUEUED" : serving ? "COMPUTE ACTIVE" : externalProcessing ? "EXTERNAL PROCESSING" : point.model.state.toUpperCase();
@@ -1790,16 +1792,33 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const activeInput = liveConnections.reduce((sum, item) => sum + item.inputTokens, 0);
         const activeOutput = liveConnections.reduce((sum, item) => sum + item.outputTokens, 0);
         const runtimeIds = [...new Set([model.runtime, ...(model.targets || []).map(target => target.runtime)].filter(Boolean))];
+        const remoteRuntimeRefs = (model.targets || [])
+          .filter(target => target.node && target.remoteRuntime)
+          .map(target => ({ node: target.node, runtime: target.remoteRuntime }));
+        const remoteRuntimeIds = [...new Set(remoteRuntimeRefs.map(item => item.node + ":" + item.runtime))];
+        const clusterNodes = state.status?.cluster?.nodes || {};
         const targetRuntimeStates = runtimeIds.map(runtimeId => runtimeStates[runtimeId] || {});
+        const remoteRuntimeStates = remoteRuntimeRefs
+          .map(item => clusterNodes[item.node]?.runtimeManager?.runtimes?.[item.runtime])
+          .filter(Boolean);
+        const observedRuntimeStates = [...targetRuntimeStates, ...remoteRuntimeStates];
         const runtimeState = model.runtime
           ? runtimeStates[model.runtime] || {}
           : {
-              healthy: targetRuntimeStates.some(item => item.healthy === true),
-              status: targetRuntimeStates.some(item => ["running", "external"].includes(item.status))
+              healthy: observedRuntimeStates.some(item => item.healthy === true),
+              status: observedRuntimeStates.some(item => ["running", "external"].includes(item.status))
                 ? "running"
-                : targetRuntimeStates.find(item => ["queued", "starting", "warming", "draining", "stopping"].includes(item.status))?.status || "idle",
-              members: targetRuntimeStates.flatMap(item => item.members || []),
-              lastRequestedAt: targetRuntimeStates.map(item => item.lastRequestedAt).filter(Boolean).sort().at(-1) || null
+                : observedRuntimeStates.find(item => ["queued", "starting", "warming", "draining", "stopping"].includes(item.status))?.status
+                  || observedRuntimeStates.find(item => item.status === "failed")?.status
+                  || observedRuntimeStates.find(item => ["stopped", "idle"].includes(item.status))?.status
+                  || "idle",
+              members: observedRuntimeStates.flatMap(item => item.members || []),
+              activeRequests: observedRuntimeStates.reduce((sum, item) => sum + Number(item.activeRequests || 0), 0),
+              queuedRequests: observedRuntimeStates.reduce((sum, item) => sum + Number(item.queuedRequests || 0), 0),
+              admissionQueuedRequests: observedRuntimeStates.reduce((sum, item) => sum + Number(item.admissionQueuedRequests || 0), 0),
+              maxConcurrency: observedRuntimeStates.reduce((sum, item) => sum + Number(item.maxConcurrency || 0), 0) || 1,
+              port: observedRuntimeStates.length === 1 ? observedRuntimeStates[0].port : null,
+              lastRequestedAt: observedRuntimeStates.map(item => item.lastRequestedAt).filter(Boolean).sort().at(-1) || null
             };
         const runtimeStatus = runtimeState.status || "idle";
         const runtimeLoaded = runtimeState.healthy === true || runtimeStatus === "running" || runtimeStatus === "external";
@@ -1813,9 +1832,14 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         // Lifecycle truth wins over traffic. A queued request connected to a
         // cold backend is not serving yet, and a draining backend remains
         // visibly evicting until the process/container is actually gone.
-        const stateLabel = !runtimeIds.length
+        const hasManagedRuntime = runtimeIds.length > 0 || remoteRuntimeRefs.length > 0;
+        const remoteOnlyUnreachable = !runtimeIds.length && remoteRuntimeRefs.length > 0
+          && remoteRuntimeRefs.every(item => clusterNodes[item.node]?.reachable === false);
+        const stateLabel = remoteOnlyUnreachable
+          ? "unreachable"
+          : !hasManagedRuntime
           ? liveConnections.length ? "external-processing" : "external"
-          : transitioning || (liveConnections.length ? "serving" : runtimeLoaded ? "hot" : "cold");
+          : transitioning || (liveConnections.length ? "serving" : runtimeLoaded ? "hot" : runtimeStatus === "failed" ? "failed" : "cold");
         const lastActiveAt = data.last?.at || runtimeState.lastRequestedAt || null;
         const lastActiveMs = Date.parse(lastActiveAt || "");
         const agedOut = stateLabel === "cold" && (!Number.isFinite(lastActiveMs) || sampleAt - lastActiveMs > TOPOLOGY_COLD_MODEL_TTL_MS);
@@ -1824,7 +1848,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           ...(runtimeState.members || []).map(member => member.node).filter(Boolean),
           runtimeState.node
         ].filter(Boolean))];
-        return { id: model.id, nodes, inputTokens: Number(data.inputTokens || 0) + activeInput, inputEstimated, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveOutputRate, promptTokens: modelPromptTokens, promptPulseAt: modelPromptPulseAt, averageRate: data.decodeTokensPerSecond == null ? null : Number(data.decodeTokensPerSecond), state: stateLabel, lastActiveAt, agedOut };
+        return { id: model.id, nodes, runtimeIds: [...runtimeIds, ...remoteRuntimeIds], runtimeStatus: runtimeState, inputTokens: Number(data.inputTokens || 0) + activeInput, inputEstimated, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveOutputRate, promptTokens: modelPromptTokens, promptPulseAt: modelPromptPulseAt, averageRate: data.decodeTokensPerSecond == null ? null : Number(data.decodeTokensPerSecond), state: stateLabel, lastActiveAt, agedOut };
       });
       state.topologyCatalogModels = topologyModels;
       applyTopologyModelFilter();

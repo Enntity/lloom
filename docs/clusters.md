@@ -18,7 +18,7 @@ export LLOOM_CLUSTER_KEY='the key accepted by the joining LLooM'
 lloom cluster add-node macbook-local http://macbook-private:8100 --apply
 ```
 
-The command reads the joining node's `/gateway/node` snapshot, records its architecture, accelerators, memory, and directly hosted model catalog, and creates deterministic gateway names such as `macbook-local/local/qwen`. It never copies credentials into config: the node and generated backend retain only `apiKeyEnv`. Config reload activates the node without restarting the central gateway.
+The command reads the joining node's `/gateway/node` snapshot, records its architecture, accelerators, memory, and directly hosted model catalog, and creates deterministic gateway names such as `macbook-local/local/qwen`. Imported targets retain the joining gateway's runtime ID as observational metadata, so the central topology and replica selection can reflect remote lifecycle and load without taking ownership of that process. It never copies credentials into config: the node and generated backend retain only `apiKeyEnv`. Config reload activates the node without restarting the central gateway.
 
 The declarative form is useful for review or hand editing:
 
@@ -36,7 +36,7 @@ The declarative form is useful for review or hand editing:
         "resources": { "memoryGb": 64 },
         "proxy": {
           "models": [
-            { "id": "local/qwen", "as": "macbook-local/local/qwen", "kind": "chat" }
+            { "id": "local/qwen", "as": "macbook-local/local/qwen", "kind": "chat", "remoteRuntime": "qwen" }
           ]
         }
       }

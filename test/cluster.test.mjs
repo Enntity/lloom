@@ -47,8 +47,14 @@ const heterogeneous = {
         resources: { memoryGb: 64 },
         proxy: {
           models: [
-            { id: 'local/qwen', as: 'lab/qwen', kind: 'chat', capabilities: ['chat', 'tools'] },
-            { id: 'local/embed', kind: 'embedding' }
+            {
+              id: 'local/qwen',
+              as: 'lab/qwen',
+              kind: 'chat',
+              capabilities: ['chat', 'tools'],
+              remoteRuntime: 'mac-qwen'
+            },
+            { id: 'local/embed', kind: 'embedding', remoteRuntime: 'mac-embed' }
           ]
         }
       },
@@ -56,7 +62,7 @@ const heterogeneous = {
         endpoint: 'http://linuxbox:8100',
         apiKeyEnv: 'LAB_KEY',
         labels: { architecture: 'linux-amd64', accelerator: 'rocm' },
-        proxy: { models: [{ id: 'local/qwen', as: 'lab/qwen', weight: 2 }] }
+        proxy: { models: [{ id: 'local/qwen', as: 'lab/qwen', weight: 2, remoteRuntime: 'linux-qwen' }] }
       }
     }
   },
@@ -71,10 +77,10 @@ assert.equal(heterogeneous.backends['lloom-node-macbook'].apiKeyEnv, 'LAB_KEY');
 assert.equal(heterogeneous.models.find((model) => model.id === 'macbook/local/embed').kind, 'embedding');
 const replicated = heterogeneous.models.find((model) => model.id === 'lab/qwen');
 assert.deepEqual(
-  modelTargets(replicated).map((target) => [target.node, target.upstreamModel, target.weight]),
+  modelTargets(replicated).map((target) => [target.node, target.upstreamModel, target.remoteRuntime, target.weight]),
   [
-    ['macbook', 'local/qwen', 1],
-    ['linuxbox', 'local/qwen', 2]
+    ['macbook', 'local/qwen', 'mac-qwen', 1],
+    ['linuxbox', 'local/qwen', 'linux-qwen', 2]
   ]
 );
 assert.deepEqual(validateClusterConfig(heterogeneous, { LLOOM_NODE_ID: 'spark' }), []);
@@ -129,15 +135,21 @@ const joinedNode = federatedNodeConfigFromSnapshot({
 assert.equal(joinedNode.endpoint, 'http://macbook:8100');
 assert.equal(joinedNode.labels.architecture, 'darwin-arm64');
 assert.deepEqual(
-  joinedNode.proxy.models.map((model) => model.as),
-  ['macbook/local/qwen']
+  joinedNode.proxy.models.map((model) => [model.as, model.remoteRuntime]),
+  [['macbook/local/qwen', 'qwen']]
 );
 
 const resolved = { resolvedId: replicated.id, model: replicated };
 const nodeStatus = {
   nodes: {
-    macbook: { reachable: true },
-    linuxbox: { reachable: true }
+    macbook: {
+      reachable: true,
+      runtimeManager: { runtimes: { 'mac-qwen': { status: 'running', healthy: true } } }
+    },
+    linuxbox: {
+      reachable: true,
+      runtimeManager: { runtimes: { 'linux-qwen': { status: 'running', healthy: true } } }
+    }
   }
 };
 const first = coordinator.selectTarget(resolved, { runtimes: {} }, nodeStatus);
@@ -151,9 +163,40 @@ assert.equal(
   coordinator.selectTarget(
     resolved,
     { runtimes: {} },
-    { nodes: { macbook: { reachable: true }, linuxbox: { reachable: false } } }
+    {
+      nodes: {
+        macbook: {
+          reachable: true,
+          runtimeManager: { runtimes: { 'mac-qwen': { status: 'running', healthy: true } } }
+        },
+        linuxbox: { reachable: false }
+      }
+    }
   ).node,
   'macbook'
+);
+assert.equal(
+  coordinator.selectTarget(
+    resolved,
+    { runtimes: {} },
+    {
+      nodes: {
+        macbook: {
+          reachable: true,
+          runtimeManager: {
+            runtimes: { 'mac-qwen': { status: 'running', healthy: true, activeRequests: 3 } }
+          }
+        },
+        linuxbox: {
+          reachable: true,
+          runtimeManager: {
+            runtimes: { 'linux-qwen': { status: 'running', healthy: true, activeRequests: 0 } }
+          }
+        }
+      }
+    }
+  ).node,
+  'linuxbox'
 );
 coordinator.noteTargetOutcome({ ...resolved, target: first }, { ok: false, status: 502 });
 assert.equal(coordinator.selectTarget(resolved, { runtimes: {} }, nodeStatus).node, 'linuxbox');

@@ -66,6 +66,7 @@ export function materializeFederatedNodes(config) {
         id: advertisedModel.targetId ?? nodeId,
         node: nodeId,
         backend: backendId,
+        ...(advertisedModel.remoteRuntime ? { remoteRuntime: advertisedModel.remoteRuntime } : {}),
         upstreamModel: remoteId,
         weight: advertisedModel.weight ?? 1
       };
@@ -81,7 +82,8 @@ export function materializeFederatedNodes(config) {
       }
       const metadata = Object.fromEntries(
         Object.entries(advertisedModel).filter(
-          ([key]) => !['id', 'model', 'as', 'targetId', 'weight', 'backend', 'runtime', 'targets'].includes(key)
+          ([key]) =>
+            !['id', 'model', 'as', 'targetId', 'weight', 'backend', 'runtime', 'remoteRuntime', 'targets'].includes(key)
         )
       );
       config.models.push({
@@ -120,17 +122,21 @@ export function federatedNodeConfigFromSnapshot({
         model.alias !== true &&
         (includeExternal || model.runtime || model.targets?.some((target) => target.runtime))
     )
-    .map((model) => ({
-      id: model.id,
-      as: merge ? model.id : `${String(namespace ?? nodeId).replace(/\/+$/, '')}/${model.id}`,
-      ...(model.name ? { name: model.name } : {}),
-      ...(model.kind ? { kind: model.kind } : {}),
-      ...(Array.isArray(model.capabilities) ? { capabilities: model.capabilities } : {}),
-      ...(Array.isArray(model.input) ? { input: model.input } : {}),
-      ...(Array.isArray(model.output) ? { output: model.output } : {}),
-      ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}),
-      ...(model.maxOutputTokens ? { maxOutputTokens: model.maxOutputTokens } : {})
-    }));
+    .map((model) => {
+      const remoteRuntime = model.runtime ?? model.targets?.find((target) => target.runtime)?.runtime;
+      return {
+        id: model.id,
+        as: merge ? model.id : `${String(namespace ?? nodeId).replace(/\/+$/, '')}/${model.id}`,
+        ...(model.name ? { name: model.name } : {}),
+        ...(model.kind ? { kind: model.kind } : {}),
+        ...(remoteRuntime ? { remoteRuntime } : {}),
+        ...(Array.isArray(model.capabilities) ? { capabilities: model.capabilities } : {}),
+        ...(Array.isArray(model.input) ? { input: model.input } : {}),
+        ...(Array.isArray(model.output) ? { output: model.output } : {}),
+        ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}),
+        ...(model.maxOutputTokens ? { maxOutputTokens: model.maxOutputTokens } : {})
+      };
+    });
   return {
     name: node.name ?? nodeId,
     endpoint: trimSlash(endpoint),
@@ -413,6 +419,7 @@ export function modelTargets(model) {
       node: target.node ?? null,
       backend: target.backend,
       runtime: target.runtime ?? null,
+      remoteRuntime: target.remoteRuntime ?? null,
       upstreamModel: target.upstreamModel ?? model.upstreamModel ?? model.id ?? null,
       weight: Math.min(100, Math.max(1, Math.floor(Number(target.weight) || 1)))
     }));
@@ -424,6 +431,7 @@ export function modelTargets(model) {
           node: null,
           backend: model.backend,
           runtime: model.runtime ?? null,
+          remoteRuntime: null,
           upstreamModel: model.upstreamModel ?? model.id ?? null,
           weight: 1
         }
@@ -680,8 +688,16 @@ export class ClusterCoordinator {
     return `${resolved.resolvedId}:${target.id}`;
   }
 
-  targetLoad(resolved, target, runtimeStatus = {}) {
-    const status = target.runtime ? runtimeStatus.runtimes?.[target.runtime] : null;
+  targetRuntimeStatus(target, runtimeStatus = {}, nodeStatus = {}) {
+    if (target.runtime) return runtimeStatus.runtimes?.[target.runtime] ?? null;
+    if (target.remoteRuntime && target.node) {
+      return nodeStatus.nodes?.[target.node]?.runtimeManager?.runtimes?.[target.remoteRuntime] ?? null;
+    }
+    return null;
+  }
+
+  targetLoad(resolved, target, runtimeStatus = {}, nodeStatus = {}) {
+    const status = this.targetRuntimeStatus(target, runtimeStatus, nodeStatus);
     return (
       Number(status?.activeRequests ?? 0) +
       Number(status?.queuedRequests ?? 0) +
@@ -724,18 +740,22 @@ export class ClusterCoordinator {
     const outsideCooldown = (target) =>
       Number(this.targetFailures.get(this.targetKey(resolved, target)) ?? 0) <= Date.now();
     const available = targets.filter((target) => {
-      const status = target.runtime ? runtimeStatus.runtimes?.[target.runtime] : null;
+      const status = this.targetRuntimeStatus(target, runtimeStatus, nodeStatus);
       const runtimeAvailable =
-        !target.runtime || status?.healthy === true || ['running', 'external'].includes(status?.status);
+        !(target.runtime || target.remoteRuntime) ||
+        status?.healthy === true ||
+        ['running', 'external'].includes(status?.status);
       return nodeAvailable(target) && outsideCooldown(target) && runtimeAvailable;
     });
     const reachable = targets.filter((target) => {
-      const status = target.runtime ? runtimeStatus.runtimes?.[target.runtime] : null;
+      const status = this.targetRuntimeStatus(target, runtimeStatus, nodeStatus);
       return nodeAvailable(target) && outsideCooldown(target) && !['failed', 'unreachable'].includes(status?.status);
     });
     const pool = available.length ? available : reachable.length ? reachable : targets;
-    const minimumLoad = Math.min(...pool.map((target) => this.targetLoad(resolved, target, runtimeStatus)));
-    const leastLoaded = pool.filter((target) => this.targetLoad(resolved, target, runtimeStatus) === minimumLoad);
+    const minimumLoad = Math.min(...pool.map((target) => this.targetLoad(resolved, target, runtimeStatus, nodeStatus)));
+    const leastLoaded = pool.filter(
+      (target) => this.targetLoad(resolved, target, runtimeStatus, nodeStatus) === minimumLoad
+    );
     const weighted = leastLoaded.flatMap((target) => Array.from({ length: target.weight }, () => target));
     const cursor = this.targetCursor.get(resolved.resolvedId) ?? 0;
     const selected = weighted[cursor % weighted.length];
