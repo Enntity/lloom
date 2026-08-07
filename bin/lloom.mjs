@@ -180,7 +180,7 @@ Serving and discovery:
 Backends and runtimes:
   lloom down
   lloom cluster [status|doctor|discover] [--apply] [--id NAME] [--api-key-env NAME] [--json]
-  lloom cluster add-node <id> <url> [--namespace NAME|--merge] [--api-key-env NAME] [--apply]
+  lloom cluster add-node <id> <url> [--namespace NAME|--merge] [--include-external] [--api-key-env NAME] [--apply]
   lloom backends [backend-id|all]
   lloom backend-plan <backend-id>
   lloom backend-install <backend-id> [--apply --yes] [--step step-id]
@@ -2188,7 +2188,7 @@ async function main() {
         const endpoint = positional(args)[3];
         if (!nodeId || !endpoint) {
           throw new Error(
-            'Usage: lloom cluster add-node <id> <url> [--namespace NAME|--merge] [--api-key-env NAME] [--apply]'
+            'Usage: lloom cluster add-node <id> <url> [--namespace NAME|--merge] [--include-external] [--api-key-env NAME] [--apply]'
           );
         }
         const apiKeyEnv = argValue(args, '--api-key-env') ?? config.cluster?.apiKeyEnv ?? 'LLOOM_CLUSTER_KEY';
@@ -2215,7 +2215,8 @@ async function main() {
           snapshot,
           apiKeyEnv,
           namespace: argValue(args, '--namespace') ?? nodeId,
-          merge: hasFlag(args, '--merge')
+          merge: hasFlag(args, '--merge'),
+          includeExternal: hasFlag(args, '--include-external')
         });
         const source = JSON.parse(readFileSync(config.sourcePath, 'utf8'));
         const localNodeId = currentNodeId(config);

@@ -104,7 +104,8 @@ export function federatedNodeConfigFromSnapshot({
   snapshot,
   apiKeyEnv = 'LLOOM_CLUSTER_KEY',
   namespace = nodeId,
-  merge = false
+  merge = false,
+  includeExternal = false
 } = {}) {
   if (!nodeId) throw new Error('federated node id is required');
   if (!endpoint) throw new Error(`federated node ${nodeId} endpoint is required`);
@@ -112,7 +113,13 @@ export function federatedNodeConfigFromSnapshot({
   const profile = asObject(node.profile);
   const system = asObject(node.system);
   const models = (Array.isArray(node.models) ? node.models : [])
-    .filter((model) => model?.id && model.federated !== true && model.alias !== true)
+    .filter(
+      (model) =>
+        model?.id &&
+        model.federated !== true &&
+        model.alias !== true &&
+        (includeExternal || model.runtime || model.targets?.some((target) => target.runtime))
+    )
     .map((model) => ({
       id: model.id,
       as: merge ? model.id : `${String(namespace ?? nodeId).replace(/\/+$/, '')}/${model.id}`,

@@ -47,7 +47,7 @@ The declarative form is useful for review or hand editing:
 
 Set the same `as` ID on two or more node model entries to create one logical model duplicated across hosts. LLooM chooses a reachable, healthy, least-loaded target, applies target weights to ties, and briefly removes a target after an upstream 5xx response so another replica can take over. The cooldown expires automatically, allowing a restarted gateway to rejoin without operator repair. Use `--merge` with `cluster add-node` to merge matching remote model IDs instead of namespacing them.
 
-Only directly hosted models are imported. A model that was itself federated from another LLooM is not re-exported by `cluster add-node`, preventing accidental routing loops. Explicit `models[].targets` remains available when different nodes need different upstream model IDs, weights, or backends.
+Only runtime-backed models are imported by default. Pass `--include-external` when the central gateway should also route the joining node's unmanaged cloud or network backends. A model that was itself federated from another LLooM is never re-exported by `cluster add-node`, preventing accidental routing loops. Explicit `models[].targets` remains available when different nodes need different upstream model IDs, weights, or backends.
 
 ## Node configuration
 

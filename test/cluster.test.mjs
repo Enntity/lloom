@@ -119,8 +119,9 @@ const joinedNode = federatedNodeConfigFromSnapshot({
       system: { platform: 'darwin', arch: 'arm64' },
       profile: { platformId: 'darwin-arm64', totalMemoryGb: 64, accelerators: ['metal'] },
       models: [
-        { id: 'local/qwen', kind: 'chat' },
-        { id: 'loop', federated: true }
+        { id: 'local/qwen', kind: 'chat', runtime: 'qwen' },
+        { id: 'cloud/model', kind: 'chat' },
+        { id: 'loop', runtime: 'loop', federated: true }
       ]
     }
   }
