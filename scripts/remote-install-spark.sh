@@ -19,6 +19,7 @@ mkdir -p "$release_root" "$backup_root"
 cp "$artifact" "$manifest" "$release_root/"
 rollback_artifact=""
 old_presence_enabled="false"
+presence_managed="false"
 
 rollback() {
   status=$?
@@ -34,14 +35,18 @@ rollback() {
 trap rollback EXIT
 
 if command -v enn >/dev/null 2>&1; then
-  old_presence_enabled=$(enn presence status "$entity" 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).state.enabled?"true":"false")}catch{console.log("false")}})')
-  enn presence disable "$entity" >/dev/null
-  for _ in $(seq 1 240); do
-    posture=$(enn presence status "$entity" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).state.posture||"")}catch{}})')
-    [[ "$posture" == "offline" ]] && break
-    sleep 1
-  done
-  [[ "${posture:-}" == "offline" ]] || { echo "entity did not finish its current thought" >&2; exit 1; }
+  presence_status=$(enn presence status "$entity" 2>/dev/null || true)
+  presence_managed=$(printf '%s' "$presence_status" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).state?"true":"false")}catch{console.log("false")}})')
+  if [[ "$presence_managed" == "true" ]]; then
+    old_presence_enabled=$(printf '%s' "$presence_status" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).state.enabled?"true":"false")}catch{console.log("false")}})')
+    enn presence disable "$entity" >/dev/null
+    for _ in $(seq 1 240); do
+      posture=$(enn presence status "$entity" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).state.posture||"")}catch{}})')
+      [[ "$posture" == "offline" ]] && break
+      sleep 1
+    done
+    [[ "${posture:-}" == "offline" ]] || { echo "entity did not finish its current thought" >&2; exit 1; }
+  fi
 fi
 
 installed="$HOME/.local/lib/node_modules/lloom"

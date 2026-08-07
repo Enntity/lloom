@@ -52,7 +52,7 @@ import { applySetup, createSetupPlan } from './setup.mjs';
 import { createSetupStatus } from './setup-status.mjs';
 import { renderDashboardPage } from './dashboard.mjs';
 import { applyBackend } from './installer.mjs';
-import { normalizeSpeechRequestBody } from './tts-catalog.mjs';
+import { normalizeSpeechRequestBody, resolveTtsDescriptor } from './tts-catalog.mjs';
 import { defaultVoicesRoot, listVoiceProfiles, listVoicesDiscovery, resolveSpeechVoice } from './voice-profiles.mjs';
 import {
   anthropicMessagesToOpenAI,
@@ -78,6 +78,7 @@ import {
   usageFromJsonText
 } from './protocol/index.mjs';
 import { assertBindAllowed, authorizeRequest, corsHeaders, securityPublicStatus } from './security.mjs';
+import { ClusterCoordinator } from './cluster.mjs';
 
 const JSON_TYPE = 'application/json; charset=utf-8';
 const SSE_TYPE = 'text/event-stream; charset=utf-8';
@@ -114,36 +115,58 @@ function createHostTelemetry({ sampleIntervalMs = 2000 } = {}) {
       const { stdout } = await execFileAsync(
         'nvidia-smi',
         [
-          '--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw',
+          '--query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,pstate,clocks.current.sm,clocks.current.memory',
           '--format=csv,noheader,nounits'
         ],
         { timeout: 1500 }
       );
+      const metric = (value) => {
+        const number = Number(String(value ?? '').trim());
+        return Number.isFinite(number) ? number : null;
+      };
       const devices = stdout
         .trim()
         .split(/\r?\n/)
         .filter(Boolean)
-        .map((line, index) => {
-          const [utilization, memoryUsed, memoryTotal, temperature, powerDraw] = line
-            .split(',')
-            .map((value) => Number(value.trim()));
-          return {
+        .map((line, fallbackIndex) => {
+          const [
             index,
+            name,
             utilization,
-            memoryUsedMb: memoryUsed,
-            memoryTotalMb: memoryTotal,
-            temperatureC: temperature,
-            powerDrawW: powerDraw
+            memoryUsed,
+            memoryTotal,
+            temperature,
+            powerDraw,
+            performanceState,
+            smClock,
+            memoryClock
+          ] = line.split(',').map((value) => value.trim());
+          return {
+            index: metric(index) ?? fallbackIndex,
+            name,
+            utilization: metric(utilization),
+            memoryUsedMb: metric(memoryUsed),
+            memoryTotalMb: metric(memoryTotal),
+            temperatureC: metric(temperature),
+            powerDrawW: metric(powerDraw),
+            performanceState: performanceState || null,
+            smClockMhz: metric(smClock),
+            memoryClockMhz: metric(memoryClock)
           };
         });
       if (devices.length) {
+        const values = (key) => devices.map((device) => device[key]).filter(Number.isFinite);
+        const sum = (items) => (items.length ? items.reduce((total, value) => total + value, 0) : null);
+        const average = (items) => (items.length ? sum(items) / items.length : null);
         gpu = {
+          vendor: 'nvidia',
+          backend: 'nvidia-smi',
           devices,
-          utilization: devices.reduce((sum, device) => sum + device.utilization, 0) / devices.length,
-          memoryUsedMb: devices.reduce((sum, device) => sum + device.memoryUsedMb, 0),
-          memoryTotalMb: devices.reduce((sum, device) => sum + device.memoryTotalMb, 0),
-          temperatureC: Math.max(...devices.map((device) => device.temperatureC)),
-          powerDrawW: devices.reduce((sum, device) => sum + device.powerDrawW, 0)
+          utilization: average(values('utilization')),
+          memoryUsedMb: sum(values('memoryUsedMb')),
+          memoryTotalMb: sum(values('memoryTotalMb')),
+          temperatureC: values('temperatureC').length ? Math.max(...values('temperatureC')) : null,
+          powerDrawW: sum(values('powerDrawW'))
         };
       }
     } catch {
@@ -157,7 +180,8 @@ function createHostTelemetry({ sampleIntervalMs = 2000 } = {}) {
       sampledAt: new Date().toISOString(),
       cpu: {
         utilization: cpuDelta?.total > 0 ? (1 - cpuDelta.idle / cpuDelta.total) * 100 : null,
-        logicalCpus: os.cpus().length
+        logicalCpus: os.cpus().length,
+        model: os.cpus()[0]?.model ?? null
       },
       memory: {
         usedBytes: usedMemory,
@@ -857,6 +881,8 @@ export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } =
         kind: raw.kind,
         backend: raw.backend,
         runtime: raw.runtime,
+        target: raw.target ?? null,
+        node: raw.node ?? null,
         caller: raw.caller ?? null,
         requestBytes: raw.requestBytes ?? 0,
         stream: raw.stream === true
@@ -885,6 +911,8 @@ export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } =
         kind: raw.kind,
         backend: raw.backend,
         runtime: raw.runtime,
+        target: raw.target ?? live?.target ?? null,
+        node: raw.node ?? live?.node ?? null,
         caller: raw.caller ?? live?.caller ?? null,
         status: raw.status ?? 0,
         ok: raw.ok === true,
@@ -1601,12 +1629,28 @@ function communityStatusSummary(context) {
   };
 }
 
-export function createLloomServer(
-  config,
-  { logger = console, runtimeManager = new RuntimeManager(config, { logger }) } = {}
-) {
+export function createLloomServer(config, { logger = console, runtimeManager = null, clusterCoordinator = null } = {}) {
+  const hostTelemetry = createHostTelemetry();
+  const machineProfile = profileMachine().catch((error) => {
+    logger.error?.(`Machine profile collection failed: ${error?.message ?? error}`);
+    return null;
+  });
+  clusterCoordinator ??= new ClusterCoordinator(config, {
+    logger,
+    telemetry: hostTelemetry,
+    profile: () => machineProfile
+  });
+  runtimeManager ??= new RuntimeManager(config, { logger, clusterCoordinator });
+  if (!runtimeManager.clusterCoordinator) {
+    runtimeManager.clusterCoordinator = clusterCoordinator;
+    clusterCoordinator.attachRuntimeManager(runtimeManager);
+  }
   let registry = createRegistry(config);
+  clusterCoordinator.attachModelCatalog(() =>
+    registry.catalogModels({ includeAliases: false, advertisedOnly: true, requireRuntimeEnabled: false })
+  );
   let reloadInFlight = Promise.resolve();
+  let routingStatusCache = { at: 0, value: null, pending: null };
   const configPath = config.sourcePath;
 
   function reloadConfig() {
@@ -1618,10 +1662,67 @@ export function createLloomServer(
         const result = await runtimeManager.reconfigure(nextConfig);
         for (const key of Object.keys(config)) delete config[key];
         Object.assign(config, nextConfig);
+        clusterCoordinator.reconfigure(config);
+        routingStatusCache = { at: 0, value: null, pending: null };
         registry = createRegistry(config);
         logger.info?.(`reloaded LLooM config; changed runtimes: ${result.changed.join(', ') || 'none'}`);
       })
       .catch((error) => logger.error?.(`LLooM config reload failed: ${error?.message ?? error}`));
+  }
+
+  async function resolveRequestModel(modelId) {
+    const resolved = registry.resolve(modelId);
+    if (!Array.isArray(resolved.model.targets) || resolved.model.targets.length <= 1) {
+      const target = clusterCoordinator.selectTarget(resolved, { runtimes: {} });
+      return {
+        ...resolved,
+        model: {
+          ...resolved.model,
+          ...(target?.upstreamModel ? { upstreamModel: target.upstreamModel } : {}),
+          selectedTarget: target?.id,
+          selectedNode: target?.node
+        },
+        target
+      };
+    }
+    const cacheMs = Math.max(0, Number(config.cluster?.routingStatusCacheMs ?? 250));
+    let runtimeStatus = routingStatusCache.value;
+    if (!runtimeStatus || Date.now() - routingStatusCache.at >= cacheMs) {
+      if (!routingStatusCache.pending) {
+        routingStatusCache.pending = Promise.resolve(
+          typeof runtimeManager.status === 'function' ? runtimeManager.status() : { runtimes: {} }
+        )
+          .then((value) => {
+            routingStatusCache = { at: Date.now(), value, pending: null };
+            return value;
+          })
+          .catch((error) => {
+            routingStatusCache = { at: 0, value: null, pending: null };
+            throw error;
+          });
+      }
+      runtimeStatus = await routingStatusCache.pending;
+    }
+    const nodeIds = [...new Set(resolved.model.targets.map((target) => target.node).filter(Boolean))];
+    const nodeEntries = await Promise.all(
+      nodeIds.map(async (nodeId) => [nodeId, await clusterCoordinator.nodeStatus(nodeId)])
+    );
+    const target = clusterCoordinator.selectTarget(resolved, runtimeStatus, { nodes: Object.fromEntries(nodeEntries) });
+    if (!target) return resolved;
+    return {
+      ...resolved,
+      model: {
+        ...resolved.model,
+        backend: target.backend,
+        ...(target.runtime ? { runtime: target.runtime } : { runtime: undefined }),
+        ...(target.upstreamModel ? { upstreamModel: target.upstreamModel } : {}),
+        selectedTarget: target.id,
+        selectedNode: target.node
+      },
+      backend: config.backends[target.backend],
+      runtime: target.runtime ? (config.runtimes[target.runtime] ?? null) : null,
+      target
+    };
   }
   function appendRequestLog(entry) {
     if (config.logging?.requestLog !== true && process.env.LLOOM_REQUEST_LOG !== '1') return;
@@ -1637,7 +1738,6 @@ export function createLloomServer(
 
   const metricsPersistence = createMetricsPersistence(config, { logger });
   const baseMetrics = createMetricsStore({ initialSnapshot: metricsPersistence.loadSnapshot() });
-  const hostTelemetry = createHostTelemetry();
   const metrics = {
     begin(entry) {
       return baseMetrics.begin(entry);
@@ -1726,6 +1826,8 @@ export function createLloomServer(
       kind: resolved.model.kind ?? 'chat',
       backend: resolved.model.backend,
       runtime: resolved.model.runtime,
+      target: resolved.model.selectedTarget,
+      node: resolved.model.selectedNode,
       caller: requestCallerLabel(req),
       requestBytes,
       stream
@@ -1734,12 +1836,14 @@ export function createLloomServer(
     const client = createClientCloseTracker(req, res);
     const progress = (patch) => metrics.update(connectionId, patch);
     try {
-      const result = await runtimeManager.withSlot(resolved.model.runtime, () =>
-        fn({
-          signal: client.signal,
-          timing,
-          progress
-        })
+      const result = await clusterCoordinator.withTarget(resolved, () =>
+        runtimeManager.withSlot(resolved.model.runtime, () =>
+          fn({
+            signal: client.signal,
+            timing,
+            progress
+          })
+        )
       );
       const status = result?.status ?? 200;
       const outcome = {
@@ -1751,6 +1855,8 @@ export function createLloomServer(
         kind: resolved.model.kind ?? 'chat',
         backend: resolved.model.backend,
         runtime: resolved.model.runtime,
+        target: resolved.model.selectedTarget,
+        node: resolved.model.selectedNode,
         caller: requestCallerLabel(req),
         status,
         ok: status >= 200 && status < 400,
@@ -1764,6 +1870,7 @@ export function createLloomServer(
       };
       metrics.record(outcome);
       noteRuntimeRequestOutcome(resolved.model.runtime, outcome);
+      clusterCoordinator.noteTargetOutcome(resolved, outcome);
       return result;
     } catch (error) {
       const status = client.closed
@@ -1780,6 +1887,8 @@ export function createLloomServer(
         kind: resolved.model.kind ?? 'chat',
         backend: resolved.model.backend,
         runtime: resolved.model.runtime,
+        target: resolved.model.selectedTarget,
+        node: resolved.model.selectedNode,
         caller: requestCallerLabel(req),
         status,
         ok: false,
@@ -1793,6 +1902,7 @@ export function createLloomServer(
       };
       metrics.record(outcome);
       noteRuntimeRequestOutcome(resolved.model.runtime, outcome);
+      clusterCoordinator.noteTargetOutcome(resolved, outcome);
       if (status === 499 || isClientClosedError(error)) {
         endResponseWithError(res, error, { stream, config, status: 499 });
         return {
@@ -1827,7 +1937,7 @@ export function createLloomServer(
 
   async function handleOpenAIChat(req, res) {
     const body = await readJson(req);
-    const resolved = registry.resolve(body.model ?? config.defaults?.chatModel);
+    const resolved = await resolveRequestModel(body.model ?? config.defaults?.chatModel);
     if ((resolved.model.kind ?? 'chat') !== 'chat') {
       sendJson(
         res,
@@ -1910,7 +2020,7 @@ export function createLloomServer(
   async function handleOpenAIImages(req, res) {
     const body = await readJson(req);
     const modelId = body.model ?? config.defaults?.imageModel;
-    const resolved = registry.resolve(modelId);
+    const resolved = await resolveRequestModel(modelId);
     if ((resolved.model.kind ?? 'chat') !== 'image') {
       sendJson(
         res,
@@ -1962,7 +2072,7 @@ export function createLloomServer(
 
     const raw = await readBodyBuffer(req);
     const modelId = multipartTextField(raw, type, 'model') ?? config.defaults?.imageModel;
-    const resolved = registry.resolve(modelId);
+    const resolved = await resolveRequestModel(modelId);
     if ((resolved.model.kind ?? 'chat') !== 'image') {
       sendJson(
         res,
@@ -2033,7 +2143,7 @@ export function createLloomServer(
       sendJson(res, 400, errorBody('video request requires model', { code: 'missing_model' }));
       return;
     }
-    const resolved = registry.resolve(modelId);
+    const resolved = await resolveRequestModel(modelId);
     if ((resolved.model.kind ?? 'chat') !== 'video') {
       sendJson(
         res,
@@ -2083,7 +2193,7 @@ export function createLloomServer(
       );
       return;
     }
-    const resolved = registry.resolve(modelId);
+    const resolved = await resolveRequestModel(modelId);
     if ((resolved.model.kind ?? 'chat') !== 'embedding') {
       sendJson(
         res,
@@ -2119,9 +2229,16 @@ export function createLloomServer(
     );
   }
 
-  function resolveSpeechModelOrError(modelId) {
+  async function resolveSpeechModelOrError(modelId) {
     try {
-      return { resolved: registry.resolveSpeechModel(modelId) };
+      const resolved = await resolveRequestModel(modelId);
+      if ((resolved.model.kind ?? 'chat') !== 'audio_speech') {
+        const error = new Error(`model ${resolved.requestedId} is not a speech model`);
+        error.code = 'wrong_model_kind';
+        error.modelId = resolved.requestedId;
+        throw error;
+      }
+      return { resolved: { ...resolved, tts: resolveTtsDescriptor(resolved.model) } };
     } catch (error) {
       if (error?.code === 'wrong_model_kind') {
         return {
@@ -2163,7 +2280,7 @@ export function createLloomServer(
       );
       return;
     }
-    const { resolved, error } = resolveSpeechModelOrError(modelId);
+    const { resolved, error } = await resolveSpeechModelOrError(modelId);
     if (error) {
       sendJson(res, error.error?.code === 'unknown_model' ? 404 : 400, error);
       return;
@@ -2223,7 +2340,7 @@ export function createLloomServer(
       }
 
       const modelId = fields.model ?? config.defaults?.speechModel;
-      const { resolved, error } = resolveSpeechModelOrError(modelId);
+      const { resolved, error } = await resolveSpeechModelOrError(modelId);
       if (error) {
         sendJson(res, error.error?.code === 'unknown_model' ? 404 : 400, error);
         return;
@@ -2322,7 +2439,7 @@ export function createLloomServer(
     );
   }
 
-  function handleSpeechSchema(req, res, url) {
+  async function handleSpeechSchema(req, res, url) {
     const modelId =
       firstQueryParam(url.searchParams, ['model', 'model_id', 'model-id']) ?? config.defaults?.speechModel;
     if (!modelId) {
@@ -2335,7 +2452,7 @@ export function createLloomServer(
       );
       return;
     }
-    const { resolved, error } = resolveSpeechModelOrError(modelId);
+    const { resolved, error } = await resolveSpeechModelOrError(modelId);
     if (error) {
       sendJson(res, error.error?.code === 'unknown_model' ? 404 : 400, error);
       return;
@@ -2379,7 +2496,7 @@ export function createLloomServer(
     sendJson(res, 200, registry.speechCatalog({ voiceProfiles: profiles }));
   }
 
-  function resolveTranscriptionModel(modelId) {
+  async function resolveTranscriptionModel(modelId) {
     if (!modelId) {
       return {
         error: errorBody('transcription request requires model', {
@@ -2387,7 +2504,7 @@ export function createLloomServer(
         })
       };
     }
-    const resolved = registry.resolve(modelId);
+    const resolved = await resolveRequestModel(modelId);
     if ((resolved.model.kind ?? 'chat') !== 'audio_transcription') {
       return {
         error: errorBody(`model ${resolved.requestedId} is not a transcription model`, {
@@ -2403,7 +2520,7 @@ export function createLloomServer(
     const type = contentType(req);
     if (/^application\/json\b/i.test(type)) {
       const body = await readJson(req);
-      const { resolved, error } = resolveTranscriptionModel(body.model ?? config.defaults?.transcriptionModel);
+      const { resolved, error } = await resolveTranscriptionModel(body.model ?? config.defaults?.transcriptionModel);
       if (error) {
         sendJson(res, 400, error);
         return;
@@ -2446,7 +2563,7 @@ export function createLloomServer(
 
     const raw = await readBodyBuffer(req);
     const modelId = multipartTextField(raw, type, 'model') ?? config.defaults?.transcriptionModel;
-    const { resolved, error } = resolveTranscriptionModel(modelId);
+    const { resolved, error } = await resolveTranscriptionModel(modelId);
     if (error) {
       sendJson(res, 400, error);
       return;
@@ -2490,7 +2607,7 @@ export function createLloomServer(
 
   async function handleOpenAIResponses(req, res) {
     const body = await readJson(req);
-    const resolved = registry.resolve(body.model ?? config.defaults?.chatModel);
+    const resolved = await resolveRequestModel(body.model ?? config.defaults?.chatModel);
     if ((resolved.model.kind ?? 'chat') !== 'chat') {
       sendJson(
         res,
@@ -2558,7 +2675,7 @@ export function createLloomServer(
 
   async function handleAnthropicMessages(req, res) {
     const body = await readJson(req);
-    const resolved = registry.resolve(body.model ?? config.defaults?.chatModel);
+    const resolved = await resolveRequestModel(body.model ?? config.defaults?.chatModel);
     await recordModelRequest(
       {
         route: '/v1/messages',
@@ -2677,22 +2794,53 @@ export function createLloomServer(
       }
 
       if (req.method === 'GET' && url.pathname === '/gateway/status') {
+        const runtimeStatus = await runtimeManager.status();
+        const clustered = Object.keys(config.cluster?.nodes ?? {}).length > 0;
+        const localRuntimeStatus = clustered
+          ? {
+              runtimes: Object.fromEntries(
+                Object.entries(runtimeStatus.runtimes ?? {}).filter(
+                  ([, runtime]) => runtime.remote !== true && runtime.distributed !== true
+                )
+              ),
+              events: runtimeStatus.events
+            }
+          : runtimeStatus;
         sendJson(res, 200, {
           ok: true,
           server: config.server,
           defaults: config.defaults,
-          runtimeManager: await runtimeManager.status()
+          runtimeManager: runtimeStatus,
+          cluster: await clusterCoordinator.status({ localRuntimeStatus })
+        });
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/gateway/node') {
+        sendJson(res, 200, {
+          ok: true,
+          node: await clusterCoordinator.localNodeStatus()
+        });
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/gateway/cluster') {
+        sendJson(res, 200, {
+          ok: true,
+          cluster: await clusterCoordinator.status()
         });
         return;
       }
 
       if (req.method === 'GET' && url.pathname === '/gateway/runtimes/plan') {
+        const runtimeStatus = await runtimeManager.status();
+        runtimeStatus.cluster = await clusterCoordinator.status();
         sendJson(
           res,
           200,
           await createRuntimePolicyPlan(config, {
             requestedRuntimeId: firstQueryParam(url.searchParams, ['runtime', 'runtime_id', 'runtime-id']),
-            status: await runtimeManager.status()
+            status: runtimeStatus
           })
         );
         return;
@@ -3097,6 +3245,19 @@ export function createLloomServer(
         return;
       }
 
+      if (req.method === 'POST' && url.pathname === '/gateway/runtimes/stop-all') {
+        sendJson(res, 200, await runtimeManager.stopAll());
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/gateway/runtimes/keep-warm') {
+        sendJson(res, 200, {
+          keepWarm: runtimeManager.keepWarmRuntimeIds(),
+          results: await runtimeManager.startKeepWarm()
+        });
+        return;
+      }
+
       const stopMatch = url.pathname.match(/^\/gateway\/runtimes\/([^/]+)\/stop$/);
       if (req.method === 'POST' && stopMatch) {
         sendJson(res, 200, await runtimeManager.stop(decodeURIComponent(stopMatch[1])));
@@ -3186,7 +3347,7 @@ export function createLloomServer(
         req.method === 'GET' &&
         (url.pathname === '/v1/audio/speech/schema' || url.pathname === '/gateway/audio/speech/schema')
       ) {
-        handleSpeechSchema(req, res, url);
+        await handleSpeechSchema(req, res, url);
         return;
       }
 

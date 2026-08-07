@@ -9,7 +9,7 @@
     "id": "MIT",
     "name": "Recipe metadata license"
   },
-  "updatedAt": "2026-07-28T05:52:41.000Z",
+  "updatedAt": "2026-08-07T06:12:00.000Z",
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated"
@@ -201,6 +201,39 @@
       ],
       "capabilities": ["image-generation", "image-editing"],
       "source": { "type": "local", "url": "recipes/linux-nvidia-gb10-image-generation.json" }
+    },
+    {
+      "id": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm",
+      "path": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json",
+      "currentVersion": 4,
+      "versions": [
+        {
+          "version": 4,
+          "path": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json",
+          "status": "current",
+          "notes": "MiaAI-tested DSpark runtime with 262K context, measured coexistence headroom, and protected warm residency."
+        }
+      ],
+      "name": "2x DGX Spark DeepSeek V4 Flash DSpark (MiaAI validated)",
+      "summary": "LLooM-managed two-node DeepSeek V4 Flash TP=2 runtime on the NVIDIA Sync private fabric.",
+      "tags": ["linux", "nvidia", "dgx-spark", "cluster", "deepseek-v4-flash", "dspark", "vllm", "nvfp4"],
+      "recommendedFor": ["Two directly connected DGX Sparks managed by NVIDIA Sync"],
+      "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "tools", "reasoning", "long-context"],
+      "source": { "type": "local", "url": "recipes/linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json" }
+    },
+    {
+      "id": "linux-nvidia-dgx-spark-cluster-flux2-klein-4b",
+      "path": "linux-nvidia-dgx-spark-cluster-flux2-klein-4b.json",
+      "currentVersion": 1,
+      "versions": [
+        { "version": 1, "path": "linux-nvidia-dgx-spark-cluster-flux2-klein-4b.json", "status": "current" }
+      ],
+      "name": "DGX Spark cluster FLUX.2 Klein 4B worker lane",
+      "summary": "Pins FLUX.2 Klein 4B to a cluster worker and routes images over the private fabric.",
+      "tags": ["linux", "nvidia", "dgx-spark", "cluster", "image-generation", "flux2"],
+      "recommendedFor": ["Two-node DGX Spark clusters co-hosting a distributed language model"],
+      "capabilities": ["image-generation", "image-editing"],
+      "source": { "type": "local", "url": "recipes/linux-nvidia-dgx-spark-cluster-flux2-klein-4b.json" }
     },
     {
       "id": "apple-silicon-qwen36",

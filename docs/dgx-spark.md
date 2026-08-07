@@ -149,12 +149,23 @@ Tune recipe flags from local benches:
 
 ## Dual / multi-Spark
 
-LLooM process management is **single-host** today. For two Sparks:
+LLooM now discovers NVIDIA Sync clusters, ranks recipes by cluster provider and node count, and coordinates ordered distributed runtime members through authenticated LLooM gateways on each node.
 
-1. Run **vLLM/SGLang with TP or Ray** on the cluster (one OpenAI URL), **or**
-2. Run one engine per box and put a load balancer in front, then register **one** OpenAI backend in LLooM.
+For a directly connected two-Spark cluster:
 
-Recipe seeds are **solo Spark** unless you extend args with `--tensor-parallel-size 2` and multi-node env.
+```bash
+lloom cluster discover --id my-spark-cluster --apply
+lloom select
+lloom setup --recipe linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm --additive --apply --yes
+lloom cluster doctor
+lloom runtime-start deepseek-v4-flash-0731-cluster
+```
+
+The DeepSeek recipe uses the current MiaAI Lab two-DGX-Spark DSpark/vLLM configuration rather than a generic Ray guess. LLooM pins its official model revision and container digest, resolves per-node RoCE GIDs at launch, starts the worker before the head, rolls back partial starts, and exposes the model through the leader's normal LLooM URL. Unsloth's GGUF DSpark drafter remains a useful alternate llama.cpp lane, but it is not the default two-host recipe because its release does not provide an equivalently validated two-DGX-Spark launcher.
+
+The measured coexistence profile uses 262K context with `gpu-memory-utilization=0.73`. For companion services, keep Qwen3-Embedding-4B on the leader and apply `linux-nvidia-dgx-spark-cluster-flux2-klein-4b` to place FLUX.2 Klein 4B on the worker; both remain available through the leader endpoint.
+
+Replicated placement remains available when each Spark should run an independent engine and LLooM should load-balance one logical model ID across them.
 
 ## Checklist before you unbox
 

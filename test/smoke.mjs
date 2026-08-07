@@ -798,6 +798,8 @@ assert.deepEqual(
     'apple-silicon-qwen36',
     'apple-silicon-ternary-bonsai-27b',
     'high-memory-local-image-generation',
+    'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm',
+    'linux-nvidia-dgx-spark-cluster-flux2-klein-4b',
     'linux-nvidia-gb10-image-generation',
     'linux-nvidia-gb10-qwen36-unsloth-vllm',
     'linux-nvidia-gb10-ternary-bonsai-27b',
@@ -806,7 +808,7 @@ assert.deepEqual(
   ]
 );
 const benchmarkEvidence = await loadBenchmarkEvidence();
-assert.equal(benchmarkEvidence.length, 21);
+assert.equal(benchmarkEvidence.length, 23);
 assert.deepEqual(validateBenchmarkEvidence(benchmarkEvidence), []);
 const spark35bEvidence = benchmarkEvidence.filter(
   (result) => result.suite?.id === 'dgx-spark-qwen36-35b-a3b-variants-20260711'
@@ -964,7 +966,7 @@ const recipeIndexReport = await buildRecipeIndexReport(config, {
 });
 assert.equal(recipeIndexReport.ok, true);
 assert.equal(recipeIndexReport.index.id, 'lloom-community-recipes');
-assert.equal(recipeIndexReport.recipes.length, 11);
+assert.equal(recipeIndexReport.recipes.length, 13);
 const indexedSparkRecipe = recipeIndexReport.recipes.find(
   (candidate) => candidate.id === 'linux-nvidia-gb10-qwen36-unsloth-vllm'
 );
@@ -2676,6 +2678,28 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
   assert.equal(sparkGeminiFlashLite.maxOutputTokens, 65536);
   assert.equal(sparkGeminiFlashLite.runtime, undefined);
   assert.deepEqual(sparkGeminiFlashLite.tags, ['cloud', 'external', 'openrouter', 'google', 'gemini']);
+  assert.deepEqual(sparkDeployConfig.backends['openai-compatible-deepseek-v4-flash-0731'], {
+    type: 'openai',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    apiKeyEnv: 'OPENROUTER_API_KEY',
+    timeoutMs: 1800000
+  });
+  const sparkDeepSeekFlash = sparkDeployConfig.models.find((model) => model.id === 'deepseek/deepseek-v4-flash-0731');
+  assert.equal(sparkDeepSeekFlash.kind, 'chat');
+  assert.equal(sparkDeepSeekFlash.backend, 'openai-compatible-deepseek-v4-flash-0731');
+  assert.equal(sparkDeepSeekFlash.upstreamModel, 'deepseek/deepseek-v4-flash-0731');
+  assert.equal(sparkDeepSeekFlash.contextWindow, 1048576);
+  assert.equal(sparkDeepSeekFlash.maxOutputTokens, 65536);
+  assert.equal(sparkDeepSeekFlash.runtime, undefined);
+  assert.deepEqual(sparkDeepSeekFlash.tags, ['cloud', 'external', 'openrouter', 'deepseek']);
+  assert.equal(
+    sparkDeployConfig.models.some((model) => model.id === 'deepseek/deepseek-v4-flash'),
+    false
+  );
+  assert.deepEqual(sparkDeployConfig.aliases['deepseek/deepseek-v4-flash'], {
+    target: 'deepseek/deepseek-v4-flash-0731',
+    advertise: false
+  });
   const qwen27Runtime = sparkDeployConfig.runtimes['unsloth-qwen36-27b-nvfp4'];
   assert.equal(qwen27Runtime.recipe.version, 3);
   assert.deepEqual(qwen27Runtime.behaviorOverrides, {
@@ -5328,7 +5352,7 @@ if (listened) {
       try {
         assert.equal(autoHostPlan.ok, true);
         assert(autoHostPlan.host.autoStarted.pid);
-        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, 16);
+        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, 18);
         assert.equal(autoHostPlan.plans[0].recommendation.id, 'apple-silicon-qwen36-35b-a3b-mtplx-pack');
         assert.equal(autoHostPlan.plans[0].plan.roots.recipesRoot, autoHostRecipesRoot);
         assert.equal(autoHostPlan.plans[0].plan.roots.benchmarksRoot, autoHostBenchmarksRoot);

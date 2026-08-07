@@ -60,6 +60,8 @@ LLooM currently fronts these local contracts:
 - `GET /v1/models`
 - `GET /v1/integrations`
 - `GET /gateway/status`
+- `GET /gateway/node`
+- `GET /gateway/cluster`
 - `GET /gateway/profile`
 - `GET /gateway/integrations`
 - `GET /gateway/runtimes/plan`
@@ -163,6 +165,8 @@ Runtime policy is deliberately separate from process lifecycle. Runtime definiti
 `sessionCache` is a generic LLooM policy block, but cache implementation is backend-specific. The runtime manager expands the policy into launch arguments for adapters that support it. MTPLX runtimes use `kind: "mtplx-ssd-session"` and are launched with `--ssd-session-cache`, `--ssd-session-cache-dir`, `--ssd-session-cache-max-size`, and `--ssd-session-cache-min-prefix-tokens` when configured. Unsupported adapters fail fast instead of silently ignoring a cache policy.
 
 `/gateway/status` reports the configured `args`, computed `effectiveArgs`, `sessionCache`, `maxConcurrency`, `activeRequests`, and `queuedRequests` for each runtime so dashboards can distinguish a slow backend from local gateway queueing and verify the exact process launch recipe.
+
+In cluster mode, `/gateway/node` reports the local node's portable machine profile, optional vendor telemetry, directly advertised models, and physical runtimes, while `/gateway/cluster` fans out through authenticated LLooM endpoints and returns a node-keyed topology. `/gateway/status` includes that cluster graph plus logical replicated/distributed runtime state. A managed cluster may pin or split raw model backends across nodes; a heterogeneous lab may proxy independently configured LLooM gateways. Federated model entries materialize into the same target abstraction as local replicas, so least-loaded weighted routing, failure cooldown, metrics, and topology do not need architecture-specific branches. Raw model backends stay on the private fabric; clients continue to use the leader gateway.
 
 Model requests automatically ensure the bound runtime only when that runtime is `enabled`; manual admin `start` can force-start any configured runtime for setup and diagnostics.
 

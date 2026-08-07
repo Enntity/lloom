@@ -12,6 +12,7 @@ import { detectModelRootForRecipe } from './model-files.mjs';
 import { profileMachine, rankRecipes } from './machine-profile.mjs';
 import { createRegistry } from './registry.mjs';
 import { loadRecipeById, loadRecipes } from './recipes.mjs';
+import { repoRoot } from './config.mjs';
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -241,13 +242,15 @@ function runtimeTemplateVariables({
   return {
     ...primitiveSettings(settings),
     recipeId: recipe.id,
+    lloomRoot: repoRoot,
+    home: process.env.HOME ?? '',
     backendId,
     runtimeId,
     modelPath,
     modelRoot,
     modelId,
     gatewayModel: modelId,
-    upstreamModel: recipeModel.model,
+    upstreamModel: recipeModel.upstreamModel ?? recipeModel.model,
     port,
     host: '127.0.0.1',
     contextWindow,
@@ -382,7 +385,15 @@ function buildRecipeRuntime({
     policy: {
       priority: positiveInteger(settings.priority, 50),
       evictable: settings.evictable !== false
-    }
+    },
+    recipe: {
+      id: recipe.id,
+      version: recipe.version ?? 1,
+      source: recipe.filePath ?? null
+    },
+    ...(settings.placement?.mode === 'distributed'
+      ? { placement: templateValue(asObject(settings.placement), primitiveSettings(settings)) }
+      : {})
   };
 
   const explicitRuntime = buildExplicitRecipeRuntime({
@@ -539,13 +550,189 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
     if (!modelId) continue;
     const modelSlug = slug(modelId);
     const existingModel = config.models.find((model) => model.id === modelId);
+    const settings = asObject(recipeModel.settings);
+    const placement = asObject(settings.placement);
+    if (placement.mode === 'distributed') {
+      const configuredNodes = asObject(config.cluster?.nodes);
+      const nodeIds = Object.keys(configuredNodes);
+      if (nodeIds.length < 2) {
+        throw new Error(
+          `recipe model ${modelId} requests distributed placement but fewer than two cluster nodes are configured`
+        );
+      }
+      const leaderNode = config.cluster?.leaderNode ?? nodeIds[0];
+      if (!configuredNodes[leaderNode])
+        throw new Error(`cluster leader ${leaderNode} is not declared in cluster.nodes`);
+      const workerNodes = nodeIds.filter((nodeId) => nodeId !== leaderNode);
+      const members = [];
+      const modelPath = modelPathForRecipeModel(recipeModel, backendId, modelRoot);
+      for (const [memberIndex, member] of asArray(placement.members).entries()) {
+        const selector = member.node ?? member.nodeRole;
+        const selectedNodes =
+          selector === 'leader'
+            ? [leaderNode]
+            : selector === 'worker' || selector === 'workers'
+              ? workerNodes
+              : [selector];
+        for (const [selectedIndex, nodeId] of selectedNodes.filter(Boolean).entries()) {
+          const node = configuredNodes[nodeId];
+          if (!node) throw new Error(`recipe model ${modelId} references unknown cluster node ${nodeId}`);
+          if (!node.backendHost) throw new Error(`cluster node ${nodeId} requires backendHost for distributed recipes`);
+          const memberRuntimeId = selectedNodes.length > 1 ? `${member.runtime}-${slug(nodeId)}` : member.runtime;
+          if (!memberRuntimeId) throw new Error(`recipe model ${modelId} has a distributed member without runtime`);
+          const nodeRank = nodeId === leaderNode ? 0 : workerNodes.indexOf(nodeId) + 1;
+          const memberSettings = {
+            ...settings,
+            placement: undefined,
+            memoryGb: member.resources?.memoryGb ?? settings.memoryGb,
+            nodeId,
+            nodeRank,
+            nodeAddress: node.backendHost,
+            fabricInterface: node.fabricInterface ?? '',
+            leaderNode,
+            leaderAddress: configuredNodes[leaderNode].backendHost,
+            clusterNodeCount: nodeIds.length,
+            runtime: asObject(member.runtimeSettings)
+          };
+          const memberRecipeModel = { ...recipeModel, settings: memberSettings };
+          const runtime = buildRecipeRuntime({
+            recipe,
+            recipeModel: memberRecipeModel,
+            backendId,
+            runtimeId: memberRuntimeId,
+            modelPath,
+            modelRoot,
+            modelId,
+            port: positiveInteger(member.port, positiveInteger(settings.port, 8888)),
+            sessionCacheRoot
+          });
+          if (!runtime)
+            throw new Error(`recipe model ${modelId} could not materialize distributed member ${memberRuntimeId}`);
+          runtime.node = nodeId;
+          runtime.healthStrategy = member.healthStrategy ?? (nodeId === leaderNode ? 'http' : 'container');
+          config.runtimes[memberRuntimeId] = runtime;
+          members.push({
+            node: nodeId,
+            runtime: memberRuntimeId,
+            role: member.role ?? (nodeId === leaderNode ? 'head' : 'worker'),
+            order: Number.isFinite(Number(member.order)) ? Number(member.order) : memberIndex * 10 + selectedIndex,
+            resources: asObject(member.resources)
+          });
+        }
+      }
+      if (!members.length) throw new Error(`recipe model ${modelId} has no distributed placement members`);
+      const runtimeId = existingModel?.runtime ?? recipeModel.runtime ?? `${backendId}-${modelSlug}`;
+      const backendConfigId = existingModel?.backend ?? recipeModel.backendConfig ?? `${backendId}-${modelSlug}`;
+      const leader = configuredNodes[leaderNode];
+      const port = positiveInteger(settings.port, 8888);
+      config.backends[backendConfigId] = {
+        type: 'openai',
+        baseUrl: settings.baseUrl ?? `${clusterNodeBackendOrigin(leader)}:${port}${settings.baseUrlPath ?? '/v1'}`,
+        apiKey: settings.apiKey ?? 'sk-local-llm',
+        timeoutMs: positiveInteger(settings.timeoutMs, 1800000)
+      };
+      config.runtimes[runtimeId] = {
+        enabled: true,
+        keepWarm: settings.keepWarm === true,
+        maxConcurrency: positiveInteger(settings.maxActiveRequests, backendId === 'mtplx' ? 10 : 4),
+        memoryGb: Number(settings.memoryGb ?? 0),
+        policy: {
+          priority: Number(settings.priority ?? 0),
+          evictable: settings.evictable !== false
+        },
+        startupTimeoutMs: positiveInteger(settings.startupTimeoutMs, 1800000),
+        healthUrl: `${clusterNodeBackendOrigin(leader)}:${port}${settings.healthPath ?? '/health'}`,
+        recipe: { id: recipe.id, version: recipe.version ?? 1, source: recipe.filePath ?? null },
+        placement: { mode: 'distributed', members }
+      };
+      const materializedModel = materializedRecipeModel(recipe, recipeModel, modelId, {
+        backend: backendConfigId,
+        runtime: runtimeId
+      });
+      if (!existingModel) config.models.push(materializedModel);
+      else Object.assign(existingModel, materializedModel);
+      finishRecipeModelConfig(config, recipeModel, materializedModel, modelId);
+      continue;
+    }
+    if (placement.mode === 'replicated') {
+      const configuredNodeIds = Object.keys(config.cluster?.nodes ?? {});
+      const leaderNode = config.cluster?.leaderNode ?? configuredNodeIds[0];
+      const workerNodes = configuredNodeIds.filter((nodeId) => nodeId !== leaderNode);
+      const requestedNodes = Array.isArray(placement.nodes) ? placement.nodes : configuredNodeIds;
+      const nodeIds = [
+        ...new Set(
+          requestedNodes.flatMap((selector) =>
+            selector === 'leader'
+              ? [leaderNode]
+              : selector === 'worker' || selector === 'workers'
+                ? workerNodes
+                : [selector]
+          )
+        )
+      ].filter(Boolean);
+      if (!nodeIds.length)
+        throw new Error(`recipe model ${modelId} requests replicated placement but no cluster nodes are configured`);
+      const targets = [];
+      const modelPath = modelPathForRecipeModel(recipeModel, backendId, modelRoot);
+      for (const nodeId of nodeIds) {
+        const node = config.cluster?.nodes?.[nodeId];
+        if (!node) throw new Error(`recipe model ${modelId} references unknown cluster node ${nodeId}`);
+        if (!node.backendHost)
+          throw new Error(`cluster node ${nodeId} requires private backendHost for replicated recipes`);
+        const suffix = slug(nodeId);
+        const runtimeId = `${recipeModel.runtime ?? `${backendId}-${modelSlug}`}-${suffix}`;
+        const backendConfigId = `${recipeModel.backendConfig ?? `${backendId}-${modelSlug}`}-${suffix}`;
+        const port =
+          Number(config.runtimes?.[runtimeId]?.port) || positiveInteger(settings.port, nextBackendPort(config));
+        const backendOrigin = clusterNodeBackendOrigin(node);
+        const baseUrlPath = asObject(settings.runtime).baseUrlPath ?? settings.baseUrlPath ?? '/v1';
+        config.backends[backendConfigId] = {
+          type: 'openai',
+          baseUrl: `${backendOrigin}:${port}${baseUrlPath.startsWith('/') ? baseUrlPath : `/${baseUrlPath}`}`,
+          apiKey: settings.apiKey ?? 'sk-local-llm',
+          timeoutMs: positiveInteger(settings.timeoutMs, 1800000)
+        };
+        const existingRuntime = config.runtimes[runtimeId];
+        if (!existingRuntime || existingRuntime.recipe?.id === recipe.id) {
+          const runtime = buildRecipeRuntime({
+            recipe,
+            recipeModel,
+            backendId,
+            runtimeId,
+            modelPath,
+            modelRoot,
+            modelId,
+            port,
+            sessionCacheRoot
+          });
+          if (runtime) {
+            runtime.node = nodeId;
+            replaceArgValue(runtime.args, '--host', node.backendHost);
+            replaceArgValue(runtime.bootstrap?.command, '--host', node.backendHost);
+            rewriteDockerPublishedHost(runtime.bootstrap?.createArgs, node.backendHost, port);
+            runtime.healthUrl = rewriteUrlOrigin(runtime.healthUrl, backendOrigin);
+            if (runtime.warmup?.url) runtime.warmup.url = rewriteUrlOrigin(runtime.warmup.url, backendOrigin);
+            config.runtimes[runtimeId] = runtime;
+          }
+        }
+        targets.push({ id: nodeId, node: nodeId, backend: backendConfigId, runtime: runtimeId });
+      }
+      const materializedModel = materializedRecipeModel(recipe, recipeModel, modelId, {
+        backend: targets[0].backend,
+        runtime: targets[0].runtime,
+        targets
+      });
+      if (!existingModel) config.models.push(materializedModel);
+      else Object.assign(existingModel, materializedModel);
+      finishRecipeModelConfig(config, recipeModel, materializedModel, modelId);
+      continue;
+    }
     const runtimeId = existingModel?.runtime ?? recipeModel.runtime ?? `${backendId}-${modelSlug}`;
     const backendConfigId = existingModel?.backend ?? recipeModel.backendConfig ?? `${backendId}-${modelSlug}`;
     const port = Number(config.runtimes?.[runtimeId]?.port) || nextBackendPort(config);
     const modelPath = modelPathForRecipeModel(recipeModel, backendId, modelRoot);
 
     if (!config.backends[backendConfigId]) {
-      const settings = asObject(recipeModel.settings);
       const runtimeSettings = asObject(settings.runtime);
       config.backends[backendConfigId] = {
         type: 'openai',
@@ -571,52 +758,80 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
       if (runtime) config.runtimes[runtimeId] = runtime;
     }
 
-    const materializedModel = {
-      id: modelId,
-      name: recipeModel.name ?? modelId.split('/').at(-1),
+    const materializedModel = materializedRecipeModel(recipe, recipeModel, modelId, {
       backend: backendConfigId,
-      ...(config.runtimes[runtimeId] ? { runtime: runtimeId } : {}),
-      upstreamModel: recipeModel.model,
-      kind: recipeModelKind(recipeModel),
-      input: recipeModelInput(recipeModel),
-      output: recipeModelOutput(recipeModel),
-      capabilities: asArray(recipeModel.capabilities),
-      reasoning: asArray(recipeModel.capabilities).includes('reasoning') || undefined,
-      supportsTools: asArray(recipeModel.capabilities).includes('tools') || undefined,
-      contextWindow: positiveInteger(asObject(recipeModel.settings).contextWindow, 32768),
-      maxOutputTokens: positiveInteger(asObject(recipeModel.settings).maxOutputTokens, 8192),
-      advertise: true,
-      tags: [
-        ...new Set([recipe.backend?.id, ...asArray(recipe.keywords), ...asArray(recipe.capabilities)].filter(Boolean))
-      ]
-    };
+      ...(config.runtimes[runtimeId] ? { runtime: runtimeId } : {})
+    });
     if (!existingModel) {
       config.models.push(materializedModel);
     } else if (config.runtimes[runtimeId]?.recipe?.id === recipe.id) {
       Object.assign(existingModel, materializedModel);
     }
 
-    if (!config.clientCatalog.modelOrder.includes(modelId)) {
-      config.clientCatalog.modelOrder.push(modelId);
-    }
-    if (recipeModel.setDefault === true) {
-      config.defaults ??= {};
-      const kind = materializedModel.kind;
-      if (kind === 'image') config.defaults.imageModel = modelId;
-      else if (kind === 'video') config.defaults.videoModel = modelId;
-      else if (kind === 'embedding') config.defaults.embeddingModel = modelId;
-      else if (kind === 'audio_speech') config.defaults.speechModel = modelId;
-      else if (kind === 'audio_transcription') config.defaults.transcriptionModel = modelId;
-      else config.defaults.chatModel = modelId;
-    }
-    if (recipeModel.role === 'default-video' && !config.defaults?.videoModel) {
-      config.defaults ??= {};
-      config.defaults.videoModel = modelId;
-    }
-    if (recipeModel.role === 'embedding' && !config.defaults?.embeddingModel) {
-      config.defaults ??= {};
-      config.defaults.embeddingModel = modelId;
-    }
+    finishRecipeModelConfig(config, recipeModel, materializedModel, modelId);
+  }
+}
+
+function materializedRecipeModel(recipe, recipeModel, modelId, placement) {
+  return {
+    id: modelId,
+    name: recipeModel.name ?? modelId.split('/').at(-1),
+    ...placement,
+    upstreamModel: recipeModel.upstreamModel ?? recipeModel.model,
+    kind: recipeModelKind(recipeModel),
+    input: recipeModelInput(recipeModel),
+    output: recipeModelOutput(recipeModel),
+    capabilities: asArray(recipeModel.capabilities),
+    reasoning: asArray(recipeModel.capabilities).includes('reasoning') || undefined,
+    supportsTools: asArray(recipeModel.capabilities).includes('tools') || undefined,
+    contextWindow: positiveInteger(asObject(recipeModel.settings).contextWindow, 32768),
+    maxOutputTokens: positiveInteger(asObject(recipeModel.settings).maxOutputTokens, 8192),
+    advertise: true,
+    tags: [
+      ...new Set([recipe.backend?.id, ...asArray(recipe.keywords), ...asArray(recipe.capabilities)].filter(Boolean))
+    ]
+  };
+}
+
+function finishRecipeModelConfig(config, recipeModel, materializedModel, modelId) {
+  if (!config.clientCatalog.modelOrder.includes(modelId)) {
+    config.clientCatalog.modelOrder.push(modelId);
+  }
+  if (recipeModel.setDefault === true) {
+    config.defaults ??= {};
+    const kind = materializedModel.kind;
+    if (kind === 'image') config.defaults.imageModel = modelId;
+    else if (kind === 'video') config.defaults.videoModel = modelId;
+    else if (kind === 'embedding') config.defaults.embeddingModel = modelId;
+    else if (kind === 'audio_speech') config.defaults.speechModel = modelId;
+    else if (kind === 'audio_transcription') config.defaults.transcriptionModel = modelId;
+    else config.defaults.chatModel = modelId;
+  }
+  if (recipeModel.role === 'default-video' && !config.defaults?.videoModel) {
+    config.defaults ??= {};
+    config.defaults.videoModel = modelId;
+  }
+  if (recipeModel.role === 'embedding' && !config.defaults?.embeddingModel) {
+    config.defaults ??= {};
+    config.defaults.embeddingModel = modelId;
+  }
+}
+
+function clusterNodeBackendOrigin(node) {
+  const protocol = node.backendProtocol ?? 'http:';
+  return `${String(protocol).replace(/:?$/, ':')}//${node.backendHost}`;
+}
+
+function rewriteUrlOrigin(value, origin) {
+  if (!value) return value;
+  try {
+    const url = new URL(value);
+    const target = new URL(origin);
+    url.protocol = target.protocol;
+    url.hostname = target.hostname;
+    return url.toString();
+  } catch {
+    return value;
   }
 }
 
@@ -654,6 +869,18 @@ function replaceArgValue(args, flag, value) {
   const index = args.indexOf(flag);
   if (index === -1 || index === args.length - 1) return;
   args[index + 1] = String(value);
+}
+
+function rewriteDockerPublishedHost(args, host, port) {
+  if (!Array.isArray(args)) return;
+  for (let index = 0; index < args.length - 1; index += 1) {
+    if (!['-p', '--publish'].includes(args[index])) continue;
+    const published = String(args[index + 1]);
+    const parts = published.split(':');
+    if (parts.length !== 3 || parts[1] !== String(port)) continue;
+    if (!['127.0.0.1', 'localhost', '0.0.0.0'].includes(parts[0])) continue;
+    args[index + 1] = `${host}:${parts[1]}:${parts[2]}`;
+  }
 }
 
 function rewriteUrlPort(value, port) {
@@ -698,9 +925,12 @@ function retargetGatewayPort(config, gatewayPort) {
 function backendIdsForRuntime(config, runtimeId) {
   return [
     ...new Set(
-      (config.models ?? [])
-        .filter((model) => model.runtime === runtimeId && model.backend)
-        .map((model) => model.backend)
+      (config.models ?? []).flatMap((model) => [
+        ...(model.runtime === runtimeId && model.backend ? [model.backend] : []),
+        ...(model.targets ?? [])
+          .filter((target) => target.runtime === runtimeId && target.backend)
+          .map((target) => target.backend)
+      ])
     )
   ];
 }
@@ -822,7 +1052,7 @@ export function deriveUserConfig(
 ) {
   const sourceTemplate = config.sourceTemplate;
   const derived = stripRuntimeFields(config);
-  const runtimeIds = recipeRuntimeIds(recipe);
+  let runtimeIds = recipeRuntimeIds(recipe);
   if (additive) {
     derived.clientCatalog ??= {};
     derived.clientCatalog.modelOrder ??= [];
@@ -836,6 +1066,10 @@ export function deriveUserConfig(
     modelRoot,
     sessionCacheRoot
   });
+  const materializedRuntimeIds = Object.entries(derived.runtimes ?? {})
+    .filter(([, runtime]) => runtime.recipe?.id === recipe.id)
+    .map(([runtimeId]) => runtimeId);
+  if (materializedRuntimeIds.length) runtimeIds = materializedRuntimeIds;
   const preferredModel = preferredRecipeModel(derived, recipe);
   if (!additive && preferredModel?.gatewayModel) {
     derived.defaults = {
@@ -848,8 +1082,12 @@ export function deriveUserConfig(
     .filter(([, runtime]) => runtime.keepWarm === true)
     .map(([runtimeId]) => runtimeId);
   const requestedRecipeKeepWarm = (recipe.models ?? [])
-    .filter((model) => model.settings?.keepWarm === true && model.runtime)
-    .map((model) => model.runtime);
+    .filter((model) => model.settings?.keepWarm === true)
+    .flatMap((model) => {
+      const modelId = model.gatewayModel ?? model.model;
+      const materialized = derived.models?.find((candidate) => candidate.id === modelId);
+      return [materialized?.runtime, ...(materialized?.targets ?? []).map((target) => target.runtime)].filter(Boolean);
+    });
   const recipeHasExplicitKeepWarm = (recipe.models ?? []).some(
     (model) => typeof model.settings?.keepWarm === 'boolean'
   );

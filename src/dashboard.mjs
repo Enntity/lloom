@@ -426,6 +426,10 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         <div class="model-inspector-head"><div><div id="model-inspector-state" class="pill"><span class="dot"></span><span>model</span></div><div id="model-inspector-title" class="model-inspector-title">Model</div></div><button id="model-inspector-close" type="button" aria-label="Close model details">×</button></div>
         <div class="model-inspector-body"><div id="model-inspector-details" class="model-detail-grid"></div><div id="model-inspector-tags"></div><div class="model-inspector-actions"><button id="model-start" data-action="start" type="button">Start</button><button id="model-warm" data-action="warmup" class="primary" type="button">Warm</button><button id="model-stop" data-action="stop" class="danger" type="button">Stop</button></div></div>
       </aside>
+      <aside id="node-inspector" class="model-inspector" aria-label="Selected node details" aria-hidden="true">
+        <div class="model-inspector-head"><div><div id="node-inspector-state" class="pill"><span class="dot"></span><span>node</span></div><div id="node-inspector-title" class="model-inspector-title">Node</div></div><button id="node-inspector-close" type="button" aria-label="Close node details">×</button></div>
+        <div class="model-inspector-body"><div id="node-inspector-details" class="model-detail-grid"></div><div id="node-inspector-tags"></div></div>
+      </aside>
     </section>
 
     <details class="operations-dock">
@@ -616,12 +620,14 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       topologyRaisedModelId: null,
       topologyInteractionFocused: false,
       selectedModelId: null,
+      selectedNodeId: null,
       showAllTopologyModels: false,
       topologyAgedModelCount: 0,
       topologyCatalogModels: [],
       topologyVisibleModelKey: "",
       topologyView: null,
       topologyHitCards: [],
+      topologyHitNodeCards: [],
       output: null,
     };
 
@@ -747,6 +753,56 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       inspector.setAttribute("aria-hidden", "true");
     }
 
+    function closeNodeInspector() {
+      state.selectedNodeId = null;
+      const inspector = $("#node-inspector");
+      inspector.classList.remove("open");
+      inspector.setAttribute("aria-hidden", "true");
+    }
+
+    function renderNodeInspector() {
+      const inspector = $("#node-inspector");
+      const node = state.status?.cluster?.nodes?.[state.selectedNodeId];
+      if (!node) {
+        if (state.selectedNodeId) closeNodeInspector();
+        return;
+      }
+      const telemetry = node.telemetry || {};
+      const profile = node.profile || {};
+      const system = node.system || {};
+      const gpu = telemetry.gpu || {};
+      const gpuMemory = gpu.memoryTotalMb > 0 ? (gpu.memoryUsedMb / gpu.memoryTotalMb) * 100 : null;
+      const marker = $("#node-inspector-state");
+      marker.querySelector(".dot").className = "dot " + (node.reachable === false ? "bad" : "ok");
+      marker.querySelector("span:last-child").textContent = node.reachable === false ? "offline" : node.local ? "local" : "reachable";
+      $("#node-inspector-title").textContent = node.name || node.id;
+      const details = [
+        ["Node ID", node.id],
+        ["Role", node.id === state.status?.cluster?.leaderNode ? "leader" : "worker"],
+        ["Platform", [profile.platformId || [system.platform, system.arch].filter(Boolean).join("-"), system.release].filter(Boolean).join(" · ") || "—"],
+        ["CPU", telemetry.cpu?.model || profile.cpuBrand || "—"],
+        ["CPU load", telemetry.cpu?.utilization == null ? "—" : Math.round(telemetry.cpu.utilization) + "%"],
+        ["RAM", telemetry.memory?.totalBytes ? formatBytes(telemetry.memory.usedBytes) + " / " + formatBytes(telemetry.memory.totalBytes) : "—"],
+        ["GPU", gpu.devices?.map(device => device.name).filter(Boolean).join(", ") || profile.devices?.filter(device => device.kind === "gpu").map(device => device.name).join(", ") || "—"],
+        ["GPU load", gpu.utilization == null ? "—" : Math.round(gpu.utilization) + "%"],
+        ["GPU memory", gpuMemory == null ? "shared / unavailable" : Math.round(gpuMemory) + "% · " + formatBytes(gpu.memoryUsedMb * 1048576) + " / " + formatBytes(gpu.memoryTotalMb * 1048576)],
+        ["Thermals", gpu.temperatureC == null && gpu.powerDrawW == null ? "—" : (gpu.temperatureC == null ? "—" : Math.round(gpu.temperatureC) + "°C") + " · " + (gpu.powerDrawW == null ? "—" : Math.round(gpu.powerDrawW) + "W")],
+        ["Uptime", system.uptimeSeconds == null ? "—" : Math.floor(system.uptimeSeconds / 3600) + "h"],
+        ["Models", Array.isArray(node.models) ? node.models.length : "—"]
+      ];
+      $("#node-inspector-details").innerHTML = details.map(([label, value]) => '<div class="model-detail"><span>' + escapeHtml(label) + '</span><strong>' + escapeHtml(value) + '</strong></div>').join("");
+      const nodeTags = [...new Set([...(profile.accelerators || []), ...Object.values(node.labels || {})])];
+      $("#node-inspector-tags").innerHTML = tags(nodeTags) || '<span class="muted">No accelerator metadata reported</span>';
+      inspector.classList.add("open");
+      inspector.setAttribute("aria-hidden", "false");
+    }
+
+    function openNodeInspector(nodeId) {
+      closeModelInspector();
+      state.selectedNodeId = nodeId;
+      renderNodeInspector();
+    }
+
     function renderModelInspector() {
       const inspector = $("#model-inspector");
       const model = (state.models || []).find(item => item.id === state.selectedModelId);
@@ -786,6 +842,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     }
 
     function openModelInspector(modelId) {
+      closeNodeInspector();
       state.selectedModelId = modelId;
       state.topologyRaisedModelId = modelId;
       renderModelInspector();
@@ -924,13 +981,33 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const bytes = Number(value || 0);
       if (bytes < 1024) return bytes + " B";
       if (bytes < 1048576) return (bytes / 1024).toFixed(bytes < 10240 ? 1 : 0) + " KB";
-      return (bytes / 1048576).toFixed(bytes < 10485760 ? 1 : 0) + " MB";
+      if (bytes < 1073741824) return (bytes / 1048576).toFixed(bytes < 10485760 ? 1 : 0) + " MB";
+      if (bytes < 1099511627776) return (bytes / 1073741824).toFixed(bytes < 10737418240 ? 1 : 0) + " GB";
+      return (bytes / 1099511627776).toFixed(1) + " TB";
     }
     function shortModel(value) { const parts = String(value || "unknown").split("/"); return parts[parts.length - 1]; }
-    function modelVendor(value) { const parts = String(value || "local").split("/"); return parts.length > 1 ? parts[0] : "local"; }
+    function modelFamily(value) {
+      const raw = String(value || "model").toLowerCase();
+      const knownFamilies = [
+        ["deepseek", "deepseek"], ["qwen", "qwen"], ["gemini", "gemini"],
+        ["glm", "glm"], ["flux", "flux"], ["llama", "llama"],
+        ["mistral", "mistral"], ["nemotron", "nemotron"], ["phi", "phi"],
+        ["claude", "claude"], ["grok", "grok"], ["command", "command"],
+        ["bge", "bge"], ["e5", "e5"]
+      ];
+      const known = knownFamilies.find(([token]) => new RegExp("(^|[^a-z0-9])" + token + "(?=[^a-z]|$)").test(raw));
+      if (known) return known[1];
+      const generic = new Set(["local", "cloud", "external", "openrouter", "ollama", "vllm", "model"]);
+      const segments = raw.split("/").filter(Boolean).reverse();
+      for (const segment of segments) {
+        const candidate = segment.split(/[^a-z0-9]+/).find(token => token && !generic.has(token));
+        if (candidate) return candidate;
+      }
+      return "model";
+    }
     function modelNameParts(id) {
       const raw = String(id || "");
-      const vendor = modelVendor(raw).toLowerCase();
+      const vendor = modelFamily(raw).toLowerCase();
       const name = shortModel(raw).toLowerCase();
       const tokens = new Set(name.split(/[^a-z0-9]+/).filter(token => token && token.length > 1));
       return { vendor, name, tokens };
@@ -1308,10 +1385,11 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const ctx = canvas.getContext("2d");
       ctx.clearRect(0, 0, viewportWidth, viewportHeight);
       const modelCount = (state.topologyModels || []).length;
+      const clusterNodes = state.status?.cluster?.enabled ? Object.values(state.status?.cluster?.nodes || {}) : [];
       const connectionCount = (state.topologyConnections || []).length;
       // Keep the model rack anchored. Traffic comes and goes constantly and
       // must not resize the world or make settled model cards jitter.
-      const targetWorldScale = Math.max(1, Math.sqrt(Math.max(1, modelCount / 6)));
+      const targetWorldScale = Math.max(1, Math.sqrt(Math.max(1, modelCount / 6, clusterNodes.length / 5)));
       const worldEase = targetWorldScale > state.topologyWorldScale ? .18 : .06;
       state.topologyWorldScale += (targetWorldScale - state.topologyWorldScale) * worldEase;
       if (Math.abs(targetWorldScale - state.topologyWorldScale) < .002) state.topologyWorldScale = targetWorldScale;
@@ -1341,8 +1419,19 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const models = state.topologyModels || [];
       const rackFraction = Math.min(.5, .27 + Math.max(0, models.length - 3) * .045);
       const modelField = { left: width * (1 - rackFraction), right: width - 18, top: 105, bottom: height - 28 };
-      const center = { x: modelField.left - 105, y: height * .53 };
-      const gate = { left: center.x - 82, right: center.x + 82, top: center.y - 170, bottom: center.y + 170 };
+      const clusterEnabled = clusterNodes.length > 0;
+      const center = { x: modelField.left - (clusterEnabled ? 190 : 105), y: height * .53 };
+      const nodeCardWidth = clusterEnabled ? 184 : 140;
+      const nodeCardHeight = clusterEnabled ? 154 : 60;
+      const nodeCardGap = clusterEnabled ? 16 : 0;
+      const clusterHeaderHeight = clusterEnabled ? 78 : 0;
+      const clusterStackHeight = clusterEnabled
+        ? clusterHeaderHeight + clusterNodes.length * nodeCardHeight + Math.max(0, clusterNodes.length - 1) * nodeCardGap
+        : 340;
+      const clusterStackTop = center.y - clusterStackHeight / 2;
+      const gate = clusterEnabled
+        ? { left: center.x - nodeCardWidth / 2, right: center.x + nodeCardWidth / 2, top: clusterStackTop, bottom: clusterStackTop + clusterStackHeight }
+        : { left: center.x - 82, right: center.x + 82, top: center.y - 170, bottom: center.y + 170 };
       updateModelLayout(models, modelField);
       const modelPoints = new Map(models.map(model => {
         const node = state.modelNodes.get(model.id);
@@ -1351,16 +1440,35 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       ctx.font = '11px "SFMono-Regular",monospace';
       ctx.textAlign = "left";
       const modelList = [...modelPoints.values()].sort((a, b) => a.y - b.y);
+      const nodeX = clusterEnabled ? center.x : gate.right + Math.max(78, (modelField.left - gate.right) * .48);
+      const nodePoints = new Map(clusterNodes.map((node, index) => [node.id, {
+        x: nodeX,
+        y: clusterEnabled
+          ? clusterStackTop + clusterHeaderHeight + nodeCardHeight / 2 + index * (nodeCardHeight + nodeCardGap)
+          : center.y,
+        node
+      }]));
+      const leaderNodeId = state.status?.cluster?.leaderNode;
+      const leaderPoint = nodePoints.get(leaderNodeId) || nodePoints.values().next().value;
+      const ingressPoint = clusterEnabled && leaderPoint
+        ? { x: leaderPoint.x - nodeCardWidth / 2, y: leaderPoint.y }
+        : { x: gate.left, y: center.y };
       modelList.forEach((point, index) => {
         const portY = center.y - Math.min(94, (modelList.length - 1) * 32) / 2 + index * Math.min(47, 94 / Math.max(1, modelList.length - 1));
-        const from = { x: gate.right, y: portY }, to = { x: point.x - point.cardWidth / 2, y: point.y };
+        const targetNodes = (point.model.nodes || []).map(id => nodePoints.get(id)).filter(Boolean);
+        const sources = targetNodes.length
+          ? targetNodes.map(item => ({ x: item.x + nodeCardWidth / 2, y: item.y }))
+          : clusterEnabled && leaderPoint
+            ? [{ x: leaderPoint.x + nodeCardWidth / 2, y: leaderPoint.y }]
+            : [{ x: gate.right, y: portY }];
+        const from = sources[0], to = { x: point.x - point.cardWidth / 2, y: point.y };
         const inputSignal = promptPulseIntensity(point.model.promptTokens, point.model.promptPulseAt, now);
         const outputRate = smoothRate("model:" + point.model.id + ":out", point.model.liveOutputRate, now);
         const rate = Math.max(inputSignal, outputRate);
         const cumulative = Number(point.model.inputTokens || 0) + Number(point.model.outputTokens || 0);
         ctx.strokeStyle = rate > 0 ? "rgba(47,230,200,.82)" : cumulative > 0 ? "rgba(47,230,200,.32)" : "rgba(153,163,176,.15)";
         ctx.lineWidth = 1 + Math.min(2.5, Math.sqrt(rate) / 8);
-        ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke();
+        for (const source of sources) { ctx.beginPath(); ctx.moveTo(source.x, source.y); ctx.lineTo(to.x, to.y); ctx.stroke(); }
         [[inputSignal, false, "rgba(143,180,255,.94)"], [outputRate, true, "rgba(47,230,200,.94)"]].forEach(([directionRate, reverse, color], direction) => {
           const particles = directionRate > 0 ? Math.min(12, Math.max(2, Math.ceil(Math.sqrt(directionRate)))) : 0;
           for (let particle = 0; particle < particles; particle++) {
@@ -1371,6 +1479,54 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           }
         });
       });
+      const nodeHitCards = [];
+      for (const point of nodePoints.values()) {
+        const node = point.node;
+        const telemetry = node.telemetry || {};
+        const cpu = telemetry.cpu?.utilization;
+        const ram = telemetry.memory?.pressureUtilization ?? telemetry.memory?.utilization;
+        const gpu = telemetry.gpu?.utilization;
+        const gpuMemory = telemetry.gpu?.memoryTotalMb > 0 ? telemetry.gpu.memoryUsedMb / telemetry.gpu.memoryTotalMb * 100 : null;
+        const cardLeft = point.x - nodeCardWidth / 2, cardTop = point.y - nodeCardHeight / 2;
+        nodeHitCards.push({ id: node.id, left: cardLeft, top: cardTop, width: nodeCardWidth, height: nodeCardHeight });
+        ctx.fillStyle = node.reachable === false ? "rgba(25,11,15,.96)" : "rgba(7,18,17,.97)";
+        ctx.strokeStyle = node.local ? "rgba(143,180,255,.72)" : node.reachable === false ? "rgba(255,111,125,.72)" : "rgba(47,230,200,.62)";
+        ctx.lineWidth = node.local ? 2 : 1;
+        ctx.beginPath(); ctx.roundRect(cardLeft, cardTop, nodeCardWidth, nodeCardHeight, 6); ctx.fill(); ctx.stroke();
+        ctx.textAlign = "left"; ctx.font = '700 10px "SFMono-Regular",monospace';
+        ctx.fillStyle = node.reachable === false ? "#ff6f7d" : "#e9fffb";
+        ctx.fillText(fitCanvasText(ctx, node.name || node.id, clusterEnabled ? 116 : 94), cardLeft + 10, cardTop + 19);
+        ctx.textAlign = "right"; ctx.fillStyle = node.local ? "#8fb4ff" : "rgba(153,163,176,.9)";
+        const nodeRole = node.reachable === false ? "OFFLINE" : node.id === leaderNodeId ? "LEADER" : String(node.labels?.role || "NODE").toUpperCase();
+        ctx.fillText(nodeRole, cardLeft + nodeCardWidth - 10, cardTop + 19);
+        if (clusterEnabled) {
+          const platform = node.profile?.platformId || [node.system?.platform, node.system?.arch].filter(Boolean).join("-") || "unknown architecture";
+          const accelerator = node.profile?.accelerators?.[0] || node.labels?.hardware || "cpu";
+          ctx.textAlign = "left"; ctx.font = '8px "SFMono-Regular",monospace'; ctx.fillStyle = "rgba(143,180,255,.72)";
+          ctx.fillText(fitCanvasText(ctx, platform + " · " + accelerator, nodeCardWidth - 20), cardLeft + 10, cardTop + 35);
+        }
+        const resources = clusterEnabled ? [["CPU", cpu], ["RAM", ram], ["GPU", gpu], ["VRAM", gpuMemory]] : [["RAM", ram], ["GPU", gpu]];
+        ctx.font = '9px "SFMono-Regular",monospace';
+        resources.forEach((row, rowIndex) => {
+          const y = clusterEnabled ? cardTop + 58 + rowIndex * 18 : point.y + 7 + rowIndex * 14;
+          const barLeft = cardLeft + 39;
+          const barWidth = clusterEnabled ? nodeCardWidth - 86 : 62;
+          ctx.textAlign = "left"; ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.fillText(row[0], cardLeft + 10, y);
+          ctx.fillStyle = "rgba(143,180,255,.13)"; ctx.fillRect(barLeft, y - 7, barWidth, 6);
+          if (row[1] != null) { ctx.fillStyle = row[1] > 90 ? "#ff6f7d" : row[1] > 70 ? "#f3bd4f" : "#2fe6c8"; ctx.fillRect(barLeft, y - 7, barWidth * Math.max(0, Math.min(100, row[1])) / 100, 6); }
+          ctx.textAlign = "right"; ctx.fillStyle = "rgba(242,245,247,.9)"; ctx.fillText(row[1] == null ? "–" : Math.round(row[1]) + "%", cardLeft + nodeCardWidth - 10, y);
+        });
+        if (clusterEnabled) {
+          const temperature = telemetry.gpu?.temperatureC;
+          const power = telemetry.gpu?.powerDrawW;
+          const thermalText = temperature == null && power == null
+            ? "TELEMETRY –"
+            : (temperature == null ? "–" : Math.round(temperature) + "°C") + " · " + (power == null ? "–" : Math.round(power) + "W");
+          ctx.textAlign = "center"; ctx.fillStyle = "rgba(153,163,176,.8)";
+          ctx.fillText(thermalText, point.x, cardTop + nodeCardHeight - 10);
+        }
+      }
+      state.topologyHitNodeCards = nodeHitCards;
       const cardDrawList = [...modelPoints.values()].sort((a, b) => {
         const zDiff = modelCardZ(a.model) - modelCardZ(b.model);
         if (zDiff !== 0) return zDiff;
@@ -1379,6 +1535,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       if (state.topologyRaisedModelId && !modelPoints.has(state.topologyRaisedModelId)) state.topologyRaisedModelId = null;
       const hitCards = [];
       for (const point of cardDrawList) {
+        ctx.save();
         const displayedLiveRate = smoothRate("model:" + point.model.id + ":display", point.model.liveRate, now);
         const live = displayedLiveRate > .05;
         const serving = point.model.state === "serving";
@@ -1415,9 +1572,12 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           ctx.save(); ctx.beginPath(); ctx.roundRect(cardLeft, cardTop, cardWidth, 68, 5); ctx.clip(); ctx.fillStyle = scan; ctx.fillRect(scanX - 16, cardTop, 32, 68); ctx.restore();
         }
         ctx.fillStyle = serving ? "#42d77d" : externalProcessing ? "#f3bd4f" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : evicting ? "#ff7e66" : "#8fb4ff"; ctx.fillRect(cardLeft, cardTop, 4, 68);
-        ctx.fillStyle = "rgba(242,245,247,.92)"; ctx.fillText(fitCanvasText(ctx, shortModel(point.model.id), cardWidth - 68), cardLeft + 12, point.y - 15);
-        const vendor = modelVendor(point.model.id).toUpperCase();
-        ctx.textAlign = "right"; ctx.fillStyle = "rgba(143,180,255,.78)"; ctx.fillText(fitCanvasText(ctx, vendor, 54), cardLeft + cardWidth - 10, point.y - 15); ctx.textAlign = "left";
+        ctx.textAlign = "left"; ctx.font = '11px "SFMono-Regular",monospace';
+        const vendor = modelFamily(point.model.id).toUpperCase();
+        const vendorText = fitCanvasText(ctx, vendor, 54);
+        const titleWidth = Math.max(24, cardWidth - 12 - 10 - ctx.measureText(vendorText).width - 12);
+        ctx.fillStyle = "rgba(242,245,247,.92)"; ctx.fillText(fitCanvasText(ctx, shortModel(point.model.id), titleWidth), cardLeft + 12, point.y - 15);
+        ctx.textAlign = "right"; ctx.fillStyle = "rgba(143,180,255,.78)"; ctx.fillText(vendorText, cardLeft + cardWidth - 10, point.y - 15); ctx.textAlign = "left";
         ctx.fillStyle = "rgba(153,163,176,.9)";
         ctx.fillText((point.model.inputEstimated ? "~" : "") + formatCompact(point.model.inputTokens) + " in · " + formatCompact(point.model.outputTokens) + " out", cardLeft + 12, point.y + 4);
         ctx.fillStyle = serving ? "#42d77d" : externalProcessing ? "#f3bd4f" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : evicting ? "#ff7e66" : "rgba(143,180,255,.7)";
@@ -1425,6 +1585,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const modelRateText = displayedModelRate == null ? "" : formatRate(displayedModelRate) + " tok/s";
         const modelStateText = point.model.state === "queued" ? "QUEUED" : serving ? "COMPUTE ACTIVE" : externalProcessing ? "EXTERNAL PROCESSING" : point.model.state.toUpperCase();
         ctx.fillText(fitCanvasText(ctx, modelStateText + (modelRateText ? " · " + modelRateText : ""), cardWidth - 22), cardLeft + 12, point.y + 23);
+        ctx.restore();
       }
       state.topologyHitCards = hitCards;
       state.topologyView = { viewportWidth, viewportHeight, width, height, zoom, panX, panY };
@@ -1440,8 +1601,10 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const seed = Number(String(connection.id).replace(/\D/g, "")) || index + 1;
         const from = state.threadNodes.get(connection.id);
         const slotCount = Math.max(1, Math.min(10, orderedConnections.length));
-        const slotY = center.y - 136 + (index % slotCount) * (272 / Math.max(1, slotCount - 1));
-        const ingress = { x: gate.left, y: slotY };
+        const slotY = clusterEnabled && leaderPoint
+          ? leaderPoint.y - Math.min(42, (slotCount - 1) * 8) / 2 + (index % slotCount) * Math.min(12, 42 / Math.max(1, slotCount - 1))
+          : center.y - 136 + (index % slotCount) * (272 / Math.max(1, slotCount - 1));
+        const ingress = { x: ingressPoint.x, y: slotY };
         const controlOne = { x: from.x + (ingress.x - from.x) * .38, y: from.y };
         const controlTwo = { x: from.x + (ingress.x - from.x) * .72, y: ingress.y };
         const inputSignal = promptPulseIntensity(connection.promptTokens, connection.promptPulseAt, now);
@@ -1471,36 +1634,46 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const liveStats = connection.outputPending ? " · awaiting JSON" : " · " + connectionRate;
         ctx.fillText((connection.inputEstimated ? "~" : "") + formatNumber(connection.inputTokens) + " in · " + formatNumber(connection.outputTokens) + " out" + liveStats, from.x + 10, from.y + 13);
       });
-      ctx.textAlign = "center";
-      const chassis = ctx.createLinearGradient(gate.left, 0, gate.right, 0);
-      chassis.addColorStop(0, "rgba(7,11,12,.98)"); chassis.addColorStop(.5, "rgba(20,64,63,.96)"); chassis.addColorStop(1, "rgba(7,11,12,.98)");
-      ctx.fillStyle = chassis; ctx.strokeStyle = "rgba(47,230,200,.9)"; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.roundRect(gate.left, gate.top, gate.right - gate.left, gate.bottom - gate.top, 9); ctx.fill(); ctx.stroke();
-      ctx.strokeStyle = "rgba(143,180,255,.35)"; ctx.lineWidth = 1;
-      for (let i = 0; i < 9; i++) { const y = gate.top + 30 + i * 25; ctx.beginPath(); ctx.moveTo(gate.left + 13, y); ctx.lineTo(gate.right - 13, y); ctx.stroke(); }
-      ctx.fillStyle = "#e9fffb"; ctx.font = '700 18px "SFMono-Regular",monospace'; ctx.fillText("LLooM", center.x, gate.top + 39);
-      ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.font = '10px "SFMono-Regular",monospace'; ctx.fillText("ROUTING LOOM", center.x, gate.top + 57);
       const summary = state.topologySummary || {};
       const promptTokens = visiblePromptTokens(summary.promptTokens, summary.promptPulseAt, now);
       const smoothedOutputRate = smoothRate("summary:output", summary.outputRate, now);
-      const statRows = [["ACTIVE", summary.active || 0], ["PROMPT", promptTokens > 0 ? (summary.promptEstimated ? "~" : "") + formatCompact(Math.round(promptTokens)) + " tok" : "—"], ["OUTPUT", formatRate(smoothedOutputRate) + " ~t/s"], ["ERRORS", summary.errors || 0]];
-      ctx.font = '11px "SFMono-Regular",monospace';
-      statRows.forEach((row, index) => { const y = gate.top + 94 + index * 27; ctx.textAlign = "left"; ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.fillText(row[0], gate.left + 18, y); ctx.textAlign = "right"; ctx.fillStyle = "rgba(242,245,247,.95)"; ctx.fillText(String(row[1]), gate.right - 18, y); });
-      const host = summary.host || {};
-      const resourceRows = [
-        ["CPU", host.cpu?.utilization],
-        ["RAM", host.memory?.utilization],
-        ["GPU", host.gpu?.utilization]
-      ];
-      ctx.font = '9px "SFMono-Regular",monospace';
-      resourceRows.forEach((row, index) => {
-        const y = gate.top + 218 + index * 24, value = row[1];
-        ctx.textAlign = "left"; ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.fillText(row[0], gate.left + 17, y);
-        ctx.fillStyle = "rgba(143,180,255,.13)"; ctx.fillRect(gate.left + 51, y - 8, 74, 7);
-        if (value != null) { ctx.fillStyle = value > 90 ? "#ff6f7d" : value > 70 ? "#f3bd4f" : "#2fe6c8"; ctx.fillRect(gate.left + 51, y - 8, 74 * Math.max(0, Math.min(100, value)) / 100, 7); }
-        ctx.textAlign = "right"; ctx.fillStyle = "rgba(242,245,247,.9)"; ctx.fillText(value == null ? "–" : Math.round(value) + "%", gate.right - 17, y);
-      });
-      if (host.gpu) { ctx.textAlign = "center"; ctx.fillStyle = "rgba(153,163,176,.8)"; ctx.fillText(Math.round(host.gpu.temperatureC) + "°C · " + Math.round(host.gpu.powerDrawW) + "W", center.x, gate.bottom - 13); }
+      ctx.textAlign = "center";
+      if (clusterEnabled) {
+        ctx.fillStyle = "#e9fffb"; ctx.font = '700 17px "SFMono-Regular",monospace'; ctx.fillText("LLooM", center.x, gate.top + 20);
+        ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.font = '9px "SFMono-Regular",monospace';
+        ctx.fillText(fitCanvasText(ctx, (state.status?.cluster?.id || "CLUSTER") + " · ROUTING", nodeCardWidth), center.x, gate.top + 35);
+        const clusterTraffic = [
+          (summary.active || 0) + " ACTIVE",
+          promptTokens > 0 ? (summary.promptEstimated ? "~" : "") + formatCompact(Math.round(promptTokens)) + " PROMPT" : "NO PROMPT"
+        ].join(" · ");
+        ctx.fillStyle = "rgba(143,180,255,.82)";
+        ctx.fillText(fitCanvasText(ctx, clusterTraffic, nodeCardWidth + 24), center.x, gate.top + 51);
+        const clusterResults = formatRate(smoothedOutputRate) + " ~T/S · " + (summary.errors || 0) + " ERR";
+        ctx.fillText(fitCanvasText(ctx, clusterResults, nodeCardWidth + 24), center.x, gate.top + 66);
+      } else {
+        const chassis = ctx.createLinearGradient(gate.left, 0, gate.right, 0);
+        chassis.addColorStop(0, "rgba(7,11,12,.98)"); chassis.addColorStop(.5, "rgba(20,64,63,.96)"); chassis.addColorStop(1, "rgba(7,11,12,.98)");
+        ctx.fillStyle = chassis; ctx.strokeStyle = "rgba(47,230,200,.9)"; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.roundRect(gate.left, gate.top, gate.right - gate.left, gate.bottom - gate.top, 9); ctx.fill(); ctx.stroke();
+        ctx.strokeStyle = "rgba(143,180,255,.35)"; ctx.lineWidth = 1;
+        for (let i = 0; i < 9; i++) { const y = gate.top + 30 + i * 25; ctx.beginPath(); ctx.moveTo(gate.left + 13, y); ctx.lineTo(gate.right - 13, y); ctx.stroke(); }
+        ctx.fillStyle = "#e9fffb"; ctx.font = '700 18px "SFMono-Regular",monospace'; ctx.fillText("LLooM", center.x, gate.top + 39);
+        ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.font = '10px "SFMono-Regular",monospace'; ctx.fillText("ROUTING LOOM", center.x, gate.top + 57);
+        const statRows = [["ACTIVE", summary.active || 0], ["PROMPT", promptTokens > 0 ? (summary.promptEstimated ? "~" : "") + formatCompact(Math.round(promptTokens)) + " tok" : "—"], ["OUTPUT", formatRate(smoothedOutputRate) + " ~t/s"], ["ERRORS", summary.errors || 0]];
+        ctx.font = '11px "SFMono-Regular",monospace';
+        statRows.forEach((row, index) => { const y = gate.top + 94 + index * 27; ctx.textAlign = "left"; ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.fillText(row[0], gate.left + 18, y); ctx.textAlign = "right"; ctx.fillStyle = "rgba(242,245,247,.95)"; ctx.fillText(String(row[1]), gate.right - 18, y); });
+        const host = summary.host || {};
+        const resourceRows = [["CPU", host.cpu?.utilization], ["RAM", host.memory?.utilization], ["GPU", host.gpu?.utilization]];
+        ctx.font = '9px "SFMono-Regular",monospace';
+        resourceRows.forEach((row, index) => {
+          const y = gate.top + 218 + index * 24, value = row[1];
+          ctx.textAlign = "left"; ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.fillText(row[0], gate.left + 17, y);
+          ctx.fillStyle = "rgba(143,180,255,.13)"; ctx.fillRect(gate.left + 51, y - 8, 74, 7);
+          if (value != null) { ctx.fillStyle = value > 90 ? "#ff6f7d" : value > 70 ? "#f3bd4f" : "#2fe6c8"; ctx.fillRect(gate.left + 51, y - 8, 74 * Math.max(0, Math.min(100, value)) / 100, 7); }
+          ctx.textAlign = "right"; ctx.fillStyle = "rgba(242,245,247,.9)"; ctx.fillText(value == null ? "–" : Math.round(value) + "%", gate.right - 17, y);
+        });
+        if (host.gpu) { ctx.textAlign = "center"; ctx.fillStyle = "rgba(153,163,176,.8)"; ctx.fillText(Math.round(host.gpu.temperatureC) + "°C · " + Math.round(host.gpu.powerDrawW) + "W", center.x, gate.bottom - 13); }
+      }
       ctx.restore();
     }
 
@@ -1616,7 +1789,18 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const inputEstimated = liveConnections.some(item => item.inputEstimated);
         const activeInput = liveConnections.reduce((sum, item) => sum + item.inputTokens, 0);
         const activeOutput = liveConnections.reduce((sum, item) => sum + item.outputTokens, 0);
-        const runtimeState = runtimeStates[model.runtime] || {};
+        const runtimeIds = [...new Set([model.runtime, ...(model.targets || []).map(target => target.runtime)].filter(Boolean))];
+        const targetRuntimeStates = runtimeIds.map(runtimeId => runtimeStates[runtimeId] || {});
+        const runtimeState = model.runtime
+          ? runtimeStates[model.runtime] || {}
+          : {
+              healthy: targetRuntimeStates.some(item => item.healthy === true),
+              status: targetRuntimeStates.some(item => ["running", "external"].includes(item.status))
+                ? "running"
+                : targetRuntimeStates.find(item => ["queued", "starting", "warming", "draining", "stopping"].includes(item.status))?.status || "idle",
+              members: targetRuntimeStates.flatMap(item => item.members || []),
+              lastRequestedAt: targetRuntimeStates.map(item => item.lastRequestedAt).filter(Boolean).sort().at(-1) || null
+            };
         const runtimeStatus = runtimeState.status || "idle";
         const runtimeLoaded = runtimeState.healthy === true || runtimeStatus === "running" || runtimeStatus === "external";
         const transitioning = runtimeStatus === "starting" || runtimeStatus === "warming"
@@ -1629,13 +1813,18 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         // Lifecycle truth wins over traffic. A queued request connected to a
         // cold backend is not serving yet, and a draining backend remains
         // visibly evicting until the process/container is actually gone.
-        const stateLabel = !model.runtime
+        const stateLabel = !runtimeIds.length
           ? liveConnections.length ? "external-processing" : "external"
           : transitioning || (liveConnections.length ? "serving" : runtimeLoaded ? "hot" : "cold");
-        const lastActiveAt = data.last?.at || runtimeStates[model.runtime]?.lastRequestedAt || null;
+        const lastActiveAt = data.last?.at || runtimeState.lastRequestedAt || null;
         const lastActiveMs = Date.parse(lastActiveAt || "");
         const agedOut = stateLabel === "cold" && (!Number.isFinite(lastActiveMs) || sampleAt - lastActiveMs > TOPOLOGY_COLD_MODEL_TTL_MS);
-        return { id: model.id, inputTokens: Number(data.inputTokens || 0) + activeInput, inputEstimated, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveOutputRate, promptTokens: modelPromptTokens, promptPulseAt: modelPromptPulseAt, averageRate: data.decodeTokensPerSecond == null ? null : Number(data.decodeTokensPerSecond), state: stateLabel, lastActiveAt, agedOut };
+        const nodes = [...new Set([
+          ...((model.targets || []).map(target => target.node).filter(Boolean)),
+          ...(runtimeState.members || []).map(member => member.node).filter(Boolean),
+          runtimeState.node
+        ].filter(Boolean))];
+        return { id: model.id, nodes, inputTokens: Number(data.inputTokens || 0) + activeInput, inputEstimated, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveOutputRate, promptTokens: modelPromptTokens, promptPulseAt: modelPromptPulseAt, averageRate: data.decodeTokensPerSecond == null ? null : Number(data.decodeTokensPerSecond), state: stateLabel, lastActiveAt, agedOut };
       });
       state.topologyCatalogModels = topologyModels;
       applyTopologyModelFilter();
@@ -1685,6 +1874,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         renderRuntimes();
         renderBackends();
         renderLibrary();
+        renderNodeInspector();
         const authHint = security.adminAuthRequired
           ? "admin auth on"
           : security.authRequired
@@ -1784,6 +1974,17 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       }
       return null;
     }
+    function hitTopologyNodeCard(screenX, screenY) {
+      const view = state.topologyView;
+      const cards = state.topologyHitNodeCards || [];
+      if (!view || !cards.length) return null;
+      const world = topologyWorldFromScreen(screenX, screenY, view);
+      for (let index = cards.length - 1; index >= 0; index--) {
+        const card = cards[index];
+        if (world.x >= card.left && world.x <= card.left + card.width && world.y >= card.top && world.y <= card.top + card.height) return card.id;
+      }
+      return null;
+    }
     $("#topology-zoom-out").addEventListener("click", () => {
       setTopologyInteractionFocused(true, { focusCanvas: true });
       adjustTopologyZoom(-.1);
@@ -1821,7 +2022,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const canvas = event.currentTarget;
       if (!drag || drag.pointerId !== event.pointerId) {
         const point = topologyScreenPoint(event, canvas);
-        canvas.style.cursor = hitTopologyModelCard(point.x, point.y) ? "pointer" : state.topologyInteractionFocused ? "grab" : "default";
+        canvas.style.cursor = hitTopologyModelCard(point.x, point.y) || hitTopologyNodeCard(point.x, point.y) ? "pointer" : state.topologyInteractionFocused ? "grab" : "default";
         return;
       }
       if (!drag.pannable) return;
@@ -1844,7 +2045,11 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const point = topologyScreenPoint(event, canvas);
       const modelId = hitTopologyModelCard(point.x, point.y);
       if (modelId) openModelInspector(modelId);
-      else closeModelInspector();
+      else {
+        const nodeId = hitTopologyNodeCard(point.x, point.y);
+        if (nodeId) openNodeInspector(nodeId);
+        else { closeModelInspector(); closeNodeInspector(); }
+      }
     }
     $("#topology-canvas").addEventListener("pointerup", endTopologyPan);
     $("#topology-canvas").addEventListener("pointercancel", endTopologyPan);
@@ -1865,6 +2070,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       }
     }, true);
     $("#model-inspector-close").addEventListener("click", closeModelInspector);
+    $("#node-inspector-close").addEventListener("click", closeNodeInspector);
     $("#copy-output").addEventListener("click", async () => {
       await navigator.clipboard.writeText($("#output").textContent);
     });

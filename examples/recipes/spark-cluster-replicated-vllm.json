@@ -1,0 +1,30 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "id": "spark-cluster-replicated-vllm-example",
+  "name": "Spark cluster replicated vLLM example",
+  "version": 1,
+  "summary": "Materialize one identical vLLM replica on every configured Spark node.",
+  "requirements": {
+    "platforms": ["linux-arm64"],
+    "memoryGb": 64,
+    "commands": ["vllm"],
+    "accelerators": ["nvidia-gpu"]
+  },
+  "backend": { "id": "vllm", "protocol": "openai" },
+  "models": [
+    {
+      "role": "chat",
+      "model": "unsloth/Qwen3.6-27B-NVFP4",
+      "gatewayModel": "unsloth/Qwen3.6-27B-NVFP4",
+      "capabilities": ["chat", "responses", "tools", "reasoning"],
+      "settings": {
+        "contextWindow": 65536,
+        "maxOutputTokens": 8192,
+        "maxActiveRequests": 4,
+        "memoryGb": 48,
+        "placement": { "mode": "replicated" }
+      }
+    }
+  ]
+}

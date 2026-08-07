@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { materializeFederatedNodes, modelTargets, validateClusterConfig } from './cluster.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const repoRoot = path.resolve(__dirname, '..');
@@ -54,19 +55,25 @@ function envBoolean(env, name) {
   throw new Error(`${name} must be one of true/false, yes/no, on/off, or 1/0`);
 }
 
-function validateConfig(config, sourcePath) {
+function validateConfig(config, sourcePath, env) {
   const errors = [];
   const modelIds = new Set();
 
   for (const [index, model] of (config.models ?? []).entries()) {
     if (!model?.id) errors.push(`models[${index}] is missing id`);
-    if (!model?.backend) errors.push(`models[${index}] ${model?.id ?? ''} is missing backend`);
+    if (!model?.backend && !model?.targets?.length) {
+      errors.push(`models[${index}] ${model?.id ?? ''} is missing backend or targets`);
+    }
     if (model?.id && modelIds.has(model.id)) errors.push(`duplicate model id: ${model.id}`);
     if (model?.id) modelIds.add(model.id);
-    if (model?.backend && !config.backends?.[model.backend]) {
-      errors.push(`model ${model.id} references unknown backend ${model.backend}`);
+    for (const target of modelTargets(model)) {
+      if (target.backend && !config.backends?.[target.backend]) {
+        errors.push(`model ${model.id} references unknown backend ${target.backend}`);
+      }
     }
   }
+
+  errors.push(...validateClusterConfig(config, env));
 
   for (const [aliasId, alias] of Object.entries(config.aliases ?? {})) {
     const target = typeof alias === 'string' ? alias : alias.target;
@@ -169,6 +176,10 @@ export async function loadConfig(
     backends: asObject(expanded.backends),
     aliases: asObject(expanded.aliases),
     runtimes: asObject(expanded.runtimes),
+    cluster: {
+      ...asObject(expanded.cluster),
+      nodes: asObject(expanded.cluster?.nodes)
+    },
     models: Array.isArray(expanded.models) ? expanded.models : [],
     clientCatalog: {
       providerId: 'local-llm',
@@ -186,6 +197,7 @@ export async function loadConfig(
     writable: false
   });
 
-  validateConfig(config, resolvedPath);
+  materializeFederatedNodes(config);
+  validateConfig(config, resolvedPath, env);
   return config;
 }

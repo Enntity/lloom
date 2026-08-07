@@ -1,5 +1,6 @@
 import os from 'node:os';
 import { runCommand } from './process-control.mjs';
+import { detectNvidiaSyncCluster } from './cluster.mjs';
 
 export const MACHINE_PROFILE_SCHEMA = 'https://lloom.dev/schemas/machine-profile.v1.schema.json';
 export const MACHINE_PROFILE_MEDIA_TYPE = 'application/vnd.lloom.machine-profile+json;version=1';
@@ -206,6 +207,7 @@ export function normalizeMachineProfile(profile = {}) {
     }),
     devices,
     isAppleSilicon,
+    ...(profile.cluster ? { cluster: profile.cluster } : {}),
     ...(profile.modelRoot ? { 'x-local-modelRoot': profile.modelRoot } : {})
   };
 }
@@ -341,6 +343,7 @@ export async function profileMachine({ platform = process.platform, arch = proce
   const logicalCpus = os.cpus().length;
   const isAppleSilicon = platform === 'darwin' && arch === 'arm64';
   const devices = [...(isAppleSilicon ? appleSiliconDevices() : []), ...(await detectCudaDevices())];
+  const cluster = platform === 'linux' ? await detectNvidiaSyncCluster({ home: env.HOME }) : null;
   return normalizeMachineProfile({
     platform,
     arch,
@@ -349,6 +352,7 @@ export async function profileMachine({ platform = process.platform, arch = proce
     logicalCpus,
     isAppleSilicon,
     devices,
+    ...(cluster ? { cluster } : {}),
     modelRoot: env.LLOOM_MODEL_ROOT ?? env.LLOOM_MTPLX_MODEL_ROOT ?? ''
   });
 }
@@ -359,6 +363,19 @@ export async function evaluateRecipe(recipe, profile, { checkCommands = true } =
   const requiredCommands = Array.isArray(requirements.commands) ? requirements.commands : [];
   const requiredAccelerators = Array.isArray(requirements.accelerators) ? requirements.accelerators : [];
   const memoryRequired = Number(requirements.memoryGb ?? 0);
+  const clusterRequirements = requirements.cluster ?? {};
+  const clusterNodeCount = Number(profile.cluster?.nodeCount ?? 1);
+  const minimumNodes = Number(clusterRequirements.minNodes ?? clusterRequirements.nodes ?? 0);
+  const maximumNodes = Number(clusterRequirements.maxNodes ?? clusterRequirements.nodes ?? 0);
+  const clusterProvider = profile.cluster?.provider ?? null;
+  const requiredProvider = clusterRequirements.provider ?? null;
+  const clusterTopology = profile.cluster?.topology ?? null;
+  const requiredTopology = clusterRequirements.topology ?? null;
+  const nodeCountSupported =
+    (!minimumNodes || clusterNodeCount >= minimumNodes) && (!maximumNodes || clusterNodeCount <= maximumNodes);
+  const clusterProviderSupported = !requiredProvider || clusterProvider === requiredProvider;
+  const clusterTopologySupported = !requiredTopology || clusterTopology === requiredTopology;
+  const clusterSupported = nodeCountSupported && clusterProviderSupported && clusterTopologySupported;
   const platformSupported = !platforms.length || platforms.includes(profile.platformId);
   const profileMemoryGb = Number(profile.totalMemoryGb);
   const memoryKnown = Number.isFinite(profileMemoryGb);
@@ -374,7 +391,7 @@ export async function evaluateRecipe(recipe, profile, { checkCommands = true } =
     });
   }
   const missingCommands = commands.filter((command) => command.available === false).map((command) => command.command);
-  const selectable = platformSupported && memorySupported !== false && acceleratorsSupported;
+  const selectable = platformSupported && memorySupported !== false && acceleratorsSupported && clusterSupported;
   const setupRequired = selectable && missingCommands.length > 0;
   const runnable = selectable && !setupRequired;
   const primaryChat = (recipe.models ?? []).some((model) => {
@@ -385,6 +402,7 @@ export async function evaluateRecipe(recipe, profile, { checkCommands = true } =
     platformSupported ? 50 : 0,
     memorySupported === true ? 25 : memorySupported === null ? 8 : 0,
     acceleratorsSupported ? 10 : 0,
+    clusterSupported ? (minimumNodes ? 40 : 0) : 0,
     missingCommands.length === 0 ? 15 : 0,
     Number(recipe.version ?? 1)
   ].reduce((sum, value) => sum + value, 0);
@@ -396,6 +414,10 @@ export async function evaluateRecipe(recipe, profile, { checkCommands = true } =
     memorySupported,
     memoryRequiredGb: memoryRequired || null,
     acceleratorsSupported,
+    clusterSupported,
+    clusterNodeCount,
+    clusterRequirements,
+    clusterTopologySupported,
     requiredAccelerators,
     missingAccelerators,
     commands,
@@ -410,6 +432,13 @@ export async function evaluateRecipe(recipe, profile, { checkCommands = true } =
       ...(memorySupported === false ? [`requires ${memoryRequired} GB memory`] : []),
       ...(memorySupported === null ? [`memory unknown; recipe requires ${memoryRequired} GB`] : []),
       ...missingAccelerators.map((accelerator) => `requires accelerator ${accelerator}`),
+      ...(!nodeCountSupported
+        ? [
+            `requires ${minimumNodes === maximumNodes ? minimumNodes : `${minimumNodes || 1}-${maximumNodes || 'any'}`} cluster nodes`
+          ]
+        : []),
+      ...(!clusterProviderSupported ? [`requires cluster provider ${requiredProvider}`] : []),
+      ...(!clusterTopologySupported ? [`requires cluster topology ${requiredTopology}`] : []),
       ...missingCommands.map((command) => `missing command ${command}`)
     ]
   };

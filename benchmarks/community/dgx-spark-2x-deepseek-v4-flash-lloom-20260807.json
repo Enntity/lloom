@@ -1,0 +1,133 @@
+{
+  "$schema": "https://lloom.dev/schemas/benchmark-suite.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "dgx-spark-2x-deepseek-v4-flash-lloom-20260807",
+  "name": "2x DGX Spark DeepSeek V4 Flash through LLooM",
+  "summary": "Streaming gateway measurements for the LLooM-managed MiaAI-tested DSpark TP=2 runtime at 262K context after coexistence tuning.",
+  "license": { "id": "CC0-1.0", "name": "CC0 1.0" },
+  "source": { "type": "local-measurement", "name": "LLooM authenticated gateway benchmark" },
+  "submittedAt": "2026-08-07T06:09:01.091Z",
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "lloom streaming benchmark harness",
+    "source": "Reproducible local measurement on ennspark-cluster"
+  },
+  "methodology": {
+    "harness": "LLooM OpenAI-compatible streaming endpoint",
+    "harnessVersion": "0.2.3",
+    "promptCorpus": "Deterministic 2,317-token repeated-token prompt, output=256, temperature=0, ignore-eos, seed=20260807",
+    "warmupRuns": 1,
+    "measurementRuns": 3,
+    "streaming": true
+  },
+  "results": [
+    {
+      "id": "dgx-spark-2x-dsv4-flash-dspark-tp2-c1",
+      "recipeId": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm",
+      "recipeVersion": 4,
+      "backendId": "docker-vllm",
+      "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
+      "gatewayModel": "deepseek-v4-flash-0731",
+      "machine": {
+        "platformId": "linux-arm64",
+        "chip": "2x NVIDIA DGX Spark / GB10",
+        "memoryGb": 128,
+        "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"],
+        "nodeCount": 2,
+        "clusterMemoryGb": 256
+      },
+      "settings": {
+        "runtimeImage": "ghcr.io/anemll/dspark-vllm-gx10@sha256:a83948492cf13df455170fb42885f5ef4db54fefe0feff0f841ecbff464ac9d8",
+        "modelRevision": "9e165c30e2704aec5d9d593cce3eebd58bbef1cb",
+        "tensorParallelSize": 2,
+        "contextWindow": 262144,
+        "gpuMemoryUtilization": 0.73,
+        "kvCacheDtype": "nvfp4_ds_mla",
+        "maxNumSeqs": 6,
+        "maxNumBatchedTokens": 8192,
+        "speculative": { "method": "dspark", "numSpeculativeTokens": 5 }
+      },
+      "workload": {
+        "type": "interactive-generation",
+        "category": "matched-deterministic",
+        "concurrency": 1,
+        "promptTokens": 2317,
+        "outputTokens": 256
+      },
+      "metrics": {
+        "generationTokPerSec": 45.243706384694796,
+        "outputThroughputTokPerSec": 45.243706384694796,
+        "timeToFirstTokenMs": 832.9876919999988,
+        "contextWindow": 262144,
+        "postFirstTokenTokPerSec": 52.56060870611609,
+        "minimumAvailableMemoryGb": 21.813106536865234
+      }
+    },
+    {
+      "id": "dgx-spark-2x-dsv4-flash-dspark-tp2-c4",
+      "recipeId": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm",
+      "recipeVersion": 4,
+      "backendId": "docker-vllm",
+      "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
+      "gatewayModel": "deepseek-v4-flash-0731",
+      "machine": {
+        "platformId": "linux-arm64",
+        "chip": "2x NVIDIA DGX Spark / GB10",
+        "memoryGb": 128,
+        "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"],
+        "nodeCount": 2,
+        "clusterMemoryGb": 256
+      },
+      "settings": {
+        "runtimeImage": "ghcr.io/anemll/dspark-vllm-gx10@sha256:a83948492cf13df455170fb42885f5ef4db54fefe0feff0f841ecbff464ac9d8",
+        "modelRevision": "9e165c30e2704aec5d9d593cce3eebd58bbef1cb",
+        "tensorParallelSize": 2,
+        "contextWindow": 262144,
+        "gpuMemoryUtilization": 0.73,
+        "kvCacheDtype": "nvfp4_ds_mla",
+        "maxNumSeqs": 6,
+        "maxNumBatchedTokens": 8192,
+        "speculative": { "method": "dspark", "numSpeculativeTokens": 5 }
+      },
+      "workload": {
+        "type": "interactive-generation",
+        "category": "matched-deterministic",
+        "concurrency": 4,
+        "promptTokens": 2317,
+        "outputTokens": 256
+      },
+      "metrics": {
+        "generationTokPerSec": 47.53126318914516,
+        "outputThroughputTokPerSec": 47.53126318914516,
+        "timeToFirstTokenMs": 10986.960447000005,
+        "contextWindow": 262144,
+        "medianPostFirstTokenTokPerSec": 59.0041724347015,
+        "minimumAvailableMemoryGb": 21.813106536865234
+      }
+    }
+  ],
+  "x-runs": {
+    "warmup": { "outputTokPerSec": 32.636687177901976, "timeToFirstTokenMs": 2521.1873699999996 },
+    "c1": [
+      { "batch": 1, "outputTokPerSec": 15.799434661271569, "timeToFirstTokenMs": 11179.403341000001 },
+      { "batch": 2, "outputTokPerSec": 45.243706384694796, "timeToFirstTokenMs": 806.0356680000004 },
+      { "batch": 3, "outputTokPerSec": 50.97639188368248, "timeToFirstTokenMs": 832.9876919999988 }
+    ],
+    "c4": [
+      { "batch": 1, "outputTokPerSec": 47.53126318914516, "timeToFirstTokenMs": 11074.835344 },
+      { "batch": 2, "outputTokPerSec": 49.252495351812215, "timeToFirstTokenMs": 10942.633858000008 },
+      { "batch": 3, "outputTokPerSec": 46.60273604850844, "timeToFirstTokenMs": 10986.960447000005 }
+    ],
+    "notes": "The first measured C1 batch retained a cold shape/compile outlier. Reported metrics are medians across all three measurement batches."
+  },
+  "x-coexistence": {
+    "qwenEmbeddingNode": "ennspark01",
+    "fluxNode": "ennspark02",
+    "embeddingDimensions": 2560,
+    "fluxProofImageBase64Bytes": 359984,
+    "deepseekHealthyAfterProof": true,
+    "availableMemoryGb": { "ennspark01": 9.12, "ennspark02": 12.44 }
+  },
+  "x-fileName": "dgx-spark-2x-deepseek-v4-flash-lloom-20260807.json"
+}

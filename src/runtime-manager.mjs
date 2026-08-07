@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { defaultShimDirFor } from './backend-catalog.mjs';
+import { currentNodeId, runtimePlacement, runtimeResourcesByNode } from './cluster.mjs';
 import { cleanupPortListener, terminateProcessTree } from './process-control.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -60,7 +61,9 @@ function compactRuntime(runtimeId, runtime) {
           image: runtime.bootstrap.image ?? null
         }
       : null,
-    cachePersistence: runtimeCacheCapability(runtime)
+    cachePersistence: runtimeCacheCapability(runtime),
+    node: runtime.node ?? runtime.placement?.node ?? null,
+    placement: runtime.placement ?? null
   };
 }
 
@@ -193,6 +196,13 @@ async function healthOk(url, timeoutMs = 1500) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function runtimeHealthOk(runtime, timeoutMs = 1500) {
+  if (runtime?.healthStrategy === 'container' && runtimeAdapter(runtime) === 'docker') {
+    return (await dockerContainerState(runtime)).running === true;
+  }
+  return healthOk(runtime?.healthUrl, timeoutMs);
 }
 
 function runtimeMaxConcurrency(runtime) {
@@ -398,7 +408,7 @@ export function effectiveRuntimeArgs(runtimeId, runtime) {
 }
 
 export class RuntimeManager {
-  constructor(config, { logger = console, captureOutput = true } = {}) {
+  constructor(config, { logger = console, captureOutput = true, clusterCoordinator = null } = {}) {
     this.config = config;
     this.logger = logger;
     this.captureOutput = captureOutput;
@@ -410,6 +420,8 @@ export class RuntimeManager {
     this.watchdogOperations = new Map();
     this.admissionQueue = Promise.resolve();
     this.events = [];
+    this.clusterCoordinator = clusterCoordinator;
+    this.clusterCoordinator?.attachRuntimeManager(this);
   }
 
   stateFor(runtimeId) {
@@ -514,13 +526,52 @@ export class RuntimeManager {
     return run;
   }
 
-  async status() {
+  async status({ localOnly = false } = {}) {
     const runtimes = {};
     const keepWarm = new Set(this.keepWarmRuntimeIds());
+    const remoteNodes = new Map();
     for (const [runtimeId, runtime] of Object.entries(this.config.runtimes ?? {})) {
+      const placement = runtimePlacement(runtime, this.config);
+      if (placement.mode === 'distributed') continue;
+      const nodeId = placement.node;
+      const isLocal = !this.clusterCoordinator
+        ? !runtime.node || nodeId === currentNodeId(this.config)
+        : this.clusterCoordinator.isLocalNode(nodeId);
+      if (localOnly && !isLocal) continue;
+      if (!isLocal && this.clusterCoordinator) {
+        if (!remoteNodes.has(nodeId)) remoteNodes.set(nodeId, this.clusterCoordinator.nodeStatus(nodeId));
+        const node = await remoteNodes.get(nodeId);
+        const remote = node.runtimeManager?.runtimes?.[runtimeId];
+        const gatewayState = this.stateFor(runtimeId);
+        runtimes[runtimeId] = remote
+          ? {
+              ...remote,
+              node: nodeId,
+              remote: true,
+              activeRequests: gatewayState.activeRequests,
+              queuedRequests: gatewayState.queuedRequests,
+              admissionQueuedRequests: gatewayState.admissionQueuedRequests,
+              lastRequestedAt: gatewayState.lastRequestedAt ?? remote.lastRequestedAt,
+              lastIdleAt: gatewayState.lastIdleAt ?? remote.lastIdleAt
+            }
+          : {
+              ...compactRuntime(runtimeId, runtime),
+              node: nodeId,
+              remote: true,
+              healthy: false,
+              status: node.reachable ? 'unknown' : 'unreachable',
+              error: node.error ?? null,
+              activeRequests: gatewayState.activeRequests,
+              queuedRequests: gatewayState.queuedRequests,
+              admissionQueuedRequests: gatewayState.admissionQueuedRequests,
+              lastRequestedAt: gatewayState.lastRequestedAt,
+              lastIdleAt: gatewayState.lastIdleAt
+            };
+        continue;
+      }
       const state = this.stateFor(runtimeId);
       const process = this.processes.get(runtimeId);
-      const healthy = await healthOk(runtime.healthUrl);
+      const healthy = await runtimeHealthOk(runtime);
       const container = runtimeAdapter(runtime) === 'docker' ? await dockerContainerState(runtime) : null;
       let status = state.status;
       if (state.status === 'queued') {
@@ -565,6 +616,44 @@ export class RuntimeManager {
         },
         container
       };
+    }
+    if (!localOnly) {
+      for (const [runtimeId, runtime] of Object.entries(this.config.runtimes ?? {})) {
+        const placement = runtimePlacement(runtime, this.config);
+        if (placement.mode !== 'distributed') continue;
+        const state = this.stateFor(runtimeId);
+        const members = placement.members.map((member) => ({
+          ...member,
+          status: runtimes[member.runtime]?.status ?? 'unknown',
+          healthy: runtimes[member.runtime]?.healthy === true
+        }));
+        const healthy = members.length > 0 && members.every((member) => member.healthy);
+        const anyLoaded = members.some((member) => ['running', 'external', 'starting'].includes(member.status));
+        runtimes[runtimeId] = {
+          ...compactRuntime(runtimeId, runtime),
+          node: null,
+          remote: false,
+          distributed: true,
+          members,
+          resourcesByNode: runtimeResourcesByNode(runtime, this.config),
+          healthy,
+          status: healthy ? 'running' : anyLoaded ? 'starting' : state.status === 'queued' ? 'queued' : 'stopped',
+          keepWarm: keepWarm.has(runtimeId),
+          starts: state.starts,
+          stops: state.stops,
+          activeRequests: state.activeRequests,
+          queuedRequests: state.queuedRequests,
+          admissionQueuedRequests: state.admissionQueuedRequests,
+          lastRequestedAt: state.lastRequestedAt,
+          lastIdleAt: state.lastIdleAt,
+          statusSince: state.statusSince,
+          transitionReason: state.transitionReason,
+          startedAt: state.startedAt,
+          stoppedAt: state.stoppedAt,
+          lastWarmup: state.lastWarmup,
+          lastError: state.lastError
+        };
+      }
     }
     return {
       runtimes,
@@ -779,7 +868,7 @@ export class RuntimeManager {
       } else if (runtimeAdapter(runtime) === 'docker') {
         wasRunning.set(runtimeId, (await dockerContainerState(runtime)).running === true);
       } else {
-        wasRunning.set(runtimeId, this.processRunning(runtimeId) || (await healthOk(runtime.healthUrl)));
+        wasRunning.set(runtimeId, this.processRunning(runtimeId) || (await runtimeHealthOk(runtime)));
       }
     }
     for (const runtimeId of changed) await this.drainRuntime(runtimeId, { timeoutMs: drainTimeoutMs });
@@ -831,8 +920,58 @@ export class RuntimeManager {
     const runtime = this.getRuntime(runtimeId);
     if (!runtime) return { runtimeId, started: false, reason: 'unknown-runtime' };
     const state = this.stateFor(runtimeId);
+    const placement = runtimePlacement(runtime, this.config);
 
-    if (await healthOk(runtime.healthUrl)) {
+    if (placement.mode === 'distributed') {
+      const started = [];
+      this.setStatus(runtimeId, 'starting', reason);
+      try {
+        for (const member of [...placement.members].sort((left, right) => left.order - right.order)) {
+          const result = await this.start(member.runtime, { force, warmup: false, reason: `${reason}:${runtimeId}` });
+          if (result?.healthy === false || (result?.started === false && result?.reason !== 'already-healthy')) {
+            throw new Error(
+              `distributed runtime ${runtimeId} member ${member.runtime} on ${member.node} did not become healthy (${result?.reason ?? 'unknown'})`
+            );
+          }
+          started.push({ ...member, result });
+        }
+        if (runtime.healthUrl) await this.waitForHealth(runtimeId, runtime);
+        state.starts += 1;
+        state.startedAt = nowIso();
+        this.setStatus(runtimeId, 'running', reason);
+        const warmupResult = warmup && runtime.warmup ? await this.warmup(runtimeId, runtime) : null;
+        return {
+          runtimeId,
+          started: true,
+          healthy: true,
+          distributed: true,
+          members: started,
+          ...(warmupResult ? { warmup: warmupResult } : {})
+        };
+      } catch (error) {
+        for (const member of started.filter((item) => item.result?.started === true).reverse()) {
+          await this.stop(member.runtime).catch(() => {});
+        }
+        state.lastError = error?.message ?? String(error);
+        this.setStatus(runtimeId, 'failed', reason);
+        throw error;
+      }
+    }
+
+    if (this.clusterCoordinator && !this.clusterCoordinator.isLocalNode(placement.node)) {
+      this.setStatus(runtimeId, 'starting', reason);
+      const result = await this.clusterCoordinator.runtimeAction(placement.node, runtimeId, 'start', {
+        force,
+        warmup,
+        reason
+      });
+      state.starts += result?.started === false ? 0 : 1;
+      state.startedAt = nowIso();
+      this.setStatus(runtimeId, result?.healthy === false ? 'failed' : 'running', reason);
+      return { ...result, runtimeId, node: placement.node, remote: true };
+    }
+
+    if (await runtimeHealthOk(runtime)) {
       this.setStatus(runtimeId, 'running');
       const warmupResult = warmup ? await this.warmup(runtimeId, runtime) : null;
       return {
@@ -953,7 +1092,7 @@ export class RuntimeManager {
     const state = this.stateFor(runtimeId);
     const deadline = Date.now() + (runtime.startupTimeoutMs ?? 300000);
     while (Date.now() < deadline) {
-      if (await healthOk(runtime.healthUrl)) {
+      if (await runtimeHealthOk(runtime)) {
         this.setStatus(runtimeId, 'running');
         this.record({ runtimeId, event: 'healthy' });
         return { runtimeId, healthy: true };
@@ -974,7 +1113,15 @@ export class RuntimeManager {
   async warmupById(runtimeId) {
     const runtime = this.getRuntime(runtimeId);
     if (!runtime) return { runtimeId, warmed: false, reason: 'unknown-runtime' };
-    if (!(await healthOk(runtime.healthUrl))) {
+    const placement = runtimePlacement(runtime, this.config);
+    if (
+      this.clusterCoordinator &&
+      placement.mode !== 'distributed' &&
+      !this.clusterCoordinator.isLocalNode(placement.node)
+    ) {
+      return this.clusterCoordinator.runtimeAction(placement.node, runtimeId, 'warmup');
+    }
+    if (!(await runtimeHealthOk(runtime))) {
       const result = { runtimeId, warmed: false, reason: 'not-healthy' };
       this.stateFor(runtimeId).lastWarmup = result;
       return result;
@@ -1097,7 +1244,16 @@ export class RuntimeManager {
   }
 
   async stopAll() {
-    const runtimeIds = Object.keys(this.config.runtimes ?? {});
+    const distributedMembers = new Set(
+      Object.values(this.config.runtimes ?? {}).flatMap((runtime) =>
+        runtime?.placement?.mode === 'distributed'
+          ? (runtime.placement.members ?? []).map((member) => member.runtime).filter(Boolean)
+          : []
+      )
+    );
+    const runtimeIds = Object.keys(this.config.runtimes ?? {}).filter(
+      (runtimeId) => !distributedMembers.has(runtimeId)
+    );
     const results = [];
     for (const runtimeId of runtimeIds) {
       results.push(await this.stop(runtimeId));
@@ -1112,6 +1268,26 @@ export class RuntimeManager {
   async stopUnlocked(runtimeId) {
     const runtime = this.getRuntime(runtimeId);
     const state = this.stateFor(runtimeId);
+    const placement = runtimePlacement(runtime, this.config);
+    if (placement.mode === 'distributed') {
+      this.setStatus(runtimeId, 'stopping', 'stop');
+      const members = [];
+      for (const member of [...placement.members].sort((left, right) => right.order - left.order)) {
+        members.push({ ...member, result: await this.stop(member.runtime) });
+      }
+      this.setStatus(runtimeId, 'stopped');
+      state.stops += 1;
+      state.stoppedAt = nowIso();
+      return { runtimeId, stopped: true, distributed: true, members };
+    }
+    if (this.clusterCoordinator && !this.clusterCoordinator.isLocalNode(placement.node)) {
+      this.setStatus(runtimeId, 'stopping', 'stop');
+      const result = await this.clusterCoordinator.runtimeAction(placement.node, runtimeId, 'stop');
+      this.setStatus(runtimeId, 'stopped');
+      state.stops += result?.stopped === false ? 0 : 1;
+      state.stoppedAt = nowIso();
+      return { ...result, runtimeId, node: placement.node, remote: true };
+    }
     if (runtimeManagement(runtime) !== 'managed') {
       return { runtimeId, stopped: false, reason: 'externally-managed' };
     }

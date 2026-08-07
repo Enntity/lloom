@@ -173,6 +173,7 @@ export function planRecipe(
       role: model.role,
       model: model.model,
       gatewayModel: model.gatewayModel,
+      upstreamModel: model.upstreamModel,
       runtime: model.runtime,
       settings: model.settings ?? {},
       observed: model.observed ?? {},

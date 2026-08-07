@@ -1,0 +1,90 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-dgx-spark-cluster-flux2-klein-4b",
+  "name": "DGX Spark cluster FLUX.2 Klein 4B worker lane",
+  "version": 1,
+  "summary": "Pins the interactive FLUX.2 Klein 4B image lane to a worker DGX Spark and routes it over the private cluster fabric.",
+  "license": { "id": "Apache-2.0", "name": "Model and recipe license" },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "cluster-dogfood",
+    "source": "Official Black Forest Labs checkpoint served by stable-diffusion.cpp"
+  },
+  "keywords": ["linux", "nvidia", "dgx-spark", "cluster", "image-generation", "flux2"],
+  "capabilities": ["image-generation", "image-editing"],
+  "requirements": {
+    "platforms": ["linux-arm64"],
+    "memoryGb": 96,
+    "diskGb": 24,
+    "commands": ["docker", "hf"],
+    "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"],
+    "cluster": { "nodes": 2, "provider": "nvidia-sync", "topology": "direct" }
+  },
+  "backend": {
+    "id": "docker-stable-diffusion-cpp",
+    "name": "stable-diffusion.cpp CUDA container",
+    "type": "openai-images-server",
+    "features": ["cuda", "blackwell", "openai-images", "image-generation", "image-editing", "flux2"]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "download-flux2-klein-4b-diffusion",
+        "title": "Download FLUX.2 Klein 4B Q8 diffusion weights",
+        "action": "command",
+        "command": "hf",
+        "args": ["download", "leejet/FLUX.2-klein-4B-GGUF", "flux-2-klein-4b-Q8_0.gguf", "--revision", "3b1f5a9dc3abb32238b053aeb3d823c30afdacbd", "--local-dir", "${modelRoot}/lloom-flux2-klein-4b"],
+        "skipIfPathExists": "${modelRoot}/lloom-flux2-klein-4b/flux-2-klein-4b-Q8_0.gguf"
+      },
+      {
+        "id": "download-flux2-klein-4b-components",
+        "title": "Download FLUX.2 Klein VAE and Qwen3 text encoder",
+        "action": "command",
+        "command": "hf",
+        "args": ["download", "Comfy-Org/vae-text-encorder-for-flux-klein-4b", "split_files/text_encoders/qwen_3_4b.safetensors", "split_files/vae/flux2-vae.safetensors", "--revision", "a9e4ca87c16db4c4e1a16406a9ddb300ab0ae246", "--local-dir", "${modelRoot}/lloom-flux2-klein-4b"],
+        "skipIfPathExists": "${modelRoot}/lloom-flux2-klein-4b/split_files/vae/flux2-vae.safetensors"
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "default-image",
+      "model": "black-forest-labs/FLUX.2-klein-4B",
+      "gatewayModel": "black-forest-labs/FLUX.2-klein-4B",
+      "name": "FLUX.2 Klein 4B Q8 cluster worker",
+      "setDefault": true,
+      "runtime": "flux2-klein-4b-sdcpp",
+      "backendConfig": "flux2-klein-4b-sdcpp",
+      "input": ["text", "image"],
+      "output": ["image"],
+      "capabilities": ["image-generation", "image-editing"],
+      "settings": {
+        "port": 8205,
+        "maxActiveRequests": 1,
+        "memoryGb": 24,
+        "priority": 150,
+        "evictable": false,
+        "keepWarm": true,
+        "startupTimeoutMs": 900000,
+        "timeoutMs": 1800000,
+        "placement": { "mode": "replicated", "nodes": ["worker"] },
+        "runtime": {
+          "adapter": "docker",
+          "management": "managed",
+          "containerName": "flux2-klein-4b-sdcpp",
+          "healthUrl": "http://127.0.0.1:${port}/v1/models",
+          "warmup": false,
+          "bootstrap": {
+            "adapter": "docker",
+            "image": "lloom/stable-diffusion.cpp:flux2-cuda",
+            "pull": false,
+            "createArgs": ["--restart", "unless-stopped", "--gpus", "all", "--ipc", "host", "-p", "127.0.0.1:${port}:8000", "--entrypoint", "/sd-server", "-v", "${modelRoot}:/models:ro"],
+            "command": ["--listen-ip", "0.0.0.0", "--listen-port", "8000", "--diffusion-model", "/models/lloom-flux2-klein-4b/flux-2-klein-4b-Q8_0.gguf", "--llm", "/models/lloom-flux2-klein-4b/split_files/text_encoders/qwen_3_4b.safetensors", "--vae", "/models/lloom-flux2-klein-4b/split_files/vae/flux2-vae.safetensors", "--cfg-scale", "1.0", "--steps", "4", "--sampling-method", "euler", "--diffusion-fa"]
+          }
+        }
+      }
+    }
+  ]
+}

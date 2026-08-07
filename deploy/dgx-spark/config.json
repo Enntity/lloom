@@ -18,6 +18,12 @@
   "defaults": {
     "chatModel": "unsloth/Qwen3.6-35B-A3B-NVFP4"
   },
+  "aliases": {
+    "deepseek/deepseek-v4-flash": {
+      "target": "deepseek/deepseek-v4-flash-0731",
+      "advertise": false
+    }
+  },
   "runtimePolicy": {
     "enabled": true,
     "autoEvict": true,
@@ -68,6 +74,12 @@
       "timeoutMs": 1800000
     },
     "openai-compatible-google-gemini-3-1-flash-lite": {
+      "type": "openai",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "timeoutMs": 1800000
+    },
+    "openai-compatible-deepseek-v4-flash-0731": {
       "type": "openai",
       "baseUrl": "https://openrouter.ai/api/v1",
       "apiKeyEnv": "OPENROUTER_API_KEY",
@@ -414,6 +426,20 @@
       "maxOutputTokens": 65536,
       "advertise": true,
       "tags": ["cloud", "external", "openrouter", "google", "gemini"]
+    },
+    {
+      "id": "deepseek/deepseek-v4-flash-0731",
+      "name": "DeepSeek V4 Flash 0731 · OpenRouter",
+      "kind": "chat",
+      "backend": "openai-compatible-deepseek-v4-flash-0731",
+      "upstreamModel": "deepseek/deepseek-v4-flash-0731",
+      "input": ["text"],
+      "output": ["text"],
+      "capabilities": ["chat", "streaming", "usage", "tools", "reasoning", "long-context", "structured-output"],
+      "contextWindow": 1048576,
+      "maxOutputTokens": 65536,
+      "advertise": true,
+      "tags": ["cloud", "external", "openrouter", "deepseek"]
     },
     {
       "id": "z-ai/glm-5.2",

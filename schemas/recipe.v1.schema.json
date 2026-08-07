@@ -186,6 +186,10 @@
           "gatewayModel": {
             "type": "string"
           },
+          "upstreamModel": {
+            "type": "string",
+            "description": "Optional model name sent to the backend when it differs from the model repository or gateway model ID."
+          },
           "setDefault": {
             "type": "boolean",
             "description": "Explicitly select this model as the installed default for its output modality."
@@ -256,6 +260,49 @@
               "memoryGb": {
                 "type": "number",
                 "minimum": 0
+              },
+              "placement": {
+                "type": "object",
+                "required": ["mode"],
+                "additionalProperties": true,
+                "description": "Cluster placement. Replicated placement materializes one runtime target per selected node; distributed placement describes a logical runtime group.",
+                "properties": {
+                  "mode": {
+                    "enum": ["replicated", "distributed"]
+                  },
+                  "nodes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "members": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "required": ["node", "runtime"],
+                      "additionalProperties": true,
+                      "properties": {
+                        "node": { "type": "string", "minLength": 1 },
+                        "runtime": { "type": "string", "minLength": 1 },
+                        "role": { "type": "string" },
+                        "order": { "type": "integer" },
+                        "resources": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "properties": {
+                            "memoryGb": { "type": "number", "minimum": 0 },
+                            "gpuMemoryGb": { "type": "number", "minimum": 0 }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
               },
               "startupTimeoutMs": {
                 "type": "integer",
