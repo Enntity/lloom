@@ -4516,6 +4516,11 @@ if (listened) {
     assert(dashboardHtml.includes('"external-processing": 3'));
     assert(dashboardHtml.includes('liveConnections.length ? "external-processing" : "external"'));
     assert(dashboardHtml.includes('externalProcessing ? "EXTERNAL PROCESSING"'));
+    assert(dashboardHtml.includes('function liveNodeActivity(nodeId)'));
+    assert(
+      dashboardHtml.includes('const activeNodes = [...new Set(liveConnections.map(item => item.node).filter(Boolean))]')
+    );
+    assert(dashboardHtml.includes('activity.requests + " ACTIVE"'));
     assert(dashboardHtml.includes('function fitTopologyCameraToModels('));
     assert(!dashboardHtml.toLowerCase().includes('switchyard'));
 

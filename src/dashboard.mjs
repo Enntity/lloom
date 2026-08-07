@@ -771,14 +771,17 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const profile = node.profile || {};
       const system = node.system || {};
       const gpu = telemetry.gpu || {};
+      const activity = liveNodeActivity(node.id);
       const gpuMemory = gpu.memoryTotalMb > 0 ? (gpu.memoryUsedMb / gpu.memoryTotalMb) * 100 : null;
       const marker = $("#node-inspector-state");
       marker.querySelector(".dot").className = "dot " + (node.reachable === false ? "bad" : "ok");
-      marker.querySelector("span:last-child").textContent = node.reachable === false ? "offline" : node.local ? "local" : "reachable";
+      marker.querySelector("span:last-child").textContent = node.reachable === false ? "offline" : activity.requests ? activity.requests + " active" : node.local ? "local" : "reachable";
       $("#node-inspector-title").textContent = node.name || node.id;
       const details = [
         ["Node ID", node.id],
         ["Role", node.id === state.status?.cluster?.leaderNode ? "leader" : node.labels?.role || "node"],
+        ["Active requests", activity.requests],
+        ["Live output", formatRate(activity.outputRate) + " tok/s"],
         ["Platform", [profile.platformId || [system.platform, system.arch].filter(Boolean).join("-"), system.release].filter(Boolean).join(" · ") || "—"],
         ["CPU", telemetry.cpu?.model || profile.cpuBrand || "—"],
         ["CPU load", telemetry.cpu?.utilization == null ? "—" : Math.round(telemetry.cpu.utilization) + "%"],
@@ -801,6 +804,15 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       closeModelInspector();
       state.selectedNodeId = nodeId;
       renderNodeInspector();
+    }
+
+    function liveNodeActivity(nodeId) {
+      const connections = (state.topologyConnections || []).filter(item => item.live && item.node === nodeId);
+      return {
+        requests: connections.length,
+        outputRate: connections.reduce((sum, item) => sum + Number(item.outputRate || 0), 0),
+        pending: connections.some(item => item.outputPending)
+      };
     }
 
     function renderModelInspector() {
@@ -1458,31 +1470,43 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const portY = center.y - Math.min(94, (modelList.length - 1) * 32) / 2 + index * Math.min(47, 94 / Math.max(1, modelList.length - 1));
         const targetNodes = (point.model.nodes || []).map(id => nodePoints.get(id)).filter(Boolean);
         const sources = targetNodes.length
-          ? targetNodes.map(item => ({ x: item.x + nodeCardWidth / 2, y: item.y }))
+          ? targetNodes.map(item => ({ id: item.node.id, x: item.x + nodeCardWidth / 2, y: item.y }))
           : clusterEnabled && leaderPoint
-            ? [{ x: leaderPoint.x + nodeCardWidth / 2, y: leaderPoint.y }]
-            : [{ x: gate.right, y: portY }];
-        const from = sources[0], to = { x: point.x - point.cardWidth / 2, y: point.y };
+            ? [{ id: leaderPoint.node.id, x: leaderPoint.x + nodeCardWidth / 2, y: leaderPoint.y }]
+            : [{ id: null, x: gate.right, y: portY }];
+        const to = { x: point.x - point.cardWidth / 2, y: point.y };
         const inputSignal = promptPulseIntensity(point.model.promptTokens, point.model.promptPulseAt, now);
         const outputRate = smoothRate("model:" + point.model.id + ":out", point.model.liveOutputRate, now);
-        const rate = Math.max(inputSignal, outputRate);
         const cumulative = Number(point.model.inputTokens || 0) + Number(point.model.outputTokens || 0);
-        ctx.strokeStyle = rate > 0 ? "rgba(47,230,200,.82)" : cumulative > 0 ? "rgba(47,230,200,.32)" : "rgba(153,163,176,.15)";
-        ctx.lineWidth = 1 + Math.min(2.5, Math.sqrt(rate) / 8);
-        for (const source of sources) { ctx.beginPath(); ctx.moveTo(source.x, source.y); ctx.lineTo(to.x, to.y); ctx.stroke(); }
-        [[inputSignal, false, "rgba(143,180,255,.94)"], [outputRate, true, "rgba(47,230,200,.94)"]].forEach(([directionRate, reverse, color], direction) => {
-          const particles = directionRate > 0 ? Math.min(12, Math.max(2, Math.ceil(Math.sqrt(directionRate)))) : 0;
-          for (let particle = 0; particle < particles; particle++) {
-            let progress = (now * (.00012 + Math.min(directionRate, 180) * .0000015) + hashUnit(particle + index * 31 + direction * 71)) % 1;
-            if (reverse) progress = 1 - progress;
-            ctx.fillStyle = color;
-            ctx.beginPath(); ctx.arc(from.x + (to.x - from.x) * progress, from.y + (to.y - from.y) * progress, 1.5 + Math.min(2, directionRate / 90), 0, Math.PI * 2); ctx.fill();
-          }
-        });
+        const activeNodeIds = new Set(point.model.activeNodes || []);
+        for (const source of sources) {
+          const selected = source.id == null || activeNodeIds.has(source.id);
+          const sourceInputSignal = selected ? inputSignal : 0;
+          const sourceOutputRate = selected ? outputRate : 0;
+          const rate = Math.max(sourceInputSignal, sourceOutputRate);
+          ctx.strokeStyle = rate > 0
+            ? "rgba(47,230,200,.82)"
+            : cumulative > 0 && sources.length === 1
+              ? "rgba(47,230,200,.32)"
+              : "rgba(153,163,176,.15)";
+          ctx.lineWidth = 1 + Math.min(2.5, Math.sqrt(rate) / 8);
+          ctx.beginPath(); ctx.moveTo(source.x, source.y); ctx.lineTo(to.x, to.y); ctx.stroke();
+          [[sourceInputSignal, false, "rgba(143,180,255,.94)"], [sourceOutputRate, true, "rgba(47,230,200,.94)"]].forEach(([directionRate, reverse, color], direction) => {
+            const particles = directionRate > 0 ? Math.min(12, Math.max(2, Math.ceil(Math.sqrt(directionRate)))) : 0;
+            for (let particle = 0; particle < particles; particle++) {
+              let progress = (now * (.00012 + Math.min(directionRate, 180) * .0000015) + hashUnit(particle + index * 31 + direction * 71)) % 1;
+              if (reverse) progress = 1 - progress;
+              ctx.fillStyle = color;
+              ctx.beginPath(); ctx.arc(source.x + (to.x - source.x) * progress, source.y + (to.y - source.y) * progress, 1.5 + Math.min(2, directionRate / 90), 0, Math.PI * 2); ctx.fill();
+            }
+          });
+        }
       });
       const nodeHitCards = [];
       for (const point of nodePoints.values()) {
         const node = point.node;
+        const activity = liveNodeActivity(node.id);
+        const active = activity.requests > 0;
         const telemetry = node.telemetry || {};
         const cpu = telemetry.cpu?.utilization;
         const ram = telemetry.memory?.pressureUtilization ?? telemetry.memory?.utilization;
@@ -1490,10 +1514,12 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const gpuMemory = telemetry.gpu?.memoryTotalMb > 0 ? telemetry.gpu.memoryUsedMb / telemetry.gpu.memoryTotalMb * 100 : null;
         const cardLeft = point.x - nodeCardWidth / 2, cardTop = point.y - nodeCardHeight / 2;
         nodeHitCards.push({ id: node.id, left: cardLeft, top: cardTop, width: nodeCardWidth, height: nodeCardHeight });
-        ctx.fillStyle = node.reachable === false ? "rgba(25,11,15,.96)" : "rgba(7,18,17,.97)";
-        ctx.strokeStyle = node.local ? "rgba(143,180,255,.72)" : node.reachable === false ? "rgba(255,111,125,.72)" : "rgba(47,230,200,.62)";
-        ctx.lineWidth = node.local ? 2 : 1;
+        ctx.fillStyle = node.reachable === false ? "rgba(25,11,15,.96)" : active ? "rgba(6,24,20,.98)" : "rgba(7,18,17,.97)";
+        ctx.strokeStyle = active ? "rgba(47,230,200,.98)" : node.local ? "rgba(143,180,255,.72)" : node.reachable === false ? "rgba(255,111,125,.72)" : "rgba(47,230,200,.62)";
+        ctx.lineWidth = active || node.local ? 2 : 1;
+        if (active) { ctx.shadowColor = "rgba(47,230,200,.55)"; ctx.shadowBlur = 12; }
         ctx.beginPath(); ctx.roundRect(cardLeft, cardTop, nodeCardWidth, nodeCardHeight, 6); ctx.fill(); ctx.stroke();
+        ctx.shadowBlur = 0;
         ctx.textAlign = "left"; ctx.font = '700 10px "SFMono-Regular",monospace';
         ctx.fillStyle = node.reachable === false ? "#ff6f7d" : "#e9fffb";
         ctx.fillText(fitCanvasText(ctx, node.name || node.id, clusterEnabled ? 116 : 94), cardLeft + 10, cardTop + 19);
@@ -1520,11 +1546,13 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         if (clusterEnabled) {
           const temperature = telemetry.gpu?.temperatureC;
           const power = telemetry.gpu?.powerDrawW;
-          const thermalText = temperature == null && power == null
-            ? "TELEMETRY –"
-            : (temperature == null ? "–" : Math.round(temperature) + "°C") + " · " + (power == null ? "–" : Math.round(power) + "W");
-          ctx.textAlign = "center"; ctx.fillStyle = "rgba(153,163,176,.8)";
-          ctx.fillText(thermalText, point.x, cardTop + nodeCardHeight - 10);
+          const footerText = active
+            ? activity.requests + " ACTIVE" + (activity.outputRate > .05 ? " · " + formatRate(activity.outputRate) + " tok/s" : activity.pending ? " · WAITING" : "")
+            : temperature == null && power == null
+              ? "TELEMETRY –"
+              : (temperature == null ? "–" : Math.round(temperature) + "°C") + " · " + (power == null ? "–" : Math.round(power) + "W");
+          ctx.textAlign = "center"; ctx.fillStyle = active ? "#2fe6c8" : "rgba(153,163,176,.8)";
+          ctx.fillText(footerText, point.x, cardTop + nodeCardHeight - 10);
         }
       }
       state.topologyHitNodeCards = nodeHitCards;
@@ -1848,7 +1876,8 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           ...(runtimeState.members || []).map(member => member.node).filter(Boolean),
           runtimeState.node
         ].filter(Boolean))];
-        return { id: model.id, nodes, runtimeIds: [...runtimeIds, ...remoteRuntimeIds], runtimeStatus: runtimeState, inputTokens: Number(data.inputTokens || 0) + activeInput, inputEstimated, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveOutputRate, promptTokens: modelPromptTokens, promptPulseAt: modelPromptPulseAt, averageRate: data.decodeTokensPerSecond == null ? null : Number(data.decodeTokensPerSecond), state: stateLabel, lastActiveAt, agedOut };
+        const activeNodes = [...new Set(liveConnections.map(item => item.node).filter(Boolean))];
+        return { id: model.id, nodes, activeNodes, runtimeIds: [...runtimeIds, ...remoteRuntimeIds], runtimeStatus: runtimeState, inputTokens: Number(data.inputTokens || 0) + activeInput, inputEstimated, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveOutputRate, promptTokens: modelPromptTokens, promptPulseAt: modelPromptPulseAt, averageRate: data.decodeTokensPerSecond == null ? null : Number(data.decodeTokensPerSecond), state: stateLabel, lastActiveAt, agedOut };
       });
       state.topologyCatalogModels = topologyModels;
       applyTopologyModelFilter();
