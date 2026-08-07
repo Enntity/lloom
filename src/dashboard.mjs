@@ -778,7 +778,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       $("#node-inspector-title").textContent = node.name || node.id;
       const details = [
         ["Node ID", node.id],
-        ["Role", node.id === state.status?.cluster?.leaderNode ? "leader" : "worker"],
+        ["Role", node.id === state.status?.cluster?.leaderNode ? "leader" : node.labels?.role || "node"],
         ["Platform", [profile.platformId || [system.platform, system.arch].filter(Boolean).join("-"), system.release].filter(Boolean).join(" · ") || "—"],
         ["CPU", telemetry.cpu?.model || profile.cpuBrand || "—"],
         ["CPU load", telemetry.cpu?.utilization == null ? "—" : Math.round(telemetry.cpu.utilization) + "%"],
