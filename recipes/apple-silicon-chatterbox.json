@@ -1,0 +1,256 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "apple-silicon-chatterbox",
+  "name": "Apple Silicon Chatterbox TTS",
+  "version": 1,
+  "summary": "ResembleAI Chatterbox on Apple Silicon MPS: zero-shot clone, exaggeration, CFG, multilingual, and turbo through LLooM's OpenAI speech API.",
+  "license": { "id": "MIT", "name": "Chatterbox and recipe license" },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "ResembleAI Chatterbox model cards and local M2 Max MPS measurements"
+  },
+  "links": [
+    { "rel": "model", "href": "https://huggingface.co/ResembleAI/chatterbox", "mediaType": "text/html" },
+    { "rel": "model", "href": "https://huggingface.co/ResembleAI/chatterbox-turbo", "mediaType": "text/html" },
+    { "rel": "runtime", "href": "https://github.com/resemble-ai/chatterbox", "mediaType": "text/html" }
+  ],
+  "keywords": [
+    "apple-silicon",
+    "tts",
+    "audio-speech",
+    "chatterbox",
+    "voice-clone",
+    "mps",
+    "multilingual"
+  ],
+  "capabilities": [
+    "audio-speech",
+    "tts",
+    "tts-voice-clone",
+    "tts-exaggeration",
+    "chatterbox"
+  ],
+  "hardware": {
+    "family": "Apple Silicon",
+    "testedMachine": "Apple M2 Max 96 GB",
+    "notes": [
+      "English clone loads in about 15s on MPS and synthesizes a short line in 5–7s after warmup.",
+      "Exaggeration is the acting knob; cfg_weight 0.5 keeps the clone close to the reference.",
+      "ResembleAI's upstream Perth implicit watermarking remains enabled.",
+      "Only clone voices you own or have explicit permission to use.",
+      "Prefer Python 3.11 for the backend venv; Homebrew python3 3.14 often lacks a torch wheel."
+    ]
+  },
+  "requirements": {
+    "platforms": ["darwin-arm64"],
+    "memoryGb": 8,
+    "diskGb": 10,
+    "commands": ["lloom-chatterbox-server"],
+    "accelerators": ["apple-gpu"]
+  },
+  "backend": {
+    "id": "chatterbox",
+    "name": "Chatterbox TTS",
+    "type": "openai-compatible-server",
+    "features": ["audio-speech", "tts", "tts-voice-clone", "mps"]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-lloom-chatterbox-server",
+        "title": "Check Chatterbox server shim",
+        "action": "check-command",
+        "command": "lloom-chatterbox-server",
+        "args": ["--help"]
+      },
+      {
+        "id": "download-chatterbox-english",
+        "title": "Download Chatterbox English clone files",
+        "action": "command",
+        "command": "hf",
+        "args": [
+          "download",
+          "ResembleAI/chatterbox",
+          "ve.safetensors",
+          "t3_cfg.safetensors",
+          "s3gen.safetensors",
+          "tokenizer.json",
+          "conds.pt",
+          "--local-dir",
+          "${modelRoot}/ResembleAI--chatterbox"
+        ],
+        "skipIfPathExists": "${modelRoot}/ResembleAI--chatterbox/t3_cfg.safetensors"
+      },
+      {
+        "id": "download-chatterbox-multilingual",
+        "title": "Download Chatterbox multilingual clone files",
+        "action": "command",
+        "command": "hf",
+        "args": [
+          "download",
+          "ResembleAI/chatterbox",
+          "ve.pt",
+          "t3_mtl23ls_v2.safetensors",
+          "s3gen.pt",
+          "grapheme_mtl_merged_expanded_v1.json",
+          "Cangjie5_TC.json",
+          "conds.pt",
+          "--local-dir",
+          "${modelRoot}/ResembleAI--chatterbox"
+        ],
+        "skipIfPathExists": "${modelRoot}/ResembleAI--chatterbox/t3_mtl23ls_v2.safetensors"
+      },
+      {
+        "id": "download-chatterbox-turbo",
+        "title": "Download Chatterbox Turbo files",
+        "action": "command",
+        "command": "hf",
+        "args": [
+          "download",
+          "ResembleAI/chatterbox-turbo",
+          "ve.safetensors",
+          "t3_turbo_v1.safetensors",
+          "s3gen_meanflow.safetensors",
+          "conds.pt",
+          "tokenizer.json",
+          "tokenizer_config.json",
+          "special_tokens_map.json",
+          "vocab.json",
+          "merges.txt",
+          "--local-dir",
+          "${modelRoot}/ResembleAI--chatterbox-turbo"
+        ],
+        "skipIfPathExists": "${modelRoot}/ResembleAI--chatterbox-turbo/t3_turbo_v1.safetensors"
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "speech",
+      "name": "Chatterbox English clone",
+      "model": "ResembleAI/chatterbox",
+      "gatewayModel": "ResembleAI/chatterbox",
+      "runtime": "chatterbox",
+      "backendConfig": "chatterbox",
+      "input": ["text"],
+      "output": ["audio"],
+      "capabilities": ["audio-speech", "tts", "tts-voice-clone", "tts-exaggeration", "chatterbox"],
+      "aliases": ["chatterbox", "chatterbox-tts", "chatterbox-clone"],
+      "tts": {
+        "family": "chatterbox",
+        "mode": "voice_clone",
+        "variant": "english"
+      },
+      "settings": {
+        "contextWindow": 4096,
+        "maxOutputTokens": 4096,
+        "maxActiveRequests": 1,
+        "memoryGb": 6,
+        "priority": 45,
+        "evictable": true,
+        "keepWarm": false,
+        "startupTimeoutMs": 300000,
+        "timeoutMs": 1800000,
+        "runtime": {
+          "command": "lloom-chatterbox-server",
+          "args": ["--host", "127.0.0.1", "--port", "${port}"],
+          "env": {
+            "LLOOM_CHATTERBOX_DEVICE": "mps",
+            "LLOOM_CHATTERBOX_CKPT_DIR": "${modelRoot}/ResembleAI--chatterbox",
+            "LLOOM_CHATTERBOX_TURBO_CKPT_DIR": "${modelRoot}/ResembleAI--chatterbox-turbo",
+            "LLOOM_TTS_MODEL": "ResembleAI/chatterbox"
+          },
+          "healthPath": "/health",
+          "warmup": false
+        }
+      },
+      "observed": {
+        "device": "mps",
+        "sampleRate": 24000,
+        "notes": "M2 Max: ~15s first load, 5–7s per short clone line after warmup."
+      }
+    },
+    {
+      "role": "speech-multilingual",
+      "name": "Chatterbox multilingual clone",
+      "model": "ResembleAI/chatterbox",
+      "gatewayModel": "ResembleAI/chatterbox-multilingual",
+      "upstreamModel": "ResembleAI/chatterbox-multilingual",
+      "runtime": "chatterbox",
+      "backendConfig": "chatterbox",
+      "input": ["text"],
+      "output": ["audio"],
+      "capabilities": ["audio-speech", "tts", "tts-voice-clone", "tts-exaggeration", "tts-multilingual", "chatterbox"],
+      "aliases": ["chatterbox-multilingual", "chatterbox-mtl"],
+      "tts": {
+        "family": "chatterbox",
+        "mode": "voice_clone",
+        "variant": "multilingual"
+      },
+      "settings": {
+        "contextWindow": 4096,
+        "maxOutputTokens": 4096,
+        "maxActiveRequests": 1,
+        "memoryGb": 6,
+        "priority": 44,
+        "evictable": true,
+        "keepWarm": false,
+        "startupTimeoutMs": 300000,
+        "timeoutMs": 1800000,
+        "runtime": {
+          "command": "lloom-chatterbox-server",
+          "args": ["--host", "127.0.0.1", "--port", "${port}"],
+          "env": {
+            "LLOOM_CHATTERBOX_DEVICE": "mps",
+            "LLOOM_CHATTERBOX_CKPT_DIR": "${modelRoot}/ResembleAI--chatterbox",
+            "LLOOM_CHATTERBOX_TURBO_CKPT_DIR": "${modelRoot}/ResembleAI--chatterbox-turbo"
+          },
+          "healthPath": "/health",
+          "warmup": false
+        }
+      }
+    },
+    {
+      "role": "speech-turbo",
+      "name": "Chatterbox Turbo clone",
+      "model": "ResembleAI/chatterbox-turbo",
+      "gatewayModel": "ResembleAI/chatterbox-turbo",
+      "runtime": "chatterbox",
+      "backendConfig": "chatterbox",
+      "input": ["text"],
+      "output": ["audio"],
+      "capabilities": ["audio-speech", "tts", "tts-voice-clone", "chatterbox"],
+      "aliases": ["chatterbox-turbo"],
+      "tts": {
+        "family": "chatterbox",
+        "mode": "voice_clone",
+        "variant": "turbo"
+      },
+      "settings": {
+        "contextWindow": 4096,
+        "maxOutputTokens": 4096,
+        "maxActiveRequests": 1,
+        "memoryGb": 6,
+        "priority": 43,
+        "evictable": true,
+        "keepWarm": false,
+        "startupTimeoutMs": 300000,
+        "timeoutMs": 1800000,
+        "runtime": {
+          "command": "lloom-chatterbox-server",
+          "args": ["--host", "127.0.0.1", "--port", "${port}"],
+          "env": {
+            "LLOOM_CHATTERBOX_DEVICE": "mps",
+            "LLOOM_CHATTERBOX_CKPT_DIR": "${modelRoot}/ResembleAI--chatterbox",
+            "LLOOM_CHATTERBOX_TURBO_CKPT_DIR": "${modelRoot}/ResembleAI--chatterbox-turbo"
+          },
+          "healthPath": "/health",
+          "warmup": false
+        }
+      }
+    }
+  ]
+}

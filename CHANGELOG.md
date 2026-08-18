@@ -6,6 +6,7 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Added
 
+- Apple Silicon and DGX / NVIDIA Chatterbox TTS recipes (`apple-silicon-chatterbox`, `linux-nvidia-gb10-chatterbox`) with zero-shot clone, exaggeration, CFG, multilingual, turbo, named LLooM voices, and the OpenAI `/v1/audio/speech` contract.
 - Guarded `lloom remove-model` planning and apply support with shared-resource protection, config backups, and opt-in weight deletion.
 - One-step `lloom add-model <ref> --go` backend installation, model download, configuration, runtime startup, warmup, and health verification.
 - Immutable recipe-version archives with index-declared current/history metadata and validation.
@@ -15,8 +16,13 @@ All notable changes to LLooM will be documented in this file. The format follows
 - A separate DGX Spark ThinkingCap Qwen3.6-27B NVFP4 candidate recipe on released vLLM 0.25, preserving the established Unsloth default while token-efficiency and quality evidence are collected.
 - Public project governance, security, contribution, CI, and release metadata.
 
+### Changed
+
+- The two-Spark DeepSeek recipe now consumes a complete, commit-pinned MiaAI patch pack through a checksum- and compatibility-verifying runner. LLooM serving policy remains a separate overlay, and vendored cache, scheduler, performance, and experimental patches stay explicitly disabled pending live canaries.
+
 ### Fixed
 
+- The two-Spark DeepSeek V4 Flash recipe now packages MiaAI's fixes for dict-form DSML tool history, reasoning-boundary JSON schemas, GPU-resident opt-in DSpark V2 thinking budgets, NVFP4 sparse-MLA dispatch, reasoning-safe client stop strings, and truncated tool-call finish reasons while preserving LLooM's conservative deployed limits.
 - Keep-warm startup now admits models in priority order, preserves already loaded runtimes, and warns and continues when a model does not fit.
 - MLX LM installs into a LLooM-managed Python environment, avoiding macOS externally-managed Python failures.
 - `lloom down` now stops the managed gateway service as well as its managed model backends.

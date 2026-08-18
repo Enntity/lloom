@@ -1,0 +1,220 @@
+{
+  "schemaVersion": 1,
+  "id": "miaai-dsv4flash-909776b5",
+  "name": "MiaAI DeepSeek V4 Flash DSpark patch pack",
+  "upstream": {
+    "repository": "https://github.com/MiaAI-Lab/DeepSeek-v4-Flash-DSpark-2x-DGX-Spark",
+    "commit": "909776b5f43154e373efe1ba6cd8d61a1d17515d",
+    "fetchedAt": "2026-08-18T23:30:00.000Z"
+  },
+  "artifactNormalization": "UTF-8 text with a terminal newline; upstreamSha256 is recorded when this changes the source byte hash.",
+  "compatibility": {
+    "runtimeImage": "ghcr.io/anemll/dspark-vllm-gx10@sha256:a83948492cf13df455170fb42885f5ef4db54fefe0feff0f841ecbff464ac9d8",
+    "runtimeName": "Anemll DSpark vLLM 0.1.1",
+    "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
+    "modelRevision": "9e165c30e2704aec5d9d593cce3eebd58bbef1cb",
+    "vllmRoot": "/usr/local/lib/python3.12/dist-packages/vllm"
+  },
+  "patches": [
+    {
+      "id": "issue21-dsml-dict-arguments",
+      "file": "patches/hotfix-encoding-dsv4-issue21.py",
+      "sha256": "492a7781a82ec2bdc5f723bf17db7b510d076965f65859333fc37509a07d6492",
+      "kind": "python",
+      "tier": "correctness",
+      "enabled": true,
+      "liveCanaryRequired": true,
+      "args": ["{file}", "{vllmRoot}/tokenizers/deepseek_v4_encoding.py"]
+    },
+    {
+      "id": "issue22-nvfp4-sparse-mla-dispatch",
+      "file": "patches/hotfix-nvfp4-ds-mla-issue22.sh",
+      "sha256": "52de6d0cd06f571cfdbbb856bfea4a098a5118ce769de739a18b51044300772a",
+      "kind": "shell",
+      "tier": "correctness",
+      "enabled": true,
+      "liveCanaryRequired": true,
+      "args": ["{file}"],
+      "env": { "VLLM_ROOT": "{vllmRoot}" }
+    },
+    {
+      "id": "issue24-reasoning-grammar-boundary",
+      "file": "patches/hotfix-dsv4-grammar-advance.sh",
+      "sha256": "99f5e0d3737a8a074c4c85b7348882a91a4d96a12bcf0d65de4d1c751a4d8abd",
+      "kind": "shell",
+      "tier": "correctness",
+      "enabled": true,
+      "liveCanaryRequired": true,
+      "args": ["{file}"],
+      "env": { "VLLM_ROOT": "{vllmRoot}" }
+    },
+    {
+      "id": "issue31-gpu-thinking-budget",
+      "file": "patches/hotfix-dsv4-issue31-v2-thinking-budget-gpu.py",
+      "sha256": "139fa1f673d9071ad309e8beb3608218d51b5905037160b7257f6aae58033762",
+      "kind": "python",
+      "tier": "correctness",
+      "enabled": true,
+      "liveCanaryRequired": true,
+      "args": ["{file}", "{vllmRoot}"]
+    },
+    {
+      "id": "reasoning-stop-string-guard",
+      "file": "patches/hotfix-dsv4-suppress-stops-in-reasoning.py",
+      "sha256": "b5bcbc147b6d86e6afa0c750c0299d8e30fd48b62c8839ee0b4140a8f37b8d81",
+      "kind": "python",
+      "tier": "correctness",
+      "enabled": true,
+      "liveCanaryRequired": true,
+      "args": ["{file}", "{vllmRoot}/v1/engine/detokenizer.py"]
+    },
+    {
+      "id": "issue55-tool-truncation",
+      "file": "patches/hotfix-dsv4-issue55-tool-truncation.py",
+      "sha256": "471d1f9b69f487f6ee6c74025ec4700cf68a046afc166e455a6846c213ce418f",
+      "upstreamSha256": "0dbb8a18d41325d518c221b3cfbd148c3a092e37c1816ba565b62e28172dd773",
+      "kind": "python",
+      "tier": "correctness",
+      "enabled": true,
+      "liveCanaryRequired": true,
+      "args": ["{file}", "{vllmRoot}"]
+    },
+    {
+      "id": "issue26-hybrid-swa-prefix-cache-v2",
+      "file": "patches/hotfix-dsv4-issue26-hybrid-swa-min.py",
+      "sha256": "8c76a65207d5f30b898cf5f60e39b8a59e4febb3217c34fe57f6a7fb225a3c3f",
+      "kind": "python",
+      "tier": "cache",
+      "enabled": false,
+      "liveCanaryRequired": true,
+      "reason": "Deferred until representative long shared-prefix canaries justify cache-policy changes.",
+      "args": ["{file}"]
+    },
+    {
+      "id": "issue27-partial-prefill-concurrency",
+      "file": "patches/hotfix-dsv4-issue27-partial-prefill-concurrency.py",
+      "sha256": "55314ffa7667fa880a95beb53e581dce27212788d77dd0780d6a508276d4872a",
+      "upstreamSha256": "f7285b9476050a12e79933bab51066393a967d842c7062d29d15747fa67fbf28",
+      "kind": "python",
+      "tier": "scheduler",
+      "enabled": false,
+      "liveCanaryRequired": true,
+      "reason": "The deployed six-slot lane has not shown the long-prefill starvation this changes.",
+      "args": ["{file}"]
+    },
+    {
+      "id": "issue43-decode-fairness",
+      "file": "patches/hotfix-dsv4-issue43-decode-fairness-and-diag.py",
+      "sha256": "84b331feb2a0c3e2f4785c94c5d99246c79bc4280e49f19c3c9783468cf7057b",
+      "upstreamSha256": "0059144ce08e825354718c8b0aa3799dcf434045f40241f75a4211fe4f199dc4",
+      "kind": "python",
+      "tier": "scheduler",
+      "enabled": false,
+      "liveCanaryRequired": true,
+      "reason": "Deferred with issue27; it is a no-op under MiaAI's conservative default scheduler knobs.",
+      "args": ["{file}"]
+    },
+    {
+      "id": "vllm49486-skip-topk",
+      "file": "patches/hotfix-dsv4-skip-topk-49486.sh",
+      "sha256": "636fd162fefc2a156750027b731a9eb136e7993f2552389adf7e3647c5b4dc7b",
+      "kind": "shell",
+      "tier": "performance",
+      "enabled": false,
+      "liveCanaryRequired": true,
+      "reason": "Performance backport; deferred while the deployed lane is stable.",
+      "args": ["{file}"],
+      "env": { "VLLM_ROOT": "{vllmRoot}" }
+    },
+    {
+      "id": "vllm48407-dense-prefill-indexer",
+      "file": "patches/hotfix-dsv4-dense-prefill-indexer-48407.sh",
+      "sha256": "c2fa444ea40af9225f3063b3be3a5827f4cada9b0ddf84e156176a23e99a2e6b",
+      "kind": "shell",
+      "tier": "performance",
+      "enabled": false,
+      "liveCanaryRequired": true,
+      "reason": "Upstream Stage A is deliberately dormant and has no benefit on the pinned image.",
+      "args": ["{file}"],
+      "env": { "VLLM_ROOT": "{vllmRoot}" }
+    },
+    {
+      "id": "vllm50312-mtp-buffer",
+      "file": "patches/hotfix-dsv4-mtp-buffer-50312.sh",
+      "sha256": "18dee7b92db1c6c55983c7a9df4d6c27c5a09d9be2225cd54207837fe94ecfe0",
+      "kind": "shell",
+      "tier": "performance",
+      "enabled": false,
+      "liveCanaryRequired": true,
+      "reason": "Memory optimization deferred until a separately measured canary.",
+      "args": ["{file}"],
+      "env": { "VLLM_ROOT": "{vllmRoot}" }
+    },
+    {
+      "id": "vllm50004-adaptive-topk",
+      "file": "patches/hotfix-dsv4-adaptive-topk-50004.sh",
+      "sha256": "561a6ebd295964e3a37df07c96259a1a2eb0d7e6aaef5ac5ca73ecb0cebf7493",
+      "kind": "shell",
+      "tier": "performance",
+      "enabled": false,
+      "liveCanaryRequired": true,
+      "reason": "Performance backport; deferred while the deployed lane is stable.",
+      "args": ["{file}"],
+      "env": { "VLLM_ROOT": "{vllmRoot}" }
+    },
+    {
+      "id": "vllm48957-skip-empty-c128",
+      "file": "patches/hotfix-dsv4-skip-empty-c128-48957.sh",
+      "sha256": "dabafb64f9273c37659027706920d175d5ed0a6b0cdd53fb5be784f408d7990e",
+      "kind": "shell",
+      "tier": "performance",
+      "enabled": false,
+      "liveCanaryRequired": true,
+      "reason": "Performance backport; disabled on part of the pinned graph path and deferred.",
+      "args": ["{file}"],
+      "env": { "VLLM_ROOT": "{vllmRoot}" }
+    },
+    {
+      "id": "vllm50298-flashmla-workspace",
+      "file": "patches/hotfix-dsv4-flashmla-workspace-50298.sh",
+      "sha256": "a7f557b264d247fbc65bfe49cc6d05e0780e4c6bebcdaf3633ace55338fa4268",
+      "kind": "shell",
+      "tier": "performance",
+      "enabled": false,
+      "liveCanaryRequired": true,
+      "reason": "Performance backport; deferred while the deployed lane is stable.",
+      "args": ["{file}"],
+      "env": { "VLLM_ROOT": "{vllmRoot}" }
+    },
+    {
+      "id": "legacy-issue22-patch",
+      "file": "patches/fix-nvfp4-ds-mla-long-context.patch",
+      "sha256": "4fdfcc6fd00412b854b51d4b672e34821178a821103126c77e32577d4db27f68",
+      "kind": "reference",
+      "tier": "reference",
+      "enabled": false,
+      "liveCanaryRequired": true,
+      "reason": "Vendored for upstream completeness; the enabled issue22 script is authoritative."
+    },
+    {
+      "id": "keys-concurrency-experimental",
+      "file": "patches/keys-concurrency.patch",
+      "sha256": "e702f8c51b1aaed0fb6898a18b4841e97d5329533f8b9dd10d189c65490c31e5",
+      "kind": "reference",
+      "tier": "experimental",
+      "enabled": false,
+      "liveCanaryRequired": true,
+      "reason": "Stage-C/Keys profile is outside LLooM's pinned Anemll runtime."
+    },
+    {
+      "id": "official-main-b12x-experimental",
+      "file": "patches/official-main-b12x-nvfp4-python.patch",
+      "sha256": "9fa58424451eb8354edada642dfeba40199fbd83add4c9d4615c912cba6165fa",
+      "kind": "reference",
+      "tier": "experimental",
+      "enabled": false,
+      "liveCanaryRequired": true,
+      "reason": "Experimental hybrid NVFP4 plugin patch is not part of the stable LLooM lane."
+    }
+  ]
+}

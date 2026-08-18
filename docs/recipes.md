@@ -18,7 +18,7 @@ LLooM intentionally has two catalog tiers:
 - `recipes/` is the small offline library: one or two high-confidence ways to get productive on each supported hardware class without contacting a community host.
 - `community/recipes/` contains broader, specialized, experimental, and opt-in choices. `lloom-host` automatically merges the bundled library into its configured host library, with host entries overriding duplicate IDs, so the host is always a strict superset.
 
-The current high-memory defaults include Apple Silicon Qwen3.6 lanes, Unsloth Qwen3.6 35B-A3B and 27B NVFP4 lanes for NVIDIA GB10, FLUX.2 Klein 4B for fast conventional image generation and reference editing, Qwen-Image-2512 for higher-quality generation, and Qwen-Image-Edit-2511 for reference-faithful edits.
+The current high-memory defaults include Apple Silicon Qwen3.6 lanes, Unsloth Qwen3.6 35B-A3B and 27B NVFP4 lanes for NVIDIA GB10, FLUX.2 Klein 4B for fast conventional image generation and reference editing, Qwen-Image-2512 for higher-quality generation, and Qwen-Image-Edit-2511 for reference-faithful edits. Local clone TTS uses Qwen3-TTS on Apple Silicon by default; add Chatterbox with `apple-silicon-chatterbox` or `linux-nvidia-gb10-chatterbox` when you want exaggeration and CFG control.
 
 DGX Spark uses the dedicated `linux-nvidia-gb10-image-generation` recipe. It materializes three additive, on-demand Docker runtimes backed by LLooM's stable-diffusion.cpp CUDA image, so the host does not need a separate CUDA compiler toolchain. The cross-platform `high-memory-local-image-generation` recipe remains the source-build path for Apple Silicon and CUDA development hosts.
 
@@ -30,6 +30,24 @@ On the current M2 Max 96 GB machine, the strongest observed Qwen3.6 lanes were:
 - 35B-A3B MoE: `Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16`
 
 These are encoded in `recipes/apple-silicon-qwen36.json` and exposed by default in `config/default.json`.
+
+## Chatterbox TTS
+
+Local clone TTS with exaggeration and CFG:
+
+- Apple Silicon (MPS): `apple-silicon-chatterbox`
+- DGX Spark / NVIDIA CUDA: `linux-nvidia-gb10-chatterbox`
+
+Add it beside an existing gateway without replacing chat defaults:
+
+```zsh
+lloom setup --recipe apple-silicon-chatterbox --additive --apply --yes
+lloom runtime-start chatterbox
+```
+
+Speech API extras: `voice` (named LLooM profile), `ref_audio` / `audio_prompt_path`, `exaggeration`, `cfg_weight`, `temperature`, `language` / `language_id` (multilingual), plus `ResembleAI/chatterbox-turbo` for the faster lane. Do not install the Spark recipe until the host has spare memory.
+
+Chatterbox keeps ResembleAI's built-in Perth watermark enabled. Only create or clone voices you own or have explicit permission to use, and disclose synthetic audio where appropriate.
 Community host seed recipes also publish split Apple Silicon MTPLX lanes plus a Linux/NVIDIA Qwen3.6 27B NVFP4 vLLM lane under `community/recipes/`; first-run onboarding can consume those signed packs directly from `lloom-host` and let machine-profile evidence decide which one fits.
 
 ## Plan Contract
@@ -113,6 +131,10 @@ hf download <model-id> --local-dir <model-root>/<model-id>
 MTPLX recipes use MTPLX's cache-safe directory convention for Hugging Face model IDs, so `owner/model` is stored under `<model-root>/owner--model`. This matches `mtplx pull` and lets `mtplx serve` resolve already-cached models without a second copy.
 
 Existing destination directories with model payload files are treated as already downloaded, which lets users seed model files manually or resume after external downloads. Metadata-only partial downloads are reported as missing.
+
+For reproducible acquisition, a `download-model` step may also declare an immutable provider `revision`, a `downloadSizeBytes` disk preflight, and per-file `integrity.files` size/SHA-256 evidence. LLooM downloads these steps into a sibling `.incomplete` directory, resumes there after interruption, verifies the declared evidence, writes `.lloom-acquisition.json`, and atomically publishes the completed model directory. Existing unpinned recipes remain backward compatible and continue to use payload-presence checks.
+
+Recipe evaluation also exposes a versioned `resourceFit` result. Profiles describe stable `memoryDomains` (including Apple unified memory and discrete accelerator memory) plus a topology fingerprint. A recipe can supply `requirements.resourceEstimate` with aggregate or per-domain memory, reserve, context, source, confidence, and provenance. Stable hardware fit remains separate from point-in-time loadability; the runtime admission policy remains authoritative for current memory pressure and eviction.
 
 ## Ad Hoc Model Intake
 

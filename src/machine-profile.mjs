@@ -1,6 +1,7 @@
 import os from 'node:os';
 import { runCommand } from './process-control.mjs';
 import { detectNvidiaSyncCluster } from './cluster.mjs';
+import { evaluateResourceFit, machineTopologyFingerprint, memoryDomainsForProfile } from './resource-fit.mjs';
 
 export const MACHINE_PROFILE_SCHEMA = 'https://lloom.dev/schemas/machine-profile.v1.schema.json';
 export const MACHINE_PROFILE_MEDIA_TYPE = 'application/vnd.lloom.machine-profile+json;version=1';
@@ -189,7 +190,7 @@ export function normalizeMachineProfile(profile = {}) {
     : isAppleSilicon
       ? appleSiliconDevices()
       : [];
-  return {
+  const normalized = {
     $schema: MACHINE_PROFILE_SCHEMA,
     schemaVersion: 1,
     profile: INTERCHANGE_PROFILE,
@@ -210,6 +211,9 @@ export function normalizeMachineProfile(profile = {}) {
     ...(profile.cluster ? { cluster: profile.cluster } : {}),
     ...(profile.modelRoot ? { 'x-local-modelRoot': profile.modelRoot } : {})
   };
+  normalized.memoryDomains = memoryDomainsForProfile({ ...profile, ...normalized });
+  normalized.topologyFingerprint = profile.topologyFingerprint ?? machineTopologyFingerprint(normalized);
+  return normalized;
 }
 
 export function validateMachineProfile(profile) {
@@ -238,6 +242,12 @@ export function validateMachineProfile(profile) {
   }
   if (profile.devices != null && !Array.isArray(profile.devices)) {
     errors.push('machine profile devices must be an array when provided');
+  }
+  if (profile.memoryDomains != null && !Array.isArray(profile.memoryDomains)) {
+    errors.push('machine profile memoryDomains must be an array when provided');
+  }
+  if (profile.topologyFingerprint != null && !/^sha256:[a-f0-9]{64}$/.test(String(profile.topologyFingerprint))) {
+    errors.push('machine profile topologyFingerprint must be a sha256 digest when provided');
   }
   return errors;
 }
@@ -363,6 +373,10 @@ export async function evaluateRecipe(recipe, profile, { checkCommands = true } =
   const requiredCommands = Array.isArray(requirements.commands) ? requirements.commands : [];
   const requiredAccelerators = Array.isArray(requirements.accelerators) ? requirements.accelerators : [];
   const memoryRequired = Number(requirements.memoryGb ?? 0);
+  const resourceFit = evaluateResourceFit(
+    profile,
+    requirements.resourceEstimate ?? { memoryGb: memoryRequired || undefined }
+  );
   const clusterRequirements = requirements.cluster ?? {};
   const clusterNodeCount = Number(profile.cluster?.nodeCount ?? 1);
   const minimumNodes = Number(clusterRequirements.minNodes ?? clusterRequirements.nodes ?? 0);
@@ -379,7 +393,14 @@ export async function evaluateRecipe(recipe, profile, { checkCommands = true } =
   const platformSupported = !platforms.length || platforms.includes(profile.platformId);
   const profileMemoryGb = Number(profile.totalMemoryGb);
   const memoryKnown = Number.isFinite(profileMemoryGb);
-  const memorySupported = !memoryRequired ? true : memoryKnown ? profileMemoryGb >= memoryRequired : null;
+  const memorySupported =
+    !memoryRequired && resourceFit.stableFit == null
+      ? true
+      : resourceFit.stableFit != null
+        ? resourceFit.stableFit
+        : memoryKnown
+          ? profileMemoryGb >= memoryRequired
+          : null;
   const profileAccelerators = new Set(Array.isArray(profile.accelerators) ? profile.accelerators : []);
   const missingAccelerators = requiredAccelerators.filter((accelerator) => !profileAccelerators.has(accelerator));
   const acceleratorsSupported = missingAccelerators.length === 0;
@@ -412,7 +433,8 @@ export async function evaluateRecipe(recipe, profile, { checkCommands = true } =
     name: recipe.name,
     platformSupported,
     memorySupported,
-    memoryRequiredGb: memoryRequired || null,
+    memoryRequiredGb: memoryRequired || resourceFit.estimate.memoryGb || null,
+    resourceFit,
     acceleratorsSupported,
     clusterSupported,
     clusterNodeCount,
@@ -429,8 +451,16 @@ export async function evaluateRecipe(recipe, profile, { checkCommands = true } =
     score,
     reasons: [
       ...(platformSupported ? [] : [`requires platform ${platforms.join(', ')}`]),
-      ...(memorySupported === false ? [`requires ${memoryRequired} GB memory`] : []),
-      ...(memorySupported === null ? [`memory unknown; recipe requires ${memoryRequired} GB`] : []),
+      ...(memorySupported === false && memoryRequired ? [`requires ${memoryRequired} GB memory`] : []),
+      ...(memorySupported === null && memoryRequired ? [`memory unknown; recipe requires ${memoryRequired} GB`] : []),
+      ...(resourceFit.stableFit === false
+        ? resourceFit.domains
+            .filter((domain) => domain.fit === false)
+            .map(
+              (domain) =>
+                `requires ${domain.requiredGb} GB in ${domain.id}; capacity is ${domain.capacityGb ?? 'unknown'} GB`
+            )
+        : []),
       ...missingAccelerators.map((accelerator) => `requires accelerator ${accelerator}`),
       ...(!nodeCountSupported
         ? [

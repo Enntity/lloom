@@ -81,6 +81,33 @@
           "type": "number",
           "minimum": 0
         },
+        "resourceEstimate": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "memoryGb": { "type": "number", "minimum": 0 },
+            "reserveGb": { "type": "number", "minimum": 0 },
+            "contextWindow": { "type": "integer", "minimum": 1 },
+            "source": { "type": "string" },
+            "confidence": { "type": "string" },
+            "provenance": { "type": "object", "additionalProperties": true },
+            "domains": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["memoryGb"],
+                "additionalProperties": true,
+                "properties": {
+                  "id": { "type": "string" },
+                  "kind": { "enum": ["system", "unified", "device"] },
+                  "backend": { "type": "string" },
+                  "memoryGb": { "type": "number", "minimum": 0 },
+                  "deviceIds": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+                }
+              }
+            }
+          }
+        },
         "diskGb": {
           "type": "number",
           "minimum": 0
@@ -154,6 +181,35 @@
               },
               "provider": {
                 "type": "string"
+              },
+              "revision": {
+                "type": "string",
+                "pattern": "^[a-fA-F0-9]{40,64}$",
+                "description": "Immutable provider revision used for reproducible acquisition."
+              },
+              "downloadSizeBytes": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Expected transfer size used for disk-capacity preflight."
+              },
+              "integrity": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": ["path"],
+                      "additionalProperties": false,
+                      "properties": {
+                        "path": { "type": "string", "minLength": 1 },
+                        "sizeBytes": { "type": "integer", "minimum": 0 },
+                        "sha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" }
+                      }
+                    }
+                  }
+                }
               },
               "skipIfPathExists": {
                 "type": "string",

@@ -773,7 +773,7 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
 }
 
 function materializedRecipeModel(recipe, recipeModel, modelId, placement) {
-  return {
+  const model = {
     id: modelId,
     name: recipeModel.name ?? modelId.split('/').at(-1),
     ...placement,
@@ -791,11 +791,22 @@ function materializedRecipeModel(recipe, recipeModel, modelId, placement) {
       ...new Set([recipe.backend?.id, ...asArray(recipe.keywords), ...asArray(recipe.capabilities)].filter(Boolean))
     ]
   };
+  if (recipeModel.tts && typeof recipeModel.tts === 'object') model.tts = recipeModel.tts;
+  if (recipeModel.stt && typeof recipeModel.stt === 'object') model.stt = recipeModel.stt;
+  return model;
 }
 
 function finishRecipeModelConfig(config, recipeModel, materializedModel, modelId) {
   if (!config.clientCatalog.modelOrder.includes(modelId)) {
     config.clientCatalog.modelOrder.push(modelId);
+  }
+  for (const aliasId of asArray(recipeModel.aliases)) {
+    if (!aliasId || config.aliases[aliasId]) continue;
+    config.aliases[aliasId] = {
+      target: modelId,
+      advertise: true,
+      description: recipeModel.aliasDescription ?? recipeModel.name ?? modelId
+    };
   }
   if (recipeModel.setDefault === true) {
     config.defaults ??= {};

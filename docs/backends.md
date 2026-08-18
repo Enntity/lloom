@@ -8,6 +8,8 @@ Current catalog entries:
 
 - `mtplx`
 - `mlx-lm`
+- `mlx-audio`
+- `chatterbox`
 - `llama-cpp`
 - `ollama`
 - `openai-compatible`

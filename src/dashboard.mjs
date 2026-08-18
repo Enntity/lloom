@@ -1903,7 +1903,8 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     }
 
     async function refresh() {
-      setHealth(false, "checking");
+      const healthPill = $("#health");
+      healthPill?.classList.add("refreshing");
       try {
         const security = await getJson("/gateway/security");
         state.security = security;
@@ -1937,6 +1938,8 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       } catch (error) {
         setHealth(false, "offline");
         showOutput({ error: error.message });
+      } finally {
+        healthPill?.classList.remove("refreshing");
       }
     }
 

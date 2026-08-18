@@ -9,7 +9,7 @@
     "id": "MIT",
     "name": "Recipe metadata license"
   },
-  "updatedAt": "2026-08-07T06:12:00.000Z",
+  "updatedAt": "2026-08-14T18:00:00.000Z",
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated"
@@ -77,6 +77,23 @@
       "recommendedFor": ["DGX Spark and CUDA hosts needing a local semantic-memory embedding service"],
       "capabilities": ["embedding", "embeddings", "batching", "multilingual"],
       "source": { "type": "local", "url": "recipes/linux-nvidia-qwen3-embedding-4b-vllm.json" }
+    },
+    {
+      "id": "apple-silicon-chatterbox",
+      "path": "apple-silicon-chatterbox.json",
+      "currentVersion": 1,
+      "versions": [
+        { "version": 1, "path": "apple-silicon-chatterbox.json", "status": "current" }
+      ],
+      "name": "Apple Silicon Chatterbox TTS",
+      "summary": "ResembleAI Chatterbox on Apple Silicon MPS: clone, exaggeration, CFG, multilingual, and turbo.",
+      "tags": ["apple-silicon", "tts", "audio-speech", "chatterbox", "voice-clone", "mps", "multilingual"],
+      "recommendedFor": [
+        "M-series Macs that want a local clone TTS lane beside Qwen3-TTS",
+        "character voices with exaggeration and CFG control"
+      ],
+      "capabilities": ["audio-speech", "tts", "tts-voice-clone", "tts-exaggeration", "chatterbox"],
+      "source": { "type": "local", "url": "recipes/apple-silicon-chatterbox.json" }
     },
     {
       "id": "apple-silicon-qwen3-embedding-4b-ollama",
@@ -190,6 +207,23 @@
       "source": { "type": "local", "url": "recipes/high-memory-local-image-generation.json" }
     },
     {
+      "id": "linux-nvidia-gb10-chatterbox",
+      "path": "linux-nvidia-gb10-chatterbox.json",
+      "currentVersion": 1,
+      "versions": [
+        { "version": 1, "path": "linux-nvidia-gb10-chatterbox.json", "status": "current" }
+      ],
+      "name": "DGX / NVIDIA Chatterbox TTS",
+      "summary": "ResembleAI Chatterbox on NVIDIA CUDA for DGX Spark / GB10 and CUDA hosts.",
+      "tags": ["linux", "nvidia", "dgx-spark", "gb10", "tts", "audio-speech", "chatterbox", "voice-clone", "cuda"],
+      "recommendedFor": [
+        "DGX Spark / GB10 hosts with spare memory for a local clone TTS lane",
+        "NVIDIA CUDA boxes that want Chatterbox through LLooM"
+      ],
+      "capabilities": ["audio-speech", "tts", "tts-voice-clone", "tts-exaggeration", "chatterbox"],
+      "source": { "type": "local", "url": "recipes/linux-nvidia-gb10-chatterbox.json" }
+    },
+    {
       "id": "linux-nvidia-gb10-image-generation",
       "path": "linux-nvidia-gb10-image-generation.json",
       "name": "DGX Spark FLUX.2 Klein 4B + Qwen Image",
@@ -205,13 +239,34 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm",
       "path": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json",
-      "currentVersion": 4,
+      "currentVersion": 7,
       "versions": [
         {
           "version": 4,
+          "path": "archive/linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm/v4.json",
+          "status": "archived",
+          "archivedAt": "2026-08-13T14:30:00.000Z",
+          "notes": "Initial LLooM-managed official 0731 lane with the conservative 262K coexistence profile."
+        },
+        {
+          "version": 5,
+          "path": "archive/linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm/v5.json",
+          "status": "archived",
+          "archivedAt": "2026-08-18T23:30:00.000Z",
+          "notes": "MiaAI-tested DSpark runtime with 262K context, measured coexistence headroom, and packaged tool, schema, reasoning-budget, and NVFP4 correctness fixes."
+        },
+        {
+          "version": 6,
+          "path": "archive/linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm/v6.json",
+          "status": "archived",
+          "archivedAt": "2026-08-18T23:45:00.000Z",
+          "notes": "Replaces the withdrawn host-scanning thinking budget with MiaAI's GPU-resident opt-in implementation and adds reasoning stop-string and truncated-tool-call safety fixes."
+        },
+        {
+          "version": 7,
           "path": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json",
           "status": "current",
-          "notes": "MiaAI-tested DSpark runtime with 262K context, measured coexistence headroom, and protected warm residency."
+          "notes": "Packages the pinned MiaAI source tree behind a checksum-verified manifest and keeps LLooM's serving profile as a separate policy overlay."
         }
       ],
       "name": "2x DGX Spark DeepSeek V4 Flash DSpark (MiaAI validated)",

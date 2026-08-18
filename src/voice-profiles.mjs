@@ -2,7 +2,7 @@
  * LLooM voice profiles — named voices (especially ICL clones) installed under
  * ~/.lloom/voices/<id>/ so clients can call:
  *
- *   POST /v1/audio/speech { "voice": "jinx", "input": "Hello" }
+ *   POST /v1/audio/speech { "voice": "character-demo", "input": "Hello" }
  *
  * without supplying ref_audio / ref_text / model.
  */
@@ -146,20 +146,19 @@ export function applyVoiceProfileToSpeechBody(body = {}, profile) {
   }
 
   const defaults = asObject(profile.defaults);
-  // Named clone profiles always bind to their Base/ICL model. Client overrides
-  // apply to sampling / text only — not to switching away from the profile recipe.
+  // Profile owns the reference clip. Client may override the clone engine
+  // (e.g. Qwen Base vs Chatterbox) and sampling knobs.
   const next = {
     ...defaults,
     ...client,
-    model: profile.model,
+    model: client.model ?? profile.model,
     voice: profile.id,
     ref_audio: client.ref_audio ?? client.refAudio ?? profile.refAudioPath,
     ref_text: client.ref_text ?? client.refText ?? profile.refText,
     response_format: client.response_format ?? client.responseFormat ?? defaults.response_format ?? 'wav'
   };
 
-  // Sampling: profile defaults under client overrides (already merged via ...defaults then ...client)
-  for (const key of ['temperature', 'top_p', 'top_k', 'repetition_penalty']) {
+  for (const key of ['temperature', 'top_p', 'top_k', 'repetition_penalty', 'exaggeration', 'cfg_weight', 'min_p']) {
     if (client[key] == null && defaults[key] != null) next[key] = defaults[key];
   }
 
@@ -168,6 +167,13 @@ export function applyVoiceProfileToSpeechBody(body = {}, profile) {
     profile,
     applied: true
   };
+}
+
+function familyForProfileModel(model) {
+  const text = String(model ?? '').toLowerCase();
+  if (text.includes('chatterbox')) return 'chatterbox';
+  if (text.includes('qwen3-tts') || text.includes('qwen3_tts')) return 'qwen3-tts';
+  return 'voice-profile';
 }
 
 export function voiceProfileDiscoveryEntry(profile) {
@@ -179,7 +185,7 @@ export function voiceProfileDiscoveryEntry(profile) {
     mode: profile.kind,
     kind: profile.kind,
     model: profile.model,
-    family: 'qwen3-tts',
+    family: familyForProfileModel(profile.model),
     description: profile.description,
     tags: profile.tags ?? [],
     defaults: profile.defaults,

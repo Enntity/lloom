@@ -2330,6 +2330,11 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         top_p: multipartTextField(raw, type, 'top_p'),
         top_k: multipartTextField(raw, type, 'top_k'),
         repetition_penalty: multipartTextField(raw, type, 'repetition_penalty'),
+        exaggeration: multipartTextField(raw, type, 'exaggeration'),
+        cfg_weight: multipartTextField(raw, type, 'cfg_weight') ?? multipartTextField(raw, type, 'cfgWeight'),
+        min_p: multipartTextField(raw, type, 'min_p'),
+        language_id: multipartTextField(raw, type, 'language_id'),
+        audio_prompt_path: multipartTextField(raw, type, 'audio_prompt_path'),
         response_format: multipartTextField(raw, type, 'response_format')
       };
       const expanded = await expandSpeechBody(fields);

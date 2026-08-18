@@ -55,6 +55,9 @@ export function inferTtsMode(model) {
   if (text.includes('customvoice') || text.includes('custom-voice') || text.includes('custom_voice')) {
     return 'custom_voice';
   }
+  if (text.includes('chatterbox')) {
+    return 'voice_clone';
+  }
   if (
     text.includes('base') ||
     text.includes('clone') ||
@@ -65,6 +68,16 @@ export function inferTtsMode(model) {
   }
   if (text.includes('kokoro') || text.includes('kitten')) return 'preset_voice';
   if (text.includes('tts') || model?.kind === 'audio_speech') return 'generic';
+  return null;
+}
+
+export function inferChatterboxVariant(model) {
+  const explicit = model?.tts?.variant;
+  if (explicit) return explicit;
+  const text = modelText(model);
+  if (text.includes('turbo')) return 'turbo';
+  if (text.includes('multilingual') || text.includes('mtl')) return 'multilingual';
+  if (text.includes('chatterbox')) return 'english';
   return null;
 }
 
@@ -267,6 +280,155 @@ function qwenVoiceCloneDescriptor(model) {
   };
 }
 
+const CHATTERBOX_LANGUAGES = [
+  'ar',
+  'da',
+  'de',
+  'el',
+  'en',
+  'es',
+  'fi',
+  'fr',
+  'he',
+  'hi',
+  'it',
+  'ja',
+  'ko',
+  'ms',
+  'nl',
+  'no',
+  'pl',
+  'pt',
+  'ru',
+  'sv',
+  'sw',
+  'tr',
+  'zh'
+];
+
+function chatterboxDescriptor(model) {
+  const variant = inferChatterboxVariant(model) ?? 'english';
+  const multilingual = variant === 'multilingual';
+  const turbo = variant === 'turbo';
+  return {
+    family: 'chatterbox',
+    mode: 'voice_clone',
+    modes: ['voice_clone'],
+    variant,
+    description: turbo
+      ? 'Chatterbox Turbo: faster zero-shot clone. Exaggeration and CFG are ignored.'
+      : multilingual
+        ? 'Chatterbox multilingual: zero-shot clone with language_id, exaggeration, and CFG.'
+        : 'Chatterbox English: zero-shot clone with exaggeration (acting) and CFG.',
+    voices: [],
+    defaultVoice: null,
+    voiceAliases: {},
+    languages: multilingual ? [...CHATTERBOX_LANGUAGES] : ['en'],
+    sampleRate: 24000,
+    responseFormats: [...SPEECH_RESPONSE_FORMATS],
+    acceptsMultipart: true,
+    params: {
+      input: param({
+        type: 'string',
+        required: true,
+        description: 'Text to synthesize in the cloned voice.',
+        maxLength: 4096
+      }),
+      voice: param({
+        type: 'string',
+        required: false,
+        description: 'Named LLooM voice profile. Supplies ref_audio when set.'
+      }),
+      ref_audio: param({
+        type: 'audio',
+        required: false,
+        aliases: ['audio_prompt_path'],
+        description: 'Reference clip for cloning. Optional when a named voice or built-in conds.pt is available.',
+        contentTypes: ['audio/wav', 'audio/mpeg', 'audio/flac', 'audio/ogg']
+      }),
+      ref_text: param({
+        type: 'string',
+        required: false,
+        description: 'Optional transcript of the reference clip. Chatterbox does not require it.'
+      }),
+      exaggeration: param({
+        type: 'number',
+        required: false,
+        minimum: 0,
+        maximum: 2,
+        default: turbo ? 0 : 0.5,
+        description: 'Emotion / intensity. The main acting knob. Ignored by turbo.'
+      }),
+      cfg_weight: param({
+        type: 'number',
+        required: false,
+        aliases: ['cfgWeight'],
+        minimum: 0,
+        maximum: 1,
+        default: turbo ? 0 : 0.5,
+        description: 'Classifier-free guidance. Lower stays closer to the reference. Ignored by turbo.'
+      }),
+      language: param({
+        type: 'string',
+        required: multilingual,
+        aliases: ['language_id', 'lang_code'],
+        description: multilingual
+          ? 'Spoken language id (en, ja, zh, …). Required for the multilingual checkpoint.'
+          : 'Language hint. English checkpoint ignores this.'
+      }),
+      temperature: param({ type: 'number', required: false, minimum: 0.05, maximum: 2, default: 0.8 }),
+      top_p: param({ type: 'number', required: false, minimum: 0, maximum: 1, default: turbo ? 0.95 : 1 }),
+      min_p: param({ type: 'number', required: false, minimum: 0, maximum: 1, default: turbo ? 0 : 0.05 }),
+      repetition_penalty: param({ type: 'number', required: false, minimum: 1, maximum: 3, default: 1.2 }),
+      speed: param({ type: 'number', required: false, minimum: 0.5, maximum: 2, default: 1 }),
+      response_format: param({
+        type: 'string',
+        required: false,
+        enum: SPEECH_RESPONSE_FORMATS,
+        default: 'wav'
+      })
+    },
+    examples: [
+      {
+        title: 'Named LLooM voice',
+        body: {
+          model: model.id,
+          voice: 'character-demo',
+          input: 'Welcome to the local voice demo.',
+          exaggeration: 0.7,
+          cfg_weight: 0.5,
+          response_format: 'wav'
+        }
+      },
+      {
+        title: 'Clone from reference (JSON path)',
+        body: {
+          model: model.id,
+          input: 'This sentence uses the reference speaker.',
+          ref_audio: '/path/to/reference.wav',
+          exaggeration: 0.5,
+          cfg_weight: 0.5,
+          response_format: 'wav'
+        }
+      },
+      {
+        title: 'Clone via multipart',
+        multipart: true,
+        fields: {
+          model: model.id,
+          input: 'This sentence uses the reference speaker.',
+          exaggeration: '0.5',
+          cfg_weight: '0.5',
+          response_format: 'wav'
+        },
+        files: {
+          ref_audio: 'reference.wav'
+        }
+      }
+    ]
+  };
+}
+
 function genericTtsDescriptor(model) {
   return {
     family: 'generic',
@@ -328,6 +490,14 @@ function capabilitiesForTts(descriptor) {
     caps.add('tts-voice-clone');
   }
   if (descriptor.family === 'qwen3-tts') caps.add('qwen3-tts');
+  if (descriptor.family === 'chatterbox') {
+    caps.add('chatterbox');
+    if (descriptor.variant !== 'turbo') {
+      caps.add('tts-exaggeration');
+      caps.add('tts-cfg');
+    }
+    if (descriptor.variant === 'multilingual') caps.add('tts-multilingual');
+  }
   return [...caps];
 }
 
@@ -340,7 +510,9 @@ export function resolveTtsDescriptor(model) {
   const mode = inferTtsMode(model);
   let inferred;
   const text = modelText(model);
-  if (text.includes('qwen3-tts') || text.includes('qwen3_tts')) {
+  if (text.includes('chatterbox') || model?.tts?.family === 'chatterbox') {
+    inferred = chatterboxDescriptor(model);
+  } else if (text.includes('qwen3-tts') || text.includes('qwen3_tts')) {
     if (mode === 'voice_design') inferred = qwenVoiceDesignDescriptor(model);
     else if (mode === 'voice_clone') inferred = qwenVoiceCloneDescriptor(model);
     else inferred = qwenCustomVoiceDescriptor(model);
@@ -558,6 +730,22 @@ export function normalizeSpeechRequestBody(body = {}, { upstreamModel } = {}) {
   if (typeof next.voice === 'string') {
     const alias = OPENAI_VOICE_ALIASES[next.voice.toLowerCase()];
     if (alias) next.voice = alias;
+  }
+
+  if (next.ref_audio != null && next.audio_prompt_path == null) {
+    next.audio_prompt_path = next.ref_audio;
+  }
+  if (next.audio_prompt_path != null && next.ref_audio == null) {
+    next.ref_audio = next.audio_prompt_path;
+  }
+  if (next.language != null && next.language_id == null) {
+    next.language_id = next.language;
+  }
+  if (next.language_id != null && next.language == null) {
+    next.language = next.language_id;
+  }
+  if (next.cfgWeight != null && next.cfg_weight == null) {
+    next.cfg_weight = next.cfgWeight;
   }
 
   if (!next.response_format) next.response_format = 'wav';

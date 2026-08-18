@@ -9,7 +9,7 @@
     "id": "MIT",
     "name": "Backend metadata license"
   },
-  "updatedAt": "2026-07-07T00:00:00Z",
+  "updatedAt": "2026-08-14T00:00:00Z",
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated"
@@ -148,6 +148,41 @@
         "healthPath": "/health",
         "speechPath": "/v1/audio/speech",
         "transcriptionPath": "/v1/audio/transcriptions"
+      }
+    },
+    {
+      "id": "chatterbox",
+      "name": "Chatterbox TTS",
+      "kind": "openai-compatible-server",
+      "description": "ResembleAI Chatterbox OpenAI-compatible TTS: zero-shot clone, exaggeration, CFG, multilingual, and turbo lanes for Apple Silicon MPS and NVIDIA CUDA.",
+      "platforms": ["darwin-arm64", "linux-arm64", "linux-x64"],
+      "features": ["audio-speech", "tts", "tts-voice-clone", "chatterbox", "mps", "cuda"],
+      "commands": ["lloom-chatterbox-server"],
+      "notes": [
+        "Installs into ~/.lloom/backends/chatterbox/venv. Prefer Python 3.11; Apple's default python3 (3.14+) often lacks a working torch wheel.",
+        "On DGX Spark / GB10, point LLOOM_CHATTERBOX_PYTHON at a CUDA-capable interpreter if the generic PyPI torch wheel lacks sm_121.",
+        "Perth implicit watermarking is disabled in the LLooM server (broken on Apple Silicon; unused for local character voices)."
+      ],
+      "setup": [
+        {
+          "id": "check-lloom-chatterbox-server",
+          "title": "Check LLooM Chatterbox server shim",
+          "action": "check-command",
+          "command": "lloom-chatterbox-server",
+          "args": ["--help"]
+        },
+        {
+          "id": "install-chatterbox",
+          "title": "Install Chatterbox backend",
+          "action": "command",
+          "command": "bash",
+          "args": ["${repoRoot}/backends/chatterbox/install.sh"]
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health",
+        "speechPath": "/v1/audio/speech"
       }
     },
     {

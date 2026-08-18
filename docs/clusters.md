@@ -143,7 +143,7 @@ The equivalent explicit config is:
 
 For a model such as DeepSeek V4 Flash that uses both Sparks, a recipe may declare member runtime templates. LLooM resolves `nodeRole` selectors, materializes one physical runtime per node, and adds one logical distributed runtime. The member list can contain any number of nodes and roles. Headless Docker workers use `healthStrategy: "container"`; the head owns the HTTP health check.
 
-The checked-in `linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm` recipe is the concrete two-Spark example. It is based on MiaAI Lab's validated multiprocess vLLM recipe, pins the official 0731 model revision and runtime image digest, starts the worker before the head, and binds the raw vLLM API only to the private NVIDIA Sync fabric.
+The checked-in `linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm` recipe is the concrete two-Spark example. It is based on MiaAI Lab's validated multiprocess vLLM recipe, pins the official 0731 model revision and runtime image digest, packages its reviewed correctness hotfixes, starts the worker before the head, and binds the raw vLLM API only to the private NVIDIA Sync fabric. Hotfix assets are bind-mounted read-only and applied idempotently before vLLM starts, so container recreation preserves the tested runtime contract.
 
 The companion `linux-nvidia-dgx-spark-cluster-flux2-klein-4b` recipe demonstrates a single worker-pinned service. It keeps the image model on a worker while clients continue to use the leader LLooM endpoint.
 

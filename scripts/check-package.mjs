@@ -19,6 +19,9 @@ const requiredFiles = [
   'bin/lloom.mjs',
   'bin/lloom-host.mjs',
   'backends/catalog.json',
+  'backends/dspark-vllm/entrypoint.sh',
+  'backends/dspark-vllm/apply-patch-pack.py',
+  'backends/dspark-vllm/packs/miaai-dsv4flash-909776b5/manifest.json',
   'backends/mlx-audio/install.sh',
   'backends/mlx-audio/lloom_audio_server.py',
   'config/default.json',
@@ -37,6 +40,8 @@ const requiredFiles = [
   'src/host-server.mjs',
   'src/onboarding.mjs',
   'src/community-client.mjs',
+  'src/model-acquisition.mjs',
+  'src/resource-fit.mjs',
   'src/tts-catalog.mjs',
   'src/voice-profiles.mjs',
   'scripts/check-interchange.mjs',
@@ -63,6 +68,14 @@ const requiredFiles = [
   'examples/interchange/signing-keys.v1.json',
   'clients/examples/omp-models.yml'
 ];
+
+const dsparkPackPath = 'backends/dspark-vllm/packs/miaai-dsv4flash-909776b5';
+const dsparkPackManifest = JSON.parse(
+  await fs.readFile(path.join(process.cwd(), dsparkPackPath, 'manifest.json'), 'utf8')
+);
+for (const patchEntry of dsparkPackManifest.patches ?? []) {
+  requiredFiles.push(path.join(dsparkPackPath, patchEntry.file));
+}
 
 const forbiddenPrefixes = ['.lloom/', 'clients/generated/', 'data/', 'logs/', 'node_modules/', 'test/'];
 const forbiddenGeneratedFiles = [/(^|\/)__pycache__\//, /\.py[cod]$/i];
@@ -334,7 +347,7 @@ try {
     LLOOM_HOME: path.join(homeRoot, '.lloom')
   });
   const health = await waitForHostHealth(baseUrl);
-  if (health?.data?.recipeCount !== 18 || health?.data?.benchmarkCount !== 12) {
+  if (health?.data?.recipeCount !== 20 || health?.data?.benchmarkCount !== 12) {
     fail('installed lloom-host is not serving packaged seed community data', [JSON.stringify(health?.data ?? null)]);
   }
 

@@ -54,6 +54,23 @@ done
 if [ -n "${encoding_source}" ]; then
   cp "${encoding_source}" /usr/local/lib/python3.12/dist-packages/vllm/tokenizers/deepseek_v4_encoding.py
 fi
+
+pack_runner="${DSPARK_PATCH_PACK_RUNNER:-/opt/lloom/apply-patch-pack.py}"
+pack_manifest="${DSPARK_PATCH_PACK_MANIFEST:-/opt/lloom/patch-pack/manifest.json}"
+vllm_root="${VLLM_ROOT:-/usr/local/lib/python3.12/dist-packages/vllm}"
+: "${DSPARK_RUNTIME_IMAGE:?DSPARK_RUNTIME_IMAGE is required for patch-pack compatibility checks}"
+if [ ! -f "${pack_runner}" ] || [ ! -f "${pack_manifest}" ]; then
+  echo "Required DSv4 patch pack is missing: ${pack_runner} / ${pack_manifest}" >&2
+  exit 1
+fi
+
+python3 "${pack_runner}" \
+  --manifest "${pack_manifest}" \
+  --runtime-image "${DSPARK_RUNTIME_IMAGE}" \
+  --model "${DSPARK_MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}" \
+  --model-revision "${DSPARK_MODEL_REVISION:-9e165c30e2704aec5d9d593cce3eebd58bbef1cb}" \
+  --vllm-root "${vllm_root}"
+
 python3 - <<'PY'
 from pathlib import Path
 

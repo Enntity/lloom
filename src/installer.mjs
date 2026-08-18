@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { planBackend } from './backend-catalog.mjs';
 import { defaultLloomHome, defaultUserModelRoot } from './config.mjs';
-import { modelDirectoryComplete } from './model-files.mjs';
+import { finalizeModelAcquisition, modelAcquisitionStatus, prepareModelAcquisition } from './model-acquisition.mjs';
 import { runCommand } from './process-control.mjs';
 import { planRecipe } from './recipes.mjs';
 
@@ -73,11 +73,18 @@ function backendState(state, backendId) {
   return state.backends[backendId];
 }
 
-function huggingFaceCommandCandidates(step) {
+function huggingFaceCommandCandidates(step, destination = step.destination) {
   const configured = process.env.LLOOM_HF_BIN || process.env.HF_HUB_CLI;
   return [configured, 'hf', 'huggingface-cli']
     .filter(Boolean)
-    .map((command) => [command, 'download', step.model, '--local-dir', step.destination]);
+    .map((command) => [
+      command,
+      'download',
+      step.model,
+      ...(step.revision ? ['--revision', step.revision] : []),
+      '--local-dir',
+      destination
+    ]);
 }
 
 async function commandAvailable(command, { env = process.env } = {}) {
@@ -145,7 +152,8 @@ async function writeCommandShim({ source, target }) {
 }
 
 async function executeDownloadModel(step, { env = process.env, stdio } = {}) {
-  if (await modelDirectoryComplete(step.destination)) {
+  const existing = await modelAcquisitionStatus(step);
+  if (existing.complete) {
     return {
       ok: true,
       status: 'skipped',
@@ -166,7 +174,29 @@ async function executeDownloadModel(step, { env = process.env, stdio } = {}) {
       stderr: 'No Hugging Face download CLI found. Install `huggingface_hub[cli]` or set LLOOM_HF_BIN.'
     };
   }
-  return executeCommand(command, { env, stdio });
+  let prepared;
+  try {
+    prepared = await prepareModelAcquisition(step);
+  } catch (error) {
+    return { ok: false, status: 'failed', command, stdout: '', stderr: error?.message ?? String(error) };
+  }
+  const workCommand = huggingFaceCommandCandidates(step, prepared.workPath).find(
+    (candidate) => candidate[0] === command[0]
+  );
+  const execution = await executeCommand(workCommand, { env, stdio });
+  if (!execution.ok) return { ...execution, status: 'failed', partialDestination: prepared.workPath };
+  try {
+    const acquisition = await finalizeModelAcquisition(step, prepared);
+    return { ...execution, status: 'completed', acquisition };
+  } catch (error) {
+    return {
+      ...execution,
+      ok: false,
+      status: 'failed',
+      stderr: [execution.stderr, error?.message ?? String(error)].filter(Boolean).join('\n'),
+      partialDestination: prepared.workPath
+    };
+  }
 }
 
 async function executePlannedStep(step, { env = process.env, stdio } = {}) {
@@ -246,7 +276,7 @@ async function firstExecutable(candidates) {
 
 async function previousRecipeStepStillApplies(step) {
   if (step.action === 'download-model' && step.destination) {
-    return modelDirectoryComplete(step.destination);
+    return (await modelAcquisitionStatus(step)).complete;
   }
   if (step.skipIfPathExists) {
     return pathExists(step.skipIfPathExists);

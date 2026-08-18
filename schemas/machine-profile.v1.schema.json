@@ -57,6 +57,28 @@
         "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/computeDevice"
       }
     },
+    "memoryDomains": {
+      "type": "array",
+      "description": "Stable physical or unified memory domains. Volatile free capacity is excluded from the topology fingerprint.",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "kind": { "enum": ["system", "unified", "device"] },
+          "backend": { "type": "string" },
+          "capacityGb": { "type": "number", "minimum": 0 },
+          "availableGb": { "type": "number", "minimum": 0 },
+          "deviceIds": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+        }
+      }
+    },
+    "topologyFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$",
+      "description": "Stable fingerprint of compute and memory topology; excludes volatile available-memory readings."
+    },
     "isAppleSilicon": {
       "type": "boolean"
     }

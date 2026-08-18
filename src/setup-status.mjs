@@ -13,6 +13,7 @@ import { defaultUserModelRoot } from './config.mjs';
 import { defaultGeneratedRoot as defaultUserGeneratedRoot } from './init.mjs';
 import { defaultInstallStatePath, defaultInstallStatePathFor, readInstallState } from './installer.mjs';
 import { profileMachine, rankRecipes } from './machine-profile.mjs';
+import { modelAcquisitionStatus } from './model-acquisition.mjs';
 import { modelDirectoryStatus } from './model-files.mjs';
 import { createRegistry } from './registry.mjs';
 import { loadRecipeById, loadRecipes, planRecipe } from './recipes.mjs';
@@ -197,7 +198,9 @@ async function recipeStepStatus(step, state) {
 
   if (step.action === 'download-model' && step.destination) {
     destination = await modelDirectoryStatus(step.destination);
-    currentArtifactSatisfied = destination.populated;
+    const acquisition = await modelAcquisitionStatus(step);
+    destination.acquisition = acquisition;
+    currentArtifactSatisfied = acquisition.complete;
   } else if (step.skipIfPathExists) {
     skipPath = await pathStatus(step.skipIfPathExists);
     currentArtifactSatisfied = skipPath.exists;

@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { summarizeBenchmarksForRecipe } from './benchmarks.mjs';
+import { validateAcquisitionStep } from './model-acquisition.mjs';
 import { repoRoot } from './config.mjs';
 
 export const recipesRoot = path.join(repoRoot, 'recipes');
@@ -105,6 +106,13 @@ export function validateRecipe(recipe, config, { backendIds, checkLocalReference
     if (step.action === 'download-model' && !step.model) {
       errors.push(`recipe ${recipe.id} setup step ${step.id} download-model requires model`);
     }
+    if (step.action === 'download-model') {
+      errors.push(
+        ...validateAcquisitionStep(step).map(
+          (error) => `recipe ${recipe.id} setup step ${step.id ?? '(missing)'} ${error}`
+        )
+      );
+    }
   }
 
   return errors;
@@ -140,8 +148,18 @@ export function planRecipe(
     if (step.action === 'download-model') {
       planned.provider = step.provider ?? 'huggingface';
       planned.model = step.model;
+      if (step.revision) planned.revision = step.revision;
+      if (step.downloadSizeBytes != null) planned.downloadSizeBytes = step.downloadSizeBytes;
+      if (step.integrity) planned.integrity = step.integrity;
       planned.destination = path.posix.join(modelRoot, modelPathSegmentForRecipe(recipe, step.model));
-      planned.command = ['hf', 'download', step.model, '--local-dir', planned.destination];
+      planned.command = [
+        'hf',
+        'download',
+        step.model,
+        ...(step.revision ? ['--revision', step.revision] : []),
+        '--local-dir',
+        planned.destination
+      ];
     } else if (['command', 'check-command'].includes(step.action)) {
       planned.command = commandLine(step, { modelRoot });
     }
