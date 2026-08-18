@@ -350,4 +350,26 @@ assert.equal(
   false
 );
 
+const cancellableManager = new RuntimeManager({ runtimes: {} });
+let lifecycleStarted;
+const lifecycleReady = new Promise((resolve) => {
+  lifecycleStarted = resolve;
+});
+const blockedLifecycle = cancellableManager.withRuntimeLifecycleLock('changing-runtime', async (signal) => {
+  lifecycleStarted();
+  await new Promise((resolve, reject) => {
+    signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+  });
+});
+await lifecycleReady;
+assert.equal(cancellableManager.abortRuntimeLifecycle('changing-runtime', 'superseded by test config'), true);
+await assert.rejects(blockedLifecycle, /superseded by test config/);
+assert.equal(cancellableManager.abortRuntimeLifecycle('changing-runtime'), false);
+assert.equal(
+  cancellableManager.events.some(
+    (event) => event.event === 'lifecycle-abort' && event.runtimeId === 'changing-runtime'
+  ),
+  true
+);
+
 console.log('cluster tests passed');

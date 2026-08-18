@@ -516,6 +516,7 @@ export class RuntimeManager {
     this.queues = new Map();
     this.pausedRuntimes = new Set();
     this.lifecycleQueues = new Map();
+    this.lifecycleControllers = new Map();
     this.watchdogOperations = new Map();
     this.admissionQueue = Promise.resolve();
     this.events = [];
@@ -617,12 +618,32 @@ export class RuntimeManager {
   withRuntimeLifecycleLock(runtimeId, fn) {
     if (!runtimeId) return fn();
     const previous = this.lifecycleQueues.get(runtimeId) ?? Promise.resolve();
-    const run = previous.catch(() => {}).then(fn);
+    const run = previous
+      .catch(() => {})
+      .then(async () => {
+        const controller = new AbortController();
+        this.lifecycleControllers.set(runtimeId, controller);
+        try {
+          return await fn(controller.signal);
+        } finally {
+          if (this.lifecycleControllers.get(runtimeId) === controller) {
+            this.lifecycleControllers.delete(runtimeId);
+          }
+        }
+      });
     this.lifecycleQueues.set(
       runtimeId,
       run.catch(() => {})
     );
     return run;
+  }
+
+  abortRuntimeLifecycle(runtimeId, reason = 'lifecycle superseded') {
+    const controller = this.lifecycleControllers.get(runtimeId);
+    if (!controller || controller.signal.aborted) return false;
+    controller.abort(new Error(reason));
+    this.record({ runtimeId, event: 'lifecycle-abort', reason });
+    return true;
   }
 
   async status({ localOnly = false } = {}) {
@@ -968,6 +989,7 @@ export class RuntimeManager {
     const stopOrder = [...changed].sort(
       (left, right) => Number(distributed.has(right)) - Number(distributed.has(left))
     );
+    for (const runtimeId of changed) this.abortRuntimeLifecycle(runtimeId, 'superseded by config reload');
     const wasRunning = new Map();
     for (const runtimeId of changed) {
       const runtime = previousConfig.runtimes?.[runtimeId];
@@ -1021,16 +1043,17 @@ export class RuntimeManager {
   }
 
   async start(runtimeId, { force = false, warmup = true, reason = 'manual-start' } = {}) {
-    return this.withRuntimeLifecycleLock(runtimeId, () =>
+    return this.withRuntimeLifecycleLock(runtimeId, (signal) =>
       this.startUnlocked(runtimeId, {
         force,
         warmup,
-        reason
+        reason,
+        signal
       })
     );
   }
 
-  async startUnlocked(runtimeId, { force = false, warmup = true, reason = 'manual-start' } = {}) {
+  async startUnlocked(runtimeId, { force = false, warmup = true, reason = 'manual-start', signal } = {}) {
     if (!runtimeId) return { runtimeId, started: false, reason: 'no-runtime' };
     const runtime = this.getRuntime(runtimeId);
     if (!runtime) return { runtimeId, started: false, reason: 'unknown-runtime' };
@@ -1050,11 +1073,11 @@ export class RuntimeManager {
           }
           started.push({ ...member, result });
         }
-        if (runtime.healthUrl) await this.waitForHealth(runtimeId, runtime);
+        if (runtime.healthUrl) await this.waitForHealth(runtimeId, runtime, null, { signal });
         state.starts += 1;
         state.startedAt = nowIso();
         this.setStatus(runtimeId, 'running', reason);
-        const warmupResult = warmup && runtime.warmup ? await this.warmup(runtimeId, runtime) : null;
+        const warmupResult = warmup && runtime.warmup ? await this.warmup(runtimeId, runtime, { signal }) : null;
         return {
           runtimeId,
           started: true,
@@ -1128,8 +1151,9 @@ export class RuntimeManager {
       state.starts += 1;
       state.startedAt = nowIso();
       this.record({ runtimeId, event: 'docker-start', processResult, reason });
-      const result = await this.waitForHealth(runtimeId, runtime);
-      const warmupResult = result.healthy && warmup && runtime.warmup ? await this.warmup(runtimeId, runtime) : null;
+      const result = await this.waitForHealth(runtimeId, runtime, null, { signal });
+      const warmupResult =
+        result.healthy && warmup && runtime.warmup ? await this.warmup(runtimeId, runtime, { signal }) : null;
       return {
         ...result,
         started: true,
@@ -1148,7 +1172,7 @@ export class RuntimeManager {
 
     const existing = this.processes.get(runtimeId);
     if (existing && existing.exitCode == null) {
-      return this.waitForHealth(runtimeId, runtime, existing);
+      return this.waitForHealth(runtimeId, runtime, existing, { signal });
     }
 
     this.setStatus(runtimeId, 'starting', reason);
@@ -1201,10 +1225,10 @@ export class RuntimeManager {
       }
     });
 
-    const result = await this.waitForHealth(runtimeId, runtime, child);
+    const result = await this.waitForHealth(runtimeId, runtime, child, { signal });
     let warmupResult = null;
     if (result.healthy && warmup && runtime.warmup) {
-      warmupResult = await this.warmup(runtimeId, runtime);
+      warmupResult = await this.warmup(runtimeId, runtime, { signal });
     }
     return {
       ...result,
@@ -1214,10 +1238,11 @@ export class RuntimeManager {
     };
   }
 
-  async waitForHealth(runtimeId, runtime, child = null) {
+  async waitForHealth(runtimeId, runtime, child = null, { signal } = {}) {
     const state = this.stateFor(runtimeId);
     const deadline = Date.now() + (runtime.startupTimeoutMs ?? 300000);
     while (Date.now() < deadline) {
+      if (signal?.aborted) throw signal.reason ?? new Error(`runtime ${runtimeId} start aborted`);
       if (await runtimeHealthOk(runtime)) {
         this.setStatus(runtimeId, 'running');
         this.record({ runtimeId, event: 'healthy' });
@@ -1229,7 +1254,12 @@ export class RuntimeManager {
         state.lastError = message;
         throw new Error(message);
       }
-      await delay(500);
+      try {
+        await delay(500, undefined, { signal });
+      } catch (error) {
+        if (signal?.aborted) throw signal.reason ?? error;
+        throw error;
+      }
     }
     state.status = 'failed';
     state.lastError = `runtime ${runtimeId} did not become healthy before timeout`;
@@ -1255,7 +1285,7 @@ export class RuntimeManager {
     return this.warmup(runtimeId, runtime);
   }
 
-  async warmup(runtimeId, runtime) {
+  async warmup(runtimeId, runtime, { signal } = {}) {
     const state = this.stateFor(runtimeId);
     const warmup = runtime.warmup;
     if (!warmup?.url) return { runtimeId, warmed: false, reason: 'no-warmup' };
@@ -1268,7 +1298,8 @@ export class RuntimeManager {
           'content-type': 'application/json',
           ...(warmup.headers ?? {})
         },
-        body: warmup.body ? JSON.stringify(warmup.body) : undefined
+        body: warmup.body ? JSON.stringify(warmup.body) : undefined,
+        signal
       });
       const text = await response.text().catch(() => '');
       const result = {
@@ -1286,6 +1317,7 @@ export class RuntimeManager {
       this.setStatus(runtimeId, 'running', response.ok ? null : 'warmup-failed');
       return result;
     } catch (error) {
+      if (signal?.aborted) throw signal.reason ?? error;
       const result = {
         runtimeId,
         warmed: false,
