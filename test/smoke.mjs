@@ -2371,6 +2371,32 @@ const sparkConfig = deriveUserConfig(config, sparkRecipe, { modelRoot: '/models'
 assert.equal(sparkConfig.runtimes['unsloth-qwen36-35b-a3b-nvfp4'].adapter, 'docker');
 assert.equal(sparkConfig.runtimes['unsloth-qwen36-35b-a3b-nvfp4'].keepWarm, false);
 assert.equal(sparkConfig.runtimes['unsloth-qwen36-27b-nvfp4'].keepWarm, false);
+const dsparkRecipe = await loadRecipeById('linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm');
+const dsparkBase = structuredClone(config);
+dsparkBase.cluster = {
+  nodeId: 'ennspark01',
+  leaderNode: 'ennspark01',
+  nodes: {
+    ennspark01: { endpoint: 'http://spark-one:8100', backendHost: '10.100.16.2' },
+    ennspark02: { endpoint: 'http://spark-two:8100', backendHost: '10.100.16.1' }
+  }
+};
+const dsparkInstalled = deriveUserConfig(dsparkBase, dsparkRecipe, { modelRoot: '/models', additive: true });
+dsparkInstalled.cluster.nodes['macbook-local'] = {
+  endpoint: 'http://macbook:8100',
+  labels: { architecture: 'darwin-arm64', accelerator: 'apple-gpu' }
+};
+const dsparkRefreshed = deriveUserConfig(dsparkInstalled, dsparkRecipe, {
+  modelRoot: '/models',
+  additive: true
+});
+assert.deepEqual(
+  dsparkRefreshed.runtimes['deepseek-v4-flash-0731-cluster'].placement.members.map((member) => member.node),
+  ['ennspark02', 'ennspark01']
+);
+assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-worker'].recipe.version, 7);
+assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-head'].recipe.version, 7);
+assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-worker-macbook-local'], undefined);
 assert.deepEqual(sparkConfig.runtimes['unsloth-qwen36-27b-nvfp4'].watchdog, {
   enabled: true,
   failureThreshold: 2,

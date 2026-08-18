@@ -553,6 +553,12 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
     const settings = asObject(recipeModel.settings);
     const placement = asObject(settings.placement);
     if (placement.mode === 'distributed') {
+      const logicalRuntimeId = existingModel?.runtime ?? recipeModel.runtime ?? `${backendId}-${modelSlug}`;
+      const existingLogicalRuntime = config.runtimes?.[logicalRuntimeId];
+      const existingPlacementMembers =
+        existingLogicalRuntime?.recipe?.id === recipe.id && existingLogicalRuntime?.placement?.mode === 'distributed'
+          ? asArray(existingLogicalRuntime.placement.members)
+          : [];
       const configuredNodes = asObject(config.cluster?.nodes);
       const nodeIds = Object.keys(configuredNodes);
       if (nodeIds.length < 2) {
@@ -568,12 +574,31 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
       const modelPath = modelPathForRecipeModel(recipeModel, backendId, modelRoot);
       for (const [memberIndex, member] of asArray(placement.members).entries()) {
         const selector = member.node ?? member.nodeRole;
+        const existingRuntimeNodes = existingPlacementMembers
+          .filter(
+            (existingMember) =>
+              existingMember.runtime === member.runtime ||
+              String(existingMember.runtime ?? '').startsWith(`${member.runtime}-`)
+          )
+          .map((existingMember) => existingMember.node)
+          .filter(Boolean);
+        const expectedRole = member.role ?? (selector === 'leader' ? 'head' : selector === 'worker' ? 'worker' : null);
+        const existingRoleNodes = expectedRole
+          ? existingPlacementMembers
+              .filter((existingMember) => existingMember.role === expectedRole)
+              .map((existingMember) => existingMember.node)
+              .filter(Boolean)
+          : [];
         const selectedNodes =
-          selector === 'leader'
-            ? [leaderNode]
-            : selector === 'worker' || selector === 'workers'
-              ? workerNodes
-              : [selector];
+          existingRuntimeNodes.length > 0
+            ? existingRuntimeNodes
+            : existingRoleNodes.length > 0
+              ? existingRoleNodes
+              : selector === 'leader'
+                ? [leaderNode]
+                : selector === 'worker' || selector === 'workers'
+                  ? workerNodes
+                  : [selector];
         for (const [selectedIndex, nodeId] of selectedNodes.filter(Boolean).entries()) {
           const node = configuredNodes[nodeId];
           if (!node) throw new Error(`recipe model ${modelId} references unknown cluster node ${nodeId}`);
@@ -621,7 +646,7 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
         }
       }
       if (!members.length) throw new Error(`recipe model ${modelId} has no distributed placement members`);
-      const runtimeId = existingModel?.runtime ?? recipeModel.runtime ?? `${backendId}-${modelSlug}`;
+      const runtimeId = logicalRuntimeId;
       const backendConfigId = existingModel?.backend ?? recipeModel.backendConfig ?? `${backendId}-${modelSlug}`;
       const leader = configuredNodes[leaderNode];
       const port = positiveInteger(settings.port, 8888);
