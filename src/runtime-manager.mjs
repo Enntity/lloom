@@ -82,6 +82,53 @@ function dockerBootstrap(runtime) {
   return adapter === 'docker' ? bootstrap : null;
 }
 
+function distributedMembers(runtime) {
+  return runtime?.placement?.mode === 'distributed'
+    ? (runtime.placement.members ?? []).map((member) => member.runtime).filter(Boolean)
+    : [];
+}
+
+export function reconfigureRuntimeIds(previousConfig, nextConfig, { nodeId, leaderNode } = {}) {
+  const selectedNodeId = nodeId ?? currentNodeId(nextConfig);
+  const selectedLeaderNode =
+    leaderNode ?? nextConfig.cluster?.leaderNode ?? previousConfig.cluster?.leaderNode ?? selectedNodeId;
+  const runtimeIds = new Set([
+    ...Object.keys(previousConfig.runtimes ?? {}),
+    ...Object.keys(nextConfig.runtimes ?? {})
+  ]);
+  const changed = new Set(
+    [...runtimeIds].filter(
+      (runtimeId) =>
+        JSON.stringify(previousConfig.runtimes?.[runtimeId] ?? null) !==
+        JSON.stringify(nextConfig.runtimes?.[runtimeId] ?? null)
+    )
+  );
+
+  // A member change is a distributed-runtime change even when the placement
+  // object itself stayed the same. Only the leader owns that logical restart;
+  // each node separately reconciles the physical member assigned to it.
+  for (const runtimeId of runtimeIds) {
+    const previous = previousConfig.runtimes?.[runtimeId];
+    const current = nextConfig.runtimes?.[runtimeId];
+    const members = new Set([...distributedMembers(previous), ...distributedMembers(current)]);
+    if (members.size > 0 && [...members].some((memberId) => changed.has(memberId))) changed.add(runtimeId);
+  }
+
+  return [...changed].filter((runtimeId) => {
+    const runtime = nextConfig.runtimes?.[runtimeId] ?? previousConfig.runtimes?.[runtimeId];
+    const placement = runtimePlacement(runtime, nextConfig);
+    if (placement.mode === 'distributed') return selectedNodeId === selectedLeaderNode;
+    return !placement.node || placement.node === selectedNodeId;
+  });
+}
+
+export function ownsDistributedRuntime(config, runtime, { nodeId, leaderNode } = {}) {
+  if (runtimePlacement(runtime, config).mode !== 'distributed') return true;
+  const selectedNodeId = nodeId ?? currentNodeId(config);
+  const selectedLeaderNode = leaderNode ?? config.cluster?.leaderNode ?? selectedNodeId;
+  return selectedNodeId === selectedLeaderNode;
+}
+
 export function runtimeChatTemplateOverride(runtime) {
   const configured = runtime?.behaviorOverrides?.chatTemplate;
   if (!configured) return null;
@@ -851,14 +898,23 @@ export class RuntimeManager {
 
   async reconfigure(nextConfig, { drainTimeoutMs = 300000 } = {}) {
     const previousConfig = this.config;
-    const runtimeIds = new Set([
-      ...Object.keys(previousConfig.runtimes ?? {}),
-      ...Object.keys(nextConfig.runtimes ?? {})
-    ]);
-    const changed = [...runtimeIds].filter(
-      (runtimeId) =>
-        JSON.stringify(previousConfig.runtimes?.[runtimeId] ?? null) !==
-        JSON.stringify(nextConfig.runtimes?.[runtimeId] ?? null)
+    const nodeId = this.clusterCoordinator?.nodeId ?? currentNodeId(nextConfig);
+    const leaderNode = nextConfig.cluster?.leaderNode ?? previousConfig.cluster?.leaderNode ?? nodeId;
+    const changed = reconfigureRuntimeIds(previousConfig, nextConfig, { nodeId, leaderNode });
+    const distributed = new Set(
+      changed.filter((runtimeId) => {
+        const runtime = nextConfig.runtimes?.[runtimeId] ?? previousConfig.runtimes?.[runtimeId];
+        return runtimePlacement(runtime, nextConfig).mode === 'distributed';
+      })
+    );
+    const distributedMemberIds = new Set(
+      [...distributed].flatMap((runtimeId) => [
+        ...distributedMembers(previousConfig.runtimes?.[runtimeId]),
+        ...distributedMembers(nextConfig.runtimes?.[runtimeId])
+      ])
+    );
+    const stopOrder = [...changed].sort(
+      (left, right) => Number(distributed.has(right)) - Number(distributed.has(left))
     );
     const wasRunning = new Map();
     for (const runtimeId of changed) {
@@ -874,7 +930,7 @@ export class RuntimeManager {
     for (const runtimeId of changed) await this.drainRuntime(runtimeId, { timeoutMs: drainTimeoutMs });
     const results = [];
     try {
-      for (const runtimeId of changed) {
+      for (const runtimeId of stopOrder) {
         const previous = previousConfig.runtimes?.[runtimeId];
         if (previous) await this.stop(runtimeId);
         if (previous && runtimeAdapter(previous) === 'docker') {
@@ -883,8 +939,15 @@ export class RuntimeManager {
         }
       }
       this.config = nextConfig;
-      for (const runtimeId of changed) {
+      const startOrder = [...changed].sort(
+        (left, right) => Number(distributed.has(right)) - Number(distributed.has(left))
+      );
+      for (const runtimeId of startOrder) {
         const current = nextConfig.runtimes?.[runtimeId];
+        if (distributedMemberIds.has(runtimeId) && distributed.size > 0) {
+          results.push({ runtimeId, started: false, reason: 'distributed-runtime-owned' });
+          continue;
+        }
         results.push(
           current?.keepWarm === true || wasRunning.get(runtimeId) === true
             ? await this.start(runtimeId, { force: true, warmup: true, reason: 'config-reload' })
@@ -1206,6 +1269,15 @@ export class RuntimeManager {
       }
       if (runtime.enabled !== true) {
         results.push({ runtimeId, started: false, reason: 'runtime-disabled' });
+        continue;
+      }
+      if (
+        !ownsDistributedRuntime(this.config, runtime, {
+          nodeId: this.clusterCoordinator?.nodeId ?? currentNodeId(this.config),
+          leaderNode: this.config.cluster?.leaderNode
+        })
+      ) {
+        results.push({ runtimeId, started: false, reason: 'leader-owned' });
         continue;
       }
       const { applyRuntimePolicyPlan } = await import('./runtime-policy.mjs');

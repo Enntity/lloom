@@ -9,7 +9,7 @@ import {
   runtimePlacement,
   validateClusterConfig
 } from '../src/cluster.mjs';
-import { RuntimeManager } from '../src/runtime-manager.mjs';
+import { ownsDistributedRuntime, reconfigureRuntimeIds, RuntimeManager } from '../src/runtime-manager.mjs';
 
 const syncPeers = parseNvidiaSyncSshConfig(`
 Host ennspark02-lan
@@ -213,7 +213,11 @@ const lifecycleCoordinator = {
   }
 };
 const distributedConfig = {
-  cluster: { nodeId: 'leader', nodes: { leader: {}, worker: { endpoint: 'http://worker:8100' } } },
+  cluster: {
+    nodeId: 'leader',
+    leaderNode: 'leader',
+    nodes: { leader: {}, worker: { endpoint: 'http://worker:8100' } }
+  },
   runtimes: {
     head: { enabled: true, node: 'leader' },
     worker: { enabled: true, node: 'worker' },
@@ -242,5 +246,86 @@ assert.deepEqual(lifecycleCalls, [
   'stop:leader:head',
   'stop:worker:worker'
 ]);
+
+const upgradedDistributedConfig = structuredClone(distributedConfig);
+upgradedDistributedConfig.runtimes.head.recipe = { id: 'flash', version: 7 };
+upgradedDistributedConfig.runtimes.worker.recipe = { id: 'flash', version: 7 };
+assert.deepEqual(
+  reconfigureRuntimeIds(distributedConfig, upgradedDistributedConfig, {
+    nodeId: 'worker',
+    leaderNode: 'leader'
+  }),
+  ['worker']
+);
+assert.deepEqual(
+  reconfigureRuntimeIds(distributedConfig, upgradedDistributedConfig, {
+    nodeId: 'leader',
+    leaderNode: 'leader'
+  }),
+  ['head', 'split']
+);
+assert.equal(
+  ownsDistributedRuntime(distributedConfig, distributedConfig.runtimes.split, {
+    nodeId: 'worker',
+    leaderNode: 'leader'
+  }),
+  false
+);
+
+const workerKeepWarmManager = new RuntimeManager(
+  { ...structuredClone(distributedConfig), cluster: { ...distributedConfig.cluster, nodeId: 'worker' } },
+  {
+    logger: { error() {}, warn() {}, info() {} },
+    captureOutput: false,
+    clusterCoordinator: {
+      nodeId: 'worker',
+      attachRuntimeManager() {},
+      isLocalNode(nodeId) {
+        return nodeId === 'worker';
+      }
+    }
+  }
+);
+workerKeepWarmManager.config.runtimes.split.keepWarm = true;
+assert.deepEqual(await workerKeepWarmManager.startKeepWarm(), [
+  { runtimeId: 'split', started: false, reason: 'leader-owned' }
+]);
+
+const reconfigureCalls = [];
+const leaderReconfigureManager = new RuntimeManager(structuredClone(distributedConfig), {
+  logger: { error() {}, warn() {}, info() {} },
+  captureOutput: false,
+  clusterCoordinator: {
+    nodeId: 'leader',
+    attachRuntimeManager() {},
+    isLocalNode(nodeId) {
+      return nodeId === 'leader';
+    }
+  }
+});
+leaderReconfigureManager.drainRuntime = async (runtimeId) => reconfigureCalls.push(`drain:${runtimeId}`);
+leaderReconfigureManager.stop = async (runtimeId) => {
+  reconfigureCalls.push(`stop:${runtimeId}`);
+  return { runtimeId, stopped: true };
+};
+leaderReconfigureManager.start = async (runtimeId) => {
+  reconfigureCalls.push(`start:${runtimeId}`);
+  return { runtimeId, started: true };
+};
+upgradedDistributedConfig.runtimes.split.keepWarm = true;
+const reconfigured = await leaderReconfigureManager.reconfigure(upgradedDistributedConfig);
+assert.deepEqual(reconfigured.changed, ['head', 'split']);
+assert.deepEqual(reconfigureCalls, [
+  'drain:head',
+  'drain:split',
+  'stop:split',
+  'stop:head',
+  'start:split'
+]);
+assert.deepEqual(reconfigured.results.at(-1), {
+  runtimeId: 'head',
+  started: false,
+  reason: 'distributed-runtime-owned'
+});
 
 console.log('cluster tests passed');
