@@ -572,7 +572,7 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
       const workerNodes = nodeIds.filter((nodeId) => nodeId !== leaderNode);
       const members = [];
       const modelPath = modelPathForRecipeModel(recipeModel, backendId, modelRoot);
-      for (const [memberIndex, member] of asArray(placement.members).entries()) {
+      const resolvedPlacementMembers = asArray(placement.members).map((member, memberIndex) => {
         const selector = member.node ?? member.nodeRole;
         const existingRuntimeNodes = existingPlacementMembers
           .filter(
@@ -599,13 +599,23 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
                 : selector === 'worker' || selector === 'workers'
                   ? workerNodes
                   : [selector];
+        return { member, memberIndex, selectedNodes: selectedNodes.filter(Boolean) };
+      });
+      const selectedNodeIds = [
+        leaderNode,
+        ...resolvedPlacementMembers
+          .flatMap(({ selectedNodes }) => selectedNodes)
+          .filter((nodeId) => nodeId !== leaderNode)
+      ].filter((nodeId, index, all) => all.indexOf(nodeId) === index);
+      const selectedWorkerNodes = selectedNodeIds.filter((nodeId) => nodeId !== leaderNode);
+      for (const { member, memberIndex, selectedNodes } of resolvedPlacementMembers) {
         for (const [selectedIndex, nodeId] of selectedNodes.filter(Boolean).entries()) {
           const node = configuredNodes[nodeId];
           if (!node) throw new Error(`recipe model ${modelId} references unknown cluster node ${nodeId}`);
           if (!node.backendHost) throw new Error(`cluster node ${nodeId} requires backendHost for distributed recipes`);
           const memberRuntimeId = selectedNodes.length > 1 ? `${member.runtime}-${slug(nodeId)}` : member.runtime;
           if (!memberRuntimeId) throw new Error(`recipe model ${modelId} has a distributed member without runtime`);
-          const nodeRank = nodeId === leaderNode ? 0 : workerNodes.indexOf(nodeId) + 1;
+          const nodeRank = nodeId === leaderNode ? 0 : selectedWorkerNodes.indexOf(nodeId) + 1;
           const memberSettings = {
             ...settings,
             placement: undefined,
@@ -616,7 +626,7 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
             fabricInterface: node.fabricInterface ?? '',
             leaderNode,
             leaderAddress: configuredNodes[leaderNode].backendHost,
-            clusterNodeCount: nodeIds.length,
+            clusterNodeCount: selectedNodeIds.length,
             runtime: asObject(member.runtimeSettings)
           };
           const memberRecipeModel = { ...recipeModel, settings: memberSettings };

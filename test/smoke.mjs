@@ -2397,6 +2397,10 @@ assert.deepEqual(
 assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-worker'].recipe.version, 7);
 assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-head'].recipe.version, 7);
 assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-worker-macbook-local'], undefined);
+assert(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-worker'].bootstrap.createArgs.includes('CLUSTER_NODE_COUNT=2'));
+assert(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-worker'].bootstrap.createArgs.includes('NODE_RANK=1'));
+assert(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-head'].bootstrap.createArgs.includes('CLUSTER_NODE_COUNT=2'));
+assert(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-head'].bootstrap.createArgs.includes('NODE_RANK=0'));
 assert.deepEqual(sparkConfig.runtimes['unsloth-qwen36-27b-nvfp4'].watchdog, {
   enabled: true,
   failureThreshold: 2,
