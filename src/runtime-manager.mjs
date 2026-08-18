@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { promisify } from 'node:util';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -16,6 +17,7 @@ const CHAT_TEMPLATE_OVERRIDES = new Map([
   ['qwen-fixed-v21.3', path.join(packageRoot, 'assets', 'chat-templates', 'qwen-fixed-v21.3.jinja')]
 ]);
 const VLLM_CHAT_TEMPLATE_PATH = '/etc/lloom/chat-template.jinja';
+const DOCKER_RUNTIME_SPEC_LABEL = 'io.lloom.runtime-spec-sha256';
 
 function nowIso() {
   return new Date().toISOString();
@@ -129,6 +131,29 @@ export function ownsDistributedRuntime(config, runtime, { nodeId, leaderNode } =
   return selectedNodeId === selectedLeaderNode;
 }
 
+export function keepWarmOwnership(config, runtimeId, { nodeId, leaderNode } = {}) {
+  const runtime = config.runtimes?.[runtimeId];
+  if (!runtime) return { owned: false, reason: 'unknown-runtime' };
+  const selectedNodeId = nodeId ?? currentNodeId(config);
+  const selectedLeaderNode = leaderNode ?? config.cluster?.leaderNode ?? selectedNodeId;
+  const distributedMemberIds = new Set(
+    Object.values(config.runtimes ?? {}).flatMap((candidate) =>
+      candidate?.enabled === true && candidate?.keepWarm === true ? distributedMembers(candidate) : []
+    )
+  );
+  if (distributedMemberIds.has(runtimeId)) {
+    return { owned: false, reason: 'distributed-runtime-owned' };
+  }
+  const placement = runtimePlacement(runtime, config);
+  if (placement.mode === 'distributed' && selectedNodeId !== selectedLeaderNode) {
+    return { owned: false, reason: 'leader-owned' };
+  }
+  if (placement.mode !== 'distributed' && placement.node && placement.node !== selectedNodeId) {
+    return { owned: false, reason: 'node-owned' };
+  }
+  return { owned: true, reason: null };
+}
+
 export function runtimeChatTemplateOverride(runtime) {
   const configured = runtime?.behaviorOverrides?.chatTemplate;
   if (!configured) return null;
@@ -154,6 +179,8 @@ export function dockerCreateArgs(runtime) {
     'create',
     '--name',
     name,
+    '--label',
+    `${DOCKER_RUNTIME_SPEC_LABEL}=${dockerRuntimeSpecHash(runtime)}`,
     ...(Array.isArray(bootstrap.createArgs) ? bootstrap.createArgs : []).map(String),
     ...(chatTemplate
       ? ['--mount', `type=bind,src=${chatTemplate.hostPath},dst=${chatTemplate.containerPath},readonly`]
@@ -161,6 +188,29 @@ export function dockerCreateArgs(runtime) {
     String(bootstrap.image),
     ...command
   ];
+}
+
+export function dockerRuntimeSpecHash(runtime) {
+  const bootstrap = dockerBootstrap(runtime);
+  if (!bootstrap) return null;
+  const chatTemplate = runtimeChatTemplateOverride(runtime);
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        image: String(bootstrap.image ?? ''),
+        createArgs: (Array.isArray(bootstrap.createArgs) ? bootstrap.createArgs : []).map(String),
+        command: (Array.isArray(bootstrap.command) ? bootstrap.command : []).map(String),
+        chatTemplate: chatTemplate
+          ? { id: chatTemplate.id, hostPath: chatTemplate.hostPath, containerPath: chatTemplate.containerPath }
+          : null
+      })
+    )
+    .digest('hex');
+}
+
+export function shouldRecreateDockerContainer(runtime, container) {
+  const expectedSpecHash = dockerRuntimeSpecHash(runtime);
+  return Boolean(container?.exists && expectedSpecHash && container.specHash !== expectedSpecHash);
 }
 
 function runtimeCacheCapability(runtime) {
@@ -186,17 +236,19 @@ async function dockerContainerState(runtime) {
   const name = dockerContainerName(runtime);
   if (!name) return { exists: false, running: false, status: 'missing' };
   try {
-    const { stdout } = await execFileAsync('docker', ['inspect', '--format', '{{json .State}}', name], {
+    const { stdout } = await execFileAsync('docker', ['inspect', '--format', '{{json .}}', name], {
       timeout: 5000
     });
-    const state = JSON.parse(stdout.trim());
+    const inspected = JSON.parse(stdout.trim());
+    const state = inspected.State ?? {};
     return {
       exists: true,
       running: state.Running === true,
       status: state.Status ?? (state.Running ? 'running' : 'stopped'),
       pid: state.Pid ?? null,
       startedAt: state.StartedAt ?? null,
-      error: state.Error || null
+      error: state.Error || null,
+      specHash: inspected.Config?.Labels?.[DOCKER_RUNTIME_SPEC_LABEL] ?? null
     };
   } catch (error) {
     return { exists: false, running: false, status: 'missing', error: error?.message ?? String(error) };
@@ -1050,7 +1102,18 @@ export class RuntimeManager {
       if (runtimeManagement(runtime) !== 'managed') {
         return { runtimeId, started: false, healthy: false, reason: 'externally-managed' };
       }
-      const container = await dockerContainerState(runtime);
+      let container = await dockerContainerState(runtime);
+      if (shouldRecreateDockerContainer(runtime, container)) {
+        const name = dockerContainerName(runtime);
+        await execFileAsync('docker', ['rm', '-f', name], { timeout: 120000 });
+        this.record({
+          runtimeId,
+          event: 'docker-recreate',
+          containerName: name,
+          reason: container.specHash ? 'runtime-spec-changed' : 'runtime-spec-untracked'
+        });
+        container = { exists: false, running: false, status: 'missing' };
+      }
       if (!container.exists) {
         const bootstrapResult = await bootstrapDockerContainer(runtime);
         if (!bootstrapResult.created) {
@@ -1271,13 +1334,12 @@ export class RuntimeManager {
         results.push({ runtimeId, started: false, reason: 'runtime-disabled' });
         continue;
       }
-      if (
-        !ownsDistributedRuntime(this.config, runtime, {
-          nodeId: this.clusterCoordinator?.nodeId ?? currentNodeId(this.config),
-          leaderNode: this.config.cluster?.leaderNode
-        })
-      ) {
-        results.push({ runtimeId, started: false, reason: 'leader-owned' });
+      const ownership = keepWarmOwnership(this.config, runtimeId, {
+        nodeId: this.clusterCoordinator?.nodeId ?? currentNodeId(this.config),
+        leaderNode: this.config.cluster?.leaderNode
+      });
+      if (!ownership.owned) {
+        results.push({ runtimeId, started: false, reason: ownership.reason });
         continue;
       }
       const { applyRuntimePolicyPlan } = await import('./runtime-policy.mjs');

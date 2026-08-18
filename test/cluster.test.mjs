@@ -9,7 +9,14 @@ import {
   runtimePlacement,
   validateClusterConfig
 } from '../src/cluster.mjs';
-import { ownsDistributedRuntime, reconfigureRuntimeIds, RuntimeManager } from '../src/runtime-manager.mjs';
+import {
+  dockerCreateArgs,
+  keepWarmOwnership,
+  ownsDistributedRuntime,
+  reconfigureRuntimeIds,
+  RuntimeManager,
+  shouldRecreateDockerContainer
+} from '../src/runtime-manager.mjs';
 
 const syncPeers = parseNvidiaSyncSshConfig(`
 Host ennspark02-lan
@@ -286,8 +293,16 @@ const workerKeepWarmManager = new RuntimeManager(
     }
   }
 );
+workerKeepWarmManager.config.runtimes.head.keepWarm = true;
+workerKeepWarmManager.config.runtimes.worker.keepWarm = true;
 workerKeepWarmManager.config.runtimes.split.keepWarm = true;
+assert.deepEqual(keepWarmOwnership(workerKeepWarmManager.config, 'head', { nodeId: 'worker' }), {
+  owned: false,
+  reason: 'distributed-runtime-owned'
+});
 assert.deepEqual(await workerKeepWarmManager.startKeepWarm(), [
+  { runtimeId: 'head', started: false, reason: 'distributed-runtime-owned' },
+  { runtimeId: 'worker', started: false, reason: 'distributed-runtime-owned' },
   { runtimeId: 'split', started: false, reason: 'leader-owned' }
 ]);
 
@@ -315,17 +330,24 @@ leaderReconfigureManager.start = async (runtimeId) => {
 upgradedDistributedConfig.runtimes.split.keepWarm = true;
 const reconfigured = await leaderReconfigureManager.reconfigure(upgradedDistributedConfig);
 assert.deepEqual(reconfigured.changed, ['head', 'split']);
-assert.deepEqual(reconfigureCalls, [
-  'drain:head',
-  'drain:split',
-  'stop:split',
-  'stop:head',
-  'start:split'
-]);
+assert.deepEqual(reconfigureCalls, ['drain:head', 'drain:split', 'stop:split', 'stop:head', 'start:split']);
 assert.deepEqual(reconfigured.results.at(-1), {
   runtimeId: 'head',
   started: false,
   reason: 'distributed-runtime-owned'
 });
+
+const managedDockerRuntime = {
+  containerName: 'managed-runtime',
+  bootstrap: { adapter: 'docker', image: 'example/model:v2', command: ['serve'] }
+};
+assert.equal(shouldRecreateDockerContainer(managedDockerRuntime, { exists: true, specHash: null }), true);
+assert.equal(shouldRecreateDockerContainer(managedDockerRuntime, { exists: true, specHash: 'stale' }), true);
+const managedDockerArgs = dockerCreateArgs(managedDockerRuntime);
+const managedDockerSpecHash = managedDockerArgs[4].split('=', 2)[1];
+assert.equal(
+  shouldRecreateDockerContainer(managedDockerRuntime, { exists: true, specHash: managedDockerSpecHash }),
+  false
+);
 
 console.log('cluster tests passed');

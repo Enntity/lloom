@@ -2640,6 +2640,8 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
       'create',
       '--name',
       'qwen-fast',
+      '--label',
+      'io.lloom.runtime-spec-sha256=4efc0da3060a994d119140c9ce9f154528989c6807ba417496558c6ec22d5ab4',
       '--restart',
       'unless-stopped',
       '-p',
