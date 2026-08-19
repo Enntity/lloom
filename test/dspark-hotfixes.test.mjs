@@ -84,7 +84,10 @@ try {
   ];
   const manifest = JSON.parse(readFileSync(packManifestPath, 'utf8'));
   assert.equal(manifest.upstream.commit, '909776b5f43154e373efe1ba6cd8d61a1d17515d');
-  assert.equal(manifest.compatibility.runtimeImage, recipe.models[0].settings.placement.members[0].runtimeSettings.bootstrap.image);
+  assert.equal(
+    manifest.compatibility.runtimeImage,
+    recipe.models[0].settings.placement.members[0].runtimeSettings.bootstrap.image
+  );
   assert.deepEqual(
     manifest.patches.filter(({ enabled }) => enabled).map(({ file }) => path.basename(file)),
     expectedHotfixes
@@ -109,9 +112,20 @@ try {
     assert.equal(env.get('GPU_MEMORY_UTILIZATION'), '0.73');
     assert.equal(env.get('DSPARK_RUNTIME_IMAGE'), member.runtimeSettings.bootstrap.image);
     assert.match(member.runtimeSettings.bootstrap.image, /@sha256:a8394849/);
-    assert(args.includes('type=bind,src=${lloomRoot}/backends/dspark-vllm/apply-patch-pack.py,dst=/opt/lloom/apply-patch-pack.py,readonly'));
-    assert(args.includes('type=bind,src=${lloomRoot}/backends/dspark-vllm/packs/miaai-dsv4flash-909776b5,dst=/opt/lloom/patch-pack,readonly'));
-    assert.equal(args.some((value) => value.includes('/opt/lloom/hotfixes/')), false);
+    assert(
+      args.includes(
+        'type=bind,src=${lloomRoot}/backends/dspark-vllm/apply-patch-pack.py,dst=/opt/lloom/apply-patch-pack.py,readonly'
+      )
+    );
+    assert(
+      args.includes(
+        'type=bind,src=${lloomRoot}/backends/dspark-vllm/packs/miaai-dsv4flash-909776b5,dst=/opt/lloom/patch-pack,readonly'
+      )
+    );
+    assert.equal(
+      args.some((value) => value.includes('/opt/lloom/hotfixes/')),
+      false
+    );
   }
 
   const entrypoint = readFileSync(path.join(repoRoot, 'backends', 'dspark-vllm', 'entrypoint.sh'), 'utf8');
@@ -120,10 +134,14 @@ try {
   assert.doesNotMatch(entrypoint, /\/opt\/lloom\/hotfixes/);
   run('python3', [
     packRunner,
-    '--manifest', packManifestPath,
-    '--runtime-image', manifest.compatibility.runtimeImage,
-    '--model', manifest.compatibility.model,
-    '--model-revision', manifest.compatibility.modelRevision,
+    '--manifest',
+    packManifestPath,
+    '--runtime-image',
+    manifest.compatibility.runtimeImage,
+    '--model',
+    manifest.compatibility.model,
+    '--model-revision',
+    manifest.compatibility.modelRevision,
     '--check-only'
   ]);
 
