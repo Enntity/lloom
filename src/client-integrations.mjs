@@ -40,7 +40,9 @@ function shellQuote(value) {
 export function providerSettings(config) {
   const providerId = config.clientCatalog?.providerId ?? 'local-llm';
   const provider = config.providers?.[providerId] ?? {};
-  const baseUrl = provider.baseUrl ?? `http://${config.server.host}:${config.server.port}/v1`;
+  const host = config.server?.host ?? '127.0.0.1';
+  const port = config.server?.port ?? 8100;
+  const baseUrl = provider.baseUrl ?? `http://${host}:${port}/v1`;
   const gatewayUrl = provider.gatewayUrl ?? gatewayUrlForBaseUrl(baseUrl);
   const apiKey = provider.apiKey ?? 'sk-lloom-local';
   const chatModel = config.defaults?.chatModel;
@@ -56,8 +58,35 @@ export function providerSettings(config) {
   };
 }
 
+function modelCapabilities(model) {
+  return Array.isArray(model.capabilities) ? model.capabilities : [];
+}
+
+function modelIsReasoning(model) {
+  return model.reasoning === true || modelCapabilities(model).includes('reasoning');
+}
+
+function modelSupportsTools(model) {
+  return model.supportsTools === true || modelCapabilities(model).includes('tools');
+}
+
+function isOpenRouterModel(config, model) {
+  const backend = config.backends?.[model.backend];
+  const url = String(backend?.baseUrl ?? backend?.url ?? '').toLowerCase();
+  const tags = Array.isArray(model.tags) ? model.tags : [];
+  return url.includes('openrouter.ai') || tags.includes('openrouter');
+}
+
+function tokenizerFor(model) {
+  const id = `${model.id ?? ''} ${model.upstreamModel ?? ''} ${model.name ?? ''}`.toLowerCase();
+  if (id.includes('glm')) return 'glm5';
+  if (id.includes('deepseek')) return 'deepseek-v3';
+  if (id.includes('qwen')) return 'qwen3';
+  return null;
+}
+
 function thinkingConfig(model) {
-  if (model.reasoning !== true) return null;
+  if (!modelIsReasoning(model)) return null;
   const qwen = /(^|\/)Qwen3\.6-/.test(model.id) || /qwen3\.6/i.test(model.name ?? '');
   return {
     mode: 'effort',
@@ -67,10 +96,17 @@ function thinkingConfig(model) {
   };
 }
 
-function pushYamlModel(lines, model) {
+function ompInputModalities(model) {
+  const allowed = new Set(['text', 'image']);
+  const input = (model.input ?? ['text']).filter((value) => allowed.has(value));
+  return input.length ? input : ['text'];
+}
+
+function pushYamlModel(lines, model, config) {
+  const reasoning = modelIsReasoning(model);
   lines.push(`      - id: ${yamlScalar(model.id)}`);
   lines.push(`        name: ${yamlScalar(model.name ?? model.id)}`);
-  lines.push(`        reasoning: ${model.reasoning === true ? 'true' : 'false'}`);
+  lines.push(`        reasoning: ${reasoning ? 'true' : 'false'}`);
   const thinking = thinkingConfig(model);
   if (thinking) {
     lines.push('        thinking:');
@@ -79,8 +115,10 @@ function pushYamlModel(lines, model) {
     lines.push(`          defaultLevel: ${thinking.defaultLevel}`);
     lines.push(`          supportsDisplay: ${thinking.supportsDisplay}`);
   }
-  lines.push(`        input: ${yamlInlineArray(model.input ?? ['text'])}`);
-  lines.push(`        supportsTools: ${model.supportsTools === true ? 'true' : 'false'}`);
+  lines.push(`        input: ${yamlInlineArray(ompInputModalities(model))}`);
+  lines.push(`        supportsTools: ${modelSupportsTools(model) ? 'true' : 'false'}`);
+  const tokenizer = tokenizerFor(model);
+  if (tokenizer) lines.push(`        tokenizer: ${tokenizer}`);
   lines.push(`        contextWindow: ${model.contextWindow ?? 128000}`);
   lines.push(`        maxTokens: ${model.maxOutputTokens ?? 8192}`);
   lines.push('        cost:');
@@ -88,6 +126,11 @@ function pushYamlModel(lines, model) {
   lines.push('          output: 0');
   lines.push('          cacheRead: 0');
   lines.push('          cacheWrite: 0');
+  if (isOpenRouterModel(config, model)) {
+    lines.push('        compat:');
+    lines.push('          thinkingFormat: openrouter');
+    lines.push('          supportsReasoningEffort: true');
+  }
 }
 
 export function renderOmpModelsYaml(config, models) {
@@ -110,20 +153,36 @@ export function renderOmpModelsYaml(config, models) {
     '      thinkingFormat: qwen-chat-template',
     '    models:'
   ];
-  for (const model of models) pushYamlModel(lines, model);
+  for (const model of models) pushYamlModel(lines, model, config);
   return `${lines.join('\n')}\n`;
 }
 
 const ompRoleNames = ['default', 'smol', 'slow', 'plan', 'commit', 'designer', 'advisor', 'tiny', 'vision', 'task'];
 
+export function ompSelector(providerId, value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  if (raw.startsWith('@') || raw.startsWith(`${providerId}/`)) return raw;
+  return `${providerId}/${raw}`;
+}
+
+function ompRoleSelector(providerId, chatModel, role, overrides) {
+  const override = overrides?.[role];
+  const raw = typeof override === 'string' ? override : override?.model;
+  const selector = ompSelector(providerId, raw);
+  if (selector) return selector;
+  const modelRef = `${providerId}/${chatModel}`;
+  return role === 'default' ? `${modelRef}:low` : modelRef;
+}
+
 export function renderOmpConfigYaml(config) {
   const { providerId, chatModel } = providerSettings(config);
-  const modelRef = `${providerId}/${chatModel}`;
   const timeoutSeconds = config.clientCatalog?.omp?.streamTimeoutSeconds ?? 1800;
+  const roleOverrides = config.clientCatalog?.omp?.roles ?? {};
+  const fallbackChains = config.clientCatalog?.omp?.fallbackChains ?? {};
   const lines = ['modelRoles:'];
   for (const role of ompRoleNames) {
-    const value = role === 'default' ? `${modelRef}:low` : modelRef;
-    lines.push(`  ${role}: ${yamlScalar(value)}`);
+    lines.push(`  ${role}: ${yamlScalar(ompRoleSelector(providerId, chatModel, role, roleOverrides))}`);
   }
   lines.push('defaultThinkingLevel: auto');
   lines.push('hideThinkingBlock: true');
@@ -132,6 +191,18 @@ export function renderOmpConfigYaml(config) {
   lines.push('setupVersion: 1');
   lines.push('compaction:');
   lines.push('  strategy: context-full');
+  const chainEntries = Object.entries(fallbackChains).filter(([, values]) => Array.isArray(values) && values.length);
+  if (chainEntries.length) {
+    lines.push('retry:');
+    lines.push('  fallbackChains:');
+    for (const [key, values] of chainEntries) {
+      lines.push(`    ${yamlScalar(key)}:`);
+      for (const value of values) {
+        const selector = ompSelector(providerId, value);
+        if (selector) lines.push(`      - ${yamlScalar(selector)}`);
+      }
+    }
+  }
   lines.push('providers:');
   lines.push(`  streamFirstEventTimeoutSeconds: ${timeoutSeconds}`);
   lines.push(`  streamIdleTimeoutSeconds: ${timeoutSeconds}`);
@@ -499,7 +570,9 @@ export function buildIntegrationArtifacts(
       mode: 'replace',
       content: renderOmpConfigYaml(config),
       notes: [
-        `Pins OMP roles to ${config.defaults?.chatModel}.`,
+        config.clientCatalog?.omp?.roles
+          ? 'Pins OMP roles from clientCatalog.omp.roles (planner / workhorse / vision).'
+          : `Pins OMP roles to ${config.defaults?.chatModel}.`,
         'Keeps long local-model stream timeouts aligned with LLooM defaults.'
       ]
     },

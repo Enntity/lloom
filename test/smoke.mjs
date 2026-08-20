@@ -30,6 +30,8 @@ import {
   buildIntegrationArtifacts,
   CLIENT_INTEGRATIONS_MEDIA_TYPE,
   createClientIntegrationStatus,
+  renderOmpConfigYaml,
+  renderOmpModelsYaml,
   validateClientIntegrationManifest,
   writeGeneratedIntegrationArtifacts
 } from '../src/client-integrations.mjs';
@@ -3122,6 +3124,81 @@ assert(!generatedOmp.includes('Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed\n
 const generatedOmpConfig = await fs.readFile(path.join('clients', 'examples', 'omp-config.yml'), 'utf8');
 assert(generatedOmpConfig.includes('default: local-llm/Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16:low'));
 assert(!generatedOmpConfig.includes('Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed\n'));
+const ompRoleYaml = renderOmpConfigYaml({
+  defaults: { chatModel: 'local-qwen' },
+  clientCatalog: {
+    providerId: 'local-llm',
+    omp: {
+      roles: {
+        default: 'deepseek/deepseek-v4-flash-0731:low',
+        smol: 'deepseek/deepseek-v4-flash-0731:low',
+        plan: 'z-ai/glm-5.2:high',
+        vision: 'google/gemini-3.1-flash-lite'
+      },
+      fallbackChains: {
+        default: ['Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16'],
+        plan: ['deepseek/deepseek-v4-flash-0731']
+      }
+    }
+  }
+});
+assert(ompRoleYaml.includes('default: local-llm/deepseek/deepseek-v4-flash-0731:low'));
+assert(ompRoleYaml.includes('plan: local-llm/z-ai/glm-5.2:high'));
+assert(ompRoleYaml.includes('vision: local-llm/google/gemini-3.1-flash-lite'));
+assert(ompRoleYaml.includes('smol: local-llm/deepseek/deepseek-v4-flash-0731:low'));
+assert(ompRoleYaml.includes('task: local-llm/local-qwen'));
+assert(ompRoleYaml.includes('retry:'));
+assert(ompRoleYaml.includes('      - local-llm/Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16'));
+const ompOpenRouterYaml = renderOmpModelsYaml(
+  {
+    providers: {
+      'local-llm': { baseUrl: 'http://127.0.0.1:8100/v1', apiKey: 'sk-lloom-local' }
+    },
+    backends: {
+      'openai-compatible-z-ai-glm-5-2': { baseUrl: 'https://openrouter.ai/api/v1' }
+    }
+  },
+  [
+    {
+      id: 'z-ai/glm-5.2',
+      name: 'GLM 5.2',
+      backend: 'openai-compatible-z-ai-glm-5-2',
+      reasoning: true,
+      supportsTools: true,
+      input: ['text'],
+      contextWindow: 1024000,
+      maxOutputTokens: 128000,
+      tags: ['openrouter']
+    }
+  ]
+);
+assert(ompOpenRouterYaml.includes('tokenizer: glm5'));
+assert(ompOpenRouterYaml.includes('thinkingFormat: openrouter'));
+assert(ompOpenRouterYaml.includes('supportsReasoningEffort: true'));
+const ompVisionYaml = renderOmpModelsYaml(
+  {
+    providers: {
+      'local-llm': { baseUrl: 'http://127.0.0.1:8100/v1', apiKey: 'sk-lloom-local' }
+    },
+    backends: {
+      'openai-compatible-google-gemini-3-1-flash-lite': { baseUrl: 'https://openrouter.ai/api/v1' }
+    }
+  },
+  [
+    {
+      id: 'google/gemini-3.1-flash-lite',
+      name: 'Gemini Flash Lite',
+      backend: 'openai-compatible-google-gemini-3-1-flash-lite',
+      input: ['text', 'image', 'video', 'file', 'audio'],
+      contextWindow: 1048576,
+      maxOutputTokens: 65536,
+      tags: ['openrouter']
+    }
+  ]
+);
+assert(ompVisionYaml.includes('input: [text, image]'));
+assert(!ompVisionYaml.includes('video'));
+assert(!ompVisionYaml.includes('audio'));
 const exampleClaudeProfile = await fs.readFile(path.join('clients', 'examples', 'claude.env'), 'utf8');
 assert(exampleClaudeProfile.includes("ANTHROPIC_BASE_URL='http://127.0.0.1:8100'"));
 assert(!exampleClaudeProfile.includes("ANTHROPIC_BASE_URL='http://127.0.0.1:8100/v1'"));
