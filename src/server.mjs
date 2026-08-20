@@ -3471,6 +3471,10 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       });
     });
   });
+  // Inference deadlines belong to the selected backend/runtime contract. The
+  // Node server default (five minutes) otherwise severs healthy long-prefill
+  // or long-generation requests before the configured upstream timeout.
+  server.requestTimeout = 0;
   server.on('clientError', (error, socket) => {
     logger.error?.(error);
     try {

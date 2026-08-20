@@ -22,6 +22,8 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Fixed
 
+- OpenRouter requests with `reasoning_effort: none` now send `reasoning: { effort: "none", exclude: true }` unless the caller already set `exclude`, so providers do not spend the output budget on hidden reasoning.
+- The local gateway no longer applies Node's default HTTP request timeout over the backend-owned inference deadline.
 - The two-Spark DeepSeek V4 Flash recipe now packages MiaAI's fixes for dict-form DSML tool history, reasoning-boundary JSON schemas, GPU-resident opt-in DSpark V2 thinking budgets, NVFP4 sparse-MLA dispatch, reasoning-safe client stop strings, and truncated tool-call finish reasons while preserving LLooM's conservative deployed limits.
 - Keep-warm startup now admits models in priority order, preserves already loaded runtimes, and warns and continues when a model does not fit.
 - MLX LM installs into a LLooM-managed Python environment, avoiding macOS externally-managed Python failures.

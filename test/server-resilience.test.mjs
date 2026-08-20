@@ -91,6 +91,7 @@ function close(server) {
   };
 
   const app = createLloomServer(config, { logger: { error() {}, warn() {} } });
+  assert.equal(app.server.requestTimeout, 0, 'gateway must defer inference deadlines to the backend contract');
   const port = await listen(app.server);
 
   // Prompt-too-large rejected cleanly

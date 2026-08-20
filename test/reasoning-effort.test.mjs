@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   QWEN_VLLM_THINKING_BUDGETS,
+  isOpenRouter,
   isQwenVllm,
   responsesToOpenAIChat,
   translateReasoningEffortForBackend
@@ -28,6 +29,27 @@ const qwenVllmWithTemplateProfile = {
     }
   }
 };
+
+const openRouter = {
+  model: { id: 'deepseek/deepseek-v4-flash-0731', upstreamModel: 'deepseek/deepseek-v4-flash-0731' },
+  backend: { id: 'openrouter', type: 'openai', baseUrl: 'https://openrouter.ai/api/v1' }
+};
+
+{
+  assert.equal(isOpenRouter(openRouter), true);
+  const translated = translateReasoningEffortForBackend({
+    model: openRouter.model.id,
+    reasoning_effort: 'none'
+  }, openRouter);
+  assert.equal(translated.reasoning_effort, undefined);
+  assert.deepEqual(translated.reasoning, { effort: 'none', exclude: true });
+
+  const explicit = translateReasoningEffortForBackend({
+    model: openRouter.model.id,
+    reasoning: { effort: 'none', exclude: false }
+  }, openRouter);
+  assert.deepEqual(explicit.reasoning, { effort: 'none', exclude: false });
+}
 
 {
   assert.equal(isQwenVllm(qwenVllm), true);

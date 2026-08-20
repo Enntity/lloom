@@ -54,6 +54,10 @@ export function isQwenVllm(resolved = {}) {
   return /qwen3(?:[._-]?(?:5|6))?/.test(hints) && /vllm/.test(hints);
 }
 
+export function isOpenRouter(resolved = {}) {
+  return String(resolved.backend?.baseUrl || resolved.backend?.url || "").toLowerCase().includes("openrouter.ai");
+}
+
 function removeGatewayEffort(body) {
   const next = { ...body };
   delete next.reasoning_effort;
@@ -87,6 +91,18 @@ function applyChatTemplateBehaviorOverrides(body = {}, resolved = {}) {
 export function translateReasoningEffortForBackend(body = {}, resolved = {}) {
   const profiledBody = applyChatTemplateBehaviorOverrides(body, resolved);
   const effort = normalizedEffort(profiledBody);
+  if (effort === 'none' && isOpenRouter(resolved)) {
+    const next = { ...profiledBody };
+    delete next.reasoning_effort;
+    next.reasoning = {
+      ...(isObject(profiledBody.reasoning) ? profiledBody.reasoning : {}),
+      effort: 'none',
+      exclude: isObject(profiledBody.reasoning) && Object.hasOwn(profiledBody.reasoning, 'exclude')
+        ? profiledBody.reasoning.exclude
+        : true
+    };
+    return next;
+  }
   if (!effort || !isQwenVllm(resolved)) return profiledBody;
 
   const next = removeGatewayEffort(profiledBody);
