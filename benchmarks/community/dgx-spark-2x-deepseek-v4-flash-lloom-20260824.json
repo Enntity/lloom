@@ -32,7 +32,8 @@
       "machine": { "platformId": "linux-arm64", "chip": "2x NVIDIA DGX Spark / GB10", "memoryGb": 128, "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"], "nodeCount": 2, "clusterMemoryGb": 256 },
       "settings": { "runtimeImage": "ghcr.io/anemll/dspark-vllm-gx10@sha256:a83948492cf13df455170fb42885f5ef4db54fefe0feff0f841ecbff464ac9d8", "modelRevision": "9e165c30e2704aec5d9d593cce3eebd58bbef1cb", "miaAiCommit": "d1b76251535daef578d8751b04b39c29ad7ecdf9", "lloomCommit": "c400c1cbc976c5ab4d5e4142221d91083e328535", "tensorParallelSize": 2, "contextWindow": 262144, "gpuMemoryUtilization": 0.73, "kvCacheDtype": "nvfp4_ds_mla", "maxNumSeqs": 6, "maxNumBatchedTokens": 8192, "maxInflightPrefills": 2, "speculative": { "method": "dspark", "numSpeculativeTokens": 5 } },
       "workload": { "type": "interactive-generation", "category": "unique-cold-prefix", "concurrency": 1, "promptTokens": 256, "outputTokens": 128 },
-      "metrics": { "generationTokPerSec": 74.5, "aggregateOutputTokPerSec": 63.0, "timeToFirstTokenMs": 312, "contextWindow": 262144 }
+      "metrics": { "generationTokPerSec": 74.5, "aggregateOutputTokPerSec": 63.0, "timeToFirstTokenMs": 312, "contextWindow": 262144 },
+      "x-rankingEligible": false
     },
     {
       "id": "dgx-spark-2x-dsv4-v9-p256-c2",
@@ -40,7 +41,8 @@
       "machine": { "platformId": "linux-arm64", "chip": "2x NVIDIA DGX Spark / GB10", "memoryGb": 128, "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"], "nodeCount": 2, "clusterMemoryGb": 256 },
       "settings": { "contextWindow": 262144, "maxNumSeqs": 6, "maxNumBatchedTokens": 8192, "maxInflightPrefills": 2, "speculative": { "method": "dspark", "numSpeculativeTokens": 5 } },
       "workload": { "type": "interactive-generation", "category": "unique-cold-prefix", "concurrency": 2, "promptTokens": 256, "outputTokens": 128 },
-      "metrics": { "generationTokPerSec": 58.5, "aggregateOutputTokPerSec": 94.0, "timeToFirstTokenMs": 435, "contextWindow": 262144 }
+      "metrics": { "generationTokPerSec": 58.5, "aggregateOutputTokPerSec": 94.0, "timeToFirstTokenMs": 435, "contextWindow": 262144 },
+      "x-rankingEligible": false
     },
     {
       "id": "dgx-spark-2x-dsv4-v9-p256-c4",
@@ -48,7 +50,8 @@
       "machine": { "platformId": "linux-arm64", "chip": "2x NVIDIA DGX Spark / GB10", "memoryGb": 128, "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"], "nodeCount": 2, "clusterMemoryGb": 256 },
       "settings": { "contextWindow": 262144, "maxNumSeqs": 6, "maxNumBatchedTokens": 8192, "maxInflightPrefills": 2, "speculative": { "method": "dspark", "numSpeculativeTokens": 5 } },
       "workload": { "type": "interactive-generation", "category": "unique-cold-prefix", "concurrency": 4, "promptTokens": 256, "outputTokens": 128 },
-      "metrics": { "generationTokPerSec": 50.5, "aggregateOutputTokPerSec": 153.2, "timeToFirstTokenMs": 630, "contextWindow": 262144 }
+      "metrics": { "generationTokPerSec": 50.5, "aggregateOutputTokPerSec": 153.2, "timeToFirstTokenMs": 630, "contextWindow": 262144 },
+      "x-rankingEligible": false
     },
     {
       "id": "dgx-spark-2x-dsv4-v9-p256-c6",
@@ -56,7 +59,8 @@
       "machine": { "platformId": "linux-arm64", "chip": "2x NVIDIA DGX Spark / GB10", "memoryGb": 128, "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"], "nodeCount": 2, "clusterMemoryGb": 256 },
       "settings": { "contextWindow": 262144, "maxNumSeqs": 6, "maxNumBatchedTokens": 8192, "maxInflightPrefills": 2, "speculative": { "method": "dspark", "numSpeculativeTokens": 5 } },
       "workload": { "type": "interactive-generation", "category": "unique-cold-prefix", "concurrency": 6, "promptTokens": 256, "outputTokens": 128 },
-      "metrics": { "generationTokPerSec": 42.3, "aggregateOutputTokPerSec": 181.2, "timeToFirstTokenMs": 1006, "contextWindow": 262144 }
+      "metrics": { "generationTokPerSec": 42.3, "aggregateOutputTokPerSec": 181.2, "timeToFirstTokenMs": 1006, "contextWindow": 262144 },
+      "x-rankingEligible": false
     },
     {
       "id": "dgx-spark-2x-dsv4-v9-p32768-c1",
@@ -64,7 +68,8 @@
       "machine": { "platformId": "linux-arm64", "chip": "2x NVIDIA DGX Spark / GB10", "memoryGb": 128, "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"], "nodeCount": 2, "clusterMemoryGb": 256 },
       "settings": { "contextWindow": 262144, "maxNumSeqs": 6, "maxNumBatchedTokens": 8192, "maxInflightPrefills": 2, "speculative": { "method": "dspark", "numSpeculativeTokens": 5 } },
       "workload": { "type": "long-context-generation", "category": "unique-cold-prefix", "concurrency": 1, "promptTokens": 32768, "outputTokens": 128 },
-      "metrics": { "generationTokPerSec": 74.6, "aggregateOutputTokPerSec": 6.7, "timeToFirstTokenMs": 17511, "contextWindow": 262144 }
+      "metrics": { "generationTokPerSec": 74.6, "aggregateOutputTokPerSec": 6.7, "timeToFirstTokenMs": 17511, "contextWindow": 262144 },
+      "x-rankingEligible": false
     },
     {
       "id": "dgx-spark-2x-dsv4-v9-p32768-c4",
@@ -72,7 +77,8 @@
       "machine": { "platformId": "linux-arm64", "chip": "2x NVIDIA DGX Spark / GB10", "memoryGb": 128, "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"], "nodeCount": 2, "clusterMemoryGb": 256 },
       "settings": { "contextWindow": 262144, "maxNumSeqs": 6, "maxNumBatchedTokens": 8192, "maxInflightPrefills": 2, "speculative": { "method": "dspark", "numSpeculativeTokens": 5 } },
       "workload": { "type": "long-context-generation", "category": "unique-cold-prefix", "concurrency": 4, "promptTokens": 32768, "outputTokens": 128 },
-      "metrics": { "generationTokPerSec": 5.8, "aggregateOutputTokPerSec": 7.2, "timeToFirstTokenMs": 45349.5, "contextWindow": 262144 }
+      "metrics": { "generationTokPerSec": 5.8, "aggregateOutputTokPerSec": 7.2, "timeToFirstTokenMs": 45349.5, "contextWindow": 262144 },
+      "x-rankingEligible": false
     }
   ],
   "x-runs": {
