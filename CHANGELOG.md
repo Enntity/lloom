@@ -18,13 +18,13 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Changed
 
-- The two-Spark DeepSeek recipe now consumes a complete, commit-pinned MiaAI patch pack through a checksum- and compatibility-verifying runner. LLooM serving policy remains a separate overlay, and vendored cache, scheduler, performance, and experimental patches stay explicitly disabled pending live canaries.
+- The two-Spark DeepSeek recipe now pins MiaAI `d1b76251`, uses fail-closed hotfixes, persists TileLang and Triton compile caches, and enables the two-prefill scheduler cap after a matched live long-context concurrency baseline.
 
 ### Fixed
 
 - OpenRouter requests with `reasoning_effort: none` now send `reasoning: { effort: "none", exclude: true }` unless the caller already set `exclude`, so providers do not spend the output budget on hidden reasoning.
 - The local gateway no longer applies Node's default HTTP request timeout over the backend-owned inference deadline.
-- The two-Spark DeepSeek V4 Flash recipe now packages MiaAI's fixes for dict-form DSML tool history, reasoning-boundary JSON schemas, GPU-resident opt-in DSpark V2 thinking budgets, NVFP4 sparse-MLA dispatch, reasoning-safe client stop strings, and truncated tool-call finish reasons while preserving LLooM's conservative deployed limits.
+- The two-Spark DeepSeek V4 Flash recipe now defaults MiaAI's issue31 thinking-budget patch off, removes the withdrawn adaptive-top-k backport from the current pack, guards the remaining top-k backport by leaving it disabled, and adds empty-encoder and GB10 spin-wait fixes.
 - Keep-warm startup now admits models in priority order, preserves already loaded runtimes, and warns and continues when a model does not fit.
 - MLX LM installs into a LLooM-managed Python environment, avoiding macOS externally-managed Python failures.
 - `lloom down` now stops the managed gateway service as well as its managed model backends.

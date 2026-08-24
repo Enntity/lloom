@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const repoRoot = process.cwd();
-const packRoot = path.join(repoRoot, 'backends', 'dspark-vllm', 'packs', 'miaai-dsv4flash-909776b5');
+const packRoot = path.join(repoRoot, 'backends', 'dspark-vllm', 'packs', 'miaai-dsv4flash-d1b76251');
 const hotfixRoot = path.join(packRoot, 'patches');
 const packManifestPath = path.join(packRoot, 'manifest.json');
 const packRunner = path.join(repoRoot, 'backends', 'dspark-vllm', 'apply-patch-pack.py');
@@ -35,8 +35,8 @@ try {
   const recipe = JSON.parse(
     readFileSync(path.join(repoRoot, 'recipes', 'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json'), 'utf8')
   );
-  assert.equal(recipe.version, 7);
-  assert.match(recipe.provenance.source, /909776b5f43154e373efe1ba6cd8d61a1d17515d/);
+  assert.equal(recipe.version, 8);
+  assert.match(recipe.provenance.source, /d1b76251535daef578d8751b04b39c29ad7ecdf9/);
   assert.equal(recipe.models[0].settings.contextWindow, 262144);
   assert.equal(recipe.models[0].settings.maxOutputTokens, 65536);
   assert.equal(recipe.models[0].settings.maxActiveRequests, 6);
@@ -61,16 +61,24 @@ try {
     )
   );
   assert.equal(archivedV6Recipe.version, 6);
+  const archivedV7Recipe = JSON.parse(
+    readFileSync(
+      path.join(repoRoot, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm', 'v7.json'),
+      'utf8'
+    )
+  );
+  assert.equal(archivedV7Recipe.version, 7);
   const recipeIndex = JSON.parse(readFileSync(path.join(repoRoot, 'recipes', 'index.json'), 'utf8'));
   const indexEntry = recipeIndex.recipes.find((candidate) => candidate.id === recipe.id);
-  assert.equal(indexEntry.currentVersion, 7);
+  assert.equal(indexEntry.currentVersion, 8);
   assert.deepEqual(
     indexEntry.versions.map(({ version, status }) => ({ version, status })),
     [
       { version: 4, status: 'archived' },
       { version: 5, status: 'archived' },
       { version: 6, status: 'archived' },
-      { version: 7, status: 'current' }
+      { version: 7, status: 'archived' },
+      { version: 8, status: 'current' }
     ]
   );
 
@@ -78,12 +86,14 @@ try {
     'hotfix-encoding-dsv4-issue21.py',
     'hotfix-nvfp4-ds-mla-issue22.sh',
     'hotfix-dsv4-grammar-advance.sh',
-    'hotfix-dsv4-issue31-v2-thinking-budget-gpu.py',
     'hotfix-dsv4-suppress-stops-in-reasoning.py',
-    'hotfix-dsv4-issue55-tool-truncation.py'
+    'hotfix-dsv4-issue55-tool-truncation.py',
+    'hotfix-gb10-spin-wait.sh',
+    'hotfix-vllm-empty-encoder-output.py',
+    'hotfix-dsv4-issue27-partial-prefill-concurrency.py'
   ];
   const manifest = JSON.parse(readFileSync(packManifestPath, 'utf8'));
-  assert.equal(manifest.upstream.commit, '909776b5f43154e373efe1ba6cd8d61a1d17515d');
+  assert.equal(manifest.upstream.commit, 'd1b76251535daef578d8751b04b39c29ad7ecdf9');
   assert.equal(
     manifest.compatibility.runtimeImage,
     recipe.models[0].settings.placement.members[0].runtimeSettings.bootstrap.image
@@ -92,7 +102,7 @@ try {
     manifest.patches.filter(({ enabled }) => enabled).map(({ file }) => path.basename(file)),
     expectedHotfixes
   );
-  assert.equal(manifest.patches.length, 18);
+  assert.equal(manifest.patches.length, 21);
   const members = recipe.models[0].settings.placement.members;
   assert.equal(members.length, 2);
   for (const member of members) {
@@ -110,6 +120,10 @@ try {
     assert.equal(env.has('DEFAULT_MAX_TOKENS'), false);
     assert.equal(env.get('MAX_MODEL_LEN'), '262144');
     assert.equal(env.get('GPU_MEMORY_UTILIZATION'), '0.73');
+    assert.equal(env.get('DSPARK_MAX_INFLIGHT_PREFILLS'), '2');
+    assert.equal(env.get('VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS'), '1800');
+    assert.equal(env.get('TILELANG_CACHE_DIR'), '/cache/huggingface/tilelang-cache');
+    assert.equal(env.get('TRITON_CACHE_DIR'), '/cache/huggingface/triton-cache');
     assert.equal(env.get('DSPARK_RUNTIME_IMAGE'), member.runtimeSettings.bootstrap.image);
     assert.match(member.runtimeSettings.bootstrap.image, /@sha256:a8394849/);
     assert(
@@ -119,7 +133,7 @@ try {
     );
     assert(
       args.includes(
-        'type=bind,src=${lloomRoot}/backends/dspark-vllm/packs/miaai-dsv4flash-909776b5,dst=/opt/lloom/patch-pack,readonly'
+        'type=bind,src=${lloomRoot}/backends/dspark-vllm/packs/miaai-dsv4flash-d1b76251,dst=/opt/lloom/patch-pack,readonly'
       )
     );
     assert.equal(

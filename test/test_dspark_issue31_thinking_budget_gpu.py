@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-HOTFIX = ROOT / "backends" / "dspark-vllm" / "packs" / "miaai-dsv4flash-909776b5" / "patches" / "hotfix-dsv4-issue31-v2-thinking-budget-gpu.py"
+HOTFIX = ROOT / "backends" / "dspark-vllm" / "packs" / "miaai-dsv4flash-d1b76251" / "patches" / "hotfix-dsv4-issue31-v2-thinking-budget-gpu.py"
 
 
 def _load_hotfix():

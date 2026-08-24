@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER = ROOT / "backends" / "dspark-vllm" / "apply-patch-pack.py"
-PACK = ROOT / "backends" / "dspark-vllm" / "packs" / "miaai-dsv4flash-909776b5"
+PACK = ROOT / "backends" / "dspark-vllm" / "packs" / "miaai-dsv4flash-d1b76251"
 MANIFEST = PACK / "manifest.json"
 
 
@@ -33,10 +33,10 @@ class PatchPackTests(unittest.TestCase):
 
     def test_pinned_pack_inventory_and_checksums(self) -> None:
         verified = self.runner.verify_pack(MANIFEST, self.manifest)
-        self.assertEqual(len(verified), 18)
+        self.assertEqual(len(verified), 21)
         self.assertEqual(
             sum("upstreamSha256" in patch_data for patch_data, _ in verified),
-            3,
+            0,
         )
         self.assertEqual(
             [patch_data["id"] for patch_data, _ in verified if patch_data["enabled"]],
@@ -44,9 +44,11 @@ class PatchPackTests(unittest.TestCase):
                 "issue21-dsml-dict-arguments",
                 "issue22-nvfp4-sparse-mla-dispatch",
                 "issue24-reasoning-grammar-boundary",
-                "issue31-gpu-thinking-budget",
                 "reasoning-stop-string-guard",
                 "issue55-tool-truncation",
+                "gb10-spin-wait",
+                "empty-encoder-output",
+                "issue27-partial-prefill-concurrency",
             ],
         )
 

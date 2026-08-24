@@ -21,11 +21,12 @@ MTPLX's upstream NOTICE also identifies Apache-2.0 material from `vllm-metal` an
 
 ## MiaAI Lab DeepSeek V4 Flash DSpark Hotfixes
 
-The files under `backends/dspark-vllm/packs/miaai-dsv4flash-909776b5/patches/` are vendored from MiaAI Lab's two-DGX-Spark DeepSeek V4 Flash recipe. The adjacent LLooM manifest and pack runner provide provenance, compatibility, enablement policy, and integrity checks:
+The files under `backends/dspark-vllm/packs/miaai-dsv4flash-d1b76251/patches/` are vendored from MiaAI Lab's two-DGX-Spark DeepSeek V4 Flash recipe. The adjacent LLooM manifest and pack runner provide provenance, compatibility, enablement policy, and integrity checks. The earlier `miaai-dsv4flash-909776b5` pack remains packaged for recipe-v7 rollback:
 
 - Project: DeepSeek-v4-Flash-DSpark-2x-DGX-Spark
 - Source: <https://github.com/MiaAI-Lab/DeepSeek-v4-Flash-DSpark-2x-DGX-Spark>
-- Revision: `909776b5f43154e373efe1ba6cd8d61a1d17515d`
+- Current revision: `d1b76251535daef578d8751b04b39c29ad7ecdf9`
+- Archived revision: `909776b5f43154e373efe1ba6cd8d61a1d17515d`
 - License: MIT
 
 Some patch payloads modify or reproduce small portions of vLLM and retain their Apache-2.0 lineage; see [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt). LLooM adapts the launch integration and testability without representing these hotfixes as an official vLLM release.

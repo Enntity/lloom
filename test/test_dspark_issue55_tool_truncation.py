@@ -19,7 +19,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-HOTFIX = ROOT / "backends" / "dspark-vllm" / "packs" / "miaai-dsv4flash-909776b5" / "patches" / "hotfix-dsv4-issue55-tool-truncation.py"
+HOTFIX = ROOT / "backends" / "dspark-vllm" / "packs" / "miaai-dsv4flash-d1b76251" / "patches" / "hotfix-dsv4-issue55-tool-truncation.py"
 SERVING = ROOT / "docker-compose.dspark.yml"  # not used; recipe present-check
 
 

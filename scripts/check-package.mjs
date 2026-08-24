@@ -21,7 +21,7 @@ const requiredFiles = [
   'backends/catalog.json',
   'backends/dspark-vllm/entrypoint.sh',
   'backends/dspark-vllm/apply-patch-pack.py',
-  'backends/dspark-vllm/packs/miaai-dsv4flash-909776b5/manifest.json',
+  'backends/dspark-vllm/packs/miaai-dsv4flash-d1b76251/manifest.json',
   'backends/mlx-audio/install.sh',
   'backends/mlx-audio/lloom_audio_server.py',
   'config/default.json',
@@ -69,7 +69,7 @@ const requiredFiles = [
   'clients/examples/omp-models.yml'
 ];
 
-const dsparkPackPath = 'backends/dspark-vllm/packs/miaai-dsv4flash-909776b5';
+const dsparkPackPath = 'backends/dspark-vllm/packs/miaai-dsv4flash-d1b76251';
 const dsparkPackManifest = JSON.parse(
   await fs.readFile(path.join(process.cwd(), dsparkPackPath, 'manifest.json'), 'utf8')
 );
