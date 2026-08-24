@@ -339,9 +339,10 @@ export function classifyRuntimeWatchdogOutcome(runtime, outcome = {}) {
   const lastContentMs = outcome.lastContentMs == null ? null : Number(outcome.lastContentMs);
   const responseBytes = Number(outcome.responseBytes ?? 0);
   const madeProgress =
-    (firstContentMs != null && Number.isFinite(firstContentMs) && firstContentMs >= 0) ||
-    (lastContentMs != null && Number.isFinite(lastContentMs) && lastContentMs >= 0) ||
-    (Number.isFinite(responseBytes) && responseBytes > 0);
+    outcome.stalled !== true &&
+    ((firstContentMs != null && Number.isFinite(firstContentMs) && firstContentMs >= 0) ||
+      (lastContentMs != null && Number.isFinite(lastContentMs) && lastContentMs >= 0) ||
+      (Number.isFinite(responseBytes) && responseBytes > 0));
   if (outcome.ok === true || madeProgress) {
     return { kind: 'progress', watchdog };
   }
@@ -604,6 +605,30 @@ export class RuntimeManager {
     return Boolean(child?.pid && child.exitCode == null && child.signalCode == null);
   }
 
+  async runtimeAppearsLoaded(runtimeId) {
+    const runtime = this.getRuntime(runtimeId);
+    if (!runtime) return false;
+    const placement = runtimePlacement(runtime, this.config);
+    if (this.clusterCoordinator && !this.clusterCoordinator.isLocalNode(placement.node)) {
+      if (typeof this.clusterCoordinator.nodeStatus === 'function') {
+        try {
+          const node = await this.clusterCoordinator.nodeStatus(placement.node);
+          const remote = node?.runtimeManager?.runtimes?.[runtimeId];
+          if (remote?.healthy === true || ['running', 'external', 'starting', 'warming'].includes(remote?.status)) {
+            return true;
+          }
+        } catch {
+          // Fall through to gateway-observed state when the node is unreachable.
+        }
+      }
+      return ['running', 'external', 'starting', 'warming'].includes(this.stateFor(runtimeId).status);
+    }
+    if (await runtimeHealthOk(runtime)) return true;
+    if (this.processRunning(runtimeId)) return true;
+    if (runtimeAdapter(runtime) === 'docker') return (await dockerContainerState(runtime)).running === true;
+    return ['running', 'external', 'starting', 'warming'].includes(this.stateFor(runtimeId).status);
+  }
+
   queueFor(runtimeId) {
     if (!this.queues.has(runtimeId)) this.queues.set(runtimeId, []);
     return this.queues.get(runtimeId);
@@ -771,7 +796,11 @@ export class RuntimeManager {
           startedAt: state.startedAt,
           stoppedAt: state.stoppedAt,
           lastWarmup: state.lastWarmup,
-          lastError: state.lastError
+          lastError: state.lastError,
+          watchdog: {
+            ...runtimeWatchdogConfig(runtime),
+            ...state.watchdog
+          }
         };
       }
     }
@@ -861,8 +890,8 @@ export class RuntimeManager {
       status: classification.status,
       durationMs: classification.durationMs
     });
-    const operation = this.withRuntimeLifecycleLock(runtimeId, () =>
-      this.restartForWatchdogUnlocked(runtimeId, classification.watchdog)
+    const operation = this.withRuntimeLifecycleLock(runtimeId, (signal) =>
+      this.restartForWatchdogUnlocked(runtimeId, classification.watchdog, { signal })
     )
       .then((result) => {
         watchdogState.restarts += 1;
@@ -891,12 +920,14 @@ export class RuntimeManager {
     return { runtimeId, action: 'restart-requested', reason: 'failure-threshold' };
   }
 
-  async restartForWatchdogUnlocked(runtimeId, watchdog) {
+  async restartForWatchdogUnlocked(runtimeId, watchdog, { signal } = {}) {
     const state = this.stateFor(runtimeId);
     const deadline = Date.now() + watchdog.drainTimeoutMs;
     while (state.activeRequests > 0 && Date.now() < deadline) {
+      signal?.throwIfAborted?.();
       await delay(50);
     }
+    signal?.throwIfAborted?.();
     const forced = state.activeRequests > 0;
     if (forced) {
       this.record({
@@ -907,10 +938,12 @@ export class RuntimeManager {
       });
     }
     const stop = await this.stopUnlocked(runtimeId);
+    signal?.throwIfAborted?.();
     const start = await this.startUnlocked(runtimeId, {
       force: true,
       warmup: true,
-      reason: 'watchdog-restart'
+      reason: 'watchdog-restart',
+      signal
     });
     return { runtimeId, restarted: true, forced, stop, start };
   }
@@ -1061,10 +1094,39 @@ export class RuntimeManager {
     const placement = runtimePlacement(runtime, this.config);
 
     if (placement.mode === 'distributed') {
+      if (!force && (await runtimeHealthOk(runtime))) {
+        this.setStatus(runtimeId, 'running');
+        return {
+          runtimeId,
+          started: false,
+          healthy: true,
+          distributed: true,
+          reason: 'already-healthy'
+        };
+      }
+
       const started = [];
       this.setStatus(runtimeId, 'starting', reason);
       try {
+        signal?.throwIfAborted?.();
+        const memberIds = placement.members.map((member) => member.runtime).filter(Boolean);
+        const hasLoadedMember = (
+          await Promise.all(memberIds.map((memberId) => this.runtimeAppearsLoaded(memberId)))
+        ).some(Boolean);
+        if (force || hasLoadedMember) {
+          this.record({
+            runtimeId,
+            event: 'distributed-recovery',
+            reason: force ? 'forced-start' : 'partial-or-unhealthy-cluster',
+            members: memberIds
+          });
+          for (const member of [...placement.members].sort((left, right) => right.order - left.order)) {
+            await this.stop(member.runtime).catch(() => {});
+          }
+        }
+        signal?.throwIfAborted?.();
         for (const member of [...placement.members].sort((left, right) => left.order - right.order)) {
+          signal?.throwIfAborted?.();
           const result = await this.start(member.runtime, { force, warmup: false, reason: `${reason}:${runtimeId}` });
           if (result?.healthy === false || (result?.started === false && result?.reason !== 'already-healthy')) {
             throw new Error(
@@ -1087,7 +1149,8 @@ export class RuntimeManager {
           ...(warmupResult ? { warmup: warmupResult } : {})
         };
       } catch (error) {
-        for (const member of started.filter((item) => item.result?.started === true).reverse()) {
+        for (const member of [...placement.members].sort((left, right) => right.order - left.order)) {
+          this.abortRuntimeLifecycle(member.runtime, `distributed runtime ${runtimeId} startup failed`);
           await this.stop(member.runtime).catch(() => {});
         }
         state.lastError = error?.message ?? String(error);
@@ -1098,11 +1161,13 @@ export class RuntimeManager {
 
     if (this.clusterCoordinator && !this.clusterCoordinator.isLocalNode(placement.node)) {
       this.setStatus(runtimeId, 'starting', reason);
-      const result = await this.clusterCoordinator.runtimeAction(placement.node, runtimeId, 'start', {
-        force,
-        warmup,
-        reason
-      });
+      const result = await this.clusterCoordinator.runtimeAction(
+        placement.node,
+        runtimeId,
+        'start',
+        { force, warmup, reason },
+        { signal }
+      );
       state.starts += result?.started === false ? 0 : 1;
       state.startedAt = nowIso();
       this.setStatus(runtimeId, result?.healthy === false ? 'failed' : 'running', reason);
@@ -1406,6 +1471,14 @@ export class RuntimeManager {
   }
 
   async stop(runtimeId) {
+    const runtime = this.getRuntime(runtimeId);
+    const placement = runtimePlacement(runtime, this.config);
+    this.abortRuntimeLifecycle(runtimeId, 'runtime stop requested');
+    if (placement.mode === 'distributed') {
+      for (const member of placement.members) {
+        this.abortRuntimeLifecycle(member.runtime, `distributed runtime ${runtimeId} stop requested`);
+      }
+    }
     return this.withRuntimeLifecycleLock(runtimeId, () => this.stopUnlocked(runtimeId));
   }
 

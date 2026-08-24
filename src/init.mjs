@@ -671,6 +671,7 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
         keepWarm: settings.keepWarm === true,
         maxConcurrency: positiveInteger(settings.maxActiveRequests, backendId === 'mtplx' ? 10 : 4),
         memoryGb: Number(settings.memoryGb ?? 0),
+        ...(settings.watchdog ? { watchdog: structuredClone(asObject(settings.watchdog)) } : {}),
         policy: {
           priority: Number(settings.priority ?? 0),
           evictable: settings.evictable !== false

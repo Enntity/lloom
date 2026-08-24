@@ -239,7 +239,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm",
       "path": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json",
-      "currentVersion": 10,
+      "currentVersion": 11,
       "versions": [
         {
           "version": 4,
@@ -285,9 +285,16 @@
         },
         {
           "version": 10,
+          "path": "archive/linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm/v10.json",
+          "status": "archived",
+          "archivedAt": "2026-08-24T23:10:00.000Z",
+          "notes": "Passes MiaAI's explicit long-prefill chunk threshold into vLLM so deep concurrent-prompt scheduling can be measured and tuned."
+        },
+        {
+          "version": 11,
           "path": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json",
           "status": "current",
-          "notes": "Passes MiaAI's explicit long-prefill chunk threshold into vLLM so deep concurrent-prompt scheduling can be measured and tuned."
+          "notes": "Backports merged vLLM PR 52805 for MTP plus XGrammar termination safety and adds atomic distributed recovery with a three-minute no-progress watchdog."
         }
       ],
       "name": "2x DGX Spark DeepSeek V4 Flash DSpark (MiaAI validated)",

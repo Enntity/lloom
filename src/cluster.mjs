@@ -564,7 +564,7 @@ export class ClusterCoordinator {
     return key ? { authorization: `Bearer ${key}` } : {};
   }
 
-  async requestNode(nodeId, pathname, { method = 'GET', body, timeoutMs = 5000 } = {}) {
+  async requestNode(nodeId, pathname, { method = 'GET', body, timeoutMs = 5000, signal } = {}) {
     const node = this.nodes[nodeId];
     if (!node) throw new Error(`unknown cluster node ${nodeId}`);
     if (!node.endpoint) throw new Error(`cluster node ${nodeId} has no endpoint`);
@@ -579,7 +579,7 @@ export class ClusterCoordinator {
           ...this.headersFor(node)
         },
         body: body == null ? undefined : JSON.stringify(body),
-        signal: controller.signal
+        signal: signal ? AbortSignal.any([controller.signal, signal]) : controller.signal
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok)
@@ -673,12 +673,13 @@ export class ClusterCoordinator {
     };
   }
 
-  async runtimeAction(nodeId, runtimeId, action, body = {}) {
+  async runtimeAction(nodeId, runtimeId, action, body = {}, { signal } = {}) {
     if (this.isLocalNode(nodeId)) throw new Error(`runtimeAction for ${runtimeId} was routed back to the local node`);
     const result = await this.requestNode(nodeId, `/gateway/runtimes/${encodeURIComponent(runtimeId)}/${action}`, {
       method: 'POST',
       body,
-      timeoutMs: action === 'start' || action === 'warmup' ? 1800000 : 120000
+      timeoutMs: action === 'start' || action === 'warmup' ? 1800000 : 120000,
+      signal
     });
     this.nodeCache.delete(nodeId);
     return result;

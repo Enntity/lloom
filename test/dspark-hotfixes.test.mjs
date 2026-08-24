@@ -35,7 +35,7 @@ try {
   const recipe = JSON.parse(
     readFileSync(path.join(repoRoot, 'recipes', 'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json'), 'utf8')
   );
-  assert.equal(recipe.version, 10);
+  assert.equal(recipe.version, 11);
   assert.match(recipe.provenance.source, /d1b76251535daef578d8751b04b39c29ad7ecdf9/);
   assert.equal(recipe.models[0].settings.contextWindow, 262144);
   assert.equal(recipe.models[0].settings.maxOutputTokens, 65536);
@@ -82,9 +82,16 @@ try {
     )
   );
   assert.equal(archivedV9Recipe.version, 9);
+  const archivedV10Recipe = JSON.parse(
+    readFileSync(
+      path.join(repoRoot, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm', 'v10.json'),
+      'utf8'
+    )
+  );
+  assert.equal(archivedV10Recipe.version, 10);
   const recipeIndex = JSON.parse(readFileSync(path.join(repoRoot, 'recipes', 'index.json'), 'utf8'));
   const indexEntry = recipeIndex.recipes.find((candidate) => candidate.id === recipe.id);
-  assert.equal(indexEntry.currentVersion, 10);
+  assert.equal(indexEntry.currentVersion, 11);
   assert.deepEqual(
     indexEntry.versions.map(({ version, status }) => ({ version, status })),
     [
@@ -94,7 +101,8 @@ try {
       { version: 7, status: 'archived' },
       { version: 8, status: 'archived' },
       { version: 9, status: 'archived' },
-      { version: 10, status: 'current' }
+      { version: 10, status: 'archived' },
+      { version: 11, status: 'current' }
     ]
   );
 
@@ -102,6 +110,7 @@ try {
     'hotfix-encoding-dsv4-issue21.py',
     'hotfix-nvfp4-ds-mla-issue22.sh',
     'hotfix-dsv4-grammar-advance.sh',
+    'hotfix-vllm-xgrammar-termination-52805.sh',
     'hotfix-dsv4-suppress-stops-in-reasoning.py',
     'hotfix-dsv4-issue55-tool-truncation.py',
     'hotfix-gb10-spin-wait.sh',
@@ -125,7 +134,7 @@ try {
     manifest.patches.filter(({ enabled }) => enabled).map(({ file }) => path.basename(file)),
     expectedHotfixes
   );
-  assert.equal(manifest.patches.length, 21);
+  assert.equal(manifest.patches.length, 22);
   const members = recipe.models[0].settings.placement.members;
   assert.equal(members.length, 2);
   for (const member of members) {

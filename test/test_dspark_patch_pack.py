@@ -33,7 +33,7 @@ class PatchPackTests(unittest.TestCase):
 
     def test_pinned_pack_inventory_and_checksums(self) -> None:
         verified = self.runner.verify_pack(MANIFEST, self.manifest)
-        self.assertEqual(len(verified), 21)
+        self.assertEqual(len(verified), 22)
         self.assertEqual(
             sum("upstreamSha256" in patch_data for patch_data, _ in verified),
             0,
@@ -44,6 +44,7 @@ class PatchPackTests(unittest.TestCase):
                 "issue21-dsml-dict-arguments",
                 "issue22-nvfp4-sparse-mla-dispatch",
                 "issue24-reasoning-grammar-boundary",
+                "vllm52805-xgrammar-termination",
                 "reasoning-stop-string-guard",
                 "issue55-tool-truncation",
                 "gb10-spin-wait",

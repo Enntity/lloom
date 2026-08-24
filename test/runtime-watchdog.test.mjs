@@ -51,6 +51,18 @@ const managedRuntime = {
     'progress',
     'a client close after streamed content is not a no-progress stall'
   );
+  assert.equal(
+    classifyRuntimeWatchdogOutcome(managedRuntime, {
+      ok: false,
+      status: 504,
+      durationMs: 1000,
+      firstContentMs: 10,
+      responseBytes: 8,
+      stalled: true
+    }).kind,
+    'no-progress-failure',
+    'an in-flight stall is evaluated from its last progress even if the request emitted earlier content'
+  );
 }
 
 class TestRuntimeManager extends RuntimeManager {

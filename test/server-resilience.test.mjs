@@ -234,6 +234,72 @@ function close(server) {
   await close(upstream);
 }
 
+// An admitted request that produces no bytes is reported before the backend's
+// much longer transport timeout, so a runtime watchdog can recover a livelock.
+{
+  const upstream = http.createServer((_req, res) => {
+    setTimeout(() => {
+      const body = JSON.stringify({
+        id: 'completion-stalled',
+        object: 'chat.completion',
+        choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }]
+      });
+      res.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
+      res.end(body);
+    }, 80);
+  });
+  const upstreamPort = await listen(upstream);
+  const outcomes = [];
+  const runtimeManager = {
+    ensure: async () => ({ healthy: true }),
+    withSlot: async (_runtimeId, fn) => fn(),
+    noteRequestOutcome(runtimeId, outcome) {
+      outcomes.push({ runtimeId, outcome });
+    }
+  };
+  const config = {
+    name: 'watchdog-live-stall-test',
+    server: { host: '127.0.0.1', port: 0 },
+    security: { allowMissingAuth: true, apiKeys: [] },
+    defaults: { chatModel: 'test-model' },
+    backends: { local: { type: 'openai', baseUrl: `http://127.0.0.1:${upstreamPort}/v1`, timeoutMs: 5000 } },
+    models: [
+      {
+        id: 'test-model',
+        backend: 'local',
+        upstreamModel: 'upstream-model',
+        runtime: 'test-runtime',
+        kind: 'chat',
+        contextWindow: 8192,
+        maxPromptTokens: 1000
+      }
+    ],
+    runtimes: {
+      'test-runtime': {
+        enabled: true,
+        watchdog: { enabled: true, failureThreshold: 1, minNoProgressMs: 30 }
+      }
+    }
+  };
+  const app = createLloomServer(config, { runtimeManager, logger: { error() {}, warn() {} } });
+  const port = await listen(app.server);
+  const response = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'hello' }], max_tokens: 8 })
+  });
+  assert.equal(response.status, 200);
+  await response.arrayBuffer();
+  assert.equal(
+    outcomes.some(({ outcome }) => outcome.stalled === true && outcome.status === 504),
+    true
+  );
+  assert.equal(outcomes.at(-1).outcome.ok, true);
+
+  await close(app.server);
+  await close(upstream);
+}
+
 // LLooM owns structured-output backend translation for both public text protocols.
 {
   const requests = [];

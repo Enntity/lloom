@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import {
   buildNvidiaSyncDiscovery,
   ClusterCoordinator,
@@ -253,6 +254,67 @@ assert.deepEqual(lifecycleCalls, [
   'stop:leader:head',
   'stop:worker:worker'
 ]);
+
+const healthyServer = http.createServer((_request, response) => {
+  response.writeHead(200).end('ok');
+});
+await new Promise((resolve) => healthyServer.listen(0, '127.0.0.1', resolve));
+distributedConfig.runtimes.split.healthUrl = `http://127.0.0.1:${healthyServer.address().port}/health`;
+const callsBeforeHealthyEnsure = lifecycleCalls.length;
+const startsBeforeHealthyEnsure = manager.stateFor('split').starts;
+assert.deepEqual(await manager.start('split', { warmup: false }), {
+  runtimeId: 'split',
+  started: false,
+  healthy: true,
+  distributed: true,
+  reason: 'already-healthy'
+});
+assert.equal(lifecycleCalls.length, callsBeforeHealthyEnsure, 'healthy ensure does not flap either rank');
+assert.equal(manager.stateFor('split').starts, startsBeforeHealthyEnsure, 'healthy ensure is not counted as a start');
+await new Promise((resolve) => healthyServer.close(resolve));
+delete distributedConfig.runtimes.split.healthUrl;
+
+manager.stateFor('worker').status = 'running';
+const recoveryStart = lifecycleCalls.length;
+await manager.start('split', { warmup: false });
+assert.deepEqual(lifecycleCalls.slice(recoveryStart), [
+  'stop:leader:head',
+  'stop:worker:worker',
+  'start:worker:worker',
+  'start:leader:head'
+]);
+assert.equal(
+  manager.events.some((event) => event.runtimeId === 'split' && event.event === 'distributed-recovery'),
+  true
+);
+
+let blockedStartReady;
+const blockedStartStarted = new Promise((resolve) => {
+  blockedStartReady = resolve;
+});
+const cancellableDistributedManager = new RuntimeManager(structuredClone(distributedConfig), {
+  logger: { error() {}, warn() {}, info() {} },
+  captureOutput: false,
+  clusterCoordinator: {
+    attachRuntimeManager() {},
+    isLocalNode(node) {
+      return node === 'leader';
+    },
+    async runtimeAction(node, runtime, action, _body, options = {}) {
+      if (action !== 'start') return { stopped: true };
+      blockedStartReady();
+      return new Promise((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
+      });
+    }
+  }
+});
+delete cancellableDistributedManager.config.runtimes.split.healthUrl;
+const blockedDistributedStart = cancellableDistributedManager.start('split', { warmup: false });
+await blockedStartStarted;
+const preemptiveStop = cancellableDistributedManager.stop('split');
+await assert.rejects(blockedDistributedStart, /runtime stop requested|stop requested/);
+assert.equal((await preemptiveStop).stopped, true, 'operator stop preempts an in-flight distributed start');
 
 const upgradedDistributedConfig = structuredClone(distributedConfig);
 upgradedDistributedConfig.runtimes.head.recipe = { id: 'flash', version: 7 };

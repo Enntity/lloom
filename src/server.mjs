@@ -46,7 +46,7 @@ import { applyRecipePack, createRecipePackPlan } from './recipe-pack.mjs';
 import { buildRecipeIndexReport } from './recipe-index.mjs';
 import { loadRecipes } from './recipes.mjs';
 import { createRegistry, UnknownModelError } from './registry.mjs';
-import { RuntimeManager } from './runtime-manager.mjs';
+import { RuntimeManager, runtimeWatchdogConfig } from './runtime-manager.mjs';
 import { applyRuntimePolicyPlan, createRuntimePolicyPlan, RuntimeAdmissionError } from './runtime-policy.mjs';
 import { applySetup, createSetupPlan } from './setup.mjs';
 import { createSetupStatus } from './setup-status.mjs';
@@ -1852,14 +1852,53 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     });
     const timing = createResponseTiming(started);
     const client = createClientCloseTracker(req, res);
-    const progress = (patch) => metrics.update(connectionId, patch);
+    const watchdogConfig = runtimeWatchdogConfig(config.runtimes?.[resolved.model.runtime]);
+    let watchdogTimer = null;
+    let watchdogArmed = false;
+    let lastProgressAt = started;
+    const clearWatchdogTimer = () => {
+      if (watchdogTimer) clearTimeout(watchdogTimer);
+      watchdogTimer = null;
+    };
+    const armWatchdogTimer = () => {
+      if (!watchdogConfig.enabled) return;
+      watchdogArmed = true;
+      clearWatchdogTimer();
+      watchdogTimer = setTimeout(() => {
+        watchdogTimer = null;
+        noteRuntimeRequestOutcome(resolved.model.runtime, {
+          id: connectionId,
+          route,
+          model: resolved.model.id,
+          status: 504,
+          ok: false,
+          durationMs: Date.now() - started,
+          stallDurationMs: Date.now() - lastProgressAt,
+          responseBytes: 0,
+          stalled: true
+        });
+      }, watchdogConfig.minNoProgressMs);
+      watchdogTimer.unref?.();
+    };
+    const progress = (patch) => {
+      metrics.update(connectionId, patch);
+      if (!watchdogArmed) return;
+      const bytes = Number(patch?.responseBytesDelta ?? 0);
+      const chars = Number(patch?.outputCharsDelta ?? 0);
+      if (bytes > 0 || chars > 0) {
+        lastProgressAt = Date.now();
+        armWatchdogTimer();
+      }
+    };
+    const watchdog = { arm: armWatchdogTimer };
     try {
       const result = await clusterCoordinator.withTarget(resolved, () =>
         runtimeManager.withSlot(resolved.model.runtime, () =>
           fn({
             signal: client.signal,
             timing,
-            progress
+            progress,
+            watchdog
           })
         )
       );
@@ -1948,6 +1987,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       }
       throw error;
     } finally {
+      clearWatchdogTimer();
       metrics.end(connectionId);
       client.dispose();
     }
@@ -1992,8 +2032,9 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         req,
         res
       },
-      async ({ signal, timing, progress }) => {
+      async ({ signal, timing, progress, watchdog }) => {
         await ensureRuntime(resolved.model.runtime);
+        watchdog.arm();
         // Normalize history so reasoning_content is OpenAI-shaped before MTPLX render.
         const normalizedRequest = prepareStructuredOutputForBackend(
           translateReasoningEffortForBackend(normalizeOpenAIChatRequestBody(body), resolved),
@@ -2058,8 +2099,9 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         req,
         res
       },
-      async ({ signal, timing }) => {
+      async ({ signal, timing, watchdog }) => {
         await ensureRuntime(resolved.model.runtime);
+        watchdog.arm();
         const upstream = await fetchUpstream({
           backend: resolved.backend,
           path: '/v1/images/generations',
@@ -2139,8 +2181,9 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         req,
         res
       },
-      async ({ signal, timing }) => {
+      async ({ signal, timing, watchdog }) => {
         await ensureRuntime(resolved.model.runtime);
+        watchdog.arm();
         const upstream = await fetchRawUpstream({
           backend: resolved.backend,
           path: '/v1/images/edits',
@@ -2181,8 +2224,9 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         req,
         res
       },
-      async ({ signal, timing }) => {
+      async ({ signal, timing, watchdog }) => {
         await ensureRuntime(resolved.model.runtime);
+        watchdog.arm();
         const upstream = await fetchUpstream({
           backend: resolved.backend,
           path: '/v1/videos/generations',
@@ -2231,8 +2275,9 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         req,
         res
       },
-      async ({ signal, timing }) => {
+      async ({ signal, timing, watchdog }) => {
         await ensureRuntime(resolved.model.runtime);
+        watchdog.arm();
         const upstream = await fetchUpstream({
           backend: resolved.backend,
           path: '/v1/embeddings',
@@ -2317,8 +2362,9 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         res,
         voiceProfile: profile?.id ?? null
       },
-      async ({ signal, timing }) => {
+      async ({ signal, timing, watchdog }) => {
         await ensureRuntime(resolved.model.runtime);
+        watchdog.arm();
         const upstream = await fetchUpstream({
           backend: resolved.backend,
           path: '/v1/audio/speech',
@@ -2395,8 +2441,9 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
           req,
           res
         },
-        async ({ signal, timing }) => {
+        async ({ signal, timing, watchdog }) => {
           await ensureRuntime(resolved.model.runtime);
+          watchdog.arm();
           const upstream = await fetchRawUpstream({
             backend: resolved.backend,
             path: '/v1/audio/speech',
@@ -2556,8 +2603,9 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
           req,
           res
         },
-        async ({ signal, timing }) => {
+        async ({ signal, timing, watchdog }) => {
           await ensureRuntime(resolved.model.runtime);
+          watchdog.arm();
           const upstream = await fetchUpstream({
             backend: resolved.backend,
             path: '/v1/audio/transcriptions',
@@ -2612,8 +2660,9 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         req,
         res
       },
-      async ({ signal, timing }) => {
+      async ({ signal, timing, watchdog }) => {
         await ensureRuntime(resolved.model.runtime);
+        watchdog.arm();
         const upstream = await fetchRawUpstream({
           backend: resolved.backend,
           path: '/v1/audio/transcriptions',
@@ -2650,8 +2699,9 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         req,
         res
       },
-      async ({ signal, timing }) => {
+      async ({ signal, timing, watchdog }) => {
         await ensureRuntime(resolved.model.runtime);
+        watchdog.arm();
         const normalizedRequest = prepareStructuredOutputForBackend(responsesToOpenAIChat(body, resolved), resolved);
         const upstream = await fetchUpstream({
           backend: resolved.backend,
@@ -2707,8 +2757,9 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         req,
         res
       },
-      async ({ signal, timing }) => {
+      async ({ signal, timing, watchdog }) => {
         await ensureRuntime(resolved.model.runtime);
+        watchdog.arm();
         const upstream = await fetchUpstream({
           backend: resolved.backend,
           path: '/v1/chat/completions',

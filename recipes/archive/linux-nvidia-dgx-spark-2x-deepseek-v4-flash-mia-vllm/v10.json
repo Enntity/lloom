@@ -4,13 +4,13 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm",
   "name": "2x DGX Spark DeepSeek V4 Flash DSpark (MiaAI validated)",
-  "version": 11,
-  "summary": "The pinned DeepSeek V4 Flash 0731 two-node DSpark appliance with MiaAI's stable defaults, upstream XGrammar/MTP termination repair, atomic rank recovery, and no-progress self-healing.",
+  "version": 10,
+  "summary": "The pinned DeepSeek V4 Flash 0731 two-node DSpark lane with MiaAI's stable-default patch set and explicit long-prefill chunk scheduling for concurrent deep prompts.",
   "license": { "id": "MIT", "name": "Recipe metadata and launcher" },
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "MiaAI-Lab DSv4 stable-default patch set at d1b76251535daef578d8751b04b39c29ad7ecdf9 plus merged vLLM PR 52805"
+    "source": "MiaAI-Lab DSv4 stable-default patch set and long-prefill scheduler profile at d1b76251535daef578d8751b04b39c29ad7ecdf9"
   },
   "links": [
     { "rel": "upstream", "href": "https://github.com/MiaAI-Lab/DeepSeek-v4-Flash-DSpark-2x-DGX-Spark" },
@@ -64,16 +64,7 @@
         "evictable": false,
         "keepWarm": true,
         "startupTimeoutMs": 3600000,
-        "timeoutMs": 300000,
-        "watchdog": {
-          "enabled": true,
-          "failureThreshold": 1,
-          "failureWindowMs": 600000,
-          "minNoProgressMs": 180000,
-          "cooldownMs": 600000,
-          "drainTimeoutMs": 30000,
-          "failureStatuses": [499, 500, 502, 504]
-        },
+        "timeoutMs": 3600000,
         "placement": {
           "mode": "distributed",
           "members": [

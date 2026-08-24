@@ -7,7 +7,7 @@
     "commit": "d1b76251535daef578d8751b04b39c29ad7ecdf9",
     "fetchedAt": "2026-08-24T16:25:00.000Z"
   },
-  "artifactNormalization": "Exact upstream bytes from the pinned commit.",
+  "artifactNormalization": "MiaAI artifacts retain their pinned bytes; explicitly identified vLLM backports are fail-closed adaptations for the pinned runtime image.",
   "compatibility": {
     "runtimeImage": "ghcr.io/anemll/dspark-vllm-gx10@sha256:a83948492cf13df455170fb42885f5ef4db54fefe0feff0f841ecbff464ac9d8",
     "runtimeName": "Anemll DSpark vLLM 0.1.1",
@@ -35,6 +35,19 @@
       "file": "patches/hotfix-dsv4-grammar-advance.sh",
       "sha256": "6318c0959816156ba0015fba9d3d56e4e128acdfb778aee373d9bf227c6faaa5",
       "kind": "shell", "tier": "correctness", "enabled": true, "liveCanaryRequired": true,
+      "args": ["{file}"], "env": { "VLLM_ROOT": "{vllmRoot}" }
+    },
+    {
+      "id": "vllm52805-xgrammar-termination",
+      "file": "patches/hotfix-vllm-xgrammar-termination-52805.sh",
+      "sha256": "b6fb5d700ac9e95f79987d9bd46cf9cf645a1cdf564fbd67769362a1192e72e3",
+      "kind": "shell", "tier": "correctness", "enabled": true, "liveCanaryRequired": true,
+      "upstream": {
+        "repository": "https://github.com/vllm-project/vllm",
+        "pullRequest": 52805,
+        "mergeCommit": "12f64b39d29282437e35be9aa5db432fb2a1a6e6"
+      },
+      "reason": "Prevents MTP draft tokens after grammar termination from desynchronizing XGrammar and livelocking sample_tokens.",
       "args": ["{file}"], "env": { "VLLM_ROOT": "{vllmRoot}" }
     },
     {
