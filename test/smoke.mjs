@@ -812,7 +812,7 @@ assert.deepEqual(
   ]
 );
 const benchmarkEvidence = await loadBenchmarkEvidence();
-assert.equal(benchmarkEvidence.length, 23);
+assert.equal(benchmarkEvidence.length, 29);
 assert.deepEqual(validateBenchmarkEvidence(benchmarkEvidence), []);
 const spark35bEvidence = benchmarkEvidence.filter(
   (result) => result.suite?.id === 'dgx-spark-qwen36-35b-a3b-variants-20260711'
