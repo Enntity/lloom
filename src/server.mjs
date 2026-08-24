@@ -1629,6 +1629,20 @@ function communityStatusSummary(context) {
   };
 }
 
+function configReloadSupersededRuntimeAction(error) {
+  return /superseded by config reload/i.test(error?.message ?? String(error));
+}
+
+export async function retryRuntimeActionAfterConfigReload(action, getReloadInFlight) {
+  try {
+    return await action();
+  } catch (error) {
+    if (!configReloadSupersededRuntimeAction(error)) throw error;
+    await getReloadInFlight();
+    return action();
+  }
+}
+
 export function createLloomServer(config, { logger = console, runtimeManager = null, clusterCoordinator = null } = {}) {
   const hostTelemetry = createHostTelemetry();
   const machineProfile = profileMachine().catch((error) => {
@@ -1668,6 +1682,10 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         logger.info?.(`reloaded LLooM config; changed runtimes: ${result.changed.join(', ') || 'none'}`);
       })
       .catch((error) => logger.error?.(`LLooM config reload failed: ${error?.message ?? error}`));
+  }
+
+  function runRuntimeAdminAction(action) {
+    return retryRuntimeActionAfterConfigReload(action, () => reloadInFlight);
   }
 
   async function resolveRequestModel(modelId) {
@@ -3275,11 +3293,13 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         sendJson(
           res,
           200,
-          await runtimeManager.start(decodeURIComponent(startMatch[1]), {
-            force: body.force !== false,
-            warmup: body.warmup !== false,
-            reason: 'admin-start'
-          })
+          await runRuntimeAdminAction(() =>
+            runtimeManager.start(decodeURIComponent(startMatch[1]), {
+              force: body.force !== false,
+              warmup: body.warmup !== false,
+              reason: 'admin-start'
+            })
+          )
         );
         return;
       }
@@ -3291,14 +3311,16 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
           sendJson(
             res,
             200,
-            await applyRuntimePolicyPlan(config, runtimeManager, {
-              requestedRuntimeId: decodeURIComponent(admitMatch[1]),
-              dryRun: body.apply !== true,
-              yes: body.yes === true,
-              force: body.force !== false,
-              warmup: body.warmup !== false,
-              reason: 'admin-admit'
-            })
+            await runRuntimeAdminAction(() =>
+              applyRuntimePolicyPlan(config, runtimeManager, {
+                requestedRuntimeId: decodeURIComponent(admitMatch[1]),
+                dryRun: body.apply !== true,
+                yes: body.yes === true,
+                force: body.force !== false,
+                warmup: body.warmup !== false,
+                reason: 'admin-admit'
+              })
+            )
           );
         } catch (error) {
           sendJson(

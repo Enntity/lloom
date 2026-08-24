@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import net from 'node:net';
-import { createLloomServer, estimateRequestPromptTokens } from '../src/server.mjs';
+import { createLloomServer, estimateRequestPromptTokens, retryRuntimeActionAfterConfigReload } from '../src/server.mjs';
 
 function listen(server) {
   return new Promise((resolve, reject) => {
@@ -12,6 +12,39 @@ function listen(server) {
 
 function close(server) {
   return new Promise((resolve) => server.close(() => resolve()));
+}
+
+// A recipe/profile reload may supersede an overlapping admin start. Wait for
+// that reconciliation and retry once instead of reporting a false failure
+// while the backend continues cycling in the background.
+{
+  const events = [];
+  let attempts = 0;
+  const result = await retryRuntimeActionAfterConfigReload(
+    async () => {
+      attempts += 1;
+      events.push(`start:${attempts}`);
+      if (attempts === 1) throw new Error('lifecycle superseded by config reload');
+      return { started: true, healthy: true };
+    },
+    async () => {
+      events.push('reload');
+    }
+  );
+  assert.deepEqual(result, { started: true, healthy: true });
+  assert.deepEqual(events, ['start:1', 'reload', 'start:2']);
+
+  await assert.rejects(
+    retryRuntimeActionAfterConfigReload(
+      async () => {
+        throw new Error('backend failed');
+      },
+      async () => {
+        throw new Error('reload should not run');
+      }
+    ),
+    /backend failed/
+  );
 }
 
 // Prompt admission counts visual tokens, not opaque base64 bytes.

@@ -48,6 +48,7 @@ import { applyInit, defaultUserConfigPath } from '../src/init.mjs';
 import { applyBackend, applyRecipe } from '../src/installer.mjs';
 import { createInterchangeRegistry, createInterchangeValidationReport } from '../src/interchange.mjs';
 import { profileMachine, rankRecipes } from '../src/machine-profile.mjs';
+import { loadManagedServiceEnvironment } from '../src/managed-environment.mjs';
 import { applyModelImport, applyModelImportGo } from '../src/model-intake.mjs';
 import { applyModelRemoval } from '../src/model-removal.mjs';
 import { applyOnboarding, createOnboardingPlan } from '../src/onboarding.mjs';
@@ -1256,6 +1257,7 @@ async function main() {
     process.exitCode = 2;
     return;
   }
+  loadManagedServiceEnvironment({ home: argValue(args, '--home') ?? process.env.HOME });
   const missingConfig = missingInstalledConfig(args, command);
   if (missingConfig) {
     const report = missingInstalledConfigReport(missingConfig);
@@ -2254,7 +2256,7 @@ async function main() {
         );
         return;
       }
-      const response = await gatewayRequest(config, '/gateway/cluster');
+      const response = await gatewayRequest(config, '/gateway/cluster', { timeoutMs: 10000 });
       if (!response?.cluster) {
         throw new Error(
           `LLooM gateway at ${gatewayUrlFor(config)} is not reachable; cluster status requires a running gateway`

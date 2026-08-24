@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { loadManagedServiceEnvironment, parseManagedEnvironmentFile } from '../src/managed-environment.mjs';
 import {
   assertBindAllowed,
   authorizeRequest,
@@ -21,6 +25,35 @@ assert.equal(classifyRoute('OPTIONS', '/v1/chat/completions'), 'public');
 assert.equal(classifyRoute('GET', '/gateway/status'), 'admin-read');
 assert.equal(classifyRoute('POST', '/gateway/setup/apply'), 'admin-write');
 assert.equal(classifyRoute('POST', '/v1/chat/completions'), 'inference');
+
+assert.deepEqual(
+  parseManagedEnvironmentFile(`
+# LLooM service credentials
+LLOOM_API_KEY=sk-inference
+LLOOM_CLUSTER_KEY="sk-cluster"
+IGNORED LINE
+`),
+  {
+    LLOOM_API_KEY: 'sk-inference',
+    LLOOM_CLUSTER_KEY: 'sk-cluster'
+  }
+);
+
+{
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lloom-managed-env-'));
+  await fs.mkdir(path.join(home, '.config', 'lloom'), { recursive: true });
+  await fs.writeFile(
+    path.join(home, '.config', 'lloom', 'env'),
+    'LLOOM_API_KEY=from-service\nLLOOM_CLUSTER_KEY=cluster-service\n',
+    { mode: 0o600 }
+  );
+  const env = { LLOOM_API_KEY: 'explicit-shell' };
+  const loaded = loadManagedServiceEnvironment({ home, env });
+  assert.equal(loaded.loaded, true);
+  assert.deepEqual(loaded.keys, ['LLOOM_CLUSTER_KEY']);
+  assert.equal(env.LLOOM_API_KEY, 'explicit-shell');
+  assert.equal(env.LLOOM_CLUSTER_KEY, 'cluster-service');
+}
 
 const loopbackConfig = {
   server: { host: '127.0.0.1', port: 8100 },
