@@ -1,0 +1,100 @@
+{
+  "$schema": "https://lloom.dev/schemas/benchmark-suite.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "dgx-spark-2x-deepseek-v4-flash-lloom-20260824",
+  "name": "2x DGX Spark DeepSeek V4 Flash MiaAI d1b76251",
+  "summary": "Matched cold-prefix streaming measurements for LLooM recipe v9 after aligning the Spark lane with MiaAI's stable-default patch set.",
+  "license": { "id": "CC0-1.0", "name": "CC0 1.0" },
+  "source": { "type": "local-measurement", "name": "MiaAI-compatible raw-backend benchmark" },
+  "submittedAt": "2026-08-24T17:27:50Z",
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "bench-miaai-ds4f.py",
+    "source": "Reproducible local measurement on ennspark01 plus ennspark02"
+  },
+  "methodology": {
+    "harness": "MiaAI-compatible OpenAI streaming benchmark",
+    "harnessVersion": "d1b76251535daef578d8751b04b39c29ad7ecdf9 protocol",
+    "promptCorpus": "Unique cold prefix per request; thinking=false; min_tokens=max_tokens=128; ignore_eos; prompt sizes 256 and 32768",
+    "warmupRuns": 1,
+    "measurementRuns": 3,
+    "streaming": true
+  },
+  "results": [
+    {
+      "id": "dgx-spark-2x-dsv4-v9-p256-c1",
+      "recipeId": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm",
+      "recipeVersion": 9,
+      "backendId": "docker-vllm",
+      "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
+      "gatewayModel": "deepseek-v4-flash-0731",
+      "machine": { "platformId": "linux-arm64", "chip": "2x NVIDIA DGX Spark / GB10", "memoryGb": 128, "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"], "nodeCount": 2, "clusterMemoryGb": 256 },
+      "settings": { "runtimeImage": "ghcr.io/anemll/dspark-vllm-gx10@sha256:a83948492cf13df455170fb42885f5ef4db54fefe0feff0f841ecbff464ac9d8", "modelRevision": "9e165c30e2704aec5d9d593cce3eebd58bbef1cb", "miaAiCommit": "d1b76251535daef578d8751b04b39c29ad7ecdf9", "lloomCommit": "c400c1cbc976c5ab4d5e4142221d91083e328535", "tensorParallelSize": 2, "contextWindow": 262144, "gpuMemoryUtilization": 0.73, "kvCacheDtype": "nvfp4_ds_mla", "maxNumSeqs": 6, "maxNumBatchedTokens": 8192, "maxInflightPrefills": 2, "speculative": { "method": "dspark", "numSpeculativeTokens": 5 } },
+      "workload": { "type": "interactive-generation", "category": "unique-cold-prefix", "concurrency": 1, "promptTokens": 256, "outputTokens": 128 },
+      "metrics": { "generationTokPerSec": 74.5, "aggregateOutputTokPerSec": 63.0, "timeToFirstTokenMs": 312, "contextWindow": 262144 }
+    },
+    {
+      "id": "dgx-spark-2x-dsv4-v9-p256-c2",
+      "recipeId": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm", "recipeVersion": 9, "backendId": "docker-vllm", "model": "deepseek-ai/DeepSeek-V4-Flash-0731", "gatewayModel": "deepseek-v4-flash-0731",
+      "machine": { "platformId": "linux-arm64", "chip": "2x NVIDIA DGX Spark / GB10", "memoryGb": 128, "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"], "nodeCount": 2, "clusterMemoryGb": 256 },
+      "settings": { "contextWindow": 262144, "maxNumSeqs": 6, "maxNumBatchedTokens": 8192, "maxInflightPrefills": 2, "speculative": { "method": "dspark", "numSpeculativeTokens": 5 } },
+      "workload": { "type": "interactive-generation", "category": "unique-cold-prefix", "concurrency": 2, "promptTokens": 256, "outputTokens": 128 },
+      "metrics": { "generationTokPerSec": 58.5, "aggregateOutputTokPerSec": 94.0, "timeToFirstTokenMs": 435, "contextWindow": 262144 }
+    },
+    {
+      "id": "dgx-spark-2x-dsv4-v9-p256-c4",
+      "recipeId": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm", "recipeVersion": 9, "backendId": "docker-vllm", "model": "deepseek-ai/DeepSeek-V4-Flash-0731", "gatewayModel": "deepseek-v4-flash-0731",
+      "machine": { "platformId": "linux-arm64", "chip": "2x NVIDIA DGX Spark / GB10", "memoryGb": 128, "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"], "nodeCount": 2, "clusterMemoryGb": 256 },
+      "settings": { "contextWindow": 262144, "maxNumSeqs": 6, "maxNumBatchedTokens": 8192, "maxInflightPrefills": 2, "speculative": { "method": "dspark", "numSpeculativeTokens": 5 } },
+      "workload": { "type": "interactive-generation", "category": "unique-cold-prefix", "concurrency": 4, "promptTokens": 256, "outputTokens": 128 },
+      "metrics": { "generationTokPerSec": 50.5, "aggregateOutputTokPerSec": 153.2, "timeToFirstTokenMs": 630, "contextWindow": 262144 }
+    },
+    {
+      "id": "dgx-spark-2x-dsv4-v9-p256-c6",
+      "recipeId": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm", "recipeVersion": 9, "backendId": "docker-vllm", "model": "deepseek-ai/DeepSeek-V4-Flash-0731", "gatewayModel": "deepseek-v4-flash-0731",
+      "machine": { "platformId": "linux-arm64", "chip": "2x NVIDIA DGX Spark / GB10", "memoryGb": 128, "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"], "nodeCount": 2, "clusterMemoryGb": 256 },
+      "settings": { "contextWindow": 262144, "maxNumSeqs": 6, "maxNumBatchedTokens": 8192, "maxInflightPrefills": 2, "speculative": { "method": "dspark", "numSpeculativeTokens": 5 } },
+      "workload": { "type": "interactive-generation", "category": "unique-cold-prefix", "concurrency": 6, "promptTokens": 256, "outputTokens": 128 },
+      "metrics": { "generationTokPerSec": 42.3, "aggregateOutputTokPerSec": 181.2, "timeToFirstTokenMs": 1006, "contextWindow": 262144 }
+    },
+    {
+      "id": "dgx-spark-2x-dsv4-v9-p32768-c1",
+      "recipeId": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm", "recipeVersion": 9, "backendId": "docker-vllm", "model": "deepseek-ai/DeepSeek-V4-Flash-0731", "gatewayModel": "deepseek-v4-flash-0731",
+      "machine": { "platformId": "linux-arm64", "chip": "2x NVIDIA DGX Spark / GB10", "memoryGb": 128, "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"], "nodeCount": 2, "clusterMemoryGb": 256 },
+      "settings": { "contextWindow": 262144, "maxNumSeqs": 6, "maxNumBatchedTokens": 8192, "maxInflightPrefills": 2, "speculative": { "method": "dspark", "numSpeculativeTokens": 5 } },
+      "workload": { "type": "long-context-generation", "category": "unique-cold-prefix", "concurrency": 1, "promptTokens": 32768, "outputTokens": 128 },
+      "metrics": { "generationTokPerSec": 74.6, "aggregateOutputTokPerSec": 6.7, "timeToFirstTokenMs": 17511, "contextWindow": 262144 }
+    },
+    {
+      "id": "dgx-spark-2x-dsv4-v9-p32768-c4",
+      "recipeId": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm", "recipeVersion": 9, "backendId": "docker-vllm", "model": "deepseek-ai/DeepSeek-V4-Flash-0731", "gatewayModel": "deepseek-v4-flash-0731",
+      "machine": { "platformId": "linux-arm64", "chip": "2x NVIDIA DGX Spark / GB10", "memoryGb": 128, "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"], "nodeCount": 2, "clusterMemoryGb": 256 },
+      "settings": { "contextWindow": 262144, "maxNumSeqs": 6, "maxNumBatchedTokens": 8192, "maxInflightPrefills": 2, "speculative": { "method": "dspark", "numSpeculativeTokens": 5 } },
+      "workload": { "type": "long-context-generation", "category": "unique-cold-prefix", "concurrency": 4, "promptTokens": 32768, "outputTokens": 128 },
+      "metrics": { "generationTokPerSec": 5.8, "aggregateOutputTokPerSec": 7.2, "timeToFirstTokenMs": 45349.5, "contextWindow": 262144 }
+    }
+  ],
+  "x-runs": {
+    "p256": {
+      "c1": [{ "decodeTokPerSec": 73.7, "aggregateTokPerSec": 61.7, "timeToFirstTokenMs": 336 }, { "decodeTokPerSec": 77.7, "aggregateTokPerSec": 65.6, "timeToFirstTokenMs": 305 }, { "decodeTokPerSec": 74.5, "aggregateTokPerSec": 63.0, "timeToFirstTokenMs": 312 }],
+      "c2": [{ "decodeTokPerSec": 66.7, "aggregateTokPerSec": 108.8, "timeToFirstTokenMs": 435 }, { "decodeTokPerSec": 58.5, "aggregateTokPerSec": 94.0, "timeToFirstTokenMs": 414 }, { "decodeTokPerSec": 54.8, "aggregateTokPerSec": 89.4, "timeToFirstTokenMs": 471 }],
+      "c4": [{ "decodeTokPerSec": 47.9, "aggregateTokPerSec": 146.2, "timeToFirstTokenMs": 792 }, { "decodeTokPerSec": 50.5, "aggregateTokPerSec": 153.2, "timeToFirstTokenMs": 620 }, { "decodeTokPerSec": 52.5, "aggregateTokPerSec": 155.7, "timeToFirstTokenMs": 630 }],
+      "c6": [{ "decodeTokPerSec": 36.5, "aggregateTokPerSec": 176.8, "timeToFirstTokenMs": 743 }, { "decodeTokPerSec": 42.3, "aggregateTokPerSec": 181.2, "timeToFirstTokenMs": 1006 }, { "decodeTokPerSec": 43.8, "aggregateTokPerSec": 191.2, "timeToFirstTokenMs": 1009 }]
+    },
+    "p32768": {
+      "c1": [{ "decodeTokPerSec": 69.1, "aggregateTokPerSec": 6.2, "timeToFirstTokenMs": 18838 }, { "decodeTokPerSec": 80.2, "aggregateTokPerSec": 7.2, "timeToFirstTokenMs": 16184 }],
+      "c4": [{ "decodeTokPerSec": 6.3, "aggregateTokPerSec": 7.3, "timeToFirstTokenMs": 46410 }, { "decodeTokPerSec": 5.4, "aggregateTokPerSec": 7.1, "timeToFirstTokenMs": 44289 }]
+    }
+  },
+  "x-beforeAfter": {
+    "beforeRecipeVersion": 7,
+    "before": {
+      "p256": { "c1": { "decodeTokPerSec": 73.0, "aggregateTokPerSec": 37.3, "timeToFirstTokenMs": 1675 }, "c2": { "decodeTokPerSec": 59.3, "aggregateTokPerSec": 91.5, "timeToFirstTokenMs": 461 }, "c4": { "decodeTokPerSec": 50.6, "aggregateTokPerSec": 146.4, "timeToFirstTokenMs": 839 }, "c6": { "decodeTokPerSec": 41.7, "aggregateTokPerSec": 185.3, "timeToFirstTokenMs": 1043 } },
+      "p32768": { "c1": { "decodeTokPerSec": 83.5, "aggregateTokPerSec": 7.0, "timeToFirstTokenMs": 16651.5 }, "c4": { "decodeTokPerSec": 6.3, "aggregateTokPerSec": 7.5, "timeToFirstTokenMs": 44727 } }
+    },
+    "notes": "The pre-update C1 short median includes a cold-shape outlier; v9 removes that tail after the 35/35 shape warmup. Cold 32K x C4 remains scheduler-serialized by design and is not presented as improved."
+  },
+  "x-coexistence": { "qwenEmbeddingNode": "ennspark01", "fluxNode": "ennspark02", "jinxPausedDuringMeasurement": true, "shapeWarmup": "35/35", "availableKvCacheTokens": 348443, "maxConcurrencyAtFull262k": 1.33 },
+  "x-fileName": "dgx-spark-2x-deepseek-v4-flash-lloom-20260824.json"
+}

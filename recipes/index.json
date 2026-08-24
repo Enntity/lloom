@@ -273,7 +273,7 @@
           "version": 8,
           "path": "archive/linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm/v8.json",
           "status": "archived",
-          "archivedAt": "2026-08-24T18:30:00.000Z",
+          "archivedAt": "2026-08-24T17:05:00.000Z",
           "notes": "Pins MiaAI d1b76251, defaults the issue31 budget patch off, enables measured two-prefill concurrency and GB10 spin-wait fixes, and persists TileLang and Triton caches."
         },
         {
