@@ -113,6 +113,7 @@ exec /usr/local/bin/vllm serve "${DSPARK_MODEL:-deepseek-ai/DeepSeek-V4-Flash-07
   --kv-cache-dtype nvfp4_ds_mla --block-size 256 \
   --max-model-len "${MAX_MODEL_LEN:-1048576}" --max-num-seqs "${MAX_NUM_SEQS:-6}" \
   --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS:-8192}" \
+  --long-prefill-token-threshold "${LONG_PREFILL_TOKEN_THRESHOLD:-1024}" \
   --max-cudagraph-capture-size "$(( ${MAX_NUM_SEQS:-6} * (${MTP_NUM_TOKENS:-5} + 1) ))" \
   --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION:-0.80}" \
   --enable-prefix-caching --enable-prompt-tokens-details --async-scheduling --enable-chunked-prefill \

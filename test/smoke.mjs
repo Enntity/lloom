@@ -2396,8 +2396,8 @@ assert.deepEqual(
   dsparkRefreshed.runtimes['deepseek-v4-flash-0731-cluster'].placement.members.map((member) => member.node),
   ['ennspark02', 'ennspark01']
 );
-assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-worker'].recipe.version, 9);
-assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-head'].recipe.version, 9);
+assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-worker'].recipe.version, 10);
+assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-head'].recipe.version, 10);
 assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-worker-macbook-local'], undefined);
 assert(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-worker'].bootstrap.createArgs.includes('CLUSTER_NODE_COUNT=2'));
 assert(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-worker'].bootstrap.createArgs.includes('NODE_RANK=1'));

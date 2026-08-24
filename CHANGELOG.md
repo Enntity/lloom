@@ -19,6 +19,7 @@ All notable changes to LLooM will be documented in this file. The format follows
 ### Changed
 
 - The two-Spark DeepSeek recipe now pins MiaAI `d1b76251`, matches its stable-default correctness and guarded performance patch set, persists TileLang and Triton compile caches, and retains the measured two-prefill scheduler cap.
+- The two-Spark DeepSeek entrypoint now passes MiaAI's explicit long-prefill chunk threshold to vLLM, making concurrent deep-prompt admission tunable instead of allowing one prefill to consume the scheduling budget.
 
 ### Fixed
 

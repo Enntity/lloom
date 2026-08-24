@@ -35,7 +35,7 @@ try {
   const recipe = JSON.parse(
     readFileSync(path.join(repoRoot, 'recipes', 'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json'), 'utf8')
   );
-  assert.equal(recipe.version, 9);
+  assert.equal(recipe.version, 10);
   assert.match(recipe.provenance.source, /d1b76251535daef578d8751b04b39c29ad7ecdf9/);
   assert.equal(recipe.models[0].settings.contextWindow, 262144);
   assert.equal(recipe.models[0].settings.maxOutputTokens, 65536);
@@ -75,9 +75,16 @@ try {
     )
   );
   assert.equal(archivedV8Recipe.version, 8);
+  const archivedV9Recipe = JSON.parse(
+    readFileSync(
+      path.join(repoRoot, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm', 'v9.json'),
+      'utf8'
+    )
+  );
+  assert.equal(archivedV9Recipe.version, 9);
   const recipeIndex = JSON.parse(readFileSync(path.join(repoRoot, 'recipes', 'index.json'), 'utf8'));
   const indexEntry = recipeIndex.recipes.find((candidate) => candidate.id === recipe.id);
-  assert.equal(indexEntry.currentVersion, 9);
+  assert.equal(indexEntry.currentVersion, 10);
   assert.deepEqual(
     indexEntry.versions.map(({ version, status }) => ({ version, status })),
     [
@@ -86,7 +93,8 @@ try {
       { version: 6, status: 'archived' },
       { version: 7, status: 'archived' },
       { version: 8, status: 'archived' },
-      { version: 9, status: 'current' }
+      { version: 9, status: 'archived' },
+      { version: 10, status: 'current' }
     ]
   );
 
@@ -136,6 +144,7 @@ try {
     assert.equal(env.get('MAX_MODEL_LEN'), '262144');
     assert.equal(env.get('GPU_MEMORY_UTILIZATION'), '0.73');
     assert.equal(env.get('DSPARK_MAX_INFLIGHT_PREFILLS'), '2');
+    assert.equal(env.get('LONG_PREFILL_TOKEN_THRESHOLD'), '1024');
     assert.equal(env.get('VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS'), '1800');
     assert.equal(env.get('TILELANG_CACHE_DIR'), '/cache/huggingface/tilelang-cache');
     assert.equal(env.get('TRITON_CACHE_DIR'), '/cache/huggingface/triton-cache');
@@ -160,6 +169,7 @@ try {
   const entrypoint = readFileSync(path.join(repoRoot, 'backends', 'dspark-vllm', 'entrypoint.sh'), 'utf8');
   assert.match(entrypoint, /apply-patch-pack\.py/);
   assert.match(entrypoint, /--runtime-image/);
+  assert.match(entrypoint, /--long-prefill-token-threshold/);
   assert.doesNotMatch(entrypoint, /\/opt\/lloom\/hotfixes/);
   run('python3', [
     packRunner,
