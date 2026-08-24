@@ -262,6 +262,7 @@ await new Promise((resolve) => healthyServer.listen(0, '127.0.0.1', resolve));
 distributedConfig.runtimes.split.healthUrl = `http://127.0.0.1:${healthyServer.address().port}/health`;
 const callsBeforeHealthyEnsure = lifecycleCalls.length;
 const startsBeforeHealthyEnsure = manager.stateFor('split').starts;
+manager.stateFor('split').lastError = 'stale failure';
 assert.deepEqual(await manager.start('split', { warmup: false }), {
   runtimeId: 'split',
   started: false,
@@ -271,12 +272,14 @@ assert.deepEqual(await manager.start('split', { warmup: false }), {
 });
 assert.equal(lifecycleCalls.length, callsBeforeHealthyEnsure, 'healthy ensure does not flap either rank');
 assert.equal(manager.stateFor('split').starts, startsBeforeHealthyEnsure, 'healthy ensure is not counted as a start');
+assert.equal(manager.stateFor('split').lastError, null, 'healthy ensure clears stale failure state');
 await new Promise((resolve) => healthyServer.close(resolve));
 delete distributedConfig.runtimes.split.healthUrl;
 
 manager.stateFor('worker').status = 'running';
 const recoveryStart = lifecycleCalls.length;
 await manager.start('split', { warmup: false });
+assert.equal(manager.stateFor('split').lastError, null, 'successful recovery clears stale failure state');
 assert.deepEqual(lifecycleCalls.slice(recoveryStart), [
   'stop:leader:head',
   'stop:worker:worker',

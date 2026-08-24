@@ -1095,6 +1095,7 @@ export class RuntimeManager {
 
     if (placement.mode === 'distributed') {
       if (!force && (await runtimeHealthOk(runtime))) {
+        state.lastError = null;
         this.setStatus(runtimeId, 'running');
         return {
           runtimeId,
@@ -1138,6 +1139,7 @@ export class RuntimeManager {
         if (runtime.healthUrl) await this.waitForHealth(runtimeId, runtime, null, { signal });
         state.starts += 1;
         state.startedAt = nowIso();
+        state.lastError = null;
         this.setStatus(runtimeId, 'running', reason);
         const warmupResult = warmup && runtime.warmup ? await this.warmup(runtimeId, runtime, { signal }) : null;
         return {
