@@ -6,9 +6,9 @@ LLooM separates the two-Spark DeepSeek runtime into three reviewable layers:
 2. **Pinned upstream pack** — MiaAI patch artifacts from one exact commit, plus a checksum manifest.
 3. **LLooM policy overlay** — cluster lifecycle, private-fabric binding, offline loading, resource limits, and gateway behavior.
 
-The current pack is `backends/dspark-vllm/packs/miaai-dsv4flash-d1b76251`. Its manifest records the upstream repository and commit, compatible image and model revision, artifact hashes, deterministic application order, and whether each patch is enabled. Vendoring an artifact does not enable it.
+The current pack is `backends/dspark-vllm/packs/miaai-dsv4flash-d1b76251-defaults`. Its manifest records the upstream repository and commit, compatible image and model revision, artifact hashes, deterministic application order, and whether each patch is enabled. Vendoring an artifact does not enable it.
 
-Recipe v8 keeps MiaAI's speculative top-k backports disabled, defaults the issue31 thinking-budget patch off, and enables only the newer fixes with direct evidence on this lane: fail-closed correctness updates, the GB10 2 ms spin-wait, empty encoder outputs, and two concurrent partial prefills. The last change was promoted after a quiet live baseline measured 32K x C4 at 6.3 tok/s per stream with roughly 45 seconds to first token under the serialized scheduler.
+Recipe v9 matches MiaAI's stable default set at `d1b76251`: fail-closed correctness fixes, long-prefix SWA cache safety, bounded decode fairness, the GB10 2 ms spin-wait, and guarded vLLM performance backports. LLooM keeps opt-in thinking budgets, assistant-final continuation, API-key redaction, and experimental Stage-C artifacts disabled. The two-prefill policy remains a separately measured LLooM overlay; cold 32K x C4 still queues at roughly 6-7 aggregate tok/s and 45-47 seconds median TTFB, so the recipe does not claim that the scheduler patches eliminate deep concurrent-prefill serialization.
 
 `backends/dspark-vllm/apply-patch-pack.py` verifies every artifact before applying any enabled patch. It rejects checksum drift, path traversal, unknown runners, duplicate entries, and runtime/model compatibility mismatches. Commands are executed directly with `python3` or `bash`; manifest values are never evaluated by a shell.
 

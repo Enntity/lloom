@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER = ROOT / "backends" / "dspark-vllm" / "apply-patch-pack.py"
-PACK = ROOT / "backends" / "dspark-vllm" / "packs" / "miaai-dsv4flash-d1b76251"
+PACK = ROOT / "backends" / "dspark-vllm" / "packs" / "miaai-dsv4flash-d1b76251-defaults"
 MANIFEST = PACK / "manifest.json"
 
 
@@ -49,6 +49,13 @@ class PatchPackTests(unittest.TestCase):
                 "gb10-spin-wait",
                 "empty-encoder-output",
                 "issue27-partial-prefill-concurrency",
+                "issue26-hybrid-swa-prefix-cache-v2",
+                "issue43-decode-fairness",
+                "vllm49486-skip-topk",
+                "vllm48407-dense-prefill-indexer",
+                "vllm50312-mtp-buffer",
+                "vllm48957-skip-empty-c128",
+                "vllm50298-flashmla-workspace",
             ],
         )
 

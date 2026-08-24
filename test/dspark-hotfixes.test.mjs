@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const repoRoot = process.cwd();
-const packRoot = path.join(repoRoot, 'backends', 'dspark-vllm', 'packs', 'miaai-dsv4flash-d1b76251');
+const packRoot = path.join(repoRoot, 'backends', 'dspark-vllm', 'packs', 'miaai-dsv4flash-d1b76251-defaults');
 const hotfixRoot = path.join(packRoot, 'patches');
 const packManifestPath = path.join(packRoot, 'manifest.json');
 const packRunner = path.join(repoRoot, 'backends', 'dspark-vllm', 'apply-patch-pack.py');
@@ -35,7 +35,7 @@ try {
   const recipe = JSON.parse(
     readFileSync(path.join(repoRoot, 'recipes', 'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json'), 'utf8')
   );
-  assert.equal(recipe.version, 8);
+  assert.equal(recipe.version, 9);
   assert.match(recipe.provenance.source, /d1b76251535daef578d8751b04b39c29ad7ecdf9/);
   assert.equal(recipe.models[0].settings.contextWindow, 262144);
   assert.equal(recipe.models[0].settings.maxOutputTokens, 65536);
@@ -68,9 +68,16 @@ try {
     )
   );
   assert.equal(archivedV7Recipe.version, 7);
+  const archivedV8Recipe = JSON.parse(
+    readFileSync(
+      path.join(repoRoot, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm', 'v8.json'),
+      'utf8'
+    )
+  );
+  assert.equal(archivedV8Recipe.version, 8);
   const recipeIndex = JSON.parse(readFileSync(path.join(repoRoot, 'recipes', 'index.json'), 'utf8'));
   const indexEntry = recipeIndex.recipes.find((candidate) => candidate.id === recipe.id);
-  assert.equal(indexEntry.currentVersion, 8);
+  assert.equal(indexEntry.currentVersion, 9);
   assert.deepEqual(
     indexEntry.versions.map(({ version, status }) => ({ version, status })),
     [
@@ -78,7 +85,8 @@ try {
       { version: 5, status: 'archived' },
       { version: 6, status: 'archived' },
       { version: 7, status: 'archived' },
-      { version: 8, status: 'current' }
+      { version: 8, status: 'archived' },
+      { version: 9, status: 'current' }
     ]
   );
 
@@ -90,7 +98,14 @@ try {
     'hotfix-dsv4-issue55-tool-truncation.py',
     'hotfix-gb10-spin-wait.sh',
     'hotfix-vllm-empty-encoder-output.py',
-    'hotfix-dsv4-issue27-partial-prefill-concurrency.py'
+    'hotfix-dsv4-issue27-partial-prefill-concurrency.py',
+    'hotfix-dsv4-issue26-hybrid-swa-min.py',
+    'hotfix-dsv4-issue43-decode-fairness-and-diag.py',
+    'hotfix-dsv4-skip-topk-49486.sh',
+    'hotfix-dsv4-dense-prefill-indexer-48407.sh',
+    'hotfix-dsv4-mtp-buffer-50312.sh',
+    'hotfix-dsv4-skip-empty-c128-48957.sh',
+    'hotfix-dsv4-flashmla-workspace-50298.sh'
   ];
   const manifest = JSON.parse(readFileSync(packManifestPath, 'utf8'));
   assert.equal(manifest.upstream.commit, 'd1b76251535daef578d8751b04b39c29ad7ecdf9');
@@ -133,7 +148,7 @@ try {
     );
     assert(
       args.includes(
-        'type=bind,src=${lloomRoot}/backends/dspark-vllm/packs/miaai-dsv4flash-d1b76251,dst=/opt/lloom/patch-pack,readonly'
+        'type=bind,src=${lloomRoot}/backends/dspark-vllm/packs/miaai-dsv4flash-d1b76251-defaults,dst=/opt/lloom/patch-pack,readonly'
       )
     );
     assert.equal(

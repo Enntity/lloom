@@ -10,7 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
-HOTFIX = ROOT / "backends" / "dspark-vllm" / "packs" / "miaai-dsv4flash-d1b76251" / "patches" / "hotfix-dsv4-suppress-stops-in-reasoning.py"
+HOTFIX = ROOT / "backends" / "dspark-vllm" / "packs" / "miaai-dsv4flash-d1b76251-defaults" / "patches" / "hotfix-dsv4-suppress-stops-in-reasoning.py"
 
 
 def _load():

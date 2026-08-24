@@ -239,7 +239,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm",
       "path": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json",
-      "currentVersion": 8,
+      "currentVersion": 9,
       "versions": [
         {
           "version": 4,
@@ -271,9 +271,16 @@
         },
         {
           "version": 8,
+          "path": "archive/linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm/v8.json",
+          "status": "archived",
+          "archivedAt": "2026-08-24T18:30:00.000Z",
+          "notes": "Pins MiaAI d1b76251, defaults the issue31 budget patch off, enables measured two-prefill concurrency and GB10 spin-wait fixes, and persists TileLang and Triton caches."
+        },
+        {
+          "version": 9,
           "path": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json",
           "status": "current",
-          "notes": "Pins MiaAI d1b76251, defaults the issue31 budget patch off, enables measured two-prefill concurrency and GB10 spin-wait fixes, and persists TileLang and Triton caches."
+          "notes": "Matches MiaAI d1b76251's stable-default correctness, scheduler, and guarded performance backports while retaining LLooM's measured coexistence profile."
         }
       ],
       "name": "2x DGX Spark DeepSeek V4 Flash DSpark (MiaAI validated)",
