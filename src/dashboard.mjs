@@ -223,12 +223,6 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     .topology-zoom-output { min-width:48px; color:var(--muted); text-align:center; font:700 10px "SFMono-Regular",monospace; }
     .topology-interaction-state { padding:0 7px; color:var(--muted); font:700 9px "SFMono-Regular",monospace; white-space:nowrap; }
     .topology-interaction-state.active { color:var(--accent); }
-    .topology-key { position:absolute; z-index:3; left:14px; bottom:14px; display:flex; gap:14px; padding:8px 11px; border:1px solid rgba(47,230,200,.24); background:rgba(7,11,12,.86); color:var(--muted); font:700 10px "SFMono-Regular",monospace; backdrop-filter:blur(10px); pointer-events:none; }
-    .topology-key span { display:flex; align-items:center; gap:6px; }
-    .topology-key i { width:7px; height:7px; border-radius:50%; box-shadow:0 0 10px currentColor; }
-    .topology-key .input { color:var(--accent-2); }
-    .topology-key .output { color:var(--accent); }
-    .topology-key .compute { color:var(--warn); }
     .model-inspector { position:absolute; z-index:5; top:92px; right:14px; width:min(360px,calc(100% - 28px)); max-height:calc(100% - 160px); overflow:auto; border:1px solid rgba(47,230,200,.38); background:rgba(10,14,17,.94); box-shadow:0 24px 80px rgba(0,0,0,.52),inset 3px 0 var(--accent); backdrop-filter:blur(18px); transform:translateX(calc(100% + 28px)); opacity:0; pointer-events:none; transition:transform .22s ease,opacity .18s ease; }
     .model-inspector.open { transform:translateX(0); opacity:1; pointer-events:auto; }
     .model-inspector-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:16px; border-bottom:1px solid var(--line); }
@@ -387,7 +381,6 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       .topology-metrics { min-height:40px; }
       .metrics-period { min-height:38px; }
       .topology-hud-right .fabric-totals { display:none; }
-      .topology-key { left:8px; bottom:8px; }
       .topology-zoom { right:8px; bottom:8px; }
       .model-inspector { top:72px; right:8px; width:calc(100% - 16px); max-height:calc(100% - 128px); }
     }
@@ -420,7 +413,6 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         </div>
       </div>
       <canvas id="topology-canvas" class="topology-canvas" tabindex="0" aria-label="Animated connections flowing through LLooM to configured models. Click to enable pan and wheel zoom; press Escape to release."></canvas>
-      <div class="topology-key" aria-label="Topology legend"><span class="input"><i></i>INPUT</span><span class="output"><i></i>OUTPUT</span><span class="compute"><i></i>COMPUTE</span></div>
       <div class="topology-zoom" aria-label="Topology zoom and pan controls"><span id="topology-interaction-state" class="topology-interaction-state">CLICK TO PAN / ZOOM</span><button id="topology-zoom-out" type="button" aria-label="Zoom out">−</button><span id="topology-zoom-output" class="topology-zoom-output">100%</span><button id="topology-zoom-in" type="button" aria-label="Zoom in">+</button><button id="topology-zoom-reset" type="button" aria-label="Reset view">↺</button></div>
       <aside id="model-inspector" class="model-inspector" aria-label="Selected model details" aria-hidden="true">
         <div class="model-inspector-head"><div><div id="model-inspector-state" class="pill"><span class="dot"></span><span>model</span></div><div id="model-inspector-title" class="model-inspector-title">Model</div></div><button id="model-inspector-close" type="button" aria-label="Close model details">×</button></div>

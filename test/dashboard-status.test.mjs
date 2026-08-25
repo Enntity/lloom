@@ -11,5 +11,7 @@ assert(source.includes('const TOPOLOGY_MIN_ZOOM = .18'));
 assert(source.includes('const TOPOLOGY_MAX_ZOOM = 1.5'));
 assert(source.includes('const beforeZoom = fitZoom * beforeManual'));
 assert(source.includes('camera.manual = nextZoom / fitZoom'));
+assert(!source.includes('class="topology-key"'));
+assert(!source.includes('aria-label="Topology legend"'));
 
 console.log('dashboard status tests passed');
