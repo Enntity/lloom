@@ -50,6 +50,13 @@ function normalizeAlias(aliasId, alias) {
   };
 }
 
+export function aliasTargetIds(alias) {
+  const normalized = typeof alias === 'string' ? { target: alias } : (alias ?? {});
+  return [normalized.target, ...(Array.isArray(normalized.fallbacks) ? normalized.fallbacks : [])].filter(
+    (target, index, targets) => typeof target === 'string' && target.length > 0 && targets.indexOf(target) === index
+  );
+}
+
 function rankMap(values = []) {
   return new Map(values.map((value, index) => [value, index]));
 }
@@ -70,34 +77,44 @@ export function createRegistry(config) {
     aliasMap.set(aliasId, normalizeAlias(aliasId, alias));
   }
 
-  function resolve(modelId = config.defaults?.chatModel) {
+  function resolveCandidates(modelId = config.defaults?.chatModel) {
     const requestedId = modelId || config.defaults?.chatModel;
     if (!requestedId) throw new UnknownModelError('(missing)');
 
     const alias = aliasMap.get(requestedId);
-    const targetId = alias?.target ?? requestedId;
-    const model = modelMap.get(targetId);
-    if (!model) throw new UnknownModelError(requestedId);
-    if (!runtimeEnabled(config, model)) throw new UnknownModelError(requestedId);
-    const target = modelTargets(model).find(
-      (candidate) => !candidate.runtime || config.runtimes?.[candidate.runtime]?.enabled !== false
-    );
-    const backend = config.backends?.[target?.backend];
-    if (!backend) throw new Error(`model ${model.id} references missing backend ${target?.backend ?? '(missing)'}`);
-    const resolvedModel = {
-      ...model,
-      backend: target.backend,
-      upstreamModel: target.upstreamModel ?? model.upstreamModel ?? model.id,
-      ...(target.runtime ? { runtime: target.runtime } : {})
-    };
-    return {
-      requestedId,
-      resolvedId: model.id,
-      alias: alias ? clone(alias) : null,
-      model: clone(resolvedModel),
-      backend: clone(backend),
-      runtime: target.runtime ? clone(config.runtimes?.[target.runtime] ?? null) : null
-    };
+    const targetIds = alias ? aliasTargetIds(alias) : [requestedId];
+    const candidates = [];
+    for (const [aliasTargetIndex, targetId] of targetIds.entries()) {
+      const model = modelMap.get(targetId);
+      if (!model || !runtimeEnabled(config, model)) continue;
+      const target = modelTargets(model).find(
+        (candidate) => !candidate.runtime || config.runtimes?.[candidate.runtime]?.enabled !== false
+      );
+      const backend = config.backends?.[target?.backend];
+      if (!backend) throw new Error(`model ${model.id} references missing backend ${target?.backend ?? '(missing)'}`);
+      const resolvedModel = {
+        ...model,
+        backend: target.backend,
+        upstreamModel: target.upstreamModel ?? model.upstreamModel ?? model.id,
+        ...(target.runtime ? { runtime: target.runtime } : {})
+      };
+      candidates.push({
+        requestedId,
+        resolvedId: model.id,
+        aliasTargetIndex,
+        aliasTargetCount: targetIds.length,
+        alias: alias ? clone(alias) : null,
+        model: clone(resolvedModel),
+        backend: clone(backend),
+        runtime: target.runtime ? clone(config.runtimes?.[target.runtime] ?? null) : null
+      });
+    }
+    if (!candidates.length) throw new UnknownModelError(requestedId);
+    return candidates;
+  }
+
+  function resolve(modelId = config.defaults?.chatModel) {
+    return resolveCandidates(modelId)[0];
   }
 
   function directModels({ kinds, advertisedOnly = true, requireRuntimeEnabled = true } = {}) {
@@ -116,21 +133,24 @@ export function createRegistry(config) {
     const entries = [];
     for (const alias of aliasMap.values()) {
       if (advertisedOnly && !advertised(alias)) continue;
-      const target = modelMap.get(alias.target);
+      const target = aliasTargetIds(alias)
+        .map((targetId) => modelMap.get(targetId))
+        .find(
+          (model) =>
+            model &&
+            (!advertisedOnly ||
+              publiclyAvailable(config, model, {
+                requireRuntimeEnabled
+              }))
+        );
       if (!target) continue;
-      if (
-        advertisedOnly &&
-        !publiclyAvailable(config, target, {
-          requireRuntimeEnabled
-        })
-      )
-        continue;
       if (kinds?.length && !kinds.includes(target.kind ?? 'chat')) continue;
       entries.push({
         ...clone(target),
         id: alias.id,
         alias: true,
         aliasTarget: alias.target,
+        aliasFallbacks: clone(alias.fallbacks ?? []),
         name: alias.name ?? target.name ?? alias.id,
         description: alias.description
       });
@@ -141,7 +161,10 @@ export function createRegistry(config) {
   function catalogModels({ includeAliases = true, kinds, advertisedOnly = true, requireRuntimeEnabled = true } = {}) {
     const models = directModels({ kinds, advertisedOnly, requireRuntimeEnabled });
     if (includeAliases) models.push(...aliasModels({ kinds, advertisedOnly, requireRuntimeEnabled }));
-    return sortForCatalog(models, config.clientCatalog?.modelOrder ?? []);
+    return sortForCatalog(
+      models.filter((model, index, all) => all.findIndex((candidate) => candidate.id === model.id) === index),
+      config.clientCatalog?.modelOrder ?? []
+    );
   }
 
   function clientModels({ kinds = ['chat'] } = {}) {
@@ -243,6 +266,7 @@ export function createRegistry(config) {
   return {
     config,
     resolve,
+    resolveCandidates,
     resolveSpeechModel,
     resolveTranscriptionModel,
     directModels,

@@ -4,8 +4,8 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm",
   "name": "2x DGX Spark DeepSeek V4 Flash DSpark (MiaAI validated)",
-  "version": 12,
-  "summary": "The pinned DeepSeek V4 Flash 0731 two-node DSpark appliance with MiaAI's stable defaults, upstream XGrammar/MTP termination repair, atomic rank recovery, no-progress self-healing, and local-first cloud failover.",
+  "version": 11,
+  "summary": "The pinned DeepSeek V4 Flash 0731 two-node DSpark appliance with MiaAI's stable defaults, upstream XGrammar/MTP termination repair, atomic rank recovery, and no-progress self-healing.",
   "license": { "id": "MIT", "name": "Recipe metadata and launcher" },
   "provenance": {
     "createdBy": "lloom",
@@ -50,14 +50,6 @@
       "upstreamModel": "deepseek-v4-flash-0731",
       "runtime": "deepseek-v4-flash-0731-cluster",
       "backendConfig": "deepseek-v4-flash-0731",
-      "aliases": [
-        {
-          "id": "deepseek-v4-flash-0731",
-          "fallbacks": ["deepseek/deepseek-v4-flash-0731"],
-          "advertise": false,
-          "description": "Local DSpark first, OpenRouter only when the local runtime is unavailable."
-        }
-      ],
       "setDefault": true,
       "input": ["text"],
       "output": ["text"],

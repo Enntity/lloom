@@ -635,6 +635,8 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     // so overlaps favor live traffic; click temporarily overrides via topologyRaisedModelId.
     const MODEL_CARD_STATE_Z = { cold: 0, failed: 0, unreachable: 0, queued: 1, warming: 1, evicting: 1, hot: 2, external: 2, "external-processing": 3, serving: 3 };
     const TOPOLOGY_COLD_MODEL_TTL_MS = 60 * 60 * 1000;
+    const TOPOLOGY_MIN_ZOOM = .18;
+    const TOPOLOGY_MAX_ZOOM = 1.5;
     const PROMPT_PULSE_MS = 800;
     function modelCardZ(model) {
       if (state.topologyRaisedModelId && model.id === state.topologyRaisedModelId) return 1000;
@@ -1407,7 +1409,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       state.topologyWorldScale += (targetWorldScale - state.topologyWorldScale) * worldEase;
       if (Math.abs(targetWorldScale - state.topologyWorldScale) < .002) state.topologyWorldScale = targetWorldScale;
       const fitZoom = 1 / state.topologyWorldScale;
-      const targetZoom = Math.max(.18, Math.min(1.6, fitZoom * state.topologyCamera.manual));
+      const targetZoom = Math.max(TOPOLOGY_MIN_ZOOM, Math.min(TOPOLOGY_MAX_ZOOM, fitZoom * state.topologyCamera.manual));
       state.topologyCamera.current += (targetZoom - state.topologyCamera.current) * .12;
       if (Math.abs(targetZoom - state.topologyCamera.current) < .002) state.topologyCamera.current = targetZoom;
       const zoom = state.topologyCamera.current;
@@ -1999,7 +2001,10 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const camera = state.topologyCamera;
       const view = state.topologyView;
       const beforeManual = camera.manual;
-      camera.manual = Math.max(.55, Math.min(1.6, beforeManual + delta));
+      const fitZoom = 1 / Math.max(1, state.topologyWorldScale);
+      const beforeZoom = fitZoom * beforeManual;
+      const nextZoom = Math.max(TOPOLOGY_MIN_ZOOM, Math.min(TOPOLOGY_MAX_ZOOM, beforeZoom + delta));
+      camera.manual = nextZoom / fitZoom;
       if (camera.manual === beforeManual) return;
       if (!view || !anchor || !view.zoom) {
         state.topologyZoomAnchor = null;

@@ -2375,6 +2375,12 @@ assert.equal(sparkConfig.runtimes['unsloth-qwen36-35b-a3b-nvfp4'].keepWarm, fals
 assert.equal(sparkConfig.runtimes['unsloth-qwen36-27b-nvfp4'].keepWarm, false);
 const dsparkRecipe = await loadRecipeById('linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm');
 const dsparkBase = structuredClone(config);
+dsparkBase.backends['openrouter-deepseek-v4-flash'] = { baseUrl: 'https://openrouter.ai/api/v1' };
+dsparkBase.models.push({
+  id: 'deepseek/deepseek-v4-flash-0731',
+  kind: 'chat',
+  backend: 'openrouter-deepseek-v4-flash'
+});
 dsparkBase.cluster = {
   nodeId: 'ennspark01',
   leaderNode: 'ennspark01',
@@ -2396,8 +2402,14 @@ assert.deepEqual(
   dsparkRefreshed.runtimes['deepseek-v4-flash-0731-cluster'].placement.members.map((member) => member.node),
   ['ennspark02', 'ennspark01']
 );
-assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-worker'].recipe.version, 11);
-assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-head'].recipe.version, 11);
+assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-worker'].recipe.version, 12);
+assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-head'].recipe.version, 12);
+assert.deepEqual(dsparkRefreshed.aliases['deepseek-v4-flash-0731'], {
+  target: 'deepseek-v4-flash-0731',
+  fallbacks: ['deepseek/deepseek-v4-flash-0731'],
+  advertise: false,
+  description: 'Local DSpark first, OpenRouter only when the local runtime is unavailable.'
+});
 assert.deepEqual(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-cluster'].watchdog, {
   enabled: true,
   failureThreshold: 1,

@@ -259,6 +259,33 @@
             "minLength": 1,
             "description": "Optional stable backend config ID to create or reuse in the local gateway config."
           },
+          "aliases": {
+            "type": "array",
+            "description": "Optional stable gateway aliases. Object entries may add ordered fallback model IDs that are already installed.",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "object",
+                  "required": ["id"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": { "type": "string", "minLength": 1 },
+                    "fallbacks": {
+                      "type": "array",
+                      "items": { "type": "string", "minLength": 1 },
+                      "uniqueItems": true
+                    },
+                    "advertise": { "type": "boolean" },
+                    "description": { "type": "string" }
+                  }
+                }
+              ]
+            }
+          },
           "input": {
             "type": "array",
             "items": {

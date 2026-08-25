@@ -92,6 +92,22 @@ LLooM currently fronts these local contracts:
 
 `/v1/chat/completions` is an OpenAI-compatible chat bridge. LLooM rewrites the request model to the selected backend `upstreamModel`, but non-streaming JSON responses and streaming chat chunks expose the originally requested gateway model ID back to the client. That keeps local aliases and community recipe IDs stable for tools while still letting recipes target backend-specific model names. Upstream usage fields are preserved for responses and parsed from streaming usage chunks for metrics.
 
+Aliases may define an ordered availability chain with `fallbacks`. The primary `target` is always preferred, including when it is stopped and LLooM can admit/start it normally. LLooM skips a primary already known to be starting, warming, draining, failed, or unreachable, and otherwise advances only on transport/runtime failures or upstream 408, 425, 429, and 5xx availability responses. It never retries malformed requests, authentication failures, other ordinary 4xx responses, or a stream after response headers or content have reached the client. The same policy applies to Chat Completions, Responses, and Anthropic Messages bridges.
+
+```json
+{
+  "aliases": {
+    "deepseek-v4-flash-0731": {
+      "target": "deepseek-v4-flash-0731",
+      "fallbacks": ["deepseek/deepseek-v4-flash-0731"],
+      "advertise": false
+    }
+  }
+}
+```
+
+An alias may intentionally have the same ID as its primary model. This preserves the public model name while adding a failover policy. All targets must be installed models of the same kind; replica selection within each target still uses the normal cluster routing policy.
+
 `/v1/images/edits` accepts the OpenAI-compatible multipart contract: one or more `image[]` file parts (or legacy `image`), a required `prompt`, and optional `mask`, `model`, `n`, `size`, and output fields. LLooM resolves and admits the selected image-editing runtime, rewrites only the multipart `model` field, and proxies image bytes without JSON or text transcoding. Models must advertise image input or the `image-editing` capability.
 
 `/v1/responses` is implemented as a bridge over chat-completions backends. It normalizes `input`, `instructions`, `max_output_tokens`, `output_text`, `tools`, `tool_choice`, function-call outputs, reasoning hints, and usage fields, and translates chat SSE into Responses-style streaming events with ordered `sequence_number` fields, reasoning text deltas, function-call argument deltas, and `response.incomplete` events for output-cap truncation.

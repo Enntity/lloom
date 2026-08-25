@@ -436,6 +436,57 @@ function clientClosedStatus(error) {
   return isClientClosedError(error) ? 499 : 0;
 }
 
+const MODEL_FAILOVER_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
+const MODEL_FAILOVER_RUNTIME_STATES = new Set([
+  'starting',
+  'warming',
+  'stopping',
+  'draining',
+  'queued',
+  'failed',
+  'unreachable',
+  'unknown'
+]);
+
+function errorStatusCode(error) {
+  const status = Number(error?.statusCode);
+  return Number.isInteger(status) && status >= 400 && status <= 599 ? status : 0;
+}
+
+export function shouldFailoverModelRequest(error, res = null) {
+  if (res?.headersSent || res?.writableEnded || res?.destroyed) return false;
+  if (isClientClosedError(error) || error instanceof PromptTooLargeError || error instanceof StructuredOutputError) {
+    return false;
+  }
+  const status = errorStatusCode(error);
+  if (status) return MODEL_FAILOVER_STATUS_CODES.has(status);
+  if (error instanceof RuntimeAdmissionError) return true;
+  const name = String(error?.name ?? '');
+  const code = String(error?.code ?? '');
+  const message = String(error?.message ?? error ?? '');
+  return (
+    ['AbortError', 'TimeoutError', 'TypeError'].includes(name) ||
+    ['ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'ENETUNREACH', 'ETIMEDOUT'].includes(code) ||
+    /fetch failed|socket|connection|timed out|runtime .* (failed|exited|healthy|start)|did not become healthy/i.test(
+      message
+    )
+  );
+}
+
+async function upstreamStatusError(upstream) {
+  const text = await upstream.text();
+  let message = text;
+  try {
+    message = JSON.parse(text)?.error?.message ?? text;
+  } catch {
+    // Keep the raw upstream response as the diagnostic message.
+  }
+  return Object.assign(new Error(message || `upstream status ${upstream.status}`), {
+    code: 'upstream_error',
+    statusCode: upstream.status
+  });
+}
+
 function createClientCloseTracker(req, res) {
   const controller = new AbortController();
   let closed = false;
@@ -881,6 +932,10 @@ export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } =
         kind: raw.kind,
         backend: raw.backend,
         runtime: raw.runtime,
+        resolvedModel: raw.resolvedModel ?? raw.model,
+        failoverAttempt: raw.failoverAttempt ?? null,
+        failoverTargets: raw.failoverTargets ?? null,
+        failedOver: raw.failedOver === true,
         target: raw.target ?? null,
         node: raw.node ?? null,
         caller: raw.caller ?? null,
@@ -911,6 +966,10 @@ export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } =
         kind: raw.kind,
         backend: raw.backend,
         runtime: raw.runtime,
+        resolvedModel: raw.resolvedModel ?? raw.model,
+        failoverAttempt: raw.failoverAttempt ?? live?.failoverAttempt ?? null,
+        failoverTargets: raw.failoverTargets ?? live?.failoverTargets ?? null,
+        failedOver: raw.failedOver === true || live?.failedOver === true,
         target: raw.target ?? live?.target ?? null,
         node: raw.node ?? live?.node ?? null,
         caller: raw.caller ?? live?.caller ?? null,
@@ -1688,21 +1747,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     return retryRuntimeActionAfterConfigReload(action, () => reloadInFlight);
   }
 
-  async function resolveRequestModel(modelId) {
-    const resolved = registry.resolve(modelId);
-    if (!Array.isArray(resolved.model.targets) || resolved.model.targets.length <= 1) {
-      const target = clusterCoordinator.selectTarget(resolved, { runtimes: {} });
-      return {
-        ...resolved,
-        model: {
-          ...resolved.model,
-          ...(target?.upstreamModel ? { upstreamModel: target.upstreamModel } : {}),
-          selectedTarget: target?.id,
-          selectedNode: target?.node
-        },
-        target
-      };
-    }
+  async function routingStatus() {
     const cacheMs = Math.max(0, Number(config.cluster?.routingStatusCacheMs ?? 250));
     let runtimeStatus = routingStatusCache.value;
     if (!runtimeStatus || Date.now() - routingStatusCache.at >= cacheMs) {
@@ -1721,6 +1766,24 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       }
       runtimeStatus = await routingStatusCache.pending;
     }
+    return runtimeStatus;
+  }
+
+  async function resolveRequestCandidate(resolved) {
+    if (!Array.isArray(resolved.model.targets) || resolved.model.targets.length <= 1) {
+      const target = clusterCoordinator.selectTarget(resolved, { runtimes: {} });
+      return {
+        ...resolved,
+        model: {
+          ...resolved.model,
+          ...(target?.upstreamModel ? { upstreamModel: target.upstreamModel } : {}),
+          selectedTarget: target?.id,
+          selectedNode: target?.node
+        },
+        target
+      };
+    }
+    const runtimeStatus = await routingStatus();
     const nodeIds = [...new Set(resolved.model.targets.map((target) => target.node).filter(Boolean))];
     const nodeEntries = await Promise.all(
       nodeIds.map(async (nodeId) => [nodeId, await clusterCoordinator.nodeStatus(nodeId)])
@@ -1741,6 +1804,54 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       runtime: target.runtime ? (config.runtimes[target.runtime] ?? null) : null,
       target
     };
+  }
+
+  async function resolveRequestModels(modelId) {
+    const candidates = await Promise.all(registry.resolveCandidates(modelId).map(resolveRequestCandidate));
+    if (candidates.length <= 1) {
+      return candidates.map((candidate) => ({
+        ...candidate,
+        ...(candidate.aliasTargetCount > 1
+          ? {
+              failover: {
+                attempt: candidate.aliasTargetIndex + 1,
+                targets: candidate.aliasTargetCount,
+                primaryModel: candidate.alias?.target,
+                used: candidate.aliasTargetIndex > 0
+              }
+            }
+          : {})
+      }));
+    }
+    let status;
+    try {
+      status = await routingStatus();
+    } catch (error) {
+      logger.warn?.(`could not inspect runtimes before model failover routing: ${error?.message ?? error}`);
+      status = { runtimes: {} };
+    }
+    const available = candidates.filter((candidate, index) => {
+      if (index === candidates.length - 1 || !candidate.model.runtime) return true;
+      const runtimeState = status?.runtimes?.[candidate.model.runtime]?.status;
+      if (!MODEL_FAILOVER_RUNTIME_STATES.has(runtimeState)) return true;
+      logger.warn?.(
+        `skipping model target ${candidate.resolvedId} for ${candidate.requestedId}: runtime ${candidate.model.runtime} is ${runtimeState}`
+      );
+      return false;
+    });
+    return available.map((candidate) => ({
+      ...candidate,
+      failover: {
+        attempt: candidate.aliasTargetIndex + 1,
+        targets: candidate.aliasTargetCount ?? available.length,
+        primaryModel: candidate.alias?.target ?? candidates[0].resolvedId,
+        used: candidate.aliasTargetIndex > 0 || candidate.resolvedId !== candidates[0].resolvedId
+      }
+    }));
+  }
+
+  async function resolveRequestModel(modelId) {
+    return (await resolveRequestModels(modelId))[0];
   }
   function appendRequestLog(entry) {
     if (config.logging?.requestLog !== true && process.env.LLOOM_REQUEST_LOG !== '1') return;
@@ -1771,6 +1882,10 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       appendRequestLog({
         route: entry.route,
         model: entry.requestedModel ?? entry.model,
+        resolvedModel: entry.resolvedModel ?? entry.model,
+        failoverAttempt: entry.failoverAttempt ?? undefined,
+        failoverTargets: entry.failoverTargets ?? undefined,
+        failedOver: entry.failedOver === true || undefined,
         status: entry.status,
         durationMs: entry.durationMs,
         firstContentMs: entry.firstContentMs,
@@ -1833,7 +1948,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     }
   }
 
-  async function recordModelRequest({ route, resolved, stream, req, res }, fn) {
+  async function recordModelRequest({ route, resolved, stream, req, res }, fn, { deferUnsentErrors = false } = {}) {
     const started = Date.now();
     const requestBytes = Number(req.headers['content-length']) || 0;
     const connectionId = metrics.begin({
@@ -1844,6 +1959,10 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       kind: resolved.model.kind ?? 'chat',
       backend: resolved.model.backend,
       runtime: resolved.model.runtime,
+      resolvedModel: resolved.resolvedId,
+      failoverAttempt: resolved.failover?.attempt,
+      failoverTargets: resolved.failover?.targets,
+      failedOver: resolved.failover?.used === true,
       target: resolved.model.selectedTarget,
       node: resolved.model.selectedNode,
       caller: requestCallerLabel(req),
@@ -1912,6 +2031,10 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         kind: resolved.model.kind ?? 'chat',
         backend: resolved.model.backend,
         runtime: resolved.model.runtime,
+        resolvedModel: resolved.resolvedId,
+        failoverAttempt: resolved.failover?.attempt,
+        failoverTargets: resolved.failover?.targets,
+        failedOver: resolved.failover?.used === true,
         target: resolved.model.selectedTarget,
         node: resolved.model.selectedNode,
         caller: requestCallerLabel(req),
@@ -1933,6 +2056,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       const status = client.closed
         ? 499
         : clientClosedStatus(error) ||
+          errorStatusCode(error) ||
           (error instanceof PromptTooLargeError || error instanceof StructuredOutputError ? error.statusCode : 0) ||
           502;
       const outcome = {
@@ -1944,6 +2068,10 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         kind: resolved.model.kind ?? 'chat',
         backend: resolved.model.backend,
         runtime: resolved.model.runtime,
+        resolvedModel: resolved.resolvedId,
+        failoverAttempt: resolved.failover?.attempt,
+        failoverTargets: resolved.failover?.targets,
+        failedOver: resolved.failover?.used === true,
         target: resolved.model.selectedTarget,
         node: resolved.model.selectedNode,
         caller: requestCallerLabel(req),
@@ -1969,16 +2097,25 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
           usage: null
         };
       }
+      if (
+        deferUnsentErrors &&
+        !res.headersSent &&
+        !res.writableEnded &&
+        !res.destroyed &&
+        shouldFailoverModelRequest(error, res)
+      ) {
+        throw error;
+      }
       // Upstream death mid-stream (Metal abort, connection reset): finish SSE/JSON without
       // rethrowing into the outer handler (which would try writeHead again and crash Node).
       if (res.headersSent || stream) {
         endResponseWithError(res, error, {
           stream: true,
           config,
-          status: error instanceof PromptTooLargeError || error instanceof StructuredOutputError ? 400 : 502
+          status
         });
         return {
-          status: error instanceof PromptTooLargeError || error instanceof StructuredOutputError ? 400 : 502,
+          status,
           stream: true,
           responseBytes: 0,
           usage: null,
@@ -1993,46 +2130,49 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     }
   }
 
-  async function handleOpenAIChat(req, res) {
-    const body = await readJson(req);
-    const resolved = await resolveRequestModel(body.model ?? config.defaults?.chatModel);
-    if ((resolved.model.kind ?? 'chat') !== 'chat') {
+  async function recordModelRequestWithFailover({ route, modelId, stream, req, res, kind = 'chat' }, fn) {
+    const candidates = await resolveRequestModels(modelId);
+    if ((candidates[0].model.kind ?? 'chat') !== kind) {
       sendJson(
         res,
         400,
-        errorBody(`model ${resolved.requestedId} is not a chat model`, {
+        errorBody(`model ${candidates[0].requestedId} is not a ${kind} model`, {
           code: 'wrong_model_kind',
-          model: resolved.requestedId
+          model: candidates[0].requestedId
         })
       );
       return;
     }
-    try {
-      assertPromptWithinBudget(resolved, body, { logger });
-    } catch (error) {
-      if (error instanceof PromptTooLargeError) {
-        sendJson(
-          res,
-          error.statusCode,
-          errorBody(error.message, {
-            type: error.type,
-            code: error.code,
-            model: error.model
-          })
+    for (const [index, resolved] of candidates.entries()) {
+      const hasNext = index < candidates.length - 1;
+      try {
+        return await recordModelRequest(
+          { route, resolved, stream, req, res },
+          (context) => fn(resolved, { ...context, hasNext }),
+          { deferUnsentErrors: hasNext }
         );
-        return;
+      } catch (error) {
+        if (!hasNext || !shouldFailoverModelRequest(error, res)) throw error;
+        logger.warn?.(
+          `model failover ${resolved.requestedId}: ${resolved.resolvedId} -> ${candidates[index + 1].resolvedId} (${error?.message ?? error})`
+        );
       }
-      throw error;
     }
-    await recordModelRequest(
+    throw new UnknownModelError(modelId);
+  }
+
+  async function handleOpenAIChat(req, res) {
+    const body = await readJson(req);
+    await recordModelRequestWithFailover(
       {
         route: '/v1/chat/completions',
-        resolved,
+        modelId: body.model ?? config.defaults?.chatModel,
         stream: body.stream === true,
         req,
         res
       },
-      async ({ signal, timing, progress, watchdog }) => {
+      async (resolved, { signal, timing, progress, watchdog, hasNext }) => {
+        assertPromptWithinBudget(resolved, body, { logger });
         await ensureRuntime(resolved.model.runtime);
         watchdog.arm();
         // Normalize history so reasoning_content is OpenAI-shaped before MTPLX render.
@@ -2049,19 +2189,9 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
             model: resolved.model.upstreamModel
           }
         });
-        if (!upstream.ok && body.stream === true) {
+        if (!upstream.ok && (body.stream === true || (hasNext && MODEL_FAILOVER_STATUS_CODES.has(upstream.status)))) {
           // Avoid opening an SSE response for an already-failed upstream.
-          const text = await upstream.text();
-          let message = text;
-          try {
-            message = JSON.parse(text)?.error?.message ?? text;
-          } catch {
-            // keep raw
-          }
-          throw Object.assign(new Error(message || `upstream status ${upstream.status}`), {
-            code: 'upstream_error',
-            statusCode: upstream.status
-          });
+          throw await upstreamStatusError(upstream);
         }
         return body.stream === true
           ? proxyOpenAIChatStream(res, upstream, resolved.requestedId, { signal, timing, progress, corsConfig: config })
@@ -2679,27 +2809,15 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
 
   async function handleOpenAIResponses(req, res) {
     const body = await readJson(req);
-    const resolved = await resolveRequestModel(body.model ?? config.defaults?.chatModel);
-    if ((resolved.model.kind ?? 'chat') !== 'chat') {
-      sendJson(
-        res,
-        400,
-        errorBody(`model ${resolved.requestedId} is not a chat model`, {
-          code: 'wrong_model_kind',
-          model: resolved.requestedId
-        })
-      );
-      return;
-    }
-    await recordModelRequest(
+    await recordModelRequestWithFailover(
       {
         route: '/v1/responses',
-        resolved,
+        modelId: body.model ?? config.defaults?.chatModel,
         stream: body.stream === true,
         req,
         res
       },
-      async ({ signal, timing, watchdog }) => {
+      async (resolved, { signal, timing, watchdog, hasNext }) => {
         await ensureRuntime(resolved.model.runtime);
         watchdog.arm();
         const normalizedRequest = prepareStructuredOutputForBackend(responsesToOpenAIChat(body, resolved), resolved);
@@ -2709,6 +2827,9 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
           signal,
           body: normalizedRequest.body
         });
+        if (!upstream.ok && hasNext && MODEL_FAILOVER_STATUS_CODES.has(upstream.status)) {
+          throw await upstreamStatusError(upstream);
+        }
         if (body.stream === true) {
           if (!upstream.ok) return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
           return streamResponsesFromOpenAI(res, upstream, resolved.requestedId, {
@@ -2748,16 +2869,15 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
 
   async function handleAnthropicMessages(req, res) {
     const body = await readJson(req);
-    const resolved = await resolveRequestModel(body.model ?? config.defaults?.chatModel);
-    await recordModelRequest(
+    await recordModelRequestWithFailover(
       {
         route: '/v1/messages',
-        resolved,
+        modelId: body.model ?? config.defaults?.chatModel,
         stream: body.stream === true,
         req,
         res
       },
-      async ({ signal, timing, watchdog }) => {
+      async (resolved, { signal, timing, watchdog, hasNext }) => {
         await ensureRuntime(resolved.model.runtime);
         watchdog.arm();
         const upstream = await fetchUpstream({
@@ -2766,6 +2886,9 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
           signal,
           body: anthropicMessagesToOpenAI(body, resolved)
         });
+        if (!upstream.ok && hasNext && MODEL_FAILOVER_STATUS_CODES.has(upstream.status)) {
+          throw await upstreamStatusError(upstream);
+        }
         if (body.stream === true) {
           if (!upstream.ok) return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
           return streamAnthropicFromOpenAI(res, upstream, resolved.requestedId, {

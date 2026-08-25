@@ -392,7 +392,7 @@ Current platform examples:
 
 These are recipe examples, not permanent global defaults. LLooM chooses from compatible local/community recipes and benchmark evidence for the detected machine.
 
-Durable route aliases such as `qwen36-27b-fastest` are allowed for scripts and humans, but `/v1/models` and generated client profiles advertise exact model IDs only.
+Durable route aliases such as `qwen36-27b-fastest` are allowed for scripts and humans, but `/v1/models` and generated client profiles advertise exact model IDs only. An alias can also declare ordered `fallbacks` for availability routing—for example, a local runtime first and an OpenRouter model second—without changing the model ID seen by the client. See [Architecture](docs/architecture.md) for the retry boundary.
 
 ## Architecture
 

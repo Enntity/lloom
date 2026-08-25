@@ -76,10 +76,31 @@ function validateConfig(config, sourcePath, env) {
   errors.push(...validateClusterConfig(config, env));
 
   for (const [aliasId, alias] of Object.entries(config.aliases ?? {})) {
-    const target = typeof alias === 'string' ? alias : alias.target;
+    const target = typeof alias === 'string' ? alias : alias?.target;
+    const fallbacks = typeof alias === 'string' ? [] : alias?.fallbacks;
     if (!target) errors.push(`alias ${aliasId} is missing target`);
-    if (target && !modelIds.has(target)) {
-      errors.push(`alias ${aliasId} targets unknown model ${target}`);
+    if (fallbacks != null && !Array.isArray(fallbacks)) {
+      errors.push(`alias ${aliasId} fallbacks must be an array`);
+    }
+    const targets = [target, ...(Array.isArray(fallbacks) ? fallbacks : [])].filter(Boolean);
+    if (new Set(targets).size !== targets.length) {
+      errors.push(`alias ${aliasId} has duplicate targets`);
+    }
+    for (const candidate of targets) {
+      if (typeof candidate !== 'string' || !candidate.trim()) {
+        errors.push(`alias ${aliasId} has an invalid target`);
+      } else if (!modelIds.has(candidate)) {
+        errors.push(`alias ${aliasId} targets unknown model ${candidate}`);
+      }
+    }
+    const kinds = new Set(
+      targets
+        .map((candidate) => (config.models ?? []).find((model) => model.id === candidate))
+        .filter(Boolean)
+        .map((model) => model.kind ?? 'chat')
+    );
+    if (kinds.size > 1) {
+      errors.push(`alias ${aliasId} targets models with different kinds: ${[...kinds].join(', ')}`);
     }
   }
 

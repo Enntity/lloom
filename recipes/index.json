@@ -239,7 +239,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm",
       "path": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json",
-      "currentVersion": 11,
+      "currentVersion": 12,
       "versions": [
         {
           "version": 4,
@@ -292,9 +292,16 @@
         },
         {
           "version": 11,
+          "path": "archive/linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm/v11.json",
+          "status": "archived",
+          "archivedAt": "2026-08-24T23:55:00.000Z",
+          "notes": "Backports merged vLLM PR 52805 for MTP plus XGrammar termination safety and adds atomic distributed recovery with a three-minute no-progress watchdog."
+        },
+        {
+          "version": 12,
           "path": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json",
           "status": "current",
-          "notes": "Backports merged vLLM PR 52805 for MTP plus XGrammar termination safety and adds atomic distributed recovery with a three-minute no-progress watchdog."
+          "notes": "Adds a same-ID local-first alias that falls through to the installed OpenRouter DeepSeek V4 Flash model during runtime upgrades and availability failures."
         }
       ],
       "name": "2x DGX Spark DeepSeek V4 Flash DSpark (MiaAI validated)",

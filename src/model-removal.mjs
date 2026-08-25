@@ -6,8 +6,9 @@ function clone(value) {
   return structuredClone(value);
 }
 
-function aliasTarget(alias) {
-  return typeof alias === 'string' ? alias : alias?.target;
+function aliasTargets(alias) {
+  if (typeof alias === 'string') return [alias];
+  return [alias?.target, ...(Array.isArray(alias?.fallbacks) ? alias.fallbacks : [])].filter(Boolean);
 }
 
 function runtimeLoaded(status) {
@@ -32,7 +33,7 @@ function aliasesRemovedWithModel(aliases, modelId) {
   while (changed) {
     changed = false;
     for (const [aliasId, alias] of Object.entries(aliases ?? {})) {
-      if (!removed.has(aliasId) && removed.has(aliasTarget(alias))) {
+      if (!removed.has(aliasId) && aliasTargets(alias).some((target) => removed.has(target))) {
         removed.add(aliasId);
         changed = true;
       }

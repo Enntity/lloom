@@ -836,12 +836,22 @@ function finishRecipeModelConfig(config, recipeModel, materializedModel, modelId
   if (!config.clientCatalog.modelOrder.includes(modelId)) {
     config.clientCatalog.modelOrder.push(modelId);
   }
-  for (const aliasId of asArray(recipeModel.aliases)) {
+  for (const aliasEntry of asArray(recipeModel.aliases)) {
+    const aliasId = typeof aliasEntry === 'string' ? aliasEntry : aliasEntry?.id;
     if (!aliasId || config.aliases[aliasId]) continue;
+    const requestedFallbacks = typeof aliasEntry === 'string' ? [] : asArray(aliasEntry.fallbacks);
+    const installedModelIds = new Set(config.models.map((model) => model.id));
     config.aliases[aliasId] = {
       target: modelId,
-      advertise: true,
-      description: recipeModel.aliasDescription ?? recipeModel.name ?? modelId
+      ...(requestedFallbacks.length
+        ? { fallbacks: requestedFallbacks.filter((fallback) => installedModelIds.has(fallback)) }
+        : {}),
+      advertise: typeof aliasEntry === 'string' ? true : aliasEntry.advertise !== false,
+      description:
+        (typeof aliasEntry === 'string' ? null : aliasEntry.description) ??
+        recipeModel.aliasDescription ??
+        recipeModel.name ??
+        modelId
     };
   }
   if (recipeModel.setDefault === true) {
