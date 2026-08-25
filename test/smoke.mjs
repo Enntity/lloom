@@ -3810,29 +3810,41 @@ if (lifecyclePort) {
   const installedLifecycleConfig = `${JSON.stringify(lifecycleConfig, null, 2)}\n`;
   await fs.writeFile(lifecycleConfigPath, installedLifecycleConfig, 'utf8');
 
-  const upCliJson = JSON.parse((await runCommand(
-    process.execPath,
-    [path.join(process.cwd(), 'bin', 'lloom.mjs'), 'up', '--home', lifecycleHome, '--go', '--json'],
-    { env: envWithoutLloomConfig }
-  )).stdout);
+  const upCliJson = JSON.parse(
+    (
+      await runCommand(
+        process.execPath,
+        [path.join(process.cwd(), 'bin', 'lloom.mjs'), 'up', '--home', lifecycleHome, '--go', '--json'],
+        { env: envWithoutLloomConfig }
+      )
+    ).stdout
+  );
   assert.equal(upCliJson.status, 'started');
   assert.equal(upCliJson.complete, true);
   assert.equal(upCliJson.config, lifecycleConfigPath);
   assert.equal(upCliJson.objective, undefined);
   assert.equal(await fs.readFile(lifecycleConfigPath, 'utf8'), installedLifecycleConfig);
 
-  const secondUpCliJson = JSON.parse((await runCommand(
-    process.execPath,
-    [path.join(process.cwd(), 'bin', 'lloom.mjs'), 'up', '--home', lifecycleHome, '--json'],
-    { env: envWithoutLloomConfig }
-  )).stdout);
+  const secondUpCliJson = JSON.parse(
+    (
+      await runCommand(
+        process.execPath,
+        [path.join(process.cwd(), 'bin', 'lloom.mjs'), 'up', '--home', lifecycleHome, '--json'],
+        { env: envWithoutLloomConfig }
+      )
+    ).stdout
+  );
   assert.equal(secondUpCliJson.status, 'already-running');
 
-  const downCliJson = JSON.parse((await runCommand(
-    process.execPath,
-    [path.join(process.cwd(), 'bin', 'lloom.mjs'), 'down', '--home', lifecycleHome, '--json'],
-    { env: envWithoutLloomConfig }
-  )).stdout);
+  const downCliJson = JSON.parse(
+    (
+      await runCommand(
+        process.execPath,
+        [path.join(process.cwd(), 'bin', 'lloom.mjs'), 'down', '--home', lifecycleHome, '--json'],
+        { env: envWithoutLloomConfig }
+      )
+    ).stdout
+  );
   assert.equal(downCliJson.ok, true);
   assert.equal(downCliJson.gateway.status, 'stopped');
 }

@@ -11,7 +11,7 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "bench-miaai-ds4f.py",
-    "source": "Reproducible local measurement on ennspark01 plus ennspark02"
+    "source": "Reproducible local measurement on a two-node DGX Spark cluster"
   },
   "methodology": {
     "harness": "MiaAI-compatible OpenAI streaming benchmark",
@@ -101,6 +101,6 @@
     },
     "notes": "The pre-update C1 short median includes a cold-shape outlier; v9 removes that tail after the 35/35 shape warmup. Cold 32K x C4 remains scheduler-serialized by design and is not presented as improved."
   },
-  "x-coexistence": { "qwenEmbeddingNode": "ennspark01", "fluxNode": "ennspark02", "jinxPausedDuringMeasurement": true, "shapeWarmup": "35/35", "availableKvCacheTokens": 348443, "maxConcurrencyAtFull262k": 1.33 },
+  "x-coexistence": { "embeddingNode": "node-a", "imageGenerationNode": "node-b", "entityWorkloadPausedDuringMeasurement": true, "shapeWarmup": "35/35", "availableKvCacheTokens": 348443, "maxConcurrencyAtFull262k": 1.33 },
   "x-fileName": "dgx-spark-2x-deepseek-v4-flash-lloom-20260824.json"
 }
