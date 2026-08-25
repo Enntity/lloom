@@ -1819,7 +1819,7 @@ assert(helpCli.includes('lloom integrate'));
 assert(!helpCli.includes('recipe-submit <pack-file-or-url>'));
 const helpFlagCli = (await runCommand(process.execPath, [path.join(process.cwd(), 'bin', 'lloom.mjs'), '--help']))
   .stdout;
-assert(helpFlagCli.includes('Preview the best setup for this machine'));
+assert(helpFlagCli.includes('Start installed LLooM; preview setup on first run'));
 const advancedHelpCli = (
   await runCommand(process.execPath, [path.join(process.cwd(), 'bin', 'lloom.mjs'), 'help', 'advanced'])
 ).stdout;
@@ -3799,6 +3799,44 @@ const installedCliHome = path.join(tempDir, 'installed-cli-home');
 const installedCliConfigPath = path.join(installedCliHome, '.lloom', 'config.json');
 await fs.mkdir(path.dirname(installedCliConfigPath), { recursive: true });
 await fs.writeFile(installedCliConfigPath, `${JSON.stringify(setupStatusIntegrationConfig, null, 2)}\n`, 'utf8');
+
+const lifecyclePort = await allocatePort();
+if (lifecyclePort) {
+  const lifecycleHome = path.join(tempDir, 'lifecycle-cli-home');
+  const lifecycleConfigPath = path.join(lifecycleHome, '.lloom', 'config.json');
+  const lifecycleConfig = communityOnlyConfig(config);
+  lifecycleConfig.server = { ...lifecycleConfig.server, host: '127.0.0.1', port: lifecyclePort };
+  await fs.mkdir(path.dirname(lifecycleConfigPath), { recursive: true });
+  const installedLifecycleConfig = `${JSON.stringify(lifecycleConfig, null, 2)}\n`;
+  await fs.writeFile(lifecycleConfigPath, installedLifecycleConfig, 'utf8');
+
+  const upCliJson = JSON.parse((await runCommand(
+    process.execPath,
+    [path.join(process.cwd(), 'bin', 'lloom.mjs'), 'up', '--home', lifecycleHome, '--go', '--json'],
+    { env: envWithoutLloomConfig }
+  )).stdout);
+  assert.equal(upCliJson.status, 'started');
+  assert.equal(upCliJson.complete, true);
+  assert.equal(upCliJson.config, lifecycleConfigPath);
+  assert.equal(upCliJson.objective, undefined);
+  assert.equal(await fs.readFile(lifecycleConfigPath, 'utf8'), installedLifecycleConfig);
+
+  const secondUpCliJson = JSON.parse((await runCommand(
+    process.execPath,
+    [path.join(process.cwd(), 'bin', 'lloom.mjs'), 'up', '--home', lifecycleHome, '--json'],
+    { env: envWithoutLloomConfig }
+  )).stdout);
+  assert.equal(secondUpCliJson.status, 'already-running');
+
+  const downCliJson = JSON.parse((await runCommand(
+    process.execPath,
+    [path.join(process.cwd(), 'bin', 'lloom.mjs'), 'down', '--home', lifecycleHome, '--json'],
+    { env: envWithoutLloomConfig }
+  )).stdout);
+  assert.equal(downCliJson.ok, true);
+  assert.equal(downCliJson.gateway.status, 'stopped');
+}
+
 const installedDoctorCli = await runCommand(
   process.execPath,
   [

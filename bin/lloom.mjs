@@ -75,7 +75,8 @@ const __filename = fileURLToPath(import.meta.url);
 
 /** Command tiers used for help + installed-config policy. Aliases resolve before dispatch. */
 const COMMAND_REGISTRY = [
-  { name: 'up', aliases: ['onboard'], tier: 'primary', needsInstalledConfig: false },
+  { name: 'up', aliases: [], tier: 'primary', needsInstalledConfig: false },
+  { name: 'onboard', aliases: [], tier: 'advanced', needsInstalledConfig: false },
   { name: 'down', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'doctor', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'serve', aliases: [], tier: 'primary', needsInstalledConfig: true },
@@ -141,8 +142,8 @@ function usage() {
   return `LLooM — local-first LLM gateway
 
 Primary commands:
-  lloom / lloom up                 Preview the best setup for this machine
-  lloom up --go                    Install, integrate clients, and start the model
+  lloom / lloom up                 Start installed LLooM; preview setup on first run
+  lloom up --go                    First run: install, integrate, and start the model
   lloom down                       Stop the gateway and all managed model backends
   lloom doctor                     Readiness report (blockers, warnings, next actions)
   lloom serve                      Run the gateway (reads ~/.lloom/config.json)
@@ -242,6 +243,34 @@ function wantsGo(args) {
   return hasFlag(args, '--go');
 }
 
+function wantsOnboardingPlan(args) {
+  return [
+    '--recipe',
+    '--workload',
+    '--capability',
+    '--tag',
+    '--host',
+    '--signing-keys-path',
+    '--no-trust-host-keys',
+    '--no-auto-host',
+    '--config-out',
+    '--model-root',
+    '--port',
+    '--backend-port-range',
+    '--client',
+    '--backend-catalog',
+    '--recipes-root',
+    '--benchmarks-root',
+    '--generated-root',
+    '--state',
+    '--no-runtimes',
+    '--additive',
+    '--apply',
+    '--yes',
+    '--start'
+  ].some((flag) => hasFlag(args, flag));
+}
+
 function shellArg(value) {
   return `'${String(value).replace(/'/g, "'\\''")}'`;
 }
@@ -274,7 +303,8 @@ const INSTALLED_CONFIG_COMMANDS = new Set([
   'serve',
   'setup',
   'setup-status',
-  'status'
+  'status',
+  'up'
 ]);
 
 const OPERATIONAL_CONFIG_COMMANDS = new Set([
@@ -1373,6 +1403,33 @@ async function main() {
       const failed = report.results.some((step) => step.status === 'failed' || step.status === 'manual-required');
       console.log(wantsJson(args) ? JSON.stringify(report, null, 2) : formatBackendInstallSummary(report));
       if (failed) process.exitCode = 1;
+    },
+    up: async (context) => {
+      const { args, configPath } = context;
+      if (!configPath || wantsOnboardingPlan(args)) return handlers.onboard(context);
+      const gateway = await startGatewayBackground(configPath);
+      const report = {
+        ok: ['started', 'already-running', 'starting'].includes(gateway.status),
+        complete: gateway.health?.ok === true,
+        status: gateway.status,
+        config: configPath,
+        gateway
+      };
+      if (wantsJson(args)) {
+        console.log(JSON.stringify(report, null, 2));
+      } else {
+        const lines = [
+          gateway.status === 'already-running'
+            ? 'LLooM is already up'
+            : gateway.status === 'started'
+              ? 'LLooM is up'
+              : 'LLooM gateway is starting'
+        ];
+        lines.push(`Gateway: ${gateway.url}`);
+        if (gateway.warning) lines.push(`Warning: ${gateway.warning}`);
+        console.log(lines.join('\n'));
+      }
+      if (!report.ok) process.exitCode = 1;
     },
     onboard: async ({ args, config, command: _command }) => {
       const go = wantsGo(args);
@@ -2497,7 +2554,6 @@ async function main() {
       );
     }
   };
-  handlers['up'] = handlers['onboard'];
   handlers['status'] = handlers['setup-status'];
   handlers['benchmarks-submit'] = handlers['benchmark-submit'];
   handlers['library'] = handlers['recipe-index'];
