@@ -239,7 +239,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm",
       "path": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json",
-      "currentVersion": 12,
+      "currentVersion": 13,
       "versions": [
         {
           "version": 4,
@@ -299,9 +299,16 @@
         },
         {
           "version": 12,
+          "path": "archive/linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm/v12.json",
+          "status": "archived",
+          "archivedAt": "2026-08-27T15:10:00.000Z",
+          "notes": "Adds a same-ID local-first alias that falls through to the installed OpenRouter DeepSeek V4 Flash model during runtime upgrades and availability failures."
+        },
+        {
+          "version": 13,
           "path": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json",
           "status": "current",
-          "notes": "Adds a same-ID local-first alias that falls through to the installed OpenRouter DeepSeek V4 Flash model during runtime upgrades and availability failures."
+          "notes": "Backports the merged vLLM PR 51538 indexer clamp that prevents padded MTP context lengths from deadlocking the pinned Blackwell sparse top-k kernel."
         }
       ],
       "name": "2x DGX Spark DeepSeek V4 Flash DSpark (MiaAI validated)",

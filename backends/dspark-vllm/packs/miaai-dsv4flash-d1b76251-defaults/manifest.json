@@ -51,6 +51,22 @@
       "args": ["{file}"], "env": { "VLLM_ROOT": "{vllmRoot}" }
     },
     {
+      "id": "vllm51538-mtp-padding-length-clamp",
+      "file": "patches/hotfix-dsv4-mtp-padding-lengths-51538.py",
+      "sha256": "cfcca5acab9e952abdf9b9e726f8b404ad5197bd6b5893fd4607105db3f864a4",
+      "kind": "python", "tier": "correctness", "enabled": true, "liveCanaryRequired": true,
+      "upstream": {
+        "repository": "https://github.com/vllm-project/vllm",
+        "issue": 51593,
+        "pullRequest": 51538,
+        "mergeCommit": "97388c44f9c608f83318e0c9540a536cd7de3e0d",
+        "indexerCommit": "318d623b497f53e7d1d3f12c4f07124e782c711b",
+        "kernelCommit": "f633bd67cdb105f3a37437e728dbac2df16511f3"
+      },
+      "reason": "Prevents padded DeepSeek V4 MTP decode slots from producing negative lengths that the pinned SM120/SM121 top-k extension can reinterpret as uint32 and deadlock. The immutable wheel does not carry rebuildable kernel sources, so its compiled defense-in-depth hardening remains an image-upgrade requirement.",
+      "args": ["{file}", "{vllmRoot}/v1/attention/backends/mla/indexer.py"]
+    },
+    {
       "id": "issue31-gpu-thinking-budget",
       "file": "patches/hotfix-dsv4-issue31-v2-thinking-budget-gpu.py",
       "sha256": "139fa1f673d9071ad309e8beb3608218d51b5905037160b7257f6aae58033762",

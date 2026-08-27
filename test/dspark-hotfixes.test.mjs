@@ -35,7 +35,7 @@ try {
   const recipe = JSON.parse(
     readFileSync(path.join(repoRoot, 'recipes', 'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json'), 'utf8')
   );
-  assert.equal(recipe.version, 12);
+  assert.equal(recipe.version, 13);
   assert.match(recipe.provenance.source, /d1b76251535daef578d8751b04b39c29ad7ecdf9/);
   assert.equal(recipe.models[0].settings.contextWindow, 262144);
   assert.equal(recipe.models[0].settings.maxOutputTokens, 65536);
@@ -96,9 +96,16 @@ try {
     )
   );
   assert.equal(archivedV11Recipe.version, 11);
+  const archivedV12Recipe = JSON.parse(
+    readFileSync(
+      path.join(repoRoot, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm', 'v12.json'),
+      'utf8'
+    )
+  );
+  assert.equal(archivedV12Recipe.version, 12);
   const recipeIndex = JSON.parse(readFileSync(path.join(repoRoot, 'recipes', 'index.json'), 'utf8'));
   const indexEntry = recipeIndex.recipes.find((candidate) => candidate.id === recipe.id);
-  assert.equal(indexEntry.currentVersion, 12);
+  assert.equal(indexEntry.currentVersion, 13);
   assert.deepEqual(
     indexEntry.versions.map(({ version, status }) => ({ version, status })),
     [
@@ -110,7 +117,8 @@ try {
       { version: 9, status: 'archived' },
       { version: 10, status: 'archived' },
       { version: 11, status: 'archived' },
-      { version: 12, status: 'current' }
+      { version: 12, status: 'archived' },
+      { version: 13, status: 'current' }
     ]
   );
 
@@ -119,6 +127,7 @@ try {
     'hotfix-nvfp4-ds-mla-issue22.sh',
     'hotfix-dsv4-grammar-advance.sh',
     'hotfix-vllm-xgrammar-termination-52805.sh',
+    'hotfix-dsv4-mtp-padding-lengths-51538.py',
     'hotfix-dsv4-suppress-stops-in-reasoning.py',
     'hotfix-dsv4-issue55-tool-truncation.py',
     'hotfix-gb10-spin-wait.sh',
@@ -142,7 +151,7 @@ try {
     manifest.patches.filter(({ enabled }) => enabled).map(({ file }) => path.basename(file)),
     expectedHotfixes
   );
-  assert.equal(manifest.patches.length, 22);
+  assert.equal(manifest.patches.length, 23);
   const members = recipe.models[0].settings.placement.members;
   assert.equal(members.length, 2);
   for (const member of members) {
@@ -316,6 +325,34 @@ print(json.dumps([module.encode_arguments_to_dsml({"arguments": json.dumps(value
   assert.doesNotMatch(readFileSync(issue24Structured, 'utf8'), /STRUCTURAL_TAG/);
   assert.match(readFileSync(issue24Scheduler, 'utf8'), /new_token_ids=new_token_ids/);
   assert.match(run('bash', [issue24Script], { env: { VLLM_ROOT: issue24Root } }), /already applied/);
+
+  const issue51538Root = path.join(tempRoot, 'issue51538');
+  const issue51538Target = writeFixture(
+    issue51538Root,
+    'v1/attention/backends/mla/indexer.py',
+    `def _prepare_uniform_decode_kernel():
+    # Compute number of KVs attended to by this token.
+    seq_len = tl.load(seq_lens_ptr + req_id)
+    per_token_seq_len = seq_len - max_decode_len + local_idx + 1
+    tl.store(decode_seq_lens_ptr + idx, per_token_seq_len)
+
+def _prepare_decode_tensors():
+                seq_lens_buffer[:] = (
+                    seq_lens.unsqueeze(1)
+                    - max_decode_len
+                    + 1
+                    + self.offsets_buffer[:max_decode_len]
+                )
+                seq_lens = seq_lens_buffer
+`
+  );
+  const issue51538Script = path.join(hotfixRoot, 'hotfix-dsv4-mtp-padding-lengths-51538.py');
+  assert.match(run('python3', [issue51538Script, issue51538Target]), /patched/);
+  const issue51538Patched = readFileSync(issue51538Target, 'utf8');
+  assert.match(issue51538Patched, /tl\.maximum\([\s\S]*local_idx \+ 1, 0/);
+  assert.match(issue51538Patched, /self\.offsets_buffer\[:max_decode_len\][\s\S]*\.clamp_\(min=0\)/);
+  assert.doesNotMatch(issue51538Patched, /per_token_seq_len = seq_len - max_decode_len/);
+  assert.match(run('python3', [issue51538Script, issue51538Target]), /already applied/);
 
   run('python3', ['-q', path.join(repoRoot, 'test', 'test_dspark_issue31_thinking_budget_gpu.py')]);
   run('python3', ['-q', path.join(repoRoot, 'test', 'test_dspark_suppress_stops_in_reasoning.py')]);
