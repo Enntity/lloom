@@ -234,18 +234,21 @@ function close(server) {
   await close(upstream);
 }
 
-// An admitted request that produces no bytes is reported before the backend's
-// much longer transport timeout, so a runtime watchdog can recover a livelock.
+// An admitted streaming request that produces no bytes is reported before the
+// backend's much longer transport timeout, so a runtime watchdog can recover a
+// livelock.
 {
   const upstream = http.createServer((_req, res) => {
     setTimeout(() => {
-      const body = JSON.stringify({
-        id: 'completion-stalled',
-        object: 'chat.completion',
-        choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }]
-      });
-      res.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
-      res.end(body);
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.write(
+        `data: ${JSON.stringify({
+          id: 'completion-stalled',
+          object: 'chat.completion.chunk',
+          choices: [{ index: 0, delta: { role: 'assistant', content: 'ok' }, finish_reason: null }]
+        })}\n\n`
+      );
+      res.end('data: [DONE]\n\n');
     }, 80);
   });
   const upstreamPort = await listen(upstream);
@@ -286,10 +289,15 @@ function close(server) {
   const response = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'hello' }], max_tokens: 8 })
+    body: JSON.stringify({
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'hello' }],
+      max_tokens: 8,
+      stream: true
+    })
   });
   assert.equal(response.status, 200);
-  await response.arrayBuffer();
+  await response.text();
   assert.equal(
     outcomes.some(({ outcome }) => outcome.stalled === true && outcome.status === 504),
     true

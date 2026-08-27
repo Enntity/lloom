@@ -23,6 +23,7 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Fixed
 
+- Runtime no-progress watchdogs now observe streaming responses only, preventing long buffered requests from restarting healthy managed runtimes before their complete response is available.
 - OpenRouter requests with `reasoning_effort: none` now send `reasoning: { effort: "none", exclude: true }` unless the caller already set `exclude`, so providers do not spend the output budget on hidden reasoning.
 - The local gateway no longer applies Node's default HTTP request timeout over the backend-owned inference deadline.
 - The two-Spark DeepSeek V4 Flash recipe now defaults MiaAI's issue31 thinking-budget patch off, removes the withdrawn adaptive-top-k backport from the current pack, guards the remaining top-k backport by leaving it disabled, and adds empty-encoder and GB10 spin-wait fixes.

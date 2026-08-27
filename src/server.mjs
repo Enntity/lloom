@@ -1980,7 +1980,10 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       watchdogTimer = null;
     };
     const armWatchdogTimer = () => {
-      if (!watchdogConfig.enabled) return;
+      // Buffered responses cannot expose upstream progress before their complete
+      // body is available. Treating that silence as a stall can restart a
+      // healthy runtime during an otherwise successful long request.
+      if (!watchdogConfig.enabled || stream !== true) return;
       watchdogArmed = true;
       clearWatchdogTimer();
       watchdogTimer = setTimeout(() => {
