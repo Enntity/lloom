@@ -39,6 +39,8 @@ for (const member of members) {
   assert.match(rendered, /QWEN_MODEL_REVISION=7b719225242aacd3dbd3f9407468c2ee9a9d2594/);
   assert.match(rendered, /MAX_TOTAL_TOKENS=627648/);
   assert.match(rendered, /SGLANG_API_HOST=0\.0\.0\.0/);
+  assert.match(rendered, /SGLANG_API_PORT=8889/);
+  assert.doesNotMatch(rendered, /SGLANG_PORT=/);
   assert.match(rendered, /MEM_FRACTION_STATIC=0\.76/);
   assert.match(rendered, /SGLANG_ENABLE_TP_MEMORY_INBALANCE_CHECK=0/);
   assert.match(rendered, /backends\/qwen38-sglang\/qsa_nvfp4_kv\.py/);
@@ -50,12 +52,14 @@ for (const expected of [
   '--kv-cache-dtype nvfp4',
   '--context-length "${CONTEXT_LENGTH:-262144}"',
   '--host "${SGLANG_API_HOST:-0.0.0.0}"',
+  '--port "${api_port}"',
   '--max-total-tokens "${MAX_TOTAL_TOKENS:-627648}"',
   '--enable-linear-replayssm-spec',
   '--cuda-graph-bs-decode 1 2 3 4 5 6'
 ]) {
   assert(entrypoint.includes(expected), `missing SGLang launch control: ${expected}`);
 }
+assert(entrypoint.includes('unset SGLANG_PORT'), 'legacy SGLANG_PORT must not leak into SGLang');
 
 const sourceHashes = {
   'qsa_fa_fallback.py': '4546423216fbf51f1763753c0865c0fb9eff670db566e83987268918a86b993a',
