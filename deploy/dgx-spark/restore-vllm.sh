@@ -24,7 +24,7 @@ docker run -d \
   --gpus all \
   --ipc host \
   --security-opt label=disable \
-  -p 192.168.1.131:8000:8000 \
+  -p 10.20.30.10:8000:8000 \
   -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
   -v "$HOME/.cache/vllm:/root/.cache/vllm" \
   vllm/vllm-openai@sha256:251eba5cc7c12fed0b75da22a9240e582b1c9e39f6fbc064f86781b963bd814f \

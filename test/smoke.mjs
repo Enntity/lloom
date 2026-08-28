@@ -2420,8 +2420,8 @@ dsparkBase.cluster = {
   nodeId: 'ennspark01',
   leaderNode: 'ennspark01',
   nodes: {
-    ennspark01: { endpoint: 'http://spark-one:8100', backendHost: '10.100.16.2' },
-    ennspark02: { endpoint: 'http://spark-two:8100', backendHost: '10.100.16.1' }
+    ennspark01: { endpoint: 'http://spark-one:8100', backendHost: '10.20.30.12' },
+    ennspark02: { endpoint: 'http://spark-two:8100', backendHost: '10.20.30.11' }
   }
 };
 const clusterEmbeddingRecipe = await loadRecipeById(
@@ -2431,7 +2431,7 @@ const clusterEmbeddingBase = structuredClone(dsparkBase);
 clusterEmbeddingBase.cluster.nodes.ennspark02.labels = { role: 'worker', hardware: 'dgx-spark' };
 clusterEmbeddingBase.cluster.nodes['macbook-local'] = {
   endpoint: 'http://macbook:8100',
-  backendHost: '100.87.11.88',
+  backendHost: '10.20.30.13',
   labels: { role: 'node', architecture: 'darwin-arm64', accelerator: 'apple-gpu' }
 };
 const clusterEmbeddingConfig = deriveUserConfig(clusterEmbeddingBase, clusterEmbeddingRecipe, {
@@ -2440,8 +2440,8 @@ const clusterEmbeddingConfig = deriveUserConfig(clusterEmbeddingBase, clusterEmb
 });
 const workerEmbeddingRuntime = clusterEmbeddingConfig.runtimes['qwen3-embedding-4b-ennspark02'];
 assert.equal(workerEmbeddingRuntime.node, 'ennspark02');
-assert.equal(workerEmbeddingRuntime.healthUrl, 'http://10.100.16.1:8002/v1/models');
-assert(workerEmbeddingRuntime.bootstrap.createArgs.includes('10.100.16.1:8002:8000'));
+assert.equal(workerEmbeddingRuntime.healthUrl, 'http://10.20.30.11:8002/v1/models');
+assert(workerEmbeddingRuntime.bootstrap.createArgs.includes('10.20.30.11:8002:8000'));
 assert.deepEqual(
   workerEmbeddingRuntime.bootstrap.command.slice(
     workerEmbeddingRuntime.bootstrap.command.indexOf('--host'),
@@ -2452,7 +2452,7 @@ assert.deepEqual(
 assert.equal(clusterEmbeddingConfig.runtimes['qwen3-embedding-4b-macbook-local'], undefined);
 assert.equal(
   clusterEmbeddingConfig.backends['qwen3-embedding-4b-ennspark02'].baseUrl,
-  'http://10.100.16.1:8002/v1'
+  'http://10.20.30.11:8002/v1'
 );
 assert.deepEqual(
   clusterEmbeddingConfig.models.find((model) => model.id === 'Qwen/Qwen3-Embedding-4B').targets,

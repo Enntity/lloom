@@ -6,7 +6,7 @@
   "model": "dsv4f-local",
   "suite": {
     "id": "enntity-synthetic-qualitative-v1",
-    "path": "/home/enntitysparkadmin/.local/lib/node_modules/lloom/examples/qualitative-benchmark-enntity.v1.json"
+    "path": "/home/lloom/.local/lib/node_modules/lloom/examples/qualitative-benchmark-enntity.v1.json"
   },
   "measurement": {
     "ttfb": "request start to first SSE response-body byte",

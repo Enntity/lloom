@@ -47,7 +47,7 @@ After starting or changing a chat lane, use the synthetic canary before routing 
 node scripts/chat-lane-canary.mjs \
   --config ~/.lloom/config.json \
   --model unsloth/Qwen3.6-27B-NVFP4 \
-  --backend-metrics-url http://192.168.1.131:8005/metrics
+  --backend-metrics-url http://10.20.30.10:8005/metrics
 ```
 
 Generic `pip install vllm` / `pip install sglang` often **fails or is suboptimal** on Spark (ARM64 Grace + Blackwell sm_121). Prefer:
