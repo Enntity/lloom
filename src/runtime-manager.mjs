@@ -516,6 +516,7 @@ export class RuntimeManager {
     this.state = new Map();
     this.queues = new Map();
     this.pausedRuntimes = new Set();
+    this.reconfiguringRuntimes = new Set();
     this.lifecycleQueues = new Map();
     this.lifecycleControllers = new Map();
     this.watchdogOperations = new Map();
@@ -1031,6 +1032,7 @@ export class RuntimeManager {
     const stopOrder = [...changed].sort(
       (left, right) => Number(distributed.has(right)) - Number(distributed.has(left))
     );
+    for (const runtimeId of ownedChanges) this.reconfiguringRuntimes.add(runtimeId);
     for (const runtimeId of ownedChanges) this.abortRuntimeLifecycle(runtimeId, 'superseded by config reload');
     const wasRunning = new Map();
     for (const runtimeId of ownedChanges) {
@@ -1095,7 +1097,10 @@ export class RuntimeManager {
       }
       return { changed, results };
     } finally {
-      for (const runtimeId of ownedChanges) this.resumeRuntime(runtimeId);
+      for (const runtimeId of ownedChanges) {
+        this.reconfiguringRuntimes.delete(runtimeId);
+        this.resumeRuntime(runtimeId);
+      }
     }
   }
 
@@ -1134,6 +1139,12 @@ export class RuntimeManager {
     if (!runtimeId) return { runtimeId, started: false, reason: 'no-runtime' };
     const runtime = this.getRuntime(runtimeId);
     if (!runtime) return { runtimeId, started: false, reason: 'unknown-runtime' };
+    if (reason === 'model-request' && this.reconfiguringRuntimes.has(runtimeId)) {
+      const error = new Error(`runtime ${runtimeId} is reconfiguring; retry through its configured fallback`);
+      error.code = 'RUNTIME_RECONFIGURING';
+      error.statusCode = 503;
+      throw error;
+    }
     const state = this.stateFor(runtimeId);
     const placement = runtimePlacement(runtime, this.config);
 

@@ -471,6 +471,16 @@ const demoted = await demotedReconfigureManager.reconfigure(demotedNextConfig);
 assert.deepEqual(demotedCalls, ['drain:standalone', 'stop:standalone']);
 assert.deepEqual(demoted.results, [{ runtimeId: 'standalone', started: false, reason: 'not-keep-warm' }]);
 
+const reconfiguringRequestManager = new RuntimeManager(structuredClone(demotedKeepWarmConfig), {
+  logger: { error() {}, warn() {}, info() {} },
+  captureOutput: false
+});
+reconfiguringRequestManager.reconfiguringRuntimes.add('standalone');
+await assert.rejects(
+  reconfiguringRequestManager.start('standalone', { reason: 'model-request' }),
+  (error) => error.code === 'RUNTIME_RECONFIGURING' && error.statusCode === 503
+);
+
 const managedDockerRuntime = {
   containerName: 'managed-runtime',
   bootstrap: { adapter: 'docker', image: 'example/model:v2', command: ['serve'] }
