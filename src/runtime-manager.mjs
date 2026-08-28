@@ -645,22 +645,46 @@ export class RuntimeManager {
     return this.queues.get(runtimeId);
   }
 
-  withAdmissionLock(fn, { runtimeId = null, reason = 'runtime-admission' } = {}) {
-    if (reason === 'model-request' && this.activeAdmission?.runtimeId && this.activeAdmission.runtimeId !== runtimeId) {
-      const error = new Error(
-        `runtime ${runtimeId} cannot wait behind active admission for ${this.activeAdmission.runtimeId}; retry through its configured fallback`
-      );
-      error.code = 'RUNTIME_ADMISSION_BUSY';
-      error.statusCode = 503;
-      return Promise.reject(error);
+  withAdmissionLock(fn, { runtimeId = null, reason = 'runtime-admission', preemptible = false } = {}) {
+    const active = this.activeAdmission;
+    if (active?.runtimeId && active.runtimeId !== runtimeId) {
+      if (active.preemptible && !active.preemptionRequested) {
+        active.preemptionRequested = true;
+        const error = new Error(
+          `runtime ${active.runtimeId} cold start was superseded by ${runtimeId}; retry through its configured external fallback`
+        );
+        error.code = 'RUNTIME_ADMISSION_PREEMPTED';
+        error.statusCode = 503;
+        active.controller.abort(error);
+        this.abortRuntimeTree(active.runtimeId, error);
+        this.record({
+          runtimeId: active.runtimeId,
+          event: 'admission-preempt',
+          reason: `superseded-by:${runtimeId}`,
+          requestedRuntimeId: runtimeId
+        });
+      } else if (reason === 'model-request') {
+        const error = new Error(
+          `runtime ${runtimeId} cannot wait behind active admission for ${active.runtimeId}; retry through its configured fallback`
+        );
+        error.code = 'RUNTIME_ADMISSION_BUSY';
+        error.statusCode = 503;
+        return Promise.reject(error);
+      }
     }
     const run = this.admissionQueue
       .catch(() => {})
       .then(async () => {
-        const admission = { runtimeId, reason };
+        const admission = {
+          runtimeId,
+          reason,
+          preemptible,
+          preemptionRequested: false,
+          controller: new AbortController()
+        };
         this.activeAdmission = admission;
         try {
-          return await fn();
+          return await fn(admission.controller.signal);
         } finally {
           if (this.activeAdmission === admission) this.activeAdmission = null;
         }
@@ -695,9 +719,21 @@ export class RuntimeManager {
   abortRuntimeLifecycle(runtimeId, reason = 'lifecycle superseded') {
     const controller = this.lifecycleControllers.get(runtimeId);
     if (!controller || controller.signal.aborted) return false;
-    controller.abort(new Error(reason));
-    this.record({ runtimeId, event: 'lifecycle-abort', reason });
+    const error = reason instanceof Error ? reason : new Error(reason);
+    controller.abort(error);
+    this.record({ runtimeId, event: 'lifecycle-abort', reason: error.message });
     return true;
+  }
+
+  abortRuntimeTree(runtimeId, reason = 'lifecycle superseded') {
+    const runtime = this.getRuntime(runtimeId);
+    let aborted = this.abortRuntimeLifecycle(runtimeId, reason);
+    if (runtimePlacement(runtime, this.config).mode === 'distributed') {
+      for (const member of runtime.placement.members ?? []) {
+        aborted = this.abortRuntimeLifecycle(member.runtime, reason) || aborted;
+      }
+    }
+    return aborted;
   }
 
   async status({ localOnly = false } = {}) {
@@ -1540,14 +1576,7 @@ export class RuntimeManager {
   }
 
   async stop(runtimeId) {
-    const runtime = this.getRuntime(runtimeId);
-    const placement = runtimePlacement(runtime, this.config);
-    this.abortRuntimeLifecycle(runtimeId, 'runtime stop requested');
-    if (placement.mode === 'distributed') {
-      for (const member of placement.members) {
-        this.abortRuntimeLifecycle(member.runtime, `distributed runtime ${runtimeId} stop requested`);
-      }
-    }
+    this.abortRuntimeTree(runtimeId, `runtime ${runtimeId} stop requested`);
     return this.withRuntimeLifecycleLock(runtimeId, () => this.stopUnlocked(runtimeId));
   }
 

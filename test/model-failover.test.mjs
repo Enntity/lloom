@@ -36,6 +36,7 @@ async function createFixture({
 } = {}) {
   const hits = { primary: 0, cloud: 0, ensures: 0 };
   const operations = [];
+  const admissionOptions = [];
   const primary = http.createServer((_req, res) => {
     hits.primary += 1;
     const body =
@@ -137,6 +138,10 @@ async function createFixture({
       return fn();
     },
     noteRequestOutcome() {},
+    withAdmissionLock(fn, options) {
+      admissionOptions.push(options);
+      return fn();
+    },
     async status() {
       return {
         runtimes: {
@@ -168,6 +173,7 @@ async function createFixture({
   return {
     app,
     hits,
+    admissionOptions,
     logs,
     operations,
     url: `http://127.0.0.1:${gatewayPort}`,
@@ -310,6 +316,7 @@ async function chat(url, body = {}) {
   assert.equal(body.choices[0].message.content, 'local');
   assert.deepEqual(fixture.hits, { primary: 1, cloud: 1, ensures: 0 });
   assert.deepEqual(fixture.operations, ['stop:resident-runtime', 'start:primary-runtime', 'slot:primary-runtime']);
+  assert.equal(fixture.admissionOptions[0].preemptible, true);
   const recent = fixture.app.metrics.snapshot().recent;
   assert.equal(recent[0].resolvedModel, 'cloud-chat');
   assert.equal(recent[0].status, 402);

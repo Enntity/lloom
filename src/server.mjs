@@ -1816,6 +1816,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
 
   async function resolveRequestModels(modelId) {
     const candidates = await Promise.all(registry.resolveCandidates(modelId).map(resolveRequestCandidate));
+    const hasExternalFallback = candidates.some((candidate) => !candidate.model.runtime);
     if (candidates.length <= 1) {
       return candidates.map((candidate) => ({
         ...candidate,
@@ -1825,7 +1826,8 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
                 attempt: 1,
                 targets: candidate.aliasTargetCount,
                 primaryModel: candidate.alias?.target,
-                used: candidate.aliasTargetIndex > 0
+                used: candidate.aliasTargetIndex > 0,
+                externalFallbackAvailable: hasExternalFallback
               }
             }
           : {})
@@ -1881,6 +1883,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         targets: candidate.aliasTargetCount ?? ordered.length,
         primaryModel: candidate.alias?.target ?? candidates[0].resolvedId,
         used: candidate.aliasTargetIndex > 0 || candidate.resolvedId !== candidates[0].resolvedId,
+        externalFallbackAvailable: hasExternalFallback,
         ...(routeReason ? { reason: routeReason } : {})
       }
     }));
@@ -1942,7 +1945,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     }
   };
 
-  async function ensureRuntime(runtimeId) {
+  async function ensureRuntime(runtimeId, { fallbackAvailable = false } = {}) {
     if (!runtimeId) return { runtimeId, started: false, reason: 'no-runtime' };
     if (typeof runtimeManager.isHealthy === 'function' && (await runtimeManager.isHealthy(runtimeId))) {
       return { runtimeId, started: false, healthy: true, reason: 'already-healthy' };
@@ -1960,7 +1963,8 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
               yes: true,
               warmup: true,
               force: false,
-              reason: 'model-request'
+              reason: 'model-request',
+              fallbackAvailable
             });
           } catch (error) {
             if (!(error instanceof RuntimeAdmissionError) || !error.temporary || Date.now() >= deadline) throw error;
@@ -2056,7 +2060,9 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     const watchdog = { arm: armWatchdogTimer };
     try {
       const result = await clusterCoordinator.withTarget(resolved, async () => {
-        await ensureRuntime(resolved.model.runtime);
+        await ensureRuntime(resolved.model.runtime, {
+          fallbackAvailable: resolved.failover?.externalFallbackAvailable === true
+        });
         return runtimeManager.withSlot(resolved.model.runtime, () =>
           fn({
             signal: client.signal,

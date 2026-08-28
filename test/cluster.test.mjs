@@ -594,6 +594,44 @@ await assert.rejects(
 releaseActiveAdmission();
 await activeAdmission;
 
+const preemptibleAdmissionManager = new RuntimeManager(
+  { runtimes: { deepseek: { enabled: true }, qwen: { enabled: true } } },
+  {
+    logger: { error() {}, warn() {}, info() {} },
+    captureOutput: false
+  }
+);
+let speculativeLifecycleReady;
+const speculativeReady = new Promise((resolve) => {
+  speculativeLifecycleReady = resolve;
+});
+const speculativeAdmission = preemptibleAdmissionManager.withAdmissionLock(
+  () =>
+    preemptibleAdmissionManager.withRuntimeLifecycleLock('deepseek', async (signal) => {
+      speculativeLifecycleReady();
+      await new Promise((resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      });
+    }),
+  { runtimeId: 'deepseek', reason: 'model-request', preemptible: true }
+);
+await speculativeReady;
+const winningAdmission = preemptibleAdmissionManager.withAdmissionLock(async () => 'qwen-admitted', {
+  runtimeId: 'qwen',
+  reason: 'model-request'
+});
+await assert.rejects(
+  speculativeAdmission,
+  (error) => error.code === 'RUNTIME_ADMISSION_PREEMPTED' && error.statusCode === 503
+);
+assert.equal(await winningAdmission, 'qwen-admitted');
+assert(
+  preemptibleAdmissionManager.events.some(
+    (event) =>
+      event.event === 'admission-preempt' && event.runtimeId === 'deepseek' && event.requestedRuntimeId === 'qwen'
+  )
+);
+
 const managedDockerRuntime = {
   containerName: 'managed-runtime',
   bootstrap: { adapter: 'docker', image: 'example/model:v2', command: ['serve'] }

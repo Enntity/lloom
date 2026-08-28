@@ -422,12 +422,21 @@ export async function createRuntimePolicyPlan(config, { requestedRuntimeId, prof
 export async function applyRuntimePolicyPlan(
   config,
   runtimeManager,
-  { requestedRuntimeId, dryRun = true, yes = false, warmup = true, force = false, reason = 'runtime-admission' } = {}
+  {
+    requestedRuntimeId,
+    dryRun = true,
+    yes = false,
+    warmup = true,
+    force = false,
+    reason = 'runtime-admission',
+    fallbackAvailable = false
+  } = {}
 ) {
   if (!requestedRuntimeId) throw new Error('requested runtime id is required');
 
-  const applyPlan = async () => {
+  const applyPlan = async (admissionSignal) => {
     const status = await runtimeManager.status();
+    admissionSignal?.throwIfAborted?.();
     if (runtimeManager.clusterCoordinator) status.cluster = await runtimeManager.clusterCoordinator.status();
     const plan = await createRuntimePolicyPlan(config, {
       requestedRuntimeId,
@@ -491,6 +500,7 @@ export async function applyRuntimePolicyPlan(
 
     const results = [];
     for (const action of plan.actions) {
+      admissionSignal?.throwIfAborted?.();
       if (action.type === 'stop') {
         if (typeof runtimeManager.drainRuntime === 'function') await runtimeManager.drainRuntime(action.runtimeId);
         try {
@@ -536,7 +546,11 @@ export async function applyRuntimePolicyPlan(
   };
 
   if (!dryRun && typeof runtimeManager.withAdmissionLock === 'function') {
-    return runtimeManager.withAdmissionLock(applyPlan, { runtimeId: requestedRuntimeId, reason });
+    return runtimeManager.withAdmissionLock(applyPlan, {
+      runtimeId: requestedRuntimeId,
+      reason,
+      preemptible: fallbackAvailable
+    });
   }
   return applyPlan();
 }
