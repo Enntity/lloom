@@ -1907,6 +1907,9 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
 
   async function ensureRuntime(runtimeId) {
     if (!runtimeId) return { runtimeId, started: false, reason: 'no-runtime' };
+    if (typeof runtimeManager.isHealthy === 'function' && (await runtimeManager.isHealthy(runtimeId))) {
+      return { runtimeId, started: false, healthy: true, reason: 'already-healthy' };
+    }
     if (config.runtimePolicy?.autoEvict === true) {
       const waitMs = Math.max(0, Number(config.runtimePolicy?.admissionWaitMs ?? 120000));
       const deadline = Date.now() + waitMs;
@@ -3650,7 +3653,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       endResponseWithError(res, error, {
         stream: res.headersSent,
         config,
-        status: 500
+        status: errorStatusCode(error) || 500
       });
     }
   }

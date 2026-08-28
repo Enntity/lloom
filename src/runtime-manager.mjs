@@ -631,6 +631,15 @@ export class RuntimeManager {
     return ['running', 'external', 'starting', 'warming'].includes(this.stateFor(runtimeId).status);
   }
 
+  async isHealthy(runtimeId) {
+    const runtime = this.getRuntime(runtimeId);
+    if (!runtime) return false;
+    if (await runtimeHealthOk(runtime)) return true;
+    if (runtimePlacement(runtime, this.config).mode !== 'distributed') return false;
+    const status = await this.status();
+    return status.runtimes?.[runtimeId]?.healthy === true;
+  }
+
   queueFor(runtimeId) {
     if (!this.queues.has(runtimeId)) this.queues.set(runtimeId, []);
     return this.queues.get(runtimeId);

@@ -260,6 +260,7 @@ const healthyServer = http.createServer((_request, response) => {
 });
 await new Promise((resolve) => healthyServer.listen(0, '127.0.0.1', resolve));
 distributedConfig.runtimes.split.healthUrl = `http://127.0.0.1:${healthyServer.address().port}/health`;
+assert.equal(await manager.isHealthy('split'), true, 'logical distributed health bypasses unrelated admission work');
 const callsBeforeHealthyEnsure = lifecycleCalls.length;
 const startsBeforeHealthyEnsure = manager.stateFor('split').starts;
 manager.stateFor('split').lastError = 'stale failure';
@@ -275,6 +276,7 @@ assert.equal(manager.stateFor('split').starts, startsBeforeHealthyEnsure, 'healt
 assert.equal(manager.stateFor('split').lastError, null, 'healthy ensure clears stale failure state');
 await new Promise((resolve) => healthyServer.close(resolve));
 delete distributedConfig.runtimes.split.healthUrl;
+assert.equal(await manager.isHealthy('missing-runtime'), false);
 
 manager.stateFor('worker').status = 'running';
 const recoveryStart = lifecycleCalls.length;
