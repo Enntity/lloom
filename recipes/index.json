@@ -305,9 +305,28 @@
       "source": { "type": "local", "url": "recipes/linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang.json" }
     },
     {
+      "id": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm",
+      "path": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm.json",
+          "status": "current",
+          "notes": "MiaAI-Lab EXL3/TR3 4bpw TP=2 with DFlash2-7 and exact pinned image, model, template, and runtime overlays."
+        }
+      ],
+      "name": "2x DGX Spark GLM-5.3 Flash EXL3 DFlash2 vLLM",
+      "summary": "LLooM-managed two-node GLM-5.3 Flash EXL3/TR3 runtime on the NVIDIA Sync private fabric.",
+      "tags": ["linux", "nvidia", "dgx-spark", "cluster", "glm-5.3", "flash", "exl3", "tr3", "vllm", "dflash2", "vision"],
+      "recommendedFor": ["Two directly connected DGX Sparks evaluating GLM-5.3 Flash with local tool and reasoning workloads"],
+      "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "tools", "reasoning", "vision", "long-context"],
+      "source": { "type": "local", "url": "recipes/linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm.json" }
+    },
+    {
       "id": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm",
       "path": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json",
-      "currentVersion": 15,
+      "currentVersion": 16,
       "versions": [
         {
           "version": 4,
@@ -388,9 +407,16 @@
         },
         {
           "version": 15,
+          "path": "archive/linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm/v15.json",
+          "status": "archived",
+          "archivedAt": "2026-08-28T18:00:00.000Z",
+          "notes": "Makes the cloud-backed local DS4F runtime on-demand instead of keep-warm so higher-priority two-Spark runtimes can be admitted without a contradictory hard pin."
+        },
+        {
+          "version": 16,
           "path": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json",
           "status": "current",
-          "notes": "Makes the cloud-backed local DS4F runtime on-demand instead of keep-warm so higher-priority two-Spark runtimes can be admitted without a contradictory hard pin."
+          "notes": "Adds a hidden dsv4f-local route with no cloud fallback so local-only benchmark attribution is enforceable."
         }
       ],
       "name": "2x DGX Spark DeepSeek V4 Flash DSpark (MiaAI validated)",

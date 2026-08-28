@@ -1,0 +1,200 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm",
+  "name": "2x DGX Spark GLM-5.3 Flash EXL3 DFlash2 vLLM",
+  "version": 1,
+  "summary": "MiaAI-Lab's GLM-5.3 Flash EXL3/TR3 4bpw TP=2 recipe with DFlash2-7, native SM121 kernels, 900K context, vision, and LLooM-managed distributed admission.",
+  "license": { "id": "MIT", "name": "Recipe metadata and launcher" },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "Adapted byte-for-byte where applicable from MiaAI-Lab/GLM-5.3-Flash-EXL3-2x-DGX-Sparks commit f3043c95bbf95fb91dd160fe58d740cd152a02c3"
+  },
+  "links": [
+    { "rel": "upstream", "href": "https://github.com/MiaAI-Lab/GLM-5.3-Flash-EXL3-2x-DGX-Sparks/tree/f3043c95bbf95fb91dd160fe58d740cd152a02c3" },
+    { "rel": "model", "href": "https://huggingface.co/Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw/tree/25a44fdbf16862a46b7cc9921142c6c81350af2f" },
+    { "rel": "draft-model", "href": "https://huggingface.co/incoai/GLM-5.3-Flash-DFlash2/tree/7d74cdd881ed7e32c31175984a67823127b66cfe" }
+  ],
+  "keywords": ["linux", "nvidia", "dgx-spark", "cluster", "glm-5.3", "flash", "exl3", "tr3", "vllm", "dflash2", "vision"],
+  "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "usage", "tools", "reasoning", "vision", "speculative-decoding", "moe", "long-context"],
+  "hardware": {
+    "family": "NVIDIA DGX Spark / GB10",
+    "testedMachine": "Two directly connected DGX Spark systems",
+    "notes": [
+      "TP=2 runs over the private ConnectX-7 RoCE fabric and starts worker-first under LLooM.",
+      "The image, target checkpoint, DFlash2 checkpoint, chat template, and three runtime overlays are immutable and tested for exact-source drift.",
+      "EXL3/TR3 4bpw is a different checkpoint and runtime path from the NVFP4 SM120 recipe."
+    ]
+  },
+  "requirements": {
+    "platforms": ["linux-arm64"],
+    "memoryGb": 112,
+    "diskGb": 190,
+    "commands": ["docker", "python3"],
+    "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"],
+    "cluster": { "nodes": 2, "provider": "nvidia-sync", "topology": "direct" }
+  },
+  "backend": {
+    "id": "docker-vllm",
+    "name": "Pinned MiaAI GLM-5.3 Flash EXL3 vLLM image",
+    "type": "openai-compatible-server"
+  },
+  "setup": {
+    "steps": [
+      { "id": "check-docker", "title": "Check Docker", "action": "check-command", "command": "docker", "args": ["version"] },
+      { "id": "create-hf-cli-venv", "title": "Create the LLooM Hugging Face downloader environment", "action": "command", "command": "python3", "args": ["-m", "venv", "${modelRoot}/.hf-cli"] },
+      { "id": "install-hf-cli", "title": "Install the Hugging Face downloader", "action": "command", "command": "${modelRoot}/.hf-cli/bin/pip", "args": ["install", "huggingface_hub[cli]==0.35.3"] },
+      {
+        "id": "download-target",
+        "title": "Download pinned GLM-5.3 Flash EXL3/TR3 target",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw",
+        "revision": "25a44fdbf16862a46b7cc9921142c6c81350af2f",
+        "downloadSizeBytes": 176093659136
+      },
+      {
+        "id": "download-dflash2",
+        "title": "Download pinned GLM-5.3 Flash DFlash2 draft",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "incoai/GLM-5.3-Flash-DFlash2",
+        "revision": "7d74cdd881ed7e32c31175984a67823127b66cfe",
+        "downloadSizeBytes": 2469606195
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "default",
+      "name": "GLM-5.3 Flash EXL3/TR3 4bpw",
+      "model": "Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw",
+      "gatewayModel": "glm-5.3-flash-exl3",
+      "upstreamModel": "glm-5.3-flash-exl3",
+      "runtime": "glm53-flash-exl3-cluster",
+      "backendConfig": "glm53-flash-exl3",
+      "aliases": ["glm53f", "glm53-flash"],
+      "setDefault": false,
+      "input": ["text", "image", "video"],
+      "output": ["text"],
+      "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "usage", "tools", "reasoning", "vision", "speculative-decoding", "moe", "long-context"],
+      "settings": {
+        "port": 8890,
+        "contextWindow": 900000,
+        "maxOutputTokens": 131072,
+        "maxActiveRequests": 4,
+        "memoryGb": 112,
+        "priority": 180,
+        "keepWarm": false,
+        "startupTimeoutMs": 7200000,
+        "timeoutMs": 1800000,
+        "watchdog": {
+          "enabled": true,
+          "failureThreshold": 1,
+          "failureWindowMs": 1200000,
+          "minNoProgressMs": 600000,
+          "cooldownMs": 600000,
+          "drainTimeoutMs": 30000,
+          "failureStatuses": [499, 500, 502, 504]
+        },
+        "placement": {
+          "mode": "distributed",
+          "members": [
+            {
+              "nodeRole": "worker",
+              "runtime": "glm53-flash-exl3-worker",
+              "role": "worker",
+              "order": 10,
+              "healthStrategy": "container",
+              "resources": { "memoryGb": 112 },
+              "runtimeSettings": {
+                "adapter": "docker",
+                "management": "managed",
+                "containerName": "lloom-glm53-flash-exl3-${nodeId}",
+                "warmup": false,
+                "bootstrap": {
+                  "adapter": "docker",
+                  "image": "ghcr.io/miaai-lab/glm-5.3-flash-2x-dgx-sparks@sha256:9bb1557a4234fce63d59599e44d10747eabd742beb337eebf9e7070be8a0fd58",
+                  "pullTimeoutMs": 3600000,
+                  "createArgs": [
+                    "--restart", "unless-stopped", "--network", "host", "--ipc", "host", "--shm-size", "64g",
+                    "--ulimit", "memlock=-1", "--ulimit", "stack=67108864", "--gpus", "all",
+                    "--device", "/dev/infiniband:/dev/infiniband", "--entrypoint", "/bin/bash",
+                    "-v", "${modelRoot}:/models:ro", "-v", "lloom-glm53-vllm:/root/.cache/vllm", "-v", "lloom-glm53-triton:/root/.triton", "-v", "lloom-glm53-tilelang:/root/.tilelang",
+                    "--mount", "type=bind,src=${lloomRoot}/backends/glm53-exl3/entrypoint.sh,dst=/opt/lloom/entrypoint.sh,readonly",
+                    "--mount", "type=bind,src=${lloomRoot}/backends/glm53-exl3/chat_template.jinja,dst=/opt/lloom/chat_template.jinja,readonly",
+                    "--mount", "type=bind,src=${lloomRoot}/backends/glm53-exl3/patch_glm_video_placeholders.py,dst=/opt/lloom/patch_glm_video_placeholders.py,readonly",
+                    "--mount", "type=bind,src=${lloomRoot}/backends/glm53-exl3/patch_suppress_stops_in_reasoning.py,dst=/opt/lloom/patch_suppress_stops_in_reasoning.py,readonly",
+                    "--mount", "type=bind,src=${lloomRoot}/backends/glm53-exl3/patch_scheduler_decode_floor.py,dst=/opt/lloom/patch_scheduler_decode_floor.py,readonly",
+                    "-e", "NODE_ADDRESS=${nodeAddress}", "-e", "FABRIC_INTERFACE=${fabricInterface}", "-e", "NODE_RANK=${nodeRank}", "-e", "CLUSTER_NODE_COUNT=${clusterNodeCount}",
+                    "-e", "MASTER_ADDR=${leaderAddress}", "-e", "MASTER_PORT=29521", "-e", "VLLM_HOST=0.0.0.0", "-e", "VLLM_PORT=8890",
+                    "-e", "NCCL_SOCKET_IFNAME=${fabricInterface}", "-e", "TP_SOCKET_IFNAME=${fabricInterface}", "-e", "GLOO_SOCKET_IFNAME=${fabricInterface}",
+                    "-e", "NCCL_NET=IB", "-e", "NCCL_NET_PLUGIN=none", "-e", "NCCL_IB_DISABLE=0", "-e", "NCCL_IB_ROCE_VERSION_NUM=2", "-e", "NCCL_IB_GID_INDEX=3",
+                    "-e", "NCCL_CROSS_NIC=0", "-e", "NCCL_CUMEM_ENABLE=0", "-e", "NCCL_NVLS_ENABLE=0", "-e", "NCCL_IGNORE_CPU_AFFINITY=1", "-e", "NCCL_DEBUG=WARN",
+                    "-e", "HF_HUB_OFFLINE=1", "-e", "TRANSFORMERS_OFFLINE=1", "-e", "VLLM_NO_USAGE_STATS=1", "-e", "DO_NOT_TRACK=1",
+                    "-e", "TORCH_CUDA_ARCH_LIST=12.1a", "-e", "FLASHINFER_CUDA_ARCH_LIST=12.1a", "-e", "FLASHINFER_DISABLE_VERSION_CHECK=1",
+                    "-e", "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True", "-e", "VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=1800",
+                    "-e", "GLM53_SUPPRESS_STOPS_IN_REASONING=1", "-e", "GLM53_MIXED_PREFILL_CHUNK=skip",
+                    "-e", "MODEL_DIR=/models/Mia-AiLab--GLM-5.3-Flash-EXL3-TR3-4bpw", "-e", "DFLASH_MODEL_DIR=/models/incoai--GLM-5.3-Flash-DFlash2",
+                    "-e", "SERVED_MODEL_NAME=glm-5.3-flash-exl3", "-e", "SPEC_METHOD=dflash", "-e", "DFLASH_TOKENS=7", "-e", "DFLASH_DRAFT_TP=1",
+                    "-e", "MAX_MODEL_LEN=900000", "-e", "GPU_MEMORY_UTILIZATION=0.87", "-e", "MAX_NUM_SEQS=4", "-e", "MAX_NUM_BATCHED_TOKENS=1024", "-e", "KV_CACHE_DTYPE=fp8"
+                  ],
+                  "command": ["/opt/lloom/entrypoint.sh"]
+                }
+              }
+            },
+            {
+              "nodeRole": "leader",
+              "runtime": "glm53-flash-exl3-head",
+              "role": "head",
+              "order": 20,
+              "resources": { "memoryGb": 112 },
+              "runtimeSettings": {
+                "adapter": "docker",
+                "management": "managed",
+                "containerName": "lloom-glm53-flash-exl3-${nodeId}",
+                "healthUrl": "http://${leaderAddress}:8890/health",
+                "warmup": {
+                  "url": "http://${leaderAddress}:8890/v1/chat/completions",
+                  "method": "POST",
+                  "body": { "model": "glm-5.3-flash-exl3", "messages": [{ "role": "user", "content": "Reply with OK." }], "max_tokens": 8, "stream": false }
+                },
+                "bootstrap": {
+                  "adapter": "docker",
+                  "image": "ghcr.io/miaai-lab/glm-5.3-flash-2x-dgx-sparks@sha256:9bb1557a4234fce63d59599e44d10747eabd742beb337eebf9e7070be8a0fd58",
+                  "pullTimeoutMs": 3600000,
+                  "createArgs": [
+                    "--restart", "unless-stopped", "--network", "host", "--ipc", "host", "--shm-size", "64g",
+                    "--ulimit", "memlock=-1", "--ulimit", "stack=67108864", "--gpus", "all",
+                    "--device", "/dev/infiniband:/dev/infiniband", "--entrypoint", "/bin/bash",
+                    "-v", "${modelRoot}:/models:ro", "-v", "lloom-glm53-vllm:/root/.cache/vllm", "-v", "lloom-glm53-triton:/root/.triton", "-v", "lloom-glm53-tilelang:/root/.tilelang",
+                    "--mount", "type=bind,src=${lloomRoot}/backends/glm53-exl3/entrypoint.sh,dst=/opt/lloom/entrypoint.sh,readonly",
+                    "--mount", "type=bind,src=${lloomRoot}/backends/glm53-exl3/chat_template.jinja,dst=/opt/lloom/chat_template.jinja,readonly",
+                    "--mount", "type=bind,src=${lloomRoot}/backends/glm53-exl3/patch_glm_video_placeholders.py,dst=/opt/lloom/patch_glm_video_placeholders.py,readonly",
+                    "--mount", "type=bind,src=${lloomRoot}/backends/glm53-exl3/patch_suppress_stops_in_reasoning.py,dst=/opt/lloom/patch_suppress_stops_in_reasoning.py,readonly",
+                    "--mount", "type=bind,src=${lloomRoot}/backends/glm53-exl3/patch_scheduler_decode_floor.py,dst=/opt/lloom/patch_scheduler_decode_floor.py,readonly",
+                    "-e", "NODE_ADDRESS=${nodeAddress}", "-e", "FABRIC_INTERFACE=${fabricInterface}", "-e", "NODE_RANK=${nodeRank}", "-e", "CLUSTER_NODE_COUNT=${clusterNodeCount}",
+                    "-e", "MASTER_ADDR=${leaderAddress}", "-e", "MASTER_PORT=29521", "-e", "VLLM_HOST=0.0.0.0", "-e", "VLLM_PORT=8890",
+                    "-e", "NCCL_SOCKET_IFNAME=${fabricInterface}", "-e", "TP_SOCKET_IFNAME=${fabricInterface}", "-e", "GLOO_SOCKET_IFNAME=${fabricInterface}",
+                    "-e", "NCCL_NET=IB", "-e", "NCCL_NET_PLUGIN=none", "-e", "NCCL_IB_DISABLE=0", "-e", "NCCL_IB_ROCE_VERSION_NUM=2", "-e", "NCCL_IB_GID_INDEX=3",
+                    "-e", "NCCL_CROSS_NIC=0", "-e", "NCCL_CUMEM_ENABLE=0", "-e", "NCCL_NVLS_ENABLE=0", "-e", "NCCL_IGNORE_CPU_AFFINITY=1", "-e", "NCCL_DEBUG=WARN",
+                    "-e", "HF_HUB_OFFLINE=1", "-e", "TRANSFORMERS_OFFLINE=1", "-e", "VLLM_NO_USAGE_STATS=1", "-e", "DO_NOT_TRACK=1",
+                    "-e", "TORCH_CUDA_ARCH_LIST=12.1a", "-e", "FLASHINFER_CUDA_ARCH_LIST=12.1a", "-e", "FLASHINFER_DISABLE_VERSION_CHECK=1",
+                    "-e", "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True", "-e", "VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=1800",
+                    "-e", "GLM53_SUPPRESS_STOPS_IN_REASONING=1", "-e", "GLM53_MIXED_PREFILL_CHUNK=skip",
+                    "-e", "MODEL_DIR=/models/Mia-AiLab--GLM-5.3-Flash-EXL3-TR3-4bpw", "-e", "DFLASH_MODEL_DIR=/models/incoai--GLM-5.3-Flash-DFlash2",
+                    "-e", "SERVED_MODEL_NAME=glm-5.3-flash-exl3", "-e", "SPEC_METHOD=dflash", "-e", "DFLASH_TOKENS=7", "-e", "DFLASH_DRAFT_TP=1",
+                    "-e", "MAX_MODEL_LEN=900000", "-e", "GPU_MEMORY_UTILIZATION=0.87", "-e", "MAX_NUM_SEQS=4", "-e", "MAX_NUM_BATCHED_TOKENS=1024", "-e", "KV_CACHE_DTYPE=fp8"
+                  ],
+                  "command": ["/opt/lloom/entrypoint.sh"]
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

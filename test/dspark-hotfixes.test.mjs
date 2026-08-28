@@ -35,7 +35,7 @@ try {
   const recipe = JSON.parse(
     readFileSync(path.join(repoRoot, 'recipes', 'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json'), 'utf8')
   );
-  assert.equal(recipe.version, 15);
+  assert.equal(recipe.version, 16);
   assert.equal(recipe.models[0].settings.keepWarm, false);
   assert.match(recipe.provenance.source, /d1b76251535daef578d8751b04b39c29ad7ecdf9/);
   assert.equal(recipe.models[0].settings.contextWindow, 262144);
@@ -123,7 +123,7 @@ try {
   assert.equal(archivedV14Recipe.models[0].settings.keepWarm, true);
   const recipeIndex = JSON.parse(readFileSync(path.join(repoRoot, 'recipes', 'index.json'), 'utf8'));
   const indexEntry = recipeIndex.recipes.find((candidate) => candidate.id === recipe.id);
-  assert.equal(indexEntry.currentVersion, 15);
+  assert.equal(indexEntry.currentVersion, 16);
   assert.deepEqual(
     indexEntry.versions.map(({ version, status }) => ({ version, status })),
     [
@@ -138,7 +138,8 @@ try {
       { version: 12, status: 'archived' },
       { version: 13, status: 'archived' },
       { version: 14, status: 'archived' },
-      { version: 15, status: 'current' }
+      { version: 15, status: 'archived' },
+      { version: 16, status: 'current' }
     ]
   );
 

@@ -4,7 +4,7 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm",
   "name": "2x DGX Spark DeepSeek V4 Flash DSpark (MiaAI validated)",
-  "version": 16,
+  "version": 15,
   "summary": "The pinned DeepSeek V4 Flash 0731 two-node DSpark appliance with MiaAI's stable defaults, upstream MTP padding-deadlock and XGrammar termination repairs, atomic rank recovery, no-progress self-healing, and an on-demand local lane behind same-ID cloud failover.",
   "license": { "id": "MIT", "name": "Recipe metadata and launcher" },
   "provenance": {
@@ -51,11 +51,6 @@
       "runtime": "deepseek-v4-flash-0731-cluster",
       "backendConfig": "deepseek-v4-flash-0731",
       "aliases": [
-        {
-          "id": "dsv4f-local",
-          "advertise": false,
-          "description": "Strict local-only DS4F route for attributed benchmarks; never falls through to cloud."
-        },
         {
           "id": "deepseek-v4-flash-0731",
           "fallbacks": ["deepseek/deepseek-v4-flash-0731"],
