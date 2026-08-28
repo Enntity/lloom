@@ -623,6 +623,10 @@ export function createModelImportPlan(
     sessionCacheRoot
   });
 
+  if (keepWarm && !runtime) {
+    throw new Error('keepWarm is only valid for a managed internal runtime; external provider models cannot be pinned');
+  }
+
   if (config.models?.some((model) => model.id === resolvedModelId)) {
     throw new Error(`model ${resolvedModelId} already exists in config`);
   }

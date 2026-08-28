@@ -273,7 +273,7 @@
           "version": 5,
           "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang.json",
           "status": "current",
-          "notes": "Makes the large distributed lane request-driven and safely evictable so aliases with available cloud fallbacks can preserve it without turning keep-warm into an unconditional pin."
+          "notes": "Makes the large distributed lane request-driven and unpinned so aliases with available cloud fallbacks can preserve it while keepWarm remains the single hard residency pin."
         }
       ],
       "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 SGLang",
@@ -363,7 +363,7 @@
           "path": "archive/linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm/v14.json",
           "status": "archived",
           "archivedAt": "2026-08-28T00:15:00.000Z",
-          "notes": "Makes the local DS4F runtime safely evictable because its same-ID route has an installed OpenRouter fallback, while active requests still drain before eviction."
+          "notes": "Makes the local DS4F runtime request-driven and unpinned because its same-ID route has an installed OpenRouter fallback, while active requests still drain before eviction."
         },
         {
           "version": 15,

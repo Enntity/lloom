@@ -383,8 +383,7 @@ function buildRecipeRuntime({
     ...(Number.isFinite(memoryGb) ? { memoryGb } : {}),
     ...(typeof settings.keepWarm === 'boolean' ? { keepWarm: settings.keepWarm } : {}),
     policy: {
-      priority: positiveInteger(settings.priority, 50),
-      evictable: settings.evictable !== false
+      priority: positiveInteger(settings.priority, 50)
     },
     recipe: {
       id: recipe.id,
@@ -677,8 +676,7 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
         memoryGb: Number(settings.memoryGb ?? 0),
         ...(settings.watchdog ? { watchdog: structuredClone(asObject(settings.watchdog)) } : {}),
         policy: {
-          priority: Number(settings.priority ?? 0),
-          evictable: settings.evictable !== false
+          priority: Number(settings.priority ?? 0)
         },
         startupTimeoutMs: positiveInteger(settings.startupTimeoutMs, 1800000),
         healthUrl: `${clusterNodeBackendOrigin(leader)}:${port}${settings.healthPath ?? '/health'}`,

@@ -394,9 +394,6 @@
               "priority": {
                 "type": "integer"
               },
-              "evictable": {
-                "type": "boolean"
-              },
               "reasoning": {
                 "oneOf": [{ "type": "boolean" }, { "type": "string" }]
               },

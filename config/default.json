@@ -31,8 +31,7 @@
     "enabled": true,
     "autoEvict": false,
     "reserveMemoryGb": 12,
-    "protectActiveRequests": true,
-    "protectKeepWarm": false
+    "protectActiveRequests": true
   },
   "community": {
     "hostUrl": "http://127.0.0.1:8110",
@@ -429,8 +428,7 @@
       "memoryGb": 32,
       "maxConcurrency": 1,
       "policy": {
-        "priority": 100,
-        "evictable": true
+        "priority": 100
       },
       "warmup": {
         "url": "http://127.0.0.1:8201/v1/chat/completions",
@@ -495,8 +493,7 @@
       "memoryGb": 72,
       "maxConcurrency": 1,
       "policy": {
-        "priority": 80,
-        "evictable": true
+        "priority": 80
       },
       "warmup": {
         "url": "http://127.0.0.1:8202/v1/chat/completions",
@@ -526,8 +523,7 @@
       "startupTimeoutMs": 900000,
       "memoryGb": 12,
       "policy": {
-        "priority": 20,
-        "evictable": true
+        "priority": 20
       },
       "maxConcurrency": 1
     },
@@ -545,8 +541,7 @@
       "startupTimeoutMs": 900000,
       "memoryGb": 6,
       "policy": {
-        "priority": 40,
-        "evictable": true
+        "priority": 40
       },
       "maxConcurrency": 1
     }

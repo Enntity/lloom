@@ -726,8 +726,7 @@ assert.equal(lmStudioReference.type, 'lm-studio');
 assert.equal(inferBackend(lmStudioReference).backend, 'lm-studio');
 const lmStudioImportPlan = createModelImportPlan(config, {
   modelRef: 'lmstudio:local-qwen',
-  port: 1235,
-  keepWarm: true
+  port: 1235
 });
 assert.equal(lmStudioImportPlan.inference.backend, 'lm-studio');
 assert.equal(lmStudioImportPlan.additions.runtimeId, null);
@@ -737,6 +736,14 @@ assert.equal(lmStudioImportPlan.config.models.find((model) => model.id === 'loca
 assert.equal(lmStudioImportPlan.config.runtimes['lm-studio-local-qwen'], undefined);
 assert.equal(lmStudioImportPlan.next.setupBackend, "lloom backend-install 'lm-studio' --apply --yes");
 assert.equal(lmStudioImportPlan.next.start, null);
+assert.throws(
+  () =>
+    createModelImportPlan(config, {
+      modelRef: 'lmstudio:cannot-pin-external',
+      keepWarm: true
+    }),
+  /external provider models cannot be pinned/
+);
 
 const openAICompatibleReference = normalizeModelReference('openai:http://127.0.0.1:9009/v1#remote-model');
 assert.equal(openAICompatibleReference.type, 'openai-compatible');
@@ -1997,7 +2004,6 @@ assert.equal(appleEmbeddingDerived.defaults.chatModel, 'existing-chat');
 assert.equal(appleEmbeddingDerived.defaults.embeddingModel, 'qwen3-embedding:4b');
 assert.equal(appleEmbeddingDerived.models.find((model) => model.id === 'qwen3-embedding:4b').kind, 'embedding');
 assert.equal(appleEmbeddingDerived.runtimes['ollama-qwen3-embedding-4b'].keepWarm, true);
-assert.equal(appleEmbeddingDerived.runtimes['ollama-qwen3-embedding-4b'].policy.evictable, false);
 assert.deepEqual(appleEmbeddingDerived.runtimes['ollama-qwen3-embedding-4b'].args, ['serve']);
 assert.equal(
   appleEmbeddingDerived.runtimes['ollama-qwen3-embedding-4b'].warmup.url,
@@ -2014,7 +2020,6 @@ assert.equal(
   'embedding'
 );
 assert.equal(appleEmbeddingFp16Derived.runtimes['ollama-qwen3-embedding-4b-fp16'].keepWarm, true);
-assert.equal(appleEmbeddingFp16Derived.runtimes['ollama-qwen3-embedding-4b-fp16'].policy.evictable, false);
 assert.deepEqual(appleEmbeddingFp16Derived.runtimes['ollama-qwen3-embedding-4b-fp16'].args, ['serve']);
 const singleModelRecipe = await loadRecipeById(
   'apple-silicon-qwen36-35b-a3b-mtplx',
@@ -2455,7 +2460,6 @@ assert.deepEqual(
 );
 assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-worker'].recipe.version, 15);
 assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-head'].recipe.version, 15);
-assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-cluster'].policy.evictable, true);
 assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-cluster'].keepWarm, false);
 assert.deepEqual(dsparkRefreshed.aliases['deepseek-v4-flash-0731'], {
   target: 'deepseek-v4-flash-0731',

@@ -65,7 +65,6 @@
         "maxActiveRequests": 1,
         "memoryGb": 24,
         "priority": 150,
-        "evictable": false,
         "keepWarm": true,
         "startupTimeoutMs": 900000,
         "timeoutMs": 1800000,

@@ -1483,28 +1483,15 @@ export class RuntimeManager {
 
   async startKeepWarm() {
     const results = [];
-    // Keep-warm boot is an ordered admission pass, not request-time eviction.
-    // Protect everything already loaded so a later preference cannot churn an
-    // earlier admitted runtime out of memory during the same pass.
+    // Keep-warm is the runtime residency pin. The normal admission policy
+    // protects every pinned runtime, including those started earlier in this
+    // ordered boot pass.
     const admissionConfig = {
       ...this.config,
       runtimePolicy: {
         ...(this.config.runtimePolicy ?? {}),
-        enabled: true,
-        protectKeepWarm: true
-      },
-      runtimes: Object.fromEntries(
-        Object.entries(this.config.runtimes ?? {}).map(([runtimeId, runtime]) => [
-          runtimeId,
-          {
-            ...runtime,
-            policy: {
-              ...(runtime.policy ?? {}),
-              evictable: false
-            }
-          }
-        ])
-      )
+        enabled: true
+      }
     };
     for (const runtimeId of this.keepWarmRuntimeIds()) {
       const runtime = this.getRuntime(runtimeId);

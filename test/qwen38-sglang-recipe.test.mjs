@@ -16,7 +16,6 @@ assert.equal(recipe.models[0].settings.contextWindow, 262144);
 assert.equal(recipe.models[0].settings.maxActiveRequests, 6);
 assert.equal(recipe.version, 5);
 assert.equal(recipe.models[0].settings.memoryGb, 80);
-assert.equal(recipe.models[0].settings.evictable, true);
 assert.equal(recipe.models[0].settings.keepWarm, false);
 
 const dockerSglang = getBackend(await loadBackendCatalog(), 'docker-sglang');

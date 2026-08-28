@@ -36,7 +36,6 @@ try {
     readFileSync(path.join(repoRoot, 'recipes', 'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json'), 'utf8')
   );
   assert.equal(recipe.version, 15);
-  assert.equal(recipe.models[0].settings.evictable, true);
   assert.equal(recipe.models[0].settings.keepWarm, false);
   assert.match(recipe.provenance.source, /d1b76251535daef578d8751b04b39c29ad7ecdf9/);
   assert.equal(recipe.models[0].settings.contextWindow, 262144);

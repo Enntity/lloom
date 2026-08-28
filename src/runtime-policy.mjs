@@ -4,14 +4,14 @@ import { RuntimeManager } from './runtime-manager.mjs';
 import { clusterNodes, runtimeResourcesByNode } from './cluster.mjs';
 
 export class RuntimeAdmissionError extends Error {
-  constructor(message, { plan, temporary = false, retryAfterSeconds = 2 } = {}) {
+  constructor(message, { plan, temporary = false, retryAfterSeconds = 2, code } = {}) {
     super(message);
     this.name = 'RuntimeAdmissionError';
     this.plan = plan;
     this.temporary = temporary;
     this.retryAfterSeconds = retryAfterSeconds;
     this.statusCode = temporary ? 429 : 503;
-    this.code = temporary ? 'runtime_capacity_busy' : 'runtime_capacity_impossible';
+    this.code = code ?? (temporary ? 'runtime_capacity_busy' : 'runtime_capacity_impossible');
     this.type = 'runtime_admission_error';
   }
 }
@@ -37,10 +37,6 @@ function runtimePriority(runtime, { requested = false, keepWarm = false } = {}) 
   const explicit = numberOrNull(runtime?.policy?.priority ?? runtime?.priority);
   if (explicit != null) return explicit;
   return keepWarm ? 100 : 0;
-}
-
-function runtimeEvictable(runtime) {
-  return runtime?.policy?.evictable !== false && runtime?.evictable !== false;
 }
 
 function isRuntimeLoaded(status) {
@@ -74,8 +70,7 @@ function policyConfig(config, profile = {}) {
     reserveMemoryGb,
     memoryBudgetGb,
     maxMemoryUtilization,
-    protectActiveRequests: policy.protectActiveRequests !== false,
-    protectKeepWarm: policy.protectKeepWarm !== false
+    protectActiveRequests: policy.protectActiveRequests !== false
   };
 }
 
@@ -117,7 +112,6 @@ function runtimeRows(config, status, requestedRuntimeId) {
         requested,
         keepWarm: keepWarm.has(runtimeId)
       }),
-      evictable: runtimeEvictable(runtime),
       command: runtime.command ?? null,
       port: runtime.port ?? null
     };
@@ -127,12 +121,8 @@ function runtimeRows(config, status, requestedRuntimeId) {
 function protectedReasons(row, policy) {
   const reasons = [];
   if (row.requested) reasons.push('requested');
-  if (!row.evictable) reasons.push('pinned');
+  if (row.keepWarm) reasons.push('keep-warm-pin');
   if (policy.protectActiveRequests && row.activeRequests > 0) reasons.push('active-requests');
-  // keepWarm is a desired residency state. Deployments may protect that
-  // preference during request-time admission, but policy.evictable=false is
-  // the only unconditional pin.
-  if (policy.protectKeepWarm && row.keepWarm) reasons.push('keep-warm');
   return reasons;
 }
 
@@ -247,7 +237,6 @@ function clusterRuntimePolicyPlan(config, { requestedRuntimeId, profile, status,
     enabled: policyTemplate.enabled !== false,
     autoEvict: policyTemplate.autoEvict === true,
     protectActiveRequests: policyTemplate.protectActiveRequests !== false,
-    protectKeepWarm: policyTemplate.protectKeepWarm !== false,
     clustered: true
   };
   const candidates = rows
@@ -479,20 +468,24 @@ export async function applyRuntimePolicyPlan(
     }
     if (!plan.admission.allowed) {
       const activeBlockers = plan.protected.filter((item) => item.protectedReasons.includes('active-requests'));
-      const permanentBlockers = plan.protected.filter((item) =>
-        item.protectedReasons.some((reason) => reason === 'pinned' || reason === 'keep-warm')
-      );
-      const temporary = activeBlockers.length > 0;
-      const blockerText = [...activeBlockers, ...permanentBlockers]
+      const keepWarmBlockers = plan.protected.filter((item) => item.protectedReasons.includes('keep-warm-pin'));
+      const temporary = activeBlockers.length > 0 && keepWarmBlockers.length === 0;
+      const blockerText = [...activeBlockers, ...keepWarmBlockers]
         .map((item) => `${item.runtimeId} (${item.protectedReasons.join(', ')})`)
         .join(', ');
       throw new RuntimeAdmissionError(
-        temporary
-          ? `Runtime ${requestedRuntimeId} is queued for capacity; waiting for active runtime(s) to drain: ${blockerText}`
-          : plan.admission.clustered
-            ? `Runtime ${requestedRuntimeId} cannot fit within the per-node cluster memory budgets; protected runtime(s): ${blockerText || 'none'}`
-            : `Runtime ${requestedRuntimeId} cannot fit within the ${plan.policy.memoryBudgetGb.toFixed(1)} GB memory budget; protected runtime(s): ${blockerText || 'none'}`,
-        { plan, temporary }
+        keepWarmBlockers.length
+          ? `Runtime ${requestedRuntimeId} cannot be admitted because it would evict keep-warm runtime(s): ${keepWarmBlockers.map((item) => item.runtimeId).join(', ')}. Clear keepWarm on the blocking internal runtime before retrying.`
+          : temporary
+            ? `Runtime ${requestedRuntimeId} is queued for capacity; waiting for active runtime(s) to drain: ${blockerText}`
+            : plan.admission.clustered
+              ? `Runtime ${requestedRuntimeId} cannot fit within the per-node cluster memory budgets; protected runtime(s): ${blockerText || 'none'}`
+              : `Runtime ${requestedRuntimeId} cannot fit within the ${plan.policy.memoryBudgetGb.toFixed(1)} GB memory budget; protected runtime(s): ${blockerText || 'none'}`,
+        {
+          plan,
+          temporary,
+          ...(keepWarmBlockers.length ? { code: 'runtime_keep_warm_conflict' } : {})
+        }
       );
     }
 

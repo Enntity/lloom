@@ -55,6 +55,36 @@ function envBoolean(env, name) {
   throw new Error(`${name} must be one of true/false, yes/no, on/off, or 1/0`);
 }
 
+function residencyFields(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+  const fields = ['keepWarm', 'pinned', 'evictable'].filter((field) => Object.hasOwn(value, field));
+  if (value.policy && typeof value.policy === 'object' && !Array.isArray(value.policy)) {
+    fields.push(
+      ...['keepWarm', 'pinned', 'evictable']
+        .filter((field) => Object.hasOwn(value.policy, field))
+        .map((field) => `policy.${field}`)
+    );
+  }
+  return fields;
+}
+
+export function normalizeLegacyResidencyPolicy(input) {
+  const config = structuredClone(input);
+  if (config.runtimePolicy && typeof config.runtimePolicy === 'object') {
+    delete config.runtimePolicy.protectKeepWarm;
+  }
+  for (const runtime of Object.values(asObject(config.runtimes))) {
+    const legacyPinned = runtime?.evictable === false || runtime?.policy?.evictable === false;
+    if (legacyPinned) runtime.keepWarm = true;
+    if (runtime && typeof runtime === 'object') delete runtime.evictable;
+    if (runtime?.policy && typeof runtime.policy === 'object') {
+      delete runtime.policy.evictable;
+      if (!Object.keys(runtime.policy).length) delete runtime.policy;
+    }
+  }
+  return config;
+}
+
 function validateConfig(config, sourcePath, env) {
   const errors = [];
   const modelIds = new Set();
@@ -66,6 +96,15 @@ function validateConfig(config, sourcePath, env) {
     }
     if (model?.id && modelIds.has(model.id)) errors.push(`duplicate model id: ${model.id}`);
     if (model?.id) modelIds.add(model.id);
+    const modelResidencyFields = residencyFields(model);
+    if (modelResidencyFields.length) {
+      errors.push(
+        `model ${model?.id ?? index} cannot declare ${modelResidencyFields.join(', ')}; keepWarm is only valid on a managed internal runtime`
+      );
+    }
+    if (model?.runtime && !config.runtimes?.[model.runtime]) {
+      errors.push(`model ${model.id} references unknown runtime ${model.runtime}`);
+    }
     for (const target of modelTargets(model)) {
       if (target.backend && !config.backends?.[target.backend]) {
         errors.push(`model ${model.id} references unknown backend ${target.backend}`);
@@ -79,6 +118,12 @@ function validateConfig(config, sourcePath, env) {
     const target = typeof alias === 'string' ? alias : alias?.target;
     const fallbacks = typeof alias === 'string' ? [] : alias?.fallbacks;
     if (!target) errors.push(`alias ${aliasId} is missing target`);
+    const aliasResidencyFields = residencyFields(alias);
+    if (aliasResidencyFields.length) {
+      errors.push(
+        `alias ${aliasId} cannot declare ${aliasResidencyFields.join(', ')}; aliases resolve models and cannot pin compute`
+      );
+    }
     if (fallbacks != null && !Array.isArray(fallbacks)) {
       errors.push(`alias ${aliasId} fallbacks must be an array`);
     }
@@ -104,6 +149,12 @@ function validateConfig(config, sourcePath, env) {
     }
   }
 
+  for (const [runtimeId, runtime] of Object.entries(config.runtimes ?? {})) {
+    if (runtime.keepWarm != null && typeof runtime.keepWarm !== 'boolean') {
+      errors.push(`runtime ${runtimeId} keepWarm must be a boolean`);
+    }
+  }
+
   if (errors.length) {
     throw new Error(`Invalid LLooM config ${sourcePath}:\n${errors.map((error) => `- ${error}`).join('\n')}`);
   }
@@ -115,7 +166,7 @@ export async function loadConfig(
 ) {
   const resolvedPath = path.resolve(configPath);
   const raw = await fs.readFile(resolvedPath, 'utf8');
-  const parsed = JSON.parse(raw);
+  const parsed = normalizeLegacyResidencyPolicy(JSON.parse(raw));
   const expanded = expandEnvValue(parsed, configEnv(env));
   if (Object.hasOwn(expanded, 'keepWarm')) {
     throw new Error(

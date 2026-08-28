@@ -29,7 +29,6 @@
     "autoEvict": true,
     "maxMemoryUtilization": 0.95,
     "protectActiveRequests": true,
-    "protectKeepWarm": false,
     "admissionWaitMs": 120000
   },
   "backends": {
@@ -104,7 +103,7 @@
       "memoryGb": 64,
       "keepWarm": false,
       "startupTimeoutMs": 600000,
-      "policy": { "priority": 50, "evictable": true },
+      "policy": { "priority": 50 },
       "recipe": { "id": "dgx-spark-qwen36-nvfp4-mtp", "version": 2 },
       "behaviorOverrides": { "chatTemplate": "qwen3-xml-tool-reminder" },
       "bootstrap": {
@@ -125,7 +124,7 @@
       "memoryGb": 64,
       "keepWarm": false,
       "startupTimeoutMs": 600000,
-      "policy": { "priority": 100, "evictable": true },
+      "policy": { "priority": 100 },
       "recipe": { "id": "dgx-spark-qwen36-nvfp4-fast-mtp", "version": 4 },
       "bootstrap": {
         "adapter": "docker",
@@ -145,7 +144,7 @@
       "memoryGb": 64,
       "keepWarm": false,
       "startupTimeoutMs": 900000,
-      "policy": { "priority": 55, "evictable": true },
+      "policy": { "priority": 55 },
       "recipe": {
         "id": "dgx-spark-qwen36-nvfp4-froggeric-vllm025",
         "version": 1,
@@ -170,7 +169,7 @@
       "maxConcurrency": 8,
       "memoryGb": 12,
       "keepWarm": true,
-      "policy": { "priority": 200, "evictable": false },
+      "policy": { "priority": 200 },
       "bootstrap": {
         "adapter": "docker",
         "image": "vllm/vllm-openai:v0.24.0",
@@ -195,7 +194,7 @@
       "memoryGb": 64,
       "keepWarm": false,
       "startupTimeoutMs": 900000,
-      "policy": { "priority": 80, "evictable": true },
+      "policy": { "priority": 80 },
       "recipe": {
         "id": "nvidia-hf-qwen36-35b-a3b-nvfp4-dgx-spark",
         "version": 1,
@@ -219,7 +218,7 @@
       "memoryGb": 64,
       "keepWarm": false,
       "startupTimeoutMs": 900000,
-      "policy": { "priority": 90, "evictable": true },
+      "policy": { "priority": 90 },
       "recipe": {
         "id": "nvidia-hf-qwen36-27b-nvfp4-vllm",
         "version": 2,
@@ -251,7 +250,7 @@
         "cooldownMs": 600000,
         "drainTimeoutMs": 30000
       },
-      "policy": { "priority": 85, "evictable": true },
+      "policy": { "priority": 85 },
       "recipe": {
         "id": "unsloth-hf-qwen36-27b-nvfp4-dgx-spark",
         "version": 3,
@@ -282,7 +281,7 @@
       "memoryGb": 64,
       "keepWarm": false,
       "startupTimeoutMs": 900000,
-      "policy": { "priority": 89, "evictable": true },
+      "policy": { "priority": 89 },
       "recipe": {
         "id": "linux-nvidia-gb10-thinkingcap-qwen36-27b-vllm",
         "version": 1,

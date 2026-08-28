@@ -153,7 +153,6 @@
         "maxActiveRequests": 1,
         "memoryGb": 32,
         "priority": 70,
-        "evictable": true,
         "keepWarm": false,
         "startupTimeoutMs": 900000,
         "runtime": {
@@ -197,7 +196,6 @@
         "maxActiveRequests": 1,
         "memoryGb": 48,
         "priority": 65,
-        "evictable": true,
         "keepWarm": false,
         "startupTimeoutMs": 1200000,
         "runtime": {
@@ -243,7 +241,6 @@
         "maxActiveRequests": 1,
         "memoryGb": 56,
         "priority": 66,
-        "evictable": true,
         "keepWarm": false,
         "startupTimeoutMs": 1200000,
         "runtime": {

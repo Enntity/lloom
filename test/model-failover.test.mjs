@@ -86,8 +86,7 @@ async function createFixture({
             enabled: true,
             autoEvict: true,
             memoryBudgetGb: 40,
-            protectActiveRequests: true,
-            protectKeepWarm: false
+            protectActiveRequests: true
           }
         }
       : {}),
@@ -124,7 +123,7 @@ async function createFixture({
     ],
     runtimes: {
       'primary-runtime': { enabled: true, memoryGb: preserveResident ? 30 : 0 },
-      ...(preserveResident ? { 'resident-runtime': { enabled: true, memoryGb: 30, policy: { evictable: true } } } : {})
+      ...(preserveResident ? { 'resident-runtime': { enabled: true, memoryGb: 30 } } : {})
     }
   };
   const runtimeManager = {
@@ -232,6 +231,23 @@ async function chat(url, body = {}) {
   base.aliases.stable.fallbacks = ['image'];
   await writeFile(configPath, JSON.stringify(base));
   await assert.rejects(loadConfig(configPath), /models with different kinds/);
+  base.aliases.stable = { target: 'chat', keepWarm: true };
+  await writeFile(configPath, JSON.stringify(base));
+  await assert.rejects(loadConfig(configPath), /aliases resolve models and cannot pin compute/);
+
+  base.aliases.stable = { target: 'chat' };
+  base.runtimePolicy = { protectKeepWarm: false };
+  base.runtimes = {
+    legacyPin: { keepWarm: false, policy: { priority: 7, evictable: false } },
+    legacyUnpinned: { policy: { evictable: true } }
+  };
+  await writeFile(configPath, JSON.stringify(base));
+  const migrated = await loadConfig(configPath);
+  assert.equal(migrated.runtimes.legacyPin.keepWarm, true);
+  assert.deepEqual(migrated.runtimes.legacyPin.policy, { priority: 7 });
+  assert.equal(migrated.runtimes.legacyUnpinned.policy, undefined);
+  assert.equal(migrated.runtimePolicy.protectKeepWarm, undefined);
+  assert.equal(migrated.sourceTemplate.runtimes.legacyPin.keepWarm, true);
   await rm(directory, { recursive: true, force: true });
 }
 

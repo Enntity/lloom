@@ -130,7 +130,6 @@
         "maxActiveRequests": 2,
         "memoryGb": 16,
         "priority": 80,
-        "evictable": true,
         "keepWarm": false,
         "startupTimeoutMs": 600000,
         "sessionCache": {

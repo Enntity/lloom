@@ -18,11 +18,7 @@ const runtimePolicyConfig = {
       memoryGb: 30,
       policy: { priority: 200 }
     },
-    pinned: {
-      enabled: true,
-      memoryGb: 10,
-      policy: { evictable: false }
-    }
+    idle: { enabled: true, memoryGb: 10 }
   }
 };
 
@@ -30,7 +26,7 @@ const syntheticPolicyStatus = {
   runtimes: {
     warm: { healthy: true, status: 'running', activeRequests: 0, queuedRequests: 0 },
     big: { healthy: false, status: 'idle', activeRequests: 0, queuedRequests: 0 },
-    pinned: { healthy: false, status: 'idle', activeRequests: 0, queuedRequests: 0 }
+    idle: { healthy: false, status: 'idle', activeRequests: 0, queuedRequests: 0 }
   }
 };
 
@@ -46,16 +42,16 @@ assert.deepEqual(
 assert.equal(runtimePolicyPlan.admission.projectedMemoryGb, 55);
 assert(
   runtimePolicyPlan.protected.some(
-    (entry) => entry.runtimeId === 'warm' && entry.protectedReasons.includes('keep-warm')
+    (entry) => entry.runtimeId === 'warm' && entry.protectedReasons.includes('keep-warm-pin')
   )
 );
 
-const softKeepWarmPlan = await createRuntimePolicyPlan(
+const unpinnedPlan = await createRuntimePolicyPlan(
   {
     ...runtimePolicyConfig,
-    runtimePolicy: {
-      ...runtimePolicyConfig.runtimePolicy,
-      protectKeepWarm: false
+    runtimes: {
+      ...runtimePolicyConfig.runtimes,
+      warm: { ...runtimePolicyConfig.runtimes.warm, keepWarm: false }
     }
   },
   {
@@ -63,9 +59,9 @@ const softKeepWarmPlan = await createRuntimePolicyPlan(
     status: syntheticPolicyStatus
   }
 );
-assert.equal(softKeepWarmPlan.admission.allowed, true);
+assert.equal(unpinnedPlan.admission.allowed, true);
 assert.deepEqual(
-  softKeepWarmPlan.actions.map((action) => `${action.type}:${action.runtimeId}`),
+  unpinnedPlan.actions.map((action) => `${action.type}:${action.runtimeId}`),
   ['stop:warm', 'start:big']
 );
 
@@ -159,7 +155,7 @@ assert(
 );
 
 const policyOperations = [];
-const evictablePolicyConfig = {
+const unpinnedPolicyConfig = {
   ...runtimePolicyConfig,
   runtimes: {
     ...runtimePolicyConfig.runtimes,
@@ -194,7 +190,20 @@ await assert.rejects(
   /without yes=true/
 );
 
-const applied = await applyRuntimePolicyPlan(evictablePolicyConfig, fakePolicyManager, {
+await assert.rejects(
+  () =>
+    applyRuntimePolicyPlan(runtimePolicyConfig, fakePolicyManager, {
+      requestedRuntimeId: 'big',
+      dryRun: false,
+      yes: true
+    }),
+  (error) =>
+    error.code === 'runtime_keep_warm_conflict' &&
+    error.temporary === false &&
+    /would evict keep-warm runtime\(s\): warm/.test(error.message)
+);
+
+const applied = await applyRuntimePolicyPlan(unpinnedPolicyConfig, fakePolicyManager, {
   requestedRuntimeId: 'big',
   dryRun: false,
   yes: true,
