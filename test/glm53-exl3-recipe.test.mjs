@@ -9,7 +9,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const backendRoot = path.join(root, 'backends', 'glm53-exl3');
 const recipe = await loadRecipeById('linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm');
 
-assert.equal(recipe.version, 3);
+assert.equal(recipe.version, 4);
 assert.equal(recipe.models[0].gatewayModel, 'glm-5.3-flash-exl3');
 assert.equal(recipe.models[0].settings.contextWindow, 262144);
 assert.equal(recipe.models[0].settings.memoryGb, 100);
@@ -49,7 +49,7 @@ for (const member of members) {
   assert.match(rendered, /DFLASH_TOKENS=7/);
   assert.match(rendered, /MAX_MODEL_LEN=262144/);
   assert.match(rendered, /GPU_MEMORY_UTILIZATION=0\.79/);
-  assert.match(rendered, /KV_CACHE_MEMORY_BYTES=4563402752/);
+  assert.match(rendered, /KV_CACHE_MEMORY_BYTES=10200547328/);
   assert.match(rendered, /GLM53_MIXED_PREFILL_CHUNK=skip/);
   assert.deepEqual(bootstrap.command, ['/opt/lloom/entrypoint.sh']);
 }
