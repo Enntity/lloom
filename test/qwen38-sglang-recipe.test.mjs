@@ -14,7 +14,8 @@ assert.equal(recipe.backend.id, 'docker-sglang');
 assert.equal(recipe.models[0].gatewayModel, 'qwen3.8-flash-next');
 assert.equal(recipe.models[0].settings.contextWindow, 262144);
 assert.equal(recipe.models[0].settings.maxActiveRequests, 6);
-assert.equal(recipe.models[0].settings.memoryGb, 96);
+assert.equal(recipe.version, 2);
+assert.equal(recipe.models[0].settings.memoryGb, 80);
 
 const dockerSglang = getBackend(await loadBackendCatalog(), 'docker-sglang');
 assert(dockerSglang, 'docker-sglang backend must be packaged');
@@ -30,6 +31,7 @@ assert.deepEqual(
   ['worker', 'head']
 );
 for (const member of members) {
+  assert.equal(member.resources.memoryGb, 80);
   const bootstrap = member.runtimeSettings.bootstrap;
   assert.equal(
     bootstrap.image,

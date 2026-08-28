@@ -49,7 +49,7 @@ import { applyInit, defaultUserConfigPath } from '../src/init.mjs';
 import { applyBackend, applyRecipe } from '../src/installer.mjs';
 import { createInterchangeRegistry, createInterchangeValidationReport } from '../src/interchange.mjs';
 import { profileMachine, rankRecipes } from '../src/machine-profile.mjs';
-import { loadManagedServiceEnvironment } from '../src/managed-environment.mjs';
+import { loadManagedServiceEnvironment, resolveManagedEnvironmentValue } from '../src/managed-environment.mjs';
 import { applyModelImport, applyModelImportGo } from '../src/model-intake.mjs';
 import { applyModelRemoval } from '../src/model-removal.mjs';
 import { applyOnboarding, createOnboardingPlan } from '../src/onboarding.mjs';
@@ -1022,7 +1022,9 @@ async function gatewayHealth(config) {
 }
 
 function gatewayAdminHeaders(config) {
-  const key = config.security?.adminApiKeys?.[0] ?? config.security?.apiKeys?.[0];
+  const key = resolveManagedEnvironmentValue(
+    config.security?.adminApiKeys?.[0] ?? config.security?.apiKeys?.[0]
+  );
   return key ? { authorization: `Bearer ${key}` } : {};
 }
 

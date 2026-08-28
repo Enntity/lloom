@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { loadManagedServiceEnvironment, parseManagedEnvironmentFile } from '../src/managed-environment.mjs';
+import {
+  loadManagedServiceEnvironment,
+  parseManagedEnvironmentFile,
+  resolveManagedEnvironmentValue
+} from '../src/managed-environment.mjs';
 import {
   assertBindAllowed,
   authorizeRequest,
@@ -38,6 +42,8 @@ IGNORED LINE
     LLOOM_CLUSTER_KEY: 'sk-cluster'
   }
 );
+assert.equal(resolveManagedEnvironmentValue('${LLOOM_ADMIN_API_KEY}', { LLOOM_ADMIN_API_KEY: 'sk-admin' }), 'sk-admin');
+assert.equal(resolveManagedEnvironmentValue('${MISSING_KEY}', {}), '${MISSING_KEY}');
 
 {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lloom-managed-env-'));

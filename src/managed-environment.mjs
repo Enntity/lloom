@@ -39,3 +39,8 @@ export function loadManagedServiceEnvironment({ home = process.env.HOME, env = p
   }
   return { loaded: true, path: filePath, keys: loadedKeys };
 }
+
+export function resolveManagedEnvironmentValue(value, env = process.env) {
+  const match = typeof value === 'string' ? value.match(/^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/) : null;
+  return match && Object.hasOwn(env, match[1]) ? env[match[1]] : value;
+}

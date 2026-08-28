@@ -4,7 +4,7 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang",
   "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 SGLang",
-  "version": 2,
+  "version": 1,
   "summary": "Pinned two-Spark SGLang TP=2 Qwen3.8 Flash Next with SM121 QSA kernels, native NVFP4 KV, MTP4 CUDA-graph decode, native 262K context, and reserved sidecar headroom.",
   "license": { "id": "MIT", "name": "Recipe metadata and launcher" },
   "provenance": {
@@ -67,7 +67,7 @@
         "contextWindow": 262144,
         "maxOutputTokens": 32768,
         "maxActiveRequests": 6,
-        "memoryGb": 80,
+        "memoryGb": 96,
         "priority": 200,
         "evictable": false,
         "keepWarm": true,
@@ -91,7 +91,7 @@
               "role": "worker",
               "order": 10,
               "healthStrategy": "container",
-              "resources": { "memoryGb": 80 },
+              "resources": { "memoryGb": 96 },
               "runtimeSettings": {
                 "adapter": "docker",
                 "management": "managed",
@@ -137,7 +137,7 @@
               "runtime": "qwen38-flash-next-head",
               "role": "head",
               "order": 20,
-              "resources": { "memoryGb": 80 },
+              "resources": { "memoryGb": 96 },
               "runtimeSettings": {
                 "adapter": "docker",
                 "management": "managed",
