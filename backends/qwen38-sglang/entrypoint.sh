@@ -37,7 +37,10 @@ fi
 # Flash Next is an always-reasoning preview.  Keep the native template in its
 # supported mode and choose the shallowest documented effort for the default
 # production path.  Per-request chat_template_kwargs remain authoritative.
-default_chat_template_kwargs="${DEFAULT_CHAT_TEMPLATE_KWARGS:-{\"reasoning_effort\":\"low\"}}"
+default_chat_template_kwargs="${DEFAULT_CHAT_TEMPLATE_KWARGS:-}"
+if [[ -z "${default_chat_template_kwargs}" ]]; then
+  default_chat_template_kwargs='{"reasoning_effort":"low"}'
+fi
 
 if [[ -z "${NCCL_IB_HCA:-}" ]]; then
   for hca_path in /sys/class/infiniband/*; do

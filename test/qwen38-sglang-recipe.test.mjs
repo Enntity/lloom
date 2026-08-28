@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -14,7 +15,7 @@ assert.equal(recipe.backend.id, 'docker-sglang');
 assert.equal(recipe.models[0].gatewayModel, 'qwen3.8-flash-next');
 assert.equal(recipe.models[0].settings.contextWindow, 262144);
 assert.equal(recipe.models[0].settings.maxActiveRequests, 6);
-assert.equal(recipe.version, 9);
+assert.equal(recipe.version, 10);
 assert.equal(recipe.models[0].settings.memoryGb, 80);
 assert.equal(recipe.models[0].settings.keepWarm, false);
 assert.equal(recipe.capabilities.includes('mtp'), true);
@@ -67,13 +68,29 @@ for (const expected of [
   'if [[ "${ENABLE_THINKING_BUDGETS:-0}" == "1" ]]',
   '--enable-linear-replayssm-spec',
   '--enable-custom-logit-processor',
-  'default_chat_template_kwargs="${DEFAULT_CHAT_TEMPLATE_KWARGS:-{\\"reasoning_effort\\":\\"low\\"}}"',
+  'default_chat_template_kwargs="${DEFAULT_CHAT_TEMPLATE_KWARGS:-}"',
+  "default_chat_template_kwargs='{\"reasoning_effort\":\"low\"}'",
   '--default-chat-template-kwargs "${default_chat_template_kwargs}"',
   '--cuda-graph-bs-decode 1 2 3 4 5 6'
 ]) {
   assert(entrypoint.includes(expected), `missing SGLang launch control: ${expected}`);
 }
 assert(entrypoint.includes('unset SGLANG_PORT'), 'legacy SGLANG_PORT must not leak into SGLang');
+const templateAssignment = entrypoint.match(
+  /default_chat_template_kwargs="\$\{DEFAULT_CHAT_TEMPLATE_KWARGS:-\}"[\s\S]*?\nfi/
+)?.[0];
+assert(templateAssignment, 'chat-template default assignment must stay executable in isolation');
+for (const [configured, expected] of [
+  ['', '{"reasoning_effort":"low"}'],
+  ['{"reasoning_effort":"medium"}', '{"reasoning_effort":"medium"}']
+]) {
+  const rendered = spawnSync('bash', ['-c', `${templateAssignment}\nprintf '%s' "$default_chat_template_kwargs"`], {
+    encoding: 'utf8',
+    env: { ...process.env, DEFAULT_CHAT_TEMPLATE_KWARGS: configured }
+  });
+  assert.equal(rendered.status, 0, rendered.stderr);
+  assert.equal(rendered.stdout, expected);
+}
 
 const sm121Patch = await fs.readFile(path.join(backendRoot, 'apply-sm121-patches.py'), 'utf8');
 assert.match(sm121Patch, /THINKING_START_TOKEN_ID: int = 248068/);
@@ -101,5 +118,6 @@ await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x
 await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v6.json'));
 await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v7.json'));
 await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v8.json'));
+await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v9.json'));
 
 console.log('qwen38 sglang recipe tests passed');

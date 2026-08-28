@@ -239,7 +239,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang",
       "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang.json",
-      "currentVersion": 9,
+      "currentVersion": 10,
       "versions": [
         {
           "version": 1,
@@ -299,9 +299,16 @@
         },
         {
           "version": 9,
+          "path": "archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang/v9.json",
+          "status": "archived",
+          "archivedAt": "2026-08-29T01:20:00.000Z",
+          "notes": "Keeps MTP while restoring the model's always-reasoning contract: native low effort is the production default, explicit efforts reach the chat template without hard token budgets, and checkpoint sampling defaults remain available."
+        },
+        {
+          "version": 10,
           "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang.json",
           "status": "current",
-          "notes": "Keeps MTP while restoring the model's always-reasoning contract: native low effort is the production default, explicit efforts reach the chat template without hard token budgets, and checkpoint sampling defaults remain available."
+          "notes": "Renders the native low-effort chat-template JSON through an explicit shell assignment so both the configured and fallback launcher paths produce exact valid argv."
         }
       ],
       "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 SGLang",
