@@ -4,16 +4,16 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang",
   "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 SGLang",
-  "version": 11,
+  "version": 10,
   "summary": "On-demand two-Spark SGLang TP=2 Qwen3.8 Flash Next with native low-effort reasoning, MTP4 CUDA-graph decode, SM121 QSA kernels, native NVFP4 KV, native 262K context, and reserved sidecar headroom.",
   "license": { "id": "MIT", "name": "Recipe metadata and launcher" },
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "Adapted from MiaAI-Lab/Qwen3.8-Flash-Next-Dual-DGX-Sparks f87d586e269df171089a879ee33a5356c0570e70 with the exact SM121 correctness update from 6acd77306bb2407af2fd2f010af22813453dd6f5, LLooM-native distributed lifecycle, and a measured-sidecar target"
+    "source": "Adapted from MiaAI-Lab/Qwen3.8-Flash-Next-Dual-DGX-Sparks f87d586e269df171089a879ee33a5356c0570e70 with LLooM-native distributed lifecycle and a measured-sidecar target"
   },
   "links": [
-    { "rel": "upstream", "href": "https://github.com/MiaAI-Lab/Qwen3.8-Flash-Next-Dual-DGX-Sparks/tree/6acd77306bb2407af2fd2f010af22813453dd6f5" },
+    { "rel": "upstream", "href": "https://github.com/MiaAI-Lab/Qwen3.8-Flash-Next-Dual-DGX-Sparks/tree/f87d586e269df171089a879ee33a5356c0570e70" },
     { "rel": "comparison", "href": "https://github.com/tonyd2wild/Qwen3.8-Flash-Next-NVFP4-DGX-Spark" },
     { "rel": "model", "href": "https://huggingface.co/RadixArk/Qwen3.8-Flash-Next-NVFP4/tree/7b719225242aacd3dbd3f9407468c2ee9a9d2594" },
     { "rel": "runtime", "href": "https://hub.docker.com/r/lmsysorg/sglang/tags" }
@@ -25,11 +25,11 @@
     "testedMachine": "Two directly connected DGX Spark systems",
     "notes": [
       "TP=2 runs over the private ConnectX-7 RoCE fabric and starts worker-first under LLooM.",
-      "The SM121 packed-varlen QSA kernel is byte-pinned to MiaAI-Lab commit 6acd77306bb2407af2fd2f010af22813453dd6f5; the NVFP4-KV layer remains pinned to f87d586e269df171089a879ee33a5356c0570e70, and all source edits refuse mismatched anchors.",
+      "The SM121 QSA and NVFP4-KV patch set is pinned to MiaAI-Lab commit f87d586e269df171089a879ee33a5356c0570e70 and refuses mismatched source anchors.",
       "The live-profiled 627648-token shared pool supports two simultaneous native-context working sets or six shorter agent sessions while reserving memory for LLooM sidecars.",
       "The 0.80 static-memory fraction covers FP32 recurrent state and the NVFP4 token pool while retaining headroom for controlled speculative experiments; 0.76 is insufficient after the FP32 correctness upgrade.",
       "Generic NEXTN renders as EAGLE in this runtime and does not enforce custom thinking-budget processors; MTP and hard graduated budgets are therefore mutually exclusive profiles.",
-      "The new SM121 kernel passed upstream exact retrieval at 120K, 190K, and 210K with no token-id-0 output; this LLooM NVFP4-KV combination still requires its own long-context semantic soak before 262K is trusted."
+      "NVFP4 KV requires workload-specific semantic validation at 262K; upstream retrieval evidence is currently strongest through 128K."
     ]
   },
   "requirements": {
@@ -116,7 +116,7 @@
                     "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/entrypoint.sh,dst=/opt/lloom/entrypoint.sh,readonly",
                     "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/apply-sm121-patches.py,dst=/opt/lloom/apply-sm121-patches.py,readonly",
                     "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/apply_nvfp4_patches.py,dst=/opt/lloom/apply_nvfp4_patches.py,readonly",
-                    "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/sm121_varlen.py,dst=/opt/lloom/sm121_varlen.py,readonly",
+                    "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/qsa_fa_fallback.py,dst=/opt/lloom/qsa_fa_fallback.py,readonly",
                     "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/qsa_nvfp4_kv.py,dst=/opt/lloom/qsa_nvfp4_kv.py,readonly",
                     "-e", "NODE_ADDRESS=${nodeAddress}", "-e", "FABRIC_INTERFACE=${fabricInterface}", "-e", "NODE_RANK=${nodeRank}",
                     "-e", "CLUSTER_NODE_COUNT=${clusterNodeCount}", "-e", "MASTER_ADDR=${leaderAddress}", "-e", "MASTER_PORT=26400",
@@ -168,7 +168,7 @@
                     "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/entrypoint.sh,dst=/opt/lloom/entrypoint.sh,readonly",
                     "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/apply-sm121-patches.py,dst=/opt/lloom/apply-sm121-patches.py,readonly",
                     "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/apply_nvfp4_patches.py,dst=/opt/lloom/apply_nvfp4_patches.py,readonly",
-                    "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/sm121_varlen.py,dst=/opt/lloom/sm121_varlen.py,readonly",
+                    "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/qsa_fa_fallback.py,dst=/opt/lloom/qsa_fa_fallback.py,readonly",
                     "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/qsa_nvfp4_kv.py,dst=/opt/lloom/qsa_nvfp4_kv.py,readonly",
                     "-e", "NODE_ADDRESS=${nodeAddress}", "-e", "FABRIC_INTERFACE=${fabricInterface}", "-e", "NODE_RANK=${nodeRank}",
                     "-e", "CLUSTER_NODE_COUNT=${clusterNodeCount}", "-e", "MASTER_ADDR=${leaderAddress}", "-e", "MASTER_PORT=26400",
