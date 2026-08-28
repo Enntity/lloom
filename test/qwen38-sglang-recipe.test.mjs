@@ -14,8 +14,10 @@ assert.equal(recipe.backend.id, 'docker-sglang');
 assert.equal(recipe.models[0].gatewayModel, 'qwen3.8-flash-next');
 assert.equal(recipe.models[0].settings.contextWindow, 262144);
 assert.equal(recipe.models[0].settings.maxActiveRequests, 6);
-assert.equal(recipe.version, 4);
+assert.equal(recipe.version, 5);
 assert.equal(recipe.models[0].settings.memoryGb, 80);
+assert.equal(recipe.models[0].settings.evictable, true);
+assert.equal(recipe.models[0].settings.keepWarm, false);
 
 const dockerSglang = getBackend(await loadBackendCatalog(), 'docker-sglang');
 assert(dockerSglang, 'docker-sglang backend must be packaged');
@@ -76,5 +78,6 @@ for (const [name, expected] of Object.entries(sourceHashes)) {
 
 await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm', 'v1.json'));
 await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v3.json'));
+await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v4.json'));
 
 console.log('qwen38 sglang recipe tests passed');

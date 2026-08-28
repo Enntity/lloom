@@ -4,8 +4,8 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang",
   "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 SGLang",
-  "version": 5,
-  "summary": "On-demand two-Spark SGLang TP=2 Qwen3.8 Flash Next with SM121 QSA kernels, native NVFP4 KV, MTP4 CUDA-graph decode, native 262K context, and reserved sidecar headroom.",
+  "version": 4,
+  "summary": "Pinned two-Spark SGLang TP=2 Qwen3.8 Flash Next with SM121 QSA kernels, native NVFP4 KV, MTP4 CUDA-graph decode, native 262K context, and reserved sidecar headroom.",
   "license": { "id": "MIT", "name": "Recipe metadata and launcher" },
   "provenance": {
     "createdBy": "lloom",
@@ -70,8 +70,8 @@
         "maxActiveRequests": 6,
         "memoryGb": 80,
         "priority": 200,
-        "evictable": true,
-        "keepWarm": false,
+        "evictable": false,
+        "keepWarm": true,
         "startupTimeoutMs": 7200000,
         "timeoutMs": 600000,
         "watchdog": {

@@ -239,7 +239,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang",
       "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang.json",
-      "currentVersion": 4,
+      "currentVersion": 5,
       "versions": [
         {
           "version": 1,
@@ -264,13 +264,20 @@
         },
         {
           "version": 4,
+          "path": "archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang/v4.json",
+          "status": "archived",
+          "archivedAt": "2026-08-28T14:00:00.000Z",
+          "notes": "Raises the static pool from 0.76 to 0.80 so the FP32 recurrent-state correction, speculative draft, and NVFP4 token cache fit together while retaining measured sidecar headroom."
+        },
+        {
+          "version": 5,
           "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang.json",
           "status": "current",
-          "notes": "Raises the static pool from 0.76 to 0.80 so the FP32 recurrent-state correction, speculative draft, and NVFP4 token cache fit together while retaining measured sidecar headroom."
+          "notes": "Makes the large distributed lane request-driven and safely evictable so aliases with available cloud fallbacks can preserve it without turning keep-warm into an unconditional pin."
         }
       ],
       "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 SGLang",
-      "summary": "Pinned LLooM-managed Qwen3.8 Flash Next TP=2 with SM121 QSA kernels, NVFP4 KV, MTP4 CUDA graphs, native 262K context, and sidecar headroom.",
+      "summary": "On-demand LLooM-managed Qwen3.8 Flash Next TP=2 with SM121 QSA kernels, NVFP4 KV, MTP4 CUDA graphs, native 262K context, and sidecar headroom.",
       "tags": ["linux", "nvidia", "dgx-spark", "cluster", "qwen3.8", "flash-next", "nvfp4", "sglang", "mtp", "qsa", "sidecars"],
       "recommendedFor": ["Two directly connected DGX Sparks serving Qwen3.8 Flash Next alongside LLooM sidecars"],
       "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "tools", "reasoning", "vision", "long-context"],
