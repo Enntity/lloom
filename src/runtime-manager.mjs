@@ -347,7 +347,11 @@ export function classifyRuntimeWatchdogOutcome(runtime, outcome = {}) {
     return { kind: 'progress', watchdog };
   }
   const status = Number(outcome.status);
-  const durationMs = Number(outcome.durationMs ?? 0);
+  // Admission, model loading, and capacity waits are not runtime execution.
+  // Prefer the time spent after admission when the caller can provide it so a
+  // client that gives up during a long cold start cannot condemn the newly
+  // healthy runtime as stalled.
+  const durationMs = Number(outcome.runtimeDurationMs ?? outcome.durationMs ?? 0);
   if (!watchdog.failureStatuses.includes(status) || !Number.isFinite(durationMs)) {
     return { kind: 'ignored', watchdog };
   }

@@ -2019,6 +2019,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     const watchdogConfig = runtimeWatchdogConfig(config.runtimes?.[resolved.model.runtime]);
     let watchdogTimer = null;
     let watchdogArmed = false;
+    let runtimeStartedAt = null;
     let lastProgressAt = started;
     const clearWatchdogTimer = () => {
       if (watchdogTimer) clearTimeout(watchdogTimer);
@@ -2040,6 +2041,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
           status: 504,
           ok: false,
           durationMs: Date.now() - started,
+          runtimeDurationMs: runtimeStartedAt == null ? 0 : Date.now() - runtimeStartedAt,
           stallDurationMs: Date.now() - lastProgressAt,
           responseBytes: 0,
           stalled: true
@@ -2063,14 +2065,16 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         await ensureRuntime(resolved.model.runtime, {
           fallbackAvailable: resolved.failover?.externalFallbackAvailable === true
         });
-        return runtimeManager.withSlot(resolved.model.runtime, () =>
-          fn({
+        return runtimeManager.withSlot(resolved.model.runtime, () => {
+          runtimeStartedAt = Date.now();
+          lastProgressAt = runtimeStartedAt;
+          return fn({
             signal: client.signal,
             timing,
             progress,
             watchdog
-          })
-        );
+          });
+        });
       });
       const status = result?.status ?? 200;
       const outcome = {
@@ -2094,6 +2098,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         ok: status >= 200 && status < 400,
         stream: result?.stream ?? stream,
         durationMs: Date.now() - started,
+        runtimeDurationMs: runtimeStartedAt == null ? 0 : Date.now() - runtimeStartedAt,
         firstContentMs: result?.firstContentMs ?? timing.firstContentMs,
         lastContentMs: result?.lastContentMs ?? timing.lastContentMs,
         responseBytes: result?.responseBytes ?? 0,
@@ -2132,6 +2137,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         ok: false,
         stream,
         durationMs: Date.now() - started,
+        runtimeDurationMs: runtimeStartedAt == null ? 0 : Date.now() - runtimeStartedAt,
         firstContentMs: timing.firstContentMs,
         lastContentMs: timing.lastContentMs,
         responseBytes: 0,

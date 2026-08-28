@@ -182,7 +182,10 @@ function close(server) {
   const upstreamPort = await listen(upstream);
   const outcomes = [];
   const runtimeManager = {
-    ensure: async () => ({ healthy: true }),
+    ensure: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      return { healthy: true };
+    },
     withSlot: async (_runtimeId, fn) => fn(),
     noteRequestOutcome(runtimeId, outcome) {
       outcomes.push({ runtimeId, outcome });
@@ -232,6 +235,10 @@ function close(server) {
   assert.equal(outcomes[0].runtimeId, 'test-runtime');
   assert.equal(outcomes[0].outcome.ok, true);
   assert(outcomes[0].outcome.responseBytes > 0);
+  assert(
+    outcomes[0].outcome.durationMs - outcomes[0].outcome.runtimeDurationMs >= 30,
+    'runtime watchdog duration excludes admission and cold-start latency'
+  );
 
   await close(app.server);
   await close(upstream);

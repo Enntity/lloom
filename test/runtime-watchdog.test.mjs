@@ -67,6 +67,17 @@ const managedRuntime = {
     classifyRuntimeWatchdogOutcome(managedRuntime, {
       ok: false,
       status: 499,
+      durationMs: 500000,
+      runtimeDurationMs: 0,
+      responseBytes: 0
+    }).kind,
+    'ignored',
+    'a client cancellation during a long cold start is not runtime-stall evidence'
+  );
+  assert.equal(
+    classifyRuntimeWatchdogOutcome(managedRuntime, {
+      ok: false,
+      status: 499,
       durationMs: 1000,
       firstContentMs: 10,
       responseBytes: 8
