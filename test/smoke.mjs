@@ -2427,7 +2427,14 @@ dsparkBase.cluster = {
 const clusterEmbeddingRecipe = await loadRecipeById(
   'linux-nvidia-dgx-spark-cluster-qwen3-embedding-4b-vllm'
 );
-const clusterEmbeddingConfig = deriveUserConfig(dsparkBase, clusterEmbeddingRecipe, {
+const clusterEmbeddingBase = structuredClone(dsparkBase);
+clusterEmbeddingBase.cluster.nodes.ennspark02.labels = { role: 'worker', hardware: 'dgx-spark' };
+clusterEmbeddingBase.cluster.nodes['macbook-local'] = {
+  endpoint: 'http://macbook:8100',
+  backendHost: '100.87.11.88',
+  labels: { role: 'node', architecture: 'darwin-arm64', accelerator: 'apple-gpu' }
+};
+const clusterEmbeddingConfig = deriveUserConfig(clusterEmbeddingBase, clusterEmbeddingRecipe, {
   modelRoot: '/models',
   additive: true
 });
@@ -2435,6 +2442,7 @@ const workerEmbeddingRuntime = clusterEmbeddingConfig.runtimes['qwen3-embedding-
 assert.equal(workerEmbeddingRuntime.node, 'ennspark02');
 assert.equal(workerEmbeddingRuntime.healthUrl, 'http://10.100.16.1:8002/v1/models');
 assert(workerEmbeddingRuntime.bootstrap.createArgs.includes('10.100.16.1:8002:8000'));
+assert.equal(clusterEmbeddingConfig.runtimes['qwen3-embedding-4b-macbook-local'], undefined);
 assert.equal(
   clusterEmbeddingConfig.backends['qwen3-embedding-4b-ennspark02'].baseUrl,
   'http://10.100.16.1:8002/v1'

@@ -698,6 +698,10 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
       const configuredNodeIds = Object.keys(config.cluster?.nodes ?? {});
       const leaderNode = config.cluster?.leaderNode ?? configuredNodeIds[0];
       const workerNodes = configuredNodeIds.filter((nodeId) => nodeId !== leaderNode);
+      const labeledWorkerNodes = workerNodes.filter(
+        (nodeId) => config.cluster?.nodes?.[nodeId]?.labels?.role === 'worker'
+      );
+      const selectedWorkerNodes = labeledWorkerNodes.length ? labeledWorkerNodes : workerNodes;
       const requestedNodes = Array.isArray(placement.nodes) ? placement.nodes : configuredNodeIds;
       const nodeIds = [
         ...new Set(
@@ -705,7 +709,7 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
             selector === 'leader'
               ? [leaderNode]
               : selector === 'worker' || selector === 'workers'
-                ? workerNodes
+                ? selectedWorkerNodes
                 : [selector]
           )
         )
