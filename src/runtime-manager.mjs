@@ -1013,18 +1013,27 @@ export class RuntimeManager {
         return runtimePlacement(runtime, nextConfig).mode === 'distributed';
       })
     );
+    const distributedRuntimeIds = new Set(
+      [...new Set([...Object.keys(previousConfig.runtimes ?? {}), ...Object.keys(nextConfig.runtimes ?? {})])].filter(
+        (runtimeId) => {
+          const runtime = nextConfig.runtimes?.[runtimeId] ?? previousConfig.runtimes?.[runtimeId];
+          return runtimePlacement(runtime, nextConfig).mode === 'distributed';
+        }
+      )
+    );
     const distributedMemberIds = new Set(
-      [...distributed].flatMap((runtimeId) => [
+      [...distributedRuntimeIds].flatMap((runtimeId) => [
         ...distributedMembers(previousConfig.runtimes?.[runtimeId]),
         ...distributedMembers(nextConfig.runtimes?.[runtimeId])
       ])
     );
+    const ownedChanges = changed.filter((runtimeId) => !distributedMemberIds.has(runtimeId));
     const stopOrder = [...changed].sort(
       (left, right) => Number(distributed.has(right)) - Number(distributed.has(left))
     );
-    for (const runtimeId of changed) this.abortRuntimeLifecycle(runtimeId, 'superseded by config reload');
+    for (const runtimeId of ownedChanges) this.abortRuntimeLifecycle(runtimeId, 'superseded by config reload');
     const wasRunning = new Map();
-    for (const runtimeId of changed) {
+    for (const runtimeId of ownedChanges) {
       const runtime = previousConfig.runtimes?.[runtimeId];
       if (!runtime) {
         wasRunning.set(runtimeId, false);
@@ -1034,10 +1043,11 @@ export class RuntimeManager {
         wasRunning.set(runtimeId, this.processRunning(runtimeId) || (await runtimeHealthOk(runtime)));
       }
     }
-    for (const runtimeId of changed) await this.drainRuntime(runtimeId, { timeoutMs: drainTimeoutMs });
+    for (const runtimeId of ownedChanges) await this.drainRuntime(runtimeId, { timeoutMs: drainTimeoutMs });
     const results = [];
     try {
       for (const runtimeId of stopOrder) {
+        if (distributedMemberIds.has(runtimeId)) continue;
         const previous = previousConfig.runtimes?.[runtimeId];
         if (previous) await this.stop(runtimeId);
         if (previous && runtimeAdapter(previous) === 'docker') {
@@ -1051,7 +1061,7 @@ export class RuntimeManager {
       );
       for (const runtimeId of startOrder) {
         const current = nextConfig.runtimes?.[runtimeId];
-        if (distributedMemberIds.has(runtimeId) && distributed.size > 0) {
+        if (distributedMemberIds.has(runtimeId)) {
           results.push({ runtimeId, started: false, reason: 'distributed-runtime-owned' });
           continue;
         }
@@ -1085,7 +1095,7 @@ export class RuntimeManager {
       }
       return { changed, results };
     } finally {
-      for (const runtimeId of changed) this.resumeRuntime(runtimeId);
+      for (const runtimeId of ownedChanges) this.resumeRuntime(runtimeId);
     }
   }
 

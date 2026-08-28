@@ -395,12 +395,44 @@ leaderReconfigureManager.admit = async (runtimeId) => {
 upgradedDistributedConfig.runtimes.split.keepWarm = true;
 const reconfigured = await leaderReconfigureManager.reconfigure(upgradedDistributedConfig);
 assert.deepEqual(reconfigured.changed, ['head', 'split']);
-assert.deepEqual(reconfigureCalls, ['drain:head', 'drain:split', 'stop:split', 'stop:head', 'admit:split']);
+assert.deepEqual(reconfigureCalls, ['drain:split', 'stop:split', 'admit:split']);
 assert.deepEqual(reconfigured.results.at(-1), {
   runtimeId: 'head',
   started: false,
   reason: 'distributed-runtime-owned'
 });
+
+const workerReconfigureCalls = [];
+const workerReconfigureManager = new RuntimeManager(
+  { ...structuredClone(distributedConfig), cluster: { ...distributedConfig.cluster, nodeId: 'worker' } },
+  {
+    logger: { error() {}, warn() {}, info() {} },
+    captureOutput: false,
+    clusterCoordinator: {
+      nodeId: 'worker',
+      attachRuntimeManager() {},
+      isLocalNode(nodeId) {
+        return nodeId === 'worker';
+      }
+    }
+  }
+);
+workerReconfigureManager.drainRuntime = async (runtimeId) => workerReconfigureCalls.push(`drain:${runtimeId}`);
+workerReconfigureManager.stop = async (runtimeId) => {
+  workerReconfigureCalls.push(`stop:${runtimeId}`);
+  return { runtimeId, stopped: true };
+};
+workerReconfigureManager.admit = async (runtimeId) => {
+  workerReconfigureCalls.push(`admit:${runtimeId}`);
+  return { runtimeId, admitted: true };
+};
+const workerReconfigured = await workerReconfigureManager.reconfigure(upgradedDistributedConfig);
+assert.deepEqual(workerReconfigured.changed, ['worker']);
+assert.deepEqual(workerReconfigureCalls, []);
+assert.deepEqual(workerReconfigured.results, [
+  { runtimeId: 'worker', started: false, reason: 'distributed-runtime-owned' }
+]);
+assert.equal(workerReconfigureManager.config.runtimes.worker.recipe.version, 7);
 
 const demotedKeepWarmConfig = {
   cluster: { nodeId: 'leader', leaderNode: 'leader' },
