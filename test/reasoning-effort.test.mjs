@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   QWEN_VLLM_THINKING_BUDGETS,
   isOpenRouter,
+  isQwen38FlashNextSglang,
   isQwenSglang,
   isQwenVllm,
   responsesToOpenAIChat,
@@ -72,6 +73,13 @@ const qwen38Unprofiled = {
 const qwen38UnprofiledThinking = translateReasoningEffortForBackend({ reasoning_effort: 'low' }, qwen38Unprofiled);
 assert.equal(qwen38UnprofiledThinking.custom_logit_processor, undefined);
 assert.equal(qwen38UnprofiledThinking.chat_template_kwargs.enable_thinking, true);
+assert.equal(qwen38UnprofiledThinking.chat_template_kwargs.reasoning_effort, 'low');
+
+const qwen38UnprofiledMedium = translateReasoningEffortForBackend({ reasoning_effort: 'medium' }, qwen38Unprofiled);
+assert.equal(qwen38UnprofiledMedium.chat_template_kwargs.reasoning_effort, 'medium');
+
+const qwen38UnprofiledHigh = translateReasoningEffortForBackend({ reasoning_effort: 'high' }, qwen38Unprofiled);
+assert.equal(qwen38UnprofiledHigh.chat_template_kwargs.reasoning_effort, 'xhigh');
 
 const qwenVllmWithTemplateProfile = {
   ...qwenVllm,
@@ -118,7 +126,9 @@ const openRouter = {
   assert.equal(isQwenVllm(qwenVllm), true);
   assert.equal(isQwenVllm({ ...qwenVllm, model: { id: 'meta-llama/Llama-3.3-70B' } }), false);
   assert.equal(isQwenSglang(qwen38Sglang), true);
+  assert.equal(isQwen38FlashNextSglang(qwen38Sglang), true);
   assert.equal(isQwenVllm(qwen38Sglang), false);
+  assert.equal(isQwen38FlashNextSglang(qwenVllm), false);
 }
 
 {

@@ -61,7 +61,11 @@ function exactToolAssessment(testCase, toolCalls) {
   const canonical = (value) => {
     if (Array.isArray(value)) return value.map(canonical);
     if (!value || typeof value !== 'object') return value;
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonical(value[key])])
+    );
   };
   return {
     callCount: toolCalls.length,
@@ -94,8 +98,8 @@ async function streamRequest({ baseUrl, apiKey, model, testCase, timeoutMs, warm
           { role: 'system', content: testCase.system },
           { role: 'user', content: testCase.user }
         ],
-        temperature: 0,
-        seed: 73,
+        ...(testCase.samplingMode === 'model' ? {} : { temperature: 0, seed: 73 }),
+        ...(testCase.reasoningEffort ? { reasoning_effort: testCase.reasoningEffort } : {}),
         stream: true,
         stream_options: { include_usage: true },
         ...(testCase.tools ? { tools: testCase.tools, tool_choice: testCase.toolChoice ?? 'auto' } : {})
@@ -170,7 +174,9 @@ async function streamRequest({ baseUrl, apiKey, model, testCase, timeoutMs, warm
         if (!choice) continue;
         if (choice.finish_reason) finishReason = choice.finish_reason;
         const delta = choice.delta ?? {};
-        const semantic = Boolean(delta.content || delta.reasoning_content || delta.reasoning || delta.tool_calls?.length);
+        const semantic = Boolean(
+          delta.content || delta.reasoning_content || delta.reasoning || delta.tool_calls?.length
+        );
         if (semantic && firstTokenMs == null) firstTokenMs = performance.now() - started;
         if (typeof delta.content === 'string') content += delta.content;
         if (typeof delta.reasoning_content === 'string') reasoningContent += delta.reasoning_content;
@@ -189,7 +195,12 @@ async function streamRequest({ baseUrl, apiKey, model, testCase, timeoutMs, warm
       requestShape: {
         stream: true,
         maxTokens: warmup ? 8 : 'omitted',
-        reasoning: 'omitted',
+        reasoning: warmup ? 'omitted' : (testCase.reasoningEffort ?? 'omitted'),
+        sampling: warmup
+          ? 'temperature=0'
+          : testCase.samplingMode === 'model'
+            ? 'checkpoint defaults'
+            : 'temperature=0 seed=73',
         toolChoice: request.tool_choice ?? null
       },
       timing: {
@@ -199,7 +210,10 @@ async function streamRequest({ baseUrl, apiKey, model, testCase, timeoutMs, warm
         completedMs: Math.round(completedMs),
         generationMs: generationSeconds == null ? null : Math.round(generationSeconds * 1000),
         completionTokens,
-        tokensPerSecond: completionTokens == null || generationSeconds == null ? null : Number((completionTokens / generationSeconds).toFixed(2))
+        tokensPerSecond:
+          completionTokens == null || generationSeconds == null
+            ? null
+            : Number((completionTokens / generationSeconds).toFixed(2))
       },
       responseModel,
       provider,
@@ -238,7 +252,12 @@ async function main() {
   if (!flags.output) throw new Error('use --output PATH');
   const suitePath = path.resolve(flags.suite);
   const suite = JSON.parse(fs.readFileSync(suitePath, 'utf8'));
-  const selected = flags.case.length ? suite.cases.filter((entry) => flags.case.includes(entry.id)) : suite.cases;
+  const selectedCases = flags.case.length ? suite.cases.filter((entry) => flags.case.includes(entry.id)) : suite.cases;
+  const selected = selectedCases.map((entry) => ({
+    ...entry,
+    samplingMode: flags.sampling === 'model' ? 'model' : 'deterministic',
+    ...(flags['reasoning-effort'] ? { reasoningEffort: flags['reasoning-effort'] } : {})
+  }));
   if (!selected.length) throw new Error('no benchmark cases selected');
   const baseUrl = flags['base-url'] || DEFAULT_BASE_URL;
   const apiKey = apiKeyFor(flags);
@@ -249,34 +268,41 @@ async function main() {
   if (!warmup.ok) throw new Error(`model admission failed: ${warmup.error}`);
 
   const results = [];
+  const outputPath = path.resolve(flags.output);
+  const writeArtifact = () => {
+    const artifact = {
+      schemaVersion: 1,
+      kind: 'lloom-local-decision-benchmark',
+      generatedAt: new Date().toISOString(),
+      gateway: baseUrl,
+      model: flags.model,
+      suite: { id: suite.id, version: suite.version, path: suitePath },
+      measurement: {
+        ttfb: 'request start to first SSE response-body byte',
+        ttft: 'request start to first non-empty content, reasoning, or tool-call delta',
+        tokensPerSecond:
+          'provider completion_tokens divided by wall time from first semantic delta to stream completion',
+        qualitativeMaxTokens: 'omitted',
+        reasoningControl: flags['reasoning-effort'] || 'omitted',
+        sampling: flags.sampling === 'model' ? 'checkpoint generation_config defaults' : 'temperature=0 seed=73'
+      },
+      admissionWarmup: warmup,
+      results
+    };
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    fs.writeFileSync(outputPath, `${JSON.stringify(artifact, null, 2)}\n`);
+  };
+  writeArtifact();
   for (const testCase of selected) {
     const result = await streamRequest({ baseUrl, apiKey, model: flags.model, testCase, timeoutMs });
     results.push(result);
+    writeArtifact();
     process.stderr.write(
       `${flags.model} ${testCase.id}: ${result.ok ? `TTFB=${result.timing.firstByteMs}ms TTFT=${result.timing.firstTokenMs}ms ${result.timing.tokensPerSecond ?? '?'} tok/s` : result.error}\n`
     );
   }
 
-  const artifact = {
-    schemaVersion: 1,
-    kind: 'lloom-local-decision-benchmark',
-    generatedAt: new Date().toISOString(),
-    gateway: baseUrl,
-    model: flags.model,
-    suite: { id: suite.id, version: suite.version, path: suitePath },
-    measurement: {
-      ttfb: 'request start to first SSE response-body byte',
-      ttft: 'request start to first non-empty content, reasoning, or tool-call delta',
-      tokensPerSecond: 'provider completion_tokens divided by wall time from first semantic delta to stream completion',
-      qualitativeMaxTokens: 'omitted',
-      reasoningControl: 'omitted'
-    },
-    admissionWarmup: warmup,
-    results
-  };
-  fs.mkdirSync(path.dirname(path.resolve(flags.output)), { recursive: true });
-  fs.writeFileSync(path.resolve(flags.output), `${JSON.stringify(artifact, null, 2)}\n`);
-  console.log(JSON.stringify({ output: path.resolve(flags.output), model: flags.model, cases: results.length }, null, 2));
+  console.log(JSON.stringify({ output: outputPath, model: flags.model, cases: results.length }, null, 2));
 }
 
 await main();

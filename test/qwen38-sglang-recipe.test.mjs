@@ -14,7 +14,7 @@ assert.equal(recipe.backend.id, 'docker-sglang');
 assert.equal(recipe.models[0].gatewayModel, 'qwen3.8-flash-next');
 assert.equal(recipe.models[0].settings.contextWindow, 262144);
 assert.equal(recipe.models[0].settings.maxActiveRequests, 6);
-assert.equal(recipe.version, 8);
+assert.equal(recipe.version, 9);
 assert.equal(recipe.models[0].settings.memoryGb, 80);
 assert.equal(recipe.models[0].settings.keepWarm, false);
 assert.equal(recipe.capabilities.includes('mtp'), true);
@@ -50,6 +50,7 @@ for (const member of members) {
   assert.match(rendered, /SGLANG_ENABLE_TP_MEMORY_INBALANCE_CHECK=0/);
   assert.match(rendered, /ENABLE_SPECULATIVE=1/);
   assert.match(rendered, /ENABLE_THINKING_BUDGETS=0/);
+  assert.match(rendered, /DEFAULT_CHAT_TEMPLATE_KWARGS=\{\"reasoning_effort\":\"low\"\}/);
   assert.match(rendered, /backends\/qwen38-sglang\/qsa_nvfp4_kv\.py/);
   assert.deepEqual(bootstrap.command, ['/opt/lloom/entrypoint.sh']);
 }
@@ -66,6 +67,8 @@ for (const expected of [
   'if [[ "${ENABLE_THINKING_BUDGETS:-0}" == "1" ]]',
   '--enable-linear-replayssm-spec',
   '--enable-custom-logit-processor',
+  'default_chat_template_kwargs="${DEFAULT_CHAT_TEMPLATE_KWARGS:-{\\"reasoning_effort\\":\\"low\\"}}"',
+  '--default-chat-template-kwargs "${default_chat_template_kwargs}"',
   '--cuda-graph-bs-decode 1 2 3 4 5 6'
 ]) {
   assert(entrypoint.includes(expected), `missing SGLang launch control: ${expected}`);
@@ -77,7 +80,9 @@ assert.match(sm121Patch, /THINKING_START_TOKEN_ID: int = 248068/);
 assert.match(sm121Patch, /THINKING_END_TOKEN_ID: int = 248069/);
 assert.match(sm121Patch, /refusing an unsafe patch/);
 
-assert.equal(recipe.models[0].settings.behaviorOverrides, undefined);
+assert.deepEqual(recipe.models[0].settings.behaviorOverrides, {
+  chatTemplateKwargs: { reasoning_effort: 'low' }
+});
 
 const sourceHashes = {
   'qsa_fa_fallback.py': '4546423216fbf51f1763753c0865c0fb9eff670db566e83987268918a86b993a',
@@ -95,5 +100,6 @@ await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x
 await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v5.json'));
 await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v6.json'));
 await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v7.json'));
+await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v8.json'));
 
 console.log('qwen38 sglang recipe tests passed');

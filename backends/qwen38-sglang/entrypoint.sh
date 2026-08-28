@@ -34,6 +34,11 @@ if [[ "${ENABLE_THINKING_BUDGETS:-0}" == "1" ]]; then
   thinking_budget_args=(--enable-custom-logit-processor)
 fi
 
+# Flash Next is an always-reasoning preview.  Keep the native template in its
+# supported mode and choose the shallowest documented effort for the default
+# production path.  Per-request chat_template_kwargs remain authoritative.
+default_chat_template_kwargs="${DEFAULT_CHAT_TEMPLATE_KWARGS:-{\"reasoning_effort\":\"low\"}}"
+
 if [[ -z "${NCCL_IB_HCA:-}" ]]; then
   for hca_path in /sys/class/infiniband/*; do
     [[ -d "${hca_path}/device/net/${FABRIC_INTERFACE}" ]] || continue
@@ -74,7 +79,7 @@ exec python3 -m sglang.launch_server \
   --reasoning-parser auto \
   --tool-call-parser auto \
   "${thinking_budget_args[@]}" \
-  --default-chat-template-kwargs '{"enable_thinking":false}' \
+  --default-chat-template-kwargs "${default_chat_template_kwargs}" \
   --enable-metrics \
   --enable-cache-report \
   --disable-prefill-cuda-graph \

@@ -60,6 +60,12 @@ export function isQwenSglang(resolved = {}) {
   return /qwen3(?:[._-]?(?:5|6|8))?/.test(hints) && /sglang/.test(hints);
 }
 
+/** True only for the always-reasoning Qwen3.8 Flash Next SGLang lane. */
+export function isQwen38FlashNextSglang(resolved = {}) {
+  const hints = qwenRuntimeHints(resolved);
+  return isQwenSglang(resolved) && /qwen3[._-]?8/.test(hints) && /flash[ _-]?next/.test(hints);
+}
+
 export function isOpenRouter(resolved = {}) {
   return String(resolved.backend?.baseUrl || resolved.backend?.url || '')
     .toLowerCase()
@@ -121,6 +127,7 @@ export function translateReasoningEffortForBackend(body = {}, resolved = {}) {
   }
   const qwenVllm = isQwenVllm(resolved);
   const qwenSglang = isQwenSglang(resolved);
+  const qwen38FlashNextSglang = isQwen38FlashNextSglang(resolved);
   if (!effort || (!qwenVllm && !qwenSglang)) return profiledBody;
 
   const next = removeGatewayEffort(profiledBody);
@@ -150,7 +157,17 @@ export function translateReasoningEffortForBackend(body = {}, resolved = {}) {
       : { ...next, chat_template_kwargs: { ...templateKwargs, enable_thinking: true } };
     const profile = sglangThinkingBudgetProfile(resolved);
     const budget = profile?.budgets?.[effort];
-    if (!profile || !Number.isInteger(budget) || budget <= 0) return withThinking;
+    if (!profile || !Number.isInteger(budget) || budget <= 0) {
+      if (!qwen38FlashNextSglang) return withThinking;
+      const templateEffort = effort === 'minimal' ? 'low' : effort === 'high' ? 'xhigh' : effort;
+      return {
+        ...withThinking,
+        chat_template_kwargs: {
+          ...withThinking.chat_template_kwargs,
+          reasoning_effort: templateEffort
+        }
+      };
+    }
     const requestedParams = isObject(profiledBody.custom_params) ? profiledBody.custom_params : {};
     return {
       ...withThinking,

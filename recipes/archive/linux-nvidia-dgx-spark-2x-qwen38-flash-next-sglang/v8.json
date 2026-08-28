@@ -4,8 +4,8 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang",
   "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 SGLang",
-  "version": 9,
-  "summary": "On-demand two-Spark SGLang TP=2 Qwen3.8 Flash Next with native low-effort reasoning, MTP4 CUDA-graph decode, SM121 QSA kernels, native NVFP4 KV, native 262K context, and reserved sidecar headroom.",
+  "version": 8,
+  "summary": "On-demand two-Spark SGLang TP=2 Qwen3.8 Flash Next with MTP4 CUDA-graph decode, SM121 QSA kernels, native NVFP4 KV, native 262K context, and reserved sidecar headroom.",
   "license": { "id": "MIT", "name": "Recipe metadata and launcher" },
   "provenance": {
     "createdBy": "lloom",
@@ -74,11 +74,6 @@
         "keepWarm": false,
         "startupTimeoutMs": 7200000,
         "timeoutMs": 600000,
-        "behaviorOverrides": {
-          "chatTemplateKwargs": {
-            "reasoning_effort": "low"
-          }
-        },
         "watchdog": {
           "enabled": true,
           "failureThreshold": 1,
@@ -132,7 +127,7 @@
                     "-e", "MAX_TOTAL_TOKENS=627648", "-e", "MAX_MAMBA_CACHE_SIZE=30", "-e", "MAMBA_FULL_MEMORY_RATIO=0.3",
                     "-e", "CHUNKED_PREFILL_SIZE=1024", "-e", "MEM_FRACTION_STATIC=0.80",
                     "-e", "SGLANG_ENABLE_TP_MEMORY_INBALANCE_CHECK=0",
-                    "-e", "ENABLE_SPECULATIVE=1", "-e", "ENABLE_THINKING_BUDGETS=0", "-e", "DEFAULT_CHAT_TEMPLATE_KWARGS={\"reasoning_effort\":\"low\"}",
+                    "-e", "ENABLE_SPECULATIVE=1", "-e", "ENABLE_THINKING_BUDGETS=0",
                     "-e", "SPECULATIVE_NUM_STEPS=3", "-e", "SPECULATIVE_NUM_DRAFT_TOKENS=4"
                   ],
                   "command": ["/opt/lloom/entrypoint.sh"]
@@ -153,7 +148,7 @@
                 "warmup": {
                   "url": "http://${leaderAddress}:8889/v1/chat/completions",
                   "method": "POST",
-                  "body": { "model": "qwen3.8-flash-next", "messages": [{ "role": "user", "content": "Reply with OK." }], "chat_template_kwargs": { "reasoning_effort": "low" }, "max_tokens": 8, "stream": false }
+                  "body": { "model": "qwen3.8-flash-next", "messages": [{ "role": "user", "content": "Reply with OK." }], "chat_template_kwargs": { "enable_thinking": false }, "max_tokens": 8, "stream": false }
                 },
                 "bootstrap": {
                   "adapter": "docker",
@@ -184,7 +179,7 @@
                     "-e", "MAX_TOTAL_TOKENS=627648", "-e", "MAX_MAMBA_CACHE_SIZE=30", "-e", "MAMBA_FULL_MEMORY_RATIO=0.3",
                     "-e", "CHUNKED_PREFILL_SIZE=1024", "-e", "MEM_FRACTION_STATIC=0.80",
                     "-e", "SGLANG_ENABLE_TP_MEMORY_INBALANCE_CHECK=0",
-                    "-e", "ENABLE_SPECULATIVE=1", "-e", "ENABLE_THINKING_BUDGETS=0", "-e", "DEFAULT_CHAT_TEMPLATE_KWARGS={\"reasoning_effort\":\"low\"}",
+                    "-e", "ENABLE_SPECULATIVE=1", "-e", "ENABLE_THINKING_BUDGETS=0",
                     "-e", "SPECULATIVE_NUM_STEPS=3", "-e", "SPECULATIVE_NUM_DRAFT_TOKENS=4"
                   ],
                   "command": ["/opt/lloom/entrypoint.sh"]
