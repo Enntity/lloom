@@ -29,6 +29,11 @@ if [[ "${ENABLE_SPECULATIVE:-0}" == "1" ]]; then
   )
 fi
 
+thinking_budget_args=()
+if [[ "${ENABLE_THINKING_BUDGETS:-0}" == "1" ]]; then
+  thinking_budget_args=(--enable-custom-logit-processor)
+fi
+
 if [[ -z "${NCCL_IB_HCA:-}" ]]; then
   for hca_path in /sys/class/infiniband/*; do
     [[ -d "${hca_path}/device/net/${FABRIC_INTERFACE}" ]] || continue
@@ -68,7 +73,7 @@ exec python3 -m sglang.launch_server \
   "${speculative_args[@]}" \
   --reasoning-parser auto \
   --tool-call-parser auto \
-  --enable-custom-logit-processor \
+  "${thinking_budget_args[@]}" \
   --default-chat-template-kwargs '{"enable_thinking":false}' \
   --enable-metrics \
   --enable-cache-report \

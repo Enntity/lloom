@@ -4,8 +4,8 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang",
   "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 SGLang",
-  "version": 8,
-  "summary": "On-demand two-Spark SGLang TP=2 Qwen3.8 Flash Next with MTP4 CUDA-graph decode, SM121 QSA kernels, native NVFP4 KV, native 262K context, and reserved sidecar headroom.",
+  "version": 7,
+  "summary": "On-demand two-Spark SGLang TP=2 Qwen3.8 Flash Next with enforceable graduated thinking budgets, SM121 QSA kernels, native NVFP4 KV, native 262K context, and reserved sidecar headroom.",
   "license": { "id": "MIT", "name": "Recipe metadata and launcher" },
   "provenance": {
     "createdBy": "lloom",
@@ -18,8 +18,8 @@
     { "rel": "model", "href": "https://huggingface.co/RadixArk/Qwen3.8-Flash-Next-NVFP4/tree/7b719225242aacd3dbd3f9407468c2ee9a9d2594" },
     { "rel": "runtime", "href": "https://hub.docker.com/r/lmsysorg/sglang/tags" }
   ],
-  "keywords": ["linux", "nvidia", "dgx-spark", "cluster", "qwen3.8", "flash-next", "nvfp4", "sglang", "mtp", "qsa", "sidecars"],
-  "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "usage", "tools", "reasoning", "vision", "mtp", "moe", "long-context"],
+  "keywords": ["linux", "nvidia", "dgx-spark", "cluster", "qwen3.8", "flash-next", "nvfp4", "sglang", "qsa", "sidecars"],
+  "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "usage", "tools", "reasoning", "vision", "moe", "long-context"],
   "hardware": {
     "family": "NVIDIA DGX Spark / GB10",
     "testedMachine": "Two directly connected DGX Spark systems",
@@ -28,7 +28,7 @@
       "The SM121 QSA and NVFP4-KV patch set is pinned to MiaAI-Lab commit f87d586e269df171089a879ee33a5356c0570e70 and refuses mismatched source anchors.",
       "The live-profiled 627648-token shared pool supports two simultaneous native-context working sets or six shorter agent sessions while reserving memory for LLooM sidecars.",
       "The 0.80 static-memory fraction covers FP32 recurrent state and the NVFP4 token pool while retaining headroom for controlled speculative experiments; 0.76 is insufficient after the FP32 correctness upgrade.",
-      "Generic NEXTN renders as EAGLE in this runtime and does not enforce custom thinking-budget processors; MTP and hard graduated budgets are therefore mutually exclusive profiles.",
+      "Generic NEXTN is disabled by default because its EAGLE verification path does not enforce per-request custom thinking budgets in this pinned runtime.",
       "NVFP4 KV requires workload-specific semantic validation at 262K; upstream retrieval evidence is currently strongest through 128K."
     ]
   },
@@ -63,7 +63,7 @@
       "setDefault": true,
       "input": ["text", "image"],
       "output": ["text"],
-      "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "usage", "tools", "reasoning", "vision", "mtp", "moe", "long-context"],
+      "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "usage", "tools", "reasoning", "vision", "moe", "long-context"],
       "settings": {
         "port": 8889,
         "contextWindow": 262144,
@@ -74,6 +74,13 @@
         "keepWarm": false,
         "startupTimeoutMs": 7200000,
         "timeoutMs": 600000,
+        "behaviorOverrides": {
+          "reasoningBudget": {
+            "kind": "sglang-custom-logit-processor",
+            "processor": "{\"callable\": \"80049554000000000000008c2a73676c616e672e7372742e73616d706c696e672e637573746f6d5f6c6f6769745f70726f636573736f72948c215177656e335468696e6b696e674275646765744c6f67697450726f636573736f729493942e\"}",
+            "budgets": { "minimal": 256, "low": 1024, "medium": 4096, "high": 16384, "xhigh": 32768 }
+          }
+        },
         "watchdog": {
           "enabled": true,
           "failureThreshold": 1,
@@ -127,7 +134,7 @@
                     "-e", "MAX_TOTAL_TOKENS=627648", "-e", "MAX_MAMBA_CACHE_SIZE=30", "-e", "MAMBA_FULL_MEMORY_RATIO=0.3",
                     "-e", "CHUNKED_PREFILL_SIZE=1024", "-e", "MEM_FRACTION_STATIC=0.80",
                     "-e", "SGLANG_ENABLE_TP_MEMORY_INBALANCE_CHECK=0",
-                    "-e", "ENABLE_SPECULATIVE=1", "-e", "ENABLE_THINKING_BUDGETS=0",
+                    "-e", "ENABLE_SPECULATIVE=0",
                     "-e", "SPECULATIVE_NUM_STEPS=3", "-e", "SPECULATIVE_NUM_DRAFT_TOKENS=4"
                   ],
                   "command": ["/opt/lloom/entrypoint.sh"]
@@ -179,7 +186,7 @@
                     "-e", "MAX_TOTAL_TOKENS=627648", "-e", "MAX_MAMBA_CACHE_SIZE=30", "-e", "MAMBA_FULL_MEMORY_RATIO=0.3",
                     "-e", "CHUNKED_PREFILL_SIZE=1024", "-e", "MEM_FRACTION_STATIC=0.80",
                     "-e", "SGLANG_ENABLE_TP_MEMORY_INBALANCE_CHECK=0",
-                    "-e", "ENABLE_SPECULATIVE=1", "-e", "ENABLE_THINKING_BUDGETS=0",
+                    "-e", "ENABLE_SPECULATIVE=0",
                     "-e", "SPECULATIVE_NUM_STEPS=3", "-e", "SPECULATIVE_NUM_DRAFT_TOKENS=4"
                   ],
                   "command": ["/opt/lloom/entrypoint.sh"]
