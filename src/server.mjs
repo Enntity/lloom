@@ -3458,9 +3458,14 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       }
 
       if (req.method === 'POST' && url.pathname === '/gateway/runtimes/keep-warm') {
+        const body = await readJson(req);
+        if (body.reloadConfig === true) {
+          reloadConfig();
+          await reloadInFlight;
+        }
         sendJson(res, 200, {
           keepWarm: runtimeManager.keepWarmRuntimeIds(),
-          results: await runtimeManager.startKeepWarm()
+          results: await runRuntimeAdminAction(() => runtimeManager.startKeepWarm())
         });
         return;
       }

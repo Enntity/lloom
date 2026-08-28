@@ -494,6 +494,51 @@ console.log('server-resilience tests passed');
   await fs.rm(temporaryRoot, { recursive: true, force: true });
 }
 
+// Setup's authoritative keep-warm request reloads the just-written config
+// before it can report health or start against the previous runtime snapshot.
+{
+  const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'lloom-keep-warm-reload-'));
+  const configPath = path.join(temporaryRoot, 'config.json');
+  const events = [];
+  const runtimeManager = {
+    clusterCoordinator: null,
+    keepWarmRuntimeIds: () => ['next'],
+    startKeepWarm: async () => {
+      events.push('keep-warm');
+      return [{ runtimeId: 'next', started: true }];
+    },
+    stopAll: async () => {},
+    reconfigure: async () => {
+      events.push('reconfigure');
+      return { changed: ['next'] };
+    }
+  };
+  const base = {
+    server: { host: '127.0.0.1', port: 8100 },
+    security: { allowMissingAuth: true, apiKeys: [] },
+    defaults: {},
+    backends: {},
+    models: [],
+    runtimes: {}
+  };
+  await fs.writeFile(configPath, `${JSON.stringify(base, null, 2)}\n`);
+  const liveConfig = { ...structuredClone(base), sourcePath: configPath };
+  liveConfig.server.port = 0;
+  const app = createLloomServer(liveConfig, { runtimeManager, logger: { error() {}, warn() {}, info() {} } });
+  await app.listen();
+  events.length = 0;
+  await fs.writeFile(configPath, `${JSON.stringify({ ...base, runtimes: { next: { enabled: true } } }, null, 2)}\n`);
+  const response = await fetch(`http://127.0.0.1:${app.server.address().port}/gateway/runtimes/keep-warm`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ reloadConfig: true })
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(events.slice(0, 2), ['reconfigure', 'keep-warm']);
+  await app.close({ stopRuntimes: false });
+  await fs.rm(temporaryRoot, { recursive: true, force: true });
+}
+
 // Gateway shutdown can leave managed runtimes alive for a fast service upgrade.
 {
   let stopAllCalls = 0;

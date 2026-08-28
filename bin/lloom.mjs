@@ -1515,7 +1515,7 @@ async function main() {
                         );
                         const result = await gatewayRequest(appliedConfig, '/gateway/runtimes/keep-warm', {
                           method: 'POST',
-                          body: {},
+                          body: { reloadConfig: true },
                           timeoutMs: startupTimeoutMs
                         });
                         if (!result)
