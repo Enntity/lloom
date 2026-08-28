@@ -342,7 +342,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm",
       "path": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm.json",
-      "currentVersion": 2,
+      "currentVersion": 3,
       "versions": [
         {
           "version": 1,
@@ -352,9 +352,15 @@
         },
         {
           "version": 2,
+          "path": "archive/linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm/v2.json",
+          "status": "archived",
+          "notes": "Introduced the 262K coexistence profile using automatic KV sizing at 0.80 utilization."
+        },
+        {
+          "version": 3,
           "path": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm.json",
           "status": "current",
-          "notes": "Keeps MiaAI-Lab's DFlash2-7 path while reducing context to 262K and memory admission to 100 GB per member so a worker embedding lane can coexist."
+          "notes": "Pins a 4.25 GiB FP8 KV pool for 262K context and uses a 0.79 fallback utilization so the Spark02 embedding lane can coexist without startup threshold jitter."
         }
       ],
       "name": "2x DGX Spark GLM-5.3 Flash EXL3 DFlash2 vLLM",

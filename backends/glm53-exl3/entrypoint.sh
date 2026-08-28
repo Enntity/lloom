@@ -54,6 +54,10 @@ args=(
   --skip-mm-profiling
 )
 
+if [[ -n "${KV_CACHE_MEMORY_BYTES:-}" ]]; then
+  args+=(--kv-cache-memory-bytes "${KV_CACHE_MEMORY_BYTES}")
+fi
+
 if [[ "${NODE_RANK}" != "0" ]]; then
   args+=(--headless)
 fi
