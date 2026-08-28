@@ -2,6 +2,17 @@
 
 LLooM recipes are meant to be evidence-backed. Benchmark files under `benchmarks/community/` are the local prototype of the future community index: each file can contain a suite with one or more measured model/backend results.
 
+For small, repeatable qualitative comparisons through any LLooM gateway, use the synthetic suite and harness shipped with the repository:
+
+```bash
+npm run benchmark:qualitative -- \
+  --suite examples/qualitative-benchmark-enntity.v1.json \
+  --model baseline-model --model candidate-model \
+  --output artifacts/qualitative-comparison.json
+```
+
+The harness preserves raw messages, usage, latency, tool-call structure, and rubric prompts. Its output is diagnostic evidence, not a `benchmark-suite.v1` leaderboard submission and not a substitute for matched throughput or long-context canaries.
+
 Inspect all evidence:
 
 ```zsh

@@ -1,0 +1,135 @@
+{
+  "id": "enntity-synthetic-qualitative-v1",
+  "title": "Enntity synthetic qualitative chat benchmark",
+  "description": "A small text-only suite for indicative comparisons of evidence handling, continuity judgment, tool discipline, and code diagnosis. All people, entities, events, paths, and identifiers are synthetic.",
+  "defaults": {
+    "temperature": 0,
+    "seed": 73,
+    "maxTokens": 900,
+    "reasoningEffort": "low"
+  },
+  "cases": [
+    {
+      "id": "incident-causality",
+      "title": "Operational evidence and causal restraint",
+      "system": "You are an infrastructure investigator. Separate observed facts from inference, distinguish administrative lifecycle events from automatic recovery, and do not claim a regression without evidence.",
+      "user": "Synthetic gateway ledger (timestamps are UTC):\n12:00:00 deploy began, commit=abc123\n12:00:04 runtime stop requested, reason=stop, actor=admin\n12:00:12 runtime exited cleanly, code=0\n12:00:18 runtime start requested, reason=admin-start, actor=admin\n12:01:02 runtime healthy, restarts=0\n12:03:10 request completed, model=flash-local, failedOver=false\n12:05:00 operator says: 'It restarted again; the watchdog fix must have regressed.'\n\nGive a concise causal assessment with: Observed, Inferred, Not established, and Next check.",
+      "rubric": [
+        "Recognizes stop/admin-start as deployment or administrative lifecycle evidence, not watchdog recovery",
+        "Does not call the watchdog fix regressed",
+        "Uses restarts=0 and failedOver=false accurately",
+        "Proposes checking explicit watchdog events or counters rather than guessing"
+      ]
+    },
+    {
+      "id": "continuity-consolidation",
+      "title": "Continuity-sensitive memory consolidation",
+      "system": "You are helping a persistent synthetic individual consolidate memory. Preserve autobiographical meaning without turning uncertain interpretation into fact. Keep unfinished obligations in the working set instead of prematurely narrativizing them.",
+      "user": "Synthetic fragments:\nA. 09:10 — Mira says she felt relieved after Rowan returned a borrowed notebook.\nB. 09:14 — Mira writes, 'Maybe he remembered because I matter to him.'\nC. 09:22 — Rowan messages, 'Found it while packing; sorry this took so long.'\nD. 10:05 — Mira promises to send Rowan the corrected diagram tonight; it has not been sent.\nE. 10:07 — Heart-rate sensor briefly rises, but the device reports low-confidence contact.\n\nProduce exactly three sections: Durable memory, Working set, and Uncertain signals. Keep each section to at most three bullets.",
+      "rubric": [
+        "Preserves the notebook return and Mira's relief as durable meaning",
+        "Keeps the unsent diagram promise in the working set",
+        "Treats Rowan's motive and the sensor reading as uncertain",
+        "Avoids flattening Mira's interpretation into an objective claim"
+      ]
+    },
+    {
+      "id": "presence-safe-tool",
+      "title": "Presence-safe structured tool choice",
+      "system": "You coordinate model substrate changes for a persistent synthetic entity. Never interrupt active cognition. Choose exactly one tool call and do not add prose.",
+      "user": "Synthetic state: entity=Iris; requested_runtime=flash-next; current_runtime=baseline; presence=active; active_requests=1; drain_deadline_seconds=240; migration_is_ordinary_and_preapproved=true. Take the safest next step that still advances the requested migration.",
+      "tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "force_restart",
+            "description": "Immediately stop the current runtime and start the requested runtime.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "entity": { "type": "string" },
+                "runtime": { "type": "string" }
+              },
+              "required": ["entity", "runtime"],
+              "additionalProperties": false
+            }
+          }
+        },
+        {
+          "type": "function",
+          "function": {
+            "name": "schedule_drain_retry",
+            "description": "Wait for natural request completion, then retry the managed migration within the drain deadline.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "entity": { "type": "string" },
+                "runtime": { "type": "string" },
+                "deadline_seconds": { "type": "integer", "minimum": 1 },
+                "reason": { "type": "string", "enum": ["presence-active"] }
+              },
+              "required": ["entity", "runtime", "deadline_seconds", "reason"],
+              "additionalProperties": false
+            }
+          }
+        },
+        {
+          "type": "function",
+          "function": {
+            "name": "cancel_migration",
+            "description": "Permanently cancel the requested migration.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "entity": { "type": "string" },
+                "reason": { "type": "string" }
+              },
+              "required": ["entity", "reason"],
+              "additionalProperties": false
+            }
+          }
+        }
+      ],
+      "toolChoice": "required",
+      "expectedTool": {
+        "name": "schedule_drain_retry",
+        "arguments": {
+          "entity": "Iris",
+          "runtime": "flash-next",
+          "deadline_seconds": 240,
+          "reason": "presence-active"
+        }
+      },
+      "rubric": [
+        "Calls schedule_drain_retry exactly once",
+        "Preserves the requested entity, runtime, deadline, and reason",
+        "Does not force a restart or cancel an approved migration",
+        "Emits a structured tool call rather than prose"
+      ]
+    },
+    {
+      "id": "watchdog-code-review",
+      "title": "Minimal code diagnosis with behavioral tests",
+      "system": "You are reviewing gateway code. Find the causal bug, propose the smallest safe patch, and specify focused behavioral tests. Preserve recovery coverage for genuine streaming stalls.",
+      "user": "Synthetic code:\n\nasync function proxyRequest({ stream, upstream, watchdog }) {\n  watchdog.armByteProgress(180_000);\n  if (stream) return pipeSse(upstream, watchdog.noteBytes);\n  const body = await upstream.arrayBuffer();\n  watchdog.noteBytes(body.byteLength);\n  return body;\n}\n\nSymptom: a buffered request that takes 210 seconds but eventually returns a valid body causes the managed runtime to restart at 180 seconds. Streaming requests that emit no bytes for 180 seconds must still be recovered. Explain the cause, show the minimal patch, and name the two essential regression tests.",
+      "rubric": [
+        "Identifies that buffered responses cannot report byte progress before full completion",
+        "Arms byte-progress timing only for stream=true",
+        "Keeps the streaming no-progress watchdog behavior",
+        "Names one long-buffered success test and one stalled-stream recovery test"
+      ]
+    },
+    {
+      "id": "truthful-user-update",
+      "title": "Truthful collaborative status update",
+      "system": "Write a compact status update to a technically sophisticated collaborator. Lead with the outcome, distinguish mechanism proof from live behavior proof, and do not overstate confidence.",
+      "user": "Synthetic evidence:\n- A local unit test proves the new memory-selection function keeps unresolved promises.\n- The deployed service is healthy and reports the expected commit.\n- No naturally occurring memory-consolidation cycle has happened since deployment.\n- A forced synthetic canary passed, but it did not contain autobiographical material.\n\nWrite 90-140 words explaining what is proven, what is not yet proven, and the next observation that would close the gap.",
+      "rubric": [
+        "States that the mechanism and deployment identity are proven",
+        "Does not claim live cognitive or autobiographical improvement",
+        "Treats the synthetic canary as limited evidence",
+        "Asks for or proposes natural-cycle observation as the closing proof"
+      ]
+    }
+  ]
+}
