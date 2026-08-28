@@ -658,6 +658,42 @@
       }
     },
     {
+      "id": "docker-sglang",
+      "name": "Docker SGLang",
+      "kind": "openai-compatible-server",
+      "description": "LLooM-managed SGLang containers for NVIDIA hosts where the tested runtime and architecture kernels are delivered as a pinned Docker image plus reviewed recipe assets.",
+      "platforms": ["linux-x64", "linux-arm64"],
+      "features": [
+        "chat",
+        "streaming",
+        "usage",
+        "tools",
+        "batching",
+        "speculative-decoding",
+        "prefix-cache",
+        "vision",
+        "cuda",
+        "blackwell",
+        "dgx-spark",
+        "docker"
+      ],
+      "commands": ["docker"],
+      "setup": [
+        {
+          "id": "check-docker",
+          "title": "Check Docker",
+          "action": "check-command",
+          "command": "docker",
+          "args": ["--version"]
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health",
+        "chatPath": "/v1/chat/completions"
+      }
+    },
+    {
       "id": "vllm",
       "name": "vLLM",
       "kind": "openai-compatible-server",

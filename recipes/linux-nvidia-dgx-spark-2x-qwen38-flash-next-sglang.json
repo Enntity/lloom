@@ -39,7 +39,7 @@
     "cluster": { "nodes": 2, "provider": "nvidia-sync", "topology": "direct" }
   },
   "backend": {
-    "id": "sglang",
+    "id": "docker-sglang",
     "name": "Pinned SGLang Qwen3.8 Flash Next SM121 image",
     "type": "openai-compatible-server"
   },

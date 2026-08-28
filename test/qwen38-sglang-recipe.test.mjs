@@ -3,17 +3,26 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { getBackend, loadBackendCatalog } from '../src/backend-catalog.mjs';
 import { loadRecipeById } from '../src/recipes.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const backendRoot = path.join(root, 'backends', 'qwen38-sglang');
 const recipe = await loadRecipeById('linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang');
 
-assert.equal(recipe.backend.id, 'sglang');
+assert.equal(recipe.backend.id, 'docker-sglang');
 assert.equal(recipe.models[0].gatewayModel, 'qwen3.8-flash-next');
 assert.equal(recipe.models[0].settings.contextWindow, 262144);
 assert.equal(recipe.models[0].settings.maxActiveRequests, 6);
 assert.equal(recipe.models[0].settings.memoryGb, 96);
+
+const dockerSglang = getBackend(await loadBackendCatalog(), 'docker-sglang');
+assert(dockerSglang, 'docker-sglang backend must be packaged');
+assert.deepEqual(dockerSglang.commands, ['docker']);
+assert.deepEqual(
+  dockerSglang.setup.map((step) => step.id),
+  ['check-docker']
+);
 
 const members = recipe.models[0].settings.placement.members;
 assert.deepEqual(
