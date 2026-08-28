@@ -828,6 +828,7 @@ assert.deepEqual(
     'linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm',
     'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang',
     'linux-nvidia-dgx-spark-cluster-flux2-klein-4b',
+    'linux-nvidia-dgx-spark-cluster-qwen3-embedding-4b-vllm',
     'linux-nvidia-gb10-chatterbox',
     'linux-nvidia-gb10-image-generation',
     'linux-nvidia-gb10-qwen36-unsloth-vllm',
@@ -995,7 +996,7 @@ const recipeIndexReport = await buildRecipeIndexReport(config, {
 });
 assert.equal(recipeIndexReport.ok, true);
 assert.equal(recipeIndexReport.index.id, 'lloom-community-recipes');
-assert.equal(recipeIndexReport.recipes.length, 17);
+assert.equal(recipeIndexReport.recipes.length, 18);
 const indexedSparkRecipe = recipeIndexReport.recipes.find(
   (candidate) => candidate.id === 'linux-nvidia-gb10-qwen36-unsloth-vllm'
 );
@@ -2423,6 +2424,32 @@ dsparkBase.cluster = {
     ennspark02: { endpoint: 'http://spark-two:8100', backendHost: '10.100.16.1' }
   }
 };
+const clusterEmbeddingRecipe = await loadRecipeById(
+  'linux-nvidia-dgx-spark-cluster-qwen3-embedding-4b-vllm'
+);
+const clusterEmbeddingConfig = deriveUserConfig(dsparkBase, clusterEmbeddingRecipe, {
+  modelRoot: '/models',
+  additive: true
+});
+const workerEmbeddingRuntime = clusterEmbeddingConfig.runtimes['qwen3-embedding-4b-ennspark02'];
+assert.equal(workerEmbeddingRuntime.node, 'ennspark02');
+assert.equal(workerEmbeddingRuntime.healthUrl, 'http://10.100.16.1:8002/v1/models');
+assert(workerEmbeddingRuntime.bootstrap.createArgs.includes('10.100.16.1:8002:8000'));
+assert.equal(
+  clusterEmbeddingConfig.backends['qwen3-embedding-4b-ennspark02'].baseUrl,
+  'http://10.100.16.1:8002/v1'
+);
+assert.deepEqual(
+  clusterEmbeddingConfig.models.find((model) => model.id === 'Qwen/Qwen3-Embedding-4B').targets,
+  [
+    {
+      id: 'ennspark02',
+      node: 'ennspark02',
+      backend: 'qwen3-embedding-4b-ennspark02',
+      runtime: 'qwen3-embedding-4b-ennspark02'
+    }
+  ]
+);
 const labeledDsparkBase = structuredClone(dsparkBase);
 labeledDsparkBase.cluster.nodes.ennspark02.labels = { role: 'worker', hardware: 'dgx-spark' };
 labeledDsparkBase.cluster.nodes['macbook-local'] = {
@@ -5618,7 +5645,7 @@ if (listened) {
       try {
         assert.equal(autoHostPlan.ok, true);
         assert(autoHostPlan.host.autoStarted.pid);
-        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, 22);
+        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, 23);
         assert.equal(autoHostPlan.plans[0].recommendation.id, 'apple-silicon-qwen36-35b-a3b-mtplx-pack');
         assert.equal(autoHostPlan.plans[0].plan.roots.recipesRoot, autoHostRecipesRoot);
         assert.equal(autoHostPlan.plans[0].plan.roots.benchmarksRoot, autoHostBenchmarksRoot);

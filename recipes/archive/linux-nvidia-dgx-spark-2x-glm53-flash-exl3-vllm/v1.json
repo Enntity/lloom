@@ -4,8 +4,8 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm",
   "name": "2x DGX Spark GLM-5.3 Flash EXL3 DFlash2 vLLM",
-  "version": 2,
-  "summary": "MiaAI-Lab's GLM-5.3 Flash EXL3/TR3 4bpw TP=2 recipe with DFlash2-7, native SM121 kernels, a 262K coexistence context, vision, and LLooM-managed distributed admission.",
+  "version": 1,
+  "summary": "MiaAI-Lab's GLM-5.3 Flash EXL3/TR3 4bpw TP=2 recipe with DFlash2-7, native SM121 kernels, 900K context, vision, and LLooM-managed distributed admission.",
   "license": { "id": "MIT", "name": "Recipe metadata and launcher" },
   "provenance": {
     "createdBy": "lloom",
@@ -30,7 +30,7 @@
   },
   "requirements": {
     "platforms": ["linux-arm64"],
-    "memoryGb": 100,
+    "memoryGb": 112,
     "diskGb": 190,
     "commands": ["docker", "python3"],
     "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"],
@@ -82,10 +82,10 @@
       "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "usage", "tools", "reasoning", "vision", "speculative-decoding", "moe", "long-context"],
       "settings": {
         "port": 8890,
-        "contextWindow": 262144,
+        "contextWindow": 900000,
         "maxOutputTokens": 131072,
         "maxActiveRequests": 4,
-        "memoryGb": 100,
+        "memoryGb": 112,
         "priority": 180,
         "keepWarm": false,
         "startupTimeoutMs": 7200000,
@@ -108,7 +108,7 @@
               "role": "worker",
               "order": 10,
               "healthStrategy": "container",
-              "resources": { "memoryGb": 100 },
+              "resources": { "memoryGb": 112 },
               "runtimeSettings": {
                 "adapter": "docker",
                 "management": "managed",
@@ -139,7 +139,7 @@
                     "-e", "GLM53_SUPPRESS_STOPS_IN_REASONING=1", "-e", "GLM53_MIXED_PREFILL_CHUNK=skip",
                     "-e", "MODEL_DIR=/models/Mia-AiLab--GLM-5.3-Flash-EXL3-TR3-4bpw", "-e", "DFLASH_MODEL_DIR=/models/incoai--GLM-5.3-Flash-DFlash2",
                     "-e", "SERVED_MODEL_NAME=glm-5.3-flash-exl3", "-e", "SPEC_METHOD=dflash", "-e", "DFLASH_TOKENS=7", "-e", "DFLASH_DRAFT_TP=1",
-                    "-e", "MAX_MODEL_LEN=262144", "-e", "GPU_MEMORY_UTILIZATION=0.80", "-e", "MAX_NUM_SEQS=4", "-e", "MAX_NUM_BATCHED_TOKENS=1024", "-e", "KV_CACHE_DTYPE=fp8"
+                    "-e", "MAX_MODEL_LEN=900000", "-e", "GPU_MEMORY_UTILIZATION=0.87", "-e", "MAX_NUM_SEQS=4", "-e", "MAX_NUM_BATCHED_TOKENS=1024", "-e", "KV_CACHE_DTYPE=fp8"
                   ],
                   "command": ["/opt/lloom/entrypoint.sh"]
                 }
@@ -150,7 +150,7 @@
               "runtime": "glm53-flash-exl3-head",
               "role": "head",
               "order": 20,
-              "resources": { "memoryGb": 100 },
+              "resources": { "memoryGb": 112 },
               "runtimeSettings": {
                 "adapter": "docker",
                 "management": "managed",
@@ -186,7 +186,7 @@
                     "-e", "GLM53_SUPPRESS_STOPS_IN_REASONING=1", "-e", "GLM53_MIXED_PREFILL_CHUNK=skip",
                     "-e", "MODEL_DIR=/models/Mia-AiLab--GLM-5.3-Flash-EXL3-TR3-4bpw", "-e", "DFLASH_MODEL_DIR=/models/incoai--GLM-5.3-Flash-DFlash2",
                     "-e", "SERVED_MODEL_NAME=glm-5.3-flash-exl3", "-e", "SPEC_METHOD=dflash", "-e", "DFLASH_TOKENS=7", "-e", "DFLASH_DRAFT_TP=1",
-                    "-e", "MAX_MODEL_LEN=262144", "-e", "GPU_MEMORY_UTILIZATION=0.80", "-e", "MAX_NUM_SEQS=4", "-e", "MAX_NUM_BATCHED_TOKENS=1024", "-e", "KV_CACHE_DTYPE=fp8"
+                    "-e", "MAX_MODEL_LEN=900000", "-e", "GPU_MEMORY_UTILIZATION=0.87", "-e", "MAX_NUM_SEQS=4", "-e", "MAX_NUM_BATCHED_TOKENS=1024", "-e", "KV_CACHE_DTYPE=fp8"
                   ],
                   "command": ["/opt/lloom/entrypoint.sh"]
                 }

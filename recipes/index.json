@@ -79,6 +79,20 @@
       "source": { "type": "local", "url": "recipes/linux-nvidia-qwen3-embedding-4b-vllm.json" }
     },
     {
+      "id": "linux-nvidia-dgx-spark-cluster-qwen3-embedding-4b-vllm",
+      "path": "linux-nvidia-dgx-spark-cluster-qwen3-embedding-4b-vllm.json",
+      "currentVersion": 1,
+      "versions": [
+        { "version": 1, "path": "linux-nvidia-dgx-spark-cluster-qwen3-embedding-4b-vllm.json", "status": "current" }
+      ],
+      "name": "DGX Spark cluster Qwen3 Embedding 4B worker lane",
+      "summary": "Worker-pinned Qwen3-Embedding-4B pooling runtime routed through the leader LLooM gateway.",
+      "tags": ["linux", "nvidia", "dgx-spark", "cluster", "embedding", "qwen3", "vllm", "continuity"],
+      "recommendedFor": ["Two-node DGX Spark clusters preserving leader memory for a large TP chat model"],
+      "capabilities": ["embedding", "embeddings", "batching", "multilingual", "long-context"],
+      "source": { "type": "local", "url": "recipes/linux-nvidia-dgx-spark-cluster-qwen3-embedding-4b-vllm.json" }
+    },
+    {
       "id": "apple-silicon-chatterbox",
       "path": "apple-silicon-chatterbox.json",
       "currentVersion": 1,
@@ -328,13 +342,19 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm",
       "path": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm.json",
-      "currentVersion": 1,
+      "currentVersion": 2,
       "versions": [
         {
           "version": 1,
+          "path": "archive/linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm/v1.json",
+          "status": "archived",
+          "notes": "Original MiaAI-Lab EXL3/TR3 4bpw TP=2 profile with 900K context and no sidecar coexistence headroom."
+        },
+        {
+          "version": 2,
           "path": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm.json",
           "status": "current",
-          "notes": "MiaAI-Lab EXL3/TR3 4bpw TP=2 with DFlash2-7 and exact pinned image, model, template, and runtime overlays."
+          "notes": "Keeps MiaAI-Lab's DFlash2-7 path while reducing context to 262K and memory admission to 100 GB per member so a worker embedding lane can coexist."
         }
       ],
       "name": "2x DGX Spark GLM-5.3 Flash EXL3 DFlash2 vLLM",
