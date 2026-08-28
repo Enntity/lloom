@@ -239,7 +239,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang",
       "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang.json",
-      "currentVersion": 2,
+      "currentVersion": 3,
       "versions": [
         {
           "version": 1,
@@ -250,9 +250,16 @@
         },
         {
           "version": 2,
+          "path": "archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang/v2.json",
+          "status": "archived",
+          "archivedAt": "2026-08-28T00:40:00.000Z",
+          "notes": "Uses the measured roughly 75 GB per-rank resident footprint plus margin for admission, preserving the pinned embedding and worker image sidecars."
+        },
+        {
+          "version": 3,
           "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang.json",
           "status": "current",
-          "notes": "Uses the measured roughly 75 GB per-rank resident footprint plus margin for admission, preserving the pinned embedding and worker image sidecars."
+          "notes": "Keeps linear-replay speculative decoding but stores recurrent SSM state in FP32 to prevent the observed BF16 replay drift at 248K tokens."
         }
       ],
       "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 SGLang",

@@ -14,7 +14,7 @@ assert.equal(recipe.backend.id, 'docker-sglang');
 assert.equal(recipe.models[0].gatewayModel, 'qwen3.8-flash-next');
 assert.equal(recipe.models[0].settings.contextWindow, 262144);
 assert.equal(recipe.models[0].settings.maxActiveRequests, 6);
-assert.equal(recipe.version, 2);
+assert.equal(recipe.version, 3);
 assert.equal(recipe.models[0].settings.memoryGb, 80);
 
 const dockerSglang = getBackend(await loadBackendCatalog(), 'docker-sglang');
@@ -56,6 +56,7 @@ for (const expected of [
   '--host "${SGLANG_API_HOST:-0.0.0.0}"',
   '--port "${api_port}"',
   '--max-total-tokens "${MAX_TOTAL_TOKENS:-627648}"',
+  '--mamba-ssm-dtype float32',
   '--enable-linear-replayssm-spec',
   '--cuda-graph-bs-decode 1 2 3 4 5 6'
 ]) {

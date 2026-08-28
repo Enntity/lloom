@@ -44,7 +44,7 @@ exec python3 -m sglang.launch_server \
   --attention-backend flashinfer \
   --kv-cache-dtype nvfp4 \
   --page-size 64 \
-  --mamba-ssm-dtype bfloat16 \
+  --mamba-ssm-dtype float32 \
   --mamba-radix-cache-strategy extra_buffer \
   --mamba-track-interval 64 \
   --max-mamba-cache-size "${MAX_MAMBA_CACHE_SIZE:-30}" \
