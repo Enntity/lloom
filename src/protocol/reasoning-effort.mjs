@@ -48,10 +48,10 @@ function qwenVllmHints(resolved = {}) {
     .toLowerCase();
 }
 
-/** True only for Qwen 3/3.5/3.6 served by a vLLM runtime. */
+/** True only for Qwen 3/3.5/3.6/3.8 served by a vLLM runtime. */
 export function isQwenVllm(resolved = {}) {
   const hints = qwenVllmHints(resolved);
-  return /qwen3(?:[._-]?(?:5|6))?/.test(hints) && /vllm/.test(hints);
+  return /qwen3(?:[._-]?(?:5|6|8))?/.test(hints) && /vllm/.test(hints);
 }
 
 export function isOpenRouter(resolved = {}) {

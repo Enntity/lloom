@@ -16,6 +16,22 @@ const qwenVllm = {
   runtime: { bootstrap: { image: 'vllm/vllm-openai:v0.24.0' } }
 };
 
+const qwen38Vllm = {
+  model: {
+    id: 'qwen3.8-flash-next',
+    upstreamModel: 'qwen3.8-flash-next'
+  },
+  backend: { id: 'qwen38-vllm', type: 'openai' },
+  runtime: {
+    adapter: 'docker',
+    recipe: { id: 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm' }
+  }
+};
+
+const qwen38NoThinking = translateReasoningEffortForBackend({ reasoning_effort: 'none' }, qwen38Vllm);
+assert.equal(qwen38NoThinking.reasoning_effort, undefined);
+assert.equal(qwen38NoThinking.chat_template_kwargs.enable_thinking, false);
+
 const qwenVllmWithTemplateProfile = {
   ...qwenVllm,
   runtime: {
