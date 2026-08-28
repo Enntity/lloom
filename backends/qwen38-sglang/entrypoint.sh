@@ -26,7 +26,7 @@ exec python3 -m sglang.launch_server \
   --revision "${QWEN_MODEL_REVISION}" \
   --served-model-name "${SERVED_MODEL_NAME}" \
   --trust-remote-code \
-  --host "${NODE_ADDRESS}" \
+  --host "${SGLANG_API_HOST:-0.0.0.0}" \
   --port "${SGLANG_PORT:-8889}" \
   --tp-size "${CLUSTER_NODE_COUNT:-2}" \
   --nnodes "${CLUSTER_NODE_COUNT:-2}" \
@@ -45,7 +45,7 @@ exec python3 -m sglang.launch_server \
   --mem-fraction-static "${MEM_FRACTION_STATIC:-0.76}" \
   --chunked-prefill-size "${CHUNKED_PREFILL_SIZE:-1024}" \
   --max-running-requests "${MAX_RUNNING_REQUESTS:-6}" \
-  --max-total-tokens "${MAX_TOTAL_TOKENS:-786432}" \
+  --max-total-tokens "${MAX_TOTAL_TOKENS:-627648}" \
   --context-length "${CONTEXT_LENGTH:-262144}" \
   --speculative-algorithm NEXTN \
   --speculative-num-steps "${SPECULATIVE_NUM_STEPS:-3}" \
