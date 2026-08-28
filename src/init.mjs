@@ -382,6 +382,7 @@ function buildRecipeRuntime({
     maxConcurrency: maxActiveRequests,
     ...(Number.isFinite(memoryGb) ? { memoryGb } : {}),
     ...(typeof settings.keepWarm === 'boolean' ? { keepWarm: settings.keepWarm } : {}),
+    ...(settings.behaviorOverrides ? { behaviorOverrides: structuredClone(asObject(settings.behaviorOverrides)) } : {}),
     policy: {
       priority: positiveInteger(settings.priority, 50)
     },
@@ -673,6 +674,9 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
         maxConcurrency: positiveInteger(settings.maxActiveRequests, backendId === 'mtplx' ? 10 : 4),
         memoryGb: Number(settings.memoryGb ?? 0),
         ...(settings.watchdog ? { watchdog: structuredClone(asObject(settings.watchdog)) } : {}),
+        ...(settings.behaviorOverrides
+          ? { behaviorOverrides: structuredClone(asObject(settings.behaviorOverrides)) }
+          : {}),
         policy: {
           priority: Number(settings.priority ?? 0)
         },

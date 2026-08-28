@@ -89,6 +89,13 @@ function applyChatTemplateBehaviorOverrides(body = {}, resolved = {}) {
   };
 }
 
+function sglangThinkingBudgetProfile(resolved = {}) {
+  const configured = resolved.runtime?.behaviorOverrides?.reasoningBudget;
+  if (!isObject(configured) || configured.kind !== 'sglang-custom-logit-processor') return null;
+  if (typeof configured.processor !== 'string' || !configured.processor.trim()) return null;
+  return configured;
+}
+
 /**
  * Return the exact upstream request for the resolved backend.
  *
@@ -135,11 +142,24 @@ export function translateReasoningEffortForBackend(body = {}, resolved = {}) {
   // non-none tiers enable thinking and receive a deterministic native budget.
   if (effort === 'auto') return next;
 
-  // SGLang exposes Qwen's template-level thinking switch but not vLLM's
-  // graduated thinking_token_budget. Preserve the user's on/off intent and
-  // do not forward unsupported gateway fields to the backend.
+  // This SGLang lane declares the exact custom processor it has enabled.
+  // Other SGLang runtimes retain the portable on/off behavior.
   if (qwenSglang) {
-    return hasThinkingOverride ? next : { ...next, chat_template_kwargs: { ...templateKwargs, enable_thinking: true } };
+    const withThinking = hasThinkingOverride
+      ? next
+      : { ...next, chat_template_kwargs: { ...templateKwargs, enable_thinking: true } };
+    const profile = sglangThinkingBudgetProfile(resolved);
+    const budget = profile?.budgets?.[effort];
+    if (!profile || !Number.isInteger(budget) || budget <= 0) return withThinking;
+    const requestedParams = isObject(profiledBody.custom_params) ? profiledBody.custom_params : {};
+    return {
+      ...withThinking,
+      custom_logit_processor: profiledBody.custom_logit_processor ?? profile.processor,
+      custom_params: {
+        ...requestedParams,
+        thinking_budget: requestedParams.thinking_budget ?? budget
+      }
+    };
   }
 
   const budget = QWEN_VLLM_THINKING_BUDGETS[effort];

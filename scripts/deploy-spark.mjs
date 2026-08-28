@@ -28,6 +28,7 @@ const remoteArgs = [
 if (flags.runtime) remoteArgs.push(String(flags.runtime));
 else remoteArgs.push('-');
 remoteArgs.push(String(flags.entity || 'Jinx'));
+remoteArgs.push(String(flags.recipe || '-'));
 await inherit('ssh', [...ssh, host, ...remoteArgs], root);
 console.log(
   JSON.stringify(
@@ -36,6 +37,7 @@ console.log(
       host,
       entity: flags.entity || 'Jinx',
       runtime: flags.runtime || null,
+      recipe: flags.recipe || null,
       commit: release.manifest.commit,
       sha256: release.manifest.sha256
     },

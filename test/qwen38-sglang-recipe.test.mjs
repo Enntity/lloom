@@ -14,7 +14,7 @@ assert.equal(recipe.backend.id, 'docker-sglang');
 assert.equal(recipe.models[0].gatewayModel, 'qwen3.8-flash-next');
 assert.equal(recipe.models[0].settings.contextWindow, 262144);
 assert.equal(recipe.models[0].settings.maxActiveRequests, 6);
-assert.equal(recipe.version, 5);
+assert.equal(recipe.version, 6);
 assert.equal(recipe.models[0].settings.memoryGb, 80);
 assert.equal(recipe.models[0].settings.keepWarm, false);
 
@@ -59,11 +59,28 @@ for (const expected of [
   '--max-total-tokens "${MAX_TOTAL_TOKENS:-627648}"',
   '--mamba-ssm-dtype float32',
   '--enable-linear-replayssm-spec',
+  '--enable-custom-logit-processor',
   '--cuda-graph-bs-decode 1 2 3 4 5 6'
 ]) {
   assert(entrypoint.includes(expected), `missing SGLang launch control: ${expected}`);
 }
 assert(entrypoint.includes('unset SGLANG_PORT'), 'legacy SGLANG_PORT must not leak into SGLang');
+
+const sm121Patch = await fs.readFile(path.join(backendRoot, 'apply-sm121-patches.py'), 'utf8');
+assert.match(sm121Patch, /THINKING_START_TOKEN_ID = 248068/);
+assert.match(sm121Patch, /THINKING_END_TOKEN_ID = 248069/);
+assert.match(sm121Patch, /refusing an unsafe patch/);
+
+const reasoningBudget = recipe.models[0].settings.behaviorOverrides.reasoningBudget;
+assert.equal(reasoningBudget.kind, 'sglang-custom-logit-processor');
+assert.match(reasoningBudget.processor, /Qwen3ThinkingBudgetLogitProcessor|800495/);
+assert.deepEqual(reasoningBudget.budgets, {
+  minimal: 256,
+  low: 1024,
+  medium: 4096,
+  high: 16384,
+  xhigh: 32768
+});
 
 const sourceHashes = {
   'qsa_fa_fallback.py': '4546423216fbf51f1763753c0865c0fb9eff670db566e83987268918a86b993a',
@@ -78,5 +95,6 @@ for (const [name, expected] of Object.entries(sourceHashes)) {
 await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm', 'v1.json'));
 await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v3.json'));
 await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v4.json'));
+await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v5.json'));
 
 console.log('qwen38 sglang recipe tests passed');

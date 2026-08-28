@@ -6,6 +6,8 @@ manifest=${2:?manifest required}
 runtime=${3:-}
 [[ "$runtime" == "-" ]] && runtime=""
 entity=${4:-Jinx}
+recipe=${5:-}
+[[ "$recipe" == "-" ]] && recipe=""
 export PATH="$HOME/.local/bin:$HOME/.local/opt/node-v22.17.0-linux-arm64/bin:$PATH"
 export NPM_CONFIG_CACHE="$HOME/.cache/npm-release"
 
@@ -20,6 +22,13 @@ cp "$artifact" "$manifest" "$release_root/"
 rollback_artifact=""
 old_presence_enabled="false"
 presence_managed="false"
+config_path=${LLOOM_CONFIG:-$HOME/.lloom/config.json}
+config_backup="$release_root/config.before.json"
+config_existed="false"
+if [[ -f "$config_path" ]]; then
+  cp "$config_path" "$config_backup"
+  config_existed="true"
+fi
 
 rollback() {
   status=$?
@@ -27,8 +36,11 @@ rollback() {
   echo "LLooM deployment failed; rolling back" >&2
   if [[ -n "$rollback_artifact" && -f "$rollback_artifact" ]]; then
     npm install --global --prefix "$HOME/.local" "$rollback_artifact" --omit=dev --ignore-scripts || true
-    systemctl --user restart lloom.service || true
   fi
+  if [[ "$config_existed" == "true" && -f "$config_backup" ]]; then
+    cp "$config_backup" "$config_path" || true
+  fi
+  systemctl --user restart lloom.service || true
   [[ "$old_presence_enabled" == "true" ]] && enn presence enable "$entity" >/dev/null 2>&1 || true
   exit "$status"
 }
@@ -66,6 +78,9 @@ if [[ -n "$runtime" ]]; then
 fi
 
 npm install --global --prefix "$HOME/.local" "$artifact" --omit=dev --ignore-scripts
+if [[ -n "$recipe" ]]; then
+  lloom setup --recipe "$recipe" --additive --apply --yes >/dev/null
+fi
 systemctl --user restart lloom.service
 for _ in $(seq 1 60); do lloom models >/dev/null 2>&1 && break; sleep 1; done
 lloom models >/dev/null

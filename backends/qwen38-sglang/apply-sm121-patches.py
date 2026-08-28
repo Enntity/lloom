@@ -13,6 +13,9 @@ ATTENTION = pathlib.Path(
     "/sgl-workspace/sglang/python/sglang/srt/layers/attention"
 )
 BACKEND = ATTENTION / "qwen_sparse_attn_backend.py"
+CUSTOM_LOGIT_PROCESSOR = pathlib.Path(
+    "/sgl-workspace/sglang/python/sglang/srt/sampling/custom_logit_processor.py"
+)
 FALLBACK_MARKER = "qsa_fa_fallback"
 
 
@@ -41,9 +44,31 @@ def patch_sm121_fallback() -> None:
     print("qwen_sparse_attn_backend.py: patched for SM121")
 
 
+def patch_thinking_budget_tokens() -> None:
+    source = CUSTOM_LOGIT_PROCESSOR.read_text()
+    patched = source
+    for old, new in (
+        ("THINKING_START_TOKEN_ID = 151667", "THINKING_START_TOKEN_ID = 248068"),
+        ("THINKING_END_TOKEN_ID = 151668", "THINKING_END_TOKEN_ID = 248069"),
+    ):
+        if new in patched:
+            continue
+        if patched.count(old) != 1:
+            raise RuntimeError(
+                f"SGLang thinking-budget anchor changed for {old!r}; refusing an unsafe patch"
+            )
+        patched = patched.replace(old, new, 1)
+    if patched == source:
+        print("custom_logit_processor.py: Qwen3.8 thinking token IDs already patched")
+        return
+    CUSTOM_LOGIT_PROCESSOR.write_text(patched)
+    print("custom_logit_processor.py: patched Qwen3.8 thinking token IDs")
+
+
 def main() -> None:
     install_modules()
     patch_sm121_fallback()
+    patch_thinking_budget_tokens()
     runpy.run_path(str(SOURCE / "apply_nvfp4_patches.py"), run_name="__main__")
 
 

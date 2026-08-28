@@ -25,7 +25,14 @@ const qwen38Sglang = {
   backend: { id: 'qwen38-sglang', type: 'openai' },
   runtime: {
     adapter: 'docker',
-    recipe: { id: 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang' }
+    recipe: { id: 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang' },
+    behaviorOverrides: {
+      reasoningBudget: {
+        kind: 'sglang-custom-logit-processor',
+        processor: '{"callable":"test-processor"}',
+        budgets: QWEN_VLLM_THINKING_BUDGETS
+      }
+    }
   }
 };
 
@@ -37,6 +44,34 @@ const qwen38Thinking = translateReasoningEffortForBackend({ reasoning_effort: 'l
 assert.equal(qwen38Thinking.reasoning_effort, undefined);
 assert.equal(qwen38Thinking.chat_template_kwargs.enable_thinking, true);
 assert.equal(qwen38Thinking.thinking_token_budget, undefined);
+assert.equal(qwen38Thinking.custom_logit_processor, '{"callable":"test-processor"}');
+assert.deepEqual(qwen38Thinking.custom_params, { thinking_budget: QWEN_VLLM_THINKING_BUDGETS.low });
+
+const qwen38ExplicitBudget = translateReasoningEffortForBackend(
+  {
+    reasoning_effort: 'high',
+    custom_logit_processor: '{"callable":"override"}',
+    custom_params: { thinking_budget: 64, marker: 'kept' }
+  },
+  qwen38Sglang
+);
+assert.equal(qwen38ExplicitBudget.custom_logit_processor, '{"callable":"override"}');
+assert.deepEqual(qwen38ExplicitBudget.custom_params, { thinking_budget: 64, marker: 'kept' });
+
+const qwen38ExplicitOff = translateReasoningEffortForBackend(
+  { reasoning_effort: 'high', chat_template_kwargs: { enable_thinking: false } },
+  qwen38Sglang
+);
+assert.equal(qwen38ExplicitOff.custom_logit_processor, undefined);
+assert.equal(qwen38ExplicitOff.custom_params, undefined);
+
+const qwen38Unprofiled = {
+  ...qwen38Sglang,
+  runtime: { adapter: 'docker', recipe: qwen38Sglang.runtime.recipe }
+};
+const qwen38UnprofiledThinking = translateReasoningEffortForBackend({ reasoning_effort: 'low' }, qwen38Unprofiled);
+assert.equal(qwen38UnprofiledThinking.custom_logit_processor, undefined);
+assert.equal(qwen38UnprofiledThinking.chat_template_kwargs.enable_thinking, true);
 
 const qwenVllmWithTemplateProfile = {
   ...qwenVllm,

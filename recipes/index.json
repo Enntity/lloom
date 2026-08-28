@@ -239,7 +239,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang",
       "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang.json",
-      "currentVersion": 5,
+      "currentVersion": 6,
       "versions": [
         {
           "version": 1,
@@ -271,9 +271,16 @@
         },
         {
           "version": 5,
+          "path": "archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang/v5.json",
+          "status": "archived",
+          "archivedAt": "2026-08-28T22:00:00.000Z",
+          "notes": "Makes the large distributed lane request-driven and unpinned so aliases with available cloud fallbacks can preserve it while keepWarm remains the single hard residency pin."
+        },
+        {
+          "version": 6,
           "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang.json",
           "status": "current",
-          "notes": "Makes the large distributed lane request-driven and unpinned so aliases with available cloud fallbacks can preserve it while keepWarm remains the single hard residency pin."
+          "notes": "Adds request-level graduated thinking budgets with Qwen3.8-correct token IDs while retaining MTP decode for live semantic validation."
         }
       ],
       "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 SGLang",

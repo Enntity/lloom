@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs';
+import http from 'node:http';
+import https from 'node:https';
 import path from 'node:path';
 import process from 'node:process';
 import { performance } from 'node:perf_hooks';
@@ -71,6 +73,28 @@ function inspectToolCall(testCase, message) {
   };
 }
 
+function requestWithoutHeaderTimeout(url, { headers, body, signal }) {
+  return new Promise((resolve, reject) => {
+    const target = new URL(url);
+    const client = target.protocol === 'https:' ? https : http;
+    const request = client.request(target, { method: 'POST', headers, signal }, (response) => {
+      const chunks = [];
+      response.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+      response.on('error', reject);
+      response.on('end', () => {
+        const responseText = Buffer.concat(chunks).toString('utf8');
+        resolve({
+          ok: response.statusCode >= 200 && response.statusCode < 300,
+          status: response.statusCode,
+          text: async () => responseText
+        });
+      });
+    });
+    request.on('error', reject);
+    request.end(body);
+  });
+}
+
 async function runCase({
   baseUrl,
   apiKey,
@@ -78,12 +102,17 @@ async function runCase({
   suite,
   testCase,
   timeoutMs,
+  transport,
+  omitMaxTokens,
   maxTokensOverride,
+  enableThinkingOverride,
   reasoningEffortOverride
 }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error(`request exceeded ${timeoutMs}ms`)), timeoutMs);
   timer.unref?.();
+  const reasoningEffort =
+    reasoningEffortOverride ?? testCase.reasoningEffort ?? suite.defaults?.reasoningEffort ?? 'low';
   const request = {
     model,
     messages: [
@@ -92,17 +121,19 @@ async function runCase({
     ],
     temperature: suite.defaults?.temperature ?? 0,
     seed: suite.defaults?.seed,
-    max_tokens: maxTokensOverride ?? testCase.maxTokens ?? suite.defaults?.maxTokens ?? 900,
-    reasoning: {
-      effort: reasoningEffortOverride ?? testCase.reasoningEffort ?? suite.defaults?.reasoningEffort ?? 'low'
-    },
+    ...(!omitMaxTokens
+      ? { max_tokens: maxTokensOverride ?? testCase.maxTokens ?? suite.defaults?.maxTokens ?? 900 }
+      : {}),
+    ...(reasoningEffort === 'omit' ? {} : { reasoning: { effort: reasoningEffort } }),
+    ...(enableThinkingOverride == null ? {} : { chat_template_kwargs: { enable_thinking: enableThinkingOverride } }),
     stream: false,
     ...(testCase.tools ? { tools: testCase.tools, tool_choice: testCase.toolChoice ?? 'auto' } : {})
   };
   const startedAt = new Date().toISOString();
   const started = performance.now();
   try {
-    const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+    const url = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+    const options = {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -111,7 +142,9 @@ async function runCase({
       },
       body: JSON.stringify(request),
       signal: controller.signal
-    });
+    };
+    const response =
+      transport === 'node-http' ? await requestWithoutHeaderTimeout(url, options) : await fetch(url, options);
     const text = await response.text();
     let body = null;
     try {
@@ -175,8 +208,21 @@ async function main() {
   const baseUrl = flags['base-url'] || DEFAULT_BASE_URL;
   const apiKey = resolveGatewayApiKey(flags);
   const timeoutMs = positiveInteger(flags['timeout-ms'], DEFAULT_TIMEOUT_MS);
-  const maxTokensOverride = flags['max-tokens'] ? positiveInteger(flags['max-tokens'], null) : null;
+  const omitMaxTokens = ['none', 'omit', 'uncapped'].includes(String(flags['max-tokens'] ?? '').toLowerCase());
+  const maxTokensOverride = flags['max-tokens'] && !omitMaxTokens ? positiveInteger(flags['max-tokens'], null) : null;
+  const enableThinkingOverride =
+    flags['enable-thinking'] == null
+      ? null
+      : String(flags['enable-thinking']).toLowerCase() === 'true'
+        ? true
+        : String(flags['enable-thinking']).toLowerCase() === 'false'
+          ? false
+          : (() => {
+              throw new Error('--enable-thinking must be true or false');
+            })();
   const reasoningEffortOverride = flags['reasoning-effort'] || null;
+  const transport = flags.transport || 'fetch';
+  if (!['fetch', 'node-http'].includes(transport)) throw new Error('--transport must be fetch or node-http');
   const artifact = {
     schemaVersion: 1,
     suite: {
@@ -193,11 +239,13 @@ async function main() {
       baselineModel: flags.model[0],
       settings: suite.defaults ?? {},
       overrides: {
-        maxTokens: maxTokensOverride,
+        maxTokens: omitMaxTokens ? 'omitted' : maxTokensOverride,
+        enableThinking: enableThinkingOverride,
         reasoningEffort: reasoningEffortOverride
       },
       caseFilter: flags.case,
-      timeoutMs
+      timeoutMs,
+      transport
     },
     models: []
   };
@@ -214,7 +262,10 @@ async function main() {
           suite,
           testCase,
           timeoutMs,
+          transport,
+          omitMaxTokens,
           maxTokensOverride,
+          enableThinkingOverride,
           reasoningEffortOverride
         })
       );

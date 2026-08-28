@@ -61,6 +61,7 @@ exec python3 -m sglang.launch_server \
   --enable-linear-replayssm-spec \
   --reasoning-parser auto \
   --tool-call-parser auto \
+  --enable-custom-logit-processor \
   --default-chat-template-kwargs '{"enable_thinking":false}' \
   --enable-metrics \
   --enable-cache-report \
