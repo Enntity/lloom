@@ -541,7 +541,7 @@ export async function applyRuntimePolicyPlan(
   };
 
   if (!dryRun && typeof runtimeManager.withAdmissionLock === 'function') {
-    return runtimeManager.withAdmissionLock(applyPlan);
+    return runtimeManager.withAdmissionLock(applyPlan, { runtimeId: requestedRuntimeId, reason });
   }
   return applyPlan();
 }

@@ -521,6 +521,7 @@ export class RuntimeManager {
     this.lifecycleControllers = new Map();
     this.watchdogOperations = new Map();
     this.admissionQueue = Promise.resolve();
+    this.activeAdmission = null;
     this.events = [];
     this.clusterCoordinator = clusterCoordinator;
     this.clusterCoordinator?.attachRuntimeManager(this);
@@ -635,8 +636,26 @@ export class RuntimeManager {
     return this.queues.get(runtimeId);
   }
 
-  withAdmissionLock(fn) {
-    const run = this.admissionQueue.catch(() => {}).then(fn);
+  withAdmissionLock(fn, { runtimeId = null, reason = 'runtime-admission' } = {}) {
+    if (reason === 'model-request' && this.activeAdmission?.runtimeId && this.activeAdmission.runtimeId !== runtimeId) {
+      const error = new Error(
+        `runtime ${runtimeId} cannot wait behind active admission for ${this.activeAdmission.runtimeId}; retry through its configured fallback`
+      );
+      error.code = 'RUNTIME_ADMISSION_BUSY';
+      error.statusCode = 503;
+      return Promise.reject(error);
+    }
+    const run = this.admissionQueue
+      .catch(() => {})
+      .then(async () => {
+        const admission = { runtimeId, reason };
+        this.activeAdmission = admission;
+        try {
+          return await fn();
+        } finally {
+          if (this.activeAdmission === admission) this.activeAdmission = null;
+        }
+      });
     this.admissionQueue = run.catch(() => {});
     return run;
   }

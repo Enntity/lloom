@@ -481,6 +481,32 @@ await assert.rejects(
   (error) => error.code === 'RUNTIME_RECONFIGURING' && error.statusCode === 503
 );
 
+const admissionBusyManager = new RuntimeManager(
+  { runtimes: {} },
+  {
+    logger: { error() {}, warn() {}, info() {} },
+    captureOutput: false
+  }
+);
+let releaseActiveAdmission;
+const activeAdmission = admissionBusyManager.withAdmissionLock(
+  () =>
+    new Promise((resolve) => {
+      releaseActiveAdmission = resolve;
+    }),
+  { runtimeId: 'qwen', reason: 'admin-admit' }
+);
+await new Promise((resolve) => setImmediate(resolve));
+await assert.rejects(
+  admissionBusyManager.withAdmissionLock(async () => 'unexpected', {
+    runtimeId: 'deepseek',
+    reason: 'model-request'
+  }),
+  (error) => error.code === 'RUNTIME_ADMISSION_BUSY' && error.statusCode === 503
+);
+releaseActiveAdmission();
+await activeAdmission;
+
 const managedDockerRuntime = {
   containerName: 'managed-runtime',
   bootstrap: { adapter: 'docker', image: 'example/model:v2', command: ['serve'] }
