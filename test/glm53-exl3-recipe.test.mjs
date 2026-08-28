@@ -57,7 +57,8 @@ for (const expected of [
   '--reasoning-parser glm45',
   '--quantization exl3',
   '--cudagraph-capture-sizes 1 2 4 8 16 24 32',
-  '"method": "dflash"',
+  "printf -v spec '{\"method\":\"dflash\"",
+  'Do not launch Python here',
   '--headless'
 ]) {
   assert(entrypoint.includes(expected), `missing GLM launch control: ${expected}`);

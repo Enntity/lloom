@@ -60,26 +60,14 @@ fi
 
 case "${SPEC_METHOD:-dflash}" in
   dflash)
-    spec="$({
-      DFLASH_MODEL_DIR="${DFLASH_MODEL_DIR}" \
-      DFLASH_TOKENS="${DFLASH_TOKENS:-7}" \
-      DFLASH_DRAFT_TP="${DFLASH_DRAFT_TP:-1}" \
-      python3 - <<'PY'
-import json
-import os
-
-spec = {
-    "method": "dflash",
-    "model": os.environ["DFLASH_MODEL_DIR"],
-    "num_speculative_tokens": int(os.environ["DFLASH_TOKENS"]),
-    "kv_cache_dtype": "auto",
-    "draft_sample_method": "probabilistic",
-    "rejection_sample_method": "standard",
-    "draft_tensor_parallel_size": int(os.environ["DFLASH_DRAFT_TP"]),
-}
-print(json.dumps(spec, separators=(",", ":")))
-PY
-    })"
+    dflash_tokens="${DFLASH_TOKENS:-7}"
+    dflash_draft_tp="${DFLASH_DRAFT_TP:-1}"
+    [[ "${dflash_tokens}" =~ ^[0-9]+$ ]] || { log "invalid DFLASH_TOKENS=${dflash_tokens}"; exit 1; }
+    [[ "${dflash_draft_tp}" =~ ^[0-9]+$ ]] || { log "invalid DFLASH_DRAFT_TP=${dflash_draft_tp}"; exit 1; }
+    # Do not launch Python here: Mia's installed video .pth emits a status line
+    # on interpreter startup, which would contaminate command-substitution JSON.
+    printf -v spec '{"method":"dflash","model":"%s","num_speculative_tokens":%d,"kv_cache_dtype":"auto","draft_sample_method":"probabilistic","rejection_sample_method":"standard","draft_tensor_parallel_size":%d}' \
+      "${DFLASH_MODEL_DIR}" "${dflash_tokens}" "${dflash_draft_tp}"
     args+=(--speculative-config "${spec}")
     ;;
   mtp)
