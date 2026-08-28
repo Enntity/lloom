@@ -49,7 +49,7 @@ exec python3 -m sglang.launch_server \
   --mamba-track-interval 64 \
   --max-mamba-cache-size "${MAX_MAMBA_CACHE_SIZE:-30}" \
   --mamba-full-memory-ratio "${MAMBA_FULL_MEMORY_RATIO:-0.3}" \
-  --mem-fraction-static "${MEM_FRACTION_STATIC:-0.76}" \
+  --mem-fraction-static "${MEM_FRACTION_STATIC:-0.80}" \
   --chunked-prefill-size "${CHUNKED_PREFILL_SIZE:-1024}" \
   --max-running-requests "${MAX_RUNNING_REQUESTS:-6}" \
   --max-total-tokens "${MAX_TOTAL_TOKENS:-627648}" \

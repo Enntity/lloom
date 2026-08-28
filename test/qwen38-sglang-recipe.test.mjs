@@ -14,7 +14,7 @@ assert.equal(recipe.backend.id, 'docker-sglang');
 assert.equal(recipe.models[0].gatewayModel, 'qwen3.8-flash-next');
 assert.equal(recipe.models[0].settings.contextWindow, 262144);
 assert.equal(recipe.models[0].settings.maxActiveRequests, 6);
-assert.equal(recipe.version, 3);
+assert.equal(recipe.version, 4);
 assert.equal(recipe.models[0].settings.memoryGb, 80);
 
 const dockerSglang = getBackend(await loadBackendCatalog(), 'docker-sglang');
@@ -43,7 +43,7 @@ for (const member of members) {
   assert.match(rendered, /SGLANG_API_HOST=0\.0\.0\.0/);
   assert.match(rendered, /SGLANG_API_PORT=8889/);
   assert.doesNotMatch(rendered, /SGLANG_PORT=/);
-  assert.match(rendered, /MEM_FRACTION_STATIC=0\.76/);
+  assert.match(rendered, /MEM_FRACTION_STATIC=0\.80/);
   assert.match(rendered, /SGLANG_ENABLE_TP_MEMORY_INBALANCE_CHECK=0/);
   assert.match(rendered, /backends\/qwen38-sglang\/qsa_nvfp4_kv\.py/);
   assert.deepEqual(bootstrap.command, ['/opt/lloom/entrypoint.sh']);
@@ -75,5 +75,6 @@ for (const [name, expected] of Object.entries(sourceHashes)) {
 }
 
 await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm', 'v1.json'));
+await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v3.json'));
 
 console.log('qwen38 sglang recipe tests passed');
