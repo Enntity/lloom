@@ -388,19 +388,56 @@ leaderReconfigureManager.stop = async (runtimeId) => {
   reconfigureCalls.push(`stop:${runtimeId}`);
   return { runtimeId, stopped: true };
 };
-leaderReconfigureManager.start = async (runtimeId) => {
-  reconfigureCalls.push(`start:${runtimeId}`);
-  return { runtimeId, started: true };
+leaderReconfigureManager.admit = async (runtimeId) => {
+  reconfigureCalls.push(`admit:${runtimeId}`);
+  return { runtimeId, admitted: true };
 };
 upgradedDistributedConfig.runtimes.split.keepWarm = true;
 const reconfigured = await leaderReconfigureManager.reconfigure(upgradedDistributedConfig);
 assert.deepEqual(reconfigured.changed, ['head', 'split']);
-assert.deepEqual(reconfigureCalls, ['drain:head', 'drain:split', 'stop:split', 'stop:head', 'start:split']);
+assert.deepEqual(reconfigureCalls, ['drain:head', 'drain:split', 'stop:split', 'stop:head', 'admit:split']);
 assert.deepEqual(reconfigured.results.at(-1), {
   runtimeId: 'head',
   started: false,
   reason: 'distributed-runtime-owned'
 });
+
+const demotedKeepWarmConfig = {
+  cluster: { nodeId: 'leader', leaderNode: 'leader' },
+  runtimes: {
+    standalone: {
+      enabled: true,
+      keepWarm: true,
+      command: 'standalone-server',
+      recipe: { id: 'standalone', version: 1 }
+    }
+  }
+};
+const demotedReconfigureManager = new RuntimeManager(structuredClone(demotedKeepWarmConfig), {
+  logger: { error() {}, warn() {}, info() {} },
+  captureOutput: false
+});
+demotedReconfigureManager.processes.set('standalone', {
+  pid: 123,
+  exitCode: null,
+  signalCode: null
+});
+const demotedCalls = [];
+demotedReconfigureManager.drainRuntime = async (runtimeId) => demotedCalls.push(`drain:${runtimeId}`);
+demotedReconfigureManager.stop = async (runtimeId) => {
+  demotedCalls.push(`stop:${runtimeId}`);
+  return { runtimeId, stopped: true };
+};
+demotedReconfigureManager.admit = async (runtimeId) => {
+  demotedCalls.push(`admit:${runtimeId}`);
+  return { runtimeId, admitted: true };
+};
+const demotedNextConfig = structuredClone(demotedKeepWarmConfig);
+demotedNextConfig.runtimes.standalone.keepWarm = false;
+demotedNextConfig.runtimes.standalone.recipe.version = 2;
+const demoted = await demotedReconfigureManager.reconfigure(demotedNextConfig);
+assert.deepEqual(demotedCalls, ['drain:standalone', 'stop:standalone']);
+assert.deepEqual(demoted.results, [{ runtimeId: 'standalone', started: false, reason: 'not-keep-warm' }]);
 
 const managedDockerRuntime = {
   containerName: 'managed-runtime',

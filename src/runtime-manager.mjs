@@ -1055,10 +1055,32 @@ export class RuntimeManager {
           results.push({ runtimeId, started: false, reason: 'distributed-runtime-owned' });
           continue;
         }
+        if (!current) {
+          results.push({ runtimeId, started: false, reason: 'removed' });
+          continue;
+        }
+        if (current.enabled !== true) {
+          results.push({ runtimeId, started: false, reason: 'runtime-disabled' });
+          continue;
+        }
+        const ownership = keepWarmOwnership(nextConfig, runtimeId, { nodeId, leaderNode });
+        if (current.keepWarm === true && !ownership.owned) {
+          results.push({ runtimeId, started: false, reason: ownership.reason });
+          continue;
+        }
+        const previous = previousConfig.runtimes?.[runtimeId];
+        const preserveOnDemandRuntime = wasRunning.get(runtimeId) === true && previous?.keepWarm !== true;
+        if (current.keepWarm !== true && !preserveOnDemandRuntime) {
+          results.push({ runtimeId, started: false, reason: 'not-keep-warm' });
+          continue;
+        }
         results.push(
-          current?.keepWarm === true || wasRunning.get(runtimeId) === true
-            ? await this.start(runtimeId, { force: true, warmup: true, reason: 'config-reload' })
-            : { runtimeId, started: false, reason: current ? 'disabled' : 'removed' }
+          await this.admit(runtimeId, {
+            config: nextConfig,
+            force: true,
+            warmup: true,
+            reason: 'config-reload'
+          })
         );
       }
       return { changed, results };
@@ -1072,6 +1094,18 @@ export class RuntimeManager {
       force: false,
       warmup: true,
       reason: 'model-request'
+    });
+  }
+
+  async admit(runtimeId, { config = this.config, force = false, warmup = true, reason = 'runtime-admission' } = {}) {
+    const { applyRuntimePolicyPlan } = await import('./runtime-policy.mjs');
+    return applyRuntimePolicyPlan(config, this, {
+      requestedRuntimeId: runtimeId,
+      dryRun: false,
+      yes: true,
+      warmup,
+      force,
+      reason
     });
   }
 
@@ -1441,12 +1475,9 @@ export class RuntimeManager {
         results.push({ runtimeId, started: false, reason: ownership.reason });
         continue;
       }
-      const { applyRuntimePolicyPlan } = await import('./runtime-policy.mjs');
       try {
-        const result = await applyRuntimePolicyPlan(admissionConfig, this, {
-          requestedRuntimeId: runtimeId,
-          dryRun: false,
-          yes: true,
+        const result = await this.admit(runtimeId, {
+          config: admissionConfig,
           warmup: true,
           force: false,
           reason: 'keep-warm'
