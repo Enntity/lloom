@@ -2390,6 +2390,23 @@ dsparkBase.cluster = {
     ennspark02: { endpoint: 'http://spark-two:8100', backendHost: '10.100.16.1' }
   }
 };
+const labeledDsparkBase = structuredClone(dsparkBase);
+labeledDsparkBase.cluster.nodes.ennspark02.labels = { role: 'worker', hardware: 'dgx-spark' };
+labeledDsparkBase.cluster.nodes['macbook-local'] = {
+  endpoint: 'http://macbook:8100',
+  labels: { role: 'node', architecture: 'darwin-arm64', accelerator: 'apple-gpu' }
+};
+const labeledDsparkInstalled = deriveUserConfig(labeledDsparkBase, dsparkRecipe, {
+  modelRoot: '/models',
+  additive: true
+});
+assert.deepEqual(
+  labeledDsparkInstalled.runtimes['deepseek-v4-flash-0731-cluster'].placement.members.map(
+    (member) => member.node
+  ),
+  ['ennspark02', 'ennspark01']
+);
+assert.equal(labeledDsparkInstalled.runtimes['deepseek-v4-flash-0731-worker-macbook-local'], undefined);
 const dsparkInstalled = deriveUserConfig(dsparkBase, dsparkRecipe, { modelRoot: '/models', additive: true });
 dsparkInstalled.cluster.nodes['macbook-local'] = {
   endpoint: 'http://macbook:8100',
