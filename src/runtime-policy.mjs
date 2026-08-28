@@ -40,7 +40,67 @@ function runtimePriority(runtime, { requested = false, keepWarm = false } = {}) 
 }
 
 function isRuntimeLoaded(status) {
-  return status?.healthy === true || ['running', 'external', 'starting'].includes(status?.status);
+  return (
+    status?.healthy === true || ['running', 'external', 'starting', 'draining', 'stopping'].includes(status?.status)
+  );
+}
+
+export function runtimeAdmissionBlockers(plan) {
+  const protectedRows = (plan?.protected ?? []).map((item) => ({
+    ...item,
+    runtime: plan?.runtimes?.find((row) => row.runtimeId === item.runtimeId)
+  }));
+  const active = [];
+  const pinned = [];
+  if (plan?.admission?.clustered) {
+    const deficits = Object.fromEntries(
+      Object.entries(plan.admission.nodes ?? {}).map(([nodeId, node]) => [
+        nodeId,
+        Math.max(0, Number(node.overBudgetGb) || 0)
+      ])
+    );
+    const contributes = (row) =>
+      Object.entries(row.runtime?.resourcesByNode ?? {}).some(
+        ([nodeId, resources]) => deficits[nodeId] > 0 && Number(resources?.memoryGb) > 0
+      );
+    for (const row of protectedRows) {
+      if (
+        row.protectedReasons.includes('active-requests') &&
+        !row.protectedReasons.includes('keep-warm-pin') &&
+        contributes(row)
+      ) {
+        active.push(row);
+        for (const [nodeId, resources] of Object.entries(row.runtime?.resourcesByNode ?? {})) {
+          deficits[nodeId] = Math.max(0, (deficits[nodeId] ?? 0) - (Number(resources?.memoryGb) || 0));
+        }
+      }
+    }
+    if (Object.values(deficits).some((value) => value > 0)) {
+      for (const row of protectedRows) {
+        if (row.protectedReasons.includes('keep-warm-pin') && contributes(row)) pinned.push(row);
+      }
+    }
+    return { active, pinned };
+  }
+
+  let deficit = Math.max(0, Number(plan?.admission?.overBudgetGb) || 0);
+  for (const row of protectedRows) {
+    if (
+      deficit > 0 &&
+      row.protectedReasons.includes('active-requests') &&
+      !row.protectedReasons.includes('keep-warm-pin') &&
+      Number(row.runtime?.memoryGb) > 0
+    ) {
+      active.push(row);
+      deficit = Math.max(0, deficit - Number(row.runtime.memoryGb));
+    }
+  }
+  if (deficit > 0) {
+    for (const row of protectedRows) {
+      if (row.protectedReasons.includes('keep-warm-pin') && Number(row.runtime?.memoryGb) > 0) pinned.push(row);
+    }
+  }
+  return { active, pinned };
 }
 
 async function liveMemoryProfile(profile = {}) {
@@ -476,8 +536,7 @@ export async function applyRuntimePolicyPlan(
       };
     }
     if (!plan.admission.allowed) {
-      const activeBlockers = plan.protected.filter((item) => item.protectedReasons.includes('active-requests'));
-      const keepWarmBlockers = plan.protected.filter((item) => item.protectedReasons.includes('keep-warm-pin'));
+      const { active: activeBlockers, pinned: keepWarmBlockers } = runtimeAdmissionBlockers(plan);
       const temporary = activeBlockers.length > 0 && keepWarmBlockers.length === 0;
       const blockerText = [...activeBlockers, ...keepWarmBlockers]
         .map((item) => `${item.runtimeId} (${item.protectedReasons.join(', ')})`)

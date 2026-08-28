@@ -843,6 +843,7 @@ export class RuntimeManager {
         }));
         const healthy = members.length > 0 && members.every((member) => member.healthy);
         const anyLoaded = members.some((member) => ['running', 'external', 'starting'].includes(member.status));
+        const transitionalStatus = ['queued', 'draining', 'stopping'].includes(state.status) ? state.status : null;
         runtimes[runtimeId] = {
           ...compactRuntime(runtimeId, runtime),
           node: null,
@@ -851,7 +852,7 @@ export class RuntimeManager {
           members,
           resourcesByNode: runtimeResourcesByNode(runtime, this.config),
           healthy,
-          status: healthy ? 'running' : anyLoaded ? 'starting' : state.status === 'queued' ? 'queued' : 'stopped',
+          status: transitionalStatus ?? (healthy ? 'running' : anyLoaded ? 'starting' : 'stopped'),
           keepWarm: keepWarm.has(runtimeId),
           starts: state.starts,
           stops: state.stops,
@@ -1050,6 +1051,7 @@ export class RuntimeManager {
   resumeRuntime(runtimeId) {
     this.pausedRuntimes.delete(runtimeId);
     const state = this.stateFor(runtimeId);
+    if (state.status === 'draining') this.setStatus(runtimeId, 'idle', 'resumed');
     const queue = this.queueFor(runtimeId);
     const maxConcurrency = runtimeMaxConcurrency(this.getRuntime(runtimeId));
     while (state.activeRequests < maxConcurrency && queue.length > 0) {
@@ -1061,14 +1063,18 @@ export class RuntimeManager {
   }
 
   async drainRuntime(runtimeId, { timeoutMs = 300000 } = {}) {
-    this.pausedRuntimes.add(runtimeId);
-    this.setStatus(runtimeId, 'draining', 'eviction');
+    this.pauseRuntime(runtimeId, 'eviction');
     const deadline = Date.now() + timeoutMs;
     const state = this.stateFor(runtimeId);
     while (state.activeRequests > 0) {
       if (Date.now() >= deadline) throw new Error(`timed out draining runtime ${runtimeId}`);
       await delay(50);
     }
+  }
+
+  pauseRuntime(runtimeId, reason = 'capacity-reallocation') {
+    this.pausedRuntimes.add(runtimeId);
+    this.setStatus(runtimeId, 'draining', reason);
   }
 
   async reconfigure(nextConfig, { drainTimeoutMs = 300000 } = {}) {

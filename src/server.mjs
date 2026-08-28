@@ -47,7 +47,12 @@ import { buildRecipeIndexReport } from './recipe-index.mjs';
 import { loadRecipes } from './recipes.mjs';
 import { createRegistry, UnknownModelError } from './registry.mjs';
 import { RuntimeManager, runtimeWatchdogConfig } from './runtime-manager.mjs';
-import { applyRuntimePolicyPlan, createRuntimePolicyPlan, RuntimeAdmissionError } from './runtime-policy.mjs';
+import {
+  applyRuntimePolicyPlan,
+  createRuntimePolicyPlan,
+  runtimeAdmissionBlockers,
+  RuntimeAdmissionError
+} from './runtime-policy.mjs';
 import { applySetup, createSetupPlan } from './setup.mjs';
 import { createSetupStatus } from './setup-status.mjs';
 import { renderDashboardPage } from './dashboard.mjs';
@@ -1954,6 +1959,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       const waitMs = Math.max(0, Number(config.runtimePolicy?.admissionWaitMs ?? 120000));
       const deadline = Date.now() + waitMs;
       let queued = false;
+      const pausedBlockers = new Set();
       try {
         while (true) {
           try {
@@ -1972,6 +1978,11 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
               runtimeManager.markAdmissionQueued(runtimeId, true, 'waiting-for-capacity');
               queued = true;
             }
+            for (const blocker of runtimeAdmissionBlockers(error.plan).active) {
+              if (pausedBlockers.has(blocker.runtimeId)) continue;
+              runtimeManager.pauseRuntime?.(blocker.runtimeId, `capacity-for:${runtimeId}`);
+              pausedBlockers.add(blocker.runtimeId);
+            }
             await new Promise((resolve) =>
               setTimeout(resolve, Math.min(error.retryAfterSeconds * 1000, deadline - Date.now()))
             );
@@ -1979,6 +1990,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         }
       } finally {
         if (queued) runtimeManager.markAdmissionQueued(runtimeId, false);
+        for (const blocker of pausedBlockers) runtimeManager.resumeRuntime?.(blocker);
       }
     }
     return runtimeManager.ensure(runtimeId);

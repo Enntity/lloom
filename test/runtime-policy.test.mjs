@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { applyRuntimePolicyPlan, createRuntimePolicyPlan } from '../src/runtime-policy.mjs';
+import { applyRuntimePolicyPlan, createRuntimePolicyPlan, runtimeAdmissionBlockers } from '../src/runtime-policy.mjs';
 
 const runtimePolicyConfig = {
   runtimePolicy: {
@@ -44,6 +44,72 @@ assert(
   runtimePolicyPlan.protected.some(
     (entry) => entry.runtimeId === 'warm' && entry.protectedReasons.includes('keep-warm-pin')
   )
+);
+
+const drainingBlockerPlan = await createRuntimePolicyPlan(
+  {
+    runtimePolicy: { memoryBudgetGb: 40, protectActiveRequests: true },
+    runtimes: {
+      sidecar: { enabled: true, keepWarm: true, memoryGb: 10 },
+      resident: { enabled: true, memoryGb: 30 },
+      requested: { enabled: true, memoryGb: 30 }
+    }
+  },
+  {
+    requestedRuntimeId: 'requested',
+    status: {
+      runtimes: {
+        sidecar: { healthy: true, status: 'running', activeRequests: 0 },
+        resident: { healthy: true, status: 'running', activeRequests: 1 },
+        requested: { healthy: false, status: 'idle', activeRequests: 0 }
+      }
+    }
+  }
+);
+assert.equal(drainingBlockerPlan.admission.allowed, false);
+assert.deepEqual(
+  runtimeAdmissionBlockers(drainingBlockerPlan),
+  {
+    active: [
+      {
+        runtimeId: 'resident',
+        protectedReasons: ['active-requests'],
+        runtime: drainingBlockerPlan.runtimes.find((row) => row.runtimeId === 'resident')
+      }
+    ],
+    pinned: []
+  },
+  'an active evictable runtime is the causal blocker when draining it preserves the pinned sidecar'
+);
+await assert.rejects(
+  () =>
+    applyRuntimePolicyPlan(
+      {
+        runtimePolicy: { memoryBudgetGb: 40, protectActiveRequests: true },
+        runtimes: {
+          sidecar: { enabled: true, keepWarm: true, memoryGb: 10 },
+          resident: { enabled: true, memoryGb: 30 },
+          requested: { enabled: true, memoryGb: 30 }
+        }
+      },
+      {
+        async status() {
+          return {
+            runtimes: {
+              sidecar: { healthy: true, status: 'running', activeRequests: 0 },
+              resident: { healthy: true, status: 'running', activeRequests: 1 },
+              requested: { healthy: false, status: 'idle', activeRequests: 0 }
+            }
+          };
+        }
+      },
+      { requestedRuntimeId: 'requested', dryRun: false, yes: true }
+    ),
+  (error) =>
+    error.temporary === true &&
+    error.code === 'runtime_capacity_busy' &&
+    /resident \(active-requests\)/.test(error.message) &&
+    !error.message.includes('sidecar')
 );
 
 const unpinnedPlan = await createRuntimePolicyPlan(

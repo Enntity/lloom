@@ -300,6 +300,20 @@ async function chat(url, body = {}) {
   await fixture.close();
 }
 
+// Once a conflicting admission begins draining a local runtime, new alias
+// traffic bypasses that runtime and uses its external fallback. Existing
+// requests can finish without allowing fresh local work to starve the swap.
+{
+  const fixture = await createFixture({ primaryStatus: 200, runtimeStatus: 'draining' });
+  const response = await chat(fixture.url);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.choices[0].message.content, 'cloud');
+  assert.deepEqual(fixture.hits, { primary: 0, cloud: 1, ensures: 0 });
+  assert.deepEqual(fixture.operations, []);
+  await fixture.close();
+}
+
 // Provider-specific payment/capacity failure is an availability failure: if
 // the cloud shortcut cannot serve, LLooM returns to the local primary and
 // performs the previously deferred admission as the last resort.
