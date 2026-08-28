@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { applyRecipe } from '../src/installer.mjs';
 import {
   finalizeModelAcquisition,
   MODEL_ACQUISITION_MANIFEST,
@@ -50,5 +51,49 @@ await fs.writeFile(path.join(destination, 'model.gguf'), 'tampered\n');
 const tampered = await modelAcquisitionStatus(step);
 assert.equal(tampered.complete, false);
 assert.equal(tampered.reason, 'size-mismatch:model.gguf');
+
+const recipeRoot = path.join(root, 'recipe-models');
+const recipeHf = path.join(recipeRoot, '.hf-cli', 'bin', 'hf');
+await fs.mkdir(path.dirname(recipeHf), { recursive: true });
+await fs.writeFile(
+  recipeHf,
+  '#!/bin/sh\nfor last do :; done\nmkdir -p "$last"\nprintf "recipe owned hf\\n" > "$last/config.json"\nprintf "weights\\n" > "$last/model.safetensors"\n',
+  { mode: 0o755 }
+);
+await fs.chmod(recipeHf, 0o755);
+const recipeResult = await applyRecipe(
+  {
+    schemaVersion: 1,
+    id: 'recipe-owned-hf-test',
+    name: 'Recipe-owned HF test',
+    backend: { id: 'test-backend' },
+    setup: {
+      steps: [
+        {
+          id: 'download',
+          action: 'download-model',
+          provider: 'huggingface',
+          model: 'owner/recipe-model',
+          revision
+        }
+      ]
+    },
+    models: [{ role: 'default', model: 'owner/recipe-model' }]
+  },
+  { models: [], runtimes: {} },
+  {
+    dryRun: false,
+    yes: true,
+    modelRoot: recipeRoot,
+    statePath: path.join(root, 'recipe-install-state.json'),
+    env: { ...process.env, PATH: '/usr/bin:/bin', LLOOM_HF_BIN: '', HF_HUB_CLI: '' }
+  }
+);
+assert.equal(recipeResult.results[0].status, 'completed', JSON.stringify(recipeResult.results[0]));
+assert.equal(recipeResult.results[0].command[0], recipeHf);
+assert.equal(
+  await fs.readFile(path.join(recipeRoot, 'owner--recipe-model', 'config.json'), 'utf8'),
+  'recipe owned hf\n'
+);
 
 console.log('model acquisition tests passed');

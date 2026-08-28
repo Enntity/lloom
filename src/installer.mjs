@@ -75,7 +75,8 @@ function backendState(state, backendId) {
 
 function huggingFaceCommandCandidates(step, destination = step.destination) {
   const configured = process.env.LLOOM_HF_BIN || process.env.HF_HUB_CLI;
-  return [configured, 'hf', 'huggingface-cli']
+  const recipeOwned = destination ? path.join(path.dirname(destination), '.hf-cli', 'bin', 'hf') : null;
+  return [configured, recipeOwned, 'hf', 'huggingface-cli']
     .filter(Boolean)
     .map((command) => [
       command,
