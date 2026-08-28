@@ -1,0 +1,189 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang",
+  "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 SGLang",
+  "version": 1,
+  "summary": "Pinned two-Spark SGLang TP=2 Qwen3.8 Flash Next with SM121 QSA kernels, native NVFP4 KV, MTP4 CUDA-graph decode, native 262K context, and reserved sidecar headroom.",
+  "license": { "id": "MIT", "name": "Recipe metadata and launcher" },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "Adapted from MiaAI-Lab/Qwen3.8-Flash-Next-Dual-DGX-Sparks f87d586e269df171089a879ee33a5356c0570e70 with LLooM-native distributed lifecycle and a measured-sidecar target"
+  },
+  "links": [
+    { "rel": "upstream", "href": "https://github.com/MiaAI-Lab/Qwen3.8-Flash-Next-Dual-DGX-Sparks/tree/f87d586e269df171089a879ee33a5356c0570e70" },
+    { "rel": "comparison", "href": "https://github.com/tonyd2wild/Qwen3.8-Flash-Next-NVFP4-DGX-Spark" },
+    { "rel": "model", "href": "https://huggingface.co/RadixArk/Qwen3.8-Flash-Next-NVFP4/tree/7b719225242aacd3dbd3f9407468c2ee9a9d2594" },
+    { "rel": "runtime", "href": "https://hub.docker.com/r/lmsysorg/sglang/tags" }
+  ],
+  "keywords": ["linux", "nvidia", "dgx-spark", "cluster", "qwen3.8", "flash-next", "nvfp4", "sglang", "mtp", "qsa", "sidecars"],
+  "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "usage", "tools", "reasoning", "vision", "mtp", "moe", "long-context"],
+  "hardware": {
+    "family": "NVIDIA DGX Spark / GB10",
+    "testedMachine": "Two directly connected DGX Spark systems",
+    "notes": [
+      "TP=2 runs over the private ConnectX-7 RoCE fabric and starts worker-first under LLooM.",
+      "The SM121 QSA and NVFP4-KV patch set is pinned to MiaAI-Lab commit f87d586e269df171089a879ee33a5356c0570e70 and refuses mismatched source anchors.",
+      "The 786432-token shared KV target supports three simultaneous native-context working sets or six shorter agent sessions while reserving memory for LLooM sidecars.",
+      "NVFP4 KV requires workload-specific semantic validation at 262K; upstream retrieval evidence is currently strongest through 128K."
+    ]
+  },
+  "requirements": {
+    "platforms": ["linux-arm64"],
+    "memoryGb": 96,
+    "diskGb": 170,
+    "commands": ["docker"],
+    "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"],
+    "cluster": { "nodes": 2, "provider": "nvidia-sync", "topology": "direct" }
+  },
+  "backend": {
+    "id": "sglang",
+    "name": "Pinned SGLang Qwen3.8 Flash Next SM121 image",
+    "type": "openai-compatible-server"
+  },
+  "setup": {
+    "steps": [
+      { "id": "check-docker", "title": "Check Docker", "action": "check-command", "command": "docker", "args": ["version"] }
+    ]
+  },
+  "models": [
+    {
+      "role": "default",
+      "name": "Qwen3.8 Flash Next NVFP4",
+      "model": "RadixArk/Qwen3.8-Flash-Next-NVFP4",
+      "gatewayModel": "qwen3.8-flash-next",
+      "upstreamModel": "qwen3.8-flash-next",
+      "runtime": "qwen38-flash-next-cluster",
+      "backendConfig": "qwen38-flash-next",
+      "aliases": ["qwen38f-next", "q38fn"],
+      "setDefault": true,
+      "input": ["text", "image"],
+      "output": ["text"],
+      "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "usage", "tools", "reasoning", "vision", "mtp", "moe", "long-context"],
+      "settings": {
+        "port": 8889,
+        "contextWindow": 262144,
+        "maxOutputTokens": 32768,
+        "maxActiveRequests": 6,
+        "memoryGb": 96,
+        "priority": 200,
+        "evictable": false,
+        "keepWarm": true,
+        "startupTimeoutMs": 7200000,
+        "timeoutMs": 600000,
+        "watchdog": {
+          "enabled": true,
+          "failureThreshold": 1,
+          "failureWindowMs": 600000,
+          "minNoProgressMs": 300000,
+          "cooldownMs": 600000,
+          "drainTimeoutMs": 30000,
+          "failureStatuses": [499, 500, 502, 504]
+        },
+        "placement": {
+          "mode": "distributed",
+          "members": [
+            {
+              "nodeRole": "worker",
+              "runtime": "qwen38-flash-next-worker",
+              "role": "worker",
+              "order": 10,
+              "healthStrategy": "container",
+              "resources": { "memoryGb": 96 },
+              "runtimeSettings": {
+                "adapter": "docker",
+                "management": "managed",
+                "containerName": "lloom-qwen38-flash-next-${nodeId}",
+                "warmup": false,
+                "bootstrap": {
+                  "adapter": "docker",
+                  "image": "lmsysorg/sglang@sha256:14ed582518584c5c830206b5318a2c2769e68229c3422e48a28b952b3a888bd4",
+                  "pullTimeoutMs": 3600000,
+                  "createArgs": [
+                    "--restart", "unless-stopped", "--network", "host", "--ipc", "host", "--shm-size", "32g",
+                    "--cpuset-cpus", "5-9,15-19", "--cap-add", "IPC_LOCK", "--ulimit", "memlock=-1", "--ulimit", "stack=67108864", "--gpus", "all",
+                    "--device", "/dev/infiniband:/dev/infiniband", "--entrypoint", "/bin/bash",
+                    "-v", "${home}/.cache/huggingface:/root/.cache/huggingface",
+                    "-v", "lloom-qwen38-triton:/root/.triton", "-v", "lloom-qwen38-flashinfer:/root/.cache/flashinfer",
+                    "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/entrypoint.sh,dst=/opt/lloom/entrypoint.sh,readonly",
+                    "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/apply-sm121-patches.py,dst=/opt/lloom/apply-sm121-patches.py,readonly",
+                    "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/apply_nvfp4_patches.py,dst=/opt/lloom/apply_nvfp4_patches.py,readonly",
+                    "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/qsa_fa_fallback.py,dst=/opt/lloom/qsa_fa_fallback.py,readonly",
+                    "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/qsa_nvfp4_kv.py,dst=/opt/lloom/qsa_nvfp4_kv.py,readonly",
+                    "-e", "NODE_ADDRESS=${nodeAddress}", "-e", "FABRIC_INTERFACE=${fabricInterface}", "-e", "NODE_RANK=${nodeRank}",
+                    "-e", "CLUSTER_NODE_COUNT=${clusterNodeCount}", "-e", "MASTER_ADDR=${leaderAddress}", "-e", "MASTER_PORT=26400",
+                    "-e", "SGLANG_HOST_IP=${nodeAddress}", "-e", "SGLANG_PORT=8889",
+                    "-e", "GLOO_SOCKET_IFNAME=${fabricInterface}", "-e", "NCCL_SOCKET_IFNAME=${fabricInterface}", "-e", "TP_SOCKET_IFNAME=${fabricInterface}",
+                    "-e", "NCCL_NET=IB", "-e", "NCCL_NET_PLUGIN=none", "-e", "NCCL_IB_DISABLE=0", "-e", "NCCL_IB_ROCE_VERSION_NUM=2", "-e", "NCCL_IB_GID_INDEX=3",
+                    "-e", "NCCL_CROSS_NIC=0", "-e", "NCCL_CUMEM_ENABLE=0", "-e", "NCCL_NVLS_ENABLE=0", "-e", "NCCL_IGNORE_CPU_AFFINITY=1",
+                    "-e", "NCCL_MIN_NCHANNELS=4", "-e", "NCCL_MAX_NCHANNELS=4", "-e", "NCCL_DEBUG=WARN", "-e", "TORCH_NCCL_ASYNC_ERROR_HANDLING=1",
+                    "-e", "TORCH_CUDA_ARCH_LIST=12.1a", "-e", "FLASHINFER_CUDA_ARCH_LIST=12.1a",
+                    "-e", "HF_HOME=/root/.cache/huggingface", "-e", "HF_HUB_DISABLE_XET=1",
+                    "-e", "QWEN_MODEL=RadixArk/Qwen3.8-Flash-Next-NVFP4", "-e", "QWEN_MODEL_REVISION=7b719225242aacd3dbd3f9407468c2ee9a9d2594",
+                    "-e", "SERVED_MODEL_NAME=qwen3.8-flash-next", "-e", "CONTEXT_LENGTH=262144", "-e", "MAX_RUNNING_REQUESTS=6",
+                    "-e", "MAX_TOTAL_TOKENS=786432", "-e", "MAX_MAMBA_CACHE_SIZE=30", "-e", "MAMBA_FULL_MEMORY_RATIO=0.3",
+                    "-e", "CHUNKED_PREFILL_SIZE=1024", "-e", "MEM_FRACTION_STATIC=0.76",
+                    "-e", "SPECULATIVE_NUM_STEPS=3", "-e", "SPECULATIVE_NUM_DRAFT_TOKENS=4"
+                  ],
+                  "command": ["/opt/lloom/entrypoint.sh"]
+                }
+              }
+            },
+            {
+              "nodeRole": "leader",
+              "runtime": "qwen38-flash-next-head",
+              "role": "head",
+              "order": 20,
+              "resources": { "memoryGb": 96 },
+              "runtimeSettings": {
+                "adapter": "docker",
+                "management": "managed",
+                "containerName": "lloom-qwen38-flash-next-${nodeId}",
+                "healthUrl": "http://${leaderAddress}:8889/health",
+                "warmup": {
+                  "url": "http://${leaderAddress}:8889/v1/chat/completions",
+                  "method": "POST",
+                  "body": { "model": "qwen3.8-flash-next", "messages": [{ "role": "user", "content": "Reply with OK." }], "chat_template_kwargs": { "enable_thinking": false }, "max_tokens": 8, "stream": false }
+                },
+                "bootstrap": {
+                  "adapter": "docker",
+                  "image": "lmsysorg/sglang@sha256:14ed582518584c5c830206b5318a2c2769e68229c3422e48a28b952b3a888bd4",
+                  "pullTimeoutMs": 3600000,
+                  "createArgs": [
+                    "--restart", "unless-stopped", "--network", "host", "--ipc", "host", "--shm-size", "32g",
+                    "--cpuset-cpus", "5-9,15-19", "--cap-add", "IPC_LOCK", "--ulimit", "memlock=-1", "--ulimit", "stack=67108864", "--gpus", "all",
+                    "--device", "/dev/infiniband:/dev/infiniband", "--entrypoint", "/bin/bash",
+                    "-v", "${home}/.cache/huggingface:/root/.cache/huggingface",
+                    "-v", "lloom-qwen38-triton:/root/.triton", "-v", "lloom-qwen38-flashinfer:/root/.cache/flashinfer",
+                    "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/entrypoint.sh,dst=/opt/lloom/entrypoint.sh,readonly",
+                    "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/apply-sm121-patches.py,dst=/opt/lloom/apply-sm121-patches.py,readonly",
+                    "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/apply_nvfp4_patches.py,dst=/opt/lloom/apply_nvfp4_patches.py,readonly",
+                    "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/qsa_fa_fallback.py,dst=/opt/lloom/qsa_fa_fallback.py,readonly",
+                    "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/qsa_nvfp4_kv.py,dst=/opt/lloom/qsa_nvfp4_kv.py,readonly",
+                    "-e", "NODE_ADDRESS=${nodeAddress}", "-e", "FABRIC_INTERFACE=${fabricInterface}", "-e", "NODE_RANK=${nodeRank}",
+                    "-e", "CLUSTER_NODE_COUNT=${clusterNodeCount}", "-e", "MASTER_ADDR=${leaderAddress}", "-e", "MASTER_PORT=26400",
+                    "-e", "SGLANG_HOST_IP=${nodeAddress}", "-e", "SGLANG_PORT=8889",
+                    "-e", "GLOO_SOCKET_IFNAME=${fabricInterface}", "-e", "NCCL_SOCKET_IFNAME=${fabricInterface}", "-e", "TP_SOCKET_IFNAME=${fabricInterface}",
+                    "-e", "NCCL_NET=IB", "-e", "NCCL_NET_PLUGIN=none", "-e", "NCCL_IB_DISABLE=0", "-e", "NCCL_IB_ROCE_VERSION_NUM=2", "-e", "NCCL_IB_GID_INDEX=3",
+                    "-e", "NCCL_CROSS_NIC=0", "-e", "NCCL_CUMEM_ENABLE=0", "-e", "NCCL_NVLS_ENABLE=0", "-e", "NCCL_IGNORE_CPU_AFFINITY=1",
+                    "-e", "NCCL_MIN_NCHANNELS=4", "-e", "NCCL_MAX_NCHANNELS=4", "-e", "NCCL_DEBUG=WARN", "-e", "TORCH_NCCL_ASYNC_ERROR_HANDLING=1",
+                    "-e", "TORCH_CUDA_ARCH_LIST=12.1a", "-e", "FLASHINFER_CUDA_ARCH_LIST=12.1a",
+                    "-e", "HF_HOME=/root/.cache/huggingface", "-e", "HF_HUB_DISABLE_XET=1",
+                    "-e", "QWEN_MODEL=RadixArk/Qwen3.8-Flash-Next-NVFP4", "-e", "QWEN_MODEL_REVISION=7b719225242aacd3dbd3f9407468c2ee9a9d2594",
+                    "-e", "SERVED_MODEL_NAME=qwen3.8-flash-next", "-e", "CONTEXT_LENGTH=262144", "-e", "MAX_RUNNING_REQUESTS=6",
+                    "-e", "MAX_TOTAL_TOKENS=786432", "-e", "MAX_MAMBA_CACHE_SIZE=30", "-e", "MAMBA_FULL_MEMORY_RATIO=0.3",
+                    "-e", "CHUNKED_PREFILL_SIZE=1024", "-e", "MEM_FRACTION_STATIC=0.76",
+                    "-e", "SPECULATIVE_NUM_STEPS=3", "-e", "SPECULATIVE_NUM_DRAFT_TOKENS=4"
+                  ],
+                  "command": ["/opt/lloom/entrypoint.sh"]
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

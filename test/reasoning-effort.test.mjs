@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   QWEN_VLLM_THINKING_BUDGETS,
   isOpenRouter,
+  isQwenSglang,
   isQwenVllm,
   responsesToOpenAIChat,
   translateReasoningEffortForBackend
@@ -16,21 +17,26 @@ const qwenVllm = {
   runtime: { bootstrap: { image: 'vllm/vllm-openai:v0.24.0' } }
 };
 
-const qwen38Vllm = {
+const qwen38Sglang = {
   model: {
     id: 'qwen3.8-flash-next',
     upstreamModel: 'qwen3.8-flash-next'
   },
-  backend: { id: 'qwen38-vllm', type: 'openai' },
+  backend: { id: 'qwen38-sglang', type: 'openai' },
   runtime: {
     adapter: 'docker',
-    recipe: { id: 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm' }
+    recipe: { id: 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang' }
   }
 };
 
-const qwen38NoThinking = translateReasoningEffortForBackend({ reasoning_effort: 'none' }, qwen38Vllm);
+const qwen38NoThinking = translateReasoningEffortForBackend({ reasoning_effort: 'none' }, qwen38Sglang);
 assert.equal(qwen38NoThinking.reasoning_effort, undefined);
 assert.equal(qwen38NoThinking.chat_template_kwargs.enable_thinking, false);
+
+const qwen38Thinking = translateReasoningEffortForBackend({ reasoning_effort: 'low' }, qwen38Sglang);
+assert.equal(qwen38Thinking.reasoning_effort, undefined);
+assert.equal(qwen38Thinking.chat_template_kwargs.enable_thinking, true);
+assert.equal(qwen38Thinking.thinking_token_budget, undefined);
 
 const qwenVllmWithTemplateProfile = {
   ...qwenVllm,
@@ -53,23 +59,31 @@ const openRouter = {
 
 {
   assert.equal(isOpenRouter(openRouter), true);
-  const translated = translateReasoningEffortForBackend({
-    model: openRouter.model.id,
-    reasoning_effort: 'none'
-  }, openRouter);
+  const translated = translateReasoningEffortForBackend(
+    {
+      model: openRouter.model.id,
+      reasoning_effort: 'none'
+    },
+    openRouter
+  );
   assert.equal(translated.reasoning_effort, undefined);
   assert.deepEqual(translated.reasoning, { effort: 'none', exclude: true });
 
-  const explicit = translateReasoningEffortForBackend({
-    model: openRouter.model.id,
-    reasoning: { effort: 'none', exclude: false }
-  }, openRouter);
+  const explicit = translateReasoningEffortForBackend(
+    {
+      model: openRouter.model.id,
+      reasoning: { effort: 'none', exclude: false }
+    },
+    openRouter
+  );
   assert.deepEqual(explicit.reasoning, { effort: 'none', exclude: false });
 }
 
 {
   assert.equal(isQwenVllm(qwenVllm), true);
   assert.equal(isQwenVllm({ ...qwenVllm, model: { id: 'meta-llama/Llama-3.3-70B' } }), false);
+  assert.equal(isQwenSglang(qwen38Sglang), true);
+  assert.equal(isQwenVllm(qwen38Sglang), false);
 }
 
 {

@@ -812,7 +812,7 @@ assert.deepEqual(
     'apple-silicon-ternary-bonsai-27b',
     'high-memory-local-image-generation',
     'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm',
-    'linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm',
+    'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang',
     'linux-nvidia-dgx-spark-cluster-flux2-klein-4b',
     'linux-nvidia-gb10-chatterbox',
     'linux-nvidia-gb10-image-generation',

@@ -360,6 +360,8 @@ def _prepare_decode_tensors():
   run('python3', ['-q', path.join(repoRoot, 'test', 'test_dspark_patch_pack.py')]);
 
   console.log('dspark hotfix tests passed');
+
+  await import('./qwen38-sglang-recipe.test.mjs');
 } finally {
   rmSync(tempRoot, { recursive: true, force: true });
 }

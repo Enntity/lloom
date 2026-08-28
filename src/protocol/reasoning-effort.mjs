@@ -26,7 +26,7 @@ function normalizedEffort(body = {}) {
   return value || null;
 }
 
-function qwenVllmHints(resolved = {}) {
+function qwenRuntimeHints(resolved = {}) {
   const model = resolved.model ?? {};
   const backend = resolved.backend ?? {};
   const runtime = resolved.runtime ?? {};
@@ -50,12 +50,20 @@ function qwenVllmHints(resolved = {}) {
 
 /** True only for Qwen 3/3.5/3.6/3.8 served by a vLLM runtime. */
 export function isQwenVllm(resolved = {}) {
-  const hints = qwenVllmHints(resolved);
+  const hints = qwenRuntimeHints(resolved);
   return /qwen3(?:[._-]?(?:5|6|8))?/.test(hints) && /vllm/.test(hints);
 }
 
+/** True only for Qwen 3/3.5/3.6/3.8 served by an SGLang runtime. */
+export function isQwenSglang(resolved = {}) {
+  const hints = qwenRuntimeHints(resolved);
+  return /qwen3(?:[._-]?(?:5|6|8))?/.test(hints) && /sglang/.test(hints);
+}
+
 export function isOpenRouter(resolved = {}) {
-  return String(resolved.backend?.baseUrl || resolved.backend?.url || "").toLowerCase().includes("openrouter.ai");
+  return String(resolved.backend?.baseUrl || resolved.backend?.url || '')
+    .toLowerCase()
+    .includes('openrouter.ai');
 }
 
 function removeGatewayEffort(body) {
@@ -97,13 +105,16 @@ export function translateReasoningEffortForBackend(body = {}, resolved = {}) {
     next.reasoning = {
       ...(isObject(profiledBody.reasoning) ? profiledBody.reasoning : {}),
       effort: 'none',
-      exclude: isObject(profiledBody.reasoning) && Object.hasOwn(profiledBody.reasoning, 'exclude')
-        ? profiledBody.reasoning.exclude
-        : true
+      exclude:
+        isObject(profiledBody.reasoning) && Object.hasOwn(profiledBody.reasoning, 'exclude')
+          ? profiledBody.reasoning.exclude
+          : true
     };
     return next;
   }
-  if (!effort || !isQwenVllm(resolved)) return profiledBody;
+  const qwenVllm = isQwenVllm(resolved);
+  const qwenSglang = isQwenSglang(resolved);
+  if (!effort || (!qwenVllm && !qwenSglang)) return profiledBody;
 
   const next = removeGatewayEffort(profiledBody);
   const templateKwargs = isObject(profiledBody.chat_template_kwargs) ? profiledBody.chat_template_kwargs : {};
@@ -123,6 +134,13 @@ export function translateReasoningEffortForBackend(body = {}, resolved = {}) {
   // `auto` deliberately leaves Qwen/vLLM defaults alone. All other known
   // non-none tiers enable thinking and receive a deterministic native budget.
   if (effort === 'auto') return next;
+
+  // SGLang exposes Qwen's template-level thinking switch but not vLLM's
+  // graduated thinking_token_budget. Preserve the user's on/off intent and
+  // do not forward unsupported gateway fields to the backend.
+  if (qwenSglang) {
+    return hasThinkingOverride ? next : { ...next, chat_template_kwargs: { ...templateKwargs, enable_thinking: true } };
+  }
 
   const budget = QWEN_VLLM_THINKING_BUDGETS[effort];
   const withThinking = hasThinkingOverride

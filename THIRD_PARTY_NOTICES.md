@@ -31,6 +31,23 @@ The files under `backends/dspark-vllm/packs/miaai-dsv4flash-d1b76251-defaults/pa
 
 Some patch payloads modify or reproduce small portions of vLLM and retain their Apache-2.0 lineage; see [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt). LLooM adapts the launch integration and testability without representing these hotfixes as an official vLLM release.
 
+## MiaAI Lab Qwen3.8 Flash Next SM121 Kernels
+
+The QSA fallback, NVFP4 KV-cache implementation, and source patcher under
+`backends/qwen38-sglang/` are vendored from MiaAI Lab's two-DGX-Spark
+Qwen3.8 Flash Next recipe. LLooM adds a managed-container installer,
+immutable image/model pins, distributed lifecycle configuration, and a
+sidecar-oriented memory profile:
+
+- Project: Qwen3.8-Flash-Next-Dual-DGX-Sparks
+- Source: <https://github.com/MiaAI-Lab/Qwen3.8-Flash-Next-Dual-DGX-Sparks>
+- Revision: `f87d586e269df171089a879ee33a5356c0570e70`
+- License: MIT
+
+The vendored files retain their upstream technical commentary. The adjacent
+`NOTICE.md` records exact source hashes. These patches are an SM121 community
+compatibility path, not an official SGLang or Qwen release.
+
 ## ResembleAI Chatterbox
 
 The optional Chatterbox backend installs and interoperates with ResembleAI's `chatterbox-tts` package; LLooM does not vendor that package or its model weights:
