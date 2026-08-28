@@ -533,6 +533,9 @@ function addModelCommand({
   contextWindow,
   maxOutputTokens,
   apiKeyEnv,
+  input,
+  capabilities,
+  tags,
   keepWarm,
   setDefault,
   apply = false,
@@ -551,6 +554,9 @@ function addModelCommand({
   if (contextWindow != null) args.push('--context-window', shellArg(contextWindow));
   if (maxOutputTokens != null) args.push('--max-output-tokens', shellArg(maxOutputTokens));
   if (apiKeyEnv) args.push('--api-key-env', shellArg(apiKeyEnv));
+  for (const value of input ?? []) args.push('--input', shellArg(value));
+  for (const value of capabilities ?? []) args.push('--capability', shellArg(value));
+  for (const value of tags ?? []) args.push('--tag', shellArg(value));
   if (keepWarm) args.push('--keep-warm');
   if (setDefault) args.push('--default');
   if (go) args.push('--go');
@@ -572,6 +578,9 @@ export function createModelImportPlan(
     contextWindow = 32768,
     maxOutputTokens = 8192,
     apiKeyEnv,
+    input = [],
+    capabilities = [],
+    tags = [],
     keepWarm = false,
     setDefault = false,
     platform = process.platform,
@@ -644,10 +653,10 @@ export function createModelImportPlan(
     timeoutMs: 1800000
   };
   if (runtime) nextConfig.runtimes[runtimeId] = runtime;
-  const capabilities = modelCapabilitiesForBackend(backendId, reference);
+  const selectedCapabilities = [...new Set([...modelCapabilitiesForBackend(backendId, reference), ...capabilities])];
   const audioKind = backendId === 'mlx-audio' ? inferAudioKind(reference) : null;
   const kind = audioKind ?? 'chat';
-  const input = kind === 'audio_transcription' ? ['audio'] : ['text'];
+  const selectedInput = [...new Set([...(kind === 'audio_transcription' ? ['audio'] : ['text']), ...input])];
   const output = kind === 'audio_speech' ? ['audio'] : ['text'];
   nextConfig.models.push({
     id: resolvedModelId,
@@ -656,13 +665,15 @@ export function createModelImportPlan(
     ...(runtime ? { runtime: runtimeId } : {}),
     upstreamModel: resolvedModelId,
     kind,
-    input,
+    input: selectedInput,
     output,
-    capabilities,
+    capabilities: selectedCapabilities,
+    ...(selectedCapabilities.includes('reasoning') ? { reasoning: true } : {}),
+    ...(selectedCapabilities.includes('tools') ? { supportsTools: true } : {}),
     contextWindow: selectedContextWindow,
     maxOutputTokens: selectedMaxOutputTokens,
     advertise: true,
-    tags: [...new Set([backendId, reference.type])]
+    tags: [...new Set([backendId, reference.type, ...tags])]
   });
   if (!nextConfig.clientCatalog.modelOrder.includes(resolvedModelId)) {
     nextConfig.clientCatalog.modelOrder.push(resolvedModelId);
@@ -712,6 +723,9 @@ export function createModelImportPlan(
         contextWindow: selectedContextWindow,
         maxOutputTokens: selectedMaxOutputTokens,
         apiKeyEnv: selectedApiKeyEnv,
+        input,
+        capabilities,
+        tags,
         keepWarm,
         setDefault,
         apply: true
@@ -728,6 +742,9 @@ export function createModelImportPlan(
         contextWindow: selectedContextWindow,
         maxOutputTokens: selectedMaxOutputTokens,
         apiKeyEnv: selectedApiKeyEnv,
+        input,
+        capabilities,
+        tags,
         keepWarm,
         setDefault,
         go: true

@@ -195,7 +195,7 @@ Backends and runtimes:
   lloom keep-warm
 
 Models and clients:
-  lloom add-model <hf-url|repo-id|local-path|ollama:tag|lmstudio:id|openai:url#model> [--backend id] [--api-key-env NAME] [--keep-warm] [--default] [--go|--apply --yes]
+  lloom add-model <hf-url|repo-id|local-path|ollama:tag|lmstudio:id|openai:url#model> [--backend id] [--api-key-env NAME] [--input TYPE] [--capability ID] [--tag ID] [--keep-warm] [--default] [--go|--apply --yes]
   lloom remove-model <model-id> [--delete-files] [--apply --yes]
   lloom integrations [client-id|all] [--home path] [--generated-root path]
   lloom integrate [client-id|all] [--home path] [--generated-root path] [--apply --yes]
@@ -1963,6 +1963,9 @@ async function main() {
         ...(contextWindow ? { contextWindow: Number(contextWindow) } : {}),
         ...(maxOutputTokens ? { maxOutputTokens: Number(maxOutputTokens) } : {}),
         apiKeyEnv: argValue(args, '--api-key-env'),
+        input: argValues(args, '--input'),
+        capabilities: argValues(args, '--capability'),
+        tags: argValues(args, '--tag'),
         keepWarm: hasFlag(args, '--keep-warm'),
         setDefault: hasFlag(args, '--default'),
         configPath: config.sourcePath

@@ -762,11 +762,23 @@ assert(!openAICompatibleDefaultPortPlan.next.apply.includes("--port '0'"));
 const authenticatedExternalPlan = createModelImportPlan(config, {
   modelRef: 'openai:https://openrouter.ai/api/v1#z-ai/glm-5.2',
   apiKeyEnv: 'OPENROUTER_API_KEY',
-  name: 'GLM 5.2 · OpenRouter'
+  name: 'GLM 5.2 · OpenRouter',
+  input: ['image', 'video'],
+  capabilities: ['reasoning', 'vision', 'multimodal', 'long-context', 'structured-output'],
+  tags: ['cloud', 'openrouter']
 });
 const authenticatedBackend = authenticatedExternalPlan.config.backends['openai-compatible-z-ai-glm-5-2'];
+const authenticatedModel = authenticatedExternalPlan.config.models.find((model) => model.id === 'z-ai/glm-5.2');
 assert.equal(authenticatedBackend.apiKeyEnv, 'OPENROUTER_API_KEY');
 assert.equal(authenticatedBackend.apiKey, undefined);
+assert.deepEqual(authenticatedModel.input, ['text', 'image', 'video']);
+assert(authenticatedModel.capabilities.includes('reasoning'));
+assert(authenticatedModel.capabilities.includes('structured-output'));
+assert.equal(authenticatedModel.reasoning, true);
+assert.equal(authenticatedModel.supportsTools, true);
+assert(authenticatedModel.tags.includes('cloud'));
+assert(authenticatedExternalPlan.next.apply.includes("--capability 'reasoning'"));
+assert(authenticatedExternalPlan.next.apply.includes("--input 'image'"));
 assert.deepEqual(authenticatedExternalPlan.config.security.apiKeys, config.sourceTemplate.security.apiKeys);
 assert(authenticatedExternalPlan.next.apply.includes("--api-key-env 'OPENROUTER_API_KEY'"));
 assert.throws(
