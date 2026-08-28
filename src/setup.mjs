@@ -25,6 +25,7 @@ function setupCommand({
   benchmarksRoot,
   backendCatalogPath,
   additive = false,
+  restoreCatalog = false,
   apply = false,
   start = false
 } = {}) {
@@ -42,6 +43,7 @@ function setupCommand({
   if (backendCatalogPath) args.push('--backend-catalog', shellArg(backendCatalogPath));
   if (clientId && clientId !== 'all') args.push('--client', shellArg(clientId));
   if (additive) args.push('--additive');
+  if (restoreCatalog) args.push('--restore-catalog');
   if (apply) args.push('--apply', '--yes');
   if (start) args.push('--start');
   return args.join(' ');
@@ -73,7 +75,8 @@ export async function createSetupPlan(
     backendCatalogPath,
     statePath,
     autoDetectModelRoot,
-    additive = false
+    additive = false,
+    restoreCatalog = false
   } = {}
 ) {
   const init = await createInitPlan(config, {
@@ -91,7 +94,8 @@ export async function createSetupPlan(
     recipeDocuments,
     backendCatalogPath,
     autoDetectModelRoot,
-    additive
+    additive,
+    restoreCatalog
   });
   const plannedConfig = configWithSource(init.config, init.configPath);
   const bootstrap = await createBootstrapPlan(plannedConfig, {
@@ -136,6 +140,7 @@ export async function createSetupPlan(
         backendCatalogPath,
         clientId,
         additive,
+        restoreCatalog,
         apply: true
       }),
       applyAndStart: setupCommand({
@@ -152,6 +157,7 @@ export async function createSetupPlan(
         backendCatalogPath,
         clientId,
         additive,
+        restoreCatalog,
         apply: true,
         start: true
       }),

@@ -170,7 +170,7 @@ function advancedUsage() {
 First run:
   lloom [--recipe id] [--host url] [--workload id] [--capability id] [--tag id] [--signing-keys-path path] [--no-trust-host-keys] [--no-auto-host] [--home path] [--model-root path] [--port n] [--backend-port-range a-b] [--client id|all] [--backend-catalog path] [--go|--apply --yes] [--start] [--json]
   lloom up|onboard [--recipe id] [--host url] [--workload id] [--capability id] [--tag id] [--signing-keys-path path] [--no-trust-host-keys] [--no-auto-host] [--home path] [--model-root path] [--port n] [--backend-port-range a-b] [--client id|all] [--backend-catalog path] [--go|--apply --yes] [--start] [--json]
-  lloom setup [--recipe id] [--config-out path] [--home path] [--model-root path] [--client id|all] [--backend-catalog path] [--apply --yes] [--start]
+  lloom setup [--recipe id] [--config-out path] [--home path] [--model-root path] [--client id|all] [--backend-catalog path] [--additive] [--restore-catalog] [--apply --yes] [--start]
   lloom doctor [--recipe id] [--model-root path] [--client id|all] [--no-runtimes]
 
 Serving and discovery:
@@ -1476,6 +1476,7 @@ async function main() {
       const yes = hasFlag(args, '--yes');
       const start = hasFlag(args, '--start');
       const additive = hasFlag(args, '--additive');
+      const restoreCatalog = hasFlag(args, '--restore-catalog');
       const options = {
         recipeId,
         configPath: configOut,
@@ -1490,7 +1491,8 @@ async function main() {
         benchmarksRoot: argValue(args, '--benchmarks-root'),
         backendCatalogPath: argValue(args, '--backend-catalog'),
         ...(statePath ? { statePath } : {}),
-        additive
+        additive,
+        restoreCatalog
       };
       console.log(
         JSON.stringify(

@@ -1958,6 +1958,17 @@ assert(
 );
 assert.equal(additiveDerived.models.find((model) => model.id === 'Qwen/Qwen3-Embedding-4B').kind, 'embedding');
 assert.equal(additiveDerived.runtimes['qwen3-embedding-4b'].adapter, 'docker');
+const narrowedCatalogBase = structuredClone(additiveBase);
+narrowedCatalogBase.clientCatalog = { modelOrder: ['existing-chat', 'existing-alias'] };
+narrowedCatalogBase.models[0].advertise = false;
+narrowedCatalogBase.aliases = { 'existing-alias': { target: 'existing-chat', advertise: false } };
+const restoredCatalog = deriveUserConfig(narrowedCatalogBase, embeddingRecipe, {
+  modelRoot: '/models',
+  additive: true,
+  restoreCatalog: true
+});
+assert.equal(restoredCatalog.models.find((model) => model.id === 'existing-chat').advertise, true);
+assert.equal(restoredCatalog.aliases['existing-alias'].advertise, true);
 const retunedEmbeddingRecipe = structuredClone(embeddingRecipe);
 retunedEmbeddingRecipe.models[0].settings.memoryGb = 13;
 const retunedDerived = deriveUserConfig(additiveDerived, retunedEmbeddingRecipe, {

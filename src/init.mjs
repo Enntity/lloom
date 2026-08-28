@@ -1016,6 +1016,16 @@ function setAliasAdvertise(alias, advertise) {
   };
 }
 
+function restoreCatalogAdvertisements(config) {
+  const ordered = new Set(config.clientCatalog?.modelOrder ?? []);
+  for (const model of config.models ?? []) {
+    if (model?.id && ordered.has(model.id)) model.advertise = true;
+  }
+  for (const [aliasId, alias] of Object.entries(config.aliases ?? {})) {
+    if (ordered.has(aliasId)) config.aliases[aliasId] = setAliasAdvertise(alias, true);
+  }
+}
+
 function restrictAdvertisedModelsToRecipe(config, recipe) {
   const selectedModelIds = recipeModelIds(recipe);
   const advertisedModelIds = new Set();
@@ -1108,11 +1118,13 @@ export function deriveUserConfig(
     recipesRoot,
     benchmarksRoot,
     backendCatalogPath,
-    additive = false
+    additive = false,
+    restoreCatalog = false
   } = {}
 ) {
   const sourceTemplate = config.sourceTemplate;
   const derived = stripRuntimeFields(config);
+  if (restoreCatalog) restoreCatalogAdvertisements(derived);
   let runtimeIds = recipeRuntimeIds(recipe);
   if (additive) {
     derived.clientCatalog ??= {};
@@ -1253,7 +1265,8 @@ export async function createInitPlan(
     recipeDocuments = [],
     backendCatalogPath,
     autoDetectModelRoot = false,
-    additive = false
+    additive = false,
+    restoreCatalog = false
   } = {}
 ) {
   const effectiveConfigPath = configPath ?? defaultUserConfigPath(home);
@@ -1285,7 +1298,8 @@ export async function createInitPlan(
     recipesRoot,
     benchmarksRoot,
     backendCatalogPath,
-    additive
+    additive,
+    restoreCatalog
   });
 
   return {
