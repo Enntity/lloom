@@ -125,6 +125,7 @@
                     "-e", "SERVED_MODEL_NAME=qwen3.8-flash-next", "-e", "CONTEXT_LENGTH=262144", "-e", "MAX_RUNNING_REQUESTS=6",
                     "-e", "MAX_TOTAL_TOKENS=786432", "-e", "MAX_MAMBA_CACHE_SIZE=30", "-e", "MAMBA_FULL_MEMORY_RATIO=0.3",
                     "-e", "CHUNKED_PREFILL_SIZE=1024", "-e", "MEM_FRACTION_STATIC=0.76",
+                    "-e", "SGLANG_ENABLE_TP_MEMORY_INBALANCE_CHECK=0",
                     "-e", "SPECULATIVE_NUM_STEPS=3", "-e", "SPECULATIVE_NUM_DRAFT_TOKENS=4"
                   ],
                   "command": ["/opt/lloom/entrypoint.sh"]
@@ -175,6 +176,7 @@
                     "-e", "SERVED_MODEL_NAME=qwen3.8-flash-next", "-e", "CONTEXT_LENGTH=262144", "-e", "MAX_RUNNING_REQUESTS=6",
                     "-e", "MAX_TOTAL_TOKENS=786432", "-e", "MAX_MAMBA_CACHE_SIZE=30", "-e", "MAMBA_FULL_MEMORY_RATIO=0.3",
                     "-e", "CHUNKED_PREFILL_SIZE=1024", "-e", "MEM_FRACTION_STATIC=0.76",
+                    "-e", "SGLANG_ENABLE_TP_MEMORY_INBALANCE_CHECK=0",
                     "-e", "SPECULATIVE_NUM_STEPS=3", "-e", "SPECULATIVE_NUM_DRAFT_TOKENS=4"
                   ],
                   "command": ["/opt/lloom/entrypoint.sh"]

@@ -39,6 +39,7 @@ for (const member of members) {
   assert.match(rendered, /QWEN_MODEL_REVISION=7b719225242aacd3dbd3f9407468c2ee9a9d2594/);
   assert.match(rendered, /MAX_TOTAL_TOKENS=786432/);
   assert.match(rendered, /MEM_FRACTION_STATIC=0\.76/);
+  assert.match(rendered, /SGLANG_ENABLE_TP_MEMORY_INBALANCE_CHECK=0/);
   assert.match(rendered, /backends\/qwen38-sglang\/qsa_nvfp4_kv\.py/);
   assert.deepEqual(bootstrap.command, ['/opt/lloom/entrypoint.sh']);
 }
