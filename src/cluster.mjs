@@ -1,7 +1,17 @@
 import os from 'node:os';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { Agent as UndiciAgent } from 'undici';
 import { runCommand } from './process-control.mjs';
+
+// Node's built-in fetch aborts a request that has not produced response headers
+// after five minutes. Runtime lifecycle endpoints intentionally hold the response
+// until a model is healthy, and a first image pull/JIT can take much longer. The
+// AbortController in requestNode remains the authoritative per-request deadline.
+const longRunningClusterDispatcher = new UndiciAgent({
+  headersTimeout: 86_400_000,
+  bodyTimeout: 86_400_000
+});
 
 function asObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
@@ -579,7 +589,8 @@ export class ClusterCoordinator {
           ...this.headersFor(node)
         },
         body: body == null ? undefined : JSON.stringify(body),
-        signal: signal ? AbortSignal.any([controller.signal, signal]) : controller.signal
+        signal: signal ? AbortSignal.any([controller.signal, signal]) : controller.signal,
+        dispatcher: longRunningClusterDispatcher
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok)
@@ -675,10 +686,15 @@ export class ClusterCoordinator {
 
   async runtimeAction(nodeId, runtimeId, action, body = {}, { signal } = {}) {
     if (this.isLocalNode(nodeId)) throw new Error(`runtimeAction for ${runtimeId} was routed back to the local node`);
+    const runtimeTimeoutMs = Number(this.config.runtimes?.[runtimeId]?.startupTimeoutMs ?? 0);
+    const timeoutMs =
+      action === 'start' || action === 'warmup'
+        ? Math.max(1_800_000, Number.isFinite(runtimeTimeoutMs) ? runtimeTimeoutMs + 60_000 : 0)
+        : 120_000;
     const result = await this.requestNode(nodeId, `/gateway/runtimes/${encodeURIComponent(runtimeId)}/${action}`, {
       method: 'POST',
       body,
-      timeoutMs: action === 'start' || action === 'warmup' ? 1800000 : 120000,
+      timeoutMs,
       signal
     });
     this.nodeCache.delete(nodeId);

@@ -120,6 +120,41 @@ const coordinator = new ClusterCoordinator(heterogeneous, {
     }
   }
 });
+
+const longStartCalls = [];
+const longStartCoordinator = new ClusterCoordinator(
+  {
+    cluster: {
+      nodeId: 'leader',
+      nodes: {
+        leader: { endpoint: 'http://leader:8100' },
+        worker: { endpoint: 'http://worker:8100' }
+      }
+    },
+    runtimes: { worker: { startupTimeoutMs: 7_200_000 } }
+  },
+  {
+    env: { LLOOM_NODE_ID: 'leader' },
+    fetchImpl: async (_url, options) => {
+      longStartCalls.push(options);
+      return new Response(JSON.stringify({ started: true, healthy: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+  }
+);
+await longStartCoordinator.runtimeAction('worker', 'worker', 'start');
+assert.equal(longStartCalls.length, 1);
+assert(longStartCalls[0].dispatcher, 'cluster requests must override the five-minute fetch headers timeout');
+assert.equal(longStartCalls[0].signal.aborted, false);
+const longStartTimeoutCalls = [];
+longStartCoordinator.requestNode = async (...args) => {
+  longStartTimeoutCalls.push(args);
+  return { started: true, healthy: true };
+};
+await longStartCoordinator.runtimeAction('worker', 'worker', 'start');
+assert.equal(longStartTimeoutCalls[0][2].timeoutMs, 7_260_000);
 const local = await coordinator.localNodeStatus({ runtimeStatus: { runtimes: {} } });
 assert.equal(local.system.platform, process.platform);
 assert.equal(local.profile.platformId, 'linux-arm64');
