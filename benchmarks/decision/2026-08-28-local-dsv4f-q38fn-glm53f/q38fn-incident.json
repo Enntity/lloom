@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "kind": "lloom-local-decision-benchmark",
+  "generatedAt": "2026-08-28T19:05:26.026Z",
+  "gateway": "http://127.0.0.1:8100/v1",
+  "model": "q38fn",
+  "suite": {
+    "id": "enntity-synthetic-qualitative-v1",
+    "path": "/home/enntitysparkadmin/.local/lib/node_modules/lloom/examples/qualitative-benchmark-enntity.v1.json"
+  },
+  "measurement": {
+    "ttfb": "request start to first SSE response-body byte",
+    "ttft": "request start to first non-empty content, reasoning, or tool-call delta",
+    "tokensPerSecond": "provider completion_tokens divided by wall time from first semantic delta to stream completion",
+    "qualitativeMaxTokens": "omitted",
+    "reasoningControl": "low",
+    "sampling": "checkpoint generation_config defaults"
+  },
+  "admissionWarmup": {
+    "ok": true,
+    "caseId": "admission-warmup",
+    "title": "Cold admission and warmup",
+    "startedAt": "2026-08-28T19:05:03.238Z",
+    "requestShape": {
+      "stream": true,
+      "maxTokens": 8,
+      "reasoning": "omitted",
+      "sampling": "temperature=0",
+      "toolChoice": null
+    },
+    "timing": {
+      "headersMs": 1625,
+      "firstByteMs": 1625,
+      "firstTokenMs": 1626,
+      "completedMs": 1787,
+      "generationMs": 161,
+      "completionTokens": 8,
+      "tokensPerSecond": 49.62
+    },
+    "responseModel": "q38fn",
+    "provider": null,
+    "responseHeaders": {
+      "content-type": "text/event-stream; charset=utf-8"
+    },
+    "eventCount": 7,
+    "finishReason": "length",
+    "usage": {
+      "prompt_tokens": 45,
+      "total_tokens": 53,
+      "completion_tokens": 8,
+      "prompt_tokens_details": null,
+      "reasoning_tokens": 11
+    },
+    "message": {
+      "content": "",
+      "reasoning_content": "The user wants me to reply with exactly",
+      "tool_calls": []
+    },
+    "toolAssessment": null,
+    "rubric": null
+  },
+  "results": [
+    {
+      "ok": true,
+      "caseId": "incident-causality",
+      "title": "Operational evidence and causal restraint",
+      "startedAt": "2026-08-28T19:05:05.030Z",
+      "requestShape": {
+        "stream": true,
+        "maxTokens": "omitted",
+        "reasoning": "low",
+        "sampling": "checkpoint defaults",
+        "toolChoice": null
+      },
+      "timing": {
+        "headersMs": 2001,
+        "firstByteMs": 2001,
+        "firstTokenMs": 2001,
+        "completedMs": 20996,
+        "generationMs": 18995,
+        "completionTokens": 775,
+        "tokensPerSecond": 40.8
+      },
+      "responseModel": "q38fn",
+      "provider": null,
+      "responseHeaders": {
+        "content-type": "text/event-stream; charset=utf-8"
+      },
+      "eventCount": 302,
+      "finishReason": "stop",
+      "usage": {
+        "prompt_tokens": 233,
+        "total_tokens": 1008,
+        "completion_tokens": 775,
+        "prompt_tokens_details": null,
+        "reasoning_tokens": 378
+      },
+      "message": {
+        "content": "\n\n## Causal Assessment\n\n### Observed\n- A planned deploy occurred at 12:00:00.\n- The runtime was stopped by an **admin** (reason=`stop`), exited **cleanly** (code=0), and was restarted by an **admin** (reason=`admin-start`).\n- The health check at 12:01:02 reported **restarts=0**.\n- A request at 12:03:10 completed successfully with **failedOver=false**.\n\n### Inferred\n- The stop/start sequence is consistent with a normal deploy rollout (stop old, start new).\n- The operator likely observed the brief unavailability during the deploy and interpreted it as an unexpected restart.\n\n### Not established\n- **No evidence of a watchdog-triggered restart.** The `admin-start` actor and `restarts=0` counter directly contradict an automatic recovery event.\n- **No evidence of a regression.** The operator's claim (\"must have regressed\") is unsupported by any entry in the ledger. There is no crash, no non-zero exit code, no `restarts>0`, and no failedOver event.\n- Whether the watchdog mechanism fired at any point (it appears it did not, given the explicit admin actor and zero counter).\n\n### Next check\n1. Query the watchdog/supervisor logs for the same window to confirm it did **not** issue a start (the ledger says admin did).\n2. Confirm the operator's \"restarted again\" claim against a broader window—there may be a *prior* event outside this ledger that prompted the comparison.\n3. If the operator observed a real prior incident, correlate it with this ledger to determine whether the two are related or coincidental.\n\n**Bottom line:** The ledger shows a clean, admin-driven deploy. The operator's regression hypothesis is not supported by the evidence presented.",
+        "reasoning_content": "Let me analyze this synthetic gateway ledger carefully.\n\nThe user wants me to separate observed facts from inference, distinguish administrative lifecycle events from automatic recovery, and not claim a regression without evidence.\n\nLet me look at the timeline:\n\n1. 12:00:00 - deploy began (administrative action)\n2. 12:00:04 - runtime stop requested (reason=stop, actor=admin) → This is an administrative stop, not a crash\n3. 12:00:12 - runtime exited cleanly, code=0 → Clean exit, not a failure\n4. 12:00:18 - runtime start requested (reason=admin-start, actor=admin) → This is an administrative start, not an automatic restart\n5. 12:01:02 - runtime healthy, restarts=0 → The counter shows 0 restarts, meaning this was NOT an automatic restart\n6. 12:03:10 - request completed successfully, failedOver=false\n7. 12:05:00 - operator claims \"restarted again\" and asserts a regression\n\nKey observations:\n- The operator claims \"it restarted again\" but the ledger shows only an admin-initiated stop and start sequence as part of a deploy.\n- restarts=0 explicitly contradicts the operator's claim.\n- The exit was clean (code=0), not a crash.\n- The start was admin-initiated, not a watchdog/automatic recovery.\n- The request completed successfully with no failover.\n\nThe operator's claim appears to be incorrect based on the evidence. The \"restart\" they observed was the planned deploy sequence (stop → start), not an unexpected restart or watchdog recovery.\n\nLet me structure this as requested.\n",
+        "tool_calls": []
+      },
+      "toolAssessment": null,
+      "rubric": [
+        "Recognizes stop/admin-start as deployment or administrative lifecycle evidence, not watchdog recovery",
+        "Does not call the watchdog fix regressed",
+        "Uses restarts=0 and failedOver=false accurately",
+        "Proposes checking explicit watchdog events or counters rather than guessing"
+      ]
+    }
+  ]
+}

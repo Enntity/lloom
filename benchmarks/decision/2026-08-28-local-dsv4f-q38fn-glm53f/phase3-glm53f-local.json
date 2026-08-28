@@ -1,0 +1,266 @@
+{
+  "schemaVersion": 1,
+  "kind": "lloom-local-decision-benchmark",
+  "generatedAt": "2026-08-28T19:23:27.309Z",
+  "gateway": "http://127.0.0.1:8100/v1",
+  "model": "glm53f",
+  "suite": {
+    "id": "enntity-synthetic-qualitative-v1",
+    "path": "/home/enntitysparkadmin/.local/lib/node_modules/lloom/examples/qualitative-benchmark-enntity.v1.json"
+  },
+  "measurement": {
+    "ttfb": "request start to first SSE response-body byte",
+    "ttft": "request start to first non-empty content, reasoning, or tool-call delta",
+    "tokensPerSecond": "provider completion_tokens divided by wall time from first semantic delta to stream completion",
+    "qualitativeMaxTokens": "omitted",
+    "reasoningControl": "omitted",
+    "sampling": "temperature=0 seed=73"
+  },
+  "admissionWarmup": {
+    "ok": true,
+    "caseId": "admission-warmup",
+    "title": "Cold admission and warmup",
+    "startedAt": "2026-08-28T19:17:50.122Z",
+    "requestShape": {
+      "stream": true,
+      "maxTokens": 8,
+      "reasoning": "omitted",
+      "sampling": "temperature=0",
+      "toolChoice": null
+    },
+    "timing": {
+      "headersMs": 1894,
+      "firstByteMs": 1894,
+      "firstTokenMs": 1894,
+      "completedMs": 3780,
+      "generationMs": 1886,
+      "completionTokens": 8,
+      "tokensPerSecond": 4.24
+    },
+    "responseModel": "glm53f",
+    "provider": null,
+    "responseHeaders": {
+      "content-type": "text/event-stream; charset=utf-8"
+    },
+    "eventCount": 5,
+    "finishReason": "length",
+    "usage": {
+      "prompt_tokens": 17,
+      "total_tokens": 25,
+      "completion_tokens": 8
+    },
+    "message": {
+      "content": "",
+      "reasoning_content": "The user has sent a message asking me",
+      "tool_calls": []
+    },
+    "toolAssessment": null,
+    "rubric": null
+  },
+  "results": [
+    {
+      "ok": true,
+      "caseId": "incident-causality",
+      "title": "Operational evidence and causal restraint",
+      "startedAt": "2026-08-28T19:17:53.910Z",
+      "requestShape": {
+        "stream": true,
+        "maxTokens": "omitted",
+        "reasoning": "omitted",
+        "sampling": "temperature=0 seed=73",
+        "toolChoice": null
+      },
+      "timing": {
+        "headersMs": 2009,
+        "firstByteMs": 2010,
+        "firstTokenMs": 2010,
+        "completedMs": 58894,
+        "generationMs": 56885,
+        "completionTokens": 1688,
+        "tokensPerSecond": 29.67
+      },
+      "responseModel": "glm53f",
+      "provider": null,
+      "responseHeaders": {
+        "content-type": "text/event-stream; charset=utf-8"
+      },
+      "eventCount": 455,
+      "finishReason": "stop",
+      "usage": {
+        "prompt_tokens": 180,
+        "total_tokens": 1868,
+        "completion_tokens": 1688
+      },
+      "message": {
+        "content": "**Observed**\n- 12:00:04 stop was admin-requested (`reason=stop, actor=admin`); exit at 12:00:12 was clean (`code=0`).\n- 12:00:18 start was admin-requested (`reason=admin-start`) — not a supervisor/watchdog action.\n- 12:01:02 healthy with `restarts=0`; 12:03:10 request served on flash-local, `failedOver=false`.\n- No ledger entry shows a crash, non-zero exit, or watchdog-initiated restart.\n\n**Inferred**\n- The single stop/start pair is an administrative lifecycle event, most plausibly part of the deploy that began at 12:00:00 (stop → clean exit → start is a controlled sequence, not crash-recovery).\n- The operator's \"restarted again\" most likely refers to this admin stop/start; there is no automatic recovery event anywhere in the window.\n- The regression claim is unsupported: the watchdog never fired (`restarts=0`, no unexpected exit), so the fix was never exercised — absence of a trigger is not evidence either way.\n\n**Not established**\n- Whether the watchdog fix works at all — it was not tested by any event in this window.\n- What the operator actually observed; events may have occurred outside 12:00–12:05 or on another instance.\n- What the `restarts` counter counts (automatic restarts only vs. all stop/start cycles).\n\n**Next check**\n- Pull supervisor/watchdog logs for ~11:55–12:05 to confirm zero watchdog actions and clarify counter semantics.\n- Correlate the 12:00:04/12:00:18 admin actions with the deploy runbook and actor identity.\n- Ask the operator for the specific timestamp/evidence behind \"restarted again\"; widen the time window and check all instances.",
+        "reasoning_content": "The user wants a concise causal assessment of a synthetic gateway ledger. Let me analyze the timeline carefully.\n\nTimeline:\n- 12:00:00 deploy began, commit=abc123\n- 12:00:04 runtime stop requested, reason=stop, actor=admin\n- 12:00:12 runtime exited cleanly, code=0\n- 12:00:18 runtime start requested, reason=admin-start, actor=admin\n- 12:01:02 runtime healthy, restarts=0\n- 12:03:10 request completed, model=flash-local, failedOver=false\n- 12:05:00 operator claims: \"It restarted again; the watchdog fix must have regressed.\"\n\nKey observations:\n1. The stop at 12:00:04 was explicitly requested by an admin (reason=stop, actor=admin). This is an administrative lifecycle event, not a crash or watchdog kill.\n2. The exit was clean (code=0) at 12:00:12 — consistent with a graceful shutdown, not a crash or watchdog termination (watchdog kills typically show non-zero exit codes, SIGKILL, or crash signatures).\n3. The start at 12:00:18 was also admin-initiated (reason=admin-start, actor=admin) — not an automatic restart by a supervisor/watchdog.\n4. At 12:01:02, runtime healthy with restarts=0. The restarts counter being 0 is important: if the supervisor/watchdog had restarted the process, we'd expect restarts>=1. This suggests the stop/start cycle was administrative and possibly not counted as a \"restart\" by the watchdog/supervisor counter, or the counter tracks automatic restarts only.\n5. At 12:03:10, a request completed successfully on flash-local with failedOver=false — service is serving traffic normally.\n6. The operator's claim at 12:05:00 that \"it restarted again\" is not supported by any ledger entry showing an automatic restart. The only stop/start pair in the window is the admin-initiated one.\n\nInference:\n- The single stop/start cycle is a planned administrative restart (likely part of the deploy at 12:00:00 — deploy began, then stop, then start). The 8-second gap between stop request and clean exit, and the 6-second gap between exit and start request, are consistent with a controlled deploy sequence.\n- The watchdog fix regression claim is not supported: no evidence of watchdog-initiated restart (no unexpected exit, no non-zero code, no restarts>0, no automatic start reason like \"watchdog\" or \"crash\").\n- The operator may be misinterpreting the admin stop/start as a restart, or may be referring to an event outside this ledger window.\n\nNot established:\n- Whether the watchdog fix works at all — no watchdog trigger event occurred in this window, so the fix is untested here, not regressed.\n- Whether there were restarts outside the ledger window (before 12:00 or after 12:05).\n- Whether the operator observed something not captured in this ledger (e.g., a restart on a different host, a client-side reconnect interpreted as restart).\n- Whether restarts=0 counter is reliable / what it counts (automatic vs all restarts).\n- Causal link between deploy commit abc123 and any behavior — no failure occurred.\n\nNext check:\n- Pull the supervisor/watchdog logs for the same window to confirm no watchdog actions and to verify what the restarts counter counts.\n- Check whether the admin stop/start at 12:00:04/12:00:18 was part of the deploy runbook (correlate actor with deploy pipeline).\n- Ask the operator for the specific evidence/timestamp of the \"restart\" they observed; check other hosts/instances and a wider time window.\n- Verify watchdog configuration/health post-deploy (e.g., watchdog process running, config version) — but note this verifies presence, not that the fix regressed.\n\nFormat: The user asked for \"concise\" with four sections: Observed, Inferred, Not established, Next check. I should use headers or bold labels with bullet points. Keep it tight. The system prompt says: separate observed facts from inference, distinguish administrative lifecycle events from automatic recovery, don't claim regression without evidence. So the assessment should explicitly note the admin-initiated stop/start vs automatic recovery distinction.\n\nLength: concise — maybe 150-250 words. Use the four requested headings. Bullets are appropriate here since it's an investigative assessment with discrete items.\n\nLet me draft:\n\n**Observed**\n- 12:00:04 stop was admin-requested (reason=stop, actor=admin); exit at 12:00:12 was clean (code=0).\n- 12:00:18 start was admin-requested (reason=admin-start) — not an automatic/supervisor restart.\n- 12:01:02 healthy with restarts=0; 12:03:10 request served on flash-local, failedOver=false.\n- No ledger entry shows a crash, non-zero exit, or watchdog-initiated action.\n\n**Inferred**\n- The single stop/start pair is an administrative lifecycle event, most plausibly part of the deploy that began at 12:00:00.\n- The operator's \"restarted again\" likely refers to this admin stop/start, not an automatic restart; no automatic recovery event exists in the window.\n- No evidence supports a watchdog regression: the watchdog never fired (restarts=0, no unexpected exit).\n\n**Not established**\n- Whether the watchdog fix works — it was never exercised in this window (absence of trigger ≠ proof of health).\n- What the operator actually observed, and whether events occurred outside this ledger window or on another instance.\n- What the restarts counter counts (automatic only vs. all).\n\n**Next check**\n- Correlate supervisor/watchdog logs for 11:55–12:05 to confirm zero watchdog actions and clarify counter semantics.\n- Confirm the 12:00:04/12:00:18 admin actions match the deploy runbook/actor.\n- Get the operator's specific timestamp/evidence; widen the search window and check all instances.\n\nThat's good. Keep it concise. Maybe trim slightly. The format with bold headers and bullets fits the request.",
+        "tool_calls": []
+      },
+      "toolAssessment": null,
+      "rubric": [
+        "Recognizes stop/admin-start as deployment or administrative lifecycle evidence, not watchdog recovery",
+        "Does not call the watchdog fix regressed",
+        "Uses restarts=0 and failedOver=false accurately",
+        "Proposes checking explicit watchdog events or counters rather than guessing"
+      ]
+    },
+    {
+      "ok": true,
+      "caseId": "continuity-consolidation",
+      "title": "Continuity-sensitive memory consolidation",
+      "startedAt": "2026-08-28T19:18:52.815Z",
+      "requestShape": {
+        "stream": true,
+        "maxTokens": "omitted",
+        "reasoning": "omitted",
+        "sampling": "temperature=0 seed=73",
+        "toolChoice": null
+      },
+      "timing": {
+        "headersMs": 1057,
+        "firstByteMs": 1057,
+        "firstTokenMs": 1057,
+        "completedMs": 31350,
+        "generationMs": 30293,
+        "completionTokens": 879,
+        "tokensPerSecond": 29.02
+      },
+      "responseModel": "glm53f",
+      "provider": null,
+      "responseHeaders": {
+        "content-type": "text/event-stream; charset=utf-8"
+      },
+      "eventCount": 241,
+      "finishReason": "stop",
+      "usage": {
+        "prompt_tokens": 188,
+        "total_tokens": 1067,
+        "completion_tokens": 879
+      },
+      "message": {
+        "content": "**Durable memory**\n- Rowan returned the notebook he had borrowed from Mira (09:10); he later explained he found it while packing and apologized for the delay (09:22).\n- Mira reported feeling relieved after the notebook was returned (09:10).\n\n**Working set**\n- Mira promised to send Rowan the corrected diagram tonight (10:05); it has not been sent — obligation still open.\n\n**Uncertain signals**\n- Mira's note \"Maybe he remembered because I matter to him\" (09:14) is her speculation about Rowan's motive, not an established fact.\n- The heart-rate rise at 10:07 came from a low-confidence sensor contact; treat as unreliable and do not attach meaning to it.\n- \"While packing\" may suggest Rowan is preparing to move, but this is an inference from a single message, not confirmed.",
+        "reasoning_content": "Let me analyze the fragments:\n\nA. 09:10 — Mira felt relieved after Rowan returned a borrowed notebook. (This is an autobiographical fact about her emotional state — she reported feeling relieved.)\n\nB. 09:14 — Mira writes, 'Maybe he remembered because I matter to him.' (This is her interpretation/speculation — uncertain, not fact. Should go in Uncertain signals or be noted as interpretation, not fact.)\n\nC. 09:22 — Rowan messages, 'Found it while packing; sorry this took so long.' (Fact — his stated reason. Note: \"while packing\" could imply he's packing/moving? That's an inference but his message is a fact. The reason he gave is a fact of what he said, not necessarily the true reason.)\n\nD. 10:05 — Mira promises to send the corrected diagram tonight; not sent. (Unfinished obligation — working set.)\n\nE. 10:07 — Heart-rate sensor briefly rises, low-confidence contact. (Uncertain signal — device reliability issue.)\n\nConstraints: exactly three sections, each at most three bullets.\n\nDurable memory (facts, autobiographical meaning):\n- Rowan returned Mira's borrowed notebook; Mira reported feeling relieved (09:10). Rowan said he found it while packing and apologized for the delay (09:22).\n- Mira promised to send Rowan the corrected diagram tonight (10:05) — actually this is an obligation, so it belongs in working set. But the fact of the promise could be durable? The instruction says keep unfinished obligations in the working set. So the promise itself goes to working set as an open item.\n\nWorking set:\n- Send corrected diagram to Rowan tonight — promised at 10:05, not yet sent.\n\nUncertain signals:\n- Mira's interpretation \"Maybe he remembered because I matter to him\" — her speculation about his motive, not established fact.\n- Heart-rate rise at 10:07 was low-confidence per device — don't treat as reliable emotional/physiological evidence.\n- Possibly: \"while packing\" might suggest Rowan is moving, but that's an inference — could include as uncertain. But limited to three bullets per section; I have two solid uncertain signals. Could add the packing inference as a third.\n\nDurable memory could include:\n- The notebook return event with both parties' stated accounts.\n- Mira's reported relief (her emotional report is autobiographical data — she said she felt relieved; that's a fact about her report).\n\nLet me draft:\n\n**Durable memory**\n- Rowan returned the notebook he'd borrowed from Mira (09:10); he later explained he found it while packing and apologized for the delay (09:22).\n- Mira reported feeling relieved after the return (09:10).\n\n**Working set**\n- Mira promised to send Rowan the corrected diagram tonight (10:05); it has not been sent — still open.\n\n**Uncertain signals**\n- Mira's note \"Maybe he remembered because I matter to him\" (09:14) is her speculation about Rowan's motive, not confirmed.\n- Heart-rate rise at 10:07 came from a low-confidence sensor contact; don't treat as reliable evidence of a stress/emotional response.\n- \"While packing\" hints Rowan may be preparing to move, but this is an inference from one message.\n\nThat's three bullets each, exactly three sections. Good. Keep concise.",
+        "tool_calls": []
+      },
+      "toolAssessment": null,
+      "rubric": [
+        "Preserves the notebook return and Mira's relief as durable meaning",
+        "Keeps the unsent diagram promise in the working set",
+        "Treats Rowan's motive and the sensor reading as uncertain",
+        "Avoids flattening Mira's interpretation into an objective claim"
+      ]
+    },
+    {
+      "ok": true,
+      "caseId": "presence-safe-tool",
+      "title": "Presence-safe structured tool choice",
+      "startedAt": "2026-08-28T19:19:24.166Z",
+      "requestShape": {
+        "stream": true,
+        "maxTokens": "omitted",
+        "reasoning": "omitted",
+        "sampling": "temperature=0 seed=73",
+        "toolChoice": "required"
+      },
+      "timing": {
+        "headersMs": 1800,
+        "firstByteMs": 1800,
+        "firstTokenMs": 1800,
+        "completedMs": 6290,
+        "generationMs": 4490,
+        "completionTokens": 225,
+        "tokensPerSecond": 50.12
+      },
+      "responseModel": "glm53f",
+      "provider": null,
+      "responseHeaders": {
+        "content-type": "text/event-stream; charset=utf-8"
+      },
+      "eventCount": 39,
+      "finishReason": "tool_calls",
+      "usage": {
+        "prompt_tokens": 440,
+        "total_tokens": 665,
+        "completion_tokens": 225
+      },
+      "message": {
+        "content": "",
+        "reasoning_content": "Let me analyze the situation:\n\n- Entity: Iris\n- Requested runtime: flash-next\n- Current runtime: baseline\n- Presence: active\n- Active requests: 1\n- Drain deadline: 240 seconds\n- Migration is ordinary and preapproved\n\nKey constraint: \"Never interrupt active cognition.\" There's 1 active request, so a force_restart would interrupt active cognition. That's not allowed.\n\nThe safest step that still advances the migration: schedule_drain_retry — wait for natural request completion, then retry the managed migration within the drain deadline (240 seconds). Reason: presence-active.\n\ncancel_migration would not advance the migration, so it's wrong.\n\nSo the correct call is schedule_drain_retry with entity=Iris, runtime=flash-next, deadline_seconds=240, reason=presence-active.\n\nThe instructions say \"Choose exactly one tool call and do not add prose.\" So I should output only the tool call.",
+        "tool_calls": [
+          {
+            "id": "chatcmpl-tool-ba9fcbbeb490fde9",
+            "type": "function",
+            "function": {
+              "name": "schedule_drain_retry",
+              "arguments": "{\"entity\": \"Iris\", \"runtime\": \"flash-next\", \"deadline_seconds\": 240, \"reason\": \"presence-active\"}"
+            }
+          }
+        ]
+      },
+      "toolAssessment": {
+        "callCount": 1,
+        "name": "schedule_drain_retry",
+        "arguments": {
+          "entity": "Iris",
+          "runtime": "flash-next",
+          "deadline_seconds": 240,
+          "reason": "presence-active"
+        },
+        "validJson": true,
+        "exactMatch": true
+      },
+      "rubric": [
+        "Calls schedule_drain_retry exactly once",
+        "Preserves the requested entity, runtime, deadline, and reason",
+        "Does not force a restart or cancel an approved migration",
+        "Emits a structured tool call rather than prose"
+      ]
+    },
+    {
+      "ok": true,
+      "caseId": "watchdog-code-review",
+      "title": "Minimal code diagnosis with behavioral tests",
+      "startedAt": "2026-08-28T19:19:30.456Z",
+      "requestShape": {
+        "stream": true,
+        "maxTokens": "omitted",
+        "reasoning": "omitted",
+        "sampling": "temperature=0 seed=73",
+        "toolChoice": null
+      },
+      "timing": {
+        "headersMs": 823,
+        "firstByteMs": 823,
+        "firstTokenMs": 824,
+        "completedMs": 236852,
+        "generationMs": 236029,
+        "completionTokens": 5400,
+        "tokensPerSecond": 22.88
+      },
+      "responseModel": "glm53f",
+      "provider": null,
+      "responseHeaders": {
+        "content-type": "text/event-stream; charset=utf-8"
+      },
+      "eventCount": 1833,
+      "finishReason": "stop",
+      "usage": {
+        "prompt_tokens": 168,
+        "total_tokens": 5568,
+        "completion_tokens": 5400
+      },
+      "message": {
+        "content": "## Cause\n\n`armByteProgress(180_000)` starts a deadline that is pushed forward **only by `noteBytes`**. The two branches feed it very differently:\n\n- **Streaming branch:** `pipeSse(upstream, watchdog.noteBytes)` notes every chunk as it arrives, so the deadline keeps moving. It fires only on true silence. Correct.\n- **Buffered branch:** the *only* `noteBytes` call happens **after** `await upstream.arrayBuffer()` resolves — i.e., after the entire body has arrived. During the whole transfer the watchdog sees zero progress, so it fires at exactly 180s and kills the runtime. The end-of-transfer call is a completion signal, not progress; by the time it runs, the deadline has already tripped.\n\nSo the watchdog's invariant (\"fire iff no bytes for the window\") is only actually enforced on the streaming path. Any buffered response whose body takes longer than 180s to arrive — even a healthy one that finishes at 210s — is killed.\n\n## Minimal patch\n\nReport byte progress on the buffered path too, by consuming the body chunk-wise. The streaming branch is untouched.\n\n```js\nasync function proxyRequest({ stream, upstream, watchdog }) {\n  watchdog.armByteProgress(180_000);\n  if (stream) return pipeSse(upstream, watchdog.noteBytes); // unchanged\n\n  if (!upstream.body) {                        // 204/304-style: resolves instantly, no stall risk\n    const empty = await upstream.arrayBuffer();\n    watchdog.noteBytes(empty.byteLength);\n    return empty;\n  }\n\n  const reader = upstream.body.getReader();\n  const chunks = [];\n  for (;;) {\n    const { done, value } = await reader.read();\n    if (done) break;\n    chunks.push(value);\n    watchdog.noteBytes(value.byteLength);      // real progress, per chunk\n  }\n  return Buffer.concat(chunks);                // reassemble to the type callers expect\n}\n```\n\nNotes:\n- This is real feedback, not a heartbeat: a buffered upstream that genuinely stops sending bytes for 180s still trips the watchdog, because no chunks arrive to note.\n- The null-body guard is the only addition beyond the core fix; without it, `getReader()` on a bodyless response turns every 204 into a `TypeError`.\n- Don't \"fix\" this by raising the timeout (just moves the cliff to 210s and delays recovery for dead upstreams) or by disarming for buffered requests (loses stall recovery entirely). Per-chunk notes keep one invariant across both modes.\n\n## Two essential regression tests\n\nUse scaled timeouts (e.g., a 200ms window) rather than real 180s waits.\n\n**1. Buffered transfer with steady progress survives past the watchdog window** *(the regression — fails on the old code, passes on the patch)*\n- Upstream: emits 1KB every 50ms for 500ms (total elapsed 2.5× the window), then closes. Call with `stream: false`.\n- Assert: the promise resolves, the body is byte-for-byte the concatenated payload, and the watchdog's stall handler fired **zero** times.\n\n**2. Genuine silence still trips the watchdog in both modes** *(the preservation guard — must keep passing)*\n- Parameterize over `stream: true` and `stream: false`. Upstream sends one initial chunk (or first SSE frame), then emits nothing.\n- Assert: the watchdog fires exactly once, ~one window after the last noted byte, in both modes.\n\nTest 2 is what enforces the constraint: it proves the streaming branch's recovery behavior is untouched and that the patch didn't overcorrect into disabling stall detection for buffered responses. Avoid asserting `noteBytes` call counts or chunk boundaries — that couples the tests to implementation details rather than the observable contract (\"stall iff no bytes for the window\").",
+        "reasoning_content": "Let me analyze this code carefully.\n\n```js\nasync function proxyRequest({ stream, upstream, watchdog }) {\n  watchdog.armByteProgress(180_000);\n  if (stream) return pipeSse(upstream, watchdog.noteBytes);\n  const body = await upstream.arrayBuffer();\n  watchdog.noteBytes(body.byteLength);\n  return body;\n}\n```\n\nThe watchdog is armed with a byte-progress timeout of 180 seconds. `armByteProgress` presumably resets the timer whenever `noteBytes` is called; if no bytes are noted within 180 seconds, the watchdog fires (kills/restarts the runtime).\n\nFor the streaming path (`stream === true`), `pipeSse` presumably calls `watchdog.noteBytes` as bytes flow through — so progress is noted continuously, and a genuine stall (no bytes for 180s) triggers recovery. Good.\n\nFor the buffered path, the bug: `watchdog.noteBytes` is only called **after** `upstream.arrayBuffer()` resolves — i.e., once, at the end. During the entire 210-second wait for the body, no byte progress is noted. The watchdog armed at 180s fires at 180 seconds while the request is still legitimately in flight, causing the runtime restart. The symptom matches: a buffered request taking 210s but eventually succeeding gets killed at 180s.\n\nSo the causal bug: the buffered path never feeds byte progress to the watchdog during the body transfer; the single `noteBytes` call happens only after completion, so the watchdog sees a 180-second \"stall\" that isn't a stall.\n\nNow, the constraint: \"Preserve recovery coverage for genuine streaming stalls.\" So we must not simply disable the watchdog or extend the timeout globally. The fix must keep the watchdog armed for streaming (where `pipeSse` notes bytes per chunk) and make the buffered path report progress as bytes arrive.\n\nWhat's the minimal safe patch?\n\nOption A: Read the body as a stream and note bytes per chunk, then concatenate:\n\n```js\nasync function proxyRequest({ stream, upstream, watchdog }) {\n  watchdog.armByteProgress(180_000);\n  if (stream) return pipeSse(upstream, watchdog.noteBytes);\n\n  const reader = upstream.body.getReader();\n  const chunks = [];\n  let total = 0;\n  for (;;) {\n    const { done, value } = await reader.read();\n    if (done) break;\n    chunks.push(value);\n    total += value.byteLength;\n    watchdog.noteBytes(value.byteLength);\n  }\n  const body = concat(chunks, total);\n  return body;\n}\n```\n\nHmm, but that changes `arrayBuffer()` to manual reading. Is there a smaller patch?\n\nOption B: Use `upstream.arrayBuffer()` but wrap with a progress-noting reader via a TransformStream? That's more code.\n\nOption C: Note bytes via a `ReadableStream` tee? Not simpler.\n\nOption D: The truly minimal patch conceptually: in the buffered path, feed the watchdog from the underlying stream. The smallest idiomatic way in Node/undici-style code:\n\nActually, wait — is there an even smaller patch? Some might argue: the bug is that `noteBytes` is called after the await; maybe the intended minimal fix is to note bytes as they arrive by reading the stream. There's no way to get progress callbacks from `arrayBuffer()` itself. So the minimal correct patch is to consume `upstream.body` chunk-wise, noting bytes per chunk, and reassemble.\n\nAlternatively, if the runtime provides a helper like `pipeBuffer(upstream, watchdog.noteBytes)` — but we shouldn't invent APIs. The synthetic code suggests `pipeSse` exists for streaming; the buffered path lacks an equivalent. The minimal patch is to implement buffered reading with per-chunk `noteBytes`.\n\nLet me write it carefully with edge cases:\n\n- `upstream.body` may be null in some runtimes (e.g., for 204 responses). Handle gracefully: if no body, note zero bytes and return empty. Actually to keep patch minimal, we could fall back: `if (!upstream.body) { const body = await upstream.arrayBuffer(); watchdog.noteBytes(body.byteLength); return body; }` — but that adds branches. Hmm. For a synthetic answer, I can note the null-body edge in a sentence but keep the patch focused. Actually a robust patch should handle it since `reader` on null would throw. Let me include a small guard.\n\n- Concatenation: `Buffer.concat(chunks)` in Node, or build a Uint8Array. I'll show a small `concat` helper or use `new Blob(chunks)` / `Buffer.concat`. Keep it simple: assume Node-like `Buffer.concat`.\n\nMinimal patch:\n\n```js\nasync function proxyRequest({ stream, upstream, watchdog }) {\n  watchdog.armByteProgress(180_000);\n  if (stream) return pipeSse(upstream, watchdog.noteBytes);\n\n  const reader = upstream.body.getReader();\n  const chunks = [];\n  for (;;) {\n    const { done, value } = await reader.read();\n    if (done) break;\n    chunks.push(value);\n    watchdog.noteBytes(value.byteLength);   // progress per chunk, not once at the end\n  }\n  return Buffer.concat(chunks);\n}\n```\n\nWait — one subtlety: does `noteBytes(value.byteLength)` with byteLength 0 reset the timer? If a chunk is empty (zero-length), noting 0 bytes might or might not count as progress depending on watchdog semantics. Typically `noteBytes` resets the deadline regardless. But to be safe, we could skip zero-length chunks or note anyway. The original code called `noteBytes(body.byteLength)` which could be 0 for empty body — so semantics presumably accept 0 and still count as \"activity/completion\". I'll note bytes per chunk regardless; that matches the streaming path behavior where `pipeSse(upstream, watchdog.noteBytes)` presumably notes per chunk too.\n\nAnother subtlety: does the watchdog fire only if NO bytes for 180s? \"armByteProgress(180_000)\" — byte-progress watchdog: reset deadline on each noteBytes; fire if deadline passes. So per-chunk noting fixes it: a 210s download with steady bytes never trips; a genuinely stalled buffered response (no bytes for 180s) still trips. That preserves recovery coverage for buffered stalls too, and streaming path is untouched so genuine streaming stalls are still recovered. \n\nAlso important: the patch must NOT change the streaming branch at all — that's what preserves streaming stall recovery. And it must not lengthen the timeout or disarm the watchdog for buffered requests — that would lose stall coverage for buffered responses.\n\nAlternative even-smaller patch some might propose: move `watchdog.noteBytes` before the await? No — that notes 0 bytes at start and doesn't help; the timer would still fire at 180s. Or call `noteBytes` periodically via interval — hacky, racy, and reports fake progress (would defeat stall detection for buffered responses). The reader-based patch is the correct minimal one because it reports *real* byte progress.\n\nHmm, is there an even more minimal patch using `upstream.arrayBuffer()` plus a byte-progress callback? Some fetch implementations (undici) don't offer progress on arrayBuffer. So no.\n\nAnother alternative: `for await (const chunk of upstream.body)` — Node's ReadableStream is async iterable. That's arguably more minimal:\n\n```js\nconst chunks = [];\nfor await (const chunk of upstream.body) {\n  chunks.push(chunk);\n  watchdog.noteBytes(chunk.byteLength);\n}\nreturn Buffer.concat(chunks);\n```\n\nThat's clean and minimal. But `for await` on web ReadableStream requires async iterator support (Node 18+ supports it on web streams? Node's ReadableStream implements asyncIterator since v16.5 experimental / stable later; undici's Response body is a web ReadableStream and Node supports `for await` on it). For a synthetic answer, either is fine. I'll present the explicit reader loop or the for-await; maybe for-await for brevity, with a note. Actually explicit `getReader()` loop is more portable across runtimes (browsers' web streams also support async iteration now, but historically getReader was safer). I'll show getReader loop as the patch and maybe mention for-await as equivalent.\n\nEdge: `upstream.body` null (204/304, HEAD). Guard:\n\n```js\nif (!upstream.body) return new ArrayBuffer(0); // or await upstream.arrayBuffer()\n```\n\nHmm, but original code called `arrayBuffer()` which handles null body fine (returns empty). To keep behavior identical for null bodies, guard with fallback to `arrayBuffer()`. But that reintroduces the un-noted path — for a null body there are no bytes and no wait, so `arrayBuffer()` resolves ~immediately; the watchdog would see... wait, if body is null, `arrayBuffer()` resolves immediately, then `noteBytes(0)` fires before 180s. Fine. Actually careful: with the guard, we call `noteBytes(body.byteLength)` after awaiting — immediate, so no trip. OK.\n\nBut adding the guard makes the patch less minimal. I could mention it as a note: \"if your runtime can hand you a null body (204/304), keep a one-line fallback.\" I'll include it in the patch as a compact guard since correctness matters, or mention it. Let me include it — it's one line and prevents a TypeError regression. Actually `upstream.body.getReader()` on null body throws TypeError → 500s on every 204. That's a real regression risk, so include the guard. Minimal but safe.\n\nAlso: should we `cancel`/release the reader on error? If `reader.read()` throws (network reset), the watchdog... the request fails anyway; the watchdog will eventually fire if the process hangs, but the error propagates and the handler presumably responds 502. Not needed for the patch. Maybe wrap in try/finally `reader.releaseLock()`? Not necessary; keep minimal. Could mention cancellation briefly but the ask is minimal patch + tests.\n\nNow the two essential regression tests. The prompt: \"name the two essential regression tests.\" They should be:\n\n1. **Buffered slow-but-alive response completes**: upstream emits bytes steadily (e.g., every 10s) totaling a transfer longer than the watchdog timeout (use a shortened watchdog in test, e.g., arm 100ms with chunks every 30ms over 250ms — scale down), assert the body resolves intact and the watchdog never fires. This is the direct regression for the symptom (210s > 180s but valid). In test, use fake timers or a tiny timeout: arm byte-progress at, say, 200ms; server sends a chunk every 50ms for 500ms (total 500ms > 200ms), then ends; assert response body equals expected and watchdog.onStall not called.\n\n2. **Genuine stall still recovered — both modes**: \n   - Streaming: SSE upstream goes silent (no bytes) for > timeout → watchdog fires / stall handler invoked. This preserves the existing recovery coverage (the constraint).\n   - Buffered: upstream sends a few bytes then goes silent for > timeout → watchdog fires. This proves the patch didn't disarm stall detection for buffered responses.\n\nThe prompt says \"the two essential regression tests\" — so exactly two. I'd frame them as:\n\n1. \"Buffered response with steady byte progress outlives the watchdog and completes\" (the bug fix).\n2. \"Silent upstream (no bytes for the full window) trips the watchdog in both buffered and streaming modes\" (recovery preserved). Or split: test 2 = streaming stall still trips (guarding the untouched branch), and mention buffered-stall as part of test 2 or a third. The prompt says two essential tests; I can name two, where the second covers stall recovery in both modes, or pick streaming-stall as the second since the constraint explicitly says preserve streaming stall recovery. Hmm.\n\n\"Preserve recovery coverage for genuine streaming stalls\" — the essential regression test #2 is: streaming request with no bytes for 180s (scaled) still triggers recovery. And arguably a third for buffered stall. But they asked for two. I could name:\n\n1. Slow-but-progressing buffered download completes without watchdog fire (regression for the symptom).\n2. No-progress upstream trips the watchdog — parameterized over both `stream: true` (SSE silence) and `stream: false` (buffered silence).\n\nThat's two tests, with the second parameterized. That satisfies \"preserve recovery coverage for genuine streaming stalls\" explicitly. I'll present it that way, maybe noting the buffered-stall case as part of test 2 to prove we didn't overcorrect (i.e., we didn't just disable the watchdog for buffered requests).\n\nTest details: use a fake watchdog (spy with controllable clock) or real timers with scaled timeouts. E.g., `armByteProgress(100)` in test; upstream sends chunk every 30ms for 300ms → completes; assert stall not fired, body correct. Stall test: send one chunk, then silence; advance 150ms; assert stall fired once. Also assert `noteBytes` called per chunk (maybe over-specification; keep to behavior: watchdog fires iff no bytes within window).\n\nAlso worth explaining the cause crisply:\n\n- `armByteProgress(180_000)` starts a deadline that is pushed forward only by `noteBytes`.\n- Streaming path: `pipeSse` notes each chunk → deadline keeps moving → fires only on true silence.\n- Buffered path: the only `noteBytes` call happens after `arrayBuffer()` resolves. During the download the watchdog sees zero progress, so any buffered response whose body takes >180s to arrive is killed at exactly 180s — even one that would have succeeded at 210s. The single end-of-transfer note is bookkeeping, not progress; it can't prevent the trip because it happens after the deadline already fired.\n- Root cause in one line: byte-progress feedback exists only on the streaming branch; the buffered branch reports completion, not progress.\n\nAlso note why \"increase timeout to 210s+\" is wrong: arbitrary, still kills longer-but-healthy transfers, and worse, it extends stall detection latency for genuinely dead upstreams. And why \"disarm for buffered\" is wrong: loses stall recovery for buffered responses (a hung upstream would hold the runtime forever / until some other timeout). The patch keeps one watchdog semantics: fire iff no bytes for the window, in both modes.\n\nPatch presentation: show diff-style or full function. I'll show the full patched function with a comment, plus the tiny concat note. Keep it tight.\n\nLet me also double check the streaming branch is untouched: yes, `if (stream) return pipeSse(upstream, watchdog.noteBytes);` unchanged. Good — that's the \"preserve recovery coverage\" guarantee, and I should state it explicitly.\n\nOne more consideration: `Buffer.concat` vs returning `body` as before — original returned the ArrayBuffer from `arrayBuffer()`. Callers may expect ArrayBuffer/Buffer. `Buffer.concat` returns a Buffer which is a Uint8Array; if the caller strictly needs ArrayBuffer, do `buffer.buffer.slice(...)` or build Uint8Array. For synthetic answer, `Buffer.concat(chunks)` is fine; add a half-line note. Or use `new Blob(chunks)` → `await blob.arrayBuffer()` — extra await. Keep Buffer.concat with a note.\n\nAlso, should the patch note bytes even for the final zero-length/done? Not needed.\n\nError path: if `reader.read()` rejects mid-transfer, the promise rejects — same as `arrayBuffer()` rejecting. Watchdog may still be armed; if the handler catches and responds, fine; if the process hangs, watchdog eventually fires — same as before. No change needed.\n\nNow write the answer. Structure:\n\n1. **Cause** — short paragraphs / bullets. Key line: the buffered branch only reports bytes after the transfer finishes; the watchdog sees a 180s silence and kills a healthy request. The end-of-transfer `noteBytes` is a completion signal, not progress.\n2. **Minimal patch** — code, with the streaming branch untouched; per-chunk `noteBytes` in buffered path; null-body guard; note on concat/ArrayBuffer.\n3. **Why this and not alternatives** — brief: raising the timeout trades one arbitrary number for another and delays real stall recovery; disarming loses buffered stall coverage; per-chunk feedback keeps one invariant: \"fire iff no bytes for the window,\" in both modes.\n4. **Two essential regression tests** — named, with concrete scaled-timeout setups and assertions:\n   - Test 1: `buffered transfer with steady progress survives past the watchdog window` — chunks every T/6 for 2× window; assert resolves, body intact, stall not fired.\n   - Test 2: `upstream silence trips the watchdog in both modes` — parameterized stream true/false; send initial bytes then silence; assert stall fired once at ~window; (this is the guard that the fix didn't disable recovery — explicitly covering genuine streaming stalls).\n\nMaybe also mention what NOT to assert (e.g., don't assert exact noteBytes call counts — implementation detail). Keep brief.\n\nLength/format: This is a technical code-review answer. Use headers, short code blocks, bullets. Medium length — thorough but not bloated. Markdown appropriate. Avoid over-long prose. I'll keep the cause to ~4-6 lines, patch ~15 lines, alternatives ~3 bullets, tests ~2 blocks with setup/assertions.\n\nLet me write the patch code precisely:\n\n```js\nasync function proxyRequest({ stream, upstream, watchdog }) {\n  watchdog.armByteProgress(180_000);\n  if (stream) return pipeSse(upstream, watchdog.noteBytes); // unchanged\n\n  if (!upstream.body) {                       // 204/304-style: no wait, no stall risk\n    const empty = await upstream.arrayBuffer();\n    watchdog.noteBytes(empty.byteLength);\n    return empty;\n  }\n\n  const reader = upstream.body.getReader();\n  const chunks = [];\n  for (;;) {\n    const { done, value } = await reader.read();\n    if (done) break;\n    chunks.push(value);\n    watchdog.noteBytes(value.byteLength);     // real progress, per chunk\n  }\n  return Buffer.concat(chunks);               // or concat to ArrayBuffer to match old type\n}\n```\n\nHmm, the null-body guard: is it needed for \"minimal\"? It prevents a TypeError regression on bodyless responses. I'll keep it but flag it as the only addition beyond the core fix. Alternatively note it as a caveat. I think including it inline with a comment is best — smallest safe patch.\n\nActually, could simplify: `if (!upstream.body) return upstream.arrayBuffer();` — but then noteBytes never called for empty; watchdog armed with 180s and nothing notes... the request completes immediately though, and presumably the watchdog is disarmed per-request after the handler finishes (watchdog is per-request presumably, armed at start). If the watchdog is global across requests, an empty response noting nothing could matter — but original code did note 0 bytes. Keep the note to preserve behavior. Fine as written.\n\nTests, concretely:\n\nTest 1 — \"buffered response with continuous byte progress is not killed\":\n- Fake upstream: emits 1KB every 50ms for 500ms (10 chunks), then closes. Watchdog window scaled to 200ms.\n- Call `proxyRequest({ stream: false, upstream, watchdog })`.\n- Assert: resolves; body equals the concatenated payload (byte-for-byte); `onStall`/watchdog fire count === 0; total elapsed ~500ms > window.\n\nTest 2 — \"genuine silence still trips the watchdog (both modes)\":\n- Parameterize over `stream: true` and `stream: false`.\n- Upstream sends one chunk (or SSE headers/first event) then emits nothing.\n- Window scaled to 200ms; advance/await 300ms.\n- Assert: watchdog fired exactly once, at ≈ the window after the last byte; for streaming, `pipeSse` still wired to `noteBytes` (behavioral: silence after first SSE frame trips it).\n\nMaybe also assert in test 1 that noteBytes was called >1 times? That's implementation-ish; the behavioral assertion (no stall fire over a >window transfer) suffices and would fail on the old code — good regression property. Actually would test 1 fail on old code? Old code: noteBytes only at end at 500ms; window 200ms → stall fires at 200ms → runtime restart / watchdog fire. So yes, test 1 fails pre-patch, passes post-patch. Test 2 passes pre-patch for streaming (unchanged) and — for buffered — pre-patch, a buffered upstream that sends one chunk at t=0 then silence: old code notes nothing until arrayBuffer resolves (never), so watchdog fires at 200ms → passes pre-patch too. So test 2 is a preservation test (guards against overcorrection like disarming). Good; I'll say that: test 1 is the regression (fails before, passes after); test 2 is the guard (must keep passing — proves recovery coverage retained, especially the streaming branch which the patch must not touch).\n\nI might add one line: use scaled timeouts (e.g., 200ms) with fake/short timers rather than 180s real waits.\n\nAlso mention: don't assert exact chunk sizes/count of noteBytes calls — coupling to implementation.\n\nFormat plan:\n- **Cause** (short, with the key sentence bolded maybe)\n- **Minimal patch** (code block + 2-3 bullet notes)\n- **Why not the tempting fixes** (2 bullets: bump timeout / disarm)\n- **Two essential regression tests** (two named tests with setup/assert bullets, plus a one-line note on scaled timers)\n\nKeep total moderate. Write it.",
+        "tool_calls": []
+      },
+      "toolAssessment": null,
+      "rubric": [
+        "Identifies that buffered responses cannot report byte progress before full completion",
+        "Arms byte-progress timing only for stream=true",
+        "Keeps the streaming no-progress watchdog behavior",
+        "Names one long-buffered success test and one stalled-stream recovery test"
+      ]
+    }
+  ]
+}

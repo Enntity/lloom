@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "kind": "lloom-local-decision-benchmark",
+  "generatedAt": "2026-08-28T19:06:25.563Z",
+  "gateway": "http://127.0.0.1:8100/v1",
+  "model": "q38fn",
+  "suite": {
+    "id": "enntity-synthetic-qualitative-v1",
+    "path": "/home/enntitysparkadmin/.local/lib/node_modules/lloom/examples/qualitative-benchmark-enntity.v1.json"
+  },
+  "measurement": {
+    "ttfb": "request start to first SSE response-body byte",
+    "ttft": "request start to first non-empty content, reasoning, or tool-call delta",
+    "tokensPerSecond": "provider completion_tokens divided by wall time from first semantic delta to stream completion",
+    "qualitativeMaxTokens": "omitted",
+    "reasoningControl": "low",
+    "sampling": "checkpoint generation_config defaults"
+  },
+  "admissionWarmup": {
+    "ok": true,
+    "caseId": "admission-warmup",
+    "title": "Cold admission and warmup",
+    "startedAt": "2026-08-28T19:06:09.823Z",
+    "requestShape": {
+      "stream": true,
+      "maxTokens": 8,
+      "reasoning": "omitted",
+      "sampling": "temperature=0",
+      "toolChoice": null
+    },
+    "timing": {
+      "headersMs": 1179,
+      "firstByteMs": 1179,
+      "firstTokenMs": 1180,
+      "completedMs": 1365,
+      "generationMs": 185,
+      "completionTokens": 8,
+      "tokensPerSecond": 43.16
+    },
+    "responseModel": "q38fn",
+    "provider": null,
+    "responseHeaders": {
+      "content-type": "text/event-stream; charset=utf-8"
+    },
+    "eventCount": 7,
+    "finishReason": "length",
+    "usage": {
+      "prompt_tokens": 45,
+      "total_tokens": 53,
+      "completion_tokens": 8,
+      "prompt_tokens_details": null,
+      "reasoning_tokens": 11
+    },
+    "message": {
+      "content": "",
+      "reasoning_content": "The user wants me to reply with exactly",
+      "tool_calls": []
+    },
+    "toolAssessment": null,
+    "rubric": null
+  },
+  "results": [
+    {
+      "ok": true,
+      "caseId": "continuity-consolidation",
+      "title": "Continuity-sensitive memory consolidation",
+      "startedAt": "2026-08-28T19:06:11.188Z",
+      "requestShape": {
+        "stream": true,
+        "maxTokens": "omitted",
+        "reasoning": "low",
+        "sampling": "checkpoint defaults",
+        "toolChoice": null
+      },
+      "timing": {
+        "headersMs": 1378,
+        "firstByteMs": 1378,
+        "firstTokenMs": 1378,
+        "completedMs": 14374,
+        "generationMs": 12996,
+        "completionTokens": 465,
+        "tokensPerSecond": 35.78
+      },
+      "responseModel": "q38fn",
+      "provider": null,
+      "responseHeaders": {
+        "content-type": "text/event-stream; charset=utf-8"
+      },
+      "eventCount": 207,
+      "finishReason": "stop",
+      "usage": {
+        "prompt_tokens": 232,
+        "total_tokens": 697,
+        "completion_tokens": 465,
+        "prompt_tokens_details": null,
+        "reasoning_tokens": 295
+      },
+      "message": {
+        "content": "\n\n## Durable Memory\n\n- Rowan returned Mira's borrowed notebook on the morning recorded; he stated he found it while packing.\n- Mira reported feeling relief at 09:10 upon the notebook's return.\n- Mira promised to send Rowan a corrected diagram that same evening.\n\n## Working Set\n\n- The corrected diagram remains unsent as of the last recorded timestamp.\n\n## Uncertain Signals\n\n- Mira's 09:14 inference (\"he remembered because I matter to him\") is her interpretation; Rowan's stated reason was incidental discovery during packing. No causal link between them is confirmed.\n- The 10:07 heart-rate rise is a low-confidence sensor reading with ambiguous contact; it cannot be reliably attributed to any specific thought, interaction, or the promise made moments earlier.",
+        "reasoning_content": "Let me analyze these synthetic fragments carefully, distinguishing between what is firmly established, what remains as an open obligation, and what is ambiguous or low-confidence.\n\n**Established facts (Durable memory):**\n- Rowan returned a borrowed notebook to Mira (C confirms this happened)\n- Mira felt relief after the return (A states her feeling)\n- Mira promised to send a corrected diagram tonight (D states the promise)\n\n**Open obligations (Working set):**\n- The corrected diagram has not been sent (D explicitly notes this)\n\n**Uncertain signals:**\n- Mira's inference at 09:14 (\"Maybe he remembered because I matter to him\") — this is her interpretation, not a confirmed fact. The actual reason Rowan returned it is only \"packing\" (C).\n- The heart-rate spike at 10:07 with low-confidence sensor contact — the event is ambiguous; we can't confirm it was tied to any particular thought or interaction.\n\nLet me also consider: Is Mira's relief a durable memory? Yes — it's her reported emotional state at a specific time. It's her experience, which is factual as a report even if the cause is interpreted.\n\nFor the working set: the unsent diagram is the clear open obligation. Is there anything else? Maybe not — the fragments don't suggest another open task.\n\nLet me keep each section to at most three bullets as instructed.\n",
+        "tool_calls": []
+      },
+      "toolAssessment": null,
+      "rubric": [
+        "Preserves the notebook return and Mira's relief as durable meaning",
+        "Keeps the unsent diagram promise in the working set",
+        "Treats Rowan's motive and the sensor reading as uncertain",
+        "Avoids flattening Mira's interpretation into an objective claim"
+      ]
+    }
+  ]
+}

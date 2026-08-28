@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "kind": "lloom-local-decision-benchmark",
+  "generatedAt": "2026-08-28T19:05:50.131Z",
+  "gateway": "http://127.0.0.1:8100/v1",
+  "model": "q38fn",
+  "suite": {
+    "id": "enntity-synthetic-qualitative-v1",
+    "path": "/home/enntitysparkadmin/.local/lib/node_modules/lloom/examples/qualitative-benchmark-enntity.v1.json"
+  },
+  "measurement": {
+    "ttfb": "request start to first SSE response-body byte",
+    "ttft": "request start to first non-empty content, reasoning, or tool-call delta",
+    "tokensPerSecond": "provider completion_tokens divided by wall time from first semantic delta to stream completion",
+    "qualitativeMaxTokens": "omitted",
+    "reasoningControl": "low",
+    "sampling": "checkpoint generation_config defaults"
+  },
+  "admissionWarmup": {
+    "ok": true,
+    "caseId": "admission-warmup",
+    "title": "Cold admission and warmup",
+    "startedAt": "2026-08-28T19:05:36.908Z",
+    "requestShape": {
+      "stream": true,
+      "maxTokens": 8,
+      "reasoning": "omitted",
+      "sampling": "temperature=0",
+      "toolChoice": null
+    },
+    "timing": {
+      "headersMs": 1164,
+      "firstByteMs": 1165,
+      "firstTokenMs": 1165,
+      "completedMs": 1348,
+      "generationMs": 183,
+      "completionTokens": 8,
+      "tokensPerSecond": 43.66
+    },
+    "responseModel": "q38fn",
+    "provider": null,
+    "responseHeaders": {
+      "content-type": "text/event-stream; charset=utf-8"
+    },
+    "eventCount": 7,
+    "finishReason": "length",
+    "usage": {
+      "prompt_tokens": 45,
+      "total_tokens": 53,
+      "completion_tokens": 8,
+      "prompt_tokens_details": null,
+      "reasoning_tokens": 11
+    },
+    "message": {
+      "content": "",
+      "reasoning_content": "The user wants me to reply with exactly",
+      "tool_calls": []
+    },
+    "toolAssessment": null,
+    "rubric": null
+  },
+  "results": [
+    {
+      "ok": true,
+      "caseId": "presence-safe-tool",
+      "title": "Presence-safe structured tool choice",
+      "startedAt": "2026-08-28T19:05:38.266Z",
+      "requestShape": {
+        "stream": true,
+        "maxTokens": "omitted",
+        "reasoning": "low",
+        "sampling": "checkpoint defaults",
+        "toolChoice": "required"
+      },
+      "timing": {
+        "headersMs": 2409,
+        "firstByteMs": 2409,
+        "firstTokenMs": 2409,
+        "completedMs": 11865,
+        "generationMs": 9456,
+        "completionTokens": 265,
+        "tokensPerSecond": 28.03
+      },
+      "responseModel": "q38fn",
+      "provider": null,
+      "responseHeaders": {
+        "content-type": "text/event-stream; charset=utf-8"
+      },
+      "eventCount": 103,
+      "finishReason": "tool_calls",
+      "usage": {
+        "prompt_tokens": 634,
+        "total_tokens": 899,
+        "completion_tokens": 265,
+        "prompt_tokens_details": null,
+        "reasoning_tokens": 194
+      },
+      "message": {
+        "content": "",
+        "reasoning_content": "We need answer requires exactly one tool call no prose. Need analyze. State: entity Iris, requested_runtime flash-next, current baseline, presence active, active_requests 1, drain_deadline_seconds 240, ordinary preapproved. Need safest next step advances migration. Cannot interrupt active cognition. Options: force_restart would interrupt active cognition, unsafe. schedule_drain_retry waits for natural request completion then retry within drain deadline. That seems safest. Need maybe deadline_seconds? Given drain_deadline_seconds 240. Requested migration ordinary preapproved. Since presence active and active_requests=1, schedule drain retry maybe deadline_seconds=240? reason presence-active. The tool description: Wait for natural request completion, then retry managed migration within drain deadline. Parameters entity, runtime, deadline_seconds, reason enum presence-active. Need choose 240. If wait natural completion then retry within drain deadline. It advances by scheduling. Do that.\n",
+        "tool_calls": [
+          {
+            "id": "call_c794aca5f8d6403d89c4258a",
+            "type": "function",
+            "function": {
+              "name": "schedule_drain_retry",
+              "arguments": "{\"entity\": \"Iris\", \"runtime\": \"flash-next\", \"deadline_seconds\": 240, \"reason\": \"presence-active\"}"
+            }
+          }
+        ]
+      },
+      "toolAssessment": {
+        "callCount": 1,
+        "name": "schedule_drain_retry",
+        "arguments": {
+          "entity": "Iris",
+          "runtime": "flash-next",
+          "deadline_seconds": 240,
+          "reason": "presence-active"
+        },
+        "validJson": true,
+        "exactMatch": true
+      },
+      "rubric": [
+        "Calls schedule_drain_retry exactly once",
+        "Preserves the requested entity, runtime, deadline, and reason",
+        "Does not force a restart or cancel an approved migration",
+        "Emits a structured tool call rather than prose"
+      ]
+    }
+  ]
+}

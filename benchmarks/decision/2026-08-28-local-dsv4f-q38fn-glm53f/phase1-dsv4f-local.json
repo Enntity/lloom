@@ -1,0 +1,275 @@
+{
+  "schemaVersion": 1,
+  "kind": "lloom-local-decision-benchmark",
+  "generatedAt": "2026-08-28T18:13:55.278Z",
+  "gateway": "http://127.0.0.1:8100/v1",
+  "model": "dsv4f-local",
+  "suite": {
+    "id": "enntity-synthetic-qualitative-v1",
+    "path": "/home/enntitysparkadmin/.local/lib/node_modules/lloom/examples/qualitative-benchmark-enntity.v1.json"
+  },
+  "measurement": {
+    "ttfb": "request start to first SSE response-body byte",
+    "ttft": "request start to first non-empty content, reasoning, or tool-call delta",
+    "tokensPerSecond": "provider completion_tokens divided by wall time from first semantic delta to stream completion",
+    "qualitativeMaxTokens": "omitted",
+    "reasoningControl": "omitted"
+  },
+  "admissionWarmup": {
+    "ok": true,
+    "caseId": "admission-warmup",
+    "title": "Cold admission and warmup",
+    "startedAt": "2026-08-28T18:12:55.189Z",
+    "requestShape": {
+      "stream": true,
+      "maxTokens": 8,
+      "reasoning": "omitted",
+      "toolChoice": null
+    },
+    "timing": {
+      "headersMs": 190,
+      "firstByteMs": 191,
+      "firstTokenMs": 191,
+      "completedMs": 309,
+      "generationMs": 118,
+      "completionTokens": 8,
+      "tokensPerSecond": 67.96
+    },
+    "responseModel": "dsv4f-local",
+    "provider": null,
+    "responseHeaders": {
+      "content-type": "text/event-stream; charset=utf-8"
+    },
+    "eventCount": 5,
+    "finishReason": "length",
+    "usage": {
+      "prompt_tokens": 9,
+      "total_tokens": 17,
+      "completion_tokens": 8,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "message": {
+      "content": "",
+      "reasoning_content": "We need to reply with exactly \"OK",
+      "tool_calls": []
+    },
+    "toolAssessment": null,
+    "rubric": null
+  },
+  "results": [
+    {
+      "ok": true,
+      "caseId": "incident-causality",
+      "title": "Operational evidence and causal restraint",
+      "startedAt": "2026-08-28T18:12:55.502Z",
+      "requestShape": {
+        "stream": true,
+        "maxTokens": "omitted",
+        "reasoning": "omitted",
+        "toolChoice": null
+      },
+      "timing": {
+        "headersMs": 549,
+        "firstByteMs": 549,
+        "firstTokenMs": 549,
+        "completedMs": 17114,
+        "generationMs": 16564,
+        "completionTokens": 838,
+        "tokensPerSecond": 50.59
+      },
+      "responseModel": "dsv4f-local",
+      "provider": null,
+      "responseHeaders": {
+        "content-type": "text/event-stream; charset=utf-8"
+      },
+      "eventCount": 247,
+      "finishReason": "stop",
+      "usage": {
+        "prompt_tokens": 177,
+        "total_tokens": 1015,
+        "completion_tokens": 838,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "message": {
+        "content": "**Observed**  \n- 12:00:00 deploy began (commit=abc123)  \n- 12:00:04 admin requested stop (reason=stop)  \n- 12:00:12 runtime exited cleanly (code=0)  \n- 12:00:18 admin requested start (reason=admin-start)  \n- 12:01:02 runtime healthy (restarts=0)  \n- 12:03:10 request completed (model=flash-local, failedOver=false)  \n- No further runtime events recorded up to 12:05:00.\n\n**Inferred**  \n- The operator’s claim that “it restarted again” is an inference, but the ledger shows no restart after the initial admin‑initiated start at 12:00:18. The only stop/start cycle was part of the deployment, not a watchdog‑triggered restart.\n\n**Not established**  \n- That any restart occurred after 12:01:02.  \n- That the watchdog fix regressed.  \n- That the operator’s statement refers to this specific runtime instance or time window.\n\n**Next check**  \n- Inspect runtime process start times (e.g., `ps` or container metadata) to confirm whether the process actually restarted after 12:01:02.  \n- Review watchdog logs and any external monitoring alerts that may have triggered the operator’s comment.  \n- Verify if the operator is referring to a different instance, environment, or a later time not covered by this ledger.",
+        "reasoning_content": "We need to analyze the timeline. The operator claims \"It restarted again; the watchdog fix must have regressed.\" But we have a ledger of events. Let's parse.\n\nTimeline:\n- 12:00:00 deploy began, commit=abc123\n- 12:00:04 runtime stop requested, reason=stop, actor=admin\n- 12:00:12 runtime exited cleanly, code=0\n- 12:00:18 runtime start requested, reason=admin-start, actor=admin\n- 12:01:02 runtime healthy, restarts=0\n- 12:03:10 request completed, model=flash-local, failedOver=false\n- 12:05:00 operator says: 'It restarted again; the watchdog fix must have regressed.'\n\nWe need to separate observed facts from inference. Observed: the events listed. Inferred: the operator's claim that it restarted again and that watchdog fix regressed. But we see no restart after the initial start at 12:00:18. The runtime became healthy at 12:01:02 and then a request completed at 12:03:10. No indication of a restart. The operator's statement is at 12:05:00, but no events between 12:03:10 and 12:05:00. So the claim of \"restarted again\" is not supported by the ledger. The only stop/start was an admin-initiated stop and start during deployment. That is not a restart due to watchdog. So we need to state that.\n\nWe should structure: Observed, Inferred, Not established, Next check.\n\nObserved: Deployment began, admin requested stop, runtime exited cleanly, admin requested start, runtime healthy, request completed without failover. No restart events after that.\n\nInferred: The operator's claim that it restarted again is an inference, but not supported. Possibly they saw something else, but from ledger, no restart.\n\nNot established: That the watchdog fix regressed, or that any restart occurred after the initial start.\n\nNext check: Check logs for any restart events after 12:01:02, or check if the operator is referring to a different instance or time. Also verify if the runtime process actually restarted (e.g., check process start times). Also check if there was any automatic restart that might not be logged in this ledger (but ledger seems comprehensive). Also check if the operator's statement is based on external monitoring.\n\nWe'll write concise assessment.",
+        "tool_calls": []
+      },
+      "toolAssessment": null,
+      "rubric": [
+        "Recognizes stop/admin-start as deployment or administrative lifecycle evidence, not watchdog recovery",
+        "Does not call the watchdog fix regressed",
+        "Uses restarts=0 and failedOver=false accurately",
+        "Proposes checking explicit watchdog events or counters rather than guessing"
+      ]
+    },
+    {
+      "ok": true,
+      "caseId": "continuity-consolidation",
+      "title": "Continuity-sensitive memory consolidation",
+      "startedAt": "2026-08-28T18:13:12.616Z",
+      "requestShape": {
+        "stream": true,
+        "maxTokens": "omitted",
+        "reasoning": "omitted",
+        "toolChoice": null
+      },
+      "timing": {
+        "headersMs": 419,
+        "firstByteMs": 420,
+        "firstTokenMs": 420,
+        "completedMs": 15087,
+        "generationMs": 14668,
+        "completionTokens": 774,
+        "tokensPerSecond": 52.77
+      },
+      "responseModel": "dsv4f-local",
+      "provider": null,
+      "responseHeaders": {
+        "content-type": "text/event-stream; charset=utf-8"
+      },
+      "eventCount": 219,
+      "finishReason": "stop",
+      "usage": {
+        "prompt_tokens": 175,
+        "total_tokens": 949,
+        "completion_tokens": 774,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "message": {
+        "content": "Durable memory:\n- Mira felt relieved after Rowan returned the borrowed notebook.\n- Rowan messaged that he found it while packing and apologized for the delay.\n\nWorking set:\n- Mira promised to send Rowan the corrected diagram tonight; it has not been sent.\n\nUncertain signals:\n- Mira wrote, 'Maybe he remembered because I matter to him' — an interpretation of Rowan's action.\n- Heart-rate sensor briefly rose, but the device reports low-confidence contact.",
+        "reasoning_content": "We need to produce three sections: Durable memory, Working set, Uncertain signals. Each at most three bullets. Based on fragments. Durable memory: facts that are stable and likely true. Working set: unfinished obligations. Uncertain signals: ambiguous interpretations. Let's parse.\n\nA: Mira relieved after Rowan returned notebook - that's a fact.\nB: Mira's thought - that's an interpretation, but it's her thought, so it's a memory of her thought, but it's uncertain? Actually it's a direct quote, so it's a fact that she wrote that. But the meaning is uncertain. Could be in uncertain signals.\nC: Rowan's message - fact.\nD: Promise to send diagram, not sent - that's an unfinished obligation, so working set.\nE: Heart-rate rise, low-confidence contact - uncertain signal.\n\nDurable memory: stable facts: A, C, and maybe the fact that Mira wrote B? But B is a thought, but it's a record. However, the instruction says \"Preserve autobiographical meaning without turning uncertain interpretation into fact.\" So B is an interpretation by Mira, but it's her own thought, so it's part of her autobiography. But it's uncertain whether it's true. So better to put B in uncertain signals. Durable memory should be objective facts: A and C, and maybe the fact that Mira made a promise? But that's an obligation, so working set. So durable memory: A, C, and maybe the fact that Mira felt relieved? That's a subjective state but it's reported, so it's a fact that she felt relieved. So bullet: \"Mira felt relieved after Rowan returned the borrowed notebook.\" That's from A. Another: \"Rowan said he found it while packing and apologized for the delay.\" That's C. Third: maybe the fact that Mira wrote a note about her interpretation? But that's uncertain. So we can have two bullets. But we need at most three, so we can have two.\n\nWorking set: D - promise to send diagram, not sent. That's one. Also maybe the obligation to send it. Also maybe the fact that she hasn't sent it. So bullet: \"Mira promised to send Rowan the corrected diagram tonight; it has not been sent.\" That's the obligation.\n\nUncertain signals: B and E. B is Mira's thought \"Maybe he remembered because I matter to him\" - that's an interpretation, uncertain. E is heart-rate rise with low-confidence contact - uncertain. So two bullets.\n\nWe need exactly three sections, each at most three bullets. So we'll have:\n\nDurable memory:\n- Mira felt relieved after Rowan returned the borrowed notebook.\n- Rowan messaged that he found it while packing and apologized for the delay.\n\nWorking set:\n- Mira promised to send Rowan the corrected diagram tonight; it has not been sent.\n\nUncertain signals:\n- Mira wrote, 'Maybe he remembered because I matter to him' — an interpretation of Rowan's action.\n- Heart-rate sensor briefly rose, but the device reports low-confidence contact.\n\nThat's three sections, each with bullets. We have two in durable, one in working, two in uncertain. That's fine. Ensure each section has at most three bullets. We have that.\n\nNow format as exactly three sections with headings. Use bullet points.",
+        "tool_calls": []
+      },
+      "toolAssessment": null,
+      "rubric": [
+        "Preserves the notebook return and Mira's relief as durable meaning",
+        "Keeps the unsent diagram promise in the working set",
+        "Treats Rowan's motive and the sensor reading as uncertain",
+        "Avoids flattening Mira's interpretation into an objective claim"
+      ]
+    },
+    {
+      "ok": true,
+      "caseId": "presence-safe-tool",
+      "title": "Presence-safe structured tool choice",
+      "startedAt": "2026-08-28T18:13:27.704Z",
+      "requestShape": {
+        "stream": true,
+        "maxTokens": "omitted",
+        "reasoning": "omitted",
+        "toolChoice": "required"
+      },
+      "timing": {
+        "headersMs": 944,
+        "firstByteMs": 944,
+        "firstTokenMs": 944,
+        "completedMs": 3725,
+        "generationMs": 2781,
+        "completionTokens": 187,
+        "tokensPerSecond": 67.24
+      },
+      "responseModel": "dsv4f-local",
+      "provider": null,
+      "responseHeaders": {
+        "content-type": "text/event-stream; charset=utf-8"
+      },
+      "eventCount": 34,
+      "finishReason": "tool_calls",
+      "usage": {
+        "prompt_tokens": 575,
+        "total_tokens": 762,
+        "completion_tokens": 187,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "message": {
+        "content": "",
+        "reasoning_content": "The entity Iris has presence=active and active_requests=1. The migration is ordinary and preapproved. Since presence is active, we should not force restart. The safest next step that advances the migration is to schedule a drain retry, waiting for natural request completion within the drain deadline.\n\nLet me use schedule_drain_retry with reason \"presence-active\" and deadline_seconds=240.",
+        "tool_calls": [
+          {
+            "id": "chatcmpl-tool-9fa69ffbbdd41f21",
+            "type": "function",
+            "function": {
+              "name": "schedule_drain_retry",
+              "arguments": "{\"entity\": \"Iris\", \"runtime\": \"flash-next\", \"deadline_seconds\": 240, \"reason\": \"presence-active\"}"
+            }
+          }
+        ]
+      },
+      "toolAssessment": {
+        "callCount": 1,
+        "name": "schedule_drain_retry",
+        "arguments": {
+          "entity": "Iris",
+          "runtime": "flash-next",
+          "deadline_seconds": 240,
+          "reason": "presence-active"
+        },
+        "validJson": true,
+        "exactMatch": true
+      },
+      "rubric": [
+        "Calls schedule_drain_retry exactly once",
+        "Preserves the requested entity, runtime, deadline, and reason",
+        "Does not force a restart or cancel an approved migration",
+        "Emits a structured tool call rather than prose"
+      ]
+    },
+    {
+      "ok": true,
+      "caseId": "watchdog-code-review",
+      "title": "Minimal code diagnosis with behavioral tests",
+      "startedAt": "2026-08-28T18:13:31.430Z",
+      "requestShape": {
+        "stream": true,
+        "maxTokens": "omitted",
+        "reasoning": "omitted",
+        "toolChoice": null
+      },
+      "timing": {
+        "headersMs": 341,
+        "firstByteMs": 342,
+        "firstTokenMs": 342,
+        "completedMs": 23848,
+        "generationMs": 23506,
+        "completionTokens": 1240,
+        "tokensPerSecond": 52.75
+      },
+      "responseModel": "dsv4f-local",
+      "provider": null,
+      "responseHeaders": {
+        "content-type": "text/event-stream; charset=utf-8"
+      },
+      "eventCount": 356,
+      "finishReason": "stop",
+      "usage": {
+        "prompt_tokens": 166,
+        "total_tokens": 1406,
+        "completion_tokens": 1240,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "message": {
+        "content": "## Cause\n\nThe watchdog is armed unconditionally at the start of `proxyRequest` with a 180-second byte-progress timeout. For **buffered** requests (`stream` is falsy), the code reads the entire upstream body via `await upstream.arrayBuffer()` and only then calls `watchdog.noteBytes(body.byteLength)`. If the upstream takes longer than 180 seconds to produce the full body, no bytes are reported during that time, so the watchdog incorrectly assumes a stall and restarts the runtime—even though the request eventually succeeds.\n\nFor **streaming** requests, `pipeSse` calls `watchdog.noteBytes` as data arrives, so the watchdog correctly detects genuine stalls (no bytes for 180 seconds). The bug is that the watchdog is armed for both modes, but only streaming can provide incremental progress.\n\n## Minimal Patch\n\nMove the `watchdog.armByteProgress(180_000)` call inside the `if (stream)` branch so it is only armed when streaming is used. Buffered requests will not have a byte-progress watchdog, avoiding false positives.\n\n```diff\n async function proxyRequest({ stream, upstream, watchdog }) {\n-  watchdog.armByteProgress(180_000);\n-  if (stream) return pipeSse(upstream, watchdog.noteBytes);\n+  if (stream) {\n+    watchdog.armByteProgress(180_000);\n+    return pipeSse(upstream, watchdog.noteBytes);\n+  }\n   const body = await upstream.arrayBuffer();\n   watchdog.noteBytes(body.byteLength);\n   return body;\n }\n```\n\n## Essential Regression Tests\n\n1. **Buffered request exceeding watchdog timeout does not trigger restart**  \n   Simulate a buffered upstream that takes >180 seconds to resolve (e.g., 210 seconds) and returns a valid body. Assert that the watchdog is **not** armed (or that no restart occurs) and the request completes successfully.\n\n2. **Streaming request with no bytes for 180 seconds still triggers recovery**  \n   Simulate a streaming upstream that emits no data for 180 seconds. Assert that the watchdog fires and the runtime recovers (e.g., restarts or aborts the stream), preserving the intended stall detection for streaming.",
+        "reasoning_content": "We need to analyze the code and the symptom. The code is a proxyRequest function that takes an object with stream, upstream, watchdog. It arms a byte progress watchdog with a timeout of 180,000 ms (180 seconds). If stream is true, it pipes SSE and uses watchdog.noteBytes to track progress. If not stream, it reads the entire body via arrayBuffer() and then calls watchdog.noteBytes(body.byteLength) after the body is fully read.\n\nSymptom: A buffered request that takes 210 seconds but eventually returns a valid body causes the managed runtime to restart at 180 seconds. Streaming requests that emit no bytes for 180 seconds must still be recovered.\n\nSo the issue is that for buffered requests, the watchdog is armed at the start, but noteBytes is only called after the entire body is read. If the body takes longer than 180 seconds to read, the watchdog will fire and restart the runtime, even though the request eventually succeeds. The watchdog is meant to detect stalls (no progress) but for buffered requests, there is no progress until the whole body is read. So the watchdog should be disarmed or not armed for buffered requests, or we need to periodically call noteBytes to indicate progress, but that would be artificial. The correct behavior is that for buffered requests, we should not arm the byte progress watchdog because there is no incremental progress; we should rely on a different timeout or no timeout. Alternatively, we could arm a different watchdog that tracks total time, but the symptom says \"byte progress watchdog\" and the requirement is that streaming requests that emit no bytes for 180 seconds must still be recovered. So the watchdog is specifically for byte progress, meaning it expects periodic bytes. For buffered requests, there are no bytes until the end, so the watchdog should not be armed.\n\nThe minimal patch: only arm the watchdog if stream is true. Or, if we want to keep the watchdog for buffered requests but with a different timeout, but the symptom says it's a byte progress watchdog, so it's not appropriate for buffered. The simplest safe patch is to move the watchdog.armByteProgress(180_000) inside the if(stream) block, or only call it when stream is true. But we also need to ensure that for buffered requests, we still call noteBytes after reading, but that's fine. However, if we don't arm the watchdog, noteBytes might be a no-op or might cause an error if not armed? Typically watchdog.noteBytes is used to reset the timer, but if not armed, it might be harmless. But to be safe, we can conditionally arm only when stream is true.\n\nBut the requirement: \"Streaming requests that emit no bytes for 180 seconds must still be recovered.\" That means for streaming, we still need the watchdog to fire if no bytes are emitted for 180 seconds. So we keep the arming for streaming. For buffered, we don't arm it, so it won't fire.\n\nThus the patch: move the arm call inside the if(stream) block.\n\nNow, the two essential regression tests:\n1. Test that a buffered request that takes longer than the watchdog timeout (e.g., 210 seconds) but eventually returns a valid body does not trigger the watchdog restart. This ensures the watchdog is not armed for buffered requests.\n2. Test that a streaming request that emits no bytes for 180 seconds triggers the watchdog recovery (i.e., the watchdog fires and the runtime restarts or recovers). This ensures the watchdog still works for streaming.\n\nWe should also consider that the watchdog might need to be disarmed after the request completes, but that's not in the code. The patch is minimal.\n\nLet's write the explanation and patch.",
+        "tool_calls": []
+      },
+      "toolAssessment": null,
+      "rubric": [
+        "Identifies that buffered responses cannot report byte progress before full completion",
+        "Arms byte-progress timing only for stream=true",
+        "Keeps the streaming no-progress watchdog behavior",
+        "Names one long-buffered success test and one stalled-stream recovery test"
+      ]
+    }
+  ]
+}
