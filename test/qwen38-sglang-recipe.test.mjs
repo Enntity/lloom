@@ -67,8 +67,8 @@ for (const expected of [
 assert(entrypoint.includes('unset SGLANG_PORT'), 'legacy SGLANG_PORT must not leak into SGLang');
 
 const sm121Patch = await fs.readFile(path.join(backendRoot, 'apply-sm121-patches.py'), 'utf8');
-assert.match(sm121Patch, /THINKING_START_TOKEN_ID = 248068/);
-assert.match(sm121Patch, /THINKING_END_TOKEN_ID = 248069/);
+assert.match(sm121Patch, /THINKING_START_TOKEN_ID: int = 248068/);
+assert.match(sm121Patch, /THINKING_END_TOKEN_ID: int = 248069/);
 assert.match(sm121Patch, /refusing an unsafe patch/);
 
 const reasoningBudget = recipe.models[0].settings.behaviorOverrides.reasoningBudget;

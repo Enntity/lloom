@@ -48,8 +48,8 @@ def patch_thinking_budget_tokens() -> None:
     source = CUSTOM_LOGIT_PROCESSOR.read_text()
     patched = source
     for old, new in (
-        ("THINKING_START_TOKEN_ID = 151667", "THINKING_START_TOKEN_ID = 248068"),
-        ("THINKING_END_TOKEN_ID = 151668", "THINKING_END_TOKEN_ID = 248069"),
+        ("THINKING_START_TOKEN_ID: int = 151667", "THINKING_START_TOKEN_ID: int = 248068"),
+        ("THINKING_END_TOKEN_ID: int = 151668", "THINKING_END_TOKEN_ID: int = 248069"),
     ):
         if new in patched:
             continue
