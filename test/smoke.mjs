@@ -2441,8 +2441,9 @@ assert.deepEqual(
   dsparkRefreshed.runtimes['deepseek-v4-flash-0731-cluster'].placement.members.map((member) => member.node),
   ['ennspark02', 'ennspark01']
 );
-assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-worker'].recipe.version, 13);
-assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-head'].recipe.version, 13);
+assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-worker'].recipe.version, 14);
+assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-head'].recipe.version, 14);
+assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-cluster'].policy.evictable, true);
 assert.deepEqual(dsparkRefreshed.aliases['deepseek-v4-flash-0731'], {
   target: 'deepseek-v4-flash-0731',
   fallbacks: ['deepseek/deepseek-v4-flash-0731'],
