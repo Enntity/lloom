@@ -36,6 +36,7 @@ import {
   selectedRecipeIdFromCommunityPlan
 } from '../src/community-client.mjs';
 import { loadConfig } from '../src/config.mjs';
+import { runtimeControlTimeoutMs } from '../src/control-timeout.mjs';
 import { createDoctorReport } from '../src/doctor.mjs';
 import {
   currentNodeId,
@@ -2382,7 +2383,7 @@ async function main() {
             force: !hasFlag(args, '--no-force'),
             warmup: !hasFlag(args, '--no-warmup')
           },
-          timeoutMs: 1800000
+          timeoutMs: runtimeControlTimeoutMs(config, runtimeId)
         });
         if (!result) throw new Error(`cluster runtime admission failed through ${gatewayUrlFor(config)}`);
         console.log(JSON.stringify(result, null, 2));
@@ -2414,7 +2415,7 @@ async function main() {
             force: !hasFlag(args, '--no-force'),
             warmup: !hasFlag(args, '--no-warmup')
           },
-          timeoutMs: 1800000
+          timeoutMs: runtimeControlTimeoutMs(config, runtimeId)
         });
         if (!result) throw new Error(`cluster runtime start failed through ${gatewayUrlFor(config)}`);
         console.log(JSON.stringify(result, null, 2));
@@ -2440,7 +2441,7 @@ async function main() {
         const result = await gatewayRequest(config, `/gateway/runtimes/${encodeURIComponent(runtimeId)}/warmup`, {
           method: 'POST',
           body: {},
-          timeoutMs: 1800000
+          timeoutMs: runtimeControlTimeoutMs(config, runtimeId)
         });
         if (!result) throw new Error(`cluster runtime warmup failed through ${gatewayUrlFor(config)}`);
         console.log(JSON.stringify(result, null, 2));

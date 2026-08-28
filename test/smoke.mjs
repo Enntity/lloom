@@ -87,6 +87,7 @@ import {
 } from '../src/recipe-pack.mjs';
 import { buildRecipeIndexReport, loadRecipeIndex, validateRecipeIndex } from '../src/recipe-index.mjs';
 import { defaultUserModelRoot, defaultUserSessionCacheRoot, loadConfig } from '../src/config.mjs';
+import { runtimeControlTimeoutMs } from '../src/control-timeout.mjs';
 import { runCommand } from '../src/process-control.mjs';
 import { createRegistry } from '../src/registry.mjs';
 import { loadRecipeById, loadRecipes, planRecipe } from '../src/recipes.mjs';
@@ -182,6 +183,15 @@ function communityOnlyConfig(baseConfig) {
 }
 
 const config = await loadConfig();
+assert.equal(runtimeControlTimeoutMs(config, 'missing-runtime'), 1800000);
+assert.equal(
+  runtimeControlTimeoutMs({ runtimes: { cold: { startupTimeoutMs: 7200000 } } }, 'cold'),
+  7260000
+);
+assert.equal(
+  runtimeControlTimeoutMs({ runtimes: { quick: { startupTimeoutMs: 5000 } } }, 'quick'),
+  1800000
+);
 assert.equal(config.community.hostUrl, 'http://127.0.0.1:8110');
 assert.equal(config.community.recipeFeedPath, '/v1/recipe-packs/recommended');
 assert.equal(config.community.signingKeysPath, '/v1/keys');
