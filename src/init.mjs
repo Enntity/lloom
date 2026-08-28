@@ -752,7 +752,9 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
           if (runtime) {
             runtime.node = nodeId;
             replaceArgValue(runtime.args, '--host', node.backendHost);
-            replaceArgValue(runtime.bootstrap?.command, '--host', node.backendHost);
+            if ((runtime.bootstrap?.adapter ?? runtime.adapter) !== 'docker') {
+              replaceArgValue(runtime.bootstrap?.command, '--host', node.backendHost);
+            }
             rewriteDockerPublishedHost(runtime.bootstrap?.createArgs, node.backendHost, port);
             runtime.healthUrl = rewriteUrlOrigin(runtime.healthUrl, backendOrigin);
             if (runtime.warmup?.url) runtime.warmup.url = rewriteUrlOrigin(runtime.warmup.url, backendOrigin);

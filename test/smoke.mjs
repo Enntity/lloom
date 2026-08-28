@@ -2442,6 +2442,13 @@ const workerEmbeddingRuntime = clusterEmbeddingConfig.runtimes['qwen3-embedding-
 assert.equal(workerEmbeddingRuntime.node, 'ennspark02');
 assert.equal(workerEmbeddingRuntime.healthUrl, 'http://10.100.16.1:8002/v1/models');
 assert(workerEmbeddingRuntime.bootstrap.createArgs.includes('10.100.16.1:8002:8000'));
+assert.deepEqual(
+  workerEmbeddingRuntime.bootstrap.command.slice(
+    workerEmbeddingRuntime.bootstrap.command.indexOf('--host'),
+    workerEmbeddingRuntime.bootstrap.command.indexOf('--host') + 2
+  ),
+  ['--host', '0.0.0.0']
+);
 assert.equal(clusterEmbeddingConfig.runtimes['qwen3-embedding-4b-macbook-local'], undefined);
 assert.equal(
   clusterEmbeddingConfig.backends['qwen3-embedding-4b-ennspark02'].baseUrl,
