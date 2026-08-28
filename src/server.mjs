@@ -436,7 +436,7 @@ function clientClosedStatus(error) {
   return isClientClosedError(error) ? 499 : 0;
 }
 
-const MODEL_FAILOVER_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
+const MODEL_FAILOVER_STATUS_CODES = new Set([402, 408, 425, 429, 500, 502, 503, 504]);
 const MODEL_FAILOVER_RUNTIME_STATES = new Set([
   'starting',
   'warming',
@@ -935,6 +935,7 @@ export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } =
         resolvedModel: raw.resolvedModel ?? raw.model,
         failoverAttempt: raw.failoverAttempt ?? null,
         failoverTargets: raw.failoverTargets ?? null,
+        failoverReason: raw.failoverReason ?? null,
         failedOver: raw.failedOver === true,
         target: raw.target ?? null,
         node: raw.node ?? null,
@@ -969,6 +970,7 @@ export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } =
         resolvedModel: raw.resolvedModel ?? raw.model,
         failoverAttempt: raw.failoverAttempt ?? live?.failoverAttempt ?? null,
         failoverTargets: raw.failoverTargets ?? live?.failoverTargets ?? null,
+        failoverReason: raw.failoverReason ?? live?.failoverReason ?? null,
         failedOver: raw.failedOver === true || live?.failedOver === true,
         target: raw.target ?? live?.target ?? null,
         node: raw.node ?? live?.node ?? null,
@@ -1820,7 +1822,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         ...(candidate.aliasTargetCount > 1
           ? {
               failover: {
-                attempt: candidate.aliasTargetIndex + 1,
+                attempt: 1,
                 targets: candidate.aliasTargetCount,
                 primaryModel: candidate.alias?.target,
                 used: candidate.aliasTargetIndex > 0
@@ -1845,13 +1847,41 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       );
       return false;
     });
-    return available.map((candidate) => ({
+    let ordered = available;
+    let routeReason = null;
+    const primary = available[0];
+    const readyFallbacks = available.slice(1).filter((candidate) => {
+      if (!candidate.model.runtime) return true;
+      const runtime = status?.runtimes?.[candidate.model.runtime];
+      return runtime?.healthy === true || ['running', 'external'].includes(runtime?.status);
+    });
+    if (config.runtimePolicy?.autoEvict === true && primary?.model.runtime && readyFallbacks.length > 0) {
+      try {
+        const plan = await createRuntimePolicyPlan(config, {
+          requestedRuntimeId: primary.model.runtime,
+          status
+        });
+        const requiresEviction = plan.actions.some((action) => action.type === 'stop');
+        if (requiresEviction || !plan.admission.allowed) {
+          const preferred = new Set(readyFallbacks);
+          ordered = [...readyFallbacks, ...available.filter((candidate) => !preferred.has(candidate))];
+          routeReason = requiresEviction ? 'preserve-residency' : 'capacity-fallback';
+        }
+      } catch (error) {
+        logger.warn?.(
+          `could not preview admission for ${primary.resolvedId}; retaining primary-first routing: ${error?.message ?? error}`
+        );
+      }
+    }
+
+    return ordered.map((candidate, attemptIndex) => ({
       ...candidate,
       failover: {
-        attempt: candidate.aliasTargetIndex + 1,
-        targets: candidate.aliasTargetCount ?? available.length,
+        attempt: attemptIndex + 1,
+        targets: candidate.aliasTargetCount ?? ordered.length,
         primaryModel: candidate.alias?.target ?? candidates[0].resolvedId,
-        used: candidate.aliasTargetIndex > 0 || candidate.resolvedId !== candidates[0].resolvedId
+        used: candidate.aliasTargetIndex > 0 || candidate.resolvedId !== candidates[0].resolvedId,
+        ...(routeReason ? { reason: routeReason } : {})
       }
     }));
   }
@@ -1891,6 +1921,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         resolvedModel: entry.resolvedModel ?? entry.model,
         failoverAttempt: entry.failoverAttempt ?? undefined,
         failoverTargets: entry.failoverTargets ?? undefined,
+        failoverReason: entry.failoverReason ?? undefined,
         failedOver: entry.failedOver === true || undefined,
         status: entry.status,
         durationMs: entry.durationMs,
@@ -1971,6 +2002,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       resolvedModel: resolved.resolvedId,
       failoverAttempt: resolved.failover?.attempt,
       failoverTargets: resolved.failover?.targets,
+      failoverReason: resolved.failover?.reason,
       failedOver: resolved.failover?.used === true,
       target: resolved.model.selectedTarget,
       node: resolved.model.selectedNode,
@@ -2023,16 +2055,17 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     };
     const watchdog = { arm: armWatchdogTimer };
     try {
-      const result = await clusterCoordinator.withTarget(resolved, () =>
-        runtimeManager.withSlot(resolved.model.runtime, () =>
+      const result = await clusterCoordinator.withTarget(resolved, async () => {
+        await ensureRuntime(resolved.model.runtime);
+        return runtimeManager.withSlot(resolved.model.runtime, () =>
           fn({
             signal: client.signal,
             timing,
             progress,
             watchdog
           })
-        )
-      );
+        );
+      });
       const status = result?.status ?? 200;
       const outcome = {
         id: connectionId,
@@ -2046,6 +2079,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         resolvedModel: resolved.resolvedId,
         failoverAttempt: resolved.failover?.attempt,
         failoverTargets: resolved.failover?.targets,
+        failoverReason: resolved.failover?.reason,
         failedOver: resolved.failover?.used === true,
         target: resolved.model.selectedTarget,
         node: resolved.model.selectedNode,
@@ -2083,6 +2117,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         resolvedModel: resolved.resolvedId,
         failoverAttempt: resolved.failover?.attempt,
         failoverTargets: resolved.failover?.targets,
+        failoverReason: resolved.failover?.reason,
         failedOver: resolved.failover?.used === true,
         target: resolved.model.selectedTarget,
         node: resolved.model.selectedNode,
@@ -2185,7 +2220,6 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       },
       async (resolved, { signal, timing, progress, watchdog, hasNext }) => {
         assertPromptWithinBudget(resolved, body, { logger });
-        await ensureRuntime(resolved.model.runtime);
         watchdog.arm();
         // Normalize history so reasoning_content is OpenAI-shaped before MTPLX render.
         const normalizedRequest = prepareStructuredOutputForBackend(
@@ -2242,7 +2276,6 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         res
       },
       async ({ signal, timing, watchdog }) => {
-        await ensureRuntime(resolved.model.runtime);
         watchdog.arm();
         const upstream = await fetchUpstream({
           backend: resolved.backend,
@@ -2324,7 +2357,6 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         res
       },
       async ({ signal, timing, watchdog }) => {
-        await ensureRuntime(resolved.model.runtime);
         watchdog.arm();
         const upstream = await fetchRawUpstream({
           backend: resolved.backend,
@@ -2367,7 +2399,6 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         res
       },
       async ({ signal, timing, watchdog }) => {
-        await ensureRuntime(resolved.model.runtime);
         watchdog.arm();
         const upstream = await fetchUpstream({
           backend: resolved.backend,
@@ -2418,7 +2449,6 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         res
       },
       async ({ signal, timing, watchdog }) => {
-        await ensureRuntime(resolved.model.runtime);
         watchdog.arm();
         const upstream = await fetchUpstream({
           backend: resolved.backend,
@@ -2505,7 +2535,6 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         voiceProfile: profile?.id ?? null
       },
       async ({ signal, timing, watchdog }) => {
-        await ensureRuntime(resolved.model.runtime);
         watchdog.arm();
         const upstream = await fetchUpstream({
           backend: resolved.backend,
@@ -2584,7 +2613,6 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
           res
         },
         async ({ signal, timing, watchdog }) => {
-          await ensureRuntime(resolved.model.runtime);
           watchdog.arm();
           const upstream = await fetchRawUpstream({
             backend: resolved.backend,
@@ -2746,7 +2774,6 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
           res
         },
         async ({ signal, timing, watchdog }) => {
-          await ensureRuntime(resolved.model.runtime);
           watchdog.arm();
           const upstream = await fetchUpstream({
             backend: resolved.backend,
@@ -2803,7 +2830,6 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         res
       },
       async ({ signal, timing, watchdog }) => {
-        await ensureRuntime(resolved.model.runtime);
         watchdog.arm();
         const upstream = await fetchRawUpstream({
           backend: resolved.backend,
@@ -2830,7 +2856,6 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         res
       },
       async (resolved, { signal, timing, watchdog, hasNext }) => {
-        await ensureRuntime(resolved.model.runtime);
         watchdog.arm();
         const normalizedRequest = prepareStructuredOutputForBackend(responsesToOpenAIChat(body, resolved), resolved);
         const upstream = await fetchUpstream({
@@ -2890,7 +2915,6 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         res
       },
       async (resolved, { signal, timing, watchdog, hasNext }) => {
-        await ensureRuntime(resolved.model.runtime);
         watchdog.arm();
         const upstream = await fetchUpstream({
           backend: resolved.backend,

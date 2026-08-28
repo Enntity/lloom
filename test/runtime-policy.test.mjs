@@ -50,6 +50,25 @@ assert(
   )
 );
 
+const softKeepWarmPlan = await createRuntimePolicyPlan(
+  {
+    ...runtimePolicyConfig,
+    runtimePolicy: {
+      ...runtimePolicyConfig.runtimePolicy,
+      protectKeepWarm: false
+    }
+  },
+  {
+    requestedRuntimeId: 'big',
+    status: syntheticPolicyStatus
+  }
+);
+assert.equal(softKeepWarmPlan.admission.allowed, true);
+assert.deepEqual(
+  softKeepWarmPlan.actions.map((action) => `${action.type}:${action.runtimeId}`),
+  ['stop:warm', 'start:big']
+);
+
 const predictiveConfig = {
   runtimePolicy: {
     maxMemoryUtilization: 0.9,

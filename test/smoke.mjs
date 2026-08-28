@@ -6514,7 +6514,7 @@ if (autoBackendListened) {
       });
       assert.equal(autoResponse.status, 200);
       assert.equal((await autoResponse.json()).model, 'auto-model');
-      assert.deepEqual(autoOperations, ['slot:big-runtime', 'stop:warm-runtime', 'start:big-runtime:model-request']);
+      assert.deepEqual(autoOperations, ['stop:warm-runtime', 'start:big-runtime:model-request', 'slot:big-runtime']);
     } finally {
       await closeServer(autoApp.server);
     }

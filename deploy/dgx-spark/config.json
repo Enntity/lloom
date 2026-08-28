@@ -29,7 +29,7 @@
     "autoEvict": true,
     "maxMemoryUtilization": 0.95,
     "protectActiveRequests": true,
-    "protectKeepWarm": true,
+    "protectKeepWarm": false,
     "admissionWaitMs": 120000
   },
   "backends": {

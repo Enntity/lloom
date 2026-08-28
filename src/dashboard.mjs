@@ -1861,7 +1861,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           ? "unreachable"
           : !hasManagedRuntime
           ? liveConnections.length ? "external-processing" : "external"
-          : transitioning || (liveConnections.length ? "serving" : runtimeLoaded ? "hot" : runtimeStatus === "failed" ? "failed" : "cold");
+          : transitioning || (runtimeLoaded ? liveConnections.length ? "serving" : "hot" : runtimeStatus === "failed" ? "failed" : "cold");
         const lastActiveAt = data.last?.at || runtimeState.lastRequestedAt || null;
         const lastActiveMs = Date.parse(lastActiveAt || "");
         const agedOut = stateLabel === "cold" && (!Number.isFinite(lastActiveMs) || sampleAt - lastActiveMs > TOPOLOGY_COLD_MODEL_TTL_MS);

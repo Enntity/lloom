@@ -13,5 +13,11 @@ assert(source.includes('const beforeZoom = fitZoom * beforeManual'));
 assert(source.includes('camera.manual = nextZoom / fitZoom'));
 assert(!source.includes('class="topology-key"'));
 assert(!source.includes('aria-label="Topology legend"'));
+assert(
+  source.includes(
+    'transitioning || (runtimeLoaded ? liveConnections.length ? "serving" : "hot" : runtimeStatus === "failed" ? "failed" : "cold")'
+  )
+);
+assert(!source.includes('transitioning || (liveConnections.length ? "serving"'));
 
 console.log('dashboard status tests passed');

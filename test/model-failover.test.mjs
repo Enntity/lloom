@@ -28,8 +28,14 @@ function completion(model, content = 'ok') {
   });
 }
 
-async function createFixture({ primaryStatus = 503, runtimeStatus = 'running' } = {}) {
+async function createFixture({
+  primaryStatus = 503,
+  cloudStatus = 200,
+  runtimeStatus = 'running',
+  preserveResident = false
+} = {}) {
   const hits = { primary: 0, cloud: 0, ensures: 0 };
+  const operations = [];
   const primary = http.createServer((_req, res) => {
     hits.primary += 1;
     const body =
@@ -44,6 +50,11 @@ async function createFixture({ primaryStatus = 503, runtimeStatus = 'running' } 
     let raw = '';
     for await (const chunk of req) raw += chunk;
     const request = JSON.parse(raw || '{}');
+    if (cloudStatus !== 200) {
+      res.writeHead(cloudStatus, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: `cloud status ${cloudStatus}` } }));
+      return;
+    }
     if (request.stream === true) {
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       res.write(
@@ -69,6 +80,17 @@ async function createFixture({ primaryStatus = 503, runtimeStatus = 'running' } 
     security: { allowMissingAuth: true, apiKeys: [] },
     logging: { metricsPersistence: false },
     cluster: { routingStatusCacheMs: 0 },
+    ...(preserveResident
+      ? {
+          runtimePolicy: {
+            enabled: true,
+            autoEvict: true,
+            memoryBudgetGb: 40,
+            protectActiveRequests: true,
+            protectKeepWarm: false
+          }
+        }
+      : {}),
     defaults: { chatModel: 'stable-chat' },
     aliases: {
       'stable-chat': {
@@ -100,21 +122,37 @@ async function createFixture({ primaryStatus = 503, runtimeStatus = 'running' } 
         maxOutputTokens: 1024
       }
     ],
-    runtimes: { 'primary-runtime': { enabled: true } }
+    runtimes: {
+      'primary-runtime': { enabled: true, memoryGb: preserveResident ? 30 : 0 },
+      ...(preserveResident ? { 'resident-runtime': { enabled: true, memoryGb: 30, policy: { evictable: true } } } : {})
+    }
   };
   const runtimeManager = {
     ensure: async () => {
       hits.ensures += 1;
+      operations.push('ensure:primary-runtime');
       return { healthy: true };
     },
-    withSlot: async (_runtimeId, fn) => fn(),
+    withSlot: async (runtimeId, fn) => {
+      if (runtimeId) operations.push(`slot:${runtimeId}`);
+      return fn();
+    },
     noteRequestOutcome() {},
     async status() {
       return {
         runtimes: {
-          'primary-runtime': { status: runtimeStatus, healthy: runtimeStatus === 'running' }
+          'primary-runtime': { status: runtimeStatus, healthy: runtimeStatus === 'running' },
+          ...(preserveResident ? { 'resident-runtime': { status: 'running', healthy: true, activeRequests: 0 } } : {})
         }
       };
+    },
+    async stop(runtimeId) {
+      operations.push(`stop:${runtimeId}`);
+      return { runtimeId, stopped: true };
+    },
+    async start(runtimeId) {
+      operations.push(`start:${runtimeId}`);
+      return { runtimeId, started: true };
     }
   };
   const logs = [];
@@ -132,6 +170,7 @@ async function createFixture({ primaryStatus = 503, runtimeStatus = 'running' } 
     app,
     hits,
     logs,
+    operations,
     url: `http://127.0.0.1:${gatewayPort}`,
     async close() {
       await close(app.server);
@@ -212,7 +251,54 @@ async function chat(url, body = {}) {
   assert.equal(recent[0].status, 503);
   assert.equal(recent[1].resolvedModel, 'cloud-chat');
   assert.equal(recent[1].failedOver, true);
+  assert.deepEqual(fixture.operations.slice(0, 2), ['ensure:primary-runtime', 'slot:primary-runtime']);
   assert(fixture.logs.some((line) => line.includes('stable-chat -> cloud-chat')));
+  await fixture.close();
+}
+
+// A cold primary with an available fallback does not evict an unrelated
+// resident runtime just to satisfy the local-first preference.
+{
+  const fixture = await createFixture({
+    primaryStatus: 200,
+    runtimeStatus: 'stopped',
+    preserveResident: true
+  });
+  const response = await chat(fixture.url);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.choices[0].message.content, 'cloud');
+  assert.deepEqual(fixture.hits, { primary: 0, cloud: 1, ensures: 0 });
+  assert.deepEqual(fixture.operations, []);
+  const recent = fixture.app.metrics.snapshot().recent;
+  assert.equal(recent[0].resolvedModel, 'cloud-chat');
+  assert.equal(recent[0].failoverAttempt, 1);
+  assert.equal(recent[0].failoverReason, 'preserve-residency');
+  assert.equal(recent[0].failedOver, true);
+  await fixture.close();
+}
+
+// Provider-specific payment/capacity failure is an availability failure: if
+// the cloud shortcut cannot serve, LLooM returns to the local primary and
+// performs the previously deferred admission as the last resort.
+{
+  const fixture = await createFixture({
+    primaryStatus: 200,
+    cloudStatus: 402,
+    runtimeStatus: 'stopped',
+    preserveResident: true
+  });
+  const response = await chat(fixture.url);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.choices[0].message.content, 'local');
+  assert.deepEqual(fixture.hits, { primary: 1, cloud: 1, ensures: 0 });
+  assert.deepEqual(fixture.operations, ['stop:resident-runtime', 'start:primary-runtime', 'slot:primary-runtime']);
+  const recent = fixture.app.metrics.snapshot().recent;
+  assert.equal(recent[0].resolvedModel, 'cloud-chat');
+  assert.equal(recent[0].status, 402);
+  assert.equal(recent[1].resolvedModel, 'stable-chat');
+  assert.equal(recent[1].failoverAttempt, 2);
   await fixture.close();
 }
 

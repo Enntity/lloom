@@ -75,7 +75,7 @@ function policyConfig(config, profile = {}) {
     memoryBudgetGb,
     maxMemoryUtilization,
     protectActiveRequests: policy.protectActiveRequests !== false,
-    protectKeepWarm: true
+    protectKeepWarm: policy.protectKeepWarm !== false
   };
 }
 
@@ -129,8 +129,10 @@ function protectedReasons(row, policy) {
   if (row.requested) reasons.push('requested');
   if (!row.evictable) reasons.push('pinned');
   if (policy.protectActiveRequests && row.activeRequests > 0) reasons.push('active-requests');
-  // keepWarm is a hard pin: request-time admission may never evict it.
-  if (row.keepWarm) reasons.push('keep-warm');
+  // keepWarm is a desired residency state. Deployments may protect that
+  // preference during request-time admission, but policy.evictable=false is
+  // the only unconditional pin.
+  if (policy.protectKeepWarm && row.keepWarm) reasons.push('keep-warm');
   return reasons;
 }
 
@@ -245,7 +247,7 @@ function clusterRuntimePolicyPlan(config, { requestedRuntimeId, profile, status,
     enabled: policyTemplate.enabled !== false,
     autoEvict: policyTemplate.autoEvict === true,
     protectActiveRequests: policyTemplate.protectActiveRequests !== false,
-    protectKeepWarm: true,
+    protectKeepWarm: policyTemplate.protectKeepWarm !== false,
     clustered: true
   };
   const candidates = rows
