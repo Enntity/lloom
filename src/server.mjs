@@ -1732,12 +1732,16 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       .catch(() => {})
       .then(async () => {
         const nextConfig = await loadConfig(configPath);
+        // Model discovery is control-plane state and must not wait behind a
+        // multi-hour model drain, image pull, or distributed cold start. Adopt
+        // the validated on-disk catalog immediately while runtimeManager
+        // reconciles physical processes against its previous snapshot.
+        registry = createRegistry(nextConfig);
         const result = await runtimeManager.reconfigure(nextConfig);
         for (const key of Object.keys(config)) delete config[key];
         Object.assign(config, nextConfig);
         clusterCoordinator.reconfigure(config);
         routingStatusCache = { at: 0, value: null, pending: null };
-        registry = createRegistry(config);
         logger.info?.(`reloaded LLooM config; changed runtimes: ${result.changed.join(', ') || 'none'}`);
       })
       .catch((error) => logger.error?.(`LLooM config reload failed: ${error?.message ?? error}`));

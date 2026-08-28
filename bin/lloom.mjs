@@ -1499,7 +1499,27 @@ async function main() {
                 ...options,
                 dryRun: false,
                 yes,
-                start
+                start,
+                ...(start && clusterConfigured(config)
+                  ? {
+                      startKeepWarm: async (appliedConfig) => {
+                        const startupTimeoutMs = Math.max(
+                          1_800_000,
+                          ...Object.values(appliedConfig.runtimes ?? {})
+                            .filter((runtime) => runtime.keepWarm === true)
+                            .map((runtime) => Number(runtime.startupTimeoutMs ?? 0) + 60_000)
+                        );
+                        const result = await gatewayRequest(appliedConfig, '/gateway/runtimes/keep-warm', {
+                          method: 'POST',
+                          body: {},
+                          timeoutMs: startupTimeoutMs
+                        });
+                        if (!result)
+                          throw new Error(`cluster setup start failed through ${gatewayUrlFor(appliedConfig)}`);
+                        return result;
+                      }
+                    }
+                  : {})
               })
             : await createSetupPlan(config, options),
           null,

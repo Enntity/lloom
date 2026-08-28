@@ -4119,6 +4119,30 @@ assert.equal(failingSetup.ok, false);
 assert.equal(failingSetup.status, 'failed');
 assert.equal(failingSetup.phases.bootstrap.recipe.blocked, true);
 assert.equal(failingSetup.phases.bootstrap.integrations.blocked, true);
+
+let blockedSetupStartCalled = false;
+await applySetup(config, {
+  recipeId: 'failing-bootstrap-recipe',
+  recipeDocuments: [failingRecipe],
+  recipesRoot: path.join(tempDir, 'missing-failing-setup-start-recipes'),
+  backendCatalogPath: failingBackendCatalogPath,
+  configPath: path.join(tempDir, 'failing-setup-start-config.json'),
+  modelRoot: '/models',
+  clientId: 'omp',
+  dryRun: false,
+  yes: true,
+  start: true,
+  startKeepWarm: async () => {
+    blockedSetupStartCalled = true;
+    return [];
+  },
+  statePath: path.join(tempDir, 'failing-setup-start-state.json'),
+  home: tempDir,
+  generatedRoot: path.join(tempDir, 'failing-setup-start-generated'),
+  backendVariables: setupBackendVariables
+});
+assert.equal(blockedSetupStartCalled, false, 'setup must not start runtimes after bootstrap fails');
+
 const setupPlan = await createSetupPlan(config, {
   recipeId: 'apple-silicon-qwen36',
   configPath: path.join(tempDir, 'setup-config.json'),

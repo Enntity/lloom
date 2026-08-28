@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
 import http from 'node:http';
 import net from 'node:net';
+import os from 'node:os';
+import path from 'node:path';
 import { createLloomServer, estimateRequestPromptTokens, retryRuntimeActionAfterConfigReload } from '../src/server.mjs';
 
 function listen(server) {
@@ -434,6 +437,62 @@ function close(server) {
 }
 
 console.log('server-resilience tests passed');
+
+// A validated catalog reload is visible immediately even when physical runtime
+// reconciliation is still blocked on a long distributed lifecycle operation.
+{
+  const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'lloom-catalog-reload-'));
+  const configPath = path.join(temporaryRoot, 'config.json');
+  let finishReconfigure;
+  const reconfigureBlocked = new Promise((resolve) => {
+    finishReconfigure = resolve;
+  });
+  const runtimeManager = {
+    clusterCoordinator: null,
+    startKeepWarm: async () => {},
+    stopAll: async () => {},
+    reconfigure: async () => {
+      await reconfigureBlocked;
+      return { changed: [] };
+    }
+  };
+  const base = {
+    server: { host: '127.0.0.1', port: 8100 },
+    security: { allowMissingAuth: true, apiKeys: [] },
+    defaults: {},
+    backends: { test: { type: 'openai', baseUrl: 'http://127.0.0.1:9/v1' } },
+    models: [{ id: 'old-model', backend: 'test', upstreamModel: 'old-model' }],
+    runtimes: {}
+  };
+  await fs.writeFile(configPath, `${JSON.stringify(base, null, 2)}\n`);
+  const liveConfig = { ...structuredClone(base), sourcePath: configPath };
+  liveConfig.server.port = 0;
+  const app = createLloomServer(liveConfig, { runtimeManager, logger: { error() {}, warn() {}, info() {} } });
+  await app.listen();
+  const port = app.server.address().port;
+  const next = {
+    ...base,
+    models: [
+      ...base.models,
+      { id: 'new-model', backend: 'test', upstreamModel: 'new-model' }
+    ]
+  };
+  await fs.writeFile(configPath, `${JSON.stringify(next, null, 2)}\n`);
+
+  let advertised = [];
+  const deadline = Date.now() + 4000;
+  while (Date.now() < deadline) {
+    const response = await fetch(`http://127.0.0.1:${port}/gateway/models`);
+    const payload = await response.json();
+    advertised = (payload.models ?? []).map((model) => model.id);
+    if (advertised.includes('new-model')) break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert(advertised.includes('new-model'), 'catalog reload must not wait for runtime reconciliation');
+  finishReconfigure();
+  await app.close({ stopRuntimes: false });
+  await fs.rm(temporaryRoot, { recursive: true, force: true });
+}
 
 // Gateway shutdown can leave managed runtimes alive for a fast service upgrade.
 {

@@ -163,7 +163,16 @@ export async function createSetupPlan(
 
 export async function applySetup(
   config,
-  { dryRun = true, yes = false, start = false, statePath, onProgress, stdio, ...options } = {}
+  {
+    dryRun = true,
+    yes = false,
+    start = false,
+    startKeepWarm,
+    statePath,
+    onProgress,
+    stdio,
+    ...options
+  } = {}
 ) {
   if (!dryRun && !yes) {
     throw new Error('Refusing to run setup without yes=true. Re-run with --yes after reviewing the dry-run plan.');
@@ -202,9 +211,11 @@ export async function applySetup(
   });
   const runtimeStart =
     start && bootstrap.ok
-      ? await new RuntimeManager(appliedConfig, {
-          captureOutput: false
-        }).startKeepWarm()
+      ? typeof startKeepWarm === 'function'
+        ? await startKeepWarm(appliedConfig)
+        : await new RuntimeManager(appliedConfig, {
+            captureOutput: false
+          }).startKeepWarm()
       : null;
 
   return {
