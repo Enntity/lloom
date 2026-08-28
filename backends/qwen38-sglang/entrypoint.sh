@@ -18,6 +18,17 @@ unset SGLANG_PORT
 
 python3 /opt/lloom/apply-sm121-patches.py
 
+speculative_args=()
+if [[ "${ENABLE_SPECULATIVE:-0}" == "1" ]]; then
+  speculative_args=(
+    --speculative-algorithm NEXTN
+    --speculative-num-steps "${SPECULATIVE_NUM_STEPS:-3}"
+    --speculative-eagle-topk 1
+    --speculative-num-draft-tokens "${SPECULATIVE_NUM_DRAFT_TOKENS:-4}"
+    --enable-linear-replayssm-spec
+  )
+fi
+
 if [[ -z "${NCCL_IB_HCA:-}" ]]; then
   for hca_path in /sys/class/infiniband/*; do
     [[ -d "${hca_path}/device/net/${FABRIC_INTERFACE}" ]] || continue
@@ -54,11 +65,7 @@ exec python3 -m sglang.launch_server \
   --max-running-requests "${MAX_RUNNING_REQUESTS:-6}" \
   --max-total-tokens "${MAX_TOTAL_TOKENS:-627648}" \
   --context-length "${CONTEXT_LENGTH:-262144}" \
-  --speculative-algorithm NEXTN \
-  --speculative-num-steps "${SPECULATIVE_NUM_STEPS:-3}" \
-  --speculative-eagle-topk 1 \
-  --speculative-num-draft-tokens "${SPECULATIVE_NUM_DRAFT_TOKENS:-4}" \
-  --enable-linear-replayssm-spec \
+  "${speculative_args[@]}" \
   --reasoning-parser auto \
   --tool-call-parser auto \
   --enable-custom-logit-processor \

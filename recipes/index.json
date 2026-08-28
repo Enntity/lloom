@@ -239,7 +239,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang",
       "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang.json",
-      "currentVersion": 6,
+      "currentVersion": 7,
       "versions": [
         {
           "version": 1,
@@ -278,14 +278,21 @@
         },
         {
           "version": 6,
+          "path": "archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang/v6.json",
+          "status": "archived",
+          "archivedAt": "2026-08-28T23:30:00.000Z",
+          "notes": "Adds request-level graduated thinking budgets with Qwen3.8-correct token IDs while retaining MTP decode for live semantic validation."
+        },
+        {
+          "version": 7,
           "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang.json",
           "status": "current",
-          "notes": "Adds request-level graduated thinking budgets with Qwen3.8-correct token IDs while retaining MTP decode for live semantic validation."
+          "notes": "Disables generic NEXTN by default because its EAGLE verification bypasses SGLang custom thinking-budget processors; retains an explicit opt-in switch for future serving work."
         }
       ],
       "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 SGLang",
-      "summary": "On-demand LLooM-managed Qwen3.8 Flash Next TP=2 with SM121 QSA kernels, NVFP4 KV, MTP4 CUDA graphs, native 262K context, and sidecar headroom.",
-      "tags": ["linux", "nvidia", "dgx-spark", "cluster", "qwen3.8", "flash-next", "nvfp4", "sglang", "mtp", "qsa", "sidecars"],
+      "summary": "On-demand LLooM-managed Qwen3.8 Flash Next TP=2 with enforceable thinking budgets, SM121 QSA kernels, NVFP4 KV, native 262K context, and sidecar headroom.",
+      "tags": ["linux", "nvidia", "dgx-spark", "cluster", "qwen3.8", "flash-next", "nvfp4", "sglang", "qsa", "sidecars"],
       "recommendedFor": ["Two directly connected DGX Sparks serving Qwen3.8 Flash Next alongside LLooM sidecars"],
       "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "tools", "reasoning", "vision", "long-context"],
       "source": { "type": "local", "url": "recipes/linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang.json" }

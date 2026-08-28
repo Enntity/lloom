@@ -14,9 +14,11 @@ assert.equal(recipe.backend.id, 'docker-sglang');
 assert.equal(recipe.models[0].gatewayModel, 'qwen3.8-flash-next');
 assert.equal(recipe.models[0].settings.contextWindow, 262144);
 assert.equal(recipe.models[0].settings.maxActiveRequests, 6);
-assert.equal(recipe.version, 6);
+assert.equal(recipe.version, 7);
 assert.equal(recipe.models[0].settings.memoryGb, 80);
 assert.equal(recipe.models[0].settings.keepWarm, false);
+assert.equal(recipe.capabilities.includes('mtp'), false);
+assert.equal(recipe.models[0].capabilities.includes('mtp'), false);
 
 const dockerSglang = getBackend(await loadBackendCatalog(), 'docker-sglang');
 assert(dockerSglang, 'docker-sglang backend must be packaged');
@@ -46,6 +48,7 @@ for (const member of members) {
   assert.doesNotMatch(rendered, /SGLANG_PORT=/);
   assert.match(rendered, /MEM_FRACTION_STATIC=0\.80/);
   assert.match(rendered, /SGLANG_ENABLE_TP_MEMORY_INBALANCE_CHECK=0/);
+  assert.match(rendered, /ENABLE_SPECULATIVE=0/);
   assert.match(rendered, /backends\/qwen38-sglang\/qsa_nvfp4_kv\.py/);
   assert.deepEqual(bootstrap.command, ['/opt/lloom/entrypoint.sh']);
 }
@@ -58,6 +61,7 @@ for (const expected of [
   '--port "${api_port}"',
   '--max-total-tokens "${MAX_TOTAL_TOKENS:-627648}"',
   '--mamba-ssm-dtype float32',
+  'if [[ "${ENABLE_SPECULATIVE:-0}" == "1" ]]',
   '--enable-linear-replayssm-spec',
   '--enable-custom-logit-processor',
   '--cuda-graph-bs-decode 1 2 3 4 5 6'
@@ -96,5 +100,6 @@ await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x
 await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v3.json'));
 await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v4.json'));
 await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v5.json'));
+await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v6.json'));
 
 console.log('qwen38 sglang recipe tests passed');
