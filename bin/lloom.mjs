@@ -1023,9 +1023,7 @@ async function gatewayHealth(config) {
 }
 
 function gatewayAdminHeaders(config) {
-  const key = resolveManagedEnvironmentValue(
-    config.security?.adminApiKeys?.[0] ?? config.security?.apiKeys?.[0]
-  );
+  const key = resolveManagedEnvironmentValue(config.security?.adminApiKeys?.[0] ?? config.security?.apiKeys?.[0]);
   return key ? { authorization: `Bearer ${key}` } : {};
 }
 

@@ -472,10 +472,7 @@ console.log('server-resilience tests passed');
   const port = app.server.address().port;
   const next = {
     ...base,
-    models: [
-      ...base.models,
-      { id: 'new-model', backend: 'test', upstreamModel: 'new-model' }
-    ]
+    models: [...base.models, { id: 'new-model', backend: 'test', upstreamModel: 'new-model' }]
   };
   await fs.writeFile(configPath, `${JSON.stringify(next, null, 2)}\n`);
 

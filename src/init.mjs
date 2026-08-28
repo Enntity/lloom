@@ -569,9 +569,7 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
       if (!configuredNodes[leaderNode])
         throw new Error(`cluster leader ${leaderNode} is not declared in cluster.nodes`);
       const nonLeaderNodes = nodeIds.filter((nodeId) => nodeId !== leaderNode);
-      const labeledWorkerNodes = nonLeaderNodes.filter(
-        (nodeId) => configuredNodes[nodeId]?.labels?.role === 'worker'
-      );
+      const labeledWorkerNodes = nonLeaderNodes.filter((nodeId) => configuredNodes[nodeId]?.labels?.role === 'worker');
       const workerNodes = labeledWorkerNodes.length ? labeledWorkerNodes : nonLeaderNodes;
       const members = [];
       const modelPath = modelPathForRecipeModel(recipeModel, backendId, modelRoot);

@@ -217,8 +217,7 @@ export async function applySetup(
     dryRun: false,
     yes
   });
-  const clusterSync =
-    bootstrap.ok && typeof afterApply === 'function' ? await afterApply(appliedConfig, plan) : null;
+  const clusterSync = bootstrap.ok && typeof afterApply === 'function' ? await afterApply(appliedConfig, plan) : null;
   const runtimeStart =
     start && bootstrap.ok
       ? typeof startKeepWarm === 'function'
