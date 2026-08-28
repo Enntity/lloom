@@ -2,6 +2,7 @@ import { createBootstrapPlan, applyBootstrap } from './bootstrap.mjs';
 import { defaultBackendVariables } from './backend-catalog.mjs';
 import { createInitPlan, applyInit } from './init.mjs';
 import { RuntimeManager } from './runtime-manager.mjs';
+import { runCommand } from './process-control.mjs';
 
 function shellArg(value) {
   return `'${String(value).replace(/'/g, "'\\''")}'`;
@@ -174,6 +175,7 @@ export async function applySetup(
     yes = false,
     start = false,
     startKeepWarm,
+    afterApply,
     statePath,
     onProgress,
     stdio,
@@ -215,6 +217,8 @@ export async function applySetup(
     dryRun: false,
     yes
   });
+  const clusterSync =
+    bootstrap.ok && typeof afterApply === 'function' ? await afterApply(appliedConfig, plan) : null;
   const runtimeStart =
     start && bootstrap.ok
       ? typeof startKeepWarm === 'function'
@@ -231,8 +235,88 @@ export async function applySetup(
     status: bootstrap.ok ? (runtimeStart ? 'started' : 'applied') : bootstrap.status,
     phases: {
       init,
-      bootstrap
+      bootstrap,
+      ...(clusterSync ? { clusterSync } : {})
     },
     runtimeStart
   };
+}
+
+export async function syncClusterSetupMembers(
+  config,
+  {
+    coordinator,
+    recipeId,
+    additive = false,
+    restoreCatalog = false,
+    clientId = 'all',
+    modelRoot,
+    generatedRoot,
+    statePath,
+    recipesRoot,
+    benchmarksRoot,
+    backendCatalogPath,
+    timeoutMs = 1_800_000
+  } = {}
+) {
+  if (!coordinator || coordinator.nodeId !== config.cluster?.leaderNode) return { synced: [], skipped: true };
+  const remoteNodeIds = [
+    ...new Set(
+      Object.values(config.runtimes ?? {})
+        .filter((runtime) => runtime?.recipe?.id === recipeId && runtime?.placement?.mode === 'distributed')
+        .flatMap((runtime) => runtime.placement.members ?? [])
+        .map((member) => member?.node)
+        .filter((nodeId) => nodeId && !coordinator.isLocalNode(nodeId))
+    )
+  ];
+  const synced = [];
+  for (const nodeId of remoteNodeIds) {
+    const body = {
+      recipeId,
+      additive,
+      restoreCatalog,
+      clientId,
+      yes: true,
+      start: false,
+      ...(modelRoot ? { modelRoot } : {}),
+      ...(generatedRoot ? { generatedRoot } : {}),
+      ...(statePath ? { statePath } : {}),
+      ...(recipesRoot ? { recipesRoot } : {}),
+      ...(benchmarksRoot ? { benchmarksRoot } : {}),
+      ...(backendCatalogPath ? { backendCatalogPath } : {})
+    };
+    const node = coordinator.nodes[nodeId];
+    let result;
+    if (node?.sshAlias) {
+      const remoteCommand = `PATH="$HOME/.local/bin:/usr/bin:/bin" ${setupCommand({
+        recipeId,
+        modelRoot,
+        clientId,
+        generatedRoot,
+        statePath,
+        recipesRoot,
+        benchmarksRoot,
+        backendCatalogPath,
+        additive,
+        restoreCatalog,
+        apply: true,
+        start: false
+      })} --json`;
+      const executed = await runCommand('ssh', [node.sshAlias, remoteCommand]);
+      try {
+        result = JSON.parse(executed.stdout);
+      } catch {
+        throw new Error(`cluster setup on ${nodeId} returned invalid JSON: ${executed.stdout || executed.stderr}`);
+      }
+    } else {
+      result = await coordinator.requestNode(nodeId, '/gateway/setup/apply', {
+        method: 'POST',
+        timeoutMs,
+        body
+      });
+    }
+    if (result?.ok === false) throw new Error(`cluster setup failed on ${nodeId}`);
+    synced.push({ nodeId, ok: result?.ok !== false, status: result?.status ?? 'applied' });
+  }
+  return { synced, skipped: false };
 }

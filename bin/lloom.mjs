@@ -39,6 +39,7 @@ import { loadConfig } from '../src/config.mjs';
 import { runtimeControlTimeoutMs } from '../src/control-timeout.mjs';
 import { createDoctorReport } from '../src/doctor.mjs';
 import {
+  ClusterCoordinator,
   currentNodeId,
   detectNvidiaSyncCluster,
   federatedNodeConfigFromSnapshot,
@@ -62,7 +63,7 @@ import { RuntimeManager } from '../src/runtime-manager.mjs';
 import { runCommand } from '../src/process-control.mjs';
 import { applyRuntimePolicyPlan, createRuntimePolicyPlan } from '../src/runtime-policy.mjs';
 import { createLloomServer } from '../src/server.mjs';
-import { applySetup, createSetupPlan } from '../src/setup.mjs';
+import { applySetup, createSetupPlan, syncClusterSetupMembers } from '../src/setup.mjs';
 import { createSetupStatus } from '../src/setup-status.mjs';
 import {
   defaultVoicesRoot,
@@ -1504,6 +1505,24 @@ async function main() {
                 dryRun: false,
                 yes,
                 start,
+                ...(clusterConfigured(config)
+                  ? {
+                      afterApply: (appliedConfig, plan) =>
+                        syncClusterSetupMembers(appliedConfig, {
+                          coordinator: new ClusterCoordinator(appliedConfig),
+                          recipeId: plan.selectedRecipe.id,
+                          additive,
+                          restoreCatalog,
+                          clientId,
+                          modelRoot: plan.modelRoot,
+                          generatedRoot,
+                          statePath,
+                          recipesRoot: options.recipesRoot,
+                          benchmarksRoot: options.benchmarksRoot,
+                          backendCatalogPath: options.backendCatalogPath
+                        })
+                    }
+                  : {}),
                 ...(start && clusterConfigured(config)
                   ? {
                       startKeepWarm: async (appliedConfig) => {

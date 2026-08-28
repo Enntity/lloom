@@ -1523,6 +1523,8 @@ function setupOptionsFromBody(config, body = {}) {
     recipesRoot: body.recipesRoot ?? body.recipes_root,
     benchmarksRoot: body.benchmarksRoot ?? body.benchmarks_root,
     statePath: body.statePath ?? body.state_path,
+    additive: body.additive === true,
+    restoreCatalog: body.restoreCatalog === true || body.restore_catalog === true,
     start: body.start === true,
     offline: body.offline === true,
     includeRuntimes: body.includeRuntimes ?? body.include_runtimes

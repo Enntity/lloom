@@ -18,6 +18,7 @@ import {
   RuntimeManager,
   shouldRecreateDockerContainer
 } from '../src/runtime-manager.mjs';
+import { syncClusterSetupMembers } from '../src/setup.mjs';
 
 const syncPeers = parseNvidiaSyncSshConfig(`
 Host ennspark02-lan
@@ -155,6 +156,55 @@ longStartCoordinator.requestNode = async (...args) => {
 };
 await longStartCoordinator.runtimeAction('worker', 'worker', 'start');
 assert.equal(longStartTimeoutCalls[0][2].timeoutMs, 7_260_000);
+
+const clusterSetupCalls = [];
+const clusterSetupConfig = {
+  cluster: { nodeId: 'leader', leaderNode: 'leader' },
+  runtimes: {
+    qwen: {
+      recipe: { id: 'qwen-recipe', version: 4 },
+      placement: {
+        mode: 'distributed',
+        members: [
+          { node: 'worker', runtime: 'qwen-worker' },
+          { node: 'leader', runtime: 'qwen-head' }
+        ]
+      }
+    }
+  }
+};
+const clusterSetupCoordinator = {
+  nodeId: 'leader',
+  nodes: { leader: {}, worker: {}, macbook: {} },
+  isLocalNode(nodeId) {
+    return nodeId === 'leader';
+  },
+  async requestNode(...args) {
+    clusterSetupCalls.push(args);
+    return { ok: true, status: 'applied' };
+  }
+};
+assert.deepEqual(
+  await syncClusterSetupMembers(clusterSetupConfig, {
+    coordinator: clusterSetupCoordinator,
+    recipeId: 'qwen-recipe',
+    additive: true,
+    restoreCatalog: true,
+    modelRoot: '/models'
+  }),
+  { synced: [{ nodeId: 'worker', ok: true, status: 'applied' }], skipped: false }
+);
+assert.equal(clusterSetupCalls[0][0], 'worker');
+assert.equal(clusterSetupCalls[0][1], '/gateway/setup/apply');
+assert.deepEqual(clusterSetupCalls[0][2].body, {
+  recipeId: 'qwen-recipe',
+  additive: true,
+  restoreCatalog: true,
+  clientId: 'all',
+  yes: true,
+  start: false,
+  modelRoot: '/models'
+});
 const local = await coordinator.localNodeStatus({ runtimeStatus: { runtimes: {} } });
 assert.equal(local.system.platform, process.platform);
 assert.equal(local.profile.platformId, 'linux-arm64');
