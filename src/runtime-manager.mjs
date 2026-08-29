@@ -7,7 +7,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { defaultShimDirFor } from './backend-catalog.mjs';
-import { currentNodeId, runtimePlacement, runtimeResourcesByNode } from './cluster.mjs';
+import {
+  currentNodeId,
+  runtimeAuthority,
+  runtimeControlAllowed,
+  runtimePlacement,
+  runtimeResourcesByNode
+} from './cluster.mjs';
 import { cleanupPortListener, terminateProcessTree } from './process-control.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -37,7 +43,22 @@ const LLAMA_CPP_SESSION_CACHE_FLAGS = new Set([
   '--slot-save-path'
 ]);
 
-function compactRuntime(runtimeId, runtime) {
+export class RuntimeAuthorityError extends Error {
+  constructor(runtimeId, authority, requesterNode) {
+    super(
+      `runtime ${runtimeId} is controlled by ${authority?.owner ?? 'another node'}; requester ${requesterNode ?? 'unknown'} is not authorized`
+    );
+    this.name = 'RuntimeAuthorityError';
+    this.code = 'RUNTIME_AUTHORITY_FORBIDDEN';
+    this.type = 'runtime_authority_error';
+    this.statusCode = 403;
+    this.runtimeId = runtimeId;
+    this.authority = authority ?? null;
+    this.requesterNode = requesterNode ?? null;
+  }
+}
+
+function compactRuntime(runtimeId, runtime, config) {
   if (!runtime) return null;
   return {
     enabled: runtime.enabled === true,
@@ -65,7 +86,8 @@ function compactRuntime(runtimeId, runtime) {
       : null,
     cachePersistence: runtimeCacheCapability(runtime),
     node: runtime.node ?? runtime.placement?.node ?? null,
-    placement: runtime.placement ?? null
+    placement: runtime.placement ?? null,
+    authority: runtimeAuthority(config, runtimeId)
   };
 }
 
@@ -137,9 +159,7 @@ export function keepWarmOwnership(config, runtimeId, { nodeId, leaderNode } = {}
   const selectedNodeId = nodeId ?? currentNodeId(config);
   const selectedLeaderNode = leaderNode ?? config.cluster?.leaderNode ?? selectedNodeId;
   const distributedMemberIds = new Set(
-    Object.values(config.runtimes ?? {}).flatMap((candidate) =>
-      candidate?.enabled === true && candidate?.keepWarm === true ? distributedMembers(candidate) : []
-    )
+    Object.values(config.runtimes ?? {}).flatMap((candidate) => distributedMembers(candidate))
   );
   if (distributedMemberIds.has(runtimeId)) {
     return { owned: false, reason: 'distributed-runtime-owned' };
@@ -595,6 +615,18 @@ export class RuntimeManager {
     return this.config.runtimes?.[runtimeId] ?? null;
   }
 
+  requesterNode(requestedBy) {
+    return requestedBy ?? this.clusterCoordinator?.nodeId ?? currentNodeId(this.config);
+  }
+
+  assertRuntimeControl(runtimeId, requestedBy) {
+    const requesterNode = this.requesterNode(requestedBy);
+    if (!runtimeControlAllowed(this.config, runtimeId, requesterNode)) {
+      throw new RuntimeAuthorityError(runtimeId, runtimeAuthority(this.config, runtimeId), requesterNode);
+    }
+    return requesterNode;
+  }
+
   keepWarmRuntimeIds() {
     return Object.entries(this.config.runtimes ?? {})
       .filter(([, runtime]) => runtime.keepWarm === true)
@@ -769,7 +801,7 @@ export class RuntimeManager {
               lastIdleAt: gatewayState.lastIdleAt ?? remote.lastIdleAt
             }
           : {
-              ...compactRuntime(runtimeId, runtime),
+              ...compactRuntime(runtimeId, runtime, this.config),
               node: nodeId,
               remote: true,
               healthy: false,
@@ -806,7 +838,7 @@ export class RuntimeManager {
         status = container.status;
       }
       runtimes[runtimeId] = {
-        ...compactRuntime(runtimeId, runtime),
+        ...compactRuntime(runtimeId, runtime, this.config),
         pid: process?.pid ?? null,
         healthy,
         status,
@@ -845,7 +877,7 @@ export class RuntimeManager {
         const anyLoaded = members.some((member) => ['running', 'external', 'starting'].includes(member.status));
         const transitionalStatus = ['queued', 'draining', 'stopping'].includes(state.status) ? state.status : null;
         runtimes[runtimeId] = {
-          ...compactRuntime(runtimeId, runtime),
+          ...compactRuntime(runtimeId, runtime, this.config),
           node: null,
           remote: false,
           distributed: true,
@@ -893,6 +925,15 @@ export class RuntimeManager {
     if (!runtimeId) return { runtimeId, action: 'ignored', reason: 'no-runtime' };
     const runtime = this.getRuntime(runtimeId);
     if (!runtime) return { runtimeId, action: 'ignored', reason: 'unknown-runtime' };
+    const requesterNode = this.requesterNode();
+    if (!runtimeControlAllowed(this.config, runtimeId, requesterNode)) {
+      return {
+        runtimeId,
+        action: 'ignored',
+        reason: 'authority-owned',
+        authority: runtimeAuthority(this.config, runtimeId)
+      };
+    }
     const classification = classifyRuntimeWatchdogOutcome(runtime, outcome);
     if (classification.kind === 'disabled') {
       return { runtimeId, action: 'ignored', reason: 'watchdog-disabled' };
@@ -1062,8 +1103,9 @@ export class RuntimeManager {
     state.queuedRequests = queue.length;
   }
 
-  async drainRuntime(runtimeId, { timeoutMs = 300000 } = {}) {
-    this.pauseRuntime(runtimeId, 'eviction');
+  async drainRuntime(runtimeId, { timeoutMs = 300000, requestedBy } = {}) {
+    const requesterNode = this.assertRuntimeControl(runtimeId, requestedBy);
+    this.pauseRuntime(runtimeId, 'eviction', { requestedBy: requesterNode });
     const deadline = Date.now() + timeoutMs;
     const state = this.stateFor(runtimeId);
     while (state.activeRequests > 0) {
@@ -1072,7 +1114,8 @@ export class RuntimeManager {
     }
   }
 
-  pauseRuntime(runtimeId, reason = 'capacity-reallocation') {
+  pauseRuntime(runtimeId, reason = 'capacity-reallocation', { requestedBy } = {}) {
+    this.assertRuntimeControl(runtimeId, requestedBy);
     this.pausedRuntimes.add(runtimeId);
     this.setStatus(runtimeId, 'draining', reason);
   }
@@ -1186,33 +1229,43 @@ export class RuntimeManager {
     });
   }
 
-  async admit(runtimeId, { config = this.config, force = false, warmup = true, reason = 'runtime-admission' } = {}) {
+  async admit(
+    runtimeId,
+    { config = this.config, force = false, warmup = true, reason = 'runtime-admission', requestedBy } = {}
+  ) {
     const { applyRuntimePolicyPlan } = await import('./runtime-policy.mjs');
+    const requesterNode = this.assertRuntimeControl(runtimeId, requestedBy);
     return applyRuntimePolicyPlan(config, this, {
       requestedRuntimeId: runtimeId,
       dryRun: false,
       yes: true,
       warmup,
       force,
-      reason
+      reason,
+      requesterNode
     });
   }
 
-  async start(runtimeId, { force = false, warmup = true, reason = 'manual-start' } = {}) {
+  async start(runtimeId, { force = false, warmup = true, reason = 'manual-start', requestedBy } = {}) {
+    const requesterNode = runtimeId
+      ? this.assertRuntimeControl(runtimeId, requestedBy)
+      : this.requesterNode(requestedBy);
     return this.withRuntimeLifecycleLock(runtimeId, (signal) =>
       this.startUnlocked(runtimeId, {
         force,
         warmup,
         reason,
+        requestedBy: requesterNode,
         signal
       })
     );
   }
 
-  async startUnlocked(runtimeId, { force = false, warmup = true, reason = 'manual-start', signal } = {}) {
+  async startUnlocked(runtimeId, { force = false, warmup = true, reason = 'manual-start', requestedBy, signal } = {}) {
     if (!runtimeId) return { runtimeId, started: false, reason: 'no-runtime' };
     const runtime = this.getRuntime(runtimeId);
     if (!runtime) return { runtimeId, started: false, reason: 'unknown-runtime' };
+    const requesterNode = this.assertRuntimeControl(runtimeId, requestedBy);
     if (reason === 'model-request' && this.reconfiguringRuntimes.has(runtimeId)) {
       const error = new Error(`runtime ${runtimeId} is reconfiguring; retry through its configured fallback`);
       error.code = 'RUNTIME_RECONFIGURING';
@@ -1251,13 +1304,18 @@ export class RuntimeManager {
             members: memberIds
           });
           for (const member of [...placement.members].sort((left, right) => right.order - left.order)) {
-            await this.stop(member.runtime).catch(() => {});
+            await this.stop(member.runtime, { requestedBy: requesterNode }).catch(() => {});
           }
         }
         signal?.throwIfAborted?.();
         for (const member of [...placement.members].sort((left, right) => left.order - right.order)) {
           signal?.throwIfAborted?.();
-          const result = await this.start(member.runtime, { force, warmup: false, reason: `${reason}:${runtimeId}` });
+          const result = await this.start(member.runtime, {
+            force,
+            warmup: false,
+            reason: `${reason}:${runtimeId}`,
+            requestedBy: requesterNode
+          });
           if (result?.healthy === false || (result?.started === false && result?.reason !== 'already-healthy')) {
             throw new Error(
               `distributed runtime ${runtimeId} member ${member.runtime} on ${member.node} did not become healthy (${result?.reason ?? 'unknown'})`
@@ -1282,7 +1340,7 @@ export class RuntimeManager {
       } catch (error) {
         for (const member of [...placement.members].sort((left, right) => right.order - left.order)) {
           this.abortRuntimeLifecycle(member.runtime, `distributed runtime ${runtimeId} startup failed`);
-          await this.stop(member.runtime).catch(() => {});
+          await this.stop(member.runtime, { requestedBy: requesterNode }).catch(() => {});
         }
         state.lastError = error?.message ?? String(error);
         this.setStatus(runtimeId, 'failed', reason);
@@ -1585,9 +1643,10 @@ export class RuntimeManager {
     return results;
   }
 
-  async stop(runtimeId) {
+  async stop(runtimeId, { requestedBy } = {}) {
+    const requesterNode = this.assertRuntimeControl(runtimeId, requestedBy);
     this.abortRuntimeTree(runtimeId, `runtime ${runtimeId} stop requested`);
-    return this.withRuntimeLifecycleLock(runtimeId, () => this.stopUnlocked(runtimeId));
+    return this.withRuntimeLifecycleLock(runtimeId, () => this.stopUnlocked(runtimeId, { requestedBy: requesterNode }));
   }
 
   async stopAll() {
@@ -1598,12 +1657,13 @@ export class RuntimeManager {
           : []
       )
     );
+    const requesterNode = this.requesterNode();
     const runtimeIds = Object.keys(this.config.runtimes ?? {}).filter(
-      (runtimeId) => !distributedMembers.has(runtimeId)
+      (runtimeId) => !distributedMembers.has(runtimeId) && runtimeControlAllowed(this.config, runtimeId, requesterNode)
     );
     const results = [];
     for (const runtimeId of runtimeIds) {
-      results.push(await this.stop(runtimeId));
+      results.push(await this.stop(runtimeId, { requestedBy: requesterNode }));
     }
     return {
       stopped: results.filter((result) => result.stopped === true).length,
@@ -1612,7 +1672,8 @@ export class RuntimeManager {
     };
   }
 
-  async stopUnlocked(runtimeId) {
+  async stopUnlocked(runtimeId, { requestedBy } = {}) {
+    const requesterNode = this.assertRuntimeControl(runtimeId, requestedBy);
     const runtime = this.getRuntime(runtimeId);
     const state = this.stateFor(runtimeId);
     const placement = runtimePlacement(runtime, this.config);
@@ -1620,7 +1681,10 @@ export class RuntimeManager {
       this.setStatus(runtimeId, 'stopping', 'stop');
       const members = [];
       for (const member of [...placement.members].sort((left, right) => right.order - left.order)) {
-        members.push({ ...member, result: await this.stop(member.runtime) });
+        members.push({
+          ...member,
+          result: await this.stop(member.runtime, { requestedBy: requesterNode })
+        });
       }
       this.setStatus(runtimeId, 'stopped');
       state.stops += 1;

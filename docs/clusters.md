@@ -1,11 +1,13 @@
 # LLooM clusters
 
-LLooM clusters keep one stable OpenAI/Anthropic-compatible client endpoint while model runtimes live on any number of nodes. Managed runtime clusters normally use the same LLooM package and config on each node. Federated labs may instead join independently configured LLooM gateways—including Apple Silicon, CUDA, ROCm, and CPU-only hosts—behind one central LLooM. `LLOOM_NODE_ID` (or `cluster.nodeId`) identifies the local node; the leader uses authenticated LLooM endpoints to inspect telemetry, route requests, and start or stop runtimes it manages.
+LLooM clusters keep one stable OpenAI/Anthropic-compatible client endpoint while each node remains a complete, locally callable LLooM. Every machine has one local config and one sovereign runtime controller. That controller owns its local models, admission decisions, and lifecycle. A federated leader proxies inference through the node's LLooM API and reads the node's advertised model, runtime, and hardware status; it does not start, stop, or connect directly to ordinary runtimes on that node.
+
+Tensor-parallel (TP) runtimes are the deliberate exception. A distributed logical model is callable only through its leader. Its physical members declare delegated lifecycle authority to that leader, allowing the leader to start, stop, restart, and reclaim only those named members. A worker's local admission, keep-warm, reload, watchdog, and stop-all paths cannot operate or evict delegated members. Delegation does not grant the leader control of any unrelated local runtime.
 
 The cluster layer supports two placement modes:
 
-- **Replicated**: one physical runtime per node. Requests prefer healthy replicas, choose the least-loaded runtime, and round-robin ties. Each replica retains its own concurrency queue and memory admission.
-- **Distributed**: one logical runtime has an ordered list of physical member runtimes across nodes. LLooM starts members in order, rolls back in reverse order after a failure, and stops them in reverse order. The backend launcher still owns engine-specific tensor/pipeline parallelism.
+- **Replicated/federated**: one complete model is hosted by each node's sovereign LLooM. The leader proxies requests to healthy node APIs, while each node retains its own concurrency queue and memory admission.
+- **Distributed**: one leader-owned logical runtime has an ordered list of explicitly delegated physical members across nodes. The leader starts members in order, rolls back in reverse order after a failure, and stops them in reverse order. The backend launcher still owns engine-specific tensor/pipeline parallelism.
 
 There is no two-node assumption. Node maps, replica targets, distributed members, topology cards, and admission plans are all arrays/maps over the recipe's declared nodes.
 
@@ -95,7 +97,7 @@ Use private fabric addresses for node-to-node LLooM and raw backend traffic. `ba
 }
 ```
 
-Deploy that same file to every Spark and set only the local environment:
+Each Spark keeps its own normal LLooM config. Shared cluster identity and node declarations may be generated from the same reviewed template, but ordinary local model entries belong to the node that serves them. Set the local identity in each node's environment:
 
 ```bash
 # spark-1
@@ -105,7 +107,7 @@ export LLOOM_NODE_ID=spark-1 LLOOM_GATEWAY_HOST=10.10.10.1
 export LLOOM_NODE_ID=spark-2 LLOOM_GATEWAY_HOST=10.10.10.2
 ```
 
-Keep `LLOOM_CLUSTER_KEY` identical on all nodes. A production firewall should allow port 8100 and backend ports only on the private fabric. Clients should use the leader LLooM URL, not worker or backend ports.
+Keep `LLOOM_CLUSTER_KEY` identical on all nodes. A production firewall should allow port 8100 and TP backend ports only on the private fabric. Clients may call a node's complete local models through that node's LLooM URL; TP logical models are advertised and callable only at the leader. Raw backend ports are never client endpoints.
 
 ## Replicated models
 
@@ -123,7 +125,7 @@ A recipe can materialize the same model on every configured node without naming 
 }
 ```
 
-Omit `placement.nodes` to use all `cluster.nodes`; set it to an explicit node-ID array for a subset, or use the `leader`, `worker`, or `workers` role selectors. During materialization LLooM creates a backend/runtime target per node, pins it to that node, rewrites its health/warmup URLs and Docker publish address to the node's private `backendHost`, and advertises one logical model ID.
+Omit `placement.nodes` to use all `cluster.nodes`; set it to an explicit node-ID array for a subset, or use the `leader`, `worker`, or `workers` role selectors. During materialization LLooM creates a local backend/runtime target per selected node. For every non-leader replica it also creates a leader-only proxy target aimed at that node's LLooM endpoint. The raw target is visible only on its owner node; the leader routes through the proxy target and never connects to or controls the remote backend directly.
 
 The equivalent explicit config is:
 
@@ -133,11 +135,14 @@ The equivalent explicit config is:
     "id": "example/Qwen",
     "targets": [
       { "id": "spark-1", "node": "spark-1", "backend": "qwen-spark-1", "runtime": "qwen-spark-1" },
-      { "id": "spark-2", "node": "spark-2", "backend": "qwen-spark-2", "runtime": "qwen-spark-2" }
+      { "id": "spark-2", "node": "spark-2", "backend": "qwen-spark-2", "runtime": "qwen-spark-2" },
+      { "id": "spark-2-proxy", "node": "spark-2", "backend": "lloom-node-spark-2", "remoteRuntime": "qwen-spark-2" }
     ]
   }]
 }
 ```
+
+On `spark-1`, the callable targets are `spark-1` and `spark-2-proxy`. On `spark-2`, only `spark-2` is callable. The proxy backend points to `spark-2`'s `/v1` API and uses the configured cluster credential.
 
 ## Distributed models
 
@@ -155,6 +160,7 @@ Explicit config remains supported:
     "dsv4-ray-head": {
       "enabled": true,
       "node": "spark-1",
+      "authority": { "owner": "spark-1", "scope": "distributed-member", "group": "dsv4flash-cluster" },
       "command": "/opt/lloom/bin/start-ray-head",
       "healthUrl": "http://10.10.10.1:8265/api/version",
       "memoryGb": 6
@@ -162,6 +168,7 @@ Explicit config remains supported:
     "dsv4-ray-worker-2": {
       "enabled": true,
       "node": "spark-2",
+      "authority": { "owner": "spark-1", "scope": "distributed-member", "group": "dsv4flash-cluster" },
       "command": "/opt/lloom/bin/start-ray-worker",
       "healthUrl": "http://10.10.10.2:8266/health",
       "memoryGb": 6
@@ -169,12 +176,14 @@ Explicit config remains supported:
     "dsv4-vllm-server": {
       "enabled": true,
       "node": "spark-1",
+      "authority": { "owner": "spark-1", "scope": "distributed-member", "group": "dsv4flash-cluster" },
       "command": "/opt/lloom/bin/start-dsv4flash-vllm",
       "healthUrl": "http://10.10.10.1:8205/health",
       "memoryGb": 54
     },
     "dsv4flash-cluster": {
       "enabled": true,
+      "authority": { "owner": "spark-1", "scope": "distributed-model", "group": "dsv4flash-cluster" },
       "healthUrl": "http://10.10.10.1:8205/health",
       "placement": {
         "mode": "distributed",
@@ -197,7 +206,7 @@ Explicit config remains supported:
 
 Launcher commands in explicit config are installation-specific. They must remain attached (or manage containers), report real health, bind only to the private fabric, and configure the vLLM/SGLang/Ray parallelism appropriate to the exact model build. LLooM coordinates lifecycle and admission; engine-specific flags live in reviewed recipes rather than being guessed at runtime.
 
-Distributed resource estimates belong on each member. Admission evaluates every node independently using live `MemAvailable` plus configured limits. A group is admitted only if it fits every node after safe, node-relevant evictions.
+Distributed resource estimates belong on each member. Admission evaluates every node independently using live `MemAvailable` plus configured limits. A group is admitted only if it fits every node after safe, node-relevant evictions. Recipe materialization writes the authority blocks automatically; explicit configs should include them for auditability. Older distributed configs derive the same leader ownership defensively during loading.
 
 ## Operations and topology
 

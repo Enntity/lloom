@@ -7,7 +7,7 @@ import {
   speechSchemaForModel,
   transcriptionSchemaForModel
 } from './tts-catalog.mjs';
-import { modelTargets } from './cluster.mjs';
+import { currentNodeId, modelTargets, runtimeAuthority } from './cluster.mjs';
 
 export class UnknownModelError extends Error {
   constructor(modelId) {
@@ -27,13 +27,48 @@ function advertised(value) {
   return value?.advertise !== false;
 }
 
+function targetVisibleHere(config, target) {
+  const localNode = currentNodeId(config);
+  if (target.remoteRuntime && target.node) {
+    return localNode === (config.cluster?.leaderNode ?? localNode) && target.node !== localNode;
+  }
+  if (!target.runtime) return true;
+  return runtimeAuthority(config, target.runtime)?.owner === localNode;
+}
+
+function availableTargets(config, model, { requireRuntimeEnabled = true } = {}) {
+  return modelTargets(model).filter(
+    (target) =>
+      targetVisibleHere(config, target) &&
+      (!requireRuntimeEnabled || !target.runtime || config.runtimes?.[target.runtime]?.enabled !== false)
+  );
+}
+
+function callableTargets(config, model) {
+  return availableTargets(config, model);
+}
+
 function runtimeEnabled(config, model) {
-  const targets = modelTargets(model);
-  return targets.some((target) => !target.runtime || config.runtimes?.[target.runtime]?.enabled !== false);
+  return callableTargets(config, model).length > 0;
 }
 
 function publiclyAvailable(config, model, { requireRuntimeEnabled = true } = {}) {
-  return advertised(model) && (!requireRuntimeEnabled || runtimeEnabled(config, model));
+  return advertised(model) && availableTargets(config, model, { requireRuntimeEnabled }).length > 0;
+}
+
+function modelAvailableHere(config, model, { requireRuntimeEnabled = true } = {}) {
+  const targets = availableTargets(config, model, { requireRuntimeEnabled });
+  if (!Array.isArray(model.targets)) return clone(model);
+  const selected = targets[0];
+  const available = {
+    ...clone(model),
+    targets: clone(targets),
+    ...(selected?.backend ? { backend: selected.backend } : {}),
+    ...(selected?.upstreamModel ? { upstreamModel: selected.upstreamModel } : {}),
+    ...(selected?.runtime ? { runtime: selected.runtime } : {})
+  };
+  if (!selected?.runtime) delete available.runtime;
+  return available;
 }
 
 function normalizeAlias(aliasId, alias) {
@@ -87,17 +122,18 @@ export function createRegistry(config) {
     for (const [aliasTargetIndex, targetId] of targetIds.entries()) {
       const model = modelMap.get(targetId);
       if (!model || !runtimeEnabled(config, model)) continue;
-      const target = modelTargets(model).find(
-        (candidate) => !candidate.runtime || config.runtimes?.[candidate.runtime]?.enabled !== false
-      );
+      const availableTargets = callableTargets(config, model);
+      const target = availableTargets[0];
       const backend = config.backends?.[target?.backend];
       if (!backend) throw new Error(`model ${model.id} references missing backend ${target?.backend ?? '(missing)'}`);
       const resolvedModel = {
         ...model,
         backend: target.backend,
         upstreamModel: target.upstreamModel ?? model.upstreamModel ?? model.id,
+        ...(Array.isArray(model.targets) ? { targets: availableTargets } : {}),
         ...(target.runtime ? { runtime: target.runtime } : {})
       };
+      if (!target.runtime) delete resolvedModel.runtime;
       candidates.push({
         requestedId,
         resolvedId: model.id,
@@ -126,7 +162,7 @@ export function createRegistry(config) {
         })
       );
     if (kinds?.length) models = models.filter((model) => kinds.includes(model.kind ?? 'chat'));
-    return models.map((model) => clone(model));
+    return models.map((model) => modelAvailableHere(config, model, { requireRuntimeEnabled }));
   }
 
   function aliasModels({ kinds, advertisedOnly = true, requireRuntimeEnabled = true } = {}) {
@@ -145,8 +181,9 @@ export function createRegistry(config) {
         );
       if (!target) continue;
       if (kinds?.length && !kinds.includes(target.kind ?? 'chat')) continue;
+      const availableTarget = modelAvailableHere(config, target, { requireRuntimeEnabled });
       entries.push({
-        ...clone(target),
+        ...availableTarget,
         id: alias.id,
         alias: true,
         aliasTarget: alias.target,

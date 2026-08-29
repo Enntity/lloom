@@ -18,6 +18,8 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Changed
 
+- Federated nodes now retain sovereign lifecycle control over ordinary local runtimes, while tensor-parallel members explicitly delegate lifecycle authority to their leader and remain non-callable on workers.
+- Runtime residency now uses `keepWarm` as the single hard pin, keeps distributed-model pins on the logical runtime, and routes ready alias alternatives without eviction or capacity queuing; embeddings remain non-evicting even when requested by exact model ID.
 - The DGX Spark `embeddings` route now prefers Spark 01, then a federated MacBook, then OpenRouter; admission-aware embedding failover tries non-evicting destinations before allowing a local runtime eviction.
 - The two-Spark GLM-5.3 Flash EXL3 recipe now tracks MiaAI `0e2e78f3`, adding padded DFlash2 KV slot-sharing, retained hybrid prefix-cache hits, speculative XGrammar termination fixes, and stdout-safe runtime overlays while preserving LLooM's measured 262K sidecar-coexistence memory budget.
 - The two-Spark DeepSeek runtime now uses a locally built, source-pinned Anemll/vLLM image with both halves of vLLM PR 51538's MTP padding fix, dual-RoCE transport, and a measured K5/greedy speculative profile. This removes the recurrent GPU-kernel stall without retaining the slower target-only safety state.

@@ -83,7 +83,7 @@ import {
   usageFromJsonText
 } from './protocol/index.mjs';
 import { assertBindAllowed, authorizeRequest, corsHeaders, securityPublicStatus } from './security.mjs';
-import { ClusterCoordinator } from './cluster.mjs';
+import { ClusterCoordinator, currentNodeId } from './cluster.mjs';
 
 const JSON_TYPE = 'application/json; charset=utf-8';
 const SSE_TYPE = 'text/event-stream; charset=utf-8';
@@ -774,6 +774,12 @@ function requestCallerLabel(req) {
   ];
   const family = families.find(([needle]) => userAgent.includes(needle))?.[1];
   return family ?? safeCallerPart(req.headers['x-stainless-lang']);
+}
+
+function runtimeRequesterNode(req, config) {
+  const header = req.headers['x-lloom-requester-node'];
+  const requester = Array.isArray(header) ? header[0] : header;
+  return String(requester ?? '').trim() || currentNodeId(config);
 }
 
 function restoreMetricBucket(target, source) {
@@ -1821,7 +1827,6 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
 
   async function resolveRequestModels(modelId) {
     const candidates = await Promise.all(registry.resolveCandidates(modelId).map(resolveRequestCandidate));
-    const hasExternalFallback = candidates.some((candidate) => !candidate.model.runtime);
     if (candidates.length <= 1) {
       return candidates.map((candidate) => ({
         ...candidate,
@@ -1832,7 +1837,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
                 targets: candidate.aliasTargetCount,
                 primaryModel: candidate.alias?.target,
                 used: candidate.aliasTargetIndex > 0,
-                externalFallbackAvailable: hasExternalFallback
+                readyAlternativeAvailable: false
               }
             }
           : {})
@@ -1896,7 +1901,9 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         targets: candidate.aliasTargetCount ?? ordered.length,
         primaryModel: candidate.alias?.target ?? candidates[0].resolvedId,
         used: candidate.aliasTargetIndex > 0 || candidate.resolvedId !== candidates[0].resolvedId,
-        externalFallbackAvailable: hasExternalFallback,
+        readyAlternativeAvailable: ordered
+          .slice(attemptIndex + 1)
+          .some((alternative) => readyFallbacks.includes(alternative)),
         ...(routeReason ? { reason: routeReason } : {})
       }
     }));
@@ -1958,7 +1965,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     }
   };
 
-  async function ensureRuntime(runtimeId, { fallbackAvailable = false, allowEviction = true } = {}) {
+  async function ensureRuntime(runtimeId, { alternativeAvailable = false, allowEviction = true } = {}) {
     if (!runtimeId) return { runtimeId, started: false, reason: 'no-runtime' };
     if (typeof runtimeManager.isHealthy === 'function' && (await runtimeManager.isHealthy(runtimeId))) {
       return { runtimeId, started: false, healthy: true, reason: 'already-healthy' };
@@ -1978,10 +1985,11 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
               warmup: true,
               force: false,
               reason: 'model-request',
-              fallbackAvailable,
-              allowEviction
+              alternativeAvailable,
+              allowEviction: allowEviction && !alternativeAvailable
             });
           } catch (error) {
+            if (alternativeAvailable && error instanceof RuntimeAdmissionError) throw error;
             if (!(error instanceof RuntimeAdmissionError) || !error.temporary || Date.now() >= deadline) throw error;
             if (!queued) {
               runtimeManager.markAdmissionQueued(runtimeId, true, 'waiting-for-capacity');
@@ -2084,7 +2092,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     try {
       const result = await clusterCoordinator.withTarget(resolved, async () => {
         await ensureRuntime(resolved.model.runtime, {
-          fallbackAvailable: resolved.failover?.externalFallbackAvailable === true,
+          alternativeAvailable: resolved.failover?.readyAlternativeAvailable === true,
           allowEviction: resolved.model.kind !== 'embedding'
         });
         return runtimeManager.withSlot(resolved.model.runtime, () => {
@@ -3524,7 +3532,13 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
 
       const stopMatch = url.pathname.match(/^\/gateway\/runtimes\/([^/]+)\/stop$/);
       if (req.method === 'POST' && stopMatch) {
-        sendJson(res, 200, await runtimeManager.stop(decodeURIComponent(stopMatch[1])));
+        sendJson(
+          res,
+          200,
+          await runtimeManager.stop(decodeURIComponent(stopMatch[1]), {
+            requestedBy: runtimeRequesterNode(req, config)
+          })
+        );
         return;
       }
 
@@ -3538,7 +3552,8 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
             runtimeManager.start(decodeURIComponent(startMatch[1]), {
               force: body.force !== false,
               warmup: body.warmup !== false,
-              reason: 'admin-start'
+              reason: 'admin-start',
+              requestedBy: runtimeRequesterNode(req, config)
             })
           )
         );
@@ -3559,11 +3574,13 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
                 yes: body.yes === true,
                 force: body.force !== false,
                 warmup: body.warmup !== false,
-                reason: 'admin-admit'
+                reason: 'admin-admit',
+                requesterNode: runtimeRequesterNode(req, config)
               })
             )
           );
         } catch (error) {
+          if (error?.statusCode) throw error;
           sendJson(
             res,
             400,

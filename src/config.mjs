@@ -1,7 +1,13 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { materializeFederatedNodes, modelTargets, validateClusterConfig } from './cluster.mjs';
+import {
+  materializeFederatedNodes,
+  modelTargets,
+  runtimeAuthority,
+  runtimePlacement,
+  validateClusterConfig
+} from './cluster.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const repoRoot = path.resolve(__dirname, '..');
@@ -164,6 +170,82 @@ function validateConfig(config, sourcePath, env) {
   for (const [runtimeId, runtime] of Object.entries(config.runtimes ?? {})) {
     if (runtime.keepWarm != null && typeof runtime.keepWarm !== 'boolean') {
       errors.push(`runtime ${runtimeId} keepWarm must be a boolean`);
+    }
+    if (runtime.authority != null) {
+      if (!runtime.authority || typeof runtime.authority !== 'object' || Array.isArray(runtime.authority)) {
+        errors.push(`runtime ${runtimeId} authority must be an object`);
+      } else {
+        const owner = runtime.authority.owner;
+        const scope = runtime.authority.scope;
+        if (typeof owner !== 'string' || !owner.trim()) {
+          errors.push(`runtime ${runtimeId} authority.owner must be a non-empty node id`);
+        } else if (config.cluster?.nodes && !config.cluster.nodes[owner]) {
+          errors.push(`runtime ${runtimeId} authority owner ${owner} is not declared in cluster.nodes`);
+        }
+        if (scope != null && !['local', 'distributed-model', 'distributed-member'].includes(scope)) {
+          errors.push(`runtime ${runtimeId} authority.scope is invalid: ${scope}`);
+        }
+        if (runtime.authority.group != null && typeof runtime.authority.group !== 'string') {
+          errors.push(`runtime ${runtimeId} authority.group must be a runtime id`);
+        }
+      }
+    }
+  }
+
+  const distributedMemberGroups = new Map();
+  for (const [runtimeId, runtime] of Object.entries(config.runtimes ?? {})) {
+    if (runtime?.placement?.mode !== 'distributed') continue;
+    const authority = runtimeAuthority(config, runtimeId, env);
+    const leader = config.cluster?.leaderNode;
+    if (runtime.authority?.owner != null && runtime.authority.owner !== authority?.owner) {
+      errors.push(`distributed runtime ${runtimeId} authority owner must be cluster leader ${authority?.owner}`);
+    }
+    if (runtime.authority?.scope != null && runtime.authority.scope !== 'distributed-model') {
+      errors.push(`distributed runtime ${runtimeId} must use authority.scope distributed-model`);
+    }
+    if (runtime.authority?.group != null && runtime.authority.group !== runtimeId) {
+      errors.push(`distributed runtime ${runtimeId} authority.group must be ${runtimeId}`);
+    }
+    if (leader && authority?.owner !== leader) {
+      errors.push(`distributed runtime ${runtimeId} must be owned by cluster leader ${leader}`);
+    }
+    for (const member of runtime.placement.members ?? []) {
+      if (distributedMemberGroups.has(member.runtime) && distributedMemberGroups.get(member.runtime) !== runtimeId) {
+        errors.push(
+          `distributed member ${member.runtime} is shared by ${distributedMemberGroups.get(member.runtime)} and ${runtimeId}`
+        );
+      }
+      distributedMemberGroups.set(member.runtime, runtimeId);
+      const memberAuthority = runtimeAuthority(config, member.runtime, env);
+      const explicit = config.runtimes?.[member.runtime]?.authority;
+      if (explicit?.owner != null && explicit.owner !== authority?.owner) {
+        errors.push(`distributed member ${member.runtime} authority owner must be ${authority?.owner}`);
+      }
+      if (explicit?.scope != null && explicit.scope !== 'distributed-member') {
+        errors.push(`distributed member ${member.runtime} must use authority.scope distributed-member`);
+      }
+      if (explicit?.group != null && explicit.group !== runtimeId) {
+        errors.push(`distributed member ${member.runtime} authority.group must be ${runtimeId}`);
+      }
+      if (memberAuthority?.owner !== authority?.owner || memberAuthority?.scope !== 'distributed-member') {
+        errors.push(`distributed member ${member.runtime} has inconsistent derived authority`);
+      }
+    }
+  }
+
+  for (const [runtimeId, runtime] of Object.entries(config.runtimes ?? {})) {
+    if (!runtime.authority || runtime?.placement?.mode === 'distributed' || distributedMemberGroups.has(runtimeId)) {
+      continue;
+    }
+    const node = runtimePlacement(runtime, config, env).node;
+    if (runtime.authority.owner !== node) {
+      errors.push(`local runtime ${runtimeId} authority owner must be its host node ${node}`);
+    }
+    if (runtime.authority.scope != null && runtime.authority.scope !== 'local') {
+      errors.push(`local runtime ${runtimeId} must use authority.scope local`);
+    }
+    if (runtime.authority.group != null) {
+      errors.push(`local runtime ${runtimeId} cannot declare authority.group`);
     }
   }
 

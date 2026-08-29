@@ -234,9 +234,7 @@ async function createEmbeddingFixture({
     logging: { metricsPersistence: false },
     cluster: {
       routingStatusCacheMs: 0,
-      ...(clusteredPredictive
-        ? { nodes: { spark: { resources: { memoryGb: 128 } } } }
-        : {})
+      ...(clusteredPredictive ? { nodes: { spark: { resources: { memoryGb: 128 } } } } : {})
     },
     ...(preserveResident || clusteredPredictive
       ? {
@@ -462,6 +460,27 @@ async function embed(url, body = {}) {
   assert.equal(migrated.runtimes.legacyUnpinned.policy, undefined);
   assert.equal(migrated.runtimePolicy.protectKeepWarm, undefined);
   assert.equal(migrated.sourceTemplate.runtimes.legacyPin.keepWarm, true);
+
+  const forgedAuthority = {
+    ...base,
+    cluster: {
+      nodeId: 'leader',
+      leaderNode: 'leader',
+      nodes: { leader: {}, worker: { endpoint: 'http://worker:8100' } }
+    },
+    runtimes: {
+      workerLocal: {
+        enabled: true,
+        node: 'worker',
+        authority: { owner: 'leader', scope: 'local' }
+      }
+    }
+  };
+  await writeFile(configPath, JSON.stringify(forgedAuthority));
+  await assert.rejects(
+    loadConfig(configPath),
+    /local runtime workerLocal authority owner must be its host node worker/
+  );
   await rm(directory, { recursive: true, force: true });
 }
 
@@ -538,7 +557,11 @@ async function embed(url, body = {}) {
   assert.equal(body.choices[0].message.content, 'local');
   assert.deepEqual(fixture.hits, { primary: 1, cloud: 1, ensures: 0 });
   assert.deepEqual(fixture.operations, ['stop:resident-runtime', 'start:primary-runtime', 'slot:primary-runtime']);
-  assert.equal(fixture.admissionOptions[0].preemptible, true);
+  assert.equal(
+    fixture.admissionOptions[0].preemptible,
+    false,
+    'after the ready cloud route fails, the last local route has no remaining live alternative'
+  );
   const recent = fixture.app.metrics.snapshot().recent;
   assert.equal(recent[0].resolvedModel, 'cloud-chat');
   assert.equal(recent[0].status, 402);
@@ -619,7 +642,11 @@ async function embed(url, body = {}) {
   assert.equal(response.status, 503);
   assert.deepEqual(fixture.hits, { spark: 0, mac: 1, cloud: 1, ensures: 0 });
   assert.deepEqual(fixture.operations, []);
-  assert.equal(fixture.admissionOptions[0].preemptible, true);
+  assert.equal(
+    fixture.admissionOptions[0].preemptible,
+    false,
+    'the exact Spark route is attempted only after both non-evicting alternatives have failed'
+  );
   await fixture.close();
 }
 

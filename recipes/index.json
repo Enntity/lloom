@@ -81,7 +81,7 @@
     {
       "id": "linux-nvidia-dgx-spark-cluster-qwen3-embedding-4b-vllm",
       "path": "linux-nvidia-dgx-spark-cluster-qwen3-embedding-4b-vllm.json",
-      "currentVersion": 2,
+      "currentVersion": 3,
       "versions": [
         {
           "version": 1,
@@ -92,9 +92,15 @@
         },
         {
           "version": 2,
+          "path": "archive/linux-nvidia-dgx-spark-cluster-qwen3-embedding-4b-vllm/v2.json",
+          "status": "archived",
+          "notes": "Moves embeddings to the leader and leaves FLUX on the worker; LLooM controls embedding startup after distributed chat admission."
+        },
+        {
+          "version": 3,
           "path": "linux-nvidia-dgx-spark-cluster-qwen3-embedding-4b-vllm.json",
           "status": "current",
-          "notes": "Moves embeddings to the leader and leaves FLUX on the worker; LLooM controls embedding startup after distributed chat admission."
+          "notes": "Makes the Spark embedding lane low-priority and on-demand; ready MacBook or cloud alias routes are preferred over evicting or waiting to evict a resident distributed model."
         }
       ],
       "name": "DGX Spark cluster Qwen3 Embedding 4B leader lane",
@@ -354,7 +360,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm",
       "path": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm.json",
-      "currentVersion": 6,
+      "currentVersion": 7,
       "versions": [
         {
           "version": 1,
@@ -388,9 +394,15 @@
         },
         {
           "version": 6,
+          "path": "archive/linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm/v6.json",
+          "status": "archived",
+          "notes": "Uses IPv4 RoCE address-family discovery and merged-NIC handling without pinning a host-specific GID index, matching the proven two-Spark NCCL fabric path."
+        },
+        {
+          "version": 7,
           "path": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm.json",
           "status": "current",
-          "notes": "Uses IPv4 RoCE address-family discovery and merged-NIC handling without pinning a host-specific GID index, matching the proven two-Spark NCCL fabric path."
+          "notes": "Makes GLM the explicit hard residency pin across both Sparks; delegated TP authority prevents worker-local displacement, while embeddings and image sidecars remain on-demand."
         }
       ],
       "name": "2x DGX Spark GLM-5.3 Flash EXL3 DFlash2 vLLM",
@@ -520,12 +532,23 @@
     {
       "id": "linux-nvidia-dgx-spark-cluster-flux2-klein-4b",
       "path": "linux-nvidia-dgx-spark-cluster-flux2-klein-4b.json",
-      "currentVersion": 1,
+      "currentVersion": 2,
       "versions": [
-        { "version": 1, "path": "linux-nvidia-dgx-spark-cluster-flux2-klein-4b.json", "status": "current" }
+        {
+          "version": 1,
+          "path": "archive/linux-nvidia-dgx-spark-cluster-flux2-klein-4b/v1.json",
+          "status": "archived",
+          "notes": "Original worker-pinned FLUX lane retained for reproducibility."
+        },
+        {
+          "version": 2,
+          "path": "linux-nvidia-dgx-spark-cluster-flux2-klein-4b.json",
+          "status": "current",
+          "notes": "Makes FLUX low-priority and on-demand so it cannot compete with the delegated GLM TP worker."
+        }
       ],
       "name": "DGX Spark cluster FLUX.2 Klein 4B worker lane",
-      "summary": "Pins FLUX.2 Klein 4B to a cluster worker and routes images over the private fabric.",
+      "summary": "On-demand FLUX.2 Klein 4B worker lane proxied through the worker LLooM.",
       "tags": ["linux", "nvidia", "dgx-spark", "cluster", "image-generation", "flux2"],
       "recommendedFor": ["Two-node DGX Spark clusters co-hosting a distributed language model"],
       "capabilities": ["image-generation", "image-editing"],

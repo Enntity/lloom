@@ -77,9 +77,89 @@ assert.deepEqual(
         runtime: drainingBlockerPlan.runtimes.find((row) => row.runtimeId === 'resident')
       }
     ],
-    pinned: []
+    pinned: [],
+    authority: []
   },
   'an active evictable runtime is the causal blocker when draining it preserves the pinned sidecar'
+);
+
+const delegatedTpConfig = {
+  cluster: {
+    nodeId: 'worker',
+    leaderNode: 'leader',
+    nodes: {
+      leader: { resources: { memoryGb: 128, reserveMemoryGb: 8 } },
+      worker: { resources: { memoryGb: 128, reserveMemoryGb: 8 } }
+    }
+  },
+  runtimePolicy: { enabled: true, autoEvict: true },
+  runtimes: {
+    'tp-head': {
+      enabled: true,
+      node: 'leader',
+      memoryGb: 100,
+      authority: { owner: 'leader', scope: 'distributed-member', group: 'tp' }
+    },
+    'tp-worker': {
+      enabled: true,
+      node: 'worker',
+      memoryGb: 100,
+      authority: { owner: 'leader', scope: 'distributed-member', group: 'tp' }
+    },
+    tp: {
+      enabled: true,
+      authority: { owner: 'leader', scope: 'distributed-model', group: 'tp' },
+      placement: {
+        mode: 'distributed',
+        members: [
+          { node: 'leader', runtime: 'tp-head' },
+          { node: 'worker', runtime: 'tp-worker' }
+        ]
+      }
+    },
+    embedding: { enabled: true, node: 'worker', memoryGb: 30 }
+  }
+};
+const delegatedTpStatus = {
+  runtimes: {
+    'tp-head': { healthy: true, status: 'running' },
+    'tp-worker': { healthy: true, status: 'running' },
+    tp: { healthy: true, status: 'running' },
+    embedding: { healthy: false, status: 'idle' }
+  }
+};
+const delegatedTpPlan = await createRuntimePolicyPlan(delegatedTpConfig, {
+  requestedRuntimeId: 'embedding',
+  requesterNode: 'worker',
+  status: delegatedTpStatus
+});
+assert.equal(delegatedTpPlan.admission.allowed, false);
+assert.deepEqual(
+  delegatedTpPlan.actions.map((action) => `${action.type}:${action.runtimeId}`),
+  ['start:embedding'],
+  'worker-local admission must not schedule an eviction of leader-owned TP capacity'
+);
+assert.deepEqual(
+  runtimeAdmissionBlockers(delegatedTpPlan).authority.map((blocker) => blocker.runtimeId),
+  ['tp']
+);
+await assert.rejects(
+  () =>
+    applyRuntimePolicyPlan(
+      delegatedTpConfig,
+      {
+        async status() {
+          return delegatedTpStatus;
+        }
+      },
+      {
+        requestedRuntimeId: 'embedding',
+        requesterNode: 'worker',
+        dryRun: false,
+        yes: true
+      }
+    ),
+  (error) => error.code === 'runtime_authority_conflict' && error.temporary === false && /tp/.test(error.message)
 );
 await assert.rejects(
   () =>
@@ -110,6 +190,33 @@ await assert.rejects(
     error.code === 'runtime_capacity_busy' &&
     /resident \(active-requests\)/.test(error.message) &&
     !error.message.includes('sidecar')
+);
+await assert.rejects(
+  () =>
+    applyRuntimePolicyPlan(
+      {
+        runtimePolicy: { memoryBudgetGb: 40, protectActiveRequests: true },
+        runtimes: {
+          resident: { enabled: true, memoryGb: 30 },
+          requested: { enabled: true, memoryGb: 30 }
+        }
+      },
+      {
+        async status() {
+          return {
+            runtimes: {
+              resident: { healthy: true, status: 'running', activeRequests: 1 },
+              requested: { healthy: false, status: 'idle', activeRequests: 0 }
+            }
+          };
+        }
+      },
+      { requestedRuntimeId: 'requested', dryRun: false, yes: true, allowEviction: false }
+    ),
+  (error) =>
+    error.temporary === false &&
+    error.code === 'runtime_eviction_forbidden' &&
+    /eventually evicting active resident runtime/.test(error.message)
 );
 
 const unpinnedPlan = await createRuntimePolicyPlan(

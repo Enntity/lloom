@@ -4,8 +4,8 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-cluster-qwen3-embedding-4b-vllm",
   "name": "DGX Spark cluster Qwen3 Embedding 4B leader lane",
-  "version": 3,
-  "summary": "Offers Qwen3-Embedding-4B as a low-priority on-demand leader lane; alias routing uses MacBook and cloud alternatives instead of evicting a resident distributed model.",
+  "version": 2,
+  "summary": "Pins Qwen3-Embedding-4B to the leader DGX Spark while the worker hosts the FLUX sidecar, keeping those companion workloads off the same DeepSeek rank.",
   "license": { "id": "Apache-2.0", "name": "Qwen3-Embedding-4B model license" },
   "provenance": {
     "createdBy": "lloom",
@@ -25,8 +25,8 @@
     "family": "NVIDIA DGX Spark / GB10 cluster",
     "testedMachine": "Two directly connected DGX Spark systems",
     "notes": [
-      "Runs on the leader node only when admission has spare capacity.",
-      "The embeddings alias should use ready MacBook or cloud routes instead of evicting or waiting to evict a resident distributed model."
+      "Runs on the leader node while the FLUX image lane runs on the worker node.",
+      "LLooM starts embeddings on demand after the distributed chat runtime reserves its memory; Docker must not race that admission at boot."
     ]
   },
   "requirements": {
@@ -70,7 +70,7 @@
         "contextWindow": 8192,
         "maxActiveRequests": 8,
         "memoryGb": 12,
-        "priority": 40,
+        "priority": 200,
         "keepWarm": false,
         "startupTimeoutMs": 900000,
         "placement": { "mode": "replicated", "nodes": ["leader"] },

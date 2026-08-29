@@ -7,6 +7,8 @@ import {
   materializeFederatedNodes,
   modelTargets,
   parseNvidiaSyncSshConfig,
+  runtimeAuthority,
+  runtimeControlAllowed,
   runtimePlacement,
   validateClusterConfig
 } from '../src/cluster.mjs';
@@ -18,6 +20,7 @@ import {
   RuntimeManager,
   shouldRecreateDockerContainer
 } from '../src/runtime-manager.mjs';
+import { createRegistry } from '../src/registry.mjs';
 import { syncClusterSetupMembers } from '../src/setup.mjs';
 
 const syncPeers = parseNvidiaSyncSshConfig(`
@@ -149,6 +152,7 @@ await longStartCoordinator.runtimeAction('worker', 'worker', 'start');
 assert.equal(longStartCalls.length, 1);
 assert(longStartCalls[0].dispatcher, 'cluster requests must override the five-minute fetch headers timeout');
 assert.equal(longStartCalls[0].signal.aborted, false);
+assert.equal(longStartCalls[0].headers['x-lloom-requester-node'], 'leader');
 const longStartTimeoutCalls = [];
 longStartCoordinator.requestNode = async (...args) => {
   longStartTimeoutCalls.push(args);
@@ -331,6 +335,91 @@ const manager = new RuntimeManager(distributedConfig, {
   captureOutput: false,
   clusterCoordinator: lifecycleCoordinator
 });
+assert.deepEqual(runtimeAuthority(distributedConfig, 'split'), {
+  owner: 'leader',
+  scope: 'distributed-model',
+  group: 'split',
+  node: 'leader',
+  delegated: false
+});
+assert.deepEqual(runtimeAuthority(distributedConfig, 'worker'), {
+  owner: 'leader',
+  scope: 'distributed-member',
+  group: 'split',
+  node: 'worker',
+  delegated: true
+});
+assert.equal(runtimeControlAllowed(distributedConfig, 'worker', 'worker'), false);
+assert.equal(runtimeControlAllowed(distributedConfig, 'worker', 'leader'), true);
+
+const sovereignRemoteConfig = {
+  cluster: {
+    nodeId: 'leader',
+    leaderNode: 'leader',
+    nodes: { leader: {}, worker: { endpoint: 'http://worker:8100' } }
+  },
+  backends: { workerRaw: {} },
+  runtimes: { workerLocal: { enabled: true, node: 'worker' } },
+  models: [{ id: 'worker/raw-model', backend: 'workerRaw', runtime: 'workerLocal' }]
+};
+const sovereignManager = new RuntimeManager(sovereignRemoteConfig, {
+  logger: { error() {}, warn() {}, info() {} },
+  captureOutput: false,
+  clusterCoordinator: lifecycleCoordinator
+});
+await assert.rejects(
+  sovereignManager.start('workerLocal', { warmup: false }),
+  (error) => error.code === 'RUNTIME_AUTHORITY_FORBIDDEN' && error.authority.owner === 'worker'
+);
+assert.equal(createRegistry(sovereignRemoteConfig).catalogModels().length, 0);
+const replicatedConfig = {
+  cluster: sovereignRemoteConfig.cluster,
+  backends: { leaderRaw: {}, workerRaw: {}, workerProxy: {} },
+  runtimes: {
+    leaderReplica: { enabled: true, node: 'leader' },
+    workerReplica: { enabled: true, node: 'worker' }
+  },
+  models: [
+    {
+      id: 'replicated/model',
+      targets: [
+        { id: 'leader', node: 'leader', backend: 'leaderRaw', runtime: 'leaderReplica' },
+        { id: 'worker', node: 'worker', backend: 'workerRaw', runtime: 'workerReplica' },
+        { id: 'worker-proxy', node: 'worker', backend: 'workerProxy', remoteRuntime: 'workerReplica' }
+      ]
+    }
+  ]
+};
+const leaderReplicaResolution = createRegistry(replicatedConfig).resolve('replicated/model');
+assert.deepEqual(
+  leaderReplicaResolution.model.targets.map((target) => target.id),
+  ['leader', 'worker-proxy'],
+  'leader reaches remote replicas only through their LLooM proxy'
+);
+assert.equal(leaderReplicaResolution.model.runtime, 'leaderReplica');
+const workerOnlyReplicaConfig = structuredClone(replicatedConfig);
+workerOnlyReplicaConfig.models[0].runtime = 'workerReplica';
+workerOnlyReplicaConfig.models[0].targets = workerOnlyReplicaConfig.models[0].targets.filter(
+  (target) => target.node === 'worker'
+);
+assert.equal(
+  createRegistry(workerOnlyReplicaConfig).resolve('replicated/model').model.runtime,
+  undefined,
+  'a leader proxy target never inherits the remote raw runtime lifecycle'
+);
+const workerReplicaRegistry = createRegistry({
+  ...structuredClone(replicatedConfig),
+  cluster: { ...replicatedConfig.cluster, nodeId: 'worker' }
+});
+assert.deepEqual(
+  workerReplicaRegistry.resolve('replicated/model').model.targets.map((target) => target.id),
+  ['worker'],
+  'worker exposes only its complete local replica'
+);
+assert.deepEqual(
+  workerReplicaRegistry.catalogModels()[0].targets.map((target) => target.id),
+  ['worker']
+);
 await manager.start('split', { warmup: false });
 await manager.stop('split');
 assert.deepEqual(lifecycleCalls, [
@@ -447,6 +536,40 @@ const workerKeepWarmManager = new RuntimeManager(
 );
 workerKeepWarmManager.config.runtimes.head.keepWarm = true;
 workerKeepWarmManager.config.runtimes.worker.keepWarm = true;
+workerKeepWarmManager.config.runtimes.worker.watchdog = {
+  enabled: true,
+  failureThreshold: 1,
+  minNoProgressMs: 0
+};
+assert.deepEqual(
+  keepWarmOwnership(workerKeepWarmManager.config, 'worker', { nodeId: 'worker' }),
+  {
+    owned: false,
+    reason: 'distributed-runtime-owned'
+  },
+  'a physical TP member never becomes an independent worker pin, even when the logical service is not pinned'
+);
+assert.deepEqual(
+  workerKeepWarmManager.noteRequestOutcome('worker', {
+    ok: false,
+    status: 504,
+    durationMs: 1000,
+    responseBytes: 0
+  }),
+  {
+    runtimeId: 'worker',
+    action: 'ignored',
+    reason: 'authority-owned',
+    authority: {
+      owner: 'leader',
+      scope: 'distributed-member',
+      group: 'split',
+      node: 'worker',
+      delegated: true
+    }
+  },
+  'the worker watchdog cannot schedule a restart of leader-owned TP space'
+);
 workerKeepWarmManager.config.runtimes.split.keepWarm = true;
 assert.deepEqual(keepWarmOwnership(workerKeepWarmManager.config, 'head', { nodeId: 'worker' }), {
   owned: false,
@@ -457,6 +580,47 @@ assert.deepEqual(await workerKeepWarmManager.startKeepWarm(), [
   { runtimeId: 'worker', started: false, reason: 'distributed-runtime-owned' },
   { runtimeId: 'split', started: false, reason: 'leader-owned' }
 ]);
+await assert.rejects(
+  workerKeepWarmManager.start('worker', { warmup: false }),
+  (error) => error.code === 'RUNTIME_AUTHORITY_FORBIDDEN' && error.statusCode === 403
+);
+await assert.rejects(
+  workerKeepWarmManager.stop('worker'),
+  (error) => error.code === 'RUNTIME_AUTHORITY_FORBIDDEN' && error.statusCode === 403
+);
+assert.deepEqual(await workerKeepWarmManager.stop('worker', { requestedBy: 'leader' }), {
+  runtimeId: 'worker',
+  stopped: true,
+  processResult: null,
+  portResult: null
+});
+assert.equal((await workerKeepWarmManager.stopAll()).total, 0, 'worker stop-all excludes delegated TP members');
+
+const leaderCatalog = createRegistry({
+  ...structuredClone(distributedConfig),
+  backends: { tp: {} },
+  models: [{ id: 'tp/model', backend: 'tp', runtime: 'split' }]
+});
+assert.equal(
+  leaderCatalog.catalogModels().some((model) => model.id === 'tp/model'),
+  true
+);
+const workerCatalog = createRegistry({
+  ...structuredClone(distributedConfig),
+  cluster: { ...distributedConfig.cluster, nodeId: 'worker' },
+  backends: { tp: {} },
+  models: [{ id: 'tp/model', backend: 'tp', runtime: 'split' }]
+});
+assert.equal(
+  workerCatalog.catalogModels().some((model) => model.id === 'tp/model'),
+  false,
+  'TP logical models are not callable or advertised on workers'
+);
+assert.equal(
+  workerCatalog.clientModels().some((model) => model.id === 'tp/model'),
+  false
+);
+assert.throws(() => workerCatalog.resolve('tp/model'), /unknown local model/);
 
 const reconfigureCalls = [];
 const leaderReconfigureManager = new RuntimeManager(structuredClone(distributedConfig), {

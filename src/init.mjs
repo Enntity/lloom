@@ -621,6 +621,10 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
           const memberSettings = {
             ...settings,
             placement: undefined,
+            // Residency belongs to the logical distributed runtime. Physical
+            // members are implementation details and must never become
+            // independent keep-warm pins on their host nodes.
+            keepWarm: false,
             memoryGb: member.resources?.memoryGb ?? settings.memoryGb,
             nodeId,
             nodeRank,
@@ -646,6 +650,11 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
           if (!runtime)
             throw new Error(`recipe model ${modelId} could not materialize distributed member ${memberRuntimeId}`);
           runtime.node = nodeId;
+          runtime.authority = {
+            owner: leaderNode,
+            scope: 'distributed-member',
+            group: logicalRuntimeId
+          };
           runtime.healthStrategy = member.healthStrategy ?? (nodeId === leaderNode ? 'http' : 'container');
           config.runtimes[memberRuntimeId] = runtime;
           members.push({
@@ -683,6 +692,11 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
         startupTimeoutMs: positiveInteger(settings.startupTimeoutMs, 1800000),
         healthUrl: `${clusterNodeBackendOrigin(leader)}:${port}${settings.healthPath ?? '/health'}`,
         recipe: { id: recipe.id, version: recipe.version ?? 1, source: recipe.filePath ?? null },
+        authority: {
+          owner: leaderNode,
+          scope: 'distributed-model',
+          group: runtimeId
+        },
         placement: { mode: 'distributed', members }
       };
       const materializedModel = materializedRecipeModel(recipe, recipeModel, modelId, {
@@ -762,6 +776,27 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
           }
         }
         targets.push({ id: nodeId, node: nodeId, backend: backendConfigId, runtime: runtimeId });
+        if (nodeId !== leaderNode) {
+          if (!node.endpoint) {
+            throw new Error(`cluster node ${nodeId} requires an LLooM endpoint for replicated recipes`);
+          }
+          const proxyBackendId = `lloom-node-${slug(nodeId)}`;
+          config.backends[proxyBackendId] ??= {
+            type: 'openai',
+            baseUrl: `${String(node.endpoint).replace(/\/+$/, '')}/v1`,
+            ...((node.apiKeyEnv ?? config.cluster?.apiKeyEnv)
+              ? { apiKeyEnv: node.apiKeyEnv ?? config.cluster.apiKeyEnv }
+              : {}),
+            timeoutMs: positiveInteger(settings.timeoutMs, 1800000)
+          };
+          targets.push({
+            id: `${nodeId}-proxy`,
+            node: nodeId,
+            backend: proxyBackendId,
+            remoteRuntime: runtimeId,
+            upstreamModel: modelId
+          });
+        }
       }
       const materializedModel = materializedRecipeModel(recipe, recipeModel, modelId, {
         backend: targets[0].backend,

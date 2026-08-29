@@ -2440,6 +2440,8 @@ const leaderEmbeddingRuntime = clusterEmbeddingConfig.runtimes['qwen3-embedding-
 assert.equal(leaderEmbeddingRuntime.node, 'ennspark01');
 assert.equal(leaderEmbeddingRuntime.healthUrl, 'http://10.20.30.12:8002/v1/models');
 assert.equal(leaderEmbeddingRuntime.keepWarm, false);
+assert.equal(leaderEmbeddingRuntime.policy.priority, 40);
+assert.equal(leaderEmbeddingRuntime.recipe.version, 3);
 assert(leaderEmbeddingRuntime.bootstrap.createArgs.includes('10.20.30.12:8002:8000'));
 assert.deepEqual(leaderEmbeddingRuntime.bootstrap.createArgs.slice(0, 2), ['--restart', 'no']);
 assert.deepEqual(
@@ -2460,6 +2462,52 @@ assert.deepEqual(clusterEmbeddingConfig.models.find((model) => model.id === 'Qwe
     runtime: 'qwen3-embedding-4b-ennspark01'
   }
 ]);
+
+const glm53Recipe = await loadRecipeById('linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm');
+const glm53Config = deriveUserConfig(clusterEmbeddingBase, glm53Recipe, {
+  modelRoot: '/models',
+  additive: true
+});
+const glm53LogicalRuntime = glm53Config.runtimes['glm53-flash-exl3-cluster'];
+assert.equal(glm53LogicalRuntime.keepWarm, true, 'only the leader-owned logical GLM service is pinned');
+assert.deepEqual(glm53LogicalRuntime.authority, {
+  owner: 'ennspark01',
+  scope: 'distributed-model',
+  group: 'glm53-flash-exl3-cluster'
+});
+for (const member of glm53LogicalRuntime.placement.members) {
+  const memberRuntime = glm53Config.runtimes[member.runtime];
+  assert.equal(memberRuntime.keepWarm, false, 'physical TP members must not acquire independent residency pins');
+  assert.deepEqual(memberRuntime.authority, {
+    owner: 'ennspark01',
+    scope: 'distributed-member',
+    group: 'glm53-flash-exl3-cluster'
+  });
+}
+
+const clusterFluxRecipe = await loadRecipeById('linux-nvidia-dgx-spark-cluster-flux2-klein-4b');
+const clusterFluxConfig = deriveUserConfig(clusterEmbeddingBase, clusterFluxRecipe, {
+  modelRoot: '/models',
+  additive: true
+});
+const clusterFluxRuntime = clusterFluxConfig.runtimes['flux2-klein-4b-sdcpp-ennspark02'];
+assert.equal(clusterFluxRuntime.keepWarm, false);
+assert.equal(clusterFluxRuntime.policy.priority, 30);
+assert.equal(clusterFluxRuntime.node, 'ennspark02');
+const clusterFluxModel = clusterFluxConfig.models.find((model) => model.id === 'black-forest-labs/FLUX.2-klein-4B');
+assert.deepEqual(
+  clusterFluxModel.targets.map((target) => target.id),
+  ['ennspark02', 'ennspark02-proxy']
+);
+const leaderFlux = createRegistry(clusterFluxConfig).resolve('black-forest-labs/FLUX.2-klein-4B');
+assert.equal(leaderFlux.model.runtime, undefined, 'leader inference must use the worker LLooM proxy');
+assert.equal(leaderFlux.model.targets[0].remoteRuntime, 'flux2-klein-4b-sdcpp-ennspark02');
+const workerFluxConfig = structuredClone(clusterFluxConfig);
+workerFluxConfig.cluster.nodeId = 'ennspark02';
+const workerFlux = createRegistry(workerFluxConfig).resolve('black-forest-labs/FLUX.2-klein-4B');
+assert.equal(workerFlux.model.runtime, 'flux2-klein-4b-sdcpp-ennspark02');
+assert.equal(workerFlux.model.targets[0].remoteRuntime, null);
+
 const labeledDsparkBase = structuredClone(dsparkBase);
 labeledDsparkBase.cluster.nodes.ennspark02.labels = { role: 'worker', hardware: 'dgx-spark' };
 labeledDsparkBase.cluster.nodes['macbook-local'] = {

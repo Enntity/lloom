@@ -179,12 +179,12 @@
       "startupTimeoutMs": 900000,
       "maxConcurrency": 8,
       "memoryGb": 12,
-      "keepWarm": true,
-      "policy": { "priority": 200 },
+      "keepWarm": false,
+      "policy": { "priority": 40 },
       "bootstrap": {
         "adapter": "docker",
         "image": "vllm/vllm-openai:v0.24.0",
-        "createArgs": ["--restart", "unless-stopped", "--gpus", "all", "--ipc", "host", "-p", "127.0.0.1:8002:8000", "-e", "CUTE_DSL_ARCH=sm_121a", "-v", "/home/lloom/.cache/huggingface:/root/.cache/huggingface"],
+        "createArgs": ["--restart", "no", "--gpus", "all", "--ipc", "host", "-p", "127.0.0.1:8002:8000", "-e", "CUTE_DSL_ARCH=sm_121a", "-v", "/home/lloom/.cache/huggingface:/root/.cache/huggingface"],
         "command": ["Qwen/Qwen3-Embedding-4B", "--host", "0.0.0.0", "--port", "8000", "--served-model-name", "Qwen/Qwen3-Embedding-4B", "--runner", "pooling", "--dtype", "bfloat16", "--trust-remote-code", "--gpu-memory-utilization", "0.09", "--max-model-len", "8192", "--max-num-seqs", "16", "--max-num-batched-tokens", "8192"]
       },
       "recipe": { "id": "linux-nvidia-qwen3-embedding-4b-vllm", "version": 1 },

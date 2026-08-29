@@ -1,14 +1,14 @@
 modelRoles:
-  default: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4:low
-  smol: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4
-  slow: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4
-  plan: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4
-  commit: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4
-  designer: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4
-  advisor: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4
-  tiny: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4
-  vision: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4
-  task: ennspark01/unsloth/Qwen3.6-35B-A3B-NVFP4
+  default: ennspark01/glm53-flash:low
+  smol: ennspark01/glm53-flash
+  slow: ennspark01/glm53-flash
+  plan: ennspark01/glm53-flash
+  commit: ennspark01/glm53-flash
+  designer: ennspark01/glm53-flash
+  advisor: ennspark01/glm53-flash
+  tiny: ennspark01/glm53-flash
+  vision: ennspark01/glm53-flash
+  task: ennspark01/glm53-flash
 defaultThinkingLevel: auto
 hideThinkingBlock: true
 startup:

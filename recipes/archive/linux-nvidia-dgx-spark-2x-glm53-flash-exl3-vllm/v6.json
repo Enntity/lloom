@@ -4,8 +4,8 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm",
   "name": "2x DGX Spark GLM-5.3 Flash EXL3 DFlash2 vLLM",
-  "version": 7,
-  "summary": "MiaAI-Lab's GLM-5.3 Flash EXL3/TR3 4bpw TP=2 recipe with DFlash2-7 slot-shared KV, native SM121 kernels, resilient IPv4 RoCE discovery, prefix-cache and structured-output fixes, a 262K context, vision, and a hard LLooM residency pin across both Sparks.",
+  "version": 6,
+  "summary": "MiaAI-Lab's GLM-5.3 Flash EXL3/TR3 4bpw TP=2 recipe with DFlash2-7 slot-shared KV, native SM121 kernels, resilient IPv4 RoCE discovery, prefix-cache and structured-output fixes, a 262K coexistence context, vision, and LLooM-managed distributed admission.",
   "license": { "id": "MIT", "name": "Recipe metadata and launcher" },
   "provenance": {
     "createdBy": "lloom",
@@ -89,7 +89,7 @@
         "maxActiveRequests": 4,
         "memoryGb": 100,
         "priority": 180,
-        "keepWarm": true,
+        "keepWarm": false,
         "startupTimeoutMs": 7200000,
         "timeoutMs": 1800000,
         "watchdog": {

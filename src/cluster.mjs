@@ -167,7 +167,11 @@ export function federatedNodeConfigFromSnapshot({
 }
 
 export function currentNodeId(config, env = process.env) {
-  return env.LLOOM_NODE_ID || config.cluster?.nodeId || os.hostname();
+  if (env.LLOOM_NODE_ID) return env.LLOOM_NODE_ID;
+  if (config.cluster?.nodeId) return config.cluster.nodeId;
+  const configuredNodeIds = Object.keys(asObject(config.cluster?.nodes));
+  if (configuredNodeIds.length === 1) return configuredNodeIds[0];
+  return os.hostname();
 }
 
 export function clusterNodes(config, env = process.env) {
@@ -396,6 +400,62 @@ export function runtimePlacement(runtime, config, env = process.env) {
   return { mode, node, nodes: node ? [node] : [], members: [] };
 }
 
+/**
+ * Return the effective lifecycle authority for a runtime.
+ *
+ * Ordinary runtimes are owned by the node where they run. A distributed
+ * logical runtime is owned by the cluster leader, and every physical member
+ * delegates its lifecycle to that same owner. The explicit config block is
+ * persisted for auditability, while the derived form keeps older configs safe
+ * until they are rewritten by setup.
+ */
+export function runtimeAuthority(config, runtimeId, env = process.env) {
+  const runtime = config.runtimes?.[runtimeId];
+  if (!runtime) return null;
+  const placement = runtimePlacement(runtime, config, env);
+  const localNode = currentNodeId(config, env);
+  const leaderNode = config.cluster?.leaderNode ?? localNode;
+
+  if (placement.mode === 'distributed') {
+    const owner = leaderNode;
+    return {
+      owner,
+      scope: 'distributed-model',
+      group: runtimeId,
+      node: owner,
+      delegated: false
+    };
+  }
+
+  for (const [groupId, groupRuntime] of Object.entries(asObject(config.runtimes))) {
+    const groupPlacement = runtimePlacement(groupRuntime, config, env);
+    if (groupPlacement.mode !== 'distributed') continue;
+    if (!groupPlacement.members.some((member) => member.runtime === runtimeId)) continue;
+    const owner = leaderNode;
+    const node = placement.node ?? localNode;
+    return {
+      owner,
+      scope: 'distributed-member',
+      group: groupId,
+      node,
+      delegated: owner !== node
+    };
+  }
+
+  const node = placement.node ?? localNode;
+  return {
+    owner: node,
+    scope: 'local',
+    node,
+    delegated: false
+  };
+}
+
+export function runtimeControlAllowed(config, runtimeId, requesterNode = currentNodeId(config), env = process.env) {
+  const authority = runtimeAuthority(config, runtimeId, env);
+  return !authority?.owner || authority.owner === requesterNode;
+}
+
 export function runtimeResourcesByNode(runtime, config, env = process.env) {
   const placement = runtimePlacement(runtime, config, env);
   if (placement.mode === 'distributed') {
@@ -574,7 +634,7 @@ export class ClusterCoordinator {
     return key ? { authorization: `Bearer ${key}` } : {};
   }
 
-  async requestNode(nodeId, pathname, { method = 'GET', body, timeoutMs = 5000, signal } = {}) {
+  async requestNode(nodeId, pathname, { method = 'GET', body, headers = {}, timeoutMs = 5000, signal } = {}) {
     const node = this.nodes[nodeId];
     if (!node) throw new Error(`unknown cluster node ${nodeId}`);
     if (!node.endpoint) throw new Error(`cluster node ${nodeId} has no endpoint`);
@@ -586,6 +646,7 @@ export class ClusterCoordinator {
         headers: {
           accept: 'application/json',
           ...(body == null ? {} : { 'content-type': 'application/json' }),
+          ...headers,
           ...this.headersFor(node)
         },
         body: body == null ? undefined : JSON.stringify(body),
@@ -593,8 +654,14 @@ export class ClusterCoordinator {
         dispatcher: longRunningClusterDispatcher
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok)
-        throw new Error(payload?.error?.message ?? payload?.message ?? `${response.status} ${response.statusText}`);
+      if (!response.ok) {
+        const error = new Error(
+          payload?.error?.message ?? payload?.message ?? `${response.status} ${response.statusText}`
+        );
+        error.statusCode = response.status;
+        error.code = payload?.error?.code ?? payload?.code ?? 'CLUSTER_NODE_REQUEST_FAILED';
+        throw error;
+      }
       return payload;
     } finally {
       clearTimeout(timer);
@@ -694,6 +761,7 @@ export class ClusterCoordinator {
     const result = await this.requestNode(nodeId, `/gateway/runtimes/${encodeURIComponent(runtimeId)}/${action}`, {
       method: 'POST',
       body,
+      headers: { 'x-lloom-requester-node': this.nodeId },
       timeoutMs,
       signal
     });

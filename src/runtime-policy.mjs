@@ -1,7 +1,7 @@
 import os from 'node:os';
 import { readHostMemory } from './host-memory.mjs';
 import { RuntimeManager } from './runtime-manager.mjs';
-import { clusterNodes, runtimeResourcesByNode } from './cluster.mjs';
+import { clusterNodes, currentNodeId, runtimeAuthority, runtimeResourcesByNode } from './cluster.mjs';
 
 export class RuntimeAdmissionError extends Error {
   constructor(message, { plan, temporary = false, retryAfterSeconds = 2, code } = {}) {
@@ -52,6 +52,7 @@ export function runtimeAdmissionBlockers(plan) {
   }));
   const active = [];
   const pinned = [];
+  const authority = [];
   if (plan?.admission?.clustered) {
     const deficits = Object.fromEntries(
       Object.entries(plan.admission.nodes ?? {}).map(([nodeId, node]) => [
@@ -63,8 +64,14 @@ export function runtimeAdmissionBlockers(plan) {
       Object.entries(row.runtime?.resourcesByNode ?? {}).some(
         ([nodeId, resources]) => deficits[nodeId] > 0 && Number(resources?.memoryGb) > 0
       );
+    authority.push(
+      ...protectedRows.filter(
+        (row) => row.protectedReasons.some((reason) => reason.startsWith('authority-owner:')) && contributes(row)
+      )
+    );
     for (const row of protectedRows) {
       if (
+        !row.protectedReasons.some((reason) => reason.startsWith('authority-owner:')) &&
         row.protectedReasons.includes('active-requests') &&
         !row.protectedReasons.includes('keep-warm-pin') &&
         contributes(row)
@@ -77,16 +84,30 @@ export function runtimeAdmissionBlockers(plan) {
     }
     if (Object.values(deficits).some((value) => value > 0)) {
       for (const row of protectedRows) {
-        if (row.protectedReasons.includes('keep-warm-pin') && contributes(row)) pinned.push(row);
+        if (
+          !row.protectedReasons.some((reason) => reason.startsWith('authority-owner:')) &&
+          row.protectedReasons.includes('keep-warm-pin') &&
+          contributes(row)
+        )
+          pinned.push(row);
       }
     }
-    return { active, pinned };
+    return { active, pinned, authority };
   }
 
   let deficit = Math.max(0, Number(plan?.admission?.overBudgetGb) || 0);
+  authority.push(
+    ...protectedRows.filter(
+      (row) =>
+        row.protectedReasons.some((reason) => reason.startsWith('authority-owner:')) &&
+        deficit > 0 &&
+        Number(row.runtime?.memoryGb) > 0
+    )
+  );
   for (const row of protectedRows) {
     if (
       deficit > 0 &&
+      !row.protectedReasons.some((reason) => reason.startsWith('authority-owner:')) &&
       row.protectedReasons.includes('active-requests') &&
       !row.protectedReasons.includes('keep-warm-pin') &&
       Number(row.runtime?.memoryGb) > 0
@@ -97,10 +118,15 @@ export function runtimeAdmissionBlockers(plan) {
   }
   if (deficit > 0) {
     for (const row of protectedRows) {
-      if (row.protectedReasons.includes('keep-warm-pin') && Number(row.runtime?.memoryGb) > 0) pinned.push(row);
+      if (
+        !row.protectedReasons.some((reason) => reason.startsWith('authority-owner:')) &&
+        row.protectedReasons.includes('keep-warm-pin') &&
+        Number(row.runtime?.memoryGb) > 0
+      )
+        pinned.push(row);
     }
   }
-  return { active, pinned };
+  return { active, pinned, authority };
 }
 
 async function liveMemoryProfile(profile = {}) {
@@ -134,7 +160,7 @@ function policyConfig(config, profile = {}) {
   };
 }
 
-function runtimeRows(config, status, requestedRuntimeId) {
+function runtimeRows(config, status, requestedRuntimeId, requesterNode) {
   const distributedMembers = new Set(
     Object.values(config.runtimes ?? {}).flatMap((runtime) =>
       runtime?.placement?.mode === 'distributed'
@@ -152,6 +178,7 @@ function runtimeRows(config, status, requestedRuntimeId) {
     const requested = runtimeId === requestedRuntimeId;
     const loaded = isRuntimeLoaded(runtimeStatus);
     const ownedByDistributedGroup = distributedMembers.has(runtimeId);
+    const authority = runtimeAuthority(config, runtimeId);
     const memoryGb = ownedByDistributedGroup ? 0 : runtimeMemoryGb(runtime);
     return {
       runtimeId,
@@ -168,6 +195,8 @@ function runtimeRows(config, status, requestedRuntimeId) {
       memoryGb,
       resourcesByNode: ownedByDistributedGroup ? {} : runtimeResourcesByNode(runtime, config),
       ownedByDistributedGroup,
+      authority,
+      authorityProtected: loaded && Boolean(authority?.owner) && authority.owner !== requesterNode,
       priority: runtimePriority(runtime, {
         requested,
         keepWarm: keepWarm.has(runtimeId)
@@ -181,6 +210,7 @@ function runtimeRows(config, status, requestedRuntimeId) {
 function protectedReasons(row, policy) {
   const reasons = [];
   if (row.requested) reasons.push('requested');
+  if (row.authorityProtected) reasons.push(`authority-owner:${row.authority.owner}`);
   if (row.keepWarm) reasons.push('keep-warm-pin');
   if (policy.protectActiveRequests && row.activeRequests > 0) reasons.push('active-requests');
   return reasons;
@@ -221,13 +251,16 @@ function nodeMemoryProfile(config, nodeId, clusterStatus, fallbackProfile) {
   };
 }
 
-function clusterRuntimePolicyPlan(config, { requestedRuntimeId, profile, status, memoryProfile }) {
+function clusterRuntimePolicyPlan(config, { requestedRuntimeId, profile, status, memoryProfile, requesterNode }) {
   const policyTemplate = config.runtimePolicy ?? {};
-  const rows = runtimeRows(config, status, requestedRuntimeId);
+  const rows = runtimeRows(config, status, requestedRuntimeId, requesterNode);
   const requested = requestedRuntimeId ? rows.find((row) => row.runtimeId === requestedRuntimeId) : null;
   const validationErrors = [];
   const warnings = [];
   if (requestedRuntimeId && !requested) validationErrors.push(`unknown runtime ${requestedRuntimeId}`);
+  if (requested?.authority?.owner && requested.authority.owner !== requesterNode) {
+    validationErrors.push(`runtime ${requestedRuntimeId} is controlled by ${requested.authority.owner}`);
+  }
   const configuredNodes = clusterNodes(config);
   const clusterStatus = status?.cluster ?? profile?.cluster ?? {};
   const nodes = {};
@@ -353,6 +386,7 @@ function clusterRuntimePolicyPlan(config, { requestedRuntimeId, profile, status,
     ok: validationErrors.length === 0,
     policy,
     requestedRuntimeId: requestedRuntimeId ?? null,
+    requesterNode,
     admission: {
       allowed,
       clustered: true,
@@ -367,7 +401,10 @@ function clusterRuntimePolicyPlan(config, { requestedRuntimeId, profile, status,
   };
 }
 
-export async function createRuntimePolicyPlan(config, { requestedRuntimeId, profile, status } = {}) {
+export async function createRuntimePolicyPlan(
+  config,
+  { requestedRuntimeId, profile, status, requesterNode = currentNodeId(config) } = {}
+) {
   const runtimeStatus =
     status ??
     (await new RuntimeManager(config, {
@@ -376,14 +413,23 @@ export async function createRuntimePolicyPlan(config, { requestedRuntimeId, prof
     }).status());
   const memoryProfile = await liveMemoryProfile(profile);
   if (clusterAdmissionEnabled(config)) {
-    return clusterRuntimePolicyPlan(config, { requestedRuntimeId, profile, status: runtimeStatus, memoryProfile });
+    return clusterRuntimePolicyPlan(config, {
+      requestedRuntimeId,
+      profile,
+      status: runtimeStatus,
+      memoryProfile,
+      requesterNode
+    });
   }
   const policy = policyConfig(config, memoryProfile);
-  const rows = runtimeRows(config, runtimeStatus, requestedRuntimeId);
+  const rows = runtimeRows(config, runtimeStatus, requestedRuntimeId, requesterNode);
   const requested = requestedRuntimeId ? rows.find((row) => row.runtimeId === requestedRuntimeId) : null;
   const validationErrors = [];
   const warnings = [];
   if (requestedRuntimeId && !requested) validationErrors.push(`unknown runtime ${requestedRuntimeId}`);
+  if (requested?.authority?.owner && requested.authority.owner !== requesterNode) {
+    validationErrors.push(`runtime ${requestedRuntimeId} is controlled by ${requested.authority.owner}`);
+  }
 
   const loadedMemoryGb = rows.filter((row) => row.loaded).reduce((sum, row) => sum + row.memoryGb, 0);
   const requestedAddsMemory = requested && !requested.loaded ? requested.memoryGb : 0;
@@ -460,6 +506,7 @@ export async function createRuntimePolicyPlan(config, { requestedRuntimeId, prof
     ok: validationErrors.length === 0,
     policy,
     requestedRuntimeId: requestedRuntimeId ?? null,
+    requesterNode,
     admission: {
       allowed,
       overBudgetGb,
@@ -489,8 +536,9 @@ export async function applyRuntimePolicyPlan(
     warmup = true,
     force = false,
     reason = 'runtime-admission',
-    fallbackAvailable = false,
-    allowEviction = true
+    alternativeAvailable = false,
+    allowEviction = true,
+    requesterNode = currentNodeId(config)
   } = {}
 ) {
   if (!requestedRuntimeId) throw new Error('requested runtime id is required');
@@ -501,7 +549,8 @@ export async function applyRuntimePolicyPlan(
     if (runtimeManager.clusterCoordinator) status.cluster = await runtimeManager.clusterCoordinator.status();
     const plan = await createRuntimePolicyPlan(config, {
       requestedRuntimeId,
-      status
+      status,
+      requesterNode
     });
     if (dryRun) {
       return {
@@ -531,29 +580,50 @@ export async function applyRuntimePolicyPlan(
           await runtimeManager.start(requestedRuntimeId, {
             force,
             warmup,
-            reason
+            reason,
+            requestedBy: requesterNode
           })
         ]
       };
     }
     if (!plan.admission.allowed) {
-      const { active: activeBlockers, pinned: keepWarmBlockers } = runtimeAdmissionBlockers(plan);
-      const temporary = activeBlockers.length > 0 && keepWarmBlockers.length === 0;
-      const blockerText = [...activeBlockers, ...keepWarmBlockers]
+      const {
+        active: activeBlockers,
+        pinned: keepWarmBlockers,
+        authority: authorityBlockers
+      } = runtimeAdmissionBlockers(plan);
+      const evictionForbiddenByActiveRuntime =
+        !allowEviction && authorityBlockers.length === 0 && keepWarmBlockers.length === 0 && activeBlockers.length > 0;
+      const temporary =
+        !evictionForbiddenByActiveRuntime &&
+        authorityBlockers.length === 0 &&
+        activeBlockers.length > 0 &&
+        keepWarmBlockers.length === 0;
+      const blockerText = [...authorityBlockers, ...activeBlockers, ...keepWarmBlockers]
         .map((item) => `${item.runtimeId} (${item.protectedReasons.join(', ')})`)
         .join(', ');
       throw new RuntimeAdmissionError(
-        keepWarmBlockers.length
-          ? `Runtime ${requestedRuntimeId} cannot be admitted because it would evict keep-warm runtime(s): ${keepWarmBlockers.map((item) => item.runtimeId).join(', ')}. Clear keepWarm on the blocking internal runtime before retrying.`
-          : temporary
-            ? `Runtime ${requestedRuntimeId} is queued for capacity; waiting for active runtime(s) to drain: ${blockerText}`
-            : plan.admission.clustered
-              ? `Runtime ${requestedRuntimeId} cannot fit within the per-node cluster memory budgets; protected runtime(s): ${blockerText || 'none'}`
-              : `Runtime ${requestedRuntimeId} cannot fit within the ${plan.policy.memoryBudgetGb.toFixed(1)} GB memory budget; protected runtime(s): ${blockerText || 'none'}`,
+        authorityBlockers.length
+          ? `Runtime ${requestedRuntimeId} cannot be admitted because delegated runtime(s) are controlled by another node: ${authorityBlockers.map((item) => `${item.runtimeId} (${item.protectedReasons.join(', ')})`).join(', ')}.`
+          : keepWarmBlockers.length
+            ? `Runtime ${requestedRuntimeId} cannot be admitted because it would evict keep-warm runtime(s): ${keepWarmBlockers.map((item) => item.runtimeId).join(', ')}. Clear keepWarm on the blocking internal runtime before retrying.`
+            : evictionForbiddenByActiveRuntime
+              ? `Runtime ${requestedRuntimeId} cannot be admitted without eventually evicting active resident runtime(s): ${activeBlockers.map((item) => item.runtimeId).join(', ')}.`
+              : temporary
+                ? `Runtime ${requestedRuntimeId} is queued for capacity; waiting for active runtime(s) to drain: ${blockerText}`
+                : plan.admission.clustered
+                  ? `Runtime ${requestedRuntimeId} cannot fit within the per-node cluster memory budgets; protected runtime(s): ${blockerText || 'none'}`
+                  : `Runtime ${requestedRuntimeId} cannot fit within the ${plan.policy.memoryBudgetGb.toFixed(1)} GB memory budget; protected runtime(s): ${blockerText || 'none'}`,
         {
           plan,
           temporary,
-          ...(keepWarmBlockers.length ? { code: 'runtime_keep_warm_conflict' } : {})
+          ...(authorityBlockers.length
+            ? { code: 'runtime_authority_conflict' }
+            : keepWarmBlockers.length
+              ? { code: 'runtime_keep_warm_conflict' }
+              : evictionForbiddenByActiveRuntime
+                ? { code: 'runtime_eviction_forbidden' }
+                : {})
         }
       );
     }
@@ -572,12 +642,14 @@ export async function applyRuntimePolicyPlan(
     for (const action of plan.actions) {
       admissionSignal?.throwIfAborted?.();
       if (action.type === 'stop') {
-        if (typeof runtimeManager.drainRuntime === 'function') await runtimeManager.drainRuntime(action.runtimeId);
+        if (typeof runtimeManager.drainRuntime === 'function') {
+          await runtimeManager.drainRuntime(action.runtimeId, { requestedBy: requesterNode });
+        }
         try {
           results.push({
             ...action,
             status: 'applied',
-            result: await runtimeManager.stop(action.runtimeId)
+            result: await runtimeManager.stop(action.runtimeId, { requestedBy: requesterNode })
           });
         } finally {
           runtimeManager.resumeRuntime?.(action.runtimeId);
@@ -589,7 +661,8 @@ export async function applyRuntimePolicyPlan(
           result: await runtimeManager.start(action.runtimeId, {
             force,
             warmup,
-            reason
+            reason,
+            requestedBy: requesterNode
           })
         });
       }
@@ -603,7 +676,8 @@ export async function applyRuntimePolicyPlan(
         result: await runtimeManager.start(requestedRuntimeId, {
           force,
           warmup,
-          reason
+          reason,
+          requestedBy: requesterNode
         })
       });
     }
@@ -619,7 +693,7 @@ export async function applyRuntimePolicyPlan(
     return runtimeManager.withAdmissionLock(applyPlan, {
       runtimeId: requestedRuntimeId,
       reason,
-      preemptible: fallbackAvailable
+      preemptible: alternativeAvailable
     });
   }
   return applyPlan();

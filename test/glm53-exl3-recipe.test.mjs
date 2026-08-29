@@ -9,12 +9,12 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const backendRoot = path.join(root, 'backends', 'glm53-exl3');
 const recipe = await loadRecipeById('linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm');
 
-assert.equal(recipe.version, 6);
+assert.equal(recipe.version, 7);
 assert.equal(recipe.models[0].gatewayModel, 'glm-5.3-flash-exl3');
 assert.equal(recipe.models[0].settings.contextWindow, 262144);
 assert.equal(recipe.models[0].settings.memoryGb, 100);
 assert.equal(recipe.models[0].settings.maxActiveRequests, 4);
-assert.equal(recipe.models[0].settings.keepWarm, false);
+assert.equal(recipe.models[0].settings.keepWarm, true);
 assert.deepEqual(recipe.models[0].aliases, ['glm53f', 'glm53-flash']);
 
 const plan = planRecipe(

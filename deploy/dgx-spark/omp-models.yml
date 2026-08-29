@@ -14,6 +14,24 @@ providers:
       toolStrictMode: none
       thinkingFormat: qwen-chat-template
     models:
+      - id: glm53-flash
+        name: GLM-5.3 Flash EXL3/TR3 4bpw via LLooM alias
+        reasoning: true
+        thinking:
+          mode: effort
+          efforts: [minimal, low, medium, high, xhigh]
+          defaultLevel: low
+          supportsDisplay: true
+        input: [text, image]
+        supportsTools: true
+        tokenizer: glm5
+        contextWindow: 262144
+        maxTokens: 131072
+        cost:
+          input: 0
+          output: 0
+          cacheRead: 0
+          cacheWrite: 0
       - id: unsloth/Qwen3.6-35B-A3B-NVFP4-Fast
         name: Qwen3.6-35B-A3B-NVFP4-Fast MTP on ennspark01
         reasoning: true
