@@ -2424,9 +2424,7 @@ dsparkBase.cluster = {
     ennspark02: { endpoint: 'http://spark-two:8100', backendHost: '10.20.30.11' }
   }
 };
-const clusterEmbeddingRecipe = await loadRecipeById(
-  'linux-nvidia-dgx-spark-cluster-qwen3-embedding-4b-vllm'
-);
+const clusterEmbeddingRecipe = await loadRecipeById('linux-nvidia-dgx-spark-cluster-qwen3-embedding-4b-vllm');
 const clusterEmbeddingBase = structuredClone(dsparkBase);
 clusterEmbeddingBase.cluster.nodes.ennspark02.labels = { role: 'worker', hardware: 'dgx-spark' };
 clusterEmbeddingBase.cluster.nodes['macbook-local'] = {
@@ -2438,33 +2436,30 @@ const clusterEmbeddingConfig = deriveUserConfig(clusterEmbeddingBase, clusterEmb
   modelRoot: '/models',
   additive: true
 });
-const workerEmbeddingRuntime = clusterEmbeddingConfig.runtimes['qwen3-embedding-4b-ennspark02'];
-assert.equal(workerEmbeddingRuntime.node, 'ennspark02');
-assert.equal(workerEmbeddingRuntime.healthUrl, 'http://10.20.30.11:8002/v1/models');
-assert(workerEmbeddingRuntime.bootstrap.createArgs.includes('10.20.30.11:8002:8000'));
+const leaderEmbeddingRuntime = clusterEmbeddingConfig.runtimes['qwen3-embedding-4b-ennspark01'];
+assert.equal(leaderEmbeddingRuntime.node, 'ennspark01');
+assert.equal(leaderEmbeddingRuntime.healthUrl, 'http://10.20.30.12:8002/v1/models');
+assert.equal(leaderEmbeddingRuntime.keepWarm, false);
+assert(leaderEmbeddingRuntime.bootstrap.createArgs.includes('10.20.30.12:8002:8000'));
+assert.deepEqual(leaderEmbeddingRuntime.bootstrap.createArgs.slice(0, 2), ['--restart', 'no']);
 assert.deepEqual(
-  workerEmbeddingRuntime.bootstrap.command.slice(
-    workerEmbeddingRuntime.bootstrap.command.indexOf('--host'),
-    workerEmbeddingRuntime.bootstrap.command.indexOf('--host') + 2
+  leaderEmbeddingRuntime.bootstrap.command.slice(
+    leaderEmbeddingRuntime.bootstrap.command.indexOf('--host'),
+    leaderEmbeddingRuntime.bootstrap.command.indexOf('--host') + 2
   ),
   ['--host', '0.0.0.0']
 );
+assert.equal(clusterEmbeddingConfig.runtimes['qwen3-embedding-4b-ennspark02'], undefined);
 assert.equal(clusterEmbeddingConfig.runtimes['qwen3-embedding-4b-macbook-local'], undefined);
-assert.equal(
-  clusterEmbeddingConfig.backends['qwen3-embedding-4b-ennspark02'].baseUrl,
-  'http://10.20.30.11:8002/v1'
-);
-assert.deepEqual(
-  clusterEmbeddingConfig.models.find((model) => model.id === 'Qwen/Qwen3-Embedding-4B').targets,
-  [
-    {
-      id: 'ennspark02',
-      node: 'ennspark02',
-      backend: 'qwen3-embedding-4b-ennspark02',
-      runtime: 'qwen3-embedding-4b-ennspark02'
-    }
-  ]
-);
+assert.equal(clusterEmbeddingConfig.backends['qwen3-embedding-4b-ennspark01'].baseUrl, 'http://10.20.30.12:8002/v1');
+assert.deepEqual(clusterEmbeddingConfig.models.find((model) => model.id === 'Qwen/Qwen3-Embedding-4B').targets, [
+  {
+    id: 'ennspark01',
+    node: 'ennspark01',
+    backend: 'qwen3-embedding-4b-ennspark01',
+    runtime: 'qwen3-embedding-4b-ennspark01'
+  }
+]);
 const labeledDsparkBase = structuredClone(dsparkBase);
 labeledDsparkBase.cluster.nodes.ennspark02.labels = { role: 'worker', hardware: 'dgx-spark' };
 labeledDsparkBase.cluster.nodes['macbook-local'] = {

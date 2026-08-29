@@ -3,9 +3,9 @@
   "schemaVersion": 1,
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-cluster-qwen3-embedding-4b-vllm",
-  "name": "DGX Spark cluster Qwen3 Embedding 4B leader lane",
-  "version": 2,
-  "summary": "Pins Qwen3-Embedding-4B to the leader DGX Spark while the worker hosts the FLUX sidecar, keeping those companion workloads off the same DeepSeek rank.",
+  "name": "DGX Spark cluster Qwen3 Embedding 4B worker lane",
+  "version": 1,
+  "summary": "Pins Qwen3-Embedding-4B to a worker DGX Spark and routes its OpenAI-compatible pooling endpoint through the leader LLooM gateway.",
   "license": { "id": "Apache-2.0", "name": "Qwen3-Embedding-4B model license" },
   "provenance": {
     "createdBy": "lloom",
@@ -25,8 +25,8 @@
     "family": "NVIDIA DGX Spark / GB10 cluster",
     "testedMachine": "Two directly connected DGX Spark systems",
     "notes": [
-      "Runs on the leader node while the FLUX image lane runs on the worker node.",
-      "LLooM starts embeddings on demand after the distributed chat runtime reserves its memory; Docker must not race that admission at boot."
+      "Runs on the worker node so the leader can reserve unified memory for a large TP chat rank.",
+      "The leader gateway routes embedding requests over the configured private backendHost."
     ]
   },
   "requirements": {
@@ -71,9 +71,9 @@
         "maxActiveRequests": 8,
         "memoryGb": 12,
         "priority": 200,
-        "keepWarm": false,
+        "keepWarm": true,
         "startupTimeoutMs": 900000,
-        "placement": { "mode": "replicated", "nodes": ["leader"] },
+        "placement": { "mode": "replicated", "nodes": ["worker"] },
         "runtime": {
           "command": "docker",
           "adapter": "docker",
@@ -92,7 +92,7 @@
             "adapter": "docker",
             "image": "vllm/vllm-openai:v0.24.0",
             "createArgs": [
-              "--restart", "no",
+              "--restart", "unless-stopped",
               "--gpus", "all",
               "--ipc", "host",
               "-p", "127.0.0.1:${port}:8000",

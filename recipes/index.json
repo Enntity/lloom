@@ -81,14 +81,26 @@
     {
       "id": "linux-nvidia-dgx-spark-cluster-qwen3-embedding-4b-vllm",
       "path": "linux-nvidia-dgx-spark-cluster-qwen3-embedding-4b-vllm.json",
-      "currentVersion": 1,
+      "currentVersion": 2,
       "versions": [
-        { "version": 1, "path": "linux-nvidia-dgx-spark-cluster-qwen3-embedding-4b-vllm.json", "status": "current" }
+        {
+          "version": 1,
+          "path": "archive/linux-nvidia-dgx-spark-cluster-qwen3-embedding-4b-vllm/v1.json",
+          "status": "archived",
+          "archivedAt": "2026-08-29T05:15:00.000Z",
+          "notes": "Original worker-pinned lane retained for reproducibility."
+        },
+        {
+          "version": 2,
+          "path": "linux-nvidia-dgx-spark-cluster-qwen3-embedding-4b-vllm.json",
+          "status": "current",
+          "notes": "Moves embeddings to the leader and leaves FLUX on the worker; LLooM controls embedding startup after distributed chat admission."
+        }
       ],
-      "name": "DGX Spark cluster Qwen3 Embedding 4B worker lane",
-      "summary": "Worker-pinned Qwen3-Embedding-4B pooling runtime routed through the leader LLooM gateway.",
+      "name": "DGX Spark cluster Qwen3 Embedding 4B leader lane",
+      "summary": "Leader-pinned Qwen3-Embedding-4B pooling runtime that leaves the worker available for the FLUX sidecar.",
       "tags": ["linux", "nvidia", "dgx-spark", "cluster", "embedding", "qwen3", "vllm", "continuity"],
-      "recommendedFor": ["Two-node DGX Spark clusters preserving leader memory for a large TP chat model"],
+      "recommendedFor": ["Two-node DGX Spark clusters splitting embeddings and FLUX across opposite DeepSeek ranks"],
       "capabilities": ["embedding", "embeddings", "batching", "multilingual", "long-context"],
       "source": { "type": "local", "url": "recipes/linux-nvidia-dgx-spark-cluster-qwen3-embedding-4b-vllm.json" }
     },
