@@ -606,8 +606,8 @@ async function embed(url, body = {}) {
   await fixture.close();
 }
 
-// Local eviction is a last resort only after all non-evicting destinations
-// have returned availability failures.
+// Embeddings never evict resident runtimes. If MacBook and cloud both fail,
+// the request fails too; the Spark embedding runtime remains stopped.
 {
   const fixture = await createEmbeddingFixture({
     macStatus: 503,
@@ -616,16 +616,25 @@ async function embed(url, body = {}) {
     preserveResident: true
   });
   const response = await embed(fixture.url);
-  assert.equal(response.status, 200);
-  const body = await response.json();
-  assert.deepEqual(body.data[0].embedding, [1]);
-  assert.deepEqual(fixture.hits, { spark: 1, mac: 1, cloud: 1, ensures: 0 });
-  assert.deepEqual(fixture.operations, [
-    'stop:resident-runtime',
-    'start:spark-embedding-runtime',
-    'slot:spark-embedding-runtime'
-  ]);
+  assert.equal(response.status, 503);
+  assert.deepEqual(fixture.hits, { spark: 0, mac: 1, cloud: 1, ensures: 0 });
+  assert.deepEqual(fixture.operations, []);
   assert.equal(fixture.admissionOptions[0].preemptible, true);
+  await fixture.close();
+}
+
+// The no-eviction guarantee also applies when a caller bypasses the alias and
+// requests the exact Spark embedding model ID.
+{
+  const fixture = await createEmbeddingFixture({
+    runtimeStatus: 'stopped',
+    clusteredPredictive: true
+  });
+  const response = await embed(fixture.url, { model: 'spark-embedding' });
+  assert.equal(response.status, 503);
+  assert.deepEqual(fixture.hits, { spark: 0, mac: 0, cloud: 0, ensures: 0 });
+  assert.deepEqual(fixture.operations, []);
+  assert.equal(fixture.admissionOptions[0].preemptible, false);
   await fixture.close();
 }
 

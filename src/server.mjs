@@ -1958,7 +1958,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     }
   };
 
-  async function ensureRuntime(runtimeId, { fallbackAvailable = false } = {}) {
+  async function ensureRuntime(runtimeId, { fallbackAvailable = false, allowEviction = true } = {}) {
     if (!runtimeId) return { runtimeId, started: false, reason: 'no-runtime' };
     if (typeof runtimeManager.isHealthy === 'function' && (await runtimeManager.isHealthy(runtimeId))) {
       return { runtimeId, started: false, healthy: true, reason: 'already-healthy' };
@@ -1978,7 +1978,8 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
               warmup: true,
               force: false,
               reason: 'model-request',
-              fallbackAvailable
+              fallbackAvailable,
+              allowEviction
             });
           } catch (error) {
             if (!(error instanceof RuntimeAdmissionError) || !error.temporary || Date.now() >= deadline) throw error;
@@ -2083,7 +2084,8 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     try {
       const result = await clusterCoordinator.withTarget(resolved, async () => {
         await ensureRuntime(resolved.model.runtime, {
-          fallbackAvailable: resolved.failover?.externalFallbackAvailable === true
+          fallbackAvailable: resolved.failover?.externalFallbackAvailable === true,
+          allowEviction: resolved.model.kind !== 'embedding'
         });
         return runtimeManager.withSlot(resolved.model.runtime, () => {
           runtimeStartedAt = Date.now();

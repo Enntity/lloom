@@ -489,7 +489,8 @@ export async function applyRuntimePolicyPlan(
     warmup = true,
     force = false,
     reason = 'runtime-admission',
-    fallbackAvailable = false
+    fallbackAvailable = false,
+    allowEviction = true
   } = {}
 ) {
   if (!requestedRuntimeId) throw new Error('requested runtime id is required');
@@ -553,6 +554,16 @@ export async function applyRuntimePolicyPlan(
           plan,
           temporary,
           ...(keepWarmBlockers.length ? { code: 'runtime_keep_warm_conflict' } : {})
+        }
+      );
+    }
+    const evictionActions = plan.actions.filter((action) => action.type === 'stop');
+    if (!allowEviction && evictionActions.length > 0) {
+      throw new RuntimeAdmissionError(
+        `Runtime ${requestedRuntimeId} cannot be admitted without evicting resident runtime(s): ${evictionActions.map((action) => action.runtimeId).join(', ')}`,
+        {
+          plan,
+          code: 'runtime_eviction_forbidden'
         }
       );
     }
