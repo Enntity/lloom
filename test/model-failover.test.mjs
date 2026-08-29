@@ -199,7 +199,8 @@ async function createEmbeddingFixture({
   macStatus = 200,
   cloudStatus = 200,
   runtimeStatus = 'running',
-  preserveResident = false
+  preserveResident = false,
+  clusteredPredictive = false
 } = {}) {
   const hits = { spark: 0, mac: 0, cloud: 0, ensures: 0 };
   const operations = [];
@@ -231,13 +232,18 @@ async function createEmbeddingFixture({
     server: { host: '127.0.0.1', port: 0 },
     security: { allowMissingAuth: true, apiKeys: [] },
     logging: { metricsPersistence: false },
-    cluster: { routingStatusCacheMs: 0 },
-    ...(preserveResident
+    cluster: {
+      routingStatusCacheMs: 0,
+      ...(clusteredPredictive
+        ? { nodes: { spark: { resources: { memoryGb: 128 } } } }
+        : {})
+    },
+    ...(preserveResident || clusteredPredictive
       ? {
           runtimePolicy: {
             enabled: true,
             autoEvict: true,
-            memoryBudgetGb: 40,
+            ...(clusteredPredictive ? { maxMemoryUtilization: 0.95 } : { memoryBudgetGb: 40 }),
             protectActiveRequests: true
           }
         }
@@ -272,8 +278,20 @@ async function createEmbeddingFixture({
       }
     ],
     runtimes: {
-      'spark-embedding-runtime': { enabled: true, memoryGb: preserveResident ? 30 : 0 },
-      ...(preserveResident ? { 'resident-runtime': { enabled: true, memoryGb: 30 } } : {})
+      'spark-embedding-runtime': {
+        enabled: true,
+        memoryGb: clusteredPredictive ? 12 : preserveResident ? 30 : 0,
+        ...(clusteredPredictive ? { node: 'spark' } : {})
+      },
+      ...(preserveResident || clusteredPredictive
+        ? {
+            'resident-runtime': {
+              enabled: true,
+              memoryGb: clusteredPredictive ? 100 : 30,
+              ...(clusteredPredictive ? { node: 'spark' } : {})
+            }
+          }
+        : {})
     }
   };
   const runtimeManager = {
@@ -295,7 +313,9 @@ async function createEmbeddingFixture({
       return {
         runtimes: {
           'spark-embedding-runtime': { status: runtimeStatus, healthy: runtimeStatus === 'running' },
-          ...(preserveResident ? { 'resident-runtime': { status: 'running', healthy: true, activeRequests: 0 } } : {})
+          ...(preserveResident || clusteredPredictive
+            ? { 'resident-runtime': { status: 'running', healthy: true, activeRequests: 0 } }
+            : {})
         }
       };
     },
@@ -308,7 +328,44 @@ async function createEmbeddingFixture({
       return { runtimeId, started: true };
     }
   };
-  const app = createLloomServer(config, { runtimeManager, logger: { error() {}, warn() {} } });
+  const clusterCoordinator = clusteredPredictive
+    ? {
+        attachRuntimeManager() {},
+        attachModelCatalog() {},
+        reconfigure() {},
+        selectTarget() {
+          return null;
+        },
+        async withTarget(_resolved, fn) {
+          return fn();
+        },
+        noteTargetOutcome() {},
+        async nodeStatus() {
+          return null;
+        },
+        async status() {
+          return {
+            nodes: {
+              spark: {
+                reachable: true,
+                local: true,
+                telemetry: {
+                  memory: {
+                    totalBytes: 128 * 1024 ** 3,
+                    availableBytes: 10 * 1024 ** 3
+                  }
+                }
+              }
+            }
+          };
+        }
+      }
+    : undefined;
+  const app = createLloomServer(config, {
+    runtimeManager,
+    ...(clusterCoordinator ? { clusterCoordinator } : {}),
+    logger: { error() {}, warn() {} }
+  });
   const gatewayPort = await listen(app.server);
   return {
     app,
@@ -525,6 +582,27 @@ async function embed(url, body = {}) {
       ['cloud-embedding', 200, 'preserve-residency']
     ]
   );
+  await fixture.close();
+}
+
+// Cluster admission previews use live node telemetry, not only configured
+// memory estimates. This catches the Spark case where static model estimates
+// appear to coexist but current unified-memory pressure requires eviction.
+{
+  const fixture = await createEmbeddingFixture({
+    runtimeStatus: 'stopped',
+    clusteredPredictive: true
+  });
+  const response = await embed(fixture.url);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(body.data[0].embedding, [2]);
+  assert.deepEqual(fixture.hits, { spark: 0, mac: 1, cloud: 0, ensures: 0 });
+  assert.deepEqual(fixture.operations, []);
+  const recent = fixture.app.metrics.snapshot().recent;
+  assert.equal(recent[0].resolvedModel, 'macbook-embedding');
+  assert.equal(recent[0].failoverReason, 'preserve-residency');
+  assert.equal(recent[0].failedOver, true);
   await fixture.close();
 }
 

@@ -1845,6 +1845,14 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       logger.warn?.(`could not inspect runtimes before model failover routing: ${error?.message ?? error}`);
       status = { runtimes: {} };
     }
+    let admissionStatus = status;
+    try {
+      if (typeof clusterCoordinator.status === 'function') {
+        admissionStatus = { ...status, cluster: await clusterCoordinator.status() };
+      }
+    } catch (error) {
+      logger.warn?.(`could not inspect cluster capacity before model failover routing: ${error?.message ?? error}`);
+    }
     const available = candidates.filter((candidate, index) => {
       if (index === candidates.length - 1 || !candidate.model.runtime) return true;
       const runtimeState = status?.runtimes?.[candidate.model.runtime]?.status;
@@ -1866,7 +1874,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       try {
         const plan = await createRuntimePolicyPlan(config, {
           requestedRuntimeId: primary.model.runtime,
-          status
+          status: admissionStatus
         });
         const requiresEviction = plan.actions.some((action) => action.type === 'stop');
         if (requiresEviction || !plan.admission.allowed) {
