@@ -3318,6 +3318,25 @@ assert(ompRoleYaml.includes('smol: local-llm/deepseek/deepseek-v4-flash-0731:low
 assert(ompRoleYaml.includes('task: local-llm/local-qwen'));
 assert(ompRoleYaml.includes('retry:'));
 assert(ompRoleYaml.includes('      - local-llm/Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16'));
+const sparkDeployConfig = JSON.parse(await fs.readFile(path.join('deploy', 'dgx-spark', 'config.json'), 'utf8'));
+assert.equal(sparkDeployConfig.clientCatalog.includeAliases, true);
+const sparkOmpConfig = renderOmpConfigYaml(sparkDeployConfig);
+for (const role of ['smol', 'slow', 'plan', 'commit', 'designer', 'advisor', 'tiny', 'vision', 'task']) {
+  assert(sparkOmpConfig.includes(`  ${role}: local-llm/glm53-flash`));
+}
+assert(sparkOmpConfig.includes('  default: local-llm/glm53-flash:low'));
+const sparkClientConfig = structuredClone(registryConfig);
+sparkClientConfig.clientCatalog = sparkDeployConfig.clientCatalog;
+sparkClientConfig.aliases['glm53-flash'] = {
+  target: 'Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16',
+  advertise: true
+};
+const sparkIntegrationArtifacts = buildIntegrationArtifacts(sparkClientConfig, createRegistry(sparkClientConfig), {
+  home: tempDir,
+  generatedRoot: path.join(tempDir, 'spark-generated')
+});
+const sparkOmpModels = sparkIntegrationArtifacts.find((artifact) => artifact.id === 'omp-models').content;
+assert(sparkOmpModels.includes('      - id: glm53-flash\n'));
 const ompOpenRouterYaml = renderOmpModelsYaml(
   {
     providers: {

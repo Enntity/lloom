@@ -19,6 +19,23 @@
     "chatModel": "unsloth/Qwen3.6-35B-A3B-NVFP4",
     "embeddingModel": "embeddings"
   },
+  "clientCatalog": {
+    "includeAliases": true,
+    "omp": {
+      "roles": {
+        "default": "glm53-flash:low",
+        "smol": "glm53-flash",
+        "slow": "glm53-flash",
+        "plan": "glm53-flash",
+        "commit": "glm53-flash",
+        "designer": "glm53-flash",
+        "advisor": "glm53-flash",
+        "tiny": "glm53-flash",
+        "vision": "glm53-flash",
+        "task": "glm53-flash"
+      }
+    }
+  },
   "aliases": {
     "embeddings": {
       "target": "Qwen/Qwen3-Embedding-4B",
