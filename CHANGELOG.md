@@ -24,6 +24,7 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Fixed
 
+- Spark release deployment now requires every worker named for a clustered recipe, stages the exact artifact and reversible package/config state on workers before leader setup, and rolls staged workers back when the guarded leader deployment fails.
 - The two-Spark DeepSeek V4 Flash patch pack now backports vLLM PR 51538's padded-MTP indexer clamp, preventing negative CUDA-graph padding lengths from deadlocking the pinned Blackwell sparse top-k kernel.
 - Runtime no-progress watchdogs now observe streaming responses only, preventing long buffered requests from restarting healthy managed runtimes before their complete response is available.
 - OpenRouter requests with `reasoning_effort: none` now send `reasoning: { effort: "none", exclude: true }` unless the caller already set `exclude`, so providers do not spend the output budget on hidden reasoning.
