@@ -354,7 +354,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm",
       "path": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm.json",
-      "currentVersion": 5,
+      "currentVersion": 6,
       "versions": [
         {
           "version": 1,
@@ -382,9 +382,15 @@
         },
         {
           "version": 5,
+          "path": "archive/linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm/v5.json",
+          "status": "archived",
+          "notes": "Refreshes to MiaAI 0e2e78f3 with DFlash2 padded slot-sharing, retained hybrid prefix hits, XGrammar speculative termination fixes, and stdout-safe overlays while preserving the measured 262K sidecar-coexistence memory envelope."
+        },
+        {
+          "version": 6,
           "path": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm.json",
           "status": "current",
-          "notes": "Refreshes to MiaAI 0e2e78f3 with DFlash2 padded slot-sharing, retained hybrid prefix hits, XGrammar speculative termination fixes, and stdout-safe overlays while preserving the measured 262K sidecar-coexistence memory envelope."
+          "notes": "Uses IPv4 RoCE address-family discovery and merged-NIC handling without pinning a host-specific GID index, matching the proven two-Spark NCCL fabric path."
         }
       ],
       "name": "2x DGX Spark GLM-5.3 Flash EXL3 DFlash2 vLLM",

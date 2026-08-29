@@ -9,7 +9,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const backendRoot = path.join(root, 'backends', 'glm53-exl3');
 const recipe = await loadRecipeById('linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm');
 
-assert.equal(recipe.version, 5);
+assert.equal(recipe.version, 6);
 assert.equal(recipe.models[0].gatewayModel, 'glm-5.3-flash-exl3');
 assert.equal(recipe.models[0].settings.contextWindow, 262144);
 assert.equal(recipe.models[0].settings.memoryGb, 100);
@@ -68,6 +68,10 @@ for (const member of members) {
   assert.match(rendered, /GPU_MEMORY_UTILIZATION=0\.79/);
   assert.match(rendered, /KV_CACHE_MEMORY_BYTES=10200547328/);
   assert.match(rendered, /GLM53_MIXED_PREFILL_CHUNK=skip/);
+  assert.match(rendered, /NCCL_IB_ADDR_FAMILY=AF_INET/);
+  assert.match(rendered, /NCCL_CROSS_NIC=1/);
+  assert.match(rendered, /NCCL_IB_MERGE_NICS=1/);
+  assert.doesNotMatch(rendered, /NCCL_IB_GID_INDEX=/);
   for (const overlay of [
     'patch_glm5_drafter_group.py',
     'patch_hybrid_prefix_hit.py',
