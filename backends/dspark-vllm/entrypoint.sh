@@ -101,7 +101,29 @@ case "${DEFAULT_THINKING:-low}" in
   *) echo "DEFAULT_THINKING must be off, low, high, or max" >&2; exit 2 ;;
 esac
 
-speculative_config="{\"method\":\"dspark\",\"num_speculative_tokens\":${MTP_NUM_TOKENS:-5},\"draft_sample_method\":\"probabilistic\"}"
+speculation_mode="${DSPARK_SPECULATION_MODE:-dspark}"
+speculation_args=()
+case "${speculation_mode}" in
+  dspark)
+    if [ "${MTP_NUM_TOKENS:-5}" -lt 1 ]; then
+      echo "MTP_NUM_TOKENS must be at least 1 when DSPARK_SPECULATION_MODE=dspark" >&2
+      exit 2
+    fi
+    speculative_config="{\"method\":\"dspark\",\"num_speculative_tokens\":${MTP_NUM_TOKENS:-5},\"draft_sample_method\":\"probabilistic\"}"
+    speculation_args=(--speculative-config "${speculative_config}")
+    cudagraph_capture_size="$(( ${MAX_NUM_SEQS:-6} * (${MTP_NUM_TOKENS:-5} + 1) ))"
+    ;;
+  target-only)
+    # Safety profile for vLLM #51593-shaped stalls. Without speculative
+    # expansion, next_n stays at 1 and CUDA-graph padding cannot underflow an
+    # MTP context length before the sparse top-k kernel.
+    cudagraph_capture_size="${MAX_NUM_SEQS:-6}"
+    ;;
+  *)
+    echo "DSPARK_SPECULATION_MODE must be dspark or target-only" >&2
+    exit 2
+    ;;
+esac
 headless=()
 if [ "${NODE_RANK}" != "0" ]; then headless=(--headless); fi
 
@@ -114,10 +136,10 @@ exec /usr/local/bin/vllm serve "${DSPARK_MODEL:-deepseek-ai/DeepSeek-V4-Flash-07
   --max-model-len "${MAX_MODEL_LEN:-1048576}" --max-num-seqs "${MAX_NUM_SEQS:-6}" \
   --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS:-8192}" \
   --long-prefill-token-threshold "${LONG_PREFILL_TOKEN_THRESHOLD:-1024}" \
-  --max-cudagraph-capture-size "$(( ${MAX_NUM_SEQS:-6} * (${MTP_NUM_TOKENS:-5} + 1) ))" \
+  --max-cudagraph-capture-size "${cudagraph_capture_size}" \
   --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION:-0.80}" \
   --enable-prefix-caching --enable-prompt-tokens-details --async-scheduling --enable-chunked-prefill \
-  --speculative-config "${speculative_config}" --tokenizer-mode deepseek_v4 \
+  "${speculation_args[@]}" --tokenizer-mode deepseek_v4 \
   --distributed-executor-backend mp --moe-backend flashinfer_b12x \
   --tool-call-parser deepseek_v4 --enable-auto-tool-choice --reasoning-parser deepseek_v4 \
   --reasoning-config '{"reasoning_parser":"deepseek_v4","reasoning_start_str":"<think>","reasoning_end_str":"</think>"}' \
