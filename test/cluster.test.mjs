@@ -646,7 +646,11 @@ leaderReconfigureManager.admit = async (runtimeId) => {
 upgradedDistributedConfig.runtimes.split.keepWarm = true;
 const reconfigured = await leaderReconfigureManager.reconfigure(upgradedDistributedConfig);
 assert.deepEqual(reconfigured.changed, ['head', 'split']);
-assert.deepEqual(reconfigureCalls, ['drain:split', 'stop:split', 'admit:split']);
+assert.deepEqual(
+  reconfigureCalls,
+  ['stop:split', 'admit:split'],
+  'a stopped distributed runtime is not falsely drained before its keep-warm start'
+);
 assert.deepEqual(reconfigured.results.at(-1), {
   runtimeId: 'head',
   started: false,
@@ -706,7 +710,8 @@ demotedReconfigureManager.processes.set('standalone', {
   signalCode: null
 });
 const demotedCalls = [];
-demotedReconfigureManager.drainRuntime = async (runtimeId) => demotedCalls.push(`drain:${runtimeId}`);
+demotedReconfigureManager.drainRuntime = async (runtimeId, options) =>
+  demotedCalls.push(`drain:${runtimeId}:${options.reason}`);
 demotedReconfigureManager.stop = async (runtimeId) => {
   demotedCalls.push(`stop:${runtimeId}`);
   return { runtimeId, stopped: true };
@@ -719,8 +724,33 @@ const demotedNextConfig = structuredClone(demotedKeepWarmConfig);
 demotedNextConfig.runtimes.standalone.keepWarm = false;
 demotedNextConfig.runtimes.standalone.recipe.version = 2;
 const demoted = await demotedReconfigureManager.reconfigure(demotedNextConfig);
-assert.deepEqual(demotedCalls, ['drain:standalone', 'stop:standalone']);
+assert.deepEqual(demotedCalls, ['drain:standalone:config-reload', 'stop:standalone']);
 assert.deepEqual(demoted.results, [{ runtimeId: 'standalone', started: false, reason: 'not-keep-warm' }]);
+
+const addedOnDemandConfig = {
+  cluster: { nodeId: 'leader', leaderNode: 'leader' },
+  runtimes: {}
+};
+const addedOnDemandManager = new RuntimeManager(structuredClone(addedOnDemandConfig), {
+  logger: { error() {}, warn() {}, info() {} },
+  captureOutput: false
+});
+const addedOnDemandCalls = [];
+addedOnDemandManager.drainRuntime = async (runtimeId) => addedOnDemandCalls.push(`drain:${runtimeId}`);
+addedOnDemandManager.stop = async (runtimeId) => {
+  addedOnDemandCalls.push(`stop:${runtimeId}`);
+  return { runtimeId, stopped: true };
+};
+const addedOnDemandNextConfig = structuredClone(addedOnDemandConfig);
+addedOnDemandNextConfig.runtimes.embedding = {
+  enabled: true,
+  keepWarm: false,
+  command: 'embedding-server',
+  recipe: { id: 'embedding', version: 1 }
+};
+const addedOnDemand = await addedOnDemandManager.reconfigure(addedOnDemandNextConfig);
+assert.deepEqual(addedOnDemandCalls, [], 'new on-demand runtimes do not emit a fake drain or stop');
+assert.deepEqual(addedOnDemand.results, [{ runtimeId: 'embedding', started: false, reason: 'not-keep-warm' }]);
 
 const reconfiguringRequestManager = new RuntimeManager(structuredClone(demotedKeepWarmConfig), {
   logger: { error() {}, warn() {}, info() {} },

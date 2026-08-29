@@ -1103,9 +1103,9 @@ export class RuntimeManager {
     state.queuedRequests = queue.length;
   }
 
-  async drainRuntime(runtimeId, { timeoutMs = 300000, requestedBy } = {}) {
+  async drainRuntime(runtimeId, { timeoutMs = 300000, requestedBy, reason = 'eviction' } = {}) {
     const requesterNode = this.assertRuntimeControl(runtimeId, requestedBy);
-    this.pauseRuntime(runtimeId, 'eviction', { requestedBy: requesterNode });
+    this.pauseRuntime(runtimeId, reason, { requestedBy: requesterNode });
     const deadline = Date.now() + timeoutMs;
     const state = this.stateFor(runtimeId);
     while (state.activeRequests > 0) {
@@ -1162,7 +1162,18 @@ export class RuntimeManager {
         wasRunning.set(runtimeId, this.processRunning(runtimeId) || (await runtimeHealthOk(runtime)));
       }
     }
-    for (const runtimeId of ownedChanges) await this.drainRuntime(runtimeId, { timeoutMs: drainTimeoutMs });
+    for (const runtimeId of ownedChanges) {
+      const previous = previousConfig.runtimes?.[runtimeId];
+      const state = this.stateFor(runtimeId);
+      const needsDrain =
+        Boolean(previous) &&
+        (wasRunning.get(runtimeId) === true || state.activeRequests > 0 || state.queuedRequests > 0);
+      if (!needsDrain) continue;
+      await this.drainRuntime(runtimeId, {
+        timeoutMs: drainTimeoutMs,
+        reason: 'config-reload'
+      });
+    }
     const results = [];
     try {
       for (const runtimeId of stopOrder) {

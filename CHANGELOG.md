@@ -28,6 +28,7 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Fixed
 
+- Config reloads now drain only pre-existing runtimes that are actually running or serving requests, and label that lifecycle transition `config-reload` instead of emitting false eviction events for new or stopped runtimes.
 - Spark release deployment now requires every worker named for a clustered recipe, stages the exact artifact and reversible package/config state on workers before leader setup, and rolls staged workers back when the guarded leader deployment fails.
 - The two-Spark DeepSeek V4 Flash patch pack now backports vLLM PR 51538's padded-MTP indexer clamp, preventing negative CUDA-graph padding lengths from deadlocking the pinned Blackwell sparse top-k kernel.
 - Runtime no-progress watchdogs now observe streaming responses only, preventing long buffered requests from restarting healthy managed runtimes before their complete response is available.
