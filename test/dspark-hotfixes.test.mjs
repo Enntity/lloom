@@ -35,7 +35,7 @@ try {
   const recipe = JSON.parse(
     readFileSync(path.join(repoRoot, 'recipes', 'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json'), 'utf8')
   );
-  assert.equal(recipe.version, 17);
+  assert.equal(recipe.version, 18);
   assert.equal(recipe.models[0].settings.keepWarm, false);
   assert.match(recipe.provenance.source, /d1b76251535daef578d8751b04b39c29ad7ecdf9/);
   assert.equal(recipe.models[0].settings.contextWindow, 262144);
@@ -128,9 +128,16 @@ try {
     )
   );
   assert.equal(archivedV16Recipe.version, 16);
+  const archivedV17Recipe = JSON.parse(
+    readFileSync(
+      path.join(repoRoot, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm', 'v17.json'),
+      'utf8'
+    )
+  );
+  assert.equal(archivedV17Recipe.version, 17);
   const recipeIndex = JSON.parse(readFileSync(path.join(repoRoot, 'recipes', 'index.json'), 'utf8'));
   const indexEntry = recipeIndex.recipes.find((candidate) => candidate.id === recipe.id);
-  assert.equal(indexEntry.currentVersion, 17);
+  assert.equal(indexEntry.currentVersion, 18);
   assert.deepEqual(
     indexEntry.versions.map(({ version, status }) => ({ version, status })),
     [
@@ -147,7 +154,8 @@ try {
       { version: 14, status: 'archived' },
       { version: 15, status: 'archived' },
       { version: 16, status: 'archived' },
-      { version: 17, status: 'current' }
+      { version: 17, status: 'archived' },
+      { version: 18, status: 'current' }
     ]
   );
 
@@ -164,6 +172,7 @@ try {
     'hotfix-dsv4-issue27-partial-prefill-concurrency.py',
     'hotfix-dsv4-issue26-hybrid-swa-min.py',
     'hotfix-dsv4-issue43-decode-fairness-and-diag.py',
+    'hotfix-dsv4-issue133-triton-specialization.py',
     'hotfix-dsv4-skip-topk-49486.sh',
     'hotfix-dsv4-dense-prefill-indexer-48407.sh',
     'hotfix-dsv4-mtp-buffer-50312.sh',
@@ -180,7 +189,7 @@ try {
     manifest.patches.filter(({ enabled }) => enabled).map(({ file }) => path.basename(file)),
     expectedHotfixes
   );
-  assert.equal(manifest.patches.length, 23);
+  assert.equal(manifest.patches.length, 24);
   const members = recipe.models[0].settings.placement.members;
   assert.equal(members.length, 2);
   for (const member of members) {
@@ -198,14 +207,25 @@ try {
     assert.equal(env.has('DEFAULT_MAX_TOKENS'), false);
     assert.equal(env.get('MAX_MODEL_LEN'), '262144');
     assert.equal(env.get('GPU_MEMORY_UTILIZATION'), '0.73');
-    assert.equal(env.get('DSPARK_MAX_INFLIGHT_PREFILLS'), '2');
+    assert.equal(env.get('DSPARK_MAX_INFLIGHT_PREFILLS'), '1');
     assert.equal(env.get('LONG_PREFILL_TOKEN_THRESHOLD'), '1024');
-    assert.equal(env.get('DSPARK_SPECULATION_MODE'), 'target-only');
+    assert.equal(env.get('DSPARK_SPECULATION_MODE'), 'dspark');
+    assert.equal(env.get('DRAFT_SAMPLE_METHOD'), 'greedy');
+    assert.equal(env.get('KV_CACHE_DTYPE'), 'nvfp4_ds_mla');
+    assert.equal(env.get('FABRIC_INTERFACES'), 'enp1s0f0np0,enP2p1s0f0np0');
+    assert.equal(env.get('NCCL_IB_MERGE_NICS'), '1');
+    assert.equal(env.get('B12X_CUTE_COMPILE_CACHE_DIR'), '/cache/huggingface/b12x-cute-cache');
+    assert.equal(env.get('TORCH_FR_BUFFER_SIZE'), '2000');
+    assert.equal(env.get('TORCH_NCCL_DUMP_ON_TIMEOUT'), '1');
+    assert.equal(env.get('TORCH_NCCL_ENABLE_MONITORING'), '1');
+    assert.equal(env.get('TORCH_FR_DUMP_TEMP_FILE'), '/cache/huggingface/nccl-fr/comm_lib_trace_rank_');
+    assert.equal(env.get('TORCH_NCCL_DEBUG_INFO_PIPE_FILE'), '/tmp/fr_dump_pipe_');
     assert.equal(env.get('VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS'), '1800');
     assert.equal(env.get('TILELANG_CACHE_DIR'), '/cache/huggingface/tilelang-cache');
     assert.equal(env.get('TRITON_CACHE_DIR'), '/cache/huggingface/triton-cache');
     assert.equal(env.get('DSPARK_RUNTIME_IMAGE'), member.runtimeSettings.bootstrap.image);
-    assert.match(member.runtimeSettings.bootstrap.image, /@sha256:a8394849/);
+    assert.equal(member.runtimeSettings.bootstrap.pull, false);
+    assert.equal(member.runtimeSettings.bootstrap.image, 'lloom/dspark-vllm-gx10:0.1.1-vllm51538');
     assert(
       args.includes(
         'type=bind,src=${lloomRoot}/backends/dspark-vllm/apply-patch-pack.py,dst=/opt/lloom/apply-patch-pack.py,readonly'
@@ -229,7 +249,29 @@ try {
   assert.match(entrypoint, /DSPARK_SPECULATION_MODE:-dspark/);
   assert.match(entrypoint, /target-only/);
   assert.match(entrypoint, /speculation_args=\(\)/);
+  assert.match(entrypoint, /FABRIC_INTERFACES/);
+  assert.match(entrypoint, /KV_CACHE_DTYPE/);
+  assert.match(entrypoint, /validate_numeric_knob/);
+  assert.match(entrypoint, /DRAFT_SAMPLE_METHOD/);
+  assert.match(entrypoint, /probabilistic\|greedy/);
+  assert.match(entrypoint, /checkpoint dspark_block_size/);
+  assert.match(entrypoint, /expanded_decode_rows/);
+  assert.match(entrypoint, /expanded_decode_rows \+ 7/);
   assert.doesNotMatch(entrypoint, /\/opt\/lloom\/hotfixes/);
+  const hardenedBuild = readFileSync(
+    path.join(repoRoot, 'backends', 'dspark-vllm', 'runtime', 'build-hardened-image.sh'),
+    'utf8'
+  );
+  assert.match(hardenedBuild, /752a3a504485790a2e8491cacbb35c137339ad34/);
+  assert.match(hardenedBuild, /47503f8e38dadd4dededca798150db2619594fce/);
+  assert.match(hardenedBuild, /vllm-318d623b-clamp-indexer-lengths\.patch/);
+  assert.match(hardenedBuild, /vllm-f633bd67-harden-topk-lengths\.patch/);
+  const compiledGuardPatch = readFileSync(
+    path.join(repoRoot, 'backends', 'dspark-vllm', 'runtime', 'patches', 'vllm-f633bd67-harden-topk-lengths.patch'),
+    'utf8'
+  );
+  assert.match(compiledGuardPatch, /non_negative_len/);
+  assert.match(compiledGuardPatch, /row_bound/);
   run('python3', [
     packRunner,
     '--manifest',
@@ -386,6 +428,23 @@ def _prepare_decode_tensors():
   assert.match(issue51538Patched, /self\.offsets_buffer\[:max_decode_len\][\s\S]*\.clamp_\(min=0\)/);
   assert.doesNotMatch(issue51538Patched, /per_token_seq_len = seq_len - max_decode_len/);
   assert.match(run('python3', [issue51538Script, issue51538Target]), /already applied/);
+  const issue51538UpstreamTarget = writeFixture(
+    issue51538Root,
+    'upstream-indexer.py',
+    `def _prepare_uniform_decode_kernel():
+    seq_len = tl.load(seq_lens_ptr + req_id)
+    per_token_seq_len = tl.maximum(seq_len - max_decode_len + local_idx + 1, 0)
+
+def _prepare_decode_tensors():
+                seq_lens_buffer[:] = (
+                    seq_lens.unsqueeze(1)
+                    - max_decode_len
+                    + 1
+                    + self.offsets_buffer[:max_decode_len]
+                ).clamp_(min=0)
+`
+  );
+  assert.match(run('python3', [issue51538Script, issue51538UpstreamTarget]), /already applied/);
 
   run('python3', ['-q', path.join(repoRoot, 'test', 'test_dspark_issue31_thinking_budget_gpu.py')]);
   run('python3', ['-q', path.join(repoRoot, 'test', 'test_dspark_suppress_stops_in_reasoning.py')]);

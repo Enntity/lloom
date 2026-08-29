@@ -391,7 +391,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm",
       "path": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json",
-      "currentVersion": 17,
+      "currentVersion": 18,
       "versions": [
         {
           "version": 4,
@@ -486,9 +486,16 @@
         },
         {
           "version": 17,
+          "path": "archive/linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm/v17.json",
+          "status": "archived",
+          "archivedAt": "2026-08-29T16:44:00.000Z",
+          "notes": "Temporarily runs target-only decode to remove the speculative CUDA-graph padding shape behind recurrent three-request GPU-kernel stalls until the pinned image carries vLLM PR 51538's compiled top-k guard."
+        },
+        {
+          "version": 18,
           "path": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json",
           "status": "current",
-          "notes": "Temporarily runs target-only decode to remove the speculative CUDA-graph padding shape behind recurrent three-request GPU-kernel stalls until the pinned image carries vLLM PR 51538's compiled top-k guard."
+          "notes": "Restores DSpark speculative decode on a locally pinned image with vLLM PR 51538's compiled top-k guard, adopts MiaAI's safe single-prefill default and Issue 133 Triton specialization fix, and enables both RoCE rails with persistent compiler caches and NCCL flight recording."
         }
       ],
       "name": "2x DGX Spark DeepSeek V4 Flash DSpark (MiaAI validated)",

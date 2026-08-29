@@ -5,11 +5,12 @@
   "upstream": {
     "repository": "https://github.com/MiaAI-Lab/DeepSeek-v4-Flash-DSpark-2x-DGX-Spark",
     "commit": "d1b76251535daef578d8751b04b39c29ad7ecdf9",
+    "auditedThroughCommit": "0107cef1835a56d1a2bcdabf7d9e1a085b70338b",
     "fetchedAt": "2026-08-24T16:25:00.000Z"
   },
-  "artifactNormalization": "MiaAI artifacts retain their pinned bytes; explicitly identified vLLM backports are fail-closed adaptations for the pinned runtime image.",
+  "artifactNormalization": "The d1b76251 base artifacts retain their pinned bytes except for the upstream default-1 Issue 27 documentation update; later stable-default additions and explicitly identified vLLM backports are checksum-pinned, fail-closed adaptations for the pinned runtime image.",
   "compatibility": {
-    "runtimeImage": "ghcr.io/anemll/dspark-vllm-gx10@sha256:a83948492cf13df455170fb42885f5ef4db54fefe0feff0f841ecbff464ac9d8",
+    "runtimeImage": "lloom/dspark-vllm-gx10:0.1.1-vllm51538",
     "runtimeName": "Anemll DSpark vLLM 0.1.1",
     "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
     "modelRevision": "9e165c30e2704aec5d9d593cce3eebd58bbef1cb",
@@ -53,7 +54,7 @@
     {
       "id": "vllm51538-mtp-padding-length-clamp",
       "file": "patches/hotfix-dsv4-mtp-padding-lengths-51538.py",
-      "sha256": "cfcca5acab9e952abdf9b9e726f8b404ad5197bd6b5893fd4607105db3f864a4",
+      "sha256": "b4dac4faf2f446357b942eaed77413adf073b8d816b82174c6be5f9bdc641c3a",
       "kind": "python", "tier": "correctness", "enabled": true, "liveCanaryRequired": true,
       "upstream": {
         "repository": "https://github.com/vllm-project/vllm",
@@ -105,7 +106,7 @@
     {
       "id": "issue27-partial-prefill-concurrency",
       "file": "patches/hotfix-dsv4-issue27-partial-prefill-concurrency.py",
-      "sha256": "31e7b14213dc6983c07716cf625c4245a42f9d884733e5f7e21a79ab459a8f8b",
+      "sha256": "1b99e7e220d027bca313ae024785a222e790e1cc62513e4c17fc0d33bda89956",
       "kind": "python", "tier": "scheduler", "enabled": true, "liveCanaryRequired": true,
       "reason": "Enabled after the deployed lane measured 32K x C4 at 6.3 tok/s per stream and 45 s median TTFB with serialized partial prefills.",
       "args": ["{file}"]
@@ -123,6 +124,19 @@
       "sha256": "0059144ce08e825354718c8b0aa3799dcf434045f40241f75a4211fe4f199dc4",
       "kind": "python", "tier": "scheduler", "enabled": true, "liveCanaryRequired": true,
       "reason": "Enabled to match MiaAI's current stable default; it provides a decode-service floor if scheduler knobs change and diagnostics remain off by default.", "args": ["{file}"]
+    },
+    {
+      "id": "issue133-triton-specialization",
+      "file": "patches/hotfix-dsv4-issue133-triton-specialization.py",
+      "sha256": "e596c31034f135532ee5db22e1d82c7b2550e3720ad7423967268c58f1171e34",
+      "kind": "python", "tier": "performance", "enabled": true, "liveCanaryRequired": true,
+      "upstream": {
+        "repository": "https://github.com/MiaAI-Lab/DeepSeek-v4-Flash-DSpark-2x-DGX-Spark",
+        "issue": 133,
+        "commit": "1fec5b78f2989805cdf8a92dd795d0041170cd20"
+      },
+      "reason": "Prevents sliced mixed-prefill metadata pointers from creating traffic-dependent Triton alignment specializations and mid-serve TP-asymmetric JIT compilation.",
+      "args": ["{file}", "{vllmRoot}/models/deepseek_v4/common/ops/cache_utils.py"]
     },
     {
       "id": "vllm49486-skip-topk",

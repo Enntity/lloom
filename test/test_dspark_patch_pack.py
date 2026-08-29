@@ -33,7 +33,7 @@ class PatchPackTests(unittest.TestCase):
 
     def test_pinned_pack_inventory_and_checksums(self) -> None:
         verified = self.runner.verify_pack(MANIFEST, self.manifest)
-        self.assertEqual(len(verified), 23)
+        self.assertEqual(len(verified), 24)
         self.assertEqual(
             sum("upstreamSha256" in patch_data for patch_data, _ in verified),
             0,
@@ -53,6 +53,7 @@ class PatchPackTests(unittest.TestCase):
                 "issue27-partial-prefill-concurrency",
                 "issue26-hybrid-swa-prefix-cache-v2",
                 "issue43-decode-fairness",
+                "issue133-triton-specialization",
                 "vllm49486-skip-topk",
                 "vllm48407-dense-prefill-indexer",
                 "vllm50312-mtp-buffer",

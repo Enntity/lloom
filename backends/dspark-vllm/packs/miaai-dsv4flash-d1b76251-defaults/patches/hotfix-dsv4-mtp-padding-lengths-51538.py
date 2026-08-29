@@ -34,6 +34,10 @@ uniform_new = (
     "        seq_len - max_decode_len + local_idx + 1, 0\n"
     "    )\n"
 )
+uniform_upstream = (
+    "    per_token_seq_len = tl.maximum("
+    "seq_len - max_decode_len + local_idx + 1, 0)\n"
+)
 native_old = (
     "                seq_lens_buffer[:] = (\n"
     "                    seq_lens.unsqueeze(1)\n"
@@ -51,9 +55,10 @@ native_new = (
     "                    + self.offsets_buffer[:max_decode_len]\n"
     "                ).clamp_(min=0)\n"
 )
+native_upstream = native_old[:-2] + ").clamp_(min=0)\n"
 
-uniform_fixed = uniform_new in source
-native_fixed = native_new in source
+uniform_fixed = uniform_new in source or uniform_upstream in source
+native_fixed = native_new in source or native_upstream in source
 if uniform_fixed and native_fixed:
     print(f"[vllm51538-hotfix] already applied to {target}")
     raise SystemExit(0)

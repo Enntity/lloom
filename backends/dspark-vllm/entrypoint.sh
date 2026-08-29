@@ -10,36 +10,98 @@ set -euo pipefail
 : "${MASTER_ADDR:?MASTER_ADDR is required}"
 : "${NODE_RANK:?NODE_RANK is required}"
 
-if [ -z "${NCCL_IB_HCA:-}" ]; then
-  for net_path in /sys/class/infiniband/*/device/net/"${FABRIC_INTERFACE}"; do
-    if [ -e "${net_path}" ]; then
-      NCCL_IB_HCA="$(basename "$(dirname "$(dirname "$(dirname "${net_path}")")")")"
-      break
-    fi
-  done
-fi
-: "${NCCL_IB_HCA:?Could not resolve RDMA HCA for ${FABRIC_INTERFACE}}"
-
-ipv4_gid_suffix() {
-  local a b c d
-  IFS=. read -r a b c d <<<"$1"
-  printf '%02x%02x:%02x%02x' "$a" "$b" "$c" "$d"
+validate_numeric_knob() {
+  local name="$1" minimum="$2" maximum="$3" value="${!1}"
+  if [[ ! "${value}" =~ ^[0-9]+$ ]] || [ "${#value}" -gt 10 ]; then
+    echo "${name} must be an integer between ${minimum} and ${maximum}: ${value}" >&2
+    exit 2
+  fi
+  value="$((10#${value}))"
+  if [ "${value}" -lt "${minimum}" ] || [ "${value}" -gt "${maximum}" ]; then
+    echo "${name} must be between ${minimum} and ${maximum}: ${value}" >&2
+    exit 2
+  fi
+  printf -v "${name}" '%d' "${value}"
+  export "${name}"
 }
 
-if [ -z "${NCCL_IB_GID_INDEX:-}" ]; then
-  suffix="$(ipv4_gid_suffix "${NODE_ADDRESS}")"
-  for gid_path in /sys/class/infiniband/"${NCCL_IB_HCA}"/ports/1/gids/*; do
-    [ -e "${gid_path}" ] || continue
-    gid_index="${gid_path##*/}"
-    gid_type="$(cat "/sys/class/infiniband/${NCCL_IB_HCA}/ports/1/gid_attrs/types/${gid_index}" 2>/dev/null || true)"
-    [ "${gid_type}" = "RoCE v2" ] || continue
-    case "$(cat "${gid_path}")" in
-      *ffff:"${suffix}") NCCL_IB_GID_INDEX="${gid_index}"; break ;;
-    esac
+MAX_NUM_SEQS="${MAX_NUM_SEQS:-6}"
+MTP_NUM_TOKENS="${MTP_NUM_TOKENS:-5}"
+MAX_NUM_BATCHED_TOKENS="${MAX_NUM_BATCHED_TOKENS:-8192}"
+validate_numeric_knob MAX_NUM_SEQS 1 4096
+validate_numeric_knob MTP_NUM_TOKENS 0 64
+validate_numeric_knob MAX_NUM_BATCHED_TOKENS 1 8388608
+
+fabric_interfaces="${FABRIC_INTERFACES:-${FABRIC_INTERFACE}}"
+IFS=',' read -r -a fabric_interface_list <<<"${fabric_interfaces}"
+
+resolve_hca_for_interface() {
+  local interface="$1" net_path
+  for net_path in /sys/class/infiniband/*/device/net/"${interface}"; do
+    if [ -e "${net_path}" ]; then
+      basename "$(dirname "$(dirname "$(dirname "${net_path}")")")"
+      return 0
+    fi
   done
+  return 1
+}
+
+resolved_hcas=()
+for interface in "${fabric_interface_list[@]}"; do
+  hca="$(resolve_hca_for_interface "${interface}")" || {
+    echo "Could not resolve RDMA HCA for ${interface}" >&2
+    exit 1
+  }
+  resolved_hcas+=("${hca}")
+done
+
+if [ -z "${NCCL_IB_HCA:-}" ]; then
+  resolved_hca_csv="$(IFS=,; echo "${resolved_hcas[*]}")"
+  # The leading '=' selects exact HCA names in NCCL's selector grammar.
+  NCCL_IB_HCA="=${resolved_hca_csv}"
 fi
-: "${NCCL_IB_GID_INDEX:?Could not resolve RoCE v2 GID for ${NCCL_IB_HCA}/${NODE_ADDRESS}}"
+
+if [ -z "${NCCL_IB_GID_INDEX:-}" ]; then
+  shared_gid_index=""
+  for index in "${!fabric_interface_list[@]}"; do
+    interface="${fabric_interface_list[${index}]}"
+    hca="${resolved_hcas[${index}]}"
+    interface_gid_index=""
+    for gid_path in /sys/class/infiniband/"${hca}"/ports/1/gids/*; do
+      [ -e "${gid_path}" ] || continue
+      gid_index="${gid_path##*/}"
+      gid_type="$(cat "/sys/class/infiniband/${hca}/ports/1/gid_attrs/types/${gid_index}" 2>/dev/null || true)"
+      [ "${gid_type}" = "RoCE v2" ] || continue
+      gid_interface="$(cat "/sys/class/infiniband/${hca}/ports/1/gid_attrs/ndevs/${gid_index}" 2>/dev/null || true)"
+      [ "${gid_interface}" = "${interface}" ] || continue
+      case "$(cat "${gid_path}")" in
+        ::|0000:0000:0000:0000:0000:0000:0000:0000) continue ;;
+        *) interface_gid_index="${gid_index}"; break ;;
+      esac
+    done
+    [ -n "${interface_gid_index}" ] || {
+      echo "Could not resolve a RoCE v2 GID for ${hca}/${interface}" >&2
+      exit 1
+    }
+    if [ -n "${shared_gid_index}" ] && [ "${shared_gid_index}" != "${interface_gid_index}" ]; then
+      echo "Selected HCAs do not share one RoCE v2 GID index: ${shared_gid_index} != ${interface_gid_index}" >&2
+      exit 1
+    fi
+    shared_gid_index="${interface_gid_index}"
+  done
+  NCCL_IB_GID_INDEX="${shared_gid_index}"
+fi
+: "${NCCL_IB_GID_INDEX:?Could not resolve a shared RoCE v2 GID index for ${NCCL_IB_HCA}}"
 export NCCL_IB_HCA NCCL_IB_GID_INDEX
+
+mkdir -p \
+  "${B12X_CUTE_COMPILE_CACHE_DIR:-/cache/huggingface/b12x-cute-cache}" \
+  "$(dirname "${TORCH_FR_DUMP_TEMP_FILE:-/cache/huggingface/nccl-fr/comm_lib_trace_rank_}")"
+
+echo "DSpark fabric: interfaces=${fabric_interfaces} hcas=${NCCL_IB_HCA} gid_index=${NCCL_IB_GID_INDEX}"
+if [ "${DSPARK_FABRIC_PROBE_ONLY:-0}" = "1" ]; then
+  exit 0
+fi
 
 export PATH="/usr/local/cuda/bin:/usr/local/bin:${PATH:-}"
 export CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
@@ -105,19 +167,27 @@ speculation_mode="${DSPARK_SPECULATION_MODE:-dspark}"
 speculation_args=()
 case "${speculation_mode}" in
   dspark)
-    if [ "${MTP_NUM_TOKENS:-5}" -lt 1 ]; then
-      echo "MTP_NUM_TOKENS must be at least 1 when DSPARK_SPECULATION_MODE=dspark" >&2
+    if [ "${MTP_NUM_TOKENS:-5}" -lt 5 ]; then
+      echo "MTP_NUM_TOKENS must be at least the checkpoint dspark_block_size (5) when DSPARK_SPECULATION_MODE=dspark" >&2
       exit 2
     fi
-    speculative_config="{\"method\":\"dspark\",\"num_speculative_tokens\":${MTP_NUM_TOKENS:-5},\"draft_sample_method\":\"probabilistic\"}"
+    case "${DRAFT_SAMPLE_METHOD:-probabilistic}" in
+      probabilistic|greedy) draft_sample_method="${DRAFT_SAMPLE_METHOD:-probabilistic}" ;;
+      *) echo "DRAFT_SAMPLE_METHOD must be probabilistic or greedy" >&2; exit 2 ;;
+    esac
+    speculative_config="{\"method\":\"dspark\",\"num_speculative_tokens\":${MTP_NUM_TOKENS:-5},\"draft_sample_method\":\"${draft_sample_method}\"}"
     speculation_args=(--speculative-config "${speculative_config}")
-    cudagraph_capture_size="$(( ${MAX_NUM_SEQS:-6} * (${MTP_NUM_TOKENS:-5} + 1) ))"
+    expanded_decode_rows="$(( MAX_NUM_SEQS * (MTP_NUM_TOKENS + 1) ))"
+    # vLLM generates capture sizes in 8-row increments above four. Round up
+    # so the configured concurrency ceiling is captured instead of silently
+    # truncating (K5/C6 is 36 rows and therefore needs a 40-row ceiling).
+    cudagraph_capture_size="$(( (expanded_decode_rows + 7) / 8 * 8 ))"
     ;;
   target-only)
     # Safety profile for vLLM #51593-shaped stalls. Without speculative
     # expansion, next_n stays at 1 and CUDA-graph padding cannot underflow an
     # MTP context length before the sparse top-k kernel.
-    cudagraph_capture_size="${MAX_NUM_SEQS:-6}"
+    cudagraph_capture_size="$(( (MAX_NUM_SEQS + 7) / 8 * 8 ))"
     ;;
   *)
     echo "DSPARK_SPECULATION_MODE must be dspark or target-only" >&2
@@ -132,7 +202,7 @@ exec /usr/local/bin/vllm serve "${DSPARK_MODEL:-deepseek-ai/DeepSeek-V4-Flash-07
   --served-model-name "${SERVED_MODEL_NAME:-deepseek-v4-flash-0731}" \
   --host "${VLLM_HOST:-${NODE_ADDRESS}}" --port "${VLLM_PORT:-8888}" \
   --trust-remote-code --tensor-parallel-size 2 --pipeline-parallel-size 1 \
-  --kv-cache-dtype nvfp4_ds_mla --block-size 256 \
+  --kv-cache-dtype "${KV_CACHE_DTYPE:-nvfp4_ds_mla}" --block-size 256 \
   --max-model-len "${MAX_MODEL_LEN:-1048576}" --max-num-seqs "${MAX_NUM_SEQS:-6}" \
   --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS:-8192}" \
   --long-prefill-token-threshold "${LONG_PREFILL_TOKEN_THRESHOLD:-1024}" \
