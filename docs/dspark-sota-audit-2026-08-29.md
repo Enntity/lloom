@@ -92,9 +92,11 @@ main decode accelerator. It was a safety state, not a state-of-the-art recipe.
 
 Every cell used the same OpenAI-compatible chat request, thinking disabled,
 128 forced output tokens, and unique prompt nonces. Decode results are the
-median of repeated trials; C6 is the median per stream. K5/greedy preserved the
-same deterministic response SHA-256 as both other speculative profiles:
-`38e0b9de817f645c4bec37c0d4a3e58baecccb040f5718dc069a72c7385a0bed`.
+median of repeated trials; C6 is the median per stream. The profile comparison
+is a performance/admission test, not a deterministic-output equivalence test;
+the cited Weschera result supplies that separate same-hash evidence for the
+hardened speculative path. A corrected post-deployment canary against the
+advertised served-model name returned HTTP 200 with non-empty model output.
 
 | Prompt / concurrency | K5 probabilistic | K5 greedy | K7 greedy |
 | --- | ---: | ---: | ---: |
