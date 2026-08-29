@@ -28,6 +28,15 @@ function completion(model, content = 'ok') {
   });
 }
 
+function embedding(model, value) {
+  return JSON.stringify({
+    object: 'list',
+    model,
+    data: [{ object: 'embedding', index: 0, embedding: [value] }],
+    usage: { prompt_tokens: 1, total_tokens: 1 }
+  });
+}
+
 async function createFixture({
   primaryStatus = 503,
   cloudStatus = 200,
@@ -185,6 +194,135 @@ async function createFixture({
   };
 }
 
+async function createEmbeddingFixture({
+  sparkStatus = 200,
+  macStatus = 200,
+  cloudStatus = 200,
+  runtimeStatus = 'running',
+  preserveResident = false
+} = {}) {
+  const hits = { spark: 0, mac: 0, cloud: 0, ensures: 0 };
+  const operations = [];
+  const admissionOptions = [];
+  const upstreams = [];
+
+  async function addUpstream(name, status, value) {
+    const server = http.createServer((_req, res) => {
+      hits[name] += 1;
+      res.writeHead(status, { 'content-type': 'application/json' });
+      res.end(
+        status === 200
+          ? embedding(`${name}-embedding`, value)
+          : JSON.stringify({ error: { message: `${name} status ${status}` } })
+      );
+    });
+    const port = await listen(server);
+    upstreams.push(server);
+    return { type: 'openai', baseUrl: `http://127.0.0.1:${port}/v1`, timeoutMs: 5000 };
+  }
+
+  const backends = {
+    spark: await addUpstream('spark', sparkStatus, 1),
+    mac: await addUpstream('mac', macStatus, 2),
+    cloud: await addUpstream('cloud', cloudStatus, 3)
+  };
+  const config = {
+    name: 'embedding-failover-test',
+    server: { host: '127.0.0.1', port: 0 },
+    security: { allowMissingAuth: true, apiKeys: [] },
+    logging: { metricsPersistence: false },
+    cluster: { routingStatusCacheMs: 0 },
+    ...(preserveResident
+      ? {
+          runtimePolicy: {
+            enabled: true,
+            autoEvict: true,
+            memoryBudgetGb: 40,
+            protectActiveRequests: true
+          }
+        }
+      : {}),
+    defaults: { embeddingModel: 'embeddings' },
+    aliases: {
+      embeddings: {
+        target: 'spark-embedding',
+        fallbacks: ['macbook-embedding', 'cloud-embedding']
+      }
+    },
+    backends,
+    models: [
+      {
+        id: 'spark-embedding',
+        kind: 'embedding',
+        backend: 'spark',
+        runtime: 'spark-embedding-runtime',
+        upstreamModel: 'spark-embedding'
+      },
+      {
+        id: 'macbook-embedding',
+        kind: 'embedding',
+        backend: 'mac',
+        upstreamModel: 'macbook-embedding'
+      },
+      {
+        id: 'cloud-embedding',
+        kind: 'embedding',
+        backend: 'cloud',
+        upstreamModel: 'cloud-embedding'
+      }
+    ],
+    runtimes: {
+      'spark-embedding-runtime': { enabled: true, memoryGb: preserveResident ? 30 : 0 },
+      ...(preserveResident ? { 'resident-runtime': { enabled: true, memoryGb: 30 } } : {})
+    }
+  };
+  const runtimeManager = {
+    async ensure() {
+      hits.ensures += 1;
+      operations.push('ensure:spark-embedding-runtime');
+      return { healthy: true };
+    },
+    async withSlot(runtimeId, fn) {
+      if (runtimeId) operations.push(`slot:${runtimeId}`);
+      return fn();
+    },
+    noteRequestOutcome() {},
+    withAdmissionLock(fn, options) {
+      admissionOptions.push(options);
+      return fn();
+    },
+    async status() {
+      return {
+        runtimes: {
+          'spark-embedding-runtime': { status: runtimeStatus, healthy: runtimeStatus === 'running' },
+          ...(preserveResident ? { 'resident-runtime': { status: 'running', healthy: true, activeRequests: 0 } } : {})
+        }
+      };
+    },
+    async stop(runtimeId) {
+      operations.push(`stop:${runtimeId}`);
+      return { runtimeId, stopped: true };
+    },
+    async start(runtimeId) {
+      operations.push(`start:${runtimeId}`);
+      return { runtimeId, started: true };
+    }
+  };
+  const app = createLloomServer(config, { runtimeManager, logger: { error() {}, warn() {} } });
+  const gatewayPort = await listen(app.server);
+  return {
+    app,
+    hits,
+    operations,
+    admissionOptions,
+    url: `http://127.0.0.1:${gatewayPort}`,
+    async close() {
+      await close(app.server);
+      await Promise.all(upstreams.map(close));
+    }
+  };
+}
+
 async function chat(url, body = {}) {
   return fetch(`${url}/v1/chat/completions`, {
     method: 'POST',
@@ -195,6 +333,14 @@ async function chat(url, body = {}) {
       max_tokens: 8,
       ...body
     })
+  });
+}
+
+async function embed(url, body = {}) {
+  return fetch(`${url}/v1/embeddings`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'embeddings', input: ['hello'], ...body })
   });
 }
 
@@ -231,6 +377,11 @@ async function chat(url, body = {}) {
   };
   await writeFile(configPath, JSON.stringify(base));
   await assert.rejects(loadConfig(configPath), /targets unknown model missing/);
+  base.aliases.stable.optionalFallbacks = ['missing'];
+  await writeFile(configPath, JSON.stringify(base));
+  const optionalFallback = await loadConfig(configPath);
+  assert.deepEqual(optionalFallback.aliases.stable.fallbacks, ['missing']);
+  delete base.aliases.stable.optionalFallbacks;
   base.aliases.stable.fallbacks = ['chat'];
   await writeFile(configPath, JSON.stringify(base));
   await assert.rejects(loadConfig(configPath), /has duplicate targets/);
@@ -336,6 +487,67 @@ async function chat(url, body = {}) {
   assert.equal(recent[0].status, 402);
   assert.equal(recent[1].resolvedModel, 'stable-chat');
   assert.equal(recent[1].failoverAttempt, 2);
+  await fixture.close();
+}
+
+// Embeddings honor the same ordered alias chain as chat: Spark is first while
+// it is resident and healthy.
+{
+  const fixture = await createEmbeddingFixture();
+  const response = await embed(fixture.url);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(body.data[0].embedding, [1]);
+  assert.deepEqual(fixture.hits, { spark: 1, mac: 0, cloud: 0, ensures: 1 });
+  await fixture.close();
+}
+
+// If admitting Spark would evict another resident model, LLooM tries every
+// ready non-evicting destination in route order. A dead MacBook falls through
+// to cloud without stopping or starting a Spark runtime.
+{
+  const fixture = await createEmbeddingFixture({
+    macStatus: 503,
+    runtimeStatus: 'stopped',
+    preserveResident: true
+  });
+  const response = await embed(fixture.url);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(body.data[0].embedding, [3]);
+  assert.deepEqual(fixture.hits, { spark: 0, mac: 1, cloud: 1, ensures: 0 });
+  assert.deepEqual(fixture.operations, []);
+  const recent = fixture.app.metrics.snapshot().recent;
+  assert.deepEqual(
+    recent.map((entry) => [entry.resolvedModel, entry.status, entry.failoverReason]),
+    [
+      ['macbook-embedding', 503, 'preserve-residency'],
+      ['cloud-embedding', 200, 'preserve-residency']
+    ]
+  );
+  await fixture.close();
+}
+
+// Local eviction is a last resort only after all non-evicting destinations
+// have returned availability failures.
+{
+  const fixture = await createEmbeddingFixture({
+    macStatus: 503,
+    cloudStatus: 503,
+    runtimeStatus: 'stopped',
+    preserveResident: true
+  });
+  const response = await embed(fixture.url);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(body.data[0].embedding, [1]);
+  assert.deepEqual(fixture.hits, { spark: 1, mac: 1, cloud: 1, ensures: 0 });
+  assert.deepEqual(fixture.operations, [
+    'stop:resident-runtime',
+    'start:spark-embedding-runtime',
+    'slot:spark-embedding-runtime'
+  ]);
+  assert.equal(fixture.admissionOptions[0].preemptible, true);
   await fixture.close();
 }
 

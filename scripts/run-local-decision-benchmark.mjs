@@ -110,7 +110,7 @@ async function streamRequest({ baseUrl, apiKey, model, testCase, timeoutMs, warm
   let headersMs = null;
   let firstByteMs = null;
   let firstTokenMs = null;
-  let completedMs = null;
+  let completedMs;
   let usage = null;
   let responseModel = null;
   let provider = null;

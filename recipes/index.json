@@ -354,7 +354,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm",
       "path": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm.json",
-      "currentVersion": 4,
+      "currentVersion": 5,
       "versions": [
         {
           "version": 1,
@@ -376,9 +376,15 @@
         },
         {
           "version": 4,
+          "path": "archive/linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm/v4.json",
+          "status": "archived",
+          "notes": "Pins a measured 9.5 GiB FP8 hybrid KV pool for 262K context and uses a 0.79 fallback utilization so the Spark02 embedding lane can coexist without startup threshold jitter."
+        },
+        {
+          "version": 5,
           "path": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm.json",
           "status": "current",
-          "notes": "Pins a measured 9.5 GiB FP8 hybrid KV pool for 262K context and uses a 0.79 fallback utilization so the Spark02 embedding lane can coexist without startup threshold jitter."
+          "notes": "Refreshes to MiaAI 0e2e78f3 with DFlash2 padded slot-sharing, retained hybrid prefix hits, XGrammar speculative termination fixes, and stdout-safe overlays while preserving the measured 262K sidecar-coexistence memory envelope."
         }
       ],
       "name": "2x DGX Spark GLM-5.3 Flash EXL3 DFlash2 vLLM",

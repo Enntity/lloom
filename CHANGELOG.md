@@ -18,6 +18,8 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Changed
 
+- The DGX Spark `embeddings` route now prefers Spark 01, then a federated MacBook, then OpenRouter; admission-aware embedding failover tries non-evicting destinations before allowing a local runtime eviction.
+- The two-Spark GLM-5.3 Flash EXL3 recipe now tracks MiaAI `0e2e78f3`, adding padded DFlash2 KV slot-sharing, retained hybrid prefix-cache hits, speculative XGrammar termination fixes, and stdout-safe runtime overlays while preserving LLooM's measured 262K sidecar-coexistence memory budget.
 - The two-Spark DeepSeek runtime now uses a locally built, source-pinned Anemll/vLLM image with both halves of vLLM PR 51538's MTP padding fix, dual-RoCE transport, and a measured K5/greedy speculative profile. This removes the recurrent GPU-kernel stall without retaining the slower target-only safety state.
 - The two-Spark DeepSeek recipe now pins MiaAI `d1b76251`, matches its stable-default correctness and guarded performance patch set, persists TileLang and Triton compile caches, and retains the measured two-prefill scheduler cap.
 - The two-Spark DeepSeek entrypoint now passes MiaAI's explicit long-prefill chunk threshold to vLLM, making concurrent deep-prompt admission tunable instead of allowing one prefill to consume the scheduling budget.

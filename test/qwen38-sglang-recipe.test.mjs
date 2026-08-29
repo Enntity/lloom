@@ -51,7 +51,7 @@ for (const member of members) {
   assert.match(rendered, /SGLANG_ENABLE_TP_MEMORY_INBALANCE_CHECK=0/);
   assert.match(rendered, /ENABLE_SPECULATIVE=1/);
   assert.match(rendered, /ENABLE_THINKING_BUDGETS=0/);
-  assert.match(rendered, /DEFAULT_CHAT_TEMPLATE_KWARGS=\{\"reasoning_effort\":\"low\"\}/);
+  assert.match(rendered, /DEFAULT_CHAT_TEMPLATE_KWARGS=\{"reasoning_effort":"low"\}/);
   assert.match(rendered, /backends\/qwen38-sglang\/sm121_varlen\.py/);
   assert.match(rendered, /backends\/qwen38-sglang\/qsa_nvfp4_kv\.py/);
   assert.deepEqual(bootstrap.command, ['/opt/lloom/entrypoint.sh']);
@@ -70,7 +70,7 @@ for (const expected of [
   '--enable-linear-replayssm-spec',
   '--enable-custom-logit-processor',
   'default_chat_template_kwargs="${DEFAULT_CHAT_TEMPLATE_KWARGS:-}"',
-  "default_chat_template_kwargs='{\"reasoning_effort\":\"low\"}'",
+  'default_chat_template_kwargs=\'{"reasoning_effort":"low"}\'',
   '--default-chat-template-kwargs "${default_chat_template_kwargs}"',
   '--cuda-graph-bs-decode 1 2 3 4 5 6'
 ]) {
@@ -122,6 +122,8 @@ await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x
 await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v7.json'));
 await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v8.json'));
 await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v9.json'));
-await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v10.json'));
+await fs.access(
+  path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v10.json')
+);
 
 console.log('qwen38 sglang recipe tests passed');

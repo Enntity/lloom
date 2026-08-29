@@ -18,11 +18,14 @@ if [[ "${SPEC_METHOD:-dflash}" == "dflash" && ! -f "${DFLASH_MODEL_DIR:-}/config
   exit 1
 fi
 
-# These are the exact runtime overlays from MiaAI-Lab commit f3043c95.
+# These are the exact runtime overlays from MiaAI-Lab commit 0e2e78f3.
 # They fail closed if their pinned vLLM anchors drift.
 python3 /opt/lloom/patch_glm_video_placeholders.py
 python3 /opt/lloom/patch_suppress_stops_in_reasoning.py
 python3 /opt/lloom/patch_scheduler_decode_floor.py
+python3 /opt/lloom/patch_glm5_drafter_group.py
+python3 /opt/lloom/patch_hybrid_prefix_hit.py
+python3 /opt/lloom/patch_xgrammar_termination.py
 
 if [[ -z "${LIMIT_MM_PER_PROMPT:-}" ]]; then
   LIMIT_MM_PER_PROMPT='{"image":4,"video":1}'
@@ -44,7 +47,7 @@ args=(
   --enable-prefix-caching
   --no-enable-flashinfer-autotune
   --quantization exl3
-  --max-model-len "${MAX_MODEL_LEN:-900000}"
+  --max-model-len "${MAX_MODEL_LEN:-1000000}"
   --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION:-0.87}"
   --max-num-seqs "${MAX_NUM_SEQS:-4}"
   --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS:-1024}"

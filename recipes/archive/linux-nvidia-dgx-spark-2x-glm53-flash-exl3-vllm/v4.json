@@ -4,16 +4,16 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm",
   "name": "2x DGX Spark GLM-5.3 Flash EXL3 DFlash2 vLLM",
-  "version": 5,
-  "summary": "MiaAI-Lab's GLM-5.3 Flash EXL3/TR3 4bpw TP=2 recipe with DFlash2-7 slot-shared KV, native SM121 kernels, prefix-cache and structured-output fixes, a 262K coexistence context, vision, and LLooM-managed distributed admission.",
+  "version": 4,
+  "summary": "MiaAI-Lab's GLM-5.3 Flash EXL3/TR3 4bpw TP=2 recipe with DFlash2-7, native SM121 kernels, a 262K coexistence context, vision, and LLooM-managed distributed admission.",
   "license": { "id": "MIT", "name": "Recipe metadata and launcher" },
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "Adapted byte-for-byte where applicable from MiaAI-Lab/GLM-5.3-Flash-EXL3-2x-DGX-Sparks commit 0e2e78f3de83624e6733b918724da27fc9040156"
+    "source": "Adapted byte-for-byte where applicable from MiaAI-Lab/GLM-5.3-Flash-EXL3-2x-DGX-Sparks commit f3043c95bbf95fb91dd160fe58d740cd152a02c3"
   },
   "links": [
-    { "rel": "upstream", "href": "https://github.com/MiaAI-Lab/GLM-5.3-Flash-EXL3-2x-DGX-Sparks/tree/0e2e78f3de83624e6733b918724da27fc9040156" },
+    { "rel": "upstream", "href": "https://github.com/MiaAI-Lab/GLM-5.3-Flash-EXL3-2x-DGX-Sparks/tree/f3043c95bbf95fb91dd160fe58d740cd152a02c3" },
     { "rel": "model", "href": "https://huggingface.co/Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw/tree/25a44fdbf16862a46b7cc9921142c6c81350af2f" },
     { "rel": "draft-model", "href": "https://huggingface.co/incoai/GLM-5.3-Flash-DFlash2/tree/7d74cdd881ed7e32c31175984a67823127b66cfe" }
   ],
@@ -24,8 +24,7 @@
     "testedMachine": "Two directly connected DGX Spark systems",
     "notes": [
       "TP=2 runs over the private ConnectX-7 RoCE fabric and starts worker-first under LLooM.",
-      "The image, target checkpoint, DFlash2 checkpoint, chat template, and six runtime overlays are immutable and tested for exact-source drift.",
-      "The 262K context and 9.5 GiB KV budget intentionally preserve LLooM sidecar headroom instead of adopting upstream's standalone 1M / 18.67 GiB lab profile.",
+      "The image, target checkpoint, DFlash2 checkpoint, chat template, and three runtime overlays are immutable and tested for exact-source drift.",
       "EXL3/TR3 4bpw is a different checkpoint and runtime path from the NVFP4 SM120 recipe."
     ]
   },
@@ -129,9 +128,6 @@
                     "--mount", "type=bind,src=${lloomRoot}/backends/glm53-exl3/patch_glm_video_placeholders.py,dst=/opt/lloom/patch_glm_video_placeholders.py,readonly",
                     "--mount", "type=bind,src=${lloomRoot}/backends/glm53-exl3/patch_suppress_stops_in_reasoning.py,dst=/opt/lloom/patch_suppress_stops_in_reasoning.py,readonly",
                     "--mount", "type=bind,src=${lloomRoot}/backends/glm53-exl3/patch_scheduler_decode_floor.py,dst=/opt/lloom/patch_scheduler_decode_floor.py,readonly",
-                    "--mount", "type=bind,src=${lloomRoot}/backends/glm53-exl3/patch_glm5_drafter_group.py,dst=/opt/lloom/patch_glm5_drafter_group.py,readonly",
-                    "--mount", "type=bind,src=${lloomRoot}/backends/glm53-exl3/patch_hybrid_prefix_hit.py,dst=/opt/lloom/patch_hybrid_prefix_hit.py,readonly",
-                    "--mount", "type=bind,src=${lloomRoot}/backends/glm53-exl3/patch_xgrammar_termination.py,dst=/opt/lloom/patch_xgrammar_termination.py,readonly",
                     "-e", "NODE_ADDRESS=${nodeAddress}", "-e", "FABRIC_INTERFACE=${fabricInterface}", "-e", "NODE_RANK=${nodeRank}", "-e", "CLUSTER_NODE_COUNT=${clusterNodeCount}",
                     "-e", "MASTER_ADDR=${leaderAddress}", "-e", "MASTER_PORT=29521", "-e", "VLLM_HOST=0.0.0.0", "-e", "VLLM_PORT=8890",
                     "-e", "NCCL_SOCKET_IFNAME=${fabricInterface}", "-e", "TP_SOCKET_IFNAME=${fabricInterface}", "-e", "GLOO_SOCKET_IFNAME=${fabricInterface}",
@@ -179,9 +175,6 @@
                     "--mount", "type=bind,src=${lloomRoot}/backends/glm53-exl3/patch_glm_video_placeholders.py,dst=/opt/lloom/patch_glm_video_placeholders.py,readonly",
                     "--mount", "type=bind,src=${lloomRoot}/backends/glm53-exl3/patch_suppress_stops_in_reasoning.py,dst=/opt/lloom/patch_suppress_stops_in_reasoning.py,readonly",
                     "--mount", "type=bind,src=${lloomRoot}/backends/glm53-exl3/patch_scheduler_decode_floor.py,dst=/opt/lloom/patch_scheduler_decode_floor.py,readonly",
-                    "--mount", "type=bind,src=${lloomRoot}/backends/glm53-exl3/patch_glm5_drafter_group.py,dst=/opt/lloom/patch_glm5_drafter_group.py,readonly",
-                    "--mount", "type=bind,src=${lloomRoot}/backends/glm53-exl3/patch_hybrid_prefix_hit.py,dst=/opt/lloom/patch_hybrid_prefix_hit.py,readonly",
-                    "--mount", "type=bind,src=${lloomRoot}/backends/glm53-exl3/patch_xgrammar_termination.py,dst=/opt/lloom/patch_xgrammar_termination.py,readonly",
                     "-e", "NODE_ADDRESS=${nodeAddress}", "-e", "FABRIC_INTERFACE=${fabricInterface}", "-e", "NODE_RANK=${nodeRank}", "-e", "CLUSTER_NODE_COUNT=${clusterNodeCount}",
                     "-e", "MASTER_ADDR=${leaderAddress}", "-e", "MASTER_PORT=29521", "-e", "VLLM_HOST=0.0.0.0", "-e", "VLLM_PORT=8890",
                     "-e", "NCCL_SOCKET_IFNAME=${fabricInterface}", "-e", "TP_SOCKET_IFNAME=${fabricInterface}", "-e", "GLOO_SOCKET_IFNAME=${fabricInterface}",

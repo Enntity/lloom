@@ -2452,27 +2452,16 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       );
       return;
     }
-    const resolved = await resolveRequestModel(modelId);
-    if ((resolved.model.kind ?? 'chat') !== 'embedding') {
-      sendJson(
-        res,
-        400,
-        errorBody(`model ${resolved.requestedId} is not an embedding model`, {
-          code: 'wrong_model_kind',
-          model: resolved.requestedId
-        })
-      );
-      return;
-    }
-    await recordModelRequest(
+    await recordModelRequestWithFailover(
       {
         route: '/v1/embeddings',
-        resolved,
+        modelId,
         stream: false,
         req,
-        res
+        res,
+        kind: 'embedding'
       },
-      async ({ signal, timing, watchdog }) => {
+      async (resolved, { signal, timing, watchdog, hasNext }) => {
         watchdog.arm();
         const upstream = await fetchUpstream({
           backend: resolved.backend,
@@ -2483,6 +2472,9 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
             model: resolved.model.upstreamModel
           }
         });
+        if (!upstream.ok && hasNext && MODEL_FAILOVER_STATUS_CODES.has(upstream.status)) {
+          throw await upstreamStatusError(upstream);
+        }
         return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
       }
     );

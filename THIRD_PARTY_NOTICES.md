@@ -31,6 +31,23 @@ The files under `backends/dspark-vllm/packs/miaai-dsv4flash-d1b76251-defaults/pa
 
 Some patch payloads modify or reproduce small portions of vLLM and retain their Apache-2.0 lineage; see [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt). LLooM adapts the launch integration and testability without representing these hotfixes as an official vLLM release.
 
+## MiaAI Lab GLM-5.3 Flash EXL3 Runtime Overlays
+
+The chat template and fail-closed runtime patchers under `backends/glm53-exl3/`
+are vendored from MiaAI Lab's two-DGX-Spark GLM-5.3 Flash EXL3 recipe. LLooM
+adds an immutable container/model pin, declarative distributed lifecycle, and a
+sidecar-coexistence memory profile:
+
+- Project: GLM-5.3-Flash-EXL3-2x-DGX-Sparks
+- Source: <https://github.com/MiaAI-Lab/GLM-5.3-Flash-EXL3-2x-DGX-Sparks>
+- Revision: `0e2e78f3de83624e6733b918724da27fc9040156`
+- License: MIT
+
+The XGrammar patcher source-exactly backports portions of vLLM PRs 52805 and
+53046 and retains their Apache-2.0 lineage; see
+[`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt). The model checkpoints and
+DFlash2 drafter remain subject to their own upstream licenses.
+
 ## MiaAI Lab Qwen3.8 Flash Next SM121 Kernels
 
 The QSA fallback, NVFP4 KV-cache implementation, and source patcher under

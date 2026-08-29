@@ -2813,6 +2813,14 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
   assert.equal(sparkCloudEmbedding.upstreamModel, 'qwen/qwen3-embedding-4b');
   assert.equal(sparkCloudEmbedding.runtime, undefined);
   assert.deepEqual(sparkCloudEmbedding.tags, ['cloud', 'external', 'openrouter', 'qwen']);
+  assert.equal(sparkDeployConfig.defaults.embeddingModel, 'embeddings');
+  assert.deepEqual(sparkDeployConfig.aliases.embeddings, {
+    target: 'Qwen/Qwen3-Embedding-4B',
+    fallbacks: ['macbook-local/qwen3-embedding:4b', 'cloud/openrouter/qwen3-embedding-4b'],
+    optionalFallbacks: ['macbook-local/qwen3-embedding:4b'],
+    advertise: true,
+    description: 'Embeddings · Spark 01, then MacBook, then OpenRouter'
+  });
   assert.deepEqual(sparkDeployConfig.backends['openai-compatible-google-gemini-3-1-flash-lite'], {
     type: 'openai',
     baseUrl: 'https://openrouter.ai/api/v1',

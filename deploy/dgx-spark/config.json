@@ -16,9 +16,20 @@
     "autoStartLocalHost": false
   },
   "defaults": {
-    "chatModel": "unsloth/Qwen3.6-35B-A3B-NVFP4"
+    "chatModel": "unsloth/Qwen3.6-35B-A3B-NVFP4",
+    "embeddingModel": "embeddings"
   },
   "aliases": {
+    "embeddings": {
+      "target": "Qwen/Qwen3-Embedding-4B",
+      "fallbacks": [
+        "macbook-local/qwen3-embedding:4b",
+        "cloud/openrouter/qwen3-embedding-4b"
+      ],
+      "optionalFallbacks": ["macbook-local/qwen3-embedding:4b"],
+      "advertise": true,
+      "description": "Embeddings · Spark 01, then MacBook, then OpenRouter"
+    },
     "deepseek/deepseek-v4-flash": {
       "target": "deepseek/deepseek-v4-flash-0731",
       "advertise": false

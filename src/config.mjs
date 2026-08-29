@@ -117,6 +117,7 @@ function validateConfig(config, sourcePath, env) {
   for (const [aliasId, alias] of Object.entries(config.aliases ?? {})) {
     const target = typeof alias === 'string' ? alias : alias?.target;
     const fallbacks = typeof alias === 'string' ? [] : alias?.fallbacks;
+    const optionalFallbacks = typeof alias === 'string' ? [] : alias?.optionalFallbacks;
     if (!target) errors.push(`alias ${aliasId} is missing target`);
     const aliasResidencyFields = residencyFields(alias);
     if (aliasResidencyFields.length) {
@@ -127,14 +128,25 @@ function validateConfig(config, sourcePath, env) {
     if (fallbacks != null && !Array.isArray(fallbacks)) {
       errors.push(`alias ${aliasId} fallbacks must be an array`);
     }
+    if (optionalFallbacks != null && !Array.isArray(optionalFallbacks)) {
+      errors.push(`alias ${aliasId} optionalFallbacks must be an array`);
+    }
     const targets = [target, ...(Array.isArray(fallbacks) ? fallbacks : [])].filter(Boolean);
+    const optionalTargets = new Set(Array.isArray(optionalFallbacks) ? optionalFallbacks : []);
     if (new Set(targets).size !== targets.length) {
       errors.push(`alias ${aliasId} has duplicate targets`);
+    }
+    for (const candidate of optionalTargets) {
+      if (typeof candidate !== 'string' || !candidate.trim()) {
+        errors.push(`alias ${aliasId} has an invalid optional fallback`);
+      } else if (!fallbacks?.includes(candidate)) {
+        errors.push(`alias ${aliasId} optional fallback ${candidate} is not present in fallbacks`);
+      }
     }
     for (const candidate of targets) {
       if (typeof candidate !== 'string' || !candidate.trim()) {
         errors.push(`alias ${aliasId} has an invalid target`);
-      } else if (!modelIds.has(candidate)) {
+      } else if (!modelIds.has(candidate) && !optionalTargets.has(candidate)) {
         errors.push(`alias ${aliasId} targets unknown model ${candidate}`);
       }
     }
