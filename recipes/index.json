@@ -288,7 +288,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang",
       "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang.json",
-      "currentVersion": 15,
+      "currentVersion": 16,
       "versions": [
         {
           "version": 1,
@@ -390,9 +390,16 @@
         },
         {
           "version": 15,
+          "path": "archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang/v15.json",
+          "status": "archived",
+          "archivedAt": "2026-08-30T17:20:00.000Z",
+          "notes": "Admits two entity-shaped requests, queues overflow in LLooM, widens the physical head probe, and sizes SGLang decode graphs plus FP32 recurrent paths for the measured staggered Presence workload."
+        },
+        {
+          "version": 16,
           "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang.json",
           "status": "current",
-          "notes": "Admits two entity-shaped requests, queues overflow in LLooM, widens loaded-health probes, and sizes SGLang decode graphs plus FP32 recurrent paths for the measured staggered Presence workload."
+          "notes": "Admits two entity-shaped requests, queues overflow in LLooM, widens both logical and physical loaded-health probes, and sizes SGLang decode graphs plus FP32 recurrent paths for the measured staggered Presence workload."
         }
       ],
       "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 SGLang",

@@ -2461,6 +2461,10 @@ dsparkBase.cluster = {
     ennspark02: { endpoint: 'http://spark-two:8100', backendHost: '10.20.30.11' }
   }
 };
+const qwen38Recipe = await loadRecipeById('linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang');
+const qwen38Config = deriveUserConfig(dsparkBase, qwen38Recipe, { modelRoot: '/models', additive: true });
+assert.equal(qwen38Config.runtimes['qwen38-flash-next-cluster'].healthTimeoutMs, 5000);
+assert.equal(qwen38Config.runtimes['qwen38-flash-next-head'].healthTimeoutMs, 5000);
 const clusterEmbeddingRecipe = await loadRecipeById('linux-nvidia-dgx-spark-cluster-qwen3-embedding-4b-vllm');
 const clusterEmbeddingBase = structuredClone(dsparkBase);
 clusterEmbeddingBase.cluster.nodes.ennspark02.labels = { role: 'worker', hardware: 'dgx-spark' };

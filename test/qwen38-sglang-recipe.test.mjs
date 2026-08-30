@@ -20,7 +20,8 @@ assert.equal(recipe.models[0].settings.queueTimeoutMs, 240000);
 assert.equal(recipe.models[0].settings.queueRetryAfterSeconds, 3);
 assert.equal(recipe.models[0].settings.requestStartupWaitMs, 1000);
 assert.equal(recipe.models[0].settings.startupRetryAfterSeconds, 15);
-assert.equal(recipe.version, 15);
+assert.equal(recipe.models[0].settings.healthTimeoutMs, 5000);
+assert.equal(recipe.version, 16);
 assert.equal(recipe.models[0].settings.memoryGb, 80);
 assert.equal(recipe.models[0].settings.keepWarm, false);
 assert.equal(recipe.capabilities.includes('mtp'), true);
@@ -160,6 +161,9 @@ await fs.access(
 );
 await fs.access(
   path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v14.json')
+);
+await fs.access(
+  path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v15.json')
 );
 
 console.log('qwen38 sglang recipe tests passed');

@@ -346,6 +346,9 @@ function buildExplicitRecipeRuntime({
       : {}),
     ...(runtimeSettings.bootstrap ? { bootstrap: templateValue(asObject(runtimeSettings.bootstrap), variables) } : {}),
     ...(runtimeSettings.watchdog ? { watchdog: templateValue(asObject(runtimeSettings.watchdog), variables) } : {}),
+    ...(Number.isFinite(Number(runtimeSettings.healthTimeoutMs))
+      ? { healthTimeoutMs: positiveInteger(runtimeSettings.healthTimeoutMs, 1500) }
+      : {}),
     recipe: {
       id: recipe.id,
       version: recipe.version ?? 1,
@@ -379,6 +382,9 @@ function buildRecipeRuntime({
     enabled: true,
     port,
     startupTimeoutMs: positiveInteger(settings.startupTimeoutMs, 900000),
+    ...(Number.isFinite(Number(settings.healthTimeoutMs))
+      ? { healthTimeoutMs: positiveInteger(settings.healthTimeoutMs, 1500) }
+      : {}),
     maxConcurrency: maxActiveRequests,
     ...(Number.isFinite(Number(settings.maxQueuedRequests))
       ? { maxQueuedRequests: Math.max(0, Math.floor(Number(settings.maxQueuedRequests))) }
@@ -720,6 +726,9 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
           priority: Number(settings.priority ?? 0)
         },
         startupTimeoutMs: positiveInteger(settings.startupTimeoutMs, 1800000),
+        ...(Number.isFinite(Number(settings.healthTimeoutMs))
+          ? { healthTimeoutMs: positiveInteger(settings.healthTimeoutMs, 1500) }
+          : {}),
         healthUrl: `${clusterNodeBackendOrigin(leader)}:${port}${settings.healthPath ?? '/health'}`,
         recipe: { id: recipe.id, version: recipe.version ?? 1, source: recipe.filePath ?? null },
         authority: {
