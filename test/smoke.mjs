@@ -2577,14 +2577,13 @@ assert.deepEqual(
   dsparkRefreshed.runtimes['deepseek-v4-flash-0731-cluster'].placement.members.map((member) => member.node),
   ['ennspark02', 'ennspark01']
 );
-assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-worker'].recipe.version, 18);
-assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-head'].recipe.version, 18);
+assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-worker'].recipe.version, 19);
+assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-head'].recipe.version, 19);
 assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-cluster'].keepWarm, false);
 assert.deepEqual(dsparkRefreshed.aliases['deepseek-v4-flash-0731'], {
   target: 'deepseek-v4-flash-0731',
-  fallbacks: ['deepseek/deepseek-v4-flash-0731'],
   advertise: false,
-  description: 'Local DSpark first, OpenRouter only when the local runtime is unavailable.'
+  description: 'Strict local DS4F route. Cloud DS4F requires its explicit deepseek/deepseek-v4-flash-0731 model ID.'
 });
 assert.deepEqual(dsparkRefreshed.aliases['dsv4f-local'], {
   target: 'deepseek-v4-flash-0731',
@@ -8519,7 +8518,9 @@ if (mockListened) {
         path: '/v1/chat/completions',
         headers: {
           'content-type': 'application/json',
-          'content-length': Buffer.byteLength(abortBody)
+          'content-length': Buffer.byteLength(abortBody),
+          'x-enntity-entity': 'Luna',
+          'x-enntity-purpose': 'chat'
         }
       });
       abortRequest.on('error', () => {});
@@ -8548,6 +8549,7 @@ if (mockListened) {
       assert(metricsJson.routes.some((route) => route.id === '/v1/messages' && route.requests >= 4));
       assert(metricsJson.recent.some((entry) => entry.stream === true && entry.usage?.input_tokens === 17));
       assert(metricsJson.recent.some((entry) => entry.caller === 'node'));
+      assert(metricsJson.recent.some((entry) => entry.entity === 'Luna' && entry.purpose === 'chat'));
       const delayedMetric = metricsJson.recent.find(
         (entry) =>
           entry.route === '/v1/chat/completions' &&

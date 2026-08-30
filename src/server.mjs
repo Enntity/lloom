@@ -799,6 +799,21 @@ function requestCallerLabel(req) {
   return family ?? safeCallerPart(req.headers['x-stainless-lang']);
 }
 
+function requestEnntityAttribution(req) {
+  return {
+    entity: safeAttributionPart(req.headers['x-enntity-entity']),
+    purpose: safeAttributionPart(req.headers['x-enntity-purpose'])
+  };
+}
+
+function safeAttributionPart(value) {
+  const text = String(Array.isArray(value) ? value[0] : (value ?? ''))
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .trim()
+    .slice(0, 128);
+  return text || null;
+}
+
 function runtimeRequesterNode(req, config) {
   const header = req.headers['x-lloom-requester-node'];
   const requester = Array.isArray(header) ? header[0] : header;
@@ -974,6 +989,8 @@ export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } =
         target: raw.target ?? null,
         node: raw.node ?? null,
         caller: raw.caller ?? null,
+        entity: raw.entity ?? null,
+        purpose: raw.purpose ?? null,
         requestBytes: raw.requestBytes ?? 0,
         stream: raw.stream === true
       });
@@ -1009,6 +1026,8 @@ export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } =
         target: raw.target ?? live?.target ?? null,
         node: raw.node ?? live?.node ?? null,
         caller: raw.caller ?? live?.caller ?? null,
+        entity: raw.entity ?? live?.entity ?? null,
+        purpose: raw.purpose ?? live?.purpose ?? null,
         status: raw.status ?? 0,
         ok: raw.ok === true,
         stream: raw.stream === true,
@@ -1970,6 +1989,9 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         failoverTargets: entry.failoverTargets ?? undefined,
         failoverReason: entry.failoverReason ?? undefined,
         failedOver: entry.failedOver === true || undefined,
+        caller: entry.caller ?? undefined,
+        entity: entry.entity ?? undefined,
+        purpose: entry.purpose ?? undefined,
         status: entry.status,
         durationMs: entry.durationMs,
         firstContentMs: entry.firstContentMs,
@@ -2088,6 +2110,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
   async function recordModelRequest({ route, resolved, stream, req, res }, fn, { deferUnsentErrors = false } = {}) {
     const started = Date.now();
     const requestBytes = Number(req.headers['content-length']) || 0;
+    const attribution = requestEnntityAttribution(req);
     const connectionId = metrics.begin({
       route,
       model: resolved.model.id,
@@ -2104,6 +2127,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       target: resolved.model.selectedTarget,
       node: resolved.model.selectedNode,
       caller: requestCallerLabel(req),
+      ...attribution,
       requestBytes,
       stream
     });
@@ -2192,6 +2216,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         target: resolved.model.selectedTarget,
         node: resolved.model.selectedNode,
         caller: requestCallerLabel(req),
+        ...attribution,
         status,
         ok: status >= 200 && status < 400,
         stream: result?.stream ?? stream,
@@ -2231,6 +2256,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         target: resolved.model.selectedTarget,
         node: resolved.model.selectedNode,
         caller: requestCallerLabel(req),
+        ...attribution,
         status,
         ok: false,
         stream,
