@@ -89,7 +89,10 @@ if [[ -n "$runtime" ]]; then
     # Non-pinned runtimes need an explicit restart so the new runtime spec is
     # applied. A stopped/failed keep-warm runtime also needs recovery.
     [[ "$keep_warm" == "true" ]] || lloom runtime-stop "$runtime" >/dev/null
-    lloom runtime-start "$runtime" >/dev/null
+    # The runtime was explicitly stopped above before the package/config swap.
+    # A request may race the service restart and begin the same new-spec startup;
+    # adopt that work instead of force-restarting the freshly loaded cluster.
+    lloom runtime-start "$runtime" --no-force >/dev/null
   fi
   for _ in $(seq 1 900); do
     healthy=$(lloom runtimes "$runtime" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);console.log(j.runtimes[process.argv[1]].healthy?"true":"false")}catch{console.log("false")}})' "$runtime")

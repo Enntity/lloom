@@ -13,6 +13,11 @@ assert.match(headInstallScript, /adopting keep-warm startup/);
 assert.match(headInstallScript, /status" == "starting"/);
 assert.match(headInstallScript, /status" == "running"/);
 assert.match(headInstallScript, /\[\[ "\$keep_warm" == "true" \]\] \|\| lloom runtime-stop/);
+assert.match(
+  headInstallScript,
+  /lloom runtime-start "\$runtime" --no-force/,
+  'deploy adopts a same-spec startup that raced the service restart instead of forcing a second model reload'
+);
 assert.doesNotMatch(
   headInstallScript,
   /enn presence (disable|enable)/,
