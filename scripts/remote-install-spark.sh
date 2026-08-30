@@ -85,8 +85,30 @@ systemctl --user restart lloom.service
 for _ in $(seq 1 60); do lloom models >/dev/null 2>&1 && break; sleep 1; done
 lloom models >/dev/null
 if [[ -n "$runtime" ]]; then
-  lloom runtime-stop "$runtime" >/dev/null
-  lloom runtime-start "$runtime" >/dev/null
+  runtime_snapshot=$(lloom runtimes "$runtime" 2>/dev/null || true)
+  runtime_fields=$(printf '%s' "$runtime_snapshot" | node -e '
+    let s = "";
+    process.stdin.on("data", d => s += d).on("end", () => {
+      try {
+        const j = JSON.parse(s);
+        const id = process.argv[1];
+        const r = j.runtimes?.[id] || {};
+        const keepWarm = r.keepWarm === true || (j.keepWarm || []).includes(id);
+        console.log(`${r.healthy === true}\t${r.status || "unknown"}\t${keepWarm}`);
+      } catch {
+        console.log("false\tunknown\tfalse");
+      }
+    });
+  ' "$runtime")
+  IFS=$'\t' read -r healthy status keep_warm <<< "$runtime_fields"
+  if [[ "$keep_warm" == "true" && ( "$healthy" == "true" || "$status" == "starting" || "$status" == "running" ) ]]; then
+    echo "adopting keep-warm startup for $runtime"
+  else
+    # Non-pinned runtimes need an explicit restart so the new runtime spec is
+    # applied. A stopped/failed keep-warm runtime also needs recovery.
+    [[ "$keep_warm" == "true" ]] || lloom runtime-stop "$runtime" >/dev/null
+    lloom runtime-start "$runtime" >/dev/null
+  fi
   for _ in $(seq 1 900); do
     healthy=$(lloom runtimes "$runtime" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);console.log(j.runtimes[process.argv[1]].healthy?"true":"false")}catch{console.log("false")}})' "$runtime")
     [[ "$healthy" == "true" ]] && break
