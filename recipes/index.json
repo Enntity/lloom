@@ -360,7 +360,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm",
       "path": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm.json",
-      "currentVersion": 7,
+      "currentVersion": 8,
       "versions": [
         {
           "version": 1,
@@ -400,9 +400,15 @@
         },
         {
           "version": 7,
+          "path": "archive/linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm/v7.json",
+          "status": "archived",
+          "notes": "Makes GLM the explicit hard residency pin across both Sparks; delegated TP authority prevents worker-local displacement, while embeddings and image sidecars remain on-demand."
+        },
+        {
+          "version": 8,
           "path": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm.json",
           "status": "current",
-          "notes": "Makes GLM the explicit hard residency pin across both Sparks; delegated TP authority prevents worker-local displacement, while embeddings and image sidecars remain on-demand."
+          "notes": "Adopts MiaAI's measured 2K prefill chunk and raises the served context to a practical 300 Ki tokens while retaining LLooM's 9.5 GiB KV budget and health headroom."
         }
       ],
       "name": "2x DGX Spark GLM-5.3 Flash EXL3 DFlash2 vLLM",

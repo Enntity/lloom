@@ -18,7 +18,7 @@ if [[ "${SPEC_METHOD:-dflash}" == "dflash" && ! -f "${DFLASH_MODEL_DIR:-}/config
   exit 1
 fi
 
-# These are the exact runtime overlays from MiaAI-Lab commit 0e2e78f3.
+# These are the exact runtime overlays retained at MiaAI-Lab commit 79f10b91.
 # They fail closed if their pinned vLLM anchors drift.
 python3 /opt/lloom/patch_glm_video_placeholders.py
 python3 /opt/lloom/patch_suppress_stops_in_reasoning.py
@@ -50,7 +50,7 @@ args=(
   --max-model-len "${MAX_MODEL_LEN:-1000000}"
   --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION:-0.87}"
   --max-num-seqs "${MAX_NUM_SEQS:-4}"
-  --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS:-1024}"
+  --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS:-2048}"
   --kv-cache-dtype "${KV_CACHE_DTYPE:-fp8}"
   --chat-template /opt/lloom/chat_template.jinja
   --limit-mm-per-prompt "${LIMIT_MM_PER_PROMPT}"

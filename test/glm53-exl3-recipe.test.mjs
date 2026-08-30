@@ -9,9 +9,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const backendRoot = path.join(root, 'backends', 'glm53-exl3');
 const recipe = await loadRecipeById('linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm');
 
-assert.equal(recipe.version, 7);
+assert.equal(recipe.version, 8);
 assert.equal(recipe.models[0].gatewayModel, 'glm-5.3-flash-exl3');
-assert.equal(recipe.models[0].settings.contextWindow, 262144);
+assert.equal(recipe.models[0].settings.contextWindow, 307200);
 assert.equal(recipe.models[0].settings.memoryGb, 100);
 assert.equal(recipe.models[0].settings.maxActiveRequests, 4);
 assert.equal(recipe.models[0].settings.keepWarm, true);
@@ -64,9 +64,10 @@ for (const member of members) {
   assert.match(rendered, /DFLASH_MODEL_DIR=\/models\/incoai--GLM-5\.3-Flash-DFlash2/);
   assert.match(rendered, /SPEC_METHOD=dflash/);
   assert.match(rendered, /DFLASH_TOKENS=7/);
-  assert.match(rendered, /MAX_MODEL_LEN=262144/);
+  assert.match(rendered, /MAX_MODEL_LEN=307200/);
   assert.match(rendered, /GPU_MEMORY_UTILIZATION=0\.79/);
   assert.match(rendered, /KV_CACHE_MEMORY_BYTES=10200547328/);
+  assert.match(rendered, /MAX_NUM_BATCHED_TOKENS=2048/);
   assert.match(rendered, /GLM53_MIXED_PREFILL_CHUNK=skip/);
   assert.match(rendered, /NCCL_IB_ADDR_FAMILY=AF_INET/);
   assert.match(rendered, /NCCL_CROSS_NIC=1/);
@@ -110,7 +111,7 @@ const sourceHashes = {
 };
 for (const [name, expected] of Object.entries(sourceHashes)) {
   const bytes = await fs.readFile(path.join(backendRoot, name));
-  assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'), expected, `${name} drifted from Mia 0e2e78f3`);
+  assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'), expected, `${name} drifted from Mia 79f10b91`);
 }
 
 console.log('glm53 exl3 recipe tests passed');
