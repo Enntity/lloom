@@ -1761,7 +1761,10 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       }
       const aggregateOutputRate = state.aggregateRateSamples.length
         ? state.aggregateRateSamples.reduce((sum, rate) => sum + rate, 0) / state.aggregateRateSamples.length
-        : null;
+        : Number(totals.decodeTokensPerSecond) > 0
+          ? Number(totals.decodeTokensPerSecond)
+          : null;
+      const displayedOutputRate = liveOutputRate > 0 ? liveOutputRate : aggregateOutputRate || 0;
       $("#fabric-rate").textContent = aggregateOutputRate == null ? "—" : formatRate(aggregateOutputRate);
       $("#fabric-active").textContent = formatNumber(active.length);
       state.topologySummary = {
@@ -1769,7 +1772,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         promptTokens,
         promptEstimated,
         promptPulseAt: promptTokens > 0 ? activityRenderedAt : null,
-        outputRate: liveOutputRate,
+        outputRate: displayedOutputRate,
         averageInputRate,
         averageOutputRate: aggregateOutputRate || 0,
         errors: totals.errors || 0,

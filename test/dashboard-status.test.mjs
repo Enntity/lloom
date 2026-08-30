@@ -19,5 +19,8 @@ assert(
   )
 );
 assert(!source.includes('transitioning || (liveConnections.length ? "serving"'));
+assert(source.includes('Number(totals.decodeTokensPerSecond) > 0'));
+assert(source.includes('const displayedOutputRate = liveOutputRate > 0 ? liveOutputRate : aggregateOutputRate || 0'));
+assert(source.includes('outputRate: displayedOutputRate'));
 
 console.log('dashboard status tests passed');
