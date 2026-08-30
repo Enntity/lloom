@@ -14,8 +14,8 @@ const recipe = await loadRecipeById('linux-nvidia-dgx-spark-2x-qwen38-flash-next
 assert.equal(recipe.backend.id, 'docker-sglang');
 assert.equal(recipe.models[0].gatewayModel, 'qwen3.8-flash-next');
 assert.equal(recipe.models[0].settings.contextWindow, 262144);
-assert.equal(recipe.models[0].settings.maxActiveRequests, 12);
-assert.equal(recipe.version, 13);
+assert.equal(recipe.models[0].settings.maxActiveRequests, 8);
+assert.equal(recipe.version, 14);
 assert.equal(recipe.models[0].settings.memoryGb, 80);
 assert.equal(recipe.models[0].settings.keepWarm, false);
 assert.equal(recipe.capabilities.includes('mtp'), true);
@@ -44,8 +44,8 @@ for (const member of members) {
   const rendered = bootstrap.createArgs.join(' ');
   assert.match(rendered, /QWEN_MODEL_REVISION=7b719225242aacd3dbd3f9407468c2ee9a9d2594/);
   assert.match(rendered, /MAX_TOTAL_TOKENS=627648/);
-  assert.match(rendered, /MAX_RUNNING_REQUESTS=12/);
-  assert.match(rendered, /MAX_MAMBA_CACHE_SIZE=60/);
+  assert.match(rendered, /MAX_RUNNING_REQUESTS=8/);
+  assert.match(rendered, /MAX_MAMBA_CACHE_SIZE=40/);
   assert.match(rendered, /SGLANG_API_HOST=0\.0\.0\.0/);
   assert.match(rendered, /SGLANG_API_PORT=8889/);
   assert.doesNotMatch(rendered, /SGLANG_PORT=/);
@@ -70,8 +70,8 @@ for (const expected of [
   '--host "${SGLANG_API_HOST:-0.0.0.0}"',
   '--port "${api_port}"',
   '--max-total-tokens "${MAX_TOTAL_TOKENS:-627648}"',
-  '--max-mamba-cache-size "${MAX_MAMBA_CACHE_SIZE:-60}"',
-  '--max-running-requests "${MAX_RUNNING_REQUESTS:-12}"',
+  '--max-mamba-cache-size "${MAX_MAMBA_CACHE_SIZE:-40}"',
+  '--max-running-requests "${MAX_RUNNING_REQUESTS:-8}"',
   '--mamba-ssm-dtype float32',
   'if [[ "${ENABLE_SPECULATIVE:-0}" == "1" ]]',
   'if [[ "${ENABLE_THINKING_BUDGETS:-0}" == "1" ]]',
@@ -80,7 +80,7 @@ for (const expected of [
   'default_chat_template_kwargs="${DEFAULT_CHAT_TEMPLATE_KWARGS:-}"',
   'default_chat_template_kwargs=\'{"reasoning_effort":"low"}\'',
   '--default-chat-template-kwargs "${default_chat_template_kwargs}"',
-  '--cuda-graph-bs-decode 1 2 3 4 5 6 7 8 10 12'
+  '--cuda-graph-bs-decode 1 2 3 4 5 6 7 8'
 ]) {
   assert(entrypoint.includes(expected), `missing SGLang launch control: ${expected}`);
 }

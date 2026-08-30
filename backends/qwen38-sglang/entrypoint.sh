@@ -71,11 +71,11 @@ exec python3 -m sglang.launch_server \
   --mamba-ssm-dtype float32 \
   --mamba-radix-cache-strategy extra_buffer \
   --mamba-track-interval 64 \
-  --max-mamba-cache-size "${MAX_MAMBA_CACHE_SIZE:-60}" \
+  --max-mamba-cache-size "${MAX_MAMBA_CACHE_SIZE:-40}" \
   --mamba-full-memory-ratio "${MAMBA_FULL_MEMORY_RATIO:-0.3}" \
   --mem-fraction-static "${MEM_FRACTION_STATIC:-0.80}" \
   --chunked-prefill-size "${CHUNKED_PREFILL_SIZE:-1024}" \
-  --max-running-requests "${MAX_RUNNING_REQUESTS:-12}" \
+  --max-running-requests "${MAX_RUNNING_REQUESTS:-8}" \
   --max-total-tokens "${MAX_TOTAL_TOKENS:-627648}" \
   --context-length "${CONTEXT_LENGTH:-262144}" \
   "${speculative_args[@]}" \
@@ -86,4 +86,4 @@ exec python3 -m sglang.launch_server \
   --enable-metrics \
   --enable-cache-report \
   --disable-prefill-cuda-graph \
-  --cuda-graph-bs-decode 1 2 3 4 5 6 7 8 10 12
+  --cuda-graph-bs-decode 1 2 3 4 5 6 7 8
