@@ -3349,9 +3349,13 @@ const sparkDeployConfig = JSON.parse(await fs.readFile(path.join('deploy', 'dgx-
 assert.equal(sparkDeployConfig.clientCatalog.includeAliases, true);
 const sparkOmpConfig = renderOmpConfigYaml(sparkDeployConfig);
 for (const role of ['smol', 'slow', 'plan', 'commit', 'designer', 'advisor', 'tiny', 'vision', 'task']) {
-  assert(sparkOmpConfig.includes(`  ${role}: local-llm/glm53-flash`));
+  assert(sparkOmpConfig.includes(`  ${role}: local-llm/qwen3.8-flash-next:low`));
 }
-assert(sparkOmpConfig.includes('  default: local-llm/glm53-flash:low'));
+assert(sparkOmpConfig.includes('  default: local-llm/qwen3.8-flash-next:low'));
+const sparkOmpModelsTemplate = await fs.readFile(path.join('deploy', 'dgx-spark', 'omp-models.yml'), 'utf8');
+assert(sparkOmpModelsTemplate.includes('      - id: qwen3.8-flash-next\n'));
+assert(sparkOmpModelsTemplate.includes('        contextWindow: 262144\n'));
+assert(sparkOmpModelsTemplate.includes('        maxTokens: 32768\n'));
 const sparkClientConfig = structuredClone(registryConfig);
 sparkClientConfig.clientCatalog = sparkDeployConfig.clientCatalog;
 sparkClientConfig.aliases['glm53-flash'] = {

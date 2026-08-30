@@ -23,16 +23,16 @@
     "includeAliases": true,
     "omp": {
       "roles": {
-        "default": "glm53-flash:low",
-        "smol": "glm53-flash",
-        "slow": "glm53-flash",
-        "plan": "glm53-flash",
-        "commit": "glm53-flash",
-        "designer": "glm53-flash",
-        "advisor": "glm53-flash",
-        "tiny": "glm53-flash",
-        "vision": "glm53-flash",
-        "task": "glm53-flash"
+        "default": "qwen3.8-flash-next:low",
+        "smol": "qwen3.8-flash-next:low",
+        "slow": "qwen3.8-flash-next:low",
+        "plan": "qwen3.8-flash-next:low",
+        "commit": "qwen3.8-flash-next:low",
+        "designer": "qwen3.8-flash-next:low",
+        "advisor": "qwen3.8-flash-next:low",
+        "tiny": "qwen3.8-flash-next:low",
+        "vision": "qwen3.8-flash-next:low",
+        "task": "qwen3.8-flash-next:low"
       }
     }
   },

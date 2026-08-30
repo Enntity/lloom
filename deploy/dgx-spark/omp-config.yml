@@ -1,14 +1,14 @@
 modelRoles:
-  default: ennspark01/glm53-flash:low
-  smol: ennspark01/glm53-flash
-  slow: ennspark01/glm53-flash
-  plan: ennspark01/glm53-flash
-  commit: ennspark01/glm53-flash
-  designer: ennspark01/glm53-flash
-  advisor: ennspark01/glm53-flash
-  tiny: ennspark01/glm53-flash
-  vision: ennspark01/glm53-flash
-  task: ennspark01/glm53-flash
+  default: ennspark01/qwen3.8-flash-next:low
+  smol: ennspark01/qwen3.8-flash-next:low
+  slow: ennspark01/qwen3.8-flash-next:low
+  plan: ennspark01/qwen3.8-flash-next:low
+  commit: ennspark01/qwen3.8-flash-next:low
+  designer: ennspark01/qwen3.8-flash-next:low
+  advisor: ennspark01/qwen3.8-flash-next:low
+  tiny: ennspark01/qwen3.8-flash-next:low
+  vision: ennspark01/qwen3.8-flash-next:low
+  task: ennspark01/qwen3.8-flash-next:low
 defaultThinkingLevel: auto
 hideThinkingBlock: true
 startup:
