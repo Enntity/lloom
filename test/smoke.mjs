@@ -2577,13 +2577,14 @@ assert.deepEqual(
   dsparkRefreshed.runtimes['deepseek-v4-flash-0731-cluster'].placement.members.map((member) => member.node),
   ['ennspark02', 'ennspark01']
 );
-assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-worker'].recipe.version, 19);
-assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-head'].recipe.version, 19);
+assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-worker'].recipe.version, 18);
+assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-head'].recipe.version, 18);
 assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-cluster'].keepWarm, false);
 assert.deepEqual(dsparkRefreshed.aliases['deepseek-v4-flash-0731'], {
   target: 'deepseek-v4-flash-0731',
+  fallbacks: ['deepseek/deepseek-v4-flash-0731'],
   advertise: false,
-  description: 'Strict local DS4F route. Cloud DS4F requires its explicit deepseek/deepseek-v4-flash-0731 model ID.'
+  description: 'Local DSpark first, OpenRouter only when the local runtime is unavailable.'
 });
 assert.deepEqual(dsparkRefreshed.aliases['dsv4f-local'], {
   target: 'deepseek-v4-flash-0731',

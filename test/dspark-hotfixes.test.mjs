@@ -35,15 +35,12 @@ try {
   const recipe = JSON.parse(
     readFileSync(path.join(repoRoot, 'recipes', 'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json'), 'utf8')
   );
-  assert.equal(recipe.version, 19);
+  assert.equal(recipe.version, 18);
   assert.equal(recipe.models[0].settings.keepWarm, false);
   assert.match(recipe.provenance.source, /d1b76251535daef578d8751b04b39c29ad7ecdf9/);
   assert.equal(recipe.models[0].settings.contextWindow, 262144);
   assert.equal(recipe.models[0].settings.maxOutputTokens, 65536);
   assert.equal(recipe.models[0].settings.maxActiveRequests, 6);
-  const localAlias = recipe.models[0].aliases.find((alias) => alias.id === 'deepseek-v4-flash-0731');
-  assert.deepEqual(localAlias.fallbacks, undefined);
-  assert.match(localAlias.description, /strict local/i);
   const archivedRecipe = JSON.parse(
     readFileSync(
       path.join(repoRoot, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm', 'v4.json'),
@@ -140,7 +137,7 @@ try {
   assert.equal(archivedV17Recipe.version, 17);
   const recipeIndex = JSON.parse(readFileSync(path.join(repoRoot, 'recipes', 'index.json'), 'utf8'));
   const indexEntry = recipeIndex.recipes.find((candidate) => candidate.id === recipe.id);
-  assert.equal(indexEntry.currentVersion, 19);
+  assert.equal(indexEntry.currentVersion, 18);
   assert.deepEqual(
     indexEntry.versions.map(({ version, status }) => ({ version, status })),
     [
@@ -158,8 +155,7 @@ try {
       { version: 15, status: 'archived' },
       { version: 16, status: 'archived' },
       { version: 17, status: 'archived' },
-      { version: 18, status: 'archived' },
-      { version: 19, status: 'current' }
+      { version: 18, status: 'current' }
     ]
   );
 
