@@ -275,6 +275,16 @@ async function dockerContainerState(runtime) {
   }
 }
 
+export function dockerStartupFailure(container) {
+  if (container?.running === true) return null;
+  const status = String(container?.status ?? (container?.exists === false ? 'missing' : 'unknown')).toLowerCase();
+  if (status === 'created' || status === 'restarting') return null;
+  return {
+    status,
+    error: container?.error || null
+  };
+}
+
 async function dockerLifecycle(action, runtime) {
   const name = dockerContainerName(runtime);
   if (!name) throw new Error('docker runtime requires containerName or container.name');
@@ -1529,6 +1539,18 @@ export class RuntimeManager {
         this.setStatus(runtimeId, 'running');
         this.record({ runtimeId, event: 'healthy' });
         return { runtimeId, healthy: true };
+      }
+      if (runtimeAdapter(runtime) === 'docker') {
+        const container = await dockerContainerState(runtime);
+        const failure = dockerStartupFailure(container);
+        if (failure) {
+          const detail = failure.error ? `: ${failure.error}` : '';
+          const message = `docker runtime ${runtimeId} container ${dockerContainerName(runtime)} stopped before becoming healthy (${failure.status})${detail}`;
+          state.status = 'failed';
+          state.lastError = message;
+          this.record({ runtimeId, event: 'docker-exit-before-health', ...failure });
+          throw new Error(message);
+        }
       }
       if (child && child.exitCode != null) {
         const message = `runtime ${runtimeId} exited before becoming healthy`;

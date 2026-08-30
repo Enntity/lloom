@@ -38,14 +38,10 @@
   },
   "aliases": {
     "embeddings": {
-      "target": "Qwen/Qwen3-Embedding-4B",
-      "fallbacks": [
-        "macbook-local/qwen3-embedding:4b",
-        "cloud/openrouter/qwen3-embedding-4b"
-      ],
-      "optionalFallbacks": ["macbook-local/qwen3-embedding:4b"],
+      "target": "macbook-embeddings-primary",
+      "fallbacks": ["cloud/openrouter/qwen3-embedding-4b"],
       "advertise": true,
-      "description": "Embeddings · Spark 01, then MacBook, then OpenRouter"
+      "description": "Embeddings · MacBook, then OpenRouter"
     },
     "deepseek/deepseek-v4-flash": {
       "target": "deepseek/deepseek-v4-flash-0731",
@@ -88,10 +84,10 @@
       "baseUrl": "http://10.20.30.10:8009/v1",
       "timeoutMs": 1800000
     },
-    "qwen3-embedding-4b": {
+    "macbook-embeddings-primary": {
       "type": "openai",
-      "baseUrl": "http://127.0.0.1:8002/v1",
-      "apiKey": "sk-local-llm",
+      "baseUrl": "http://100.87.11.88:8101/v1",
+      "apiKeyEnv": "LLOOM_MACBOOK_API_KEY",
       "timeoutMs": 1800000
     },
     "openai-compatible-openrouter-qwen3-embedding-4b": {
@@ -184,31 +180,6 @@
         "image": "vllm/vllm-openai:v0.25.0",
         "createArgs": ["--restart", "unless-stopped", "--gpus", "all", "--ipc", "host", "-p", "10.20.30.10:8009:8000", "-e", "CUTE_DSL_ARCH=sm_121a", "-v", "/home/lloom/.cache/huggingface:/root/.cache/huggingface", "-v", "/home/lloom/.cache/vllm:/root/.cache/vllm"],
         "command": ["unsloth/Qwen3.6-35B-A3B-NVFP4", "--host", "0.0.0.0", "--port", "8000", "--tensor-parallel-size", "1", "--trust-remote-code", "--dtype", "bfloat16", "--kv-cache-dtype", "fp8", "--attention-backend", "flashinfer", "--gpu-memory-utilization", "0.4", "--max-model-len", "262144", "--max-num-seqs", "4", "--max-num-batched-tokens", "8192", "--enable-chunked-prefill", "--async-scheduling", "--enable-prefix-caching", "--load-format", "fastsafetensors", "--reasoning-parser", "qwen3", "--tool-call-parser", "qwen3_coder", "--enable-auto-tool-choice", "--speculative-config", "{\"method\":\"mtp\",\"num_speculative_tokens\":2}"]
-      }
-    },
-    "qwen3-embedding-4b": {
-      "enabled": true,
-      "adapter": "docker",
-      "management": "managed",
-      "containerName": "qwen3-embedding-4b",
-      "port": 8002,
-      "healthUrl": "http://127.0.0.1:8002/v1/models",
-      "startupTimeoutMs": 900000,
-      "maxConcurrency": 8,
-      "memoryGb": 12,
-      "keepWarm": false,
-      "policy": { "priority": 40 },
-      "bootstrap": {
-        "adapter": "docker",
-        "image": "vllm/vllm-openai:v0.24.0",
-        "createArgs": ["--restart", "no", "--gpus", "all", "--ipc", "host", "-p", "127.0.0.1:8002:8000", "-e", "CUTE_DSL_ARCH=sm_121a", "-v", "/home/lloom/.cache/huggingface:/root/.cache/huggingface"],
-        "command": ["Qwen/Qwen3-Embedding-4B", "--host", "0.0.0.0", "--port", "8000", "--served-model-name", "Qwen/Qwen3-Embedding-4B", "--runner", "pooling", "--dtype", "bfloat16", "--trust-remote-code", "--gpu-memory-utilization", "0.09", "--max-model-len", "8192", "--max-num-seqs", "16", "--max-num-batched-tokens", "8192"]
-      },
-      "recipe": { "id": "linux-nvidia-qwen3-embedding-4b-vllm", "version": 1 },
-      "warmup": {
-        "url": "http://127.0.0.1:8002/v1/embeddings",
-        "method": "POST",
-        "body": { "model": "Qwen/Qwen3-Embedding-4B", "input": ["Continuity is the persistence of meaningful identity through time."] }
       }
     },
     "nvidia-qwen36-35b-nvfp4": {
@@ -358,18 +329,18 @@
       "capabilities": ["chat", "streaming", "usage", "tools", "reasoning", "long-context", "batching", "speculative-decoding"]
     },
     {
-      "id": "Qwen/Qwen3-Embedding-4B",
-      "name": "Qwen3-Embedding-4B",
+      "id": "macbook-embeddings-primary",
+      "name": "Qwen3-Embedding-4B on MacBook",
       "kind": "embedding",
-      "backend": "qwen3-embedding-4b",
-      "runtime": "qwen3-embedding-4b",
-      "upstreamModel": "Qwen/Qwen3-Embedding-4B",
+      "backend": "macbook-embeddings-primary",
+      "upstreamModel": "qwen3-embedding:4b",
       "input": ["text"],
       "output": ["embedding"],
       "capabilities": ["embedding", "embeddings", "batching", "multilingual", "long-context"],
-      "contextWindow": 8192,
+      "contextWindow": 40960,
       "maxOutputTokens": 8192,
-      "advertise": true
+      "advertise": false,
+      "tags": ["macbook", "external", "ollama", "qwen3"]
     },
     {
       "id": "cloud/openrouter/qwen3-embedding-4b",

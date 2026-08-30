@@ -91,7 +91,12 @@ import { runtimeControlTimeoutMs } from '../src/control-timeout.mjs';
 import { runCommand } from '../src/process-control.mjs';
 import { createRegistry } from '../src/registry.mjs';
 import { loadRecipeById, loadRecipes, planRecipe } from '../src/recipes.mjs';
-import { RuntimeManager, dockerCreateArgs, effectiveRuntimeArgs } from '../src/runtime-manager.mjs';
+import {
+  RuntimeManager,
+  dockerCreateArgs,
+  dockerStartupFailure,
+  effectiveRuntimeArgs
+} from '../src/runtime-manager.mjs';
 import { applyRuntimePolicyPlan } from '../src/runtime-policy.mjs';
 import { createLloomServer } from '../src/server.mjs';
 import { applySetup, createSetupPlan } from '../src/setup.mjs';
@@ -2820,6 +2825,17 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
     reason: 'externally-managed'
   });
 
+  assert.equal(dockerStartupFailure({ exists: true, running: true, status: 'running' }), null);
+  assert.equal(dockerStartupFailure({ exists: true, running: false, status: 'restarting' }), null);
+  assert.deepEqual(dockerStartupFailure({ exists: true, running: false, status: 'exited' }), {
+    status: 'exited',
+    error: null
+  });
+  assert.deepEqual(dockerStartupFailure({ exists: false, running: false, status: 'missing' }), {
+    status: 'missing',
+    error: null
+  });
+
   assert.deepEqual(
     dockerCreateArgs({
       containerName: 'qwen-fast',
@@ -2890,12 +2906,17 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
   assert.deepEqual(sparkCloudEmbedding.tags, ['cloud', 'external', 'openrouter', 'qwen']);
   assert.equal(sparkDeployConfig.defaults.embeddingModel, 'embeddings');
   assert.deepEqual(sparkDeployConfig.aliases.embeddings, {
-    target: 'Qwen/Qwen3-Embedding-4B',
-    fallbacks: ['macbook-local/qwen3-embedding:4b', 'cloud/openrouter/qwen3-embedding-4b'],
-    optionalFallbacks: ['macbook-local/qwen3-embedding:4b'],
+    target: 'macbook-embeddings-primary',
+    fallbacks: ['cloud/openrouter/qwen3-embedding-4b'],
     advertise: true,
-    description: 'Embeddings · Spark 01, then MacBook, then OpenRouter'
+    description: 'Embeddings · MacBook, then OpenRouter'
   });
+  assert.equal(sparkDeployConfig.runtimes['qwen3-embedding-4b'], undefined);
+  assert.equal(sparkDeployConfig.backends['qwen3-embedding-4b'], undefined);
+  const sparkMacEmbedding = sparkDeployConfig.models.find((model) => model.id === 'macbook-embeddings-primary');
+  assert.equal(sparkMacEmbedding.backend, 'macbook-embeddings-primary');
+  assert.equal(sparkMacEmbedding.upstreamModel, 'qwen3-embedding:4b');
+  assert.equal(sparkMacEmbedding.advertise, false);
   assert.deepEqual(sparkDeployConfig.backends['openai-compatible-google-gemini-3-1-flash-lite'], {
     type: 'openai',
     baseUrl: 'https://openrouter.ai/api/v1',
