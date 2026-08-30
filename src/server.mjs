@@ -1189,6 +1189,7 @@ export function createMetricsPersistence(config, { logger = console } = {}) {
 function rollingMetricWindow(entries, now, windowMs, model) {
   const cutoff = now - windowMs;
   const selected = entries.filter((entry) => (!model || entry.model === model) && Date.parse(entry.at) >= cutoff);
+  const errors = selected.reduce((sum, entry) => sum + (entry.ok ? 0 : 1), 0);
   const outputTokens = selected.reduce((sum, entry) => sum + metricOutputTokens(entry), 0);
   const decodeTokens = selected.reduce((sum, entry) => {
     const tokens = metricOutputTokens(entry);
@@ -1202,6 +1203,7 @@ function rollingMetricWindow(entries, now, windowMs, model) {
   return {
     windowMs,
     requests: selected.length,
+    errors,
     outputTokens,
     decodeTokens,
     outputTokensPerSecond:

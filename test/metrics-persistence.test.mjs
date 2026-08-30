@@ -45,6 +45,29 @@ try {
   assert.equal(restoredSnapshot.routes.find((entry) => entry.id === '/v1/chat/completions')?.outputTokens, 7);
   assert.equal(restored.snapshot({ period: 'today' }).totals.inputTokens, 11);
   assert.equal(restored.snapshot({ period: '7d' }).models[0]?.outputTokens, 7);
+
+  const rollingMetrics = createMetricsStore();
+  rollingMetrics.record({
+    id: 'conn_ok',
+    route: '/v1/chat/completions',
+    model: 'rolling-model',
+    status: 200,
+    ok: true,
+    durationMs: 10
+  });
+  rollingMetrics.record({
+    id: 'conn_error',
+    route: '/v1/chat/completions',
+    model: 'rolling-model',
+    status: 500,
+    ok: false,
+    durationMs: 10,
+    error: 'test failure'
+  });
+  const rollingSnapshot = rollingMetrics.snapshot();
+  assert.equal(rollingSnapshot.rolling.short.requests, 2);
+  assert.equal(rollingSnapshot.rolling.short.errors, 1);
+  assert.equal(rollingSnapshot.rolling.minute.errors, 1);
 } finally {
   rmSync(root, { recursive: true, force: true });
 }

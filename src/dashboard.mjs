@@ -767,6 +767,8 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const gpu = telemetry.gpu || {};
       const activity = liveNodeActivity(node.id);
       const gpuMemory = gpu.memoryTotalMb > 0 ? (gpu.memoryUsedMb / gpu.memoryTotalMb) * 100 : null;
+      const hasGpu = nodeHasGpu(node);
+      const hasDedicatedGpuMemory = nodeHasDedicatedGpuMemory(node);
       const marker = $("#node-inspector-state");
       marker.querySelector(".dot").className = "dot " + (node.reachable === false ? "bad" : "ok");
       marker.querySelector("span:last-child").textContent = node.reachable === false ? "offline" : activity.requests ? activity.requests + " active" : node.local ? "local" : "reachable";
@@ -779,14 +781,24 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         ["Platform", [profile.platformId || [system.platform, system.arch].filter(Boolean).join("-"), system.release].filter(Boolean).join(" · ") || "—"],
         ["CPU", telemetry.cpu?.model || profile.cpuBrand || "—"],
         ["CPU load", telemetry.cpu?.utilization == null ? "—" : Math.round(telemetry.cpu.utilization) + "%"],
-        ["RAM", telemetry.memory?.totalBytes ? formatBytes(telemetry.memory.usedBytes) + " / " + formatBytes(telemetry.memory.totalBytes) : "—"],
-        ["GPU", gpu.devices?.map(device => device.name).filter(Boolean).join(", ") || profile.devices?.filter(device => device.kind === "gpu").map(device => device.name).join(", ") || "—"],
-        ["GPU load", gpu.utilization == null ? "—" : Math.round(gpu.utilization) + "%"],
-        ["GPU memory", gpuMemory == null ? "shared / unavailable" : Math.round(gpuMemory) + "% · " + formatBytes(gpu.memoryUsedMb * 1048576) + " / " + formatBytes(gpu.memoryTotalMb * 1048576)],
-        ["Thermals", gpu.temperatureC == null && gpu.powerDrawW == null ? "—" : (gpu.temperatureC == null ? "—" : Math.round(gpu.temperatureC) + "°C") + " · " + (gpu.powerDrawW == null ? "—" : Math.round(gpu.powerDrawW) + "W")],
+        ["RAM", telemetry.memory?.totalBytes ? formatBytes(telemetry.memory.usedBytes) + " / " + formatBytes(telemetry.memory.totalBytes) : "—"]
+      ];
+      if (hasGpu) {
+        details.push(
+          ["GPU", gpu.devices?.map(device => device.name).filter(Boolean).join(", ") || profile.devices?.filter(device => device.kind === "gpu").map(device => device.name).join(", ") || "—"],
+          ["GPU load", gpu.utilization == null ? "—" : Math.round(gpu.utilization) + "%"]
+        );
+      }
+      if (hasDedicatedGpuMemory) {
+        details.push(["GPU memory", Math.round(gpuMemory) + "% · " + formatBytes(gpu.memoryUsedMb * 1048576) + " / " + formatBytes(gpu.memoryTotalMb * 1048576)]);
+      }
+      if (gpu.temperatureC != null || gpu.powerDrawW != null) {
+        details.push(["Thermals", (gpu.temperatureC == null ? "—" : Math.round(gpu.temperatureC) + "°C") + " · " + (gpu.powerDrawW == null ? "—" : Math.round(gpu.powerDrawW) + "W")]);
+      }
+      details.push(
         ["Uptime", system.uptimeSeconds == null ? "—" : Math.floor(system.uptimeSeconds / 3600) + "h"],
         ["Models", Array.isArray(node.models) ? node.models.length : "—"]
-      ];
+      );
       $("#node-inspector-details").innerHTML = details.map(([label, value]) => '<div class="model-detail"><span>' + escapeHtml(label) + '</span><strong>' + escapeHtml(value) + '</strong></div>').join("");
       const nodeTags = [...new Set([...(profile.accelerators || []), ...Object.values(node.labels || {})])];
       $("#node-inspector-tags").innerHTML = tags(nodeTags) || '<span class="muted">No accelerator metadata reported</span>';
@@ -807,6 +819,49 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         outputRate: connections.reduce((sum, item) => sum + Number(item.outputRate || 0), 0),
         pending: connections.some(item => item.outputPending)
       };
+    }
+
+    function nodeAcceleratorSignals(node) {
+      const profile = node?.profile || {};
+      return [
+        ...(profile.accelerators || []),
+        ...(profile.devices || []).flatMap(device => [device.kind, device.vendor, device.backend, device.name, ...(device.accelerators || [])]),
+        ...(node?.telemetry?.gpu?.devices || []).flatMap(device => [device.name, device.vendor, device.backend])
+      ].filter(Boolean).map(value => String(value).toLowerCase());
+    }
+
+    function nodeHasGpu(node) {
+      if (node?.telemetry?.gpu) return true;
+      if ((node?.profile?.devices || []).some(device => String(device.kind).toLowerCase() === "gpu")) return true;
+      return nodeAcceleratorSignals(node).some(value => /(^|[^a-z])(gpu|cuda|metal|gb10|dgx-spark|blackwell)([^a-z]|$)/.test(value));
+    }
+
+    function nodeUsesUnifiedMemory(node) {
+      const profile = node?.profile || {};
+      if (profile.isAppleSilicon) return true;
+      if ((profile.memoryDomains || []).some(domain => String(domain.kind).toLowerCase() === "unified")) return true;
+      return nodeAcceleratorSignals(node).some(value => /\bgb10\b|\bdgx[ -]spark\b/.test(value));
+    }
+
+    function nodeHasDedicatedGpuMemory(node) {
+      const gpu = node?.telemetry?.gpu;
+      return nodeHasGpu(node)
+        && !nodeUsesUnifiedMemory(node)
+        && Number(gpu?.memoryTotalMb) > 0
+        && Number.isFinite(Number(gpu?.memoryUsedMb));
+    }
+
+    function nodeResourceRows(node) {
+      const telemetry = node?.telemetry || {};
+      const rows = [
+        ["CPU", telemetry.cpu?.utilization],
+        ["RAM", telemetry.memory?.pressureUtilization ?? telemetry.memory?.utilization]
+      ];
+      if (nodeHasGpu(node)) rows.push(["GPU", telemetry.gpu?.utilization]);
+      if (nodeHasDedicatedGpuMemory(node)) {
+        rows.push(["VRAM", telemetry.gpu.memoryUsedMb / telemetry.gpu.memoryTotalMb * 100]);
+      }
+      return rows;
     }
 
     function renderModelInspector() {
@@ -1300,7 +1355,6 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         state.modelNodes.delete(id);
         state.smoothedRates.delete("model:" + id + ":in");
         state.smoothedRates.delete("model:" + id + ":out");
-        state.smoothedRates.delete("model:" + id + ":display");
       }
       const snapshotField = () => ({ left: field.left, right: field.right, top: field.top, bottom: field.bottom });
       const idsKey = models.map(model => model.id).sort().join("|");
@@ -1429,11 +1483,14 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const clusterEnabled = clusterNodes.length > 0;
       const center = { x: modelField.left - (clusterEnabled ? 190 : 105), y: height * .53 };
       const nodeCardWidth = clusterEnabled ? 184 : 140;
-      const nodeCardHeight = clusterEnabled ? 154 : 60;
       const nodeCardGap = clusterEnabled ? 16 : 0;
       const clusterHeaderHeight = clusterEnabled ? 78 : 0;
+      const nodeCards = clusterNodes.map(node => {
+        const resources = nodeResourceRows(node);
+        return { node, resources, height: Math.max(100, 82 + resources.length * 18) };
+      });
       const clusterStackHeight = clusterEnabled
-        ? clusterHeaderHeight + clusterNodes.length * nodeCardHeight + Math.max(0, clusterNodes.length - 1) * nodeCardGap
+        ? clusterHeaderHeight + nodeCards.reduce((sum, card) => sum + card.height, 0) + Math.max(0, nodeCards.length - 1) * nodeCardGap
         : 340;
       const clusterStackTop = center.y - clusterStackHeight / 2;
       const gate = clusterEnabled
@@ -1448,13 +1505,18 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       ctx.textAlign = "left";
       const modelList = [...modelPoints.values()].sort((a, b) => a.y - b.y);
       const nodeX = clusterEnabled ? center.x : gate.right + Math.max(78, (modelField.left - gate.right) * .48);
-      const nodePoints = new Map(clusterNodes.map((node, index) => [node.id, {
-        x: nodeX,
-        y: clusterEnabled
-          ? clusterStackTop + clusterHeaderHeight + nodeCardHeight / 2 + index * (nodeCardHeight + nodeCardGap)
-          : center.y,
-        node
-      }]));
+      const nodePoints = new Map();
+      let nextNodeTop = clusterStackTop + clusterHeaderHeight;
+      for (const card of nodeCards) {
+        nodePoints.set(card.node.id, {
+          x: nodeX,
+          y: nextNodeTop + card.height / 2,
+          node: card.node,
+          resources: card.resources,
+          cardHeight: card.height
+        });
+        nextNodeTop += card.height + nodeCardGap;
+      }
       const leaderNodeId = state.status?.cluster?.leaderNode;
       const leaderPoint = nodePoints.get(leaderNodeId) || nodePoints.values().next().value;
       const ingressPoint = clusterEnabled && leaderPoint
@@ -1475,6 +1537,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const activeNodeIds = new Set(point.model.activeNodes || []);
         for (const source of sources) {
           const selected = source.id == null || activeNodeIds.has(source.id);
+          const connectorActive = selected && (point.model.state === "serving" || point.model.state === "external-processing");
           const sourceInputSignal = selected ? inputSignal : 0;
           const sourceOutputRate = selected ? outputRate : 0;
           const rate = Math.max(sourceInputSignal, sourceOutputRate);
@@ -1485,6 +1548,19 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
               : "rgba(153,163,176,.15)";
           ctx.lineWidth = 1 + Math.min(2.5, Math.sqrt(rate) / 8);
           ctx.beginPath(); ctx.moveTo(source.x, source.y); ctx.lineTo(to.x, to.y); ctx.stroke();
+          if (connectorActive) {
+            const processingRgb = point.model.state === "external-processing" ? "192,153,255" : "243,189,79";
+            const connectorPulse = .68 + (Math.sin(now * .008 + index) + 1) * .12;
+            ctx.save();
+            ctx.strokeStyle = "rgba(" + processingRgb + "," + connectorPulse + ")";
+            ctx.lineWidth = 2.25;
+            ctx.setLineDash([7, 5]);
+            ctx.lineDashOffset = -now * .03;
+            ctx.shadowColor = "rgba(" + processingRgb + ",.78)";
+            ctx.shadowBlur = 10;
+            ctx.stroke();
+            ctx.restore();
+          }
           [[sourceInputSignal, false, "rgba(143,180,255,.94)"], [sourceOutputRate, true, "rgba(47,230,200,.94)"]].forEach(([directionRate, reverse, color], direction) => {
             const particles = directionRate > 0 ? Math.min(12, Math.max(2, Math.ceil(Math.sqrt(directionRate)))) : 0;
             for (let particle = 0; particle < particles; particle++) {
@@ -1502,17 +1578,13 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const activity = liveNodeActivity(node.id);
         const active = activity.requests > 0;
         const telemetry = node.telemetry || {};
-        const cpu = telemetry.cpu?.utilization;
-        const ram = telemetry.memory?.pressureUtilization ?? telemetry.memory?.utilization;
-        const gpu = telemetry.gpu?.utilization;
-        const gpuMemory = telemetry.gpu?.memoryTotalMb > 0 ? telemetry.gpu.memoryUsedMb / telemetry.gpu.memoryTotalMb * 100 : null;
-        const cardLeft = point.x - nodeCardWidth / 2, cardTop = point.y - nodeCardHeight / 2;
-        nodeHitCards.push({ id: node.id, left: cardLeft, top: cardTop, width: nodeCardWidth, height: nodeCardHeight });
+        const cardLeft = point.x - nodeCardWidth / 2, cardTop = point.y - point.cardHeight / 2;
+        nodeHitCards.push({ id: node.id, left: cardLeft, top: cardTop, width: nodeCardWidth, height: point.cardHeight });
         ctx.fillStyle = node.reachable === false ? "rgba(25,11,15,.96)" : active ? "rgba(6,24,20,.98)" : "rgba(7,18,17,.97)";
         ctx.strokeStyle = active ? "rgba(47,230,200,.98)" : node.local ? "rgba(143,180,255,.72)" : node.reachable === false ? "rgba(255,111,125,.72)" : "rgba(47,230,200,.62)";
         ctx.lineWidth = active || node.local ? 2 : 1;
         if (active) { ctx.shadowColor = "rgba(47,230,200,.55)"; ctx.shadowBlur = 12; }
-        ctx.beginPath(); ctx.roundRect(cardLeft, cardTop, nodeCardWidth, nodeCardHeight, 6); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.roundRect(cardLeft, cardTop, nodeCardWidth, point.cardHeight, 6); ctx.fill(); ctx.stroke();
         ctx.shadowBlur = 0;
         ctx.textAlign = "left"; ctx.font = '700 10px "SFMono-Regular",monospace';
         ctx.fillStyle = node.reachable === false ? "#ff6f7d" : "#e9fffb";
@@ -1526,12 +1598,11 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           ctx.textAlign = "left"; ctx.font = '8px "SFMono-Regular",monospace'; ctx.fillStyle = "rgba(143,180,255,.72)";
           ctx.fillText(fitCanvasText(ctx, platform + " · " + accelerator, nodeCardWidth - 20), cardLeft + 10, cardTop + 35);
         }
-        const resources = clusterEnabled ? [["CPU", cpu], ["RAM", ram], ["GPU", gpu], ["VRAM", gpuMemory]] : [["RAM", ram], ["GPU", gpu]];
         ctx.font = '9px "SFMono-Regular",monospace';
-        resources.forEach((row, rowIndex) => {
-          const y = clusterEnabled ? cardTop + 58 + rowIndex * 18 : point.y + 7 + rowIndex * 14;
+        point.resources.forEach((row, rowIndex) => {
+          const y = cardTop + 58 + rowIndex * 18;
           const barLeft = cardLeft + 39;
-          const barWidth = clusterEnabled ? nodeCardWidth - 86 : 62;
+          const barWidth = nodeCardWidth - 86;
           ctx.textAlign = "left"; ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.fillText(row[0], cardLeft + 10, y);
           ctx.fillStyle = "rgba(143,180,255,.13)"; ctx.fillRect(barLeft, y - 7, barWidth, 6);
           if (row[1] != null) { ctx.fillStyle = row[1] > 90 ? "#ff6f7d" : row[1] > 70 ? "#f3bd4f" : "#2fe6c8"; ctx.fillRect(barLeft, y - 7, barWidth * Math.max(0, Math.min(100, row[1])) / 100, 6); }
@@ -1546,7 +1617,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
               ? "TELEMETRY –"
               : (temperature == null ? "–" : Math.round(temperature) + "°C") + " · " + (power == null ? "–" : Math.round(power) + "W");
           ctx.textAlign = "center"; ctx.fillStyle = active ? "#2fe6c8" : "rgba(153,163,176,.8)";
-          ctx.fillText(footerText, point.x, cardTop + nodeCardHeight - 10);
+          ctx.fillText(footerText, point.x, cardTop + point.cardHeight - 10);
         }
       }
       state.topologyHitNodeCards = nodeHitCards;
@@ -1559,11 +1630,10 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const hitCards = [];
       for (const point of cardDrawList) {
         ctx.save();
-        const displayedLiveRate = smoothRate("model:" + point.model.id + ":display", point.model.liveRate, now);
-        const live = displayedLiveRate > .05;
         const serving = point.model.state === "serving";
         const externalProcessing = point.model.state === "external-processing";
         const processing = serving || externalProcessing;
+        const instantaneousModelRate = Math.max(0, Number(point.model.liveRate || 0));
         const external = point.model.state === "external" || externalProcessing;
         const warming = point.model.state === "warming" || point.model.state === "queued";
         const evicting = point.model.state === "evicting";
@@ -1605,8 +1675,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         ctx.fillStyle = "rgba(153,163,176,.9)";
         ctx.fillText((point.model.inputEstimated ? "~" : "") + formatCompact(point.model.inputTokens) + " in · " + formatCompact(point.model.outputTokens) + " out", cardLeft + 12, point.y + 4);
         ctx.fillStyle = serving ? "#42d77d" : externalProcessing ? "#f3bd4f" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : evicting ? "#ff7e66" : unavailable ? "#ff6f7d" : "rgba(143,180,255,.7)";
-        const displayedModelRate = live ? displayedLiveRate : point.model.averageRate;
-        const modelRateText = displayedModelRate == null ? "" : formatRate(displayedModelRate) + " tok/s";
+        const modelRateText = processing && instantaneousModelRate > .05
+          ? formatRate(instantaneousModelRate) + " tok/s"
+          : "";
         const modelStateText = point.model.state === "queued" ? "QUEUED" : serving ? "COMPUTE ACTIVE" : externalProcessing ? "EXTERNAL PROCESSING" : point.model.state.toUpperCase();
         ctx.fillText(fitCanvasText(ctx, modelStateText + (modelRateText ? " · " + modelRateText : ""), cardWidth - 22), cardLeft + 12, point.y + 23);
         ctx.restore();
@@ -1672,7 +1743,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         ].join(" · ");
         ctx.fillStyle = "rgba(143,180,255,.82)";
         ctx.fillText(fitCanvasText(ctx, clusterTraffic, nodeCardWidth + 24), center.x, gate.top + 51);
-        const clusterResults = formatRate(smoothedOutputRate) + " ~T/S · " + (summary.errors || 0) + " ERR";
+        const clusterResults = formatRate(smoothedOutputRate) + " ~T/S · " + (summary.recentErrors || 0) + " ERR/1M";
         ctx.fillText(fitCanvasText(ctx, clusterResults, nodeCardWidth + 24), center.x, gate.top + 66);
       } else {
         const chassis = ctx.createLinearGradient(gate.left, 0, gate.right, 0);
@@ -1683,7 +1754,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         for (let i = 0; i < 9; i++) { const y = gate.top + 30 + i * 25; ctx.beginPath(); ctx.moveTo(gate.left + 13, y); ctx.lineTo(gate.right - 13, y); ctx.stroke(); }
         ctx.fillStyle = "#e9fffb"; ctx.font = '700 18px "SFMono-Regular",monospace'; ctx.fillText("LLooM", center.x, gate.top + 39);
         ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.font = '10px "SFMono-Regular",monospace'; ctx.fillText("ROUTING LOOM", center.x, gate.top + 57);
-        const statRows = [["ACTIVE", summary.active || 0], ["PROMPT", promptTokens > 0 ? (summary.promptEstimated ? "~" : "") + formatCompact(Math.round(promptTokens)) + " tok" : "—"], ["OUTPUT", formatRate(smoothedOutputRate) + " ~t/s"], ["ERRORS", summary.errors || 0]];
+        const statRows = [["ACTIVE", summary.active || 0], ["PROMPT", promptTokens > 0 ? (summary.promptEstimated ? "~" : "") + formatCompact(Math.round(promptTokens)) + " tok" : "—"], ["OUTPUT", formatRate(smoothedOutputRate) + " ~t/s"], ["ERRORS/1M", summary.recentErrors || 0]];
         ctx.font = '11px "SFMono-Regular",monospace';
         statRows.forEach((row, index) => { const y = gate.top + 94 + index * 27; ctx.textAlign = "left"; ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.fillText(row[0], gate.left + 18, y); ctx.textAlign = "right"; ctx.fillStyle = "rgba(242,245,247,.95)"; ctx.fillText(String(row[1]), gate.right - 18, y); });
         const host = summary.host || {};
@@ -1775,7 +1846,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         outputRate: displayedOutputRate,
         averageInputRate,
         averageOutputRate: aggregateOutputRate || 0,
-        errors: totals.errors || 0,
+        recentErrors: Math.max(0, Number(metrics.rolling?.minute?.errors || 0)),
         host: metrics.host || null
       };
       const recentById = new Map();
