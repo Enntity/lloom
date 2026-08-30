@@ -1421,9 +1421,32 @@ export class RuntimeManager {
       try {
         signal?.throwIfAborted?.();
         const memberIds = placement.members.map((member) => member.runtime).filter(Boolean);
-        const hasLoadedMember = (
-          await Promise.all(memberIds.map((memberId) => this.runtimeAppearsLoaded(memberId)))
-        ).some(Boolean);
+        const loadedMembers = await Promise.all(memberIds.map((memberId) => this.runtimeAppearsLoaded(memberId)));
+        const hasLoadedMember = loadedMembers.some(Boolean);
+        const allMembersLoaded = loadedMembers.length > 0 && loadedMembers.every(Boolean);
+        if (!force && allMembersLoaded) {
+          this.record({
+            runtimeId,
+            event: 'distributed-start-adopted',
+            reason: 'all-members-already-loaded',
+            members: memberIds
+          });
+          const result = runtime.healthUrl
+            ? await this.waitForHealth(runtimeId, runtime, null, { signal })
+            : { runtimeId, healthy: true };
+          state.lastError = null;
+          this.setStatus(runtimeId, 'running', reason);
+          const warmupResult = warmup && runtime.warmup ? await this.warmup(runtimeId, runtime, { signal }) : null;
+          return {
+            ...result,
+            runtimeId,
+            started: false,
+            healthy: true,
+            distributed: true,
+            reason: 'startup-adopted',
+            ...(warmupResult ? { warmup: warmupResult } : {})
+          };
+        }
         if (force || hasLoadedMember) {
           this.record({
             runtimeId,

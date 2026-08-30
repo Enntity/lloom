@@ -452,6 +452,35 @@ await new Promise((resolve) => healthyServer.close(resolve));
 delete distributedConfig.runtimes.split.healthUrl;
 assert.equal(await manager.isHealthy('missing-runtime'), false);
 
+const adoptingConfig = structuredClone(distributedConfig);
+adoptingConfig.runtimes.split.healthUrl = 'http://127.0.0.1:1/health';
+const adoptingCalls = [];
+const adoptingManager = new RuntimeManager(adoptingConfig, {
+  logger: { error() {}, warn() {}, info() {} },
+  captureOutput: false,
+  clusterCoordinator: {
+    ...lifecycleCoordinator,
+    async runtimeAction(node, runtime, action) {
+      adoptingCalls.push(`${action}:${node}:${runtime}`);
+      return action === 'start' ? { started: true, healthy: true } : { stopped: true };
+    }
+  }
+});
+adoptingManager.runtimeAppearsLoaded = async () => true;
+adoptingManager.waitForHealth = async (runtimeId) => ({ runtimeId, healthy: true });
+assert.deepEqual(await adoptingManager.start('split', { warmup: false }), {
+  runtimeId: 'split',
+  healthy: true,
+  started: false,
+  distributed: true,
+  reason: 'startup-adopted'
+});
+assert.deepEqual(adoptingCalls, [], 'an already-running TP startup is adopted without touching either rank');
+assert.equal(
+  adoptingManager.events.some((event) => event.runtimeId === 'split' && event.event === 'distributed-start-adopted'),
+  true
+);
+
 manager.stateFor('worker').status = 'running';
 const recoveryStart = lifecycleCalls.length;
 await manager.start('split', { warmup: false });
