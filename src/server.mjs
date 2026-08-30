@@ -2104,7 +2104,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
             progress,
             watchdog
           });
-        });
+        }, { signal: client.signal });
       });
       const status = result?.status ?? 200;
       const outcome = {

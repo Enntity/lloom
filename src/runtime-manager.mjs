@@ -912,8 +912,8 @@ export class RuntimeManager {
     };
   }
 
-  async withSlot(runtimeId, fn) {
-    const release = await this.acquireSlot(runtimeId);
+  async withSlot(runtimeId, fn, { signal = null } = {}) {
+    const release = await this.acquireSlot(runtimeId, { signal });
     try {
       return await fn();
     } finally {
@@ -1059,7 +1059,8 @@ export class RuntimeManager {
     return { runtimeId, restarted: true, forced, stop, start };
   }
 
-  acquireSlot(runtimeId) {
+  acquireSlot(runtimeId, { signal = null } = {}) {
+    signal?.throwIfAborted?.();
     if (!runtimeId) return () => {};
     const runtime = this.getRuntime(runtimeId);
     if (!runtime) return () => {};
@@ -1072,8 +1073,23 @@ export class RuntimeManager {
     }
     const queue = this.queueFor(runtimeId);
     state.queuedRequests = queue.length + 1;
-    return new Promise((resolve) => {
-      queue.push(resolve);
+    return new Promise((resolve, reject) => {
+      const entry = {
+        resolve: (release) => {
+          signal?.removeEventListener?.('abort', entry.abort);
+          resolve(release);
+        },
+        abort: () => {
+          const index = queue.indexOf(entry);
+          if (index >= 0) queue.splice(index, 1);
+          state.queuedRequests = queue.length;
+          reject(signal?.reason ?? abortError());
+        },
+        signal
+      };
+      queue.push(entry);
+      signal?.addEventListener?.('abort', entry.abort, { once: true });
+      if (signal?.aborted) entry.abort();
     });
   }
 
@@ -1082,11 +1098,11 @@ export class RuntimeManager {
     state.activeRequests = Math.max(0, state.activeRequests - 1);
     if (state.activeRequests === 0) state.lastIdleAt = nowIso();
     const queue = this.queueFor(runtimeId);
-    const next = this.pausedRuntimes.has(runtimeId) ? null : queue.shift();
+    const next = this.pausedRuntimes.has(runtimeId) ? null : takeQueuedEntry(queue);
     state.queuedRequests = queue.length;
     if (!next) return;
     state.activeRequests += 1;
-    next(() => this.releaseSlot(runtimeId));
+    next.resolve(() => this.releaseSlot(runtimeId));
   }
 
   resumeRuntime(runtimeId) {
@@ -1096,9 +1112,10 @@ export class RuntimeManager {
     const queue = this.queueFor(runtimeId);
     const maxConcurrency = runtimeMaxConcurrency(this.getRuntime(runtimeId));
     while (state.activeRequests < maxConcurrency && queue.length > 0) {
-      const next = queue.shift();
+      const next = takeQueuedEntry(queue);
+      if (!next) break;
       state.activeRequests += 1;
-      next(() => this.releaseSlot(runtimeId));
+      next.resolve(() => this.releaseSlot(runtimeId));
     }
     state.queuedRequests = queue.length;
   }
@@ -1747,4 +1764,23 @@ export class RuntimeManager {
       portResult
     };
   }
+}
+
+function takeQueuedEntry(queue) {
+  while (queue.length > 0) {
+    const entry = queue.shift();
+    if (entry?.signal?.aborted) {
+      entry.signal.removeEventListener?.('abort', entry.abort);
+      continue;
+    }
+    return entry;
+  }
+  return null;
+}
+
+function abortError() {
+  return Object.assign(new Error('Request aborted while waiting for runtime admission'), {
+    name: 'AbortError',
+    code: 'ABORT_ERR'
+  });
 }
