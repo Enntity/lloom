@@ -43,6 +43,16 @@ assert(
   )
 );
 assert(
+  source.includes(
+    'const selected = source.id == null || activeNodeIds.has(source.id) || (activeNodeIds.size === 0 && sources.length === 1)'
+  )
+);
+assert(
+  source.includes(
+    '...(liveConnections.length ? (runtimeState.members || []).map(member => member.node).filter(Boolean) : [])'
+  )
+);
+assert(
   source.includes('const processingRgb = point.model.state === "external-processing" ? "192,153,255" : "243,189,79"')
 );
 assert(source.includes('ctx.setLineDash([7, 5])'));

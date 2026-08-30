@@ -1536,7 +1536,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const cumulative = Number(point.model.inputTokens || 0) + Number(point.model.outputTokens || 0);
         const activeNodeIds = new Set(point.model.activeNodes || []);
         for (const source of sources) {
-          const selected = source.id == null || activeNodeIds.has(source.id);
+          const selected = source.id == null || activeNodeIds.has(source.id) || (activeNodeIds.size === 0 && sources.length === 1);
           const connectorActive = selected && (point.model.state === "serving" || point.model.state === "external-processing");
           const sourceInputSignal = selected ? inputSignal : 0;
           const sourceOutputRate = selected ? outputRate : 0;
@@ -1944,7 +1944,10 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           ...(runtimeState.members || []).map(member => member.node).filter(Boolean),
           runtimeState.node
         ].filter(Boolean))];
-        const activeNodes = [...new Set(liveConnections.map(item => item.node).filter(Boolean))];
+        const activeNodes = [...new Set([
+          ...liveConnections.map(item => item.node).filter(Boolean),
+          ...(liveConnections.length ? (runtimeState.members || []).map(member => member.node).filter(Boolean) : [])
+        ])];
         return { id: model.id, nodes, activeNodes, runtimeIds: [...runtimeIds, ...remoteRuntimeIds], runtimeStatus: runtimeState, inputTokens: Number(data.inputTokens || 0) + activeInput, inputEstimated, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveOutputRate, promptTokens: modelPromptTokens, promptPulseAt: modelPromptPulseAt, averageRate: data.decodeTokensPerSecond == null ? null : Number(data.decodeTokensPerSecond), state: stateLabel, lastActiveAt, agedOut };
       });
       state.topologyCatalogModels = topologyModels;
