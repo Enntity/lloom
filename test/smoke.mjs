@@ -4951,8 +4951,11 @@ if (listened) {
     assert(dashboardHtml.includes('liveConnections.length ? "external-processing" : "external"'));
     assert(dashboardHtml.includes('externalProcessing ? "EXTERNAL PROCESSING"'));
     assert(dashboardHtml.includes('function liveNodeActivity(nodeId)'));
+    assert(dashboardHtml.includes('...liveConnections.map(item => item.node).filter(Boolean)'));
     assert(
-      dashboardHtml.includes('const activeNodes = [...new Set(liveConnections.map(item => item.node).filter(Boolean))]')
+      dashboardHtml.includes(
+        '...(liveConnections.length ? (runtimeState.members || []).map(member => member.node).filter(Boolean) : [])'
+      )
     );
     assert(dashboardHtml.includes('activity.requests + " ACTIVE"'));
     assert(dashboardHtml.includes('function fitTopologyCameraToModels('));
