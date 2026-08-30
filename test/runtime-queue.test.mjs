@@ -1,15 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { RuntimeManager } from '../src/runtime-manager.mjs';
+import { RuntimeManager, RuntimeQueueError } from '../src/runtime-manager.mjs';
 
 test('an aborted queued request leaves admission immediately and never executes', async () => {
-  const manager = new RuntimeManager(
-    { runtimes: { limited: { maxConcurrency: 1 } } },
-    { logger: { error() {} } }
-  );
+  const manager = new RuntimeManager({ runtimes: { limited: { maxConcurrency: 1 } } }, { logger: { error() {} } });
   let releaseBlockingSlot;
   const blockingSlot = manager.withSlot('limited', async () => {
-    await new Promise((resolve) => { releaseBlockingSlot = resolve; });
+    await new Promise((resolve) => {
+      releaseBlockingSlot = resolve;
+    });
   });
   const admissionAbort = new AbortController();
   const abortedQueuedSlot = manager.withSlot(
@@ -29,15 +28,14 @@ test('an aborted queued request leaves admission immediately and never executes'
 });
 
 test('aborting one waiter preserves FIFO order for remaining requests', async () => {
-  const manager = new RuntimeManager(
-    { runtimes: { limited: { maxConcurrency: 1 } } },
-    { logger: { error() {} } }
-  );
+  const manager = new RuntimeManager({ runtimes: { limited: { maxConcurrency: 1 } } }, { logger: { error() {} } });
   const order = [];
   let releaseBlockingSlot;
   const blockingSlot = manager.withSlot('limited', async () => {
     order.push('blocking');
-    await new Promise((resolve) => { releaseBlockingSlot = resolve; });
+    await new Promise((resolve) => {
+      releaseBlockingSlot = resolve;
+    });
   });
   const aborted = new AbortController();
   const canceled = manager.withSlot('limited', async () => order.push('canceled'), {
@@ -53,6 +51,78 @@ test('aborting one waiter preserves FIFO order for remaining requests', async ()
   await Promise.all([blockingSlot, survivor]);
 
   assert.deepEqual(order, ['blocking', 'survivor']);
+});
+
+test('a full runtime queue returns a retryable 429 instead of growing without bound', async () => {
+  const manager = new RuntimeManager(
+    {
+      runtimes: {
+        limited: {
+          maxConcurrency: 1,
+          maxQueuedRequests: 1,
+          queueRetryAfterSeconds: 7
+        }
+      }
+    },
+    { logger: { error() {} } }
+  );
+  let releaseBlockingSlot;
+  const blockingSlot = manager.withSlot('limited', async () => {
+    await new Promise((resolve) => {
+      releaseBlockingSlot = resolve;
+    });
+  });
+  const queuedSlot = manager.withSlot('limited', async () => 'queued');
+
+  await waitFor(() => manager.stateFor('limited').queuedRequests === 1);
+  await assert.rejects(
+    manager.withSlot('limited', async () => assert.fail('full queue request must never execute')),
+    (error) =>
+      error instanceof RuntimeQueueError &&
+      error.code === 'RUNTIME_QUEUE_FULL' &&
+      error.statusCode === 429 &&
+      error.retryAfterSeconds === 7
+  );
+  assert.equal(manager.stateFor('limited').queuedRequests, 1);
+
+  releaseBlockingSlot();
+  assert.equal(await queuedSlot, 'queued');
+  await blockingSlot;
+});
+
+test('a runtime queue waiter expires with retry guidance and is removed', async () => {
+  const manager = new RuntimeManager(
+    {
+      runtimes: {
+        limited: {
+          maxConcurrency: 1,
+          maxQueuedRequests: 2,
+          queueTimeoutMs: 10,
+          queueRetryAfterSeconds: 3
+        }
+      }
+    },
+    { logger: { error() {} } }
+  );
+  let releaseBlockingSlot;
+  const blockingSlot = manager.withSlot('limited', async () => {
+    await new Promise((resolve) => {
+      releaseBlockingSlot = resolve;
+    });
+  });
+  const timedOut = manager.withSlot('limited', async () => assert.fail('expired waiter must never execute'));
+
+  await assert.rejects(
+    timedOut,
+    (error) =>
+      error instanceof RuntimeQueueError &&
+      error.code === 'RUNTIME_QUEUE_TIMEOUT' &&
+      error.statusCode === 429 &&
+      error.retryAfterSeconds === 3
+  );
+  assert.equal(manager.stateFor('limited').queuedRequests, 0);
+  releaseBlockingSlot();
+  await blockingSlot;
 });
 
 async function waitFor(predicate, timeoutMs = 1_000) {

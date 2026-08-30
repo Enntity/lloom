@@ -306,6 +306,11 @@ for (const schemaId of schemaIds) {
     assert(modelProperties.output.items.enum.includes('embedding'));
     assert(modelProperties.settings.properties.contextWindow);
     assert(modelProperties.settings.properties.maxActiveRequests);
+    assert(modelProperties.settings.properties.maxQueuedRequests);
+    assert(modelProperties.settings.properties.queueTimeoutMs);
+    assert(modelProperties.settings.properties.queueRetryAfterSeconds);
+    assert(modelProperties.settings.properties.requestStartupWaitMs);
+    assert(modelProperties.settings.properties.startupRetryAfterSeconds);
     assert(modelProperties.settings.properties.runtime.properties.command);
     assert(modelProperties.settings.properties.runtime.properties.args);
     assert(modelProperties.settings.properties.sessionCacheMode.enum.includes('write-only'));

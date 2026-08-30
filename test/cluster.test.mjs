@@ -759,7 +759,7 @@ const reconfiguringRequestManager = new RuntimeManager(structuredClone(demotedKe
 reconfiguringRequestManager.reconfiguringRuntimes.add('standalone');
 await assert.rejects(
   reconfiguringRequestManager.start('standalone', { reason: 'model-request' }),
-  (error) => error.code === 'RUNTIME_RECONFIGURING' && error.statusCode === 503
+  (error) => error.code === 'RUNTIME_RECONFIGURING' && error.statusCode === 429 && error.retryAfterSeconds === 2
 );
 
 const admissionBusyManager = new RuntimeManager(
@@ -783,7 +783,7 @@ await assert.rejects(
     runtimeId: 'deepseek',
     reason: 'model-request'
   }),
-  (error) => error.code === 'RUNTIME_ADMISSION_BUSY' && error.statusCode === 503
+  (error) => error.code === 'RUNTIME_ADMISSION_BUSY' && error.statusCode === 429 && error.retryAfterSeconds === 2
 );
 releaseActiveAdmission();
 await activeAdmission;

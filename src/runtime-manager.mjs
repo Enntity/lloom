@@ -58,12 +58,31 @@ export class RuntimeAuthorityError extends Error {
   }
 }
 
+export class RuntimeQueueError extends Error {
+  constructor(runtimeId, { reason = 'full', retryAfterSeconds = 2 } = {}) {
+    const message =
+      reason === 'timeout'
+        ? `runtime ${runtimeId} request queue wait timed out; retry after ${retryAfterSeconds} seconds`
+        : `runtime ${runtimeId} request queue is full; retry after ${retryAfterSeconds} seconds`;
+    super(message);
+    this.name = 'RuntimeQueueError';
+    this.code = reason === 'timeout' ? 'RUNTIME_QUEUE_TIMEOUT' : 'RUNTIME_QUEUE_FULL';
+    this.type = 'runtime_queue_error';
+    this.statusCode = 429;
+    this.retryAfterSeconds = retryAfterSeconds;
+    this.runtimeId = runtimeId;
+    this.reason = reason;
+  }
+}
+
 function compactRuntime(runtimeId, runtime, config) {
   if (!runtime) return null;
   return {
     enabled: runtime.enabled === true,
     keepWarm: runtime.keepWarm === true,
     maxConcurrency: runtimeMaxConcurrency(runtime),
+    maxQueuedRequests: runtimeMaxQueuedRequests(runtime),
+    queueTimeoutMs: runtimeQueueTimeoutMs(runtime),
     command: runtime.command,
     args: runtime.args,
     effectiveArgs: effectiveRuntimeArgs(runtimeId, runtime),
@@ -337,6 +356,21 @@ async function runtimeHealthOk(runtime, timeoutMs = 1500) {
 function runtimeMaxConcurrency(runtime) {
   const value = Number(runtime?.maxConcurrency ?? 1);
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : 1;
+}
+
+function runtimeMaxQueuedRequests(runtime) {
+  const value = Number(runtime?.maxQueuedRequests ?? Math.max(8, runtimeMaxConcurrency(runtime) * 4));
+  return Number.isFinite(value) && value >= 0 ? Math.floor(value) : Math.max(8, runtimeMaxConcurrency(runtime) * 4);
+}
+
+function runtimeQueueTimeoutMs(runtime) {
+  const value = Number(runtime?.queueTimeoutMs ?? 240000);
+  return Number.isFinite(value) && value >= 0 ? Math.floor(value) : 240000;
+}
+
+function runtimeQueueRetryAfterSeconds(runtime) {
+  const value = Number(runtime?.queueRetryAfterSeconds ?? 2);
+  return Number.isFinite(value) && value > 0 ? Math.ceil(value) : 2;
 }
 
 function integerAtLeast(value, fallback, minimum) {
@@ -697,7 +731,7 @@ export class RuntimeManager {
       if (active.preemptible && !active.preemptionRequested) {
         active.preemptionRequested = true;
         const error = new Error(
-          `runtime ${active.runtimeId} cold start was superseded by ${runtimeId}; retry through its configured external fallback`
+          `runtime ${active.runtimeId} cold start was superseded by ${runtimeId}; retry when that runtime is viable again`
         );
         error.code = 'RUNTIME_ADMISSION_PREEMPTED';
         error.statusCode = 503;
@@ -711,10 +745,11 @@ export class RuntimeManager {
         });
       } else if (reason === 'model-request') {
         const error = new Error(
-          `runtime ${runtimeId} cannot wait behind active admission for ${active.runtimeId}; retry through its configured fallback`
+          `runtime ${runtimeId} cannot wait behind active admission for ${active.runtimeId}; retry after the active admission completes`
         );
         error.code = 'RUNTIME_ADMISSION_BUSY';
-        error.statusCode = 503;
+        error.statusCode = 429;
+        error.retryAfterSeconds = 2;
         return Promise.reject(error);
       }
     }
@@ -1082,24 +1117,41 @@ export class RuntimeManager {
       return () => this.releaseSlot(runtimeId);
     }
     const queue = this.queueFor(runtimeId);
+    const maxQueuedRequests = runtimeMaxQueuedRequests(runtime);
+    const retryAfterSeconds = runtimeQueueRetryAfterSeconds(runtime);
+    if (queue.length >= maxQueuedRequests) {
+      return Promise.reject(new RuntimeQueueError(runtimeId, { reason: 'full', retryAfterSeconds }));
+    }
     state.queuedRequests = queue.length + 1;
     return new Promise((resolve, reject) => {
       const entry = {
         resolve: (release) => {
+          if (entry.timer) clearTimeout(entry.timer);
           signal?.removeEventListener?.('abort', entry.abort);
           resolve(release);
         },
-        abort: () => {
+        reject: (error) => {
+          if (entry.timer) clearTimeout(entry.timer);
+          signal?.removeEventListener?.('abort', entry.abort);
           const index = queue.indexOf(entry);
           if (index >= 0) queue.splice(index, 1);
           state.queuedRequests = queue.length;
-          reject(signal?.reason ?? abortError());
+          reject(error);
         },
+        abort: () => entry.reject(signal?.reason ?? abortError()),
+        timer: null,
         signal
       };
       queue.push(entry);
       signal?.addEventListener?.('abort', entry.abort, { once: true });
       if (signal?.aborted) entry.abort();
+      const queueTimeoutMs = runtimeQueueTimeoutMs(runtime);
+      if (!signal?.aborted && queueTimeoutMs > 0) {
+        entry.timer = setTimeout(
+          () => entry.reject(new RuntimeQueueError(runtimeId, { reason: 'timeout', retryAfterSeconds })),
+          queueTimeoutMs
+        );
+      }
     });
   }
 
@@ -1305,9 +1357,10 @@ export class RuntimeManager {
     if (!runtime) return { runtimeId, started: false, reason: 'unknown-runtime' };
     const requesterNode = this.assertRuntimeControl(runtimeId, requestedBy);
     if (reason === 'model-request' && this.reconfiguringRuntimes.has(runtimeId)) {
-      const error = new Error(`runtime ${runtimeId} is reconfiguring; retry through its configured fallback`);
+      const error = new Error(`runtime ${runtimeId} is reconfiguring; retry after the configuration change completes`);
       error.code = 'RUNTIME_RECONFIGURING';
-      error.statusCode = 503;
+      error.statusCode = 429;
+      error.retryAfterSeconds = 2;
       throw error;
     }
     const state = this.stateFor(runtimeId);

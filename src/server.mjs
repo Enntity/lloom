@@ -433,6 +433,29 @@ class ClientClosedError extends Error {
   }
 }
 
+class RuntimeStartingError extends Error {
+  constructor(runtimeId, retryAfterSeconds = 15) {
+    super(`runtime ${runtimeId} is starting; retry after ${retryAfterSeconds} seconds`);
+    this.name = 'RuntimeStartingError';
+    this.statusCode = 429;
+    this.code = 'RUNTIME_STARTING';
+    this.type = 'runtime_admission_error';
+    this.retryAfterSeconds = retryAfterSeconds;
+    this.runtimeId = runtimeId;
+  }
+}
+
+class RuntimeUnavailableError extends Error {
+  constructor(runtimeId, reason = 'not ready') {
+    super(`runtime ${runtimeId} cannot currently serve requests: ${reason}`);
+    this.name = 'RuntimeUnavailableError';
+    this.statusCode = 503;
+    this.code = 'RUNTIME_UNAVAILABLE';
+    this.type = 'runtime_admission_error';
+    this.runtimeId = runtimeId;
+  }
+}
+
 function isClientClosedError(error) {
   return error instanceof ClientClosedError || error?.name === 'ClientClosedError' || error?.code === 'client_closed';
 }
@@ -1739,6 +1762,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
   );
   let reloadInFlight = Promise.resolve();
   let routingStatusCache = { at: 0, value: null, pending: null };
+  const runtimeStartOperations = new Map();
   const configPath = config.sourcePath;
 
   function reloadConfig() {
@@ -1965,11 +1989,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     }
   };
 
-  async function ensureRuntime(runtimeId, { alternativeAvailable = false, allowEviction = true } = {}) {
-    if (!runtimeId) return { runtimeId, started: false, reason: 'no-runtime' };
-    if (typeof runtimeManager.isHealthy === 'function' && (await runtimeManager.isHealthy(runtimeId))) {
-      return { runtimeId, started: false, healthy: true, reason: 'already-healthy' };
-    }
+  async function startRuntime(runtimeId, { alternativeAvailable = false, allowEviction = true } = {}) {
     if (config.runtimePolicy?.autoEvict === true) {
       const waitMs = Math.max(0, Number(config.runtimePolicy?.admissionWaitMs ?? 120000));
       const deadline = Date.now() + waitMs;
@@ -2011,6 +2031,50 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       }
     }
     return runtimeManager.ensure(runtimeId);
+  }
+
+  async function ensureRuntime(runtimeId, { alternativeAvailable = false, allowEviction = true } = {}) {
+    if (!runtimeId) return { runtimeId, started: false, reason: 'no-runtime' };
+    if (typeof runtimeManager.isHealthy === 'function' && (await runtimeManager.isHealthy(runtimeId))) {
+      return { runtimeId, started: false, healthy: true, reason: 'already-healthy' };
+    }
+
+    let operation = runtimeStartOperations.get(runtimeId);
+    if (!operation) {
+      operation = startRuntime(runtimeId, { alternativeAvailable, allowEviction });
+      runtimeStartOperations.set(runtimeId, operation);
+      operation
+        .catch((error) => logger.error?.(`runtime ${runtimeId} background start failed: ${error?.message ?? error}`))
+        .finally(() => {
+          if (runtimeStartOperations.get(runtimeId) === operation) runtimeStartOperations.delete(runtimeId);
+        });
+    }
+
+    const runtime = config.runtimes?.[runtimeId] ?? {};
+    const foregroundWaitMs = Math.max(0, Number(runtime.requestStartupWaitMs ?? 1000));
+    if (foregroundWaitMs > 0) {
+      const stillStarting = Symbol('runtime-still-starting');
+      const result = await Promise.race([
+        operation,
+        new Promise((resolve) => {
+          const timer = setTimeout(() => resolve(stillStarting), foregroundWaitMs);
+          timer.unref?.();
+        })
+      ]);
+      if (result !== stillStarting) {
+        if (typeof runtimeManager.isHealthy !== 'function' || (await runtimeManager.isHealthy(runtimeId))) {
+          return result;
+        }
+        const reason =
+          result?.reason ??
+          result?.results?.find?.((entry) => entry.runtimeId === runtimeId && entry.type === 'start')?.result?.reason ??
+          'startup completed without a healthy endpoint';
+        throw new RuntimeUnavailableError(runtimeId, reason);
+      }
+    }
+
+    const retryAfterSeconds = Math.max(1, Math.ceil(Number(runtime.startupRetryAfterSeconds ?? 15)));
+    throw new RuntimeStartingError(runtimeId, retryAfterSeconds);
   }
 
   function noteRuntimeRequestOutcome(runtimeId, outcome) {
@@ -2095,16 +2159,20 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
           alternativeAvailable: resolved.failover?.readyAlternativeAvailable === true,
           allowEviction: resolved.model.kind !== 'embedding'
         });
-        return runtimeManager.withSlot(resolved.model.runtime, () => {
-          runtimeStartedAt = Date.now();
-          lastProgressAt = runtimeStartedAt;
-          return fn({
-            signal: client.signal,
-            timing,
-            progress,
-            watchdog
-          });
-        }, { signal: client.signal });
+        return runtimeManager.withSlot(
+          resolved.model.runtime,
+          () => {
+            runtimeStartedAt = Date.now();
+            lastProgressAt = runtimeStartedAt;
+            return fn({
+              signal: client.signal,
+              timing,
+              progress,
+              watchdog
+            });
+          },
+          { signal: client.signal }
+        );
       });
       const status = result?.status ?? 200;
       const outcome = {

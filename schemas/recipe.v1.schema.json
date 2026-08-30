@@ -340,6 +340,31 @@
                 "type": "integer",
                 "minimum": 1
               },
+              "maxQueuedRequests": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Maximum requests LLooM may hold behind the runtime concurrency gate before returning HTTP 429."
+              },
+              "queueTimeoutMs": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Maximum time a request may wait in LLooM's runtime queue before returning HTTP 429. Zero disables the timeout."
+              },
+              "queueRetryAfterSeconds": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Retry-After guidance used for full or expired runtime queues."
+              },
+              "requestStartupWaitMs": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Brief foreground grace period for a fast runtime start before LLooM detaches startup and returns HTTP 429."
+              },
+              "startupRetryAfterSeconds": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Retry-After guidance while a runtime continues starting in the background."
+              },
               "memoryGb": {
                 "type": "number",
                 "minimum": 0

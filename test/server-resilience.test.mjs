@@ -244,6 +244,125 @@ function close(server) {
   await close(upstream);
 }
 
+// One cold start runs in the background while concurrent callers receive an
+// explicit retry contract instead of accumulating lifecycle/startup waiters.
+{
+  let resolveStart;
+  let ensureCalls = 0;
+  let runtimeHealthy = false;
+  const runtimeManager = {
+    isHealthy: async () => runtimeHealthy,
+    ensure: async () => {
+      ensureCalls += 1;
+      return new Promise((resolve) => {
+        resolveStart = (result) => {
+          runtimeHealthy = true;
+          resolve(result);
+        };
+      });
+    },
+    withSlot: async (_runtimeId, fn) => fn(),
+    noteRequestOutcome() {}
+  };
+  const config = {
+    name: 'background-runtime-start-test',
+    server: { host: '127.0.0.1', port: 0 },
+    security: { allowMissingAuth: true, apiKeys: [] },
+    defaults: { chatModel: 'test-model' },
+    backends: {
+      local: {
+        type: 'openai',
+        baseUrl: 'http://127.0.0.1:1/v1',
+        timeoutMs: 5000
+      }
+    },
+    models: [
+      {
+        id: 'test-model',
+        backend: 'local',
+        upstreamModel: 'upstream-model',
+        runtime: 'test-runtime',
+        kind: 'chat',
+        contextWindow: 8192,
+        maxPromptTokens: 1000
+      }
+    ],
+    runtimes: {
+      'test-runtime': {
+        enabled: true,
+        requestStartupWaitMs: 5,
+        startupRetryAfterSeconds: 9
+      }
+    }
+  };
+  const app = createLloomServer(config, { runtimeManager, logger: { error() {}, warn() {} } });
+  const port = await listen(app.server);
+  const request = () =>
+    fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'test-model',
+        messages: [{ role: 'user', content: 'hello' }],
+        max_tokens: 8
+      })
+    });
+  const responses = await Promise.all([request(), request(), request()]);
+  assert.equal(ensureCalls, 1);
+  for (const response of responses) {
+    assert.equal(response.status, 429);
+    assert.equal(response.headers.get('retry-after'), '9');
+    assert.equal((await response.json()).error.code, 'RUNTIME_STARTING');
+  }
+  resolveStart({ healthy: true });
+  await new Promise((resolve) => setImmediate(resolve));
+  await close(app.server);
+}
+
+// A lifecycle command returning is not enough: the gateway must verify the
+// selected runtime is actually healthy before it forwards model traffic.
+{
+  const runtimeManager = {
+    isHealthy: async () => false,
+    ensure: async () => ({ healthy: false, reason: 'runtime-disabled' }),
+    withSlot: async () => assert.fail('an unhealthy runtime must not acquire a request slot'),
+    noteRequestOutcome() {}
+  };
+  const config = {
+    name: 'runtime-readiness-test',
+    server: { host: '127.0.0.1', port: 0 },
+    security: { allowMissingAuth: true, apiKeys: [] },
+    defaults: { chatModel: 'test-model' },
+    backends: { local: { type: 'openai', baseUrl: 'http://127.0.0.1:1/v1', timeoutMs: 5000 } },
+    models: [
+      {
+        id: 'test-model',
+        backend: 'local',
+        upstreamModel: 'upstream-model',
+        runtime: 'test-runtime',
+        kind: 'chat',
+        contextWindow: 8192,
+        maxPromptTokens: 1000
+      }
+    ],
+    runtimes: { 'test-runtime': { enabled: true, requestStartupWaitMs: 50 } }
+  };
+  const app = createLloomServer(config, { runtimeManager, logger: { error() {}, warn() {} } });
+  const port = await listen(app.server);
+  const response = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'hello' }],
+      max_tokens: 8
+    })
+  });
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error.code, 'RUNTIME_UNAVAILABLE');
+  await close(app.server);
+}
+
 // An admitted streaming request that produces no bytes is reported before the
 // backend's much longer transport timeout, so a runtime watchdog can recover a
 // livelock.

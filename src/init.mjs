@@ -380,6 +380,21 @@ function buildRecipeRuntime({
     port,
     startupTimeoutMs: positiveInteger(settings.startupTimeoutMs, 900000),
     maxConcurrency: maxActiveRequests,
+    ...(Number.isFinite(Number(settings.maxQueuedRequests))
+      ? { maxQueuedRequests: Math.max(0, Math.floor(Number(settings.maxQueuedRequests))) }
+      : {}),
+    ...(Number.isFinite(Number(settings.queueTimeoutMs))
+      ? { queueTimeoutMs: Math.max(0, Math.floor(Number(settings.queueTimeoutMs))) }
+      : {}),
+    ...(Number.isFinite(Number(settings.queueRetryAfterSeconds))
+      ? { queueRetryAfterSeconds: Math.max(1, Math.ceil(Number(settings.queueRetryAfterSeconds))) }
+      : {}),
+    ...(Number.isFinite(Number(settings.requestStartupWaitMs))
+      ? { requestStartupWaitMs: Math.max(0, Math.floor(Number(settings.requestStartupWaitMs))) }
+      : {}),
+    ...(Number.isFinite(Number(settings.startupRetryAfterSeconds))
+      ? { startupRetryAfterSeconds: Math.max(1, Math.ceil(Number(settings.startupRetryAfterSeconds))) }
+      : {}),
     ...(Number.isFinite(memoryGb) ? { memoryGb } : {}),
     ...(typeof settings.keepWarm === 'boolean' ? { keepWarm: settings.keepWarm } : {}),
     ...(settings.behaviorOverrides ? { behaviorOverrides: structuredClone(asObject(settings.behaviorOverrides)) } : {}),
@@ -681,6 +696,21 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
         enabled: true,
         keepWarm: settings.keepWarm === true,
         maxConcurrency: positiveInteger(settings.maxActiveRequests, backendId === 'mtplx' ? 10 : 4),
+        ...(Number.isFinite(Number(settings.maxQueuedRequests))
+          ? { maxQueuedRequests: Math.max(0, Math.floor(Number(settings.maxQueuedRequests))) }
+          : {}),
+        ...(Number.isFinite(Number(settings.queueTimeoutMs))
+          ? { queueTimeoutMs: Math.max(0, Math.floor(Number(settings.queueTimeoutMs))) }
+          : {}),
+        ...(Number.isFinite(Number(settings.queueRetryAfterSeconds))
+          ? { queueRetryAfterSeconds: Math.max(1, Math.ceil(Number(settings.queueRetryAfterSeconds))) }
+          : {}),
+        ...(Number.isFinite(Number(settings.requestStartupWaitMs))
+          ? { requestStartupWaitMs: Math.max(0, Math.floor(Number(settings.requestStartupWaitMs))) }
+          : {}),
+        ...(Number.isFinite(Number(settings.startupRetryAfterSeconds))
+          ? { startupRetryAfterSeconds: Math.max(1, Math.ceil(Number(settings.startupRetryAfterSeconds))) }
+          : {}),
         memoryGb: Number(settings.memoryGb ?? 0),
         ...(settings.watchdog ? { watchdog: structuredClone(asObject(settings.watchdog)) } : {}),
         ...(settings.behaviorOverrides
