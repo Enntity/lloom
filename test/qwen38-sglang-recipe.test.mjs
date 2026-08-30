@@ -15,7 +15,7 @@ assert.equal(recipe.backend.id, 'docker-sglang');
 assert.equal(recipe.models[0].gatewayModel, 'qwen3.8-flash-next');
 assert.equal(recipe.models[0].settings.contextWindow, 262144);
 assert.equal(recipe.models[0].settings.maxActiveRequests, 12);
-assert.equal(recipe.version, 12);
+assert.equal(recipe.version, 13);
 assert.equal(recipe.models[0].settings.memoryGb, 80);
 assert.equal(recipe.models[0].settings.keepWarm, false);
 assert.equal(recipe.capabilities.includes('mtp'), true);
@@ -52,6 +52,9 @@ for (const member of members) {
   assert.match(rendered, /MEM_FRACTION_STATIC=0\.80/);
   assert.match(rendered, /SGLANG_ENABLE_TP_MEMORY_INBALANCE_CHECK=0/);
   assert.match(rendered, /SGLANG_SANITIZE_NAN_LOGITS=1/);
+  assert.match(rendered, /NCCL_IB_HCA=rocep1s0f0/);
+  assert.match(rendered, /NCCL_IB_ADDR_FAMILY=AF_INET/);
+  assert.doesNotMatch(rendered, /NCCL_IB_GID_INDEX=/);
   assert.match(rendered, /ENABLE_SPECULATIVE=1/);
   assert.match(rendered, /ENABLE_THINKING_BUDGETS=0/);
   assert.match(rendered, /DEFAULT_CHAT_TEMPLATE_KWARGS=\{"reasoning_effort":"low"\}/);

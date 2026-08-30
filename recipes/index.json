@@ -288,7 +288,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang",
       "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang.json",
-      "currentVersion": 12,
+      "currentVersion": 13,
       "versions": [
         {
           "version": 1,
@@ -369,9 +369,16 @@
         },
         {
           "version": 12,
+          "path": "archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang/v12.json",
+          "status": "archived",
+          "archivedAt": "2026-08-30T06:05:00.000Z",
+          "notes": "Ports MiaAI-Lab's post-kernel token-id-0 abort and cache-reset guard, doubles continuous-batch admission to twelve, expands the FP32 recurrent cache to sixty paths, and captures decode graphs through batch twelve."
+        },
+        {
+          "version": 13,
           "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang.json",
           "status": "current",
-          "notes": "Ports MiaAI-Lab's post-kernel token-id-0 abort and cache-reset guard, doubles continuous-batch admission to twelve, expands the FP32 recurrent cache to sixty paths, and captures decode graphs through batch twelve."
+          "notes": "Selects the per-node IPv4 RoCE-v2 GID dynamically and pins the active ConnectX-7 HCA, avoiding a cross-node GID-index mismatch that caused NCCL restart loops."
         }
       ],
       "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 SGLang",
