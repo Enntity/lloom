@@ -19,6 +19,44 @@ Current catalog entries:
 - `vllm`
 - `sglang`
 
+## Cancellation and compute reclamation
+
+LLooM uses one cancellation trigger for every proxied inference backend: when
+the downstream client closes, LLooM aborts the in-flight upstream HTTP request
+and releases any queued or active LLooM runtime slot. This applies to buffered
+and streaming JSON routes and to raw multipart media routes.
+
+Transport close is necessary but is not proof that a backend stopped its
+model work. Every bundled backend therefore declares a separate
+`cancellation.computeReclamation` status:
+
+- `verified`: the backend maps disconnect to its engine request stop path.
+- `version-dependent`: some versions or recipe patches reclaim compute and
+  others do not; the installed artifact needs a disconnect canary.
+- `partial`: only some request modes can stop cooperatively.
+- `unverified`: LLooM closes transport, but the backend's scheduler behavior is
+  not established.
+- `unsupported`: the current backend interface cannot preempt work already in
+  flight.
+
+Current reviewed status:
+
+| Status | Backends |
+| --- | --- |
+| Verified | MLX-LM, vLLM, Docker vLLM |
+| Version-dependent | SGLang, Docker SGLang, PrismML llama.cpp, Ollama, stable-diffusion.cpp |
+| Partial | MLX Audio |
+| Unverified | MTPLX, generic OpenAI-compatible, LM Studio, OptiQ |
+| Unsupported | upstream llama.cpp server, Chatterbox synchronous generation |
+
+The Qwen3.8 Flash Next Docker SGLang recipe promotes its exact pinned artifact
+to verified behavior by applying an exact-source-guarded backport of SGLang PR
+[#36418](https://github.com/sgl-project/sglang/pull/36418). The backport keeps
+scheduler-owned request IDs alive through HTTP teardown and delivers SGLang's
+existing delayed abort instead of leaving a request to decode to `max_tokens`.
+Do not promote a backend's status based only on a 499 gateway metric: verify
+its scheduler/slot counter returns to baseline after a real client disconnect.
+
 MTPLX runtime definitions can enable LLooM-managed SSD SessionBank caching through `sessionCache`. Generated user configs place those caches under `~/.lloom/session-cache/<runtime-id>` so model restarts, evictions, and gateway restarts reuse the same persistent prefix snapshots.
 
 Inspect catalog entries:

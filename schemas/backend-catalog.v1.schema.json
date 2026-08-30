@@ -112,10 +112,46 @@
         },
         "server": {
           "$ref": "#/$defs/server"
+        },
+        "cancellation": {
+          "$ref": "#/$defs/cancellation"
         }
       },
       "patternProperties": {
         "^x-": true
+      }
+    },
+    "cancellation": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["trigger", "computeReclamation"],
+      "properties": {
+        "trigger": {
+          "const": "client-disconnect"
+        },
+        "computeReclamation": {
+          "type": "string",
+          "enum": ["verified", "version-dependent", "partial", "unverified", "unsupported"]
+        },
+        "modes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["streaming", "buffered", "queued", "generation", "embedding", "speech", "transcription", "image"]
+          },
+          "uniqueItems": true
+        },
+        "notes": {
+          "type": "string"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uri"
+          },
+          "uniqueItems": true
+        }
       }
     },
     "setupStep": {

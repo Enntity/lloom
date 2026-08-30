@@ -66,6 +66,12 @@
         "protocol": "openai",
         "healthPath": "/health",
         "chatPath": "/v1/chat/completions"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "unverified",
+        "modes": ["streaming", "buffered"],
+        "notes": "LLooM closes the upstream request immediately; MTPLX scheduler reclamation still needs a pinned-version disconnect canary."
       }
     },
     {
@@ -117,6 +123,12 @@
         "protocol": "openai",
         "healthPath": "/v1/models",
         "chatPath": "/v1/chat/completions"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "verified",
+        "modes": ["streaming", "buffered", "queued", "generation"],
+        "notes": "MLX-LM stops the request GenerationContext in the HTTP handler's finally path, and batched generation removes stopped request IDs."
       }
     },
     {
@@ -148,6 +160,12 @@
         "healthPath": "/health",
         "speechPath": "/v1/audio/speech",
         "transcriptionPath": "/v1/audio/transcriptions"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "partial",
+        "modes": ["speech", "transcription"],
+        "notes": "LLooM closes the upstream request immediately, but the backend libraries expose no uniform interrupt for a synchronous speech or transcription kernel already in flight."
       }
     },
     {
@@ -183,6 +201,12 @@
         "protocol": "openai",
         "healthPath": "/health",
         "speechPath": "/v1/audio/speech"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "unsupported",
+        "modes": ["speech"],
+        "notes": "Chatterbox exposes one synchronous model.generate call and no cooperative request-cancel hook; transport cancellation cannot preempt that call."
       }
     },
     {
@@ -251,6 +275,13 @@
         "protocol": "openai",
         "healthPath": "/health",
         "chatPath": "/v1/chat/completions"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "unsupported",
+        "modes": ["streaming", "buffered"],
+        "notes": "Current llama-server captures connection state but does not wire it to task cancellation; track upstream issue #24496 before promoting this status.",
+        "evidence": ["https://github.com/ggml-org/llama.cpp/issues/24496"]
       }
     },
     {
@@ -332,6 +363,12 @@
         "protocol": "openai",
         "healthPath": "/health",
         "chatPath": "/v1/chat/completions"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "version-dependent",
+        "modes": ["streaming", "buffered"],
+        "notes": "PrismML inherits llama.cpp server lifecycle behavior; require a fork revision with connection-close task cancellation before treating reclamation as verified."
       }
     },
     {
@@ -390,6 +427,12 @@
         "protocol": "openai",
         "healthPath": "/health",
         "chatPath": "/v1/chat/completions"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "version-dependent",
+        "modes": ["streaming", "buffered"],
+        "notes": "The Docker variant inherits PrismML llama.cpp server lifecycle behavior and must be canaried at its exact image revision."
       }
     },
     {
@@ -429,6 +472,13 @@
         "protocol": "openai",
         "healthPath": "/api/tags",
         "chatPath": "/v1/chat/completions"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "version-dependent",
+        "modes": ["streaming", "buffered", "queued", "generation"],
+        "notes": "Ollama passes the HTTP request context into scheduling and completion, but current releases have an open streaming disconnect leak; verify the installed version.",
+        "evidence": ["https://github.com/ollama/ollama/issues/17131"]
       }
     },
     {
@@ -451,6 +501,12 @@
         "protocol": "openai",
         "healthPath": "/v1/models",
         "chatPath": "/v1/chat/completions"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "unverified",
+        "modes": ["streaming", "buffered"],
+        "notes": "LLooM propagates disconnect at the transport boundary; scheduler reclamation belongs to the selected external provider and must be verified there."
       }
     },
     {
@@ -473,6 +529,12 @@
         "protocol": "openai",
         "healthPath": "/v1/models",
         "chatPath": "/v1/chat/completions"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "unverified",
+        "modes": ["streaming", "buffered"],
+        "notes": "LLooM propagates disconnect immediately, but LM Studio scheduler reclamation is version-dependent and is not asserted by this catalog."
       }
     },
     {
@@ -502,6 +564,12 @@
         "protocol": "openai",
         "healthPath": "/health",
         "chatPath": "/v1/chat/completions"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "unverified",
+        "modes": ["streaming", "buffered"],
+        "notes": "LLooM propagates disconnect immediately; the selected OptiQ server implementation must prove that its generator observes the closed transport."
       }
     },
     {
@@ -606,6 +674,13 @@
         "healthPath": "/v1/models",
         "imagePath": "/v1/images/generations",
         "imageEditPath": "/v1/images/edits"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "version-dependent",
+        "modes": ["queued", "image"],
+        "notes": "The native async sdcpp job API has explicit cancellation, but LLooM's synchronous OpenAI image path cannot cancel an accepted kernel on older servers.",
+        "evidence": ["https://github.com/leejet/stable-diffusion.cpp/blob/master/examples/server/api.md"]
       }
     },
     {
@@ -637,6 +712,12 @@
         "healthPath": "/v1/models",
         "imagePath": "/v1/images/generations",
         "imageEditPath": "/v1/images/edits"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "version-dependent",
+        "modes": ["queued", "image"],
+        "notes": "The image must expose stable-diffusion.cpp's native async cancel API before LLooM can promote compute reclamation beyond transport close."
       }
     },
     {
@@ -673,6 +754,12 @@
         "healthPath": "/health",
         "chatPath": "/v1/chat/completions",
         "embeddingsPath": "/v1/embeddings"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "verified",
+        "modes": ["streaming", "buffered", "queued", "generation", "embedding"],
+        "notes": "vLLM's OpenAI server checks request disconnect and aborts the engine request ID; pin and canary the selected image revision."
       }
     },
     {
@@ -709,6 +796,13 @@
         "protocol": "openai",
         "healthPath": "/health",
         "chatPath": "/v1/chat/completions"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "version-dependent",
+        "modes": ["streaming", "buffered", "queued", "generation"],
+        "notes": "SGLang releases affected by issue #36333 require the scheduler-safe lifecycle fix; the Qwen3.8 Flash Next recipe applies an exact-source-guarded backport.",
+        "evidence": ["https://github.com/sgl-project/sglang/issues/36333", "https://github.com/sgl-project/sglang/pull/36418"]
       }
     },
     {
@@ -777,6 +871,12 @@
         "protocol": "openai",
         "healthPath": "/health",
         "chatPath": "/v1/chat/completions"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "verified",
+        "modes": ["streaming", "buffered", "queued", "generation"],
+        "notes": "vLLM's OpenAI server checks request disconnect and aborts the engine request ID; verify the installed package revision."
       }
     },
     {
@@ -847,6 +947,13 @@
         "protocol": "openai",
         "healthPath": "/health",
         "chatPath": "/v1/chat/completions"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "version-dependent",
+        "modes": ["streaming", "buffered", "queued", "generation"],
+        "notes": "SGLang releases affected by issue #36333 need PR #36418 or an equivalent exact-source fix before disconnect reliably reaches the scheduler.",
+        "evidence": ["https://github.com/sgl-project/sglang/issues/36333", "https://github.com/sgl-project/sglang/pull/36418"]
       }
     }
   ]

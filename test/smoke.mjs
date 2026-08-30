@@ -349,6 +349,19 @@ assert.equal(backendCatalogValidation.kind, 'backendCatalog');
 assert.equal(backendCatalogValidation.mediaType, 'application/vnd.lloom.backend-catalog+json;version=1');
 assert.deepEqual(backendCatalogValidation.conformanceWarnings, []);
 assert(backendCatalog.backends.length >= 6);
+for (const backend of backendCatalog.backends) {
+  assert.equal(
+    backend.cancellation?.trigger,
+    'client-disconnect',
+    `${backend.id} must declare the common cancellation trigger`
+  );
+  assert(
+    ['verified', 'version-dependent', 'partial', 'unverified', 'unsupported'].includes(
+      backend.cancellation?.computeReclamation
+    ),
+    `${backend.id} must declare whether disconnect actually reclaims compute`
+  );
+}
 assert(backendIds(backendCatalog).has('mtplx'));
 assert(backendIds(backendCatalog).has('llama-cpp'));
 assert(backendIds(backendCatalog).has('ollama'));

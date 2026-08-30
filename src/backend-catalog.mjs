@@ -366,6 +366,18 @@ export function validateBackendCatalog(catalog) {
     if (!backend.id) errors.push(`backends[${index}] is missing id`);
     if (!backend.name) errors.push(`backend ${backend.id ?? index} is missing name`);
     if (!backend.kind) errors.push(`backend ${backend.id ?? index} is missing kind`);
+    if (backend.cancellation) {
+      if (backend.cancellation.trigger !== 'client-disconnect') {
+        errors.push(`backend ${backend.id ?? index} cancellation trigger must be client-disconnect`);
+      }
+      if (
+        !['verified', 'version-dependent', 'partial', 'unverified', 'unsupported'].includes(
+          backend.cancellation.computeReclamation
+        )
+      ) {
+        errors.push(`backend ${backend.id ?? index} has invalid compute reclamation status`);
+      }
+    }
     if (backend.id && ids.has(backend.id)) errors.push(`duplicate backend id: ${backend.id}`);
     if (backend.id) ids.add(backend.id);
     for (const step of asArray(backend.setup)) {
@@ -458,6 +470,7 @@ export async function planBackend(
     platform: platformId,
     platformSupported,
     features: asArray(backend.features),
+    cancellation: backend.cancellation ?? null,
     commands: commandChecks,
     missingCommands,
     setupRequired,
