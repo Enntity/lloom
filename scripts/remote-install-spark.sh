@@ -20,8 +20,6 @@ backup_root="$HOME/.lloom/releases/backups"
 mkdir -p "$release_root" "$backup_root"
 cp "$artifact" "$manifest" "$release_root/"
 rollback_artifact=""
-old_presence_enabled="false"
-presence_managed="false"
 config_path=${LLOOM_CONFIG:-$HOME/.lloom/config.json}
 config_backup="$release_root/config.before.json"
 config_existed="false"
@@ -41,25 +39,9 @@ rollback() {
     cp "$config_backup" "$config_path" || true
   fi
   systemctl --user restart lloom.service || true
-  [[ "$old_presence_enabled" == "true" ]] && enn presence enable "$entity" >/dev/null 2>&1 || true
   exit "$status"
 }
 trap rollback EXIT
-
-if command -v enn >/dev/null 2>&1; then
-  presence_status=$(enn presence status "$entity" 2>/dev/null || true)
-  presence_managed=$(printf '%s' "$presence_status" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).state?"true":"false")}catch{console.log("false")}})')
-  if [[ "$presence_managed" == "true" ]]; then
-    old_presence_enabled=$(printf '%s' "$presence_status" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).state.enabled?"true":"false")}catch{console.log("false")}})')
-    enn presence disable "$entity" >/dev/null
-    for _ in $(seq 1 240); do
-      posture=$(enn presence status "$entity" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).state.posture||"")}catch{}})')
-      [[ "$posture" == "offline" ]] && break
-      sleep 1
-    done
-    [[ "${posture:-}" == "offline" ]] || { echo "entity did not finish its current thought" >&2; exit 1; }
-  fi
-fi
 
 installed="$HOME/.local/lib/node_modules/lloom"
 if [[ -f "$installed/package.json" ]]; then
@@ -117,6 +99,5 @@ if [[ -n "$runtime" ]]; then
   [[ "${healthy:-false}" == "true" ]] || { echo "runtime failed health check" >&2; exit 1; }
 fi
 cp "$manifest" "$HOME/.lloom/releases/current.manifest.json"
-[[ "$old_presence_enabled" == "true" ]] && enn presence enable "$entity" >/dev/null
 trap - EXIT
 echo "deployed LLooM $release_id"

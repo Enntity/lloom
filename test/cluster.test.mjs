@@ -452,6 +452,25 @@ await new Promise((resolve) => healthyServer.close(resolve));
 delete distributedConfig.runtimes.split.healthUrl;
 assert.equal(await manager.isHealthy('missing-runtime'), false);
 
+const slowHealthServer = http.createServer((_request, response) => {
+  setTimeout(() => response.writeHead(200).end('ok'), 40);
+});
+await new Promise((resolve) => slowHealthServer.listen(0, '127.0.0.1', resolve));
+const slowHealthManager = new RuntimeManager({
+  runtimes: {
+    slow: {
+      enabled: true,
+      managed: false,
+      healthUrl: `http://127.0.0.1:${slowHealthServer.address().port}/health`,
+      healthTimeoutMs: 10
+    }
+  }
+});
+assert.equal(await slowHealthManager.isHealthy('slow'), false, 'runtime-specific health timeout is enforced');
+slowHealthManager.config.runtimes.slow.healthTimeoutMs = 100;
+assert.equal(await slowHealthManager.isHealthy('slow'), true, 'loaded backends may use a wider health probe budget');
+await new Promise((resolve) => slowHealthServer.close(resolve));
+
 const adoptingConfig = structuredClone(distributedConfig);
 adoptingConfig.runtimes.split.healthUrl = 'http://127.0.0.1:1/health';
 const adoptingCalls = [];
@@ -545,6 +564,7 @@ const liveAdmissionOnlyConfig = structuredClone(distributedConfig);
 liveAdmissionOnlyConfig.runtimes.split.maxConcurrency = 3;
 liveAdmissionOnlyConfig.runtimes.split.maxQueuedRequests = 6;
 liveAdmissionOnlyConfig.runtimes.split.queueTimeoutMs = 180000;
+liveAdmissionOnlyConfig.runtimes.head.healthTimeoutMs = 5000;
 assert.deepEqual(
   reconfigureRuntimeIds(distributedConfig, liveAdmissionOnlyConfig, {
     nodeId: 'leader',

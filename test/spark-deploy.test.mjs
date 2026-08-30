@@ -13,6 +13,11 @@ assert.match(headInstallScript, /adopting keep-warm startup/);
 assert.match(headInstallScript, /status" == "starting"/);
 assert.match(headInstallScript, /status" == "running"/);
 assert.match(headInstallScript, /\[\[ "\$keep_warm" == "true" \]\] \|\| lloom runtime-stop/);
+assert.doesNotMatch(
+  headInstallScript,
+  /enn presence (disable|enable)/,
+  'LLooM deployment must not manipulate independent Runtime Presence state'
+);
 const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lloom-spark-deploy-'));
 const bin = path.join(home, '.local', 'bin');
 const installed = path.join(home, '.local', 'lib', 'node_modules', 'lloom');

@@ -89,6 +89,7 @@ function compactRuntime(runtimeId, runtime, config) {
     cwd: runtime.cwd,
     port: runtime.port,
     healthUrl: runtime.healthUrl,
+    healthTimeoutMs: runtimeHealthTimeoutMs(runtime),
     startupTimeoutMs: runtime.startupTimeoutMs,
     watchdog: runtimeWatchdogConfig(runtime),
     sessionCache: runtime.sessionCache ?? null,
@@ -137,7 +138,8 @@ const LIVE_ADMISSION_FIELDS = new Set([
   'queueTimeoutMs',
   'queueRetryAfterSeconds',
   'requestStartupWaitMs',
-  'startupRetryAfterSeconds'
+  'startupRetryAfterSeconds',
+  'healthTimeoutMs'
 ]);
 
 function runtimeLifecycleConfig(runtime) {
@@ -379,7 +381,12 @@ async function healthOk(url, timeoutMs = 1500) {
   }
 }
 
-async function runtimeHealthOk(runtime, timeoutMs = 1500) {
+function runtimeHealthTimeoutMs(runtime) {
+  const value = Number(runtime?.healthTimeoutMs ?? 1500);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 1500;
+}
+
+async function runtimeHealthOk(runtime, timeoutMs = runtimeHealthTimeoutMs(runtime)) {
   if (runtime?.healthStrategy === 'container' && runtimeAdapter(runtime) === 'docker') {
     return (await dockerContainerState(runtime)).running === true;
   }
