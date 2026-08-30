@@ -416,6 +416,14 @@ assert(
     (step) => step.action === 'git-clone' && step.repo === 'https://github.com/leejet/stable-diffusion.cpp.git'
   )
 );
+assert(
+  stableDiffusionPlan.steps.some(
+    (step) =>
+      step.id === 'init-stable-diffusion-cpp-submodules' &&
+      step.command.join(' ') ===
+        `git -C ${backendAuditVariables.installRoot}/stable-diffusion.cpp submodule update --init --recursive --depth 1`
+  )
+);
 assert(stableDiffusionPlan.steps.some((step) => step.action === 'link-command' && step.link.commandName === 'sd'));
 const ollamaPlan = await planBackend(getBackend(backendCatalog, 'ollama'), {
   checkCommands: false,
@@ -818,6 +826,7 @@ assert.deepEqual(
   loadedRecipes.map((candidate) => candidate.id),
   [
     'apple-silicon-chatterbox',
+    'apple-silicon-flux2-klein-4b',
     'apple-silicon-qwen3-embedding-4b-fp16-ollama',
     'apple-silicon-qwen3-embedding-4b-ollama',
     'apple-silicon-qwen36-35b-a3b-optiq',
@@ -996,7 +1005,7 @@ const recipeIndexReport = await buildRecipeIndexReport(config, {
 });
 assert.equal(recipeIndexReport.ok, true);
 assert.equal(recipeIndexReport.index.id, 'lloom-community-recipes');
-assert.equal(recipeIndexReport.recipes.length, 18);
+assert.equal(recipeIndexReport.recipes.length, 19);
 const indexedSparkRecipe = recipeIndexReport.recipes.find(
   (candidate) => candidate.id === 'linux-nvidia-gb10-qwen36-unsloth-vllm'
 );
@@ -1030,7 +1039,7 @@ const libraryCli = await runCommand(process.execPath, [
 ]);
 const libraryJson = JSON.parse(libraryCli.stdout);
 assert.equal(libraryJson.index.id, 'lloom-community-recipes');
-assert.equal(libraryJson.recipes[0].id, 'apple-silicon-ternary-bonsai-27b');
+assert.equal(libraryJson.recipes[0].id, 'apple-silicon-flux2-klein-4b');
 if (process.platform === 'darwin' && process.arch === 'arm64') {
   assert.equal(libraryJson.selected.recipeId, 'apple-silicon-qwen36-35b-a3b-optiq');
 } else {
@@ -2376,6 +2385,24 @@ assert(
 );
 assert(imageConfig.runtimes['qwen-image-edit-2511-sdcpp'].args.includes('qwen_image_zero_cond_t=true'));
 assert.equal(imageConfig.runtimes['flux2-klein-4b-sdcpp'].keepWarm, false);
+
+const appleFluxRecipe = await loadRecipeById('apple-silicon-flux2-klein-4b');
+const appleFluxInstall = await applyRecipe(appleFluxRecipe, config, {
+  dryRun: true,
+  modelRoot: '/models',
+  statePath: path.join(tempDir, 'apple-flux-install-state.json')
+});
+assert.equal(appleFluxInstall.plan.validationErrors.length, 0);
+assert.equal(appleFluxInstall.results.length, 2);
+const appleFluxConfig = deriveUserConfig(config, appleFluxRecipe, { modelRoot: '/models', additive: true });
+assert.deepEqual(appleFluxRecipe.requirements.platforms, ['darwin-arm64']);
+assert.equal(appleFluxConfig.runtimes['flux2-klein-4b-sdcpp'].keepWarm, true);
+assert.equal(appleFluxConfig.runtimes['flux2-klein-4b-sdcpp'].memoryGb, 32);
+assert(
+  appleFluxConfig.runtimes['flux2-klein-4b-sdcpp'].args.includes(
+    '/models/lloom-flux2-klein-4b/flux-2-klein-4b-Q8_0.gguf'
+  )
+);
 
 const sparkImageRecipe = await loadRecipeById('linux-nvidia-gb10-image-generation');
 const sparkImageConfig = deriveUserConfig(config, sparkImageRecipe, { modelRoot: '/models' });
@@ -5730,7 +5757,7 @@ if (listened) {
       try {
         assert.equal(autoHostPlan.ok, true);
         assert(autoHostPlan.host.autoStarted.pid);
-        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, 23);
+        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, 24);
         assert.equal(autoHostPlan.plans[0].recommendation.id, 'apple-silicon-qwen36-35b-a3b-mtplx-pack');
         assert.equal(autoHostPlan.plans[0].plan.roots.recipesRoot, autoHostRecipesRoot);
         assert.equal(autoHostPlan.plans[0].plan.roots.benchmarksRoot, autoHostBenchmarksRoot);

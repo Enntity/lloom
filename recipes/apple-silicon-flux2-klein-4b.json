@@ -1,0 +1,140 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "apple-silicon-flux2-klein-4b",
+  "name": "Apple Silicon FLUX.2 Klein 4B",
+  "version": 1,
+  "summary": "Persistent four-step FLUX.2 Klein 4B Q8 image generation and reference editing on high-memory Apple Silicon.",
+  "license": { "id": "Apache-2.0", "name": "Model and recipe license" },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "Official Black Forest Labs model card and stable-diffusion.cpp documentation"
+  },
+  "links": [
+    {
+      "rel": "model",
+      "href": "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B",
+      "mediaType": "text/html"
+    },
+    {
+      "rel": "runtime",
+      "href": "https://github.com/leejet/stable-diffusion.cpp",
+      "mediaType": "text/html"
+    }
+  ],
+  "keywords": [
+    "image-generation",
+    "image-editing",
+    "apple-silicon",
+    "metal",
+    "flux2",
+    "stable-diffusion-cpp"
+  ],
+  "capabilities": ["image-generation", "image-editing"],
+  "hardware": {
+    "family": "High-memory Apple Silicon",
+    "testedMachine": "Apple Silicon Mac with 96 GB unified memory",
+    "notes": [
+      "FLUX.2 Klein 4B is the fast Apache-2.0 four-step image lane.",
+      "The Q8 diffusion model, Qwen3 text encoder, and VAE run through stable-diffusion.cpp with Metal acceleration.",
+      "This focused recipe installs only FLUX.2 Klein rather than the larger companion Qwen image lanes."
+    ]
+  },
+  "requirements": {
+    "platforms": ["darwin-arm64"],
+    "memoryGb": 32,
+    "diskGb": 16,
+    "commands": ["hf", "sd-server"],
+    "accelerators": ["apple-gpu", "metal"]
+  },
+  "backend": {
+    "id": "stable-diffusion-cpp",
+    "name": "stable-diffusion.cpp",
+    "type": "openai-images-server",
+    "features": ["metal", "openai-images", "flux2"]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "download-flux2-klein-4b-diffusion",
+        "title": "Download FLUX.2 Klein 4B Q8 diffusion weights",
+        "action": "command",
+        "command": "hf",
+        "args": [
+          "download",
+          "leejet/FLUX.2-klein-4B-GGUF",
+          "flux-2-klein-4b-Q8_0.gguf",
+          "--revision",
+          "3b1f5a9dc3abb32238b053aeb3d823c30afdacbd",
+          "--local-dir",
+          "${modelRoot}/lloom-flux2-klein-4b"
+        ],
+        "skipIfPathExists": "${modelRoot}/lloom-flux2-klein-4b/flux-2-klein-4b-Q8_0.gguf"
+      },
+      {
+        "id": "download-flux2-klein-4b-components",
+        "title": "Download FLUX.2 Klein VAE and Qwen3 text encoder",
+        "action": "command",
+        "command": "hf",
+        "args": [
+          "download",
+          "Comfy-Org/vae-text-encorder-for-flux-klein-4b",
+          "split_files/text_encoders/qwen_3_4b.safetensors",
+          "split_files/vae/flux2-vae.safetensors",
+          "--revision",
+          "a9e4ca87c16db4c4e1a16406a9ddb300ab0ae246",
+          "--local-dir",
+          "${modelRoot}/lloom-flux2-klein-4b"
+        ],
+        "skipIfPathExists": "${modelRoot}/lloom-flux2-klein-4b/split_files/vae/flux2-vae.safetensors"
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "default-image",
+      "model": "black-forest-labs/FLUX.2-klein-4B",
+      "gatewayModel": "black-forest-labs/FLUX.2-klein-4B",
+      "runtime": "flux2-klein-4b-sdcpp",
+      "backendConfig": "flux2-klein-4b-sdcpp",
+      "backend": "stable-diffusion.cpp Metal",
+      "input": ["text", "image"],
+      "output": ["image"],
+      "capabilities": ["image-generation", "image-editing"],
+      "settings": {
+        "maxActiveRequests": 1,
+        "memoryGb": 32,
+        "priority": 150,
+        "keepWarm": true,
+        "startupTimeoutMs": 900000,
+        "runtime": {
+          "command": "sd-server",
+          "args": [
+            "--listen-ip",
+            "127.0.0.1",
+            "--listen-port",
+            "${port}",
+            "--diffusion-model",
+            "${modelRoot}/lloom-flux2-klein-4b/flux-2-klein-4b-Q8_0.gguf",
+            "--llm",
+            "${modelRoot}/lloom-flux2-klein-4b/split_files/text_encoders/qwen_3_4b.safetensors",
+            "--vae",
+            "${modelRoot}/lloom-flux2-klein-4b/split_files/vae/flux2-vae.safetensors",
+            "--cfg-scale",
+            "1.0",
+            "--steps",
+            "4",
+            "--sampling-method",
+            "euler",
+            "--diffusion-fa"
+          ],
+          "baseUrlPath": "/v1",
+          "healthPath": "/v1/models",
+          "warmup": false
+        }
+      }
+    }
+  ]
+}

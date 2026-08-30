@@ -530,6 +530,24 @@
           "depth": 1
         },
         {
+          "id": "init-stable-diffusion-cpp-submodules",
+          "title": "Initialize stable-diffusion.cpp submodules",
+          "action": "command",
+          "description": "Fetch the pinned ggml and third-party sources required by the stable-diffusion.cpp build.",
+          "command": "git",
+          "args": [
+            "-C",
+            "${installRoot}/stable-diffusion.cpp",
+            "submodule",
+            "update",
+            "--init",
+            "--recursive",
+            "--depth",
+            "1"
+          ],
+          "skipIfPathExists": "${installRoot}/stable-diffusion.cpp/ggml/CMakeLists.txt"
+        },
+        {
           "id": "configure-stable-diffusion-cpp-metal",
           "title": "Configure stable-diffusion.cpp with Metal",
           "action": "cmake-configure",

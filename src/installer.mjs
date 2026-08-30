@@ -308,6 +308,10 @@ async function previousBackendStepStillApplies(step, { env = process.env } = {})
     return step.destination ? pathExists(path.join(step.destination, '.git')) : true;
   }
 
+  if (step.action === 'command' && step.skipIfPathExists) {
+    return pathExists(step.skipIfPathExists);
+  }
+
   if (step.action === 'cmake-configure' || step.action === 'cmake-build') {
     return step.build ? pathExists(step.build) : true;
   }

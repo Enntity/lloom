@@ -9,12 +9,29 @@
     "id": "MIT",
     "name": "Recipe metadata license"
   },
-  "updatedAt": "2026-08-14T18:00:00.000Z",
+  "updatedAt": "2026-08-30T01:43:54.000Z",
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated"
   },
   "recipes": [
+    {
+      "id": "apple-silicon-flux2-klein-4b",
+      "path": "apple-silicon-flux2-klein-4b.json",
+      "currentVersion": 1,
+      "versions": [
+        { "version": 1, "path": "apple-silicon-flux2-klein-4b.json", "status": "current" }
+      ],
+      "name": "Apple Silicon FLUX.2 Klein 4B",
+      "summary": "Persistent four-step FLUX.2 Klein 4B Q8 image generation and reference editing on high-memory Apple Silicon.",
+      "tags": ["apple-silicon", "metal", "image-generation", "image-editing", "flux2", "stable-diffusion-cpp"],
+      "recommendedFor": [
+        "Apple Silicon Macs with at least 32 GB unified memory",
+        "a persistent fast local image lane without the larger Qwen image downloads"
+      ],
+      "capabilities": ["image-generation", "image-editing"],
+      "source": { "type": "local", "url": "recipes/apple-silicon-flux2-klein-4b.json" }
+    },
     {
       "id": "apple-silicon-ternary-bonsai-27b",
       "path": "apple-silicon-ternary-bonsai-27b.json",
@@ -271,7 +288,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang",
       "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang.json",
-      "currentVersion": 11,
+      "currentVersion": 12,
       "versions": [
         {
           "version": 1,
@@ -345,13 +362,20 @@
         },
         {
           "version": 11,
+          "path": "archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang/v11.json",
+          "status": "archived",
+          "archivedAt": "2026-08-30T05:07:51.000Z",
+          "notes": "Ports MiaAI-Lab's exact sglang#36845 packed-varlen kernel and excludes SM121 from the numerically corrupt TRT-LLM sparse-decode path while retaining MTP and NVFP4 KV."
+        },
+        {
+          "version": 12,
           "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang.json",
           "status": "current",
-          "notes": "Ports MiaAI-Lab's exact sglang#36845 packed-varlen kernel and excludes SM121 from the numerically corrupt TRT-LLM sparse-decode path while retaining MTP and NVFP4 KV."
+          "notes": "Ports MiaAI-Lab's post-kernel token-id-0 abort and cache-reset guard, doubles continuous-batch admission to twelve, expands the FP32 recurrent cache to sixty paths, and captures decode graphs through batch twelve."
         }
       ],
       "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 SGLang",
-      "summary": "On-demand LLooM-managed Qwen3.8 Flash Next TP=2 with native low-effort reasoning, MTP4 CUDA graphs, SM121 QSA kernels, NVFP4 KV, native 262K context, and sidecar headroom.",
+      "summary": "On-demand LLooM-managed Qwen3.8 Flash Next TP=2 with a 12-request continuous-batching envelope, native low-effort reasoning, MTP4 CUDA graphs, SM121 QSA guards, NVFP4 KV, native 262K context, and sidecar headroom.",
       "tags": ["linux", "nvidia", "dgx-spark", "cluster", "qwen3.8", "flash-next", "nvfp4", "sglang", "mtp", "qsa", "sidecars"],
       "recommendedFor": ["Two directly connected DGX Sparks serving Qwen3.8 Flash Next alongside LLooM sidecars"],
       "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "tools", "reasoning", "vision", "long-context"],
