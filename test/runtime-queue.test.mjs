@@ -125,6 +125,55 @@ test('a runtime queue waiter expires with retry guidance and is removed', async 
   await blockingSlot;
 });
 
+test('live concurrency increases release queued work without a runtime restart', async () => {
+  const config = { runtimes: { limited: { enabled: true, maxConcurrency: 1 } } };
+  const manager = new RuntimeManager(structuredClone(config), { logger: { error() {} } });
+  const releaseFirst = await manager.acquireSlot('limited');
+  const queuedRelease = manager.acquireSlot('limited');
+  await waitFor(() => manager.stateFor('limited').queuedRequests === 1);
+
+  const nextConfig = structuredClone(config);
+  nextConfig.runtimes.limited.maxConcurrency = 2;
+  const result = await manager.reconfigure(nextConfig);
+  const releaseSecond = await queuedRelease;
+
+  assert.deepEqual(result, {
+    changed: [],
+    liveAdmissionChanged: ['limited'],
+    results: []
+  });
+  assert.equal(manager.stateFor('limited').activeRequests, 2);
+  assert.equal(manager.stateFor('limited').queuedRequests, 0);
+  releaseFirst();
+  releaseSecond();
+});
+
+test('live concurrency decreases do not admit another waiter above the new cap', async () => {
+  const config = { runtimes: { limited: { enabled: true, maxConcurrency: 3 } } };
+  const manager = new RuntimeManager(structuredClone(config), { logger: { error() {} } });
+  const releases = await Promise.all([
+    manager.acquireSlot('limited'),
+    manager.acquireSlot('limited'),
+    manager.acquireSlot('limited')
+  ]);
+  const queuedRelease = manager.acquireSlot('limited');
+  await waitFor(() => manager.stateFor('limited').queuedRequests === 1);
+
+  const nextConfig = structuredClone(config);
+  nextConfig.runtimes.limited.maxConcurrency = 2;
+  await manager.reconfigure(nextConfig);
+  releases.shift()();
+  assert.equal(manager.stateFor('limited').activeRequests, 2);
+  assert.equal(manager.stateFor('limited').queuedRequests, 1);
+
+  releases.shift()();
+  const admittedRelease = await queuedRelease;
+  assert.equal(manager.stateFor('limited').activeRequests, 2);
+  assert.equal(manager.stateFor('limited').queuedRequests, 0);
+  releases.shift()();
+  admittedRelease();
+});
+
 async function waitFor(predicate, timeoutMs = 1_000) {
   const deadline = Date.now() + timeoutMs;
   while (!predicate()) {

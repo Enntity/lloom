@@ -512,6 +512,18 @@ assert.deepEqual(
   }),
   ['head', 'split']
 );
+const liveAdmissionOnlyConfig = structuredClone(distributedConfig);
+liveAdmissionOnlyConfig.runtimes.split.maxConcurrency = 3;
+liveAdmissionOnlyConfig.runtimes.split.maxQueuedRequests = 6;
+liveAdmissionOnlyConfig.runtimes.split.queueTimeoutMs = 180000;
+assert.deepEqual(
+  reconfigureRuntimeIds(distributedConfig, liveAdmissionOnlyConfig, {
+    nodeId: 'leader',
+    leaderNode: 'leader'
+  }),
+  [],
+  'gateway admission controls update without restarting a healthy distributed model'
+);
 assert.equal(
   ownsDistributedRuntime(distributedConfig, distributedConfig.runtimes.split, {
     nodeId: 'worker',

@@ -131,6 +131,25 @@ function distributedMembers(runtime) {
     : [];
 }
 
+const LIVE_ADMISSION_FIELDS = new Set([
+  'maxConcurrency',
+  'maxQueuedRequests',
+  'queueTimeoutMs',
+  'queueRetryAfterSeconds',
+  'requestStartupWaitMs',
+  'startupRetryAfterSeconds'
+]);
+
+function runtimeLifecycleConfig(runtime) {
+  if (!runtime) return runtime ?? null;
+  return Object.fromEntries(Object.entries(runtime).filter(([key]) => !LIVE_ADMISSION_FIELDS.has(key)));
+}
+
+function runtimeLiveAdmissionConfig(runtime) {
+  if (!runtime) return runtime ?? null;
+  return Object.fromEntries(Object.entries(runtime).filter(([key]) => LIVE_ADMISSION_FIELDS.has(key)));
+}
+
 export function reconfigureRuntimeIds(previousConfig, nextConfig, { nodeId, leaderNode } = {}) {
   const selectedNodeId = nodeId ?? currentNodeId(nextConfig);
   const selectedLeaderNode =
@@ -142,8 +161,8 @@ export function reconfigureRuntimeIds(previousConfig, nextConfig, { nodeId, lead
   const changed = new Set(
     [...runtimeIds].filter(
       (runtimeId) =>
-        JSON.stringify(previousConfig.runtimes?.[runtimeId] ?? null) !==
-        JSON.stringify(nextConfig.runtimes?.[runtimeId] ?? null)
+        JSON.stringify(runtimeLifecycleConfig(previousConfig.runtimes?.[runtimeId])) !==
+        JSON.stringify(runtimeLifecycleConfig(nextConfig.runtimes?.[runtimeId]))
     )
   );
 
@@ -162,6 +181,20 @@ export function reconfigureRuntimeIds(previousConfig, nextConfig, { nodeId, lead
     const placement = runtimePlacement(runtime, nextConfig);
     if (placement.mode === 'distributed') return selectedNodeId === selectedLeaderNode;
     return !placement.node || placement.node === selectedNodeId;
+  });
+}
+
+function liveAdmissionRuntimeIds(previousConfig, nextConfig) {
+  return [
+    ...new Set([...Object.keys(previousConfig.runtimes ?? {}), ...Object.keys(nextConfig.runtimes ?? {})])
+  ].filter((runtimeId) => {
+    const previous = previousConfig.runtimes?.[runtimeId];
+    const current = nextConfig.runtimes?.[runtimeId];
+    return (
+      previous &&
+      current &&
+      JSON.stringify(runtimeLiveAdmissionConfig(previous)) !== JSON.stringify(runtimeLiveAdmissionConfig(current))
+    );
   });
 }
 
@@ -1160,7 +1193,9 @@ export class RuntimeManager {
     state.activeRequests = Math.max(0, state.activeRequests - 1);
     if (state.activeRequests === 0) state.lastIdleAt = nowIso();
     const queue = this.queueFor(runtimeId);
-    const next = this.pausedRuntimes.has(runtimeId) ? null : takeQueuedEntry(queue);
+    const maxConcurrency = runtimeMaxConcurrency(this.getRuntime(runtimeId));
+    const next =
+      this.pausedRuntimes.has(runtimeId) || state.activeRequests >= maxConcurrency ? null : takeQueuedEntry(queue);
     state.queuedRequests = queue.length;
     if (!next) return;
     state.activeRequests += 1;
@@ -1204,6 +1239,7 @@ export class RuntimeManager {
     const nodeId = this.clusterCoordinator?.nodeId ?? currentNodeId(nextConfig);
     const leaderNode = nextConfig.cluster?.leaderNode ?? previousConfig.cluster?.leaderNode ?? nodeId;
     const changed = reconfigureRuntimeIds(previousConfig, nextConfig, { nodeId, leaderNode });
+    const liveAdmissionChanged = liveAdmissionRuntimeIds(previousConfig, nextConfig);
     const distributed = new Set(
       changed.filter((runtimeId) => {
         const runtime = nextConfig.runtimes?.[runtimeId] ?? previousConfig.runtimes?.[runtimeId];
@@ -1265,6 +1301,7 @@ export class RuntimeManager {
         }
       }
       this.config = nextConfig;
+      for (const runtimeId of liveAdmissionChanged) this.resumeRuntime(runtimeId);
       const startOrder = [...changed].sort(
         (left, right) => Number(distributed.has(right)) - Number(distributed.has(left))
       );
@@ -1302,7 +1339,7 @@ export class RuntimeManager {
           })
         );
       }
-      return { changed, results };
+      return { changed, ...(liveAdmissionChanged.length ? { liveAdmissionChanged } : {}), results };
     } finally {
       for (const runtimeId of ownedChanges) {
         this.reconfiguringRuntimes.delete(runtimeId);
