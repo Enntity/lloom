@@ -504,16 +504,28 @@ def dspark_consume_token0_flush() -> bool:
         self, running_batch: ScheduleBatch, last_batch: Optional[ScheduleBatch]
     ) -> NextBatchPlan:
         self.process_pending_chunked_abort()
-        # dspark_token0_guard: drop the radix tree before the next prefill so
+        # dspark_token0_guard: flush every cache owner before the next prefill so
         # a later request cannot reuse prefix KV corrupted by a token-id-0 run.
-        if running_batch.is_empty():
+        # tree_cache.reset() alone drops its references without returning the
+        # corresponding full-token and Mamba pages to their allocators.
+        cache_owners_idle = (
+            running_batch.is_empty()
+            and self.chunked_req is None
+            and (last_batch is None or last_batch.is_empty())
+            and (not self.enable_overlap or len(self.result_queue) == 0)
+        )
+        if cache_owners_idle:
             from sglang.srt.managers.schedule_batch import dspark_consume_token0_flush
 
             if dspark_consume_token0_flush():
                 logger.warning(
-                    "dspark: token-id-0 loop; resetting prefix cache before the next prefill"
+                    "dspark: token-id-0 loop; atomically flushing model cache pools before the next prefill"
                 )
                 self.tree_cache.reset()
+                self.req_to_token_pool.clear()
+                self.token_to_kv_pool_allocator.clear()
+                if self.draft_worker:
+                    self.draft_worker.clear_cache_pool()
 '''
 
     def _one(path, replacements):

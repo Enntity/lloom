@@ -22,11 +22,11 @@ assert.equal(recipe.models[0].settings.queueRetryAfterSeconds, 3);
 assert.equal(recipe.models[0].settings.requestStartupWaitMs, 1000);
 assert.equal(recipe.models[0].settings.startupRetryAfterSeconds, 15);
 assert.equal(recipe.models[0].settings.healthTimeoutMs, 5000);
-assert.equal(recipe.version, 17);
+assert.equal(recipe.version, 18);
 assert.equal(recipe.models[0].settings.memoryGb, 80);
 assert.equal(recipe.models[0].settings.keepWarm, false);
-assert.equal(recipe.capabilities.includes('mtp'), true);
-assert.equal(recipe.models[0].capabilities.includes('mtp'), true);
+assert.equal(recipe.capabilities.includes('mtp'), false);
+assert.equal(recipe.models[0].capabilities.includes('mtp'), false);
 
 const dockerSglang = getBackend(await loadBackendCatalog(), 'docker-sglang');
 assert(dockerSglang, 'docker-sglang backend must be packaged');
@@ -62,7 +62,7 @@ for (const member of members) {
   assert.match(rendered, /NCCL_IB_HCA=rocep1s0f0/);
   assert.match(rendered, /NCCL_IB_ADDR_FAMILY=AF_INET/);
   assert.doesNotMatch(rendered, /NCCL_IB_GID_INDEX=/);
-  assert.match(rendered, /ENABLE_SPECULATIVE=1/);
+  assert.match(rendered, /ENABLE_SPECULATIVE=0/);
   assert.match(rendered, /ENABLE_THINKING_BUDGETS=0/);
   assert.match(rendered, /DEFAULT_CHAT_TEMPLATE_KWARGS=\{"reasoning_effort":"low"\}/);
   assert.match(rendered, /backends\/qwen38-sglang\/sm121_varlen\.py/);
@@ -130,7 +130,13 @@ for (const expected of [
   'self._check_token0_loop_finish()',
   'is_insert = False',
   'dspark_consume_token0_flush',
-  'self.tree_cache.reset()'
+  'and self.chunked_req is None',
+  'and (last_batch is None or last_batch.is_empty())',
+  'and (not self.enable_overlap or len(self.result_queue) == 0)',
+  'self.tree_cache.reset()',
+  'self.req_to_token_pool.clear()',
+  'self.token_to_kv_pool_allocator.clear()',
+  'self.draft_worker.clear_cache_pool()'
 ]) {
   assert(nvfp4Patch.includes(expected), `missing token-id-0 guard: ${expected}`);
 }
@@ -162,7 +168,7 @@ assert.deepEqual(recipe.models[0].settings.behaviorOverrides, {
 const sourceHashes = {
   'sm121_varlen.py': '562610cf63f90ae666106c9f364812978ef039ac02ec9e7efc31e52a9de78e2b',
   'qsa_nvfp4_kv.py': '3aa1139774f2de8a345d59da0ac85e5e8cd47896fc618c7db298939506686580',
-  'apply_nvfp4_patches.py': '14f8aa89871bd212032d0e03ae9d68738b73ae1822ac762225eedc9e1c8d2bfd',
+  'apply_nvfp4_patches.py': 'd4e04ca0a6eb9c87899f30be9ed361e63155664182ff2e77aed7ad6ea20d2a3e',
   'apply_disconnect_lifecycle_fix.py': '83b4c439589dac47cda64633cf48638cdf4462d1777f08fc025ba4c5acee6c60'
 };
 for (const [name, expected] of Object.entries(sourceHashes)) {
@@ -192,6 +198,9 @@ await fs.access(
 );
 await fs.access(
   path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v16.json')
+);
+await fs.access(
+  path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v17.json')
 );
 
 console.log('qwen38 sglang recipe tests passed');

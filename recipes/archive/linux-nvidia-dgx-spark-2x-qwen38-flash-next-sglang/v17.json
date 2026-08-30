@@ -4,13 +4,13 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang",
   "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 SGLang",
-  "version": 18,
-  "summary": "On-demand two-Spark SGLang TP=2 Qwen3.8 Flash Next with a measured two-request entity-workload envelope, LLooM-owned overflow queueing, scheduler-safe disconnect cancellation, stable target-only decode, native low-effort reasoning, SM121 QSA guards, NVFP4 KV, native 262K context, and reserved sidecar headroom.",
+  "version": 17,
+  "summary": "On-demand two-Spark SGLang TP=2 Qwen3.8 Flash Next with a measured two-request entity-workload envelope, LLooM-owned overflow queueing, scheduler-safe disconnect cancellation, native low-effort reasoning, MTP4 CUDA-graph decode, SM121 QSA guards, NVFP4 KV, native 262K context, and reserved sidecar headroom.",
   "license": { "id": "MIT", "name": "Recipe metadata and launcher" },
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "Adapted from MiaAI-Lab/Qwen3.8-Flash-Next-Dual-DGX-Sparks 0f950012c8d8323acac9a08846a32ef7953f5f62 with LLooM-native distributed lifecycle, FP32 recurrent state, a measured-sidecar target, a two-request scheduler profile, an exact-source-guarded SGLang PR #36418 disconnect lifecycle fix, atomic token-id-0 cache reclamation, and target-only production decode after a single-request speculative-verify failure"
+    "source": "Adapted from MiaAI-Lab/Qwen3.8-Flash-Next-Dual-DGX-Sparks 0f950012c8d8323acac9a08846a32ef7953f5f62 with LLooM-native distributed lifecycle, FP32 recurrent state, a measured-sidecar target, a two-request scheduler profile validated with staggered live Enntity Runtime traffic, and the exact-source-guarded SGLang PR #36418 disconnect lifecycle fix"
   },
   "links": [
     { "rel": "upstream", "href": "https://github.com/MiaAI-Lab/Qwen3.8-Flash-Next-Dual-DGX-Sparks/tree/0f950012c8d8323acac9a08846a32ef7953f5f62" },
@@ -18,8 +18,8 @@
     { "rel": "model", "href": "https://huggingface.co/RadixArk/Qwen3.8-Flash-Next-NVFP4/tree/7b719225242aacd3dbd3f9407468c2ee9a9d2594" },
     { "rel": "runtime", "href": "https://hub.docker.com/r/lmsysorg/sglang/tags" }
   ],
-  "keywords": ["linux", "nvidia", "dgx-spark", "cluster", "qwen3.8", "flash-next", "nvfp4", "sglang", "qsa", "sidecars"],
-  "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "usage", "tools", "reasoning", "vision", "moe", "long-context"],
+  "keywords": ["linux", "nvidia", "dgx-spark", "cluster", "qwen3.8", "flash-next", "nvfp4", "sglang", "mtp", "qsa", "sidecars"],
+  "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "usage", "tools", "reasoning", "vision", "mtp", "moe", "long-context"],
   "hardware": {
     "family": "NVIDIA DGX Spark / GB10",
     "testedMachine": "Two directly connected DGX Spark systems",
@@ -28,11 +28,11 @@
       "The SM121 packed-varlen QSA kernel, NVFP4-KV layer, and token-id-0 abort/reset guard are pinned to MiaAI-Lab commit 0f950012c8d8323acac9a08846a32ef7953f5f62; all source edits refuse mismatched anchors.",
       "The pinned SGLang revision drops tokenizer state before its delayed disconnect abort, leaving scheduler-owned zombie requests. An exact-source-guarded backport of sglang#36418 retains dispatched request IDs and forces their scheduler abort after the existing two-second teardown window.",
       "The 627648-token pool supports two simultaneous native-context working sets. LLooM admits two entity requests and owns a bounded eight-request overflow queue so later long prefills do not enter SGLang while active decodes are still making progress.",
-      "Target-only production decode needs at most two active recurrent paths. The 16-path FP32 cache retains diagnostic headroom without returning to the old eight-request admission profile.",
-      "Historical speculative-decode measurements with recovered Presence traffic produced three staggered requests at roughly 148K aggregate tokens. Three-way decode reached roughly 86-90 aggregate token/s, but an arriving long prefill cut generation to roughly 44 token/s; a saturated 92-second cap-three window averaged 57.9-second TTFT and 120.9-second end-to-end latency. Cap two kept overflow in LLooM and its measured 92-second window averaged 8.0-second TTFT and 46.8-second end-to-end latency.",
-      "A live twelve-way staggered canary produced non-finite speculative-verify logits and token-id-0 loops in four tail streams, and a later single-request canary reproduced the same failure after 18 output tokens. Production therefore uses target-only decode; the token-id-0 guard atomically clears all cache allocators if the safety condition is ever reached again.",
-      "The 0.80 static-memory fraction covers FP32 recurrent state and the NVFP4 token pool while retaining headroom for controlled experiments; 0.76 was insufficient in the former speculative profile.",
-      "Generic NEXTN renders as EAGLE in this runtime, does not enforce custom thinking-budget processors, and is disabled by default because its verify path produced non-finite logits on the pinned artifact.",
+      "Two requests with MTP need up to eight recurrent paths. The 16-path FP32 cache keeps an equal reserve while avoiding the old eight-request profile's unused recurrent-state allocation.",
+      "Live recovered Presence traffic produced three staggered requests at roughly 148K aggregate tokens. Three-way decode reached roughly 86-90 aggregate token/s, but an arriving long prefill cut generation to roughly 44 token/s; a saturated 92-second cap-three window averaged 57.9-second TTFT and 120.9-second end-to-end latency. Cap two kept overflow in LLooM and its measured 92-second window averaged 8.0-second TTFT and 46.8-second end-to-end latency.",
+      "A live twelve-way staggered canary reached twelve running requests with zero backend queue, but four tail streams developed non-finite verify logits and token-id-0 loops before SGLang asserted a pool leak. The correctness guards remain necessary even though LLooM now admits only two requests.",
+      "The 0.80 static-memory fraction covers FP32 recurrent state and the NVFP4 token pool while retaining headroom for controlled speculative experiments; 0.76 is insufficient after the FP32 correctness upgrade.",
+      "Generic NEXTN renders as EAGLE in this runtime and does not enforce custom thinking-budget processors; MTP and hard graduated budgets are therefore mutually exclusive profiles.",
       "The new SM121 kernel passed upstream exact retrieval at 120K, 190K, and 210K with no token-id-0 output; this LLooM NVFP4-KV combination still requires its own long-context semantic soak before 262K is trusted."
     ]
   },
@@ -67,7 +67,7 @@
       "setDefault": true,
       "input": ["text", "image"],
       "output": ["text"],
-      "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "usage", "tools", "reasoning", "vision", "moe", "long-context"],
+      "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "usage", "tools", "reasoning", "vision", "mtp", "moe", "long-context"],
       "settings": {
         "port": 8889,
         "contextWindow": 262144,
@@ -143,7 +143,7 @@
                     "-e", "MAX_TOTAL_TOKENS=627648", "-e", "MAX_MAMBA_CACHE_SIZE=16", "-e", "MAMBA_FULL_MEMORY_RATIO=0.3",
                     "-e", "CHUNKED_PREFILL_SIZE=1024", "-e", "MEM_FRACTION_STATIC=0.80",
                     "-e", "SGLANG_ENABLE_TP_MEMORY_INBALANCE_CHECK=0", "-e", "SGLANG_SANITIZE_NAN_LOGITS=1",
-                    "-e", "ENABLE_SPECULATIVE=0", "-e", "ENABLE_THINKING_BUDGETS=0", "-e", "DEFAULT_CHAT_TEMPLATE_KWARGS={\"reasoning_effort\":\"low\"}",
+                    "-e", "ENABLE_SPECULATIVE=1", "-e", "ENABLE_THINKING_BUDGETS=0", "-e", "DEFAULT_CHAT_TEMPLATE_KWARGS={\"reasoning_effort\":\"low\"}",
                     "-e", "SPECULATIVE_NUM_STEPS=3", "-e", "SPECULATIVE_NUM_DRAFT_TOKENS=4"
                   ],
                   "command": ["/opt/lloom/entrypoint.sh"]
@@ -197,7 +197,7 @@
                     "-e", "MAX_TOTAL_TOKENS=627648", "-e", "MAX_MAMBA_CACHE_SIZE=16", "-e", "MAMBA_FULL_MEMORY_RATIO=0.3",
                     "-e", "CHUNKED_PREFILL_SIZE=1024", "-e", "MEM_FRACTION_STATIC=0.80",
                     "-e", "SGLANG_ENABLE_TP_MEMORY_INBALANCE_CHECK=0", "-e", "SGLANG_SANITIZE_NAN_LOGITS=1",
-                    "-e", "ENABLE_SPECULATIVE=0", "-e", "ENABLE_THINKING_BUDGETS=0", "-e", "DEFAULT_CHAT_TEMPLATE_KWARGS={\"reasoning_effort\":\"low\"}",
+                    "-e", "ENABLE_SPECULATIVE=1", "-e", "ENABLE_THINKING_BUDGETS=0", "-e", "DEFAULT_CHAT_TEMPLATE_KWARGS={\"reasoning_effort\":\"low\"}",
                     "-e", "SPECULATIVE_NUM_STEPS=3", "-e", "SPECULATIVE_NUM_DRAFT_TOKENS=4"
                   ],
                   "command": ["/opt/lloom/entrypoint.sh"]
