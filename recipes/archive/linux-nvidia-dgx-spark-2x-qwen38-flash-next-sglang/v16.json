@@ -4,13 +4,13 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang",
   "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 SGLang",
-  "version": 17,
-  "summary": "On-demand two-Spark SGLang TP=2 Qwen3.8 Flash Next with a measured two-request entity-workload envelope, LLooM-owned overflow queueing, scheduler-safe disconnect cancellation, native low-effort reasoning, MTP4 CUDA-graph decode, SM121 QSA guards, NVFP4 KV, native 262K context, and reserved sidecar headroom.",
+  "version": 16,
+  "summary": "On-demand two-Spark SGLang TP=2 Qwen3.8 Flash Next with a measured two-request entity-workload envelope, LLooM-owned overflow queueing, native low-effort reasoning, MTP4 CUDA-graph decode, SM121 QSA guards, NVFP4 KV, native 262K context, and reserved sidecar headroom.",
   "license": { "id": "MIT", "name": "Recipe metadata and launcher" },
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "Adapted from MiaAI-Lab/Qwen3.8-Flash-Next-Dual-DGX-Sparks 0f950012c8d8323acac9a08846a32ef7953f5f62 with LLooM-native distributed lifecycle, FP32 recurrent state, a measured-sidecar target, a two-request scheduler profile validated with staggered live Enntity Runtime traffic, and the exact-source-guarded SGLang PR #36418 disconnect lifecycle fix"
+    "source": "Adapted from MiaAI-Lab/Qwen3.8-Flash-Next-Dual-DGX-Sparks 0f950012c8d8323acac9a08846a32ef7953f5f62 with LLooM-native distributed lifecycle, FP32 recurrent state, a measured-sidecar target, and a two-request scheduler profile validated with staggered live Enntity Runtime traffic on the two-Spark cluster"
   },
   "links": [
     { "rel": "upstream", "href": "https://github.com/MiaAI-Lab/Qwen3.8-Flash-Next-Dual-DGX-Sparks/tree/0f950012c8d8323acac9a08846a32ef7953f5f62" },
@@ -26,7 +26,6 @@
     "notes": [
       "TP=2 runs over the private ConnectX-7 RoCE fabric and starts worker-first under LLooM. NCCL selects the IPv4 RoCE-v2 GID independently on each Spark because the kernel may assign different GID-table indexes to the same fabric address class.",
       "The SM121 packed-varlen QSA kernel, NVFP4-KV layer, and token-id-0 abort/reset guard are pinned to MiaAI-Lab commit 0f950012c8d8323acac9a08846a32ef7953f5f62; all source edits refuse mismatched anchors.",
-      "The pinned SGLang revision drops tokenizer state before its delayed disconnect abort, leaving scheduler-owned zombie requests. An exact-source-guarded backport of sglang#36418 retains dispatched request IDs and forces their scheduler abort after the existing two-second teardown window.",
       "The 627648-token pool supports two simultaneous native-context working sets. LLooM admits two entity requests and owns a bounded eight-request overflow queue so later long prefills do not enter SGLang while active decodes are still making progress.",
       "Two requests with MTP need up to eight recurrent paths. The 16-path FP32 cache keeps an equal reserve while avoiding the old eight-request profile's unused recurrent-state allocation.",
       "Live recovered Presence traffic produced three staggered requests at roughly 148K aggregate tokens. Three-way decode reached roughly 86-90 aggregate token/s, but an arriving long prefill cut generation to roughly 44 token/s; a saturated 92-second cap-three window averaged 57.9-second TTFT and 120.9-second end-to-end latency. Cap two kept overflow in LLooM and its measured 92-second window averaged 8.0-second TTFT and 46.8-second end-to-end latency.",
@@ -125,7 +124,6 @@
                     "-v", "lloom-qwen38-triton:/root/.triton", "-v", "lloom-qwen38-flashinfer:/root/.cache/flashinfer",
                     "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/entrypoint.sh,dst=/opt/lloom/entrypoint.sh,readonly",
                     "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/apply-sm121-patches.py,dst=/opt/lloom/apply-sm121-patches.py,readonly",
-                    "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/apply_disconnect_lifecycle_fix.py,dst=/opt/lloom/apply_disconnect_lifecycle_fix.py,readonly",
                     "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/apply_nvfp4_patches.py,dst=/opt/lloom/apply_nvfp4_patches.py,readonly",
                     "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/sm121_varlen.py,dst=/opt/lloom/sm121_varlen.py,readonly",
                     "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/qsa_nvfp4_kv.py,dst=/opt/lloom/qsa_nvfp4_kv.py,readonly",
@@ -179,7 +177,6 @@
                     "-v", "lloom-qwen38-triton:/root/.triton", "-v", "lloom-qwen38-flashinfer:/root/.cache/flashinfer",
                     "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/entrypoint.sh,dst=/opt/lloom/entrypoint.sh,readonly",
                     "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/apply-sm121-patches.py,dst=/opt/lloom/apply-sm121-patches.py,readonly",
-                    "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/apply_disconnect_lifecycle_fix.py,dst=/opt/lloom/apply_disconnect_lifecycle_fix.py,readonly",
                     "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/apply_nvfp4_patches.py,dst=/opt/lloom/apply_nvfp4_patches.py,readonly",
                     "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/sm121_varlen.py,dst=/opt/lloom/sm121_varlen.py,readonly",
                     "--mount", "type=bind,src=${lloomRoot}/backends/qwen38-sglang/qsa_nvfp4_kv.py,dst=/opt/lloom/qsa_nvfp4_kv.py,readonly",

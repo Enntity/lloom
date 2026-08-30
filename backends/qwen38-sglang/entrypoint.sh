@@ -17,6 +17,8 @@ api_port="${SGLANG_API_PORT:-${SGLANG_PORT:-8889}}"
 unset SGLANG_PORT
 
 python3 /opt/lloom/apply-sm121-patches.py
+python3 /opt/lloom/apply_disconnect_lifecycle_fix.py \
+  /sgl-workspace/sglang/python/sglang/srt/managers/tokenizer_manager.py
 
 speculative_args=()
 if [[ "${ENABLE_SPECULATIVE:-0}" == "1" ]]; then

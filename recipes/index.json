@@ -288,7 +288,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang",
       "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang.json",
-      "currentVersion": 16,
+      "currentVersion": 17,
       "versions": [
         {
           "version": 1,
@@ -397,13 +397,20 @@
         },
         {
           "version": 16,
+          "path": "archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang/v16.json",
+          "status": "archived",
+          "archivedAt": "2026-08-30T19:15:00.000Z",
+          "notes": "Admits two entity-shaped requests, queues overflow in LLooM, widens both logical and physical loaded-health probes, and sizes SGLang decode graphs plus FP32 recurrent paths for the measured staggered Presence workload."
+        },
+        {
+          "version": 17,
           "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang.json",
           "status": "current",
-          "notes": "Admits two entity-shaped requests, queues overflow in LLooM, widens both logical and physical loaded-health probes, and sizes SGLang decode graphs plus FP32 recurrent paths for the measured staggered Presence workload."
+          "notes": "Backports SGLang's scheduler-safe disconnect lifecycle so abandoned streams release their running slot within the existing two-second abort window instead of decoding to max_tokens."
         }
       ],
       "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 SGLang",
-      "summary": "On-demand LLooM-managed Qwen3.8 Flash Next TP=2 with a measured two-request entity-workload envelope, LLooM-owned overflow queueing, native low-effort reasoning, MTP4 CUDA graphs, SM121 QSA guards, NVFP4 KV, native 262K context, and sidecar headroom.",
+      "summary": "On-demand LLooM-managed Qwen3.8 Flash Next TP=2 with a measured two-request entity-workload envelope, LLooM-owned overflow queueing, scheduler-safe disconnect cancellation, native low-effort reasoning, MTP4 CUDA graphs, SM121 QSA guards, NVFP4 KV, native 262K context, and sidecar headroom.",
       "tags": ["linux", "nvidia", "dgx-spark", "cluster", "qwen3.8", "flash-next", "nvfp4", "sglang", "mtp", "qsa", "sidecars"],
       "recommendedFor": ["Two directly connected DGX Sparks serving Qwen3.8 Flash Next alongside LLooM sidecars"],
       "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "tools", "reasoning", "vision", "long-context"],

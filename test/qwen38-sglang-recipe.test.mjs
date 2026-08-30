@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getBackend, loadBackendCatalog } from '../src/backend-catalog.mjs';
@@ -21,7 +22,7 @@ assert.equal(recipe.models[0].settings.queueRetryAfterSeconds, 3);
 assert.equal(recipe.models[0].settings.requestStartupWaitMs, 1000);
 assert.equal(recipe.models[0].settings.startupRetryAfterSeconds, 15);
 assert.equal(recipe.models[0].settings.healthTimeoutMs, 5000);
-assert.equal(recipe.version, 16);
+assert.equal(recipe.version, 17);
 assert.equal(recipe.models[0].settings.memoryGb, 80);
 assert.equal(recipe.models[0].settings.keepWarm, false);
 assert.equal(recipe.capabilities.includes('mtp'), true);
@@ -66,6 +67,7 @@ for (const member of members) {
   assert.match(rendered, /DEFAULT_CHAT_TEMPLATE_KWARGS=\{"reasoning_effort":"low"\}/);
   assert.match(rendered, /backends\/qwen38-sglang\/sm121_varlen\.py/);
   assert.match(rendered, /backends\/qwen38-sglang\/qsa_nvfp4_kv\.py/);
+  assert.match(rendered, /backends\/qwen38-sglang\/apply_disconnect_lifecycle_fix\.py/);
   assert.deepEqual(bootstrap.command, ['/opt/lloom/entrypoint.sh']);
 }
 assert.equal(members.find((member) => member.role === 'head').runtimeSettings.healthTimeoutMs, 5000);
@@ -92,6 +94,8 @@ for (const expected of [
   assert(entrypoint.includes(expected), `missing SGLang launch control: ${expected}`);
 }
 assert(entrypoint.includes('unset SGLANG_PORT'), 'legacy SGLANG_PORT must not leak into SGLang');
+assert.match(entrypoint, /apply_disconnect_lifecycle_fix\.py/);
+assert.match(entrypoint, /sglang\/srt\/managers\/tokenizer_manager\.py/);
 const templateAssignment = entrypoint.match(
   /default_chat_template_kwargs="\$\{DEFAULT_CHAT_TEMPLATE_KWARGS:-\}"[\s\S]*?\nfi/
 )?.[0];
@@ -131,6 +135,26 @@ for (const expected of [
   assert(nvfp4Patch.includes(expected), `missing token-id-0 guard: ${expected}`);
 }
 
+const disconnectPatchPath = path.join(backendRoot, 'apply_disconnect_lifecycle_fix.py');
+const disconnectPatch = await fs.readFile(disconnectPatchPath, 'utf8');
+for (const expected of [
+  'except (asyncio.CancelledError, GeneratorExit):',
+  'obj._dispatched_rids = dispatched_rids.copy()',
+  'self.abort_request(rid, force=True)',
+  'if dispatched_rids is None or rid not in dispatched_rids:',
+  'expected exactly one match'
+]) {
+  assert(disconnectPatch.includes(expected), `missing disconnect lifecycle guard: ${expected}`);
+}
+
+const badFixtureRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'lloom-sglang-disconnect-'));
+const badFixture = path.join(badFixtureRoot, 'tokenizer_manager.py');
+await fs.writeFile(badFixture, 'class TokenizerManager:\n    pass\n');
+const refusedPatch = spawnSync('python3', [disconnectPatchPath, badFixture], { encoding: 'utf8' });
+assert.notEqual(refusedPatch.status, 0, 'disconnect patch must fail closed on unknown SGLang source');
+assert.match(refusedPatch.stderr, /expected exactly one match/);
+await fs.rm(badFixtureRoot, { recursive: true, force: true });
+
 assert.deepEqual(recipe.models[0].settings.behaviorOverrides, {
   chatTemplateKwargs: { reasoning_effort: 'low' }
 });
@@ -138,7 +162,8 @@ assert.deepEqual(recipe.models[0].settings.behaviorOverrides, {
 const sourceHashes = {
   'sm121_varlen.py': '562610cf63f90ae666106c9f364812978ef039ac02ec9e7efc31e52a9de78e2b',
   'qsa_nvfp4_kv.py': '3aa1139774f2de8a345d59da0ac85e5e8cd47896fc618c7db298939506686580',
-  'apply_nvfp4_patches.py': '14f8aa89871bd212032d0e03ae9d68738b73ae1822ac762225eedc9e1c8d2bfd'
+  'apply_nvfp4_patches.py': '14f8aa89871bd212032d0e03ae9d68738b73ae1822ac762225eedc9e1c8d2bfd',
+  'apply_disconnect_lifecycle_fix.py': '83b4c439589dac47cda64633cf48638cdf4462d1777f08fc025ba4c5acee6c60'
 };
 for (const [name, expected] of Object.entries(sourceHashes)) {
   const bytes = await fs.readFile(path.join(backendRoot, name));
@@ -164,6 +189,9 @@ await fs.access(
 );
 await fs.access(
   path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v15.json')
+);
+await fs.access(
+  path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v16.json')
 );
 
 console.log('qwen38 sglang recipe tests passed');

@@ -167,6 +167,113 @@ function close(server) {
   await close(upstream);
 }
 
+// A downstream disconnect must tear down the in-flight upstream transport for
+// every proxy body mode. Backend schedulers use that close as their common
+// cancellation signal, so LLooM must not merely release its local slot.
+{
+  let activeProbe = null;
+  const upstream = http.createServer(async (req, res) => {
+    const probe = activeProbe;
+    res.on('close', () => probe?.closed?.());
+    for await (const _chunk of req) {
+      // Drain the request so this test observes response-side cancellation.
+    }
+    probe?.received?.();
+    // Intentionally leave the response pending until LLooM aborts it.
+  });
+  const upstreamPort = await listen(upstream);
+  const config = {
+    name: 'client-cancellation-propagation-test',
+    server: { host: '127.0.0.1', port: 0 },
+    security: { allowMissingAuth: true, apiKeys: [] },
+    defaults: { chatModel: 'chat-model', imageModel: 'image-model' },
+    backends: {
+      local: {
+        type: 'openai',
+        baseUrl: `http://127.0.0.1:${upstreamPort}/v1`,
+        timeoutMs: 5000
+      }
+    },
+    models: [
+      {
+        id: 'chat-model',
+        backend: 'local',
+        upstreamModel: 'upstream-chat',
+        kind: 'chat',
+        contextWindow: 8192,
+        maxPromptTokens: 1000
+      },
+      {
+        id: 'image-model',
+        backend: 'local',
+        upstreamModel: 'upstream-image',
+        kind: 'image',
+        input: ['text', 'image'],
+        capabilities: ['image-editing']
+      }
+    ],
+    runtimes: {}
+  };
+  const app = createLloomServer(config, { logger: { error() {}, warn() {} } });
+  const port = await listen(app.server);
+
+  async function assertDisconnectClosesUpstream({ path: requestPath, headers, body }) {
+    let received;
+    let closed;
+    const receivedPromise = new Promise((resolve) => {
+      received = resolve;
+    });
+    const closedPromise = new Promise((resolve) => {
+      closed = resolve;
+    });
+    activeProbe = { received, closed };
+    const request = http.request({
+      host: '127.0.0.1',
+      port,
+      path: requestPath,
+      method: 'POST',
+      headers: { ...headers, 'content-length': Buffer.byteLength(body) }
+    });
+    request.on('error', () => {});
+    request.end(body);
+    await receivedPromise;
+    const abortedAt = Date.now();
+    request.destroy();
+    await Promise.race([
+      closedPromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('upstream socket was not canceled')), 1000))
+    ]);
+    assert(Date.now() - abortedAt < 1000, `${requestPath} upstream close was not immediate`);
+    activeProbe = null;
+  }
+
+  await assertDisconnectClosesUpstream({
+    path: '/v1/chat/completions',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: 'chat-model',
+      messages: [{ role: 'user', content: 'keep generating' }],
+      max_tokens: 1000,
+      stream: false
+    })
+  });
+
+  const boundary = 'lloom-cancel-boundary';
+  await assertDisconnectClosesUpstream({
+    path: '/v1/images/edits',
+    headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+    body: [
+      `--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\nimage-model\r\n`,
+      `--${boundary}\r\nContent-Disposition: form-data; name="image"; filename="image.png"\r\n`,
+      'Content-Type: image/png\r\n\r\nnot-a-real-png\r\n',
+      `--${boundary}--\r\n`
+    ].join('')
+  });
+
+  await close(app.server);
+  await close(upstream);
+}
+
 // Completed model requests feed runtime-scoped evidence to the watchdog hook.
 {
   const upstream = http.createServer((_req, res) => {

@@ -12,6 +12,14 @@ Their source SHA-256 values are:
 - `qsa_nvfp4_kv.py`: `3aa1139774f2de8a345d59da0ac85e5e8cd47896fc618c7db298939506686580`
 - `apply_nvfp4_patches.py`: `14f8aa89871bd212032d0e03ae9d68738b73ae1822ac762225eedc9e1c8d2bfd`
 
+`apply_disconnect_lifecycle_fix.py` is an exact-source-guarded backport of
+SGLang PR #36418 for the digest-pinned image's `TokenizerManager`. It retains
+scheduler-owned request IDs through HTTP stream cancellation so SGLang's
+existing delayed abort reaches the scheduler instead of burning compute until
+`max_tokens`. The port was taken from the MIT-licensed
+`hellojiaru/qwen38-flash-next-dual-gb10` v0.1.2-canary release and refuses to
+modify a source revision whose anchors do not match.
+
 LLooM's `apply-sm121-patches.py` installs those sources into the immutable,
 digest-pinned SGLang base image at managed-container creation time. It refuses
 to continue when an upstream source anchor does not match.
