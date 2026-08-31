@@ -57,8 +57,15 @@ try {
   assert.equal(written.aliases.stable.fallbacks, undefined);
   assert.equal((await fs.stat(configPath)).mode & 0o777, 0o600);
 
+  const restored = await writeRouteProfile(config, 'stable', 'local-first');
+  assert.equal(restored.changed, true);
+  const restoredSource = JSON.parse(await fs.readFile(configPath, 'utf8'));
+  assert.equal(restoredSource.aliases.stable.activeRoute, 'local-first');
+  assert.equal(restoredSource.aliases.stable.target, 'local-model');
+  assert.deepEqual(restoredSource.aliases.stable.fallbacks, ['cloud-model']);
+
   const reloaded = await loadConfig(configPath, { env: { ...process.env, OPENROUTER_API_KEY: 'test' } });
-  const unchanged = await writeRouteProfile(reloaded, 'stable', 'cloud');
+  const unchanged = await writeRouteProfile(reloaded, 'stable', 'local-first');
   assert.equal(unchanged.changed, false);
   await assert.rejects(writeRouteProfile(reloaded, 'stable', 'missing'), /unknown route profile/);
 } finally {

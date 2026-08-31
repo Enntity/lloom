@@ -32,7 +32,11 @@ export function routeProfileStatus(config, aliasId = null) {
 
 export async function writeRouteProfile(config, aliasId, profileName) {
   if (!config.sourcePath) throw new Error('route switching requires a file-backed LLooM config');
-  const source = structuredClone(config.sourceTemplate ?? JSON.parse(await fs.readFile(config.sourcePath, 'utf8')));
+  // The running config object is hot-reloaded in place and intentionally keeps
+  // non-enumerable loader metadata out of that mutation. Always read the
+  // current source file so a second route flip cannot act on the startup
+  // template and falsely report that an outdated profile is already active.
+  const source = JSON.parse(await fs.readFile(config.sourcePath, 'utf8'));
   const alias = object(source.aliases?.[aliasId]);
   if (!alias) throw new Error(`unknown profiled route alias: ${aliasId}`);
   const selected = normalizedProfile(alias.routeProfiles?.[profileName]);
