@@ -8,6 +8,7 @@ runtime=${3:-}
 entity=${4:-Jinx}
 recipe=${5:-}
 [[ "$recipe" == "-" ]] && recipe=""
+route_catalog=${6:-}
 export PATH="$HOME/.local/bin:$HOME/.local/opt/node-v22.17.0-linux-arm64/bin:$PATH"
 export NPM_CONFIG_CACHE="$HOME/.cache/npm-release"
 
@@ -60,6 +61,10 @@ if [[ -n "$runtime" ]]; then
 fi
 
 npm install --global --prefix "$HOME/.local" "$artifact" --omit=dev --ignore-scripts
+if [[ -n "$route_catalog" ]]; then
+  node "$HOME/.local/lib/node_modules/lloom/scripts/apply-spark-route-catalog.mjs" \
+    "$config_path" "$route_catalog" --apply --yes >/dev/null
+fi
 if [[ -n "$recipe" ]]; then
   lloom setup --recipe "$recipe" --additive --apply --yes >/dev/null
 fi

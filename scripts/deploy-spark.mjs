@@ -25,6 +25,7 @@ if (flags.runtime) remoteArgs.push(String(flags.runtime));
 else remoteArgs.push('-');
 remoteArgs.push(String(flags.entity || 'Jinx'));
 remoteArgs.push(String(flags.recipe || '-'));
+remoteArgs.push(`${remoteDir}/spark-route-catalog.json`);
 const stagedWorkers = [];
 try {
   for (const workerHost of workerHosts) {
@@ -69,6 +70,17 @@ async function stageRelease(target) {
     [...scp, path.join(root, 'scripts', 'remote-install-spark.sh'), `${scpHost}:${remoteDir}/install.sh`],
     root
   );
+  if (target === host) {
+    await inherit(
+      'scp',
+      [
+        ...scp,
+        path.join(root, 'deploy', 'dgx-spark', 'config.json'),
+        `${scpHost}:${remoteDir}/spark-route-catalog.json`
+      ],
+      root
+    );
+  }
   if (target !== host) {
     await inherit(
       'scp',

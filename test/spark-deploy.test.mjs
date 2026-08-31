@@ -23,6 +23,12 @@ assert.doesNotMatch(
   /enn presence (disable|enable)/,
   'LLooM deployment must not manipulate independent Runtime Presence state'
 );
+assert.match(headInstallScript, /apply-spark-route-catalog\.mjs/);
+assert(
+  headInstallScript.indexOf('apply-spark-route-catalog.mjs') <
+    headInstallScript.lastIndexOf('systemctl --user restart'),
+  'leader route catalog must be reconciled before the gateway restart'
+);
 const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lloom-spark-deploy-'));
 const bin = path.join(home, '.local', 'bin');
 const installed = path.join(home, '.local', 'lib', 'node_modules', 'lloom');
