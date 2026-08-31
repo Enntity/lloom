@@ -490,17 +490,6 @@ function clientClosedStatus(error) {
 }
 
 const MODEL_FAILOVER_STATUS_CODES = new Set([402, 408, 425, 429, 500, 502, 503, 504]);
-const MODEL_FAILOVER_RUNTIME_STATES = new Set([
-  'starting',
-  'warming',
-  'stopping',
-  'draining',
-  'queued',
-  'failed',
-  'unreachable',
-  'unknown'
-]);
-
 function errorStatusCode(error) {
   const status = Number(error?.statusCode);
   return Number.isInteger(status) && status >= 400 && status <= 599 ? status : 0;
@@ -1818,6 +1807,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
   let reloadInFlight = Promise.resolve();
   let routingStatusCache = { at: 0, value: null, pending: null };
   const runtimeStartOperations = new Map();
+  const runtimeRecoveryBackoffs = new Map();
   const targetBackoffs = new Map();
   const configPath = config.sourcePath;
 
@@ -1891,6 +1881,35 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       state: state.until > now ? 'open' : state.probeInFlight ? 'half-open' : 'probe-ready',
       retryAfterSeconds: Math.max(0, Math.ceil((state.until - now) / 1000)),
       updatedAt: state.updatedAt
+    }));
+  }
+
+  function runtimeRecoveryAllowed(runtimeId) {
+    const state = runtimeRecoveryBackoffs.get(runtimeId);
+    if (!state) return true;
+    return state.until <= Date.now();
+  }
+
+  function noteRuntimeRecoveryFailure(runtimeId, error) {
+    const previous = runtimeRecoveryBackoffs.get(runtimeId);
+    const failures = (previous?.failures ?? 0) + 1;
+    const settings = targetBackoffSettings();
+    const requestedMs = Number(error?.retryAfterSeconds) > 0 ? Number(error.retryAfterSeconds) * 1000 : null;
+    const delayMs = requestedMs ?? Math.min(settings.maxMs, settings.baseMs * 2 ** Math.min(16, failures - 1));
+    runtimeRecoveryBackoffs.set(runtimeId, {
+      runtimeId,
+      failures,
+      reason: error?.message ?? String(error),
+      until: Date.now() + delayMs,
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  function runtimeRecoveryBackoffStatus() {
+    const now = Date.now();
+    return [...runtimeRecoveryBackoffs.values()].map((state) => ({
+      ...state,
+      retryAfterSeconds: Math.max(0, Math.ceil((state.until - now) / 1000))
     }));
   }
 
@@ -1983,13 +2002,13 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     if (candidates.length <= 1) {
       return candidates.map((candidate) => ({
         ...candidate,
-        ...(candidate.aliasTargetCount > 1
+        ...(candidate.aliasMemberCount > 1
           ? {
-              failover: {
+              routeSelection: {
                 attempt: 1,
-                targets: candidate.aliasTargetCount,
-                primaryModel: candidate.alias?.target,
-                used: candidate.aliasTargetIndex > 0,
+                members: candidate.aliasMemberCount,
+                preferredModel: candidate.alias?.members?.[0],
+                usedAlternative: candidate.aliasMemberIndex > 0,
                 readyAlternativeAvailable: false
               }
             }
@@ -2003,61 +2022,61 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       logger.warn?.(`could not inspect runtimes before model failover routing: ${error?.message ?? error}`);
       status = { runtimes: {} };
     }
-    let admissionStatus = status;
-    try {
-      if (typeof clusterCoordinator.status === 'function') {
-        admissionStatus = { ...status, cluster: await clusterCoordinator.status() };
-      }
-    } catch (error) {
-      logger.warn?.(`could not inspect cluster capacity before model failover routing: ${error?.message ?? error}`);
-    }
-    const available = candidates.filter((candidate, index) => {
-      if (index === candidates.length - 1 || !candidate.model.runtime) return true;
-      const runtimeState = status?.runtimes?.[candidate.model.runtime]?.status;
-      if (!MODEL_FAILOVER_RUNTIME_STATES.has(runtimeState)) return true;
-      logger.warn?.(
-        `skipping model target ${candidate.resolvedId} for ${candidate.requestedId}: runtime ${candidate.model.runtime} is ${runtimeState}`
-      );
-      return false;
-    });
-    let ordered = available;
-    let routeReason = null;
-    const primary = available[0];
-    const readyFallbacks = available.slice(1).filter((candidate) => {
+    const runtimeReadyNow = (candidate) => {
       if (!candidate.model.runtime) return true;
       const runtime = status?.runtimes?.[candidate.model.runtime];
-      return runtime?.healthy === true || ['running', 'external'].includes(runtime?.status);
-    });
-    if (config.runtimePolicy?.autoEvict === true && primary?.model.runtime && readyFallbacks.length > 0) {
-      try {
-        const plan = await createRuntimePolicyPlan(config, {
-          requestedRuntimeId: primary.model.runtime,
-          status: admissionStatus
-        });
-        const requiresEviction = plan.actions.some((action) => action.type === 'stop');
-        if (requiresEviction || !plan.admission.allowed) {
-          const preferred = new Set(readyFallbacks);
-          ordered = [...readyFallbacks, ...available.filter((candidate) => !preferred.has(candidate))];
-          routeReason = requiresEviction ? 'preserve-residency' : 'capacity-fallback';
+      const ready = runtime?.healthy === true || ['running', 'external'].includes(runtime?.status);
+      if (ready) runtimeRecoveryBackoffs.delete(candidate.model.runtime);
+      return ready;
+    };
+    const availableNow = (candidate) => {
+      const envName = candidate.backend?.apiKeyEnv;
+      if (envName && !process.env[envName]) return false;
+      const backoff = targetBackoffs.get(targetKey(candidate));
+      if (backoff && (backoff.until > Date.now() || backoff.probeInFlight)) return false;
+      return runtimeReadyNow(candidate);
+    };
+    const readyMembers = candidates.filter(availableNow);
+    const readySet = new Set(readyMembers);
+    const ordered = readyMembers.length
+      ? [...readyMembers, ...candidates.filter((candidate) => !readySet.has(candidate))]
+      : candidates;
+
+    // A cold higher-priority member must not hold the current request behind a
+    // model start. If a lower-priority member can serve now, recover only the
+    // highest-priority unavailable managed member in the background. The
+    // admission planner remains authoritative and alternativeAvailable keeps
+    // this recovery non-evicting.
+    const selectedReady = readyMembers[0];
+    if (selectedReady) {
+      const preferredUnavailable = candidates.find(
+        (candidate) =>
+          candidate.aliasMemberIndex < selectedReady.aliasMemberIndex &&
+          candidate.model.runtime &&
+          !runtimeReadyNow(candidate)
+      );
+      if (preferredUnavailable) {
+        const runtimeState = status?.runtimes?.[preferredUnavailable.model.runtime]?.status;
+        if (!['starting', 'warming', 'queued', 'draining', 'stopping'].includes(runtimeState)) {
+          if (runtimeRecoveryAllowed(preferredUnavailable.model.runtime)) {
+            void startRuntimeOperation(preferredUnavailable.model.runtime, {
+              alternativeAvailable: true,
+              allowEviction: false
+            });
+          }
         }
-      } catch (error) {
-        logger.warn?.(
-          `could not preview admission for ${primary.resolvedId}; retaining primary-first routing: ${error?.message ?? error}`
-        );
       }
     }
 
     return ordered.map((candidate, attemptIndex) => ({
       ...candidate,
-      failover: {
+      routeSelection: {
         attempt: attemptIndex + 1,
-        targets: candidate.aliasTargetCount ?? ordered.length,
-        primaryModel: candidate.alias?.target ?? candidates[0].resolvedId,
-        used: candidate.aliasTargetIndex > 0 || candidate.resolvedId !== candidates[0].resolvedId,
-        readyAlternativeAvailable: ordered
-          .slice(attemptIndex + 1)
-          .some((alternative) => readyFallbacks.includes(alternative)),
-        ...(routeReason ? { reason: routeReason } : {})
+        members: candidate.aliasMemberCount ?? ordered.length,
+        preferredModel: candidate.alias?.members?.[0] ?? candidates[0].resolvedId,
+        usedAlternative: candidate.aliasMemberIndex > 0 || candidate.resolvedId !== candidates[0].resolvedId,
+        readyAlternativeAvailable: ordered.slice(attemptIndex + 1).some((alternative) => readySet.has(alternative)),
+        ...(candidate !== candidates[0] ? { reason: 'preferred-member-unavailable' } : {})
       }
     }));
   }
@@ -2165,22 +2184,46 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     return runtimeManager.ensure(runtimeId);
   }
 
+  function startRuntimeOperation(runtimeId, { alternativeAvailable = false, allowEviction = true } = {}) {
+    let operation = runtimeStartOperations.get(runtimeId);
+    if (operation) return operation;
+    operation = startRuntime(runtimeId, { alternativeAvailable, allowEviction });
+    operation.lloomAlternativeAvailable = alternativeAvailable;
+    runtimeStartOperations.set(runtimeId, operation);
+    operation
+      .then(() => runtimeRecoveryBackoffs.delete(runtimeId))
+      .catch((error) => {
+        if (alternativeAvailable) noteRuntimeRecoveryFailure(runtimeId, error);
+        logger.error?.(`runtime ${runtimeId} background start failed: ${error?.message ?? error}`);
+      })
+      .finally(() => {
+        if (runtimeStartOperations.get(runtimeId) === operation) runtimeStartOperations.delete(runtimeId);
+      });
+    return operation;
+  }
+
   async function ensureRuntime(runtimeId, { alternativeAvailable = false, allowEviction = true } = {}) {
     if (!runtimeId) return { runtimeId, started: false, reason: 'no-runtime' };
     if (typeof runtimeManager.isHealthy === 'function' && (await runtimeManager.isHealthy(runtimeId))) {
+      runtimeRecoveryBackoffs.delete(runtimeId);
       return { runtimeId, started: false, healthy: true, reason: 'already-healthy' };
     }
 
     let operation = runtimeStartOperations.get(runtimeId);
-    if (!operation) {
-      operation = startRuntime(runtimeId, { alternativeAvailable, allowEviction });
-      runtimeStartOperations.set(runtimeId, operation);
-      operation
-        .catch((error) => logger.error?.(`runtime ${runtimeId} background start failed: ${error?.message ?? error}`))
-        .finally(() => {
-          if (runtimeStartOperations.get(runtimeId) === operation) runtimeStartOperations.delete(runtimeId);
-        });
+    if (!alternativeAvailable) runtimeRecoveryBackoffs.delete(runtimeId);
+    if (operation?.lloomAlternativeAvailable === true && !alternativeAvailable) {
+      // A speculative backswing recovery may be deliberately non-evicting.
+      // Once all ready alternatives have actually failed, let that operation
+      // settle and retry under the foreground request's ordinary admission
+      // authority instead of inheriting its weaker constraint.
+      await operation.catch(() => {});
+      if (typeof runtimeManager.isHealthy === 'function' && (await runtimeManager.isHealthy(runtimeId))) {
+        return { runtimeId, started: false, healthy: true, reason: 'background-recovery-completed' };
+      }
+      if (runtimeStartOperations.get(runtimeId) === operation) runtimeStartOperations.delete(runtimeId);
+      operation = null;
     }
+    operation ??= startRuntimeOperation(runtimeId, { alternativeAvailable, allowEviction });
 
     const runtime = config.runtimes?.[runtimeId] ?? {};
     const foregroundWaitMs = Math.max(0, Number(runtime.requestStartupWaitMs ?? 1000));
@@ -2230,10 +2273,10 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       backend: resolved.model.backend,
       runtime: resolved.model.runtime,
       resolvedModel: resolved.resolvedId,
-      failoverAttempt: resolved.failover?.attempt,
-      failoverTargets: resolved.failover?.targets,
-      failoverReason: resolved.failover?.reason,
-      failedOver: resolved.failover?.used === true,
+      failoverAttempt: resolved.routeSelection?.attempt,
+      failoverTargets: resolved.routeSelection?.members,
+      failoverReason: resolved.routeSelection?.reason,
+      failedOver: resolved.routeSelection?.usedAlternative === true,
       target: resolved.model.selectedTarget,
       node: resolved.model.selectedNode,
       caller: requestCallerLabel(req),
@@ -2290,7 +2333,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     try {
       const result = await clusterCoordinator.withTarget(resolved, async () => {
         await ensureRuntime(resolved.model.runtime, {
-          alternativeAvailable: resolved.failover?.readyAlternativeAvailable === true,
+          alternativeAvailable: resolved.routeSelection?.readyAlternativeAvailable === true,
           allowEviction: resolved.model.kind !== 'embedding'
         });
         return runtimeManager.withSlot(
@@ -2319,10 +2362,10 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         backend: resolved.model.backend,
         runtime: resolved.model.runtime,
         resolvedModel: resolved.resolvedId,
-        failoverAttempt: resolved.failover?.attempt,
-        failoverTargets: resolved.failover?.targets,
-        failoverReason: resolved.failover?.reason,
-        failedOver: resolved.failover?.used === true,
+        failoverAttempt: resolved.routeSelection?.attempt,
+        failoverTargets: resolved.routeSelection?.members,
+        failoverReason: resolved.routeSelection?.reason,
+        failedOver: resolved.routeSelection?.usedAlternative === true,
         target: resolved.model.selectedTarget,
         node: resolved.model.selectedNode,
         caller: requestCallerLabel(req),
@@ -2359,10 +2402,10 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         backend: resolved.model.backend,
         runtime: resolved.model.runtime,
         resolvedModel: resolved.resolvedId,
-        failoverAttempt: resolved.failover?.attempt,
-        failoverTargets: resolved.failover?.targets,
-        failoverReason: resolved.failover?.reason,
-        failedOver: resolved.failover?.used === true,
+        failoverAttempt: resolved.routeSelection?.attempt,
+        failoverTargets: resolved.routeSelection?.members,
+        failoverReason: resolved.routeSelection?.reason,
+        failedOver: resolved.routeSelection?.usedAlternative === true,
         target: resolved.model.selectedTarget,
         node: resolved.model.selectedNode,
         caller: requestCallerLabel(req),
@@ -3291,11 +3334,16 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       }
 
       if (req.method === 'GET' && url.pathname === '/gateway/routing') {
+        const routes = routeProfileStatus(config);
         sendJson(res, 200, {
           aliases: config.aliases ?? {},
           defaults: config.defaults ?? {},
-          profiles: routeProfileStatus(config),
-          targetBackoffs: targetBackoffStatus()
+          routes,
+          // Compatibility for clients that consumed the former profile-only
+          // route listing.
+          profiles: routes,
+          targetBackoffs: targetBackoffStatus(),
+          runtimeRecoveryBackoffs: runtimeRecoveryBackoffStatus()
         });
         return;
       }

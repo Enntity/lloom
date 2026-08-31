@@ -67,16 +67,8 @@
         "qwen38f-next",
         {
           "id": "q38fn",
-          "fallbacks": ["cloud/openrouter/q38fn"],
-          "activeRoute": "local-first",
-          "routeProfiles": {
-            "local-first": {
-              "target": "qwen3.8-flash-next",
-              "fallbacks": ["cloud/openrouter/q38fn"]
-            },
-            "cloud": { "target": "cloud/openrouter/q38fn" }
-          },
-          "description": "Stable Qwen3.8 Flash route: local Spark cluster first, OpenRouter during maintenance or outage."
+          "members": ["qwen3.8-flash-next", "cloud/openrouter/q38fn"],
+          "description": "Stable Qwen3.8 Flash route with ordered local Spark and OpenRouter members."
         },
         {
           "id": "q38fn-local",

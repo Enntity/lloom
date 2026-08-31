@@ -395,7 +395,7 @@ Current platform examples:
 
 These are recipe examples, not permanent global defaults. LLooM chooses from compatible local/community recipes and benchmark evidence for the detected machine.
 
-Durable route aliases such as `qwen36-27b-fastest` are allowed for scripts and humans, but `/v1/models` and generated client profiles advertise exact model IDs only. An alias can also declare ordered `fallbacks` for availability routing—for example, a local runtime first and an OpenRouter model second—without changing the model ID seen by the client. Named `routeProfiles` make that ordering an atomic operational choice: `lloom route <alias>` inspects it, and `lloom route <alias> <profile> --apply --yes` switches new requests without rewriting client configuration. See [Architecture](docs/architecture.md) for the retry boundary.
+Durable route aliases such as `q38fn` are ordered sets of interchangeable model members. Members may be local runtimes, distributed TP models, federated models on other nodes, or external providers. LLooM selects the first member that can serve now and keeps the alias ID stable in the response. A cold higher-priority local member is recovered through normal admission in the background while the current request proceeds on the next viable member. `lloom route <alias>` reports the effective member order. See [Architecture](docs/architecture.md) for the retry and recovery boundaries.
 
 ## Architecture
 

@@ -43,50 +43,33 @@
   },
   "aliases": {
     "embeddings": {
-      "target": "macbook-embeddings-primary",
-      "fallbacks": ["cloud/openrouter/qwen3-embedding-4b"],
+      "members": ["macbook-embeddings-primary", "cloud/openrouter/qwen3-embedding-4b"],
       "advertise": true,
       "description": "Embeddings · MacBook, then OpenRouter"
     },
     "deepseek/deepseek-v4-flash": {
-      "target": "deepseek/deepseek-v4-flash-0731",
+      "members": ["deepseek/deepseek-v4-flash-0731"],
       "advertise": false
     },
     "ds4f": {
-      "target": "cloud/openrouter/ds4f",
-      "activeRoute": "cloud",
-      "routeProfiles": {
-        "cloud": { "target": "cloud/openrouter/ds4f" }
-      },
+      "members": ["cloud/openrouter/ds4f"],
       "advertise": true,
-      "description": "Stable DS4F route with operator-selectable local and cloud profiles"
+      "description": "Stable DS4F route across ordered local and cloud members"
     },
     "ds4fv": {
-      "target": "cloud/openrouter/ds4fv",
-      "activeRoute": "cloud",
-      "routeProfiles": {
-        "cloud": { "target": "cloud/openrouter/ds4fv" }
-      },
+      "members": ["cloud/openrouter/ds4fv"],
       "advertise": true,
       "description": "DeepSeek V4 Flash Vision via OpenRouter"
     },
     "q38fn": {
-      "target": "cloud/openrouter/q38fn",
-      "activeRoute": "cloud",
-      "routeProfiles": {
-        "cloud": { "target": "cloud/openrouter/q38fn" }
-      },
+      "members": ["cloud/openrouter/q38fn"],
       "advertise": true,
-      "description": "Stable Qwen3.8 Flash route with operator-selectable local and cloud profiles"
+      "description": "Stable Qwen3.8 Flash route across ordered local and cloud members"
     },
     "glm53f": {
-      "target": "cloud/openrouter/glm53f",
-      "activeRoute": "cloud",
-      "routeProfiles": {
-        "cloud": { "target": "cloud/openrouter/glm53f" }
-      },
+      "members": ["cloud/openrouter/glm53f"],
       "advertise": true,
-      "description": "Stable GLM-5.3 Flash route with operator-selectable local and cloud profiles"
+      "description": "Stable GLM-5.3 Flash route across ordered local and cloud members"
     }
   },
   "runtimePolicy": {

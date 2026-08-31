@@ -730,7 +730,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       $("#default-model").textContent = state.status?.defaults?.chatModel || "no default";
       rows.innerHTML = models.length ? models.map(model =>
         '<tr>' +
-          '<td><code>' + escapeHtml(model.id) + '</code><div class="muted">' + escapeHtml(model.name || "") + '</div></td>' +
+          '<td><code>' + escapeHtml(model.id) + '</code><div class="muted">' + escapeHtml(model.alias ? "route · " + (model.aliasMembers || []).join(" → ") : model.name || "") + '</div></td>' +
           '<td>' + escapeHtml(model.kind || "chat") + '</td>' +
           '<td>' + escapeHtml(model.contextWindow || "-") + '</td>' +
           '<td><code>' + escapeHtml(model.runtime || "-") + '</code></td>' +
@@ -882,6 +882,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const observedRuntime = runtime || topologyModel.runtimeStatus || null;
       const details = [
         ["Gateway model", model.id],
+        ...(model.alias ? [["Ordered members", (model.aliasMembers || []).join(" → ") || "—"]] : []),
         ["Runtime", model.runtime || topologyModel.runtimeIds?.join(", ") || "external"],
         ["Runtime state", observedRuntime?.status || modelState],
         ["Context", model.contextWindow ? formatNumber(model.contextWindow) : "—"],
@@ -1856,6 +1857,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const fieldCapacity = Math.max(8, Math.min(24, Math.floor(availableArea / (170 * 48))));
       const inactiveCapacity = Math.max(0, fieldCapacity - active.length);
       const fading = [...recentById.values()].filter(item => !activeIds.has(item.id) && sampleAt - Date.parse(item.at) < 22500).slice(0, inactiveCapacity);
+      const catalogModelIds = new Set((state.models || []).map(model => model.id));
       const connections = active.map(item => ({ ...item, live: true, ageMs: 0 })).concat(fading.map(item => ({ ...item, ageMs: Math.max(0, sampleAt - Date.parse(item.at)) })));
       state.topologyConnections = connections.map(item => {
         const completedPrompt = completedPromptBursts.get(item.id);
@@ -1863,6 +1865,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const inputEstimated = item.live ? true : item.usage?.input_tokens == null;
         return {
           ...item,
+          model: item.requestedModel && catalogModelIds.has(item.requestedModel) ? item.requestedModel : item.model,
           fadeStartedAt: item.live ? activityRenderedAt : activityRenderedAt - item.ageMs,
           inputTokens: Math.round(Number(item.usage?.input_tokens || (item.requestBytes || 0) / 4)),
           outputTokens: Math.round(Number(item.usage?.output_tokens || item.outputChars / 4 || 0)),
@@ -1887,8 +1890,14 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const inputEstimated = liveConnections.some(item => item.inputEstimated);
         const activeInput = liveConnections.reduce((sum, item) => sum + item.inputTokens, 0);
         const activeOutput = liveConnections.reduce((sum, item) => sum + item.outputTokens, 0);
-        const runtimeIds = [...new Set([model.runtime, ...(model.targets || []).map(target => target.runtime)].filter(Boolean))];
-        const remoteRuntimeRefs = (model.targets || [])
+        const memberModels = model.memberModels || [];
+        const modelTargets = [model, ...memberModels].flatMap(member => member.targets || []);
+        const runtimeIds = [...new Set([
+          model.runtime,
+          ...memberModels.map(member => member.runtime),
+          ...modelTargets.map(target => target.runtime)
+        ].filter(Boolean))];
+        const remoteRuntimeRefs = modelTargets
           .filter(target => target.node && target.remoteRuntime)
           .map(target => ({ node: target.node, runtime: target.remoteRuntime }));
         const remoteRuntimeIds = [...new Set(remoteRuntimeRefs.map(item => item.node + ":" + item.runtime))];
@@ -1929,13 +1938,20 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         // cold backend is not serving yet, and a draining backend remains
         // visibly evicting until the process/container is actually gone.
         const hasManagedRuntime = runtimeIds.length > 0 || remoteRuntimeRefs.length > 0;
+        const hasExternalMember = model.alias
+          ? memberModels.some(member => !member.runtime && !(member.targets || []).some(target => target.runtime))
+          : !hasManagedRuntime;
+        const liveManaged = liveConnections.some(connection => {
+          const member = memberModels.find(candidate => candidate.id === connection.resolvedModel);
+          return Boolean(member?.runtime || (member?.targets || []).some(target => target.runtime));
+        });
         const remoteOnlyUnreachable = !runtimeIds.length && remoteRuntimeRefs.length > 0
           && remoteRuntimeRefs.every(item => clusterNodes[item.node]?.reachable === false);
         const stateLabel = remoteOnlyUnreachable
           ? "unreachable"
-          : !hasManagedRuntime
-          ? liveConnections.length ? "external-processing" : "external"
-          : transitioning || (runtimeLoaded ? liveConnections.length ? "serving" : "hot" : runtimeStatus === "failed" ? "failed" : "cold");
+          : liveConnections.length
+            ? liveManaged || (!model.alias && hasManagedRuntime) ? "serving" : "external-processing"
+            : transitioning || (runtimeLoaded ? "hot" : hasExternalMember ? "external" : runtimeStatus === "failed" ? "failed" : "cold");
         const lastActiveAt = data.last?.at || runtimeState.lastRequestedAt || null;
         const lastActiveMs = Date.parse(lastActiveAt || "");
         const agedOut = stateLabel === "cold" && (!Number.isFinite(lastActiveMs) || sampleAt - lastActiveMs > TOPOLOGY_COLD_MODEL_TTL_MS);
@@ -1989,9 +2005,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           getJson("/gateway/library").catch(error => ({ error: error.message })),
           getJson("/gateway/backends").catch(error => ({ backends: [], error: error.message })),
         ]);
-        // Routing aliases are client conveniences, not additional configured
-        // model processes. Keep the topology and model count physical.
-        state.models = (models.models || []).filter(model => !model.alias);
+        // Advertised aliases are the stable model surface. Their ordered
+        // members carry the physical local, federated, and external topology.
+        state.models = models.models || [];
         state.status = status;
         state.library = library;
         state.backends = backends.backends || [];

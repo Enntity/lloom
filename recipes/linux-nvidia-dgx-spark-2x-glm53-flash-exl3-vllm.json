@@ -81,16 +81,8 @@
       "aliases": [
         {
           "id": "glm53f",
-          "fallbacks": ["cloud/openrouter/glm53f"],
-          "activeRoute": "local-first",
-          "routeProfiles": {
-            "local-first": {
-              "target": "glm-5.3-flash-exl3",
-              "fallbacks": ["cloud/openrouter/glm53f"]
-            },
-            "cloud": { "target": "cloud/openrouter/glm53f" }
-          },
-          "description": "Stable GLM-5.3 Flash route: local Spark cluster first, OpenRouter during maintenance or outage."
+          "members": ["glm-5.3-flash-exl3", "cloud/openrouter/glm53f"],
+          "description": "Stable GLM-5.3 Flash route with ordered local Spark and OpenRouter members."
         },
         {
           "id": "glm53f-local",

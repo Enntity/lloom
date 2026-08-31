@@ -92,27 +92,28 @@ LLooM currently fronts these local contracts:
 
 `/v1/chat/completions` is an OpenAI-compatible chat bridge. LLooM rewrites the request model to the selected backend `upstreamModel`, but non-streaming JSON responses and streaming chat chunks expose the originally requested gateway model ID back to the client. That keeps local aliases and community recipe IDs stable for tools while still letting recipes target backend-specific model names. Upstream usage fields are preserved for responses and parsed from streaming usage chunks for metrics.
 
-Aliases may define an ordered availability chain with `fallbacks`. The primary `target` is preferred when it is already resident or can be admitted without evicting another loaded runtime. When admission predicts an eviction or is blocked and a later route is ready, LLooM tries the ready route first. A race cannot reverse that decision: while an untried ready alternative remains, the local admission is non-evicting and does not queue behind an active runtime merely to evict it later. If every ready alternative then reports an availability failure, a chat request may return to the local primary as a last resort; embeddings remain non-evicting even when requested by exact model ID. LLooM also skips a primary already known to be starting, warming, draining, failed, unreachable, or otherwise unavailable. It advances on transport/runtime failures or upstream 402, 408, 425, 429, and 5xx availability responses. Retryable target failures open a per-provider/model cooldown; explicit `Retry-After` wins, while other transient failures use jittered exponential backoff and a single half-open probe. It never retries malformed requests, authentication failures, other ordinary 4xx responses, or a stream after response headers or content have reached the client. The same route ordering applies to Chat Completions, Embeddings, Responses, and Anthropic Messages bridges.
+Aliases define an ordered `members` list. Every member is an interchangeable implementation of the alias and may be a local runtime, a distributed TP model, a federated model on another node, or an external provider. LLooM selects the first member that can serve immediately. If a higher-priority managed member is cold or down while a later member is viable, the current request uses the viable member without waiting; LLooM separately asks the normal admission planner to recover the highest-priority unavailable member in the background. That recovery is non-evicting while another member can serve. If no member is immediately viable, ordinary request-time admission and retry behavior applies. A response from any member is rewritten to the requested alias ID.
 
-Aliases may also define named `routeProfiles` and an `activeRoute`. `POST /gateway/routes/:alias/profile` validates the complete candidate config, writes it atomically, and hot-reloads the registry; the guarded CLI is `lloom route <alias> <profile> --apply --yes`. This is the maintenance boundary for moving a stable entity-facing model ID to cloud before stopping or replacing local model processes, then returning it to `local-first` after a semantic canary.
+Routing advances on transport/runtime failures or upstream 402, 408, 425, 429, and 5xx availability responses. Retryable member failures open a per-provider/model cooldown; explicit `Retry-After` wins, while other transient failures use jittered exponential backoff and a single half-open probe. LLooM never retries malformed requests, authentication failures, other ordinary 4xx responses, or a stream after response headers or content have reached the client. The same member ordering applies to Chat Completions, Embeddings, Responses, and Anthropic Messages bridges.
+
+Aliases may optionally define named `routeProfiles` containing alternate complete `members` lists and an `activeRoute`. `POST /gateway/routes/:alias/profile` validates the candidate config, writes it atomically, and hot-reloads the registry; the guarded CLI is `lloom route <alias> <profile> --apply --yes`. Profiles are explicit operator overrides, not the normal local/cloud failover mechanism.
 
 Runtime residency has three independent rules. `keepWarm: true` is the only hard pin and makes a loaded runtime non-evictable. Delegated TP authority is also non-evictable from non-owner nodes. Active requests drain before an otherwise permitted eviction. `policy.priority` only orders the remaining evictable runtimes: lower values are evicted first, and priority never overrides a pin, delegated authority, or active-request protection.
 
-An alias may list federated model IDs in `optionalFallbacks`. Each optional ID must also appear in `fallbacks`; it participates in routing when the corresponding node has been materialized and is skipped when that node is not configured. This keeps a portable Spark config valid before a MacBook or other optional lab node joins without weakening validation for required destinations.
+An alias may list federated model IDs in `optionalMembers`. Each optional ID must also appear in `members`; it participates in routing when the corresponding node has been materialized and is skipped when that node is not configured. This keeps a portable Spark config valid before a MacBook or other optional lab node joins without weakening validation for required destinations.
 
 ```json
 {
   "aliases": {
     "deepseek-v4-flash-0731": {
-      "target": "deepseek-v4-flash-0731",
-      "fallbacks": ["deepseek/deepseek-v4-flash-0731"],
+      "members": ["deepseek-v4-flash-0731", "deepseek/deepseek-v4-flash-0731"],
       "advertise": false
     }
   }
 }
 ```
 
-An alias may intentionally have the same ID as its primary model. This preserves the public model name while adding a failover policy. All targets must be installed models of the same kind; replica selection within each target still uses the normal cluster routing policy.
+An alias may intentionally have the same ID as one of its members. This preserves the public model name while adding routing policy. All members must be installed models of the same kind; replica selection within each member still uses the normal cluster routing policy.
 
 `/v1/images/edits` accepts the OpenAI-compatible multipart contract: one or more `image[]` file parts (or legacy `image`), a required `prompt`, and optional `mask`, `model`, `n`, `size`, and output fields. LLooM resolves and admits the selected image-editing runtime, rewrites only the multipart `model` field, and proxies image bytes without JSON or text transcoding. Models must advertise image input or the `image-editing` capability.
 

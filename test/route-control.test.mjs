@@ -43,8 +43,7 @@ try {
     {
       alias: 'stable',
       activeRoute: 'local-first',
-      target: 'local-model',
-      fallbacks: ['cloud-model'],
+      members: ['local-model', 'cloud-model'],
       profiles: ['local-first', 'cloud']
     }
   ]);
@@ -53,7 +52,8 @@ try {
   assert.equal(changed.changed, true);
   const written = JSON.parse(await fs.readFile(configPath, 'utf8'));
   assert.equal(written.aliases.stable.activeRoute, 'cloud');
-  assert.equal(written.aliases.stable.target, 'cloud-model');
+  assert.deepEqual(written.aliases.stable.members, ['cloud-model']);
+  assert.equal(written.aliases.stable.target, undefined);
   assert.equal(written.aliases.stable.fallbacks, undefined);
   assert.equal((await fs.stat(configPath)).mode & 0o777, 0o600);
 
@@ -61,8 +61,7 @@ try {
   assert.equal(restored.changed, true);
   const restoredSource = JSON.parse(await fs.readFile(configPath, 'utf8'));
   assert.equal(restoredSource.aliases.stable.activeRoute, 'local-first');
-  assert.equal(restoredSource.aliases.stable.target, 'local-model');
-  assert.deepEqual(restoredSource.aliases.stable.fallbacks, ['cloud-model']);
+  assert.deepEqual(restoredSource.aliases.stable.members, ['local-model', 'cloud-model']);
 
   const reloaded = await loadConfig(configPath, { env: { ...process.env, OPENROUTER_API_KEY: 'test' } });
   const unchanged = await writeRouteProfile(reloaded, 'stable', 'local-first');

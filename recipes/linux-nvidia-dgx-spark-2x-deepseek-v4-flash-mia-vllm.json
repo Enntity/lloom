@@ -118,22 +118,12 @@
         },
         {
           "id": "ds4f",
-          "fallbacks": ["cloud/openrouter/ds4f"],
-          "activeRoute": "local-first",
-          "routeProfiles": {
-            "local-first": {
-              "target": "deepseek-v4-flash-0731",
-              "fallbacks": ["cloud/openrouter/ds4f"]
-            },
-            "cloud": { "target": "cloud/openrouter/ds4f" }
-          },
-          "description": "Stable DS4F route: local Spark cluster first, OpenRouter during maintenance or outage."
+          "members": ["deepseek-v4-flash-0731", "cloud/openrouter/ds4f"],
+          "description": "Stable DS4F route with ordered local Spark and OpenRouter members."
         },
         {
           "id": "deepseek-v4-flash-0731",
-          "fallbacks": [
-            "deepseek/deepseek-v4-flash-0731"
-          ],
+          "members": ["deepseek-v4-flash-0731", "deepseek/deepseek-v4-flash-0731"],
           "advertise": false,
           "description": "Local DSpark first, OpenRouter only when the local runtime is unavailable."
         }

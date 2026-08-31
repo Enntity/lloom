@@ -2259,10 +2259,9 @@ async function main() {
       if (!profile) {
         const routing = await gatewayRequest(config, '/gateway/routing', { timeoutMs: 10000 });
         if (!routing) throw new Error(`LLooM gateway at ${gatewayUrlFor(config)} is not reachable`);
-        const routes = aliasId
-          ? (routing.profiles ?? []).filter((entry) => entry.alias === aliasId)
-          : (routing.profiles ?? []);
-        if (aliasId && !routes.length) throw new Error(`Unknown profiled route alias ${aliasId}`);
+        const listedRoutes = routing.routes ?? routing.profiles ?? [];
+        const routes = aliasId ? listedRoutes.filter((entry) => entry.alias === aliasId) : listedRoutes;
+        if (aliasId && !routes.length) throw new Error(`Unknown route alias ${aliasId}`);
         console.log(JSON.stringify({ routes, targetBackoffs: routing.targetBackoffs ?? [] }, null, 2));
         return;
       }

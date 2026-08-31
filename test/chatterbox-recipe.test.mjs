@@ -31,9 +31,9 @@ assert.equal(next.runtimes.chatterbox.command, 'lloom-chatterbox-server');
 assert.equal(next.runtimes.chatterbox.env.LLOOM_CHATTERBOX_DEVICE, 'mps');
 assert.equal(next.runtimes.chatterbox.warmup, undefined);
 assert.match(next.backends.chatterbox.baseUrl, /^http:\/\/127\.0\.0\.1:\d+\/v1$/);
-assert.equal(next.aliases.chatterbox.target, 'ResembleAI/chatterbox');
-assert.equal(next.aliases['chatterbox-multilingual'].target, 'ResembleAI/chatterbox-multilingual');
-assert.equal(next.aliases['chatterbox-turbo'].target, 'ResembleAI/chatterbox-turbo');
+assert.deepEqual(next.aliases.chatterbox.members, ['ResembleAI/chatterbox']);
+assert.deepEqual(next.aliases['chatterbox-multilingual'].members, ['ResembleAI/chatterbox-multilingual']);
+assert.deepEqual(next.aliases['chatterbox-turbo'].members, ['ResembleAI/chatterbox-turbo']);
 
 const descriptor = resolveTtsDescriptor(english);
 assert.equal(descriptor.params.exaggeration.default, 0.5);

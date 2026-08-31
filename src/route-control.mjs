@@ -8,11 +8,18 @@ function object(value) {
 
 function normalizedProfile(profile) {
   const value = object(profile);
-  if (!value || typeof value.target !== 'string' || !value.target.trim()) return null;
+  if (!value) return null;
+  const members = Array.isArray(value.members)
+    ? [...value.members]
+    : [value.target, ...(Array.isArray(value.fallbacks) ? value.fallbacks : [])].filter(Boolean);
+  if (!members.length || members.some((member) => typeof member !== 'string' || !member.trim())) return null;
   return {
-    target: value.target,
-    fallbacks: Array.isArray(value.fallbacks) ? [...value.fallbacks] : [],
-    optionalFallbacks: Array.isArray(value.optionalFallbacks) ? [...value.optionalFallbacks] : []
+    members,
+    optionalMembers: Array.isArray(value.optionalMembers)
+      ? [...value.optionalMembers]
+      : Array.isArray(value.optionalFallbacks)
+        ? [...value.optionalFallbacks]
+        : []
   };
 }
 
@@ -20,12 +27,11 @@ export function routeProfileStatus(config, aliasId = null) {
   const aliases = config.aliases ?? {};
   const entries = aliasId == null ? Object.entries(aliases) : [[aliasId, aliases[aliasId]]];
   return entries
-    .filter(([, alias]) => object(alias)?.routeProfiles)
+    .filter(([, alias]) => object(alias)?.members)
     .map(([id, alias]) => ({
       alias: id,
       activeRoute: alias.activeRoute ?? null,
-      target: alias.target,
-      fallbacks: Array.isArray(alias.fallbacks) ? [...alias.fallbacks] : [],
+      members: Array.isArray(alias.members) ? [...alias.members] : [],
       profiles: Object.keys(alias.routeProfiles ?? {})
     }));
 }
@@ -44,25 +50,24 @@ export async function writeRouteProfile(config, aliasId, profileName) {
 
   const changed =
     alias.activeRoute !== profileName ||
-    alias.target !== selected.target ||
-    JSON.stringify(alias.fallbacks ?? []) !== JSON.stringify(selected.fallbacks) ||
-    JSON.stringify(alias.optionalFallbacks ?? []) !== JSON.stringify(selected.optionalFallbacks);
+    JSON.stringify(alias.members ?? []) !== JSON.stringify(selected.members) ||
+    JSON.stringify(alias.optionalMembers ?? []) !== JSON.stringify(selected.optionalMembers);
   if (!changed) {
     return {
       changed: false,
       alias: aliasId,
       activeRoute: profileName,
-      target: selected.target,
-      fallbacks: selected.fallbacks
+      members: selected.members
     };
   }
 
   alias.activeRoute = profileName;
-  alias.target = selected.target;
-  if (selected.fallbacks.length) alias.fallbacks = selected.fallbacks;
-  else delete alias.fallbacks;
-  if (selected.optionalFallbacks.length) alias.optionalFallbacks = selected.optionalFallbacks;
-  else delete alias.optionalFallbacks;
+  alias.members = selected.members;
+  if (selected.optionalMembers.length) alias.optionalMembers = selected.optionalMembers;
+  else delete alias.optionalMembers;
+  delete alias.target;
+  delete alias.fallbacks;
+  delete alias.optionalFallbacks;
 
   const mode = (await fs.stat(config.sourcePath)).mode;
   const temporary = path.join(
@@ -82,7 +87,6 @@ export async function writeRouteProfile(config, aliasId, profileName) {
     changed: true,
     alias: aliasId,
     activeRoute: profileName,
-    target: selected.target,
-    fallbacks: selected.fallbacks
+    members: selected.members
   };
 }

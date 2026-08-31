@@ -2594,13 +2594,12 @@ assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-worker'].recipe.ve
 assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-head'].recipe.version, 19);
 assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-cluster'].keepWarm, false);
 assert.deepEqual(dsparkRefreshed.aliases['deepseek-v4-flash-0731'], {
-  target: 'deepseek-v4-flash-0731',
-  fallbacks: ['deepseek/deepseek-v4-flash-0731'],
+  members: ['deepseek-v4-flash-0731', 'deepseek/deepseek-v4-flash-0731'],
   advertise: false,
   description: 'Local DSpark first, OpenRouter only when the local runtime is unavailable.'
 });
 assert.deepEqual(dsparkRefreshed.aliases['dsv4f-local'], {
-  target: 'deepseek-v4-flash-0731',
+  members: ['deepseek-v4-flash-0731'],
   advertise: false,
   description: 'Strict local-only DS4F route for attributed benchmarks; never falls through to cloud.'
 });
@@ -2928,8 +2927,7 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
   assert.deepEqual(sparkCloudEmbedding.tags, ['cloud', 'external', 'openrouter', 'qwen']);
   assert.equal(sparkDeployConfig.defaults.embeddingModel, 'embeddings');
   assert.deepEqual(sparkDeployConfig.aliases.embeddings, {
-    target: 'macbook-embeddings-primary',
-    fallbacks: ['cloud/openrouter/qwen3-embedding-4b'],
+    members: ['macbook-embeddings-primary', 'cloud/openrouter/qwen3-embedding-4b'],
     advertise: true,
     description: 'Embeddings · MacBook, then OpenRouter'
   });
@@ -2972,7 +2970,7 @@ process.on("SIGTERM", () => server.close(() => process.exit(0)));
     false
   );
   assert.deepEqual(sparkDeployConfig.aliases['deepseek/deepseek-v4-flash'], {
-    target: 'deepseek/deepseek-v4-flash-0731',
+    members: ['deepseek/deepseek-v4-flash-0731'],
     advertise: false
   });
   const qwen27Runtime = sparkDeployConfig.runtimes['unsloth-qwen36-27b-nvfp4'];
@@ -3391,8 +3389,7 @@ assert(ompRoleYaml.includes('      - local-llm/Youssofal/Qwen3.6-35B-A3B-MTPLX-O
 const sparkDeployConfig = JSON.parse(await fs.readFile(path.join('deploy', 'dgx-spark', 'config.json'), 'utf8'));
 assert.equal(sparkDeployConfig.clientCatalog.includeAliases, true);
 for (const aliasId of ['ds4f', 'ds4fv', 'q38fn', 'glm53f']) {
-  assert.equal(sparkDeployConfig.aliases[aliasId].activeRoute, 'cloud');
-  assert.match(sparkDeployConfig.aliases[aliasId].target, /^cloud\/openrouter\//);
+  assert.deepEqual(sparkDeployConfig.aliases[aliasId].members, [`cloud/openrouter/${aliasId}`]);
 }
 const sparkProfileBase = structuredClone(sparkDeployConfig);
 sparkProfileBase.cluster = structuredClone(dsparkBase.cluster);
@@ -3400,22 +3397,31 @@ const sparkQwenConfig = deriveUserConfig(sparkProfileBase, qwen38Recipe, {
   modelRoot: '/models',
   additive: true
 });
-assert.equal(sparkQwenConfig.aliases.q38fn.activeRoute, 'cloud');
-assert.equal(sparkQwenConfig.aliases.q38fn.target, 'cloud/openrouter/q38fn');
-assert.deepEqual(sparkQwenConfig.aliases.q38fn.routeProfiles['local-first'], {
-  target: 'qwen3.8-flash-next',
-  fallbacks: ['cloud/openrouter/q38fn']
-});
-const sparkQwenLocalFirst = structuredClone(sparkQwenConfig);
-sparkQwenLocalFirst.aliases.q38fn.activeRoute = 'local-first';
-sparkQwenLocalFirst.aliases.q38fn.target = 'qwen3.8-flash-next';
-sparkQwenLocalFirst.aliases.q38fn.fallbacks = ['cloud/openrouter/q38fn'];
-const sparkQwenRefreshed = deriveUserConfig(sparkQwenLocalFirst, qwen38Recipe, {
+assert.deepEqual(sparkQwenConfig.aliases.q38fn.members, ['qwen3.8-flash-next', 'cloud/openrouter/q38fn']);
+const sparkQwenRefreshed = deriveUserConfig(sparkQwenConfig, qwen38Recipe, {
   modelRoot: '/models',
   additive: true
 });
-assert.equal(sparkQwenRefreshed.aliases.q38fn.activeRoute, 'local-first');
-assert.equal(sparkQwenRefreshed.aliases.q38fn.target, 'qwen3.8-flash-next');
+assert.deepEqual(sparkQwenRefreshed.aliases.q38fn.members, ['qwen3.8-flash-next', 'cloud/openrouter/q38fn']);
+const sparkQwenLegacyProfile = structuredClone(sparkProfileBase);
+sparkQwenLegacyProfile.aliases.q38fn = {
+  target: 'cloud/openrouter/q38fn',
+  activeRoute: 'cloud',
+  routeProfiles: {
+    cloud: { target: 'cloud/openrouter/q38fn' },
+    'local-first': {
+      target: 'qwen3.8-flash-next',
+      fallbacks: ['cloud/openrouter/q38fn']
+    }
+  }
+};
+const sparkQwenMigrated = deriveUserConfig(sparkQwenLegacyProfile, qwen38Recipe, {
+  modelRoot: '/models',
+  additive: true
+});
+assert.deepEqual(sparkQwenMigrated.aliases.q38fn.members, ['qwen3.8-flash-next', 'cloud/openrouter/q38fn']);
+assert.equal(sparkQwenMigrated.aliases.q38fn.activeRoute, undefined);
+assert.equal(sparkQwenMigrated.aliases.q38fn.routeProfiles, undefined);
 const sparkOmpConfig = renderOmpConfigYaml(sparkDeployConfig);
 for (const role of ['smol', 'slow', 'plan', 'commit', 'designer', 'advisor', 'tiny', 'vision', 'task']) {
   assert(sparkOmpConfig.includes(`  ${role}: local-llm/q38fn:low`));
@@ -3428,7 +3434,7 @@ assert(sparkOmpModelsTemplate.includes('        maxTokens: 32768\n'));
 const sparkClientConfig = structuredClone(registryConfig);
 sparkClientConfig.clientCatalog = sparkDeployConfig.clientCatalog;
 sparkClientConfig.aliases['glm53-flash'] = {
-  target: 'Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16',
+  members: ['Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16'],
   advertise: true
 };
 const sparkIntegrationArtifacts = buildIntegrationArtifacts(sparkClientConfig, createRegistry(sparkClientConfig), {
@@ -4969,7 +4975,8 @@ if (listened) {
     assert(dashboardHtml.includes('event.key === "Escape"'));
     assert(dashboardHtml.includes('showAllTopologyModels: false'));
     assert(dashboardHtml.includes('Show all configured models, including inactive cold models'));
-    assert(dashboardHtml.includes('(models.models || []).filter(model => !model.alias)'));
+    assert(dashboardHtml.includes('state.models = models.models || []'));
+    assert(dashboardHtml.includes('Ordered members'));
     assert(dashboardHtml.includes('["GPU", host.gpu?.utilization]'));
     assert(
       dashboardHtml.includes(
@@ -4987,7 +4994,9 @@ if (listened) {
     assert(!dashboardHtml.includes('smoothRate("summary:input"'));
     assert(!dashboardHtml.includes('liveInputRate'));
     assert(dashboardHtml.includes('"external-processing": 3'));
-    assert(dashboardHtml.includes('liveConnections.length ? "external-processing" : "external"'));
+    assert(
+      dashboardHtml.includes('? liveManaged || (!model.alias && hasManagedRuntime) ? "serving" : "external-processing"')
+    );
     assert(dashboardHtml.includes('externalProcessing ? "EXTERNAL PROCESSING"'));
     assert(dashboardHtml.includes('function liveNodeActivity(nodeId)'));
     assert(dashboardHtml.includes('...liveConnections.map(item => item.node).filter(Boolean)'));

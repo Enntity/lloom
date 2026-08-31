@@ -639,7 +639,7 @@ export function modelDiscoveryMetadata(model) {
     capabilities,
     contextWindow: model.contextWindow,
     maxOutputTokens: model.maxOutputTokens,
-    aliasTarget: model.aliasTarget,
+    aliasMembers: model.aliasMembers,
     tags: model.tags ?? []
   };
 

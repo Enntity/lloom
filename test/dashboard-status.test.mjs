@@ -16,9 +16,11 @@ assert(!source.includes('class="topology-key"'));
 assert(!source.includes('aria-label="Topology legend"'));
 assert(
   source.includes(
-    'transitioning || (runtimeLoaded ? liveConnections.length ? "serving" : "hot" : runtimeStatus === "failed" ? "failed" : "cold")'
+    'transitioning || (runtimeLoaded ? "hot" : hasExternalMember ? "external" : runtimeStatus === "failed" ? "failed" : "cold")'
   )
 );
+assert(source.includes('state.models = models.models || []'));
+assert(source.includes('["Ordered members", (model.aliasMembers || []).join(" → ") || "—"]'));
 assert(!source.includes('transitioning || (liveConnections.length ? "serving"'));
 assert(source.includes('Number(totals.decodeTokensPerSecond) > 0'));
 assert(source.includes('const displayedOutputRate = liveOutputRate > 0 ? liveOutputRate : aggregateOutputRate || 0'));

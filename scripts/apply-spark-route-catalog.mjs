@@ -44,33 +44,20 @@ export function mergeSparkRouteCatalog(installedInput, catalogInput) {
   for (const [aliasId, { localModel, cloudModel }] of Object.entries(STABLE_ROUTES)) {
     const current = asObject(installed.aliases[aliasId]);
     const catalogAlias = asObject(catalog.aliases?.[aliasId]);
-    if (!catalogAlias.target) throw new Error(`Spark route catalog is missing alias ${aliasId}`);
-    const routeProfiles = {
-      ...(localModel && installedModelIds.has(localModel)
-        ? {
-            'local-first': {
-              target: localModel,
-              fallbacks: [cloudModel]
-            }
-          }
-        : {}),
-      cloud: { target: cloudModel }
-    };
-    const activeRoute = routeProfiles[current.activeRoute]
-      ? current.activeRoute
-      : localModel && installedModelIds.has(localModel) && (!current.target || current.target === localModel)
-        ? 'local-first'
-        : 'cloud';
-    const active = routeProfiles[activeRoute];
+    if (!Array.isArray(catalogAlias.members) || !catalogAlias.members.length) {
+      throw new Error(`Spark route catalog is missing alias ${aliasId}`);
+    }
+    const members = [...(localModel && installedModelIds.has(localModel) ? [localModel] : []), cloudModel];
     installed.aliases[aliasId] = {
       ...current,
       ...catalogAlias,
-      target: active.target,
-      ...(active.fallbacks?.length ? { fallbacks: active.fallbacks } : {}),
-      activeRoute,
-      routeProfiles
+      members
     };
-    if (!active.fallbacks?.length) delete installed.aliases[aliasId].fallbacks;
+    delete installed.aliases[aliasId].target;
+    delete installed.aliases[aliasId].fallbacks;
+    delete installed.aliases[aliasId].optionalFallbacks;
+    delete installed.aliases[aliasId].activeRoute;
+    delete installed.aliases[aliasId].routeProfiles;
   }
 
   installed.server = {
@@ -114,8 +101,7 @@ export async function applySparkRouteCatalog(configPath, catalogPath) {
       Object.keys(STABLE_ROUTES).map((aliasId) => [
         aliasId,
         {
-          activeRoute: merged.aliases[aliasId].activeRoute,
-          target: merged.aliases[aliasId].target
+          members: merged.aliases[aliasId].members
         }
       ])
     )

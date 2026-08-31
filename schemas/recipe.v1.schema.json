@@ -261,7 +261,7 @@
           },
           "aliases": {
             "type": "array",
-            "description": "Optional stable gateway aliases. Object entries may add ordered fallback model IDs that are already installed.",
+            "description": "Optional stable gateway aliases. Object entries may declare an ordered set of interchangeable installed model members.",
             "items": {
               "oneOf": [
                 {
@@ -274,10 +274,17 @@
                   "additionalProperties": false,
                   "properties": {
                     "id": { "type": "string", "minLength": 1 },
+                    "members": {
+                      "type": "array",
+                      "items": { "type": "string", "minLength": 1 },
+                      "minItems": 1,
+                      "uniqueItems": true
+                    },
                     "fallbacks": {
                       "type": "array",
                       "items": { "type": "string", "minLength": 1 },
-                      "uniqueItems": true
+                      "uniqueItems": true,
+                      "description": "Deprecated compatibility form; the recipe model is prepended to these IDs and materialized as members."
                     },
                     "advertise": { "type": "boolean" },
                     "description": { "type": "string" }

@@ -75,22 +75,31 @@ function normalizeAlias(aliasId, alias) {
   if (typeof alias === 'string') {
     return {
       id: aliasId,
-      target: alias,
+      members: [alias],
       advertise: true
     };
   }
   return {
     id: aliasId,
-    ...alias
+    ...alias,
+    members: aliasMemberIds(alias)
   };
 }
 
-export function aliasTargetIds(alias) {
-  const normalized = typeof alias === 'string' ? { target: alias } : (alias ?? {});
-  return [normalized.target, ...(Array.isArray(normalized.fallbacks) ? normalized.fallbacks : [])].filter(
-    (target, index, targets) => typeof target === 'string' && target.length > 0 && targets.indexOf(target) === index
+export function aliasMemberIds(alias) {
+  if (typeof alias === 'string') return [alias];
+  const normalized = alias ?? {};
+  const members = Array.isArray(normalized.members)
+    ? normalized.members
+    : [normalized.target, ...(Array.isArray(normalized.fallbacks) ? normalized.fallbacks : [])];
+  return members.filter(
+    (member, index, all) => typeof member === 'string' && member.length > 0 && all.indexOf(member) === index
   );
 }
+
+// Backward-compatible export for integrations compiled against the former
+// primary/fallback vocabulary. New code should use aliasMemberIds.
+export const aliasTargetIds = aliasMemberIds;
 
 function rankMap(values = []) {
   return new Map(values.map((value, index) => [value, index]));
@@ -117,10 +126,10 @@ export function createRegistry(config) {
     if (!requestedId) throw new UnknownModelError('(missing)');
 
     const alias = aliasMap.get(requestedId);
-    const targetIds = alias ? aliasTargetIds(alias) : [requestedId];
+    const memberIds = alias ? aliasMemberIds(alias) : [requestedId];
     const candidates = [];
-    for (const [aliasTargetIndex, targetId] of targetIds.entries()) {
-      const model = modelMap.get(targetId);
+    for (const [aliasMemberIndex, memberId] of memberIds.entries()) {
+      const model = modelMap.get(memberId);
       if (!model || !runtimeEnabled(config, model)) continue;
       const availableTargets = callableTargets(config, model);
       const target = availableTargets[0];
@@ -137,8 +146,8 @@ export function createRegistry(config) {
       candidates.push({
         requestedId,
         resolvedId: model.id,
-        aliasTargetIndex,
-        aliasTargetCount: targetIds.length,
+        aliasMemberIndex,
+        aliasMemberCount: memberIds.length,
         alias: alias ? clone(alias) : null,
         model: clone(resolvedModel),
         backend: clone(backend),
@@ -169,16 +178,17 @@ export function createRegistry(config) {
     const entries = [];
     for (const alias of aliasMap.values()) {
       if (advertisedOnly && !advertised(alias)) continue;
-      const target = aliasTargetIds(alias)
-        .map((targetId) => modelMap.get(targetId))
-        .find(
-          (model) =>
-            model &&
-            (!advertisedOnly ||
-              publiclyAvailable(config, model, {
-                requireRuntimeEnabled
-              }))
-        );
+      const memberModels = aliasMemberIds(alias)
+        .map((memberId) => modelMap.get(memberId))
+        .filter(Boolean);
+      const target = memberModels.find(
+        (model) =>
+          model &&
+          (!advertisedOnly ||
+            availableTargets(config, model, {
+              requireRuntimeEnabled
+            }).length > 0)
+      );
       if (!target) continue;
       if (kinds?.length && !kinds.includes(target.kind ?? 'chat')) continue;
       const availableTarget = modelAvailableHere(config, target, { requireRuntimeEnabled });
@@ -186,8 +196,10 @@ export function createRegistry(config) {
         ...availableTarget,
         id: alias.id,
         alias: true,
-        aliasTarget: alias.target,
-        aliasFallbacks: clone(alias.fallbacks ?? []),
+        aliasMembers: clone(aliasMemberIds(alias)),
+        memberModels: clone(
+          memberModels.map((model) => modelAvailableHere(config, model, { requireRuntimeEnabled: false }))
+        ),
         name: alias.name ?? target.name ?? alias.id,
         description: alias.description
       });

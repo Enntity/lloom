@@ -91,6 +91,42 @@ export function normalizeLegacyResidencyPolicy(input) {
   return config;
 }
 
+function legacyMembers(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+  return [value.target, ...(Array.isArray(value.fallbacks) ? value.fallbacks : [])].filter(Boolean);
+}
+
+function normalizeMemberSet(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const normalized = structuredClone(value);
+  if (!Array.isArray(normalized.members)) normalized.members = legacyMembers(normalized);
+  if (!Array.isArray(normalized.optionalMembers) && Array.isArray(normalized.optionalFallbacks)) {
+    normalized.optionalMembers = [...normalized.optionalFallbacks];
+  }
+  delete normalized.target;
+  delete normalized.fallbacks;
+  delete normalized.optionalFallbacks;
+  return normalized;
+}
+
+export function normalizeLegacyAliases(input) {
+  const config = structuredClone(input);
+  for (const [aliasId, alias] of Object.entries(asObject(config.aliases))) {
+    if (typeof alias === 'string') continue;
+    const normalized = normalizeMemberSet(alias);
+    if (normalized.routeProfiles && typeof normalized.routeProfiles === 'object') {
+      normalized.routeProfiles = Object.fromEntries(
+        Object.entries(normalized.routeProfiles).map(([profileName, profile]) => [
+          profileName,
+          normalizeMemberSet(profile)
+        ])
+      );
+    }
+    config.aliases[aliasId] = normalized;
+  }
+  return config;
+}
+
 function validateConfig(config, sourcePath, env) {
   const errors = [];
   const modelIds = new Set();
@@ -125,49 +161,48 @@ function validateConfig(config, sourcePath, env) {
   errors.push(...validateClusterConfig(config, env));
 
   for (const [aliasId, alias] of Object.entries(config.aliases ?? {})) {
-    const target = typeof alias === 'string' ? alias : alias?.target;
-    const fallbacks = typeof alias === 'string' ? [] : alias?.fallbacks;
-    const optionalFallbacks = typeof alias === 'string' ? [] : alias?.optionalFallbacks;
-    if (!target) errors.push(`alias ${aliasId} is missing target`);
+    const members = typeof alias === 'string' ? [alias] : alias?.members;
+    const optionalMembers = typeof alias === 'string' ? [] : alias?.optionalMembers;
+    if (!Array.isArray(members) || !members.length) errors.push(`alias ${aliasId} must declare at least one member`);
     const aliasResidencyFields = residencyFields(alias);
     if (aliasResidencyFields.length) {
       errors.push(
         `alias ${aliasId} cannot declare ${aliasResidencyFields.join(', ')}; aliases resolve models and cannot pin compute`
       );
     }
-    if (fallbacks != null && !Array.isArray(fallbacks)) {
-      errors.push(`alias ${aliasId} fallbacks must be an array`);
+    if (members != null && !Array.isArray(members)) {
+      errors.push(`alias ${aliasId} members must be an array`);
     }
-    if (optionalFallbacks != null && !Array.isArray(optionalFallbacks)) {
-      errors.push(`alias ${aliasId} optionalFallbacks must be an array`);
+    if (optionalMembers != null && !Array.isArray(optionalMembers)) {
+      errors.push(`alias ${aliasId} optionalMembers must be an array`);
     }
-    const targets = [target, ...(Array.isArray(fallbacks) ? fallbacks : [])].filter(Boolean);
-    const optionalTargets = new Set(Array.isArray(optionalFallbacks) ? optionalFallbacks : []);
-    if (new Set(targets).size !== targets.length) {
-      errors.push(`alias ${aliasId} has duplicate targets`);
+    const memberIds = Array.isArray(members) ? members : [];
+    const optionalMemberIds = new Set(Array.isArray(optionalMembers) ? optionalMembers : []);
+    if (new Set(memberIds).size !== memberIds.length) {
+      errors.push(`alias ${aliasId} has duplicate members`);
     }
-    for (const candidate of optionalTargets) {
+    for (const candidate of optionalMemberIds) {
       if (typeof candidate !== 'string' || !candidate.trim()) {
-        errors.push(`alias ${aliasId} has an invalid optional fallback`);
-      } else if (!fallbacks?.includes(candidate)) {
-        errors.push(`alias ${aliasId} optional fallback ${candidate} is not present in fallbacks`);
+        errors.push(`alias ${aliasId} has an invalid optional member`);
+      } else if (!memberIds.includes(candidate)) {
+        errors.push(`alias ${aliasId} optional member ${candidate} is not present in members`);
       }
     }
-    for (const candidate of targets) {
+    for (const candidate of memberIds) {
       if (typeof candidate !== 'string' || !candidate.trim()) {
-        errors.push(`alias ${aliasId} has an invalid target`);
-      } else if (!modelIds.has(candidate) && !optionalTargets.has(candidate)) {
-        errors.push(`alias ${aliasId} targets unknown model ${candidate}`);
+        errors.push(`alias ${aliasId} has an invalid member`);
+      } else if (!modelIds.has(candidate) && !optionalMemberIds.has(candidate)) {
+        errors.push(`alias ${aliasId} references unknown model ${candidate}`);
       }
     }
     const kinds = new Set(
-      targets
+      memberIds
         .map((candidate) => (config.models ?? []).find((model) => model.id === candidate))
         .filter(Boolean)
         .map((model) => model.kind ?? 'chat')
     );
     if (kinds.size > 1) {
-      errors.push(`alias ${aliasId} targets models with different kinds: ${[...kinds].join(', ')}`);
+      errors.push(`alias ${aliasId} contains models with different kinds: ${[...kinds].join(', ')}`);
     }
 
     const routeProfiles = typeof alias === 'string' ? null : alias?.routeProfiles;
@@ -185,47 +220,41 @@ function validateConfig(config, sourcePath, env) {
             errors.push(`alias ${aliasId} route profile ${profileName} must be an object`);
             continue;
           }
-          const profileTargets = [
-            profile.target,
-            ...(Array.isArray(profile.fallbacks) ? profile.fallbacks : [])
-          ].filter(Boolean);
-          if (typeof profile.target !== 'string' || !profile.target.trim()) {
-            errors.push(`alias ${aliasId} route profile ${profileName} is missing target`);
+          const profileMembers = profile.members;
+          if (!Array.isArray(profileMembers) || !profileMembers.length) {
+            errors.push(`alias ${aliasId} route profile ${profileName} must declare at least one member`);
           }
-          if (profile.fallbacks != null && !Array.isArray(profile.fallbacks)) {
-            errors.push(`alias ${aliasId} route profile ${profileName} fallbacks must be an array`);
+          if (profileMembers != null && !Array.isArray(profileMembers)) {
+            errors.push(`alias ${aliasId} route profile ${profileName} members must be an array`);
           }
-          if (new Set(profileTargets).size !== profileTargets.length) {
-            errors.push(`alias ${aliasId} route profile ${profileName} has duplicate targets`);
+          const profileMemberIds = Array.isArray(profileMembers) ? profileMembers : [];
+          if (new Set(profileMemberIds).size !== profileMemberIds.length) {
+            errors.push(`alias ${aliasId} route profile ${profileName} has duplicate members`);
           }
-          for (const candidate of profileTargets) {
+          for (const candidate of profileMemberIds) {
             if (typeof candidate !== 'string' || !candidate.trim()) {
-              errors.push(`alias ${aliasId} route profile ${profileName} has an invalid target`);
+              errors.push(`alias ${aliasId} route profile ${profileName} has an invalid member`);
             } else if (!modelIds.has(candidate)) {
-              errors.push(`alias ${aliasId} route profile ${profileName} targets unknown model ${candidate}`);
+              errors.push(`alias ${aliasId} route profile ${profileName} references unknown model ${candidate}`);
             }
           }
           const profileKinds = new Set(
-            profileTargets
+            profileMemberIds
               .map((candidate) => (config.models ?? []).find((model) => model.id === candidate))
               .filter(Boolean)
               .map((model) => model.kind ?? 'chat')
           );
           if (profileKinds.size > 1) {
             errors.push(
-              `alias ${aliasId} route profile ${profileName} targets models with different kinds: ${[
+              `alias ${aliasId} route profile ${profileName} contains models with different kinds: ${[
                 ...profileKinds
               ].join(', ')}`
             );
           }
         }
         const active = routeProfiles[alias.activeRoute];
-        if (
-          active &&
-          (alias.target !== active.target ||
-            JSON.stringify(alias.fallbacks ?? []) !== JSON.stringify(active.fallbacks ?? []))
-        ) {
-          errors.push(`alias ${aliasId} active target order does not match route profile ${alias.activeRoute}`);
+        if (active && JSON.stringify(alias.members ?? []) !== JSON.stringify(active.members ?? [])) {
+          errors.push(`alias ${aliasId} active member order does not match route profile ${alias.activeRoute}`);
         }
       }
     } else if (typeof alias !== 'string' && alias?.activeRoute != null) {
@@ -326,7 +355,7 @@ export async function loadConfig(
 ) {
   const resolvedPath = path.resolve(configPath);
   const raw = await fs.readFile(resolvedPath, 'utf8');
-  const parsed = normalizeLegacyResidencyPolicy(JSON.parse(raw));
+  const parsed = normalizeLegacyAliases(normalizeLegacyResidencyPolicy(JSON.parse(raw)));
   const expanded = expandEnvValue(parsed, configEnv(env));
   if (Object.hasOwn(expanded, 'keepWarm')) {
     throw new Error(

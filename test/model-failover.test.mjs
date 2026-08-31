@@ -105,8 +105,7 @@ async function createFixture({
     defaults: { chatModel: 'stable-chat' },
     aliases: {
       'stable-chat': {
-        target: 'stable-chat',
-        fallbacks: ['cloud-chat'],
+        members: ['stable-chat', 'cloud-chat'],
         advertise: false
       }
     },
@@ -251,8 +250,7 @@ async function createEmbeddingFixture({
     defaults: { embeddingModel: 'embeddings' },
     aliases: {
       embeddings: {
-        target: 'spark-embedding',
-        fallbacks: ['macbook-embedding', 'cloud-embedding']
+        members: ['spark-embedding', 'macbook-embedding', 'cloud-embedding']
       }
     },
     backends,
@@ -401,11 +399,11 @@ async function embed(url, body = {}) {
   });
 }
 
-// Alias chains resolve in order, including an alias that intentionally shadows
-// its primary model ID.
+// Alias members resolve in priority order, including an alias that
+// intentionally shadows one of its model IDs.
 {
   const registry = createRegistry({
-    aliases: { local: { target: 'local', fallbacks: ['cloud'] } },
+    aliases: { local: { members: ['local', 'cloud'] } },
     backends: { local: {}, cloud: {} },
     runtimes: { local: { enabled: true } },
     models: [
@@ -420,7 +418,30 @@ async function embed(url, body = {}) {
   assert.equal(registry.catalogModels({ includeAliases: true }).filter((model) => model.id === 'local').length, 1);
 }
 
-// Config validation catches unknown, duplicate, and cross-kind fallback targets.
+// Alias visibility is independent of member visibility. Exact provider and
+// local member IDs may stay hidden while the stable routed alias is advertised.
+{
+  const registry = createRegistry({
+    aliases: { stable: { members: ['local', 'cloud'], advertise: true } },
+    backends: { local: {}, cloud: {} },
+    models: [
+      { id: 'local', backend: 'local', kind: 'chat', advertise: false },
+      { id: 'cloud', backend: 'cloud', kind: 'chat', advertise: false }
+    ]
+  });
+  const catalog = registry.catalogModels({ includeAliases: true });
+  assert.deepEqual(
+    catalog.map((model) => model.id),
+    ['stable']
+  );
+  assert.deepEqual(catalog[0].aliasMembers, ['local', 'cloud']);
+  assert.deepEqual(
+    catalog[0].memberModels.map((model) => model.id),
+    ['local', 'cloud']
+  );
+}
+
+// Config validation catches unknown, duplicate, and cross-kind members.
 {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'lloom-alias-validation-'));
   const configPath = path.join(directory, 'config.json');
@@ -430,26 +451,26 @@ async function embed(url, body = {}) {
       { id: 'chat', kind: 'chat', backend: 'chat' },
       { id: 'image', kind: 'image', backend: 'image' }
     ],
-    aliases: { stable: { target: 'chat', fallbacks: ['missing'] } }
+    aliases: { stable: { members: ['chat', 'missing'] } }
   };
   await writeFile(configPath, JSON.stringify(base));
-  await assert.rejects(loadConfig(configPath), /targets unknown model missing/);
-  base.aliases.stable.optionalFallbacks = ['missing'];
+  await assert.rejects(loadConfig(configPath), /references unknown model missing/);
+  base.aliases.stable.optionalMembers = ['missing'];
   await writeFile(configPath, JSON.stringify(base));
   const optionalFallback = await loadConfig(configPath);
-  assert.deepEqual(optionalFallback.aliases.stable.fallbacks, ['missing']);
-  delete base.aliases.stable.optionalFallbacks;
-  base.aliases.stable.fallbacks = ['chat'];
+  assert.deepEqual(optionalFallback.aliases.stable.members, ['chat', 'missing']);
+  delete base.aliases.stable.optionalMembers;
+  base.aliases.stable.members = ['chat', 'chat'];
   await writeFile(configPath, JSON.stringify(base));
-  await assert.rejects(loadConfig(configPath), /has duplicate targets/);
-  base.aliases.stable.fallbacks = ['image'];
+  await assert.rejects(loadConfig(configPath), /has duplicate members/);
+  base.aliases.stable.members = ['chat', 'image'];
   await writeFile(configPath, JSON.stringify(base));
   await assert.rejects(loadConfig(configPath), /models with different kinds/);
-  base.aliases.stable = { target: 'chat', keepWarm: true };
+  base.aliases.stable = { members: ['chat'], keepWarm: true };
   await writeFile(configPath, JSON.stringify(base));
   await assert.rejects(loadConfig(configPath), /aliases resolve models and cannot pin compute/);
 
-  base.aliases.stable = { target: 'chat' };
+  base.aliases.stable = { members: ['chat'] };
   base.runtimePolicy = { protectKeepWarm: false };
   base.runtimes = {
     legacyPin: { keepWarm: false, policy: { priority: 7, evictable: false } },
@@ -486,8 +507,8 @@ async function embed(url, body = {}) {
   await rm(directory, { recursive: true, force: true });
 }
 
-// A retryable primary response fails over, while preserving the requested alias
-// in the OpenAI response and recording both attempts.
+// A retryable preferred member advances to the next member while preserving
+// the requested alias in the OpenAI response and recording both attempts.
 {
   const fixture = await createFixture({ primaryStatus: 503 });
   const response = await chat(fixture.url);
@@ -535,8 +556,8 @@ async function embed(url, body = {}) {
   await fixture.close();
 }
 
-// A cold primary with an available fallback does not evict an unrelated
-// resident runtime just to satisfy the local-first preference.
+// A cold preferred member does not block a ready lower-priority member or
+// evict an unrelated resident runtime while recovering in the background.
 {
   const fixture = await createFixture({
     primaryStatus: 200,
@@ -547,18 +568,46 @@ async function embed(url, body = {}) {
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.choices[0].message.content, 'cloud');
-  assert.deepEqual(fixture.hits, { primary: 0, cloud: 1, ensures: 0 });
+  let routing;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    routing = await fetch(`${fixture.url}/gateway/routing`).then((value) => value.json());
+    if (routing.runtimeRecoveryBackoffs.length) break;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.equal(routing.runtimeRecoveryBackoffs[0].runtimeId, 'primary-runtime');
+  assert(routing.runtimeRecoveryBackoffs[0].retryAfterSeconds >= 1);
+  assert.equal((await chat(fixture.url)).status, 200);
+  assert.deepEqual(fixture.hits, { primary: 0, cloud: 2, ensures: 0 });
   assert.deepEqual(fixture.operations, []);
+  assert.equal(fixture.admissionOptions.length, 1, 'rejected backswing recovery is circuit-broken');
   const recent = fixture.app.metrics.snapshot().recent;
   assert.equal(recent[0].resolvedModel, 'cloud-chat');
   assert.equal(recent[0].failoverAttempt, 1);
-  assert.equal(recent[0].failoverReason, 'preserve-residency');
+  assert.equal(recent[0].failoverReason, 'preferred-member-unavailable');
   assert.equal(recent[0].failedOver, true);
   await fixture.close();
 }
 
+// When admission can recover a cold preferred member without eviction, LLooM
+// starts that recovery on the backswing while the current request is already
+// served by the next ready member.
+{
+  const fixture = await createFixture({ primaryStatus: 200, runtimeStatus: 'stopped' });
+  const response = await chat(fixture.url);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.choices[0].message.content, 'cloud');
+  assert.deepEqual(fixture.hits, { primary: 0, cloud: 1, ensures: 1 });
+  assert.deepEqual(fixture.operations, ['ensure:primary-runtime']);
+  const recent = fixture.app.metrics.snapshot().recent;
+  assert.equal(recent[0].resolvedModel, 'cloud-chat');
+  assert.equal(recent[0].failoverAttempt, 1);
+  assert.equal(recent[0].failoverReason, 'preferred-member-unavailable');
+  await fixture.close();
+}
+
 // Once a conflicting admission begins draining a local runtime, new alias
-// traffic bypasses that runtime and uses its external fallback. Existing
+// traffic bypasses that member and uses the ready external member. Existing
 // requests can finish without allowing fresh local work to starve the swap.
 {
   const fixture = await createFixture({ primaryStatus: 200, runtimeStatus: 'draining' });
@@ -572,7 +621,7 @@ async function embed(url, body = {}) {
 }
 
 // Provider-specific payment/capacity failure is an availability failure: if
-// the cloud shortcut cannot serve, LLooM returns to the local primary and
+// the ready cloud member cannot serve, LLooM returns to the local member and
 // performs the previously deferred admission as the last resort.
 {
   const fixture = await createFixture({
@@ -589,6 +638,11 @@ async function embed(url, body = {}) {
   assert.deepEqual(fixture.operations, ['stop:resident-runtime', 'start:primary-runtime', 'slot:primary-runtime']);
   assert.equal(
     fixture.admissionOptions[0].preemptible,
+    true,
+    'backswing recovery remains non-evicting while the cloud member can serve'
+  );
+  assert.equal(
+    fixture.admissionOptions.at(-1).preemptible,
     false,
     'after the ready cloud route fails, the last local route has no remaining live alternative'
   );
@@ -631,8 +685,8 @@ async function embed(url, body = {}) {
   assert.deepEqual(
     recent.map((entry) => [entry.resolvedModel, entry.status, entry.failoverReason]),
     [
-      ['macbook-embedding', 503, 'preserve-residency'],
-      ['cloud-embedding', 200, 'preserve-residency']
+      ['macbook-embedding', 503, 'preferred-member-unavailable'],
+      ['cloud-embedding', 200, 'preferred-member-unavailable']
     ]
   );
   await fixture.close();
@@ -654,7 +708,7 @@ async function embed(url, body = {}) {
   assert.deepEqual(fixture.operations, []);
   const recent = fixture.app.metrics.snapshot().recent;
   assert.equal(recent[0].resolvedModel, 'macbook-embedding');
-  assert.equal(recent[0].failoverReason, 'preserve-residency');
+  assert.equal(recent[0].failoverReason, 'preferred-member-unavailable');
   assert.equal(recent[0].failedOver, true);
   await fixture.close();
 }
@@ -673,7 +727,7 @@ async function embed(url, body = {}) {
   assert.deepEqual(fixture.hits, { spark: 0, mac: 1, cloud: 1, ensures: 0 });
   assert.deepEqual(fixture.operations, []);
   assert.equal(
-    fixture.admissionOptions[0].preemptible,
+    fixture.admissionOptions.at(-1).preemptible,
     false,
     'the exact Spark route is attempted only after both non-evicting alternatives have failed'
   );
@@ -740,7 +794,7 @@ async function embed(url, body = {}) {
   await fixture.close();
 }
 
-// Ordinary request errors are returned from the primary without trying cloud.
+// Ordinary request errors are returned from the preferred member without trying cloud.
 {
   const fixture = await createFixture({ primaryStatus: 400 });
   const response = await chat(fixture.url);
@@ -757,7 +811,6 @@ async function embed(url, body = {}) {
   const body = await response.json();
   assert.equal(body.choices[0].message.content, 'cloud');
   assert.deepEqual(fixture.hits, { primary: 0, cloud: 1, ensures: 0 });
-  assert(fixture.logs.some((line) => line.includes('is warming')));
   await fixture.close();
 }
 

@@ -8,6 +8,7 @@ function clone(value) {
 
 function aliasTargets(alias) {
   if (typeof alias === 'string') return [alias];
+  if (Array.isArray(alias?.members)) return alias.members.filter(Boolean);
   return [alias?.target, ...(Array.isArray(alias?.fallbacks) ? alias.fallbacks : [])].filter(Boolean);
 }
 

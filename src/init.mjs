@@ -925,30 +925,38 @@ function finishRecipeModelConfig(config, recipeModel, materializedModel, modelId
     if (!aliasId) continue;
     const existingAlias = asObject(config.aliases[aliasId]);
     if (config.aliases[aliasId] && typeof aliasEntry === 'string') continue;
-    const requestedFallbacks = typeof aliasEntry === 'string' ? [] : asArray(aliasEntry.fallbacks);
+    const requestedMembers =
+      typeof aliasEntry === 'string'
+        ? [modelId]
+        : asArray(aliasEntry.members).length
+          ? asArray(aliasEntry.members)
+          : [modelId, ...asArray(aliasEntry.fallbacks)];
     const installedModelIds = new Set(config.models.map((model) => model.id));
     const requestedRouteProfiles = typeof aliasEntry === 'string' ? {} : asObject(aliasEntry.routeProfiles);
     const availableRequestedProfiles = Object.fromEntries(
       Object.entries(requestedRouteProfiles).flatMap(([profileName, profile]) => {
         const selected = asObject(profile);
-        if (!installedModelIds.has(selected.target)) return [];
+        const members = asArray(selected.members).length
+          ? asArray(selected.members)
+          : [selected.target, ...asArray(selected.fallbacks)].filter(Boolean);
+        const installedMembers = members.filter((member) => installedModelIds.has(member));
+        if (!installedMembers.length) return [];
         return [
           [
             profileName,
             {
-              target: selected.target,
-              ...(asArray(selected.fallbacks).length
-                ? { fallbacks: asArray(selected.fallbacks).filter((fallback) => installedModelIds.has(fallback)) }
-                : {})
+              members: installedMembers
             }
           ]
         ];
       })
     );
-    const routeProfiles = {
-      ...asObject(existingAlias.routeProfiles),
-      ...availableRequestedProfiles
-    };
+    const routeProfiles = Object.keys(requestedRouteProfiles).length
+      ? {
+          ...asObject(existingAlias.routeProfiles),
+          ...availableRequestedProfiles
+        }
+      : {};
     const requestedActiveRoute = typeof aliasEntry === 'string' ? null : aliasEntry.activeRoute;
     const activeRoute = routeProfiles[existingAlias.activeRoute]
       ? existingAlias.activeRoute
@@ -956,12 +964,10 @@ function finishRecipeModelConfig(config, recipeModel, materializedModel, modelId
         ? requestedActiveRoute
         : (Object.keys(routeProfiles)[0] ?? null);
     const activeProfile = activeRoute ? routeProfiles[activeRoute] : null;
-    const activeFallbacks =
-      activeProfile?.fallbacks ?? requestedFallbacks.filter((fallback) => installedModelIds.has(fallback));
+    const activeMembers = activeProfile?.members ?? requestedMembers.filter((member) => installedModelIds.has(member));
     config.aliases[aliasId] = {
       ...existingAlias,
-      target: activeProfile?.target ?? modelId,
-      fallbacks: activeFallbacks,
+      members: activeMembers.length ? activeMembers : [modelId],
       ...(activeRoute ? { activeRoute, routeProfiles } : {}),
       advertise: existingAlias.advertise ?? (typeof aliasEntry === 'string' ? true : aliasEntry.advertise !== false),
       description:
@@ -971,7 +977,13 @@ function finishRecipeModelConfig(config, recipeModel, materializedModel, modelId
         recipeModel.name ??
         modelId
     };
-    if (!activeFallbacks.length) delete config.aliases[aliasId].fallbacks;
+    delete config.aliases[aliasId].target;
+    delete config.aliases[aliasId].fallbacks;
+    delete config.aliases[aliasId].optionalFallbacks;
+    if (!activeRoute) {
+      delete config.aliases[aliasId].activeRoute;
+      delete config.aliases[aliasId].routeProfiles;
+    }
   }
   if (recipeModel.setDefault === true) {
     config.defaults ??= {};
@@ -1154,8 +1166,15 @@ function restrictAdvertisedModelsToRecipe(config, recipe) {
   }
 
   for (const [aliasId, alias] of Object.entries(config.aliases ?? {})) {
-    const target = typeof alias === 'string' ? alias : alias.target;
-    const selected = selectedModelIds.has(aliasId) || selectedModelIds.has(target) || advertisedModelIds.has(target);
+    const members =
+      typeof alias === 'string'
+        ? [alias]
+        : asArray(alias.members).length
+          ? asArray(alias.members)
+          : [alias.target, ...asArray(alias.fallbacks)].filter(Boolean);
+    const selected =
+      selectedModelIds.has(aliasId) ||
+      members.some((member) => selectedModelIds.has(member) || advertisedModelIds.has(member));
     config.aliases[aliasId] = setAliasAdvertise(alias, selected);
   }
 
