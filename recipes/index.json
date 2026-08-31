@@ -288,7 +288,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm",
       "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm.json",
-      "currentVersion": 2,
+      "currentVersion": 3,
       "versions": [
         {
           "version": 1,
@@ -299,9 +299,16 @@
         },
         {
           "version": 2,
+          "path": "archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm/v2.json",
+          "status": "archived",
+          "archivedAt": "2026-08-31T18:40:00.000Z",
+          "notes": "Pins MiaAI 169fbad and the ARM64 day-zero image, uses native 262K context with BF16 hybrid KV, exact-source-guarded FP8 PLE loading, MTP3, and LLooM-owned staggered-workload admission."
+        },
+        {
+          "version": 3,
           "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm.json",
           "status": "current",
-          "notes": "Pins MiaAI 169fbad and the ARM64 day-zero image, uses native 262K context with BF16 hybrid KV, exact-source-guarded FP8 PLE loading, MTP3, and LLooM-owned staggered-workload admission."
+          "notes": "Moves the third staggered entity request from vLLM's internal wait queue into LLooM's bounded observable queue."
         }
       ],
       "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 vLLM",

@@ -4,8 +4,8 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm",
   "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 vLLM",
-  "version": 3,
-  "summary": "On-demand two-Spark vLLM TP=2 plus expert-parallel Qwen3.8 Flash Next with MTP speculative decode, native 262K context, BF16 hybrid KV, prefix caching, two-request entity admission with LLooM-owned overflow queueing, and an exact-source-guarded FP8 PLE loader.",
+  "version": 2,
+  "summary": "On-demand two-Spark vLLM TP=2 plus expert-parallel Qwen3.8 Flash Next with MTP speculative decode, native 262K context, BF16 hybrid KV, prefix caching, LLooM-owned staggered-workload admission and overflow queueing, and an exact-source-guarded FP8 PLE loader.",
   "license": { "id": "MIT", "name": "Recipe metadata and launcher" },
   "provenance": {
     "createdBy": "lloom",
@@ -28,7 +28,7 @@
       "The pinned vLLM image is the ARM64 manifest used by MiaAI commit 169fbad266f2791335a3102f0d3d625e7c295563. Its exact PLE source hash is guarded before enabling the checkpoint's existing FP8 PLE method.",
       "Native 262144-token context deliberately omits YaRN. The checkpoint's supported BF16 hybrid cache is retained; FP8 KV is not enabled without separate QSA/GDN correctness evidence.",
       "MiaAI measured 35.11 GiB of KV memory and 2,481,424 cache tokens at GPU memory utilization 0.835. At native context this is enough for roughly nine full-context sequences; LLooM keeps entity-shaped admission below that physical ceiling and owns the bounded overflow queue.",
-      "A tight three-request stagger showed vLLM executing two requests while holding the third internally. LLooM therefore admits two entity requests and owns overflow queueing rather than duplicating the backend's opaque wait queue.",
+      "The first production candidate uses three LLooM-admitted requests, eight vLLM sequence slots, 8192 batched prefill tokens, MTP3, and full-decode-only CUDA graphs. Final admission and MTP settings are selected from staggered entity-workload measurements, not the upstream headline limit.",
       "The full-pair lane displaces resident Spark GPU sidecars while active. Alias-member suspension keeps production q38fn traffic on external members during recipe work and prevents background admission from fighting controlled benchmarks."
     ]
   },
@@ -79,7 +79,7 @@
         "port": 8889,
         "contextWindow": 262144,
         "maxOutputTokens": 32768,
-        "maxActiveRequests": 2,
+        "maxActiveRequests": 3,
         "maxQueuedRequests": 8,
         "queueTimeoutMs": 240000,
         "queueRetryAfterSeconds": 3,

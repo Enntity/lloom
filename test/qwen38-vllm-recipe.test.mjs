@@ -12,10 +12,10 @@ const backendRoot = path.join(root, 'backends', 'qwen38-vllm');
 const recipe = await loadRecipeById('linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm');
 
 assert.equal(recipe.backend.id, 'docker-vllm');
-assert.equal(recipe.version, 2);
+assert.equal(recipe.version, 3);
 assert.equal(recipe.models[0].gatewayModel, 'qwen3.8-flash-next');
 assert.equal(recipe.models[0].settings.contextWindow, 262144);
-assert.equal(recipe.models[0].settings.maxActiveRequests, 3);
+assert.equal(recipe.models[0].settings.maxActiveRequests, 2);
 assert.equal(recipe.models[0].settings.maxQueuedRequests, 8);
 assert.equal(recipe.models[0].settings.memoryGb, 108);
 assert.equal(recipe.models[0].settings.keepWarm, false);
@@ -103,6 +103,7 @@ assert.deepEqual(recipe.models[0].settings.behaviorOverrides, {
   chatTemplateKwargs: { reasoning_effort: 'low' }
 });
 await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm', 'v1.json'));
+await fs.access(path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm', 'v2.json'));
 await fs.access(
   path.join(root, 'recipes', 'archive', 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang', 'v19.json')
 );
