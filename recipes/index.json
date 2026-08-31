@@ -288,7 +288,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm",
       "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm.json",
-      "currentVersion": 3,
+      "currentVersion": 4,
       "versions": [
         {
           "version": 1,
@@ -306,9 +306,16 @@
         },
         {
           "version": 3,
+          "path": "archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm/v3.json",
+          "status": "archived",
+          "archivedAt": "2026-08-31T19:45:00.000Z",
+          "notes": "Moves the third staggered entity request from vLLM's internal wait queue into LLooM's bounded observable queue."
+        },
+        {
+          "version": 4,
           "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm.json",
           "status": "current",
-          "notes": "Moves the third staggered entity request from vLLM's internal wait queue into LLooM's bounded observable queue."
+          "notes": "Selects MTP-3 and seven-request admission from entity-shaped concurrency 2-8 sweeps; rejects MTP-1 after lower throughput and an eight-request clean-drain failure."
         }
       ],
       "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 vLLM",
