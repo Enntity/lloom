@@ -1,7 +1,12 @@
 {
   "server": {
     "host": "0.0.0.0",
-    "port": 8100
+    "port": 8100,
+    "inferenceEnabled": true
+  },
+  "routing": {
+    "targetBackoffBaseMs": 1000,
+    "targetBackoffMaxMs": 60000
   },
   "security": {
     "allowMissingAuth": false,
@@ -23,16 +28,16 @@
     "includeAliases": true,
     "omp": {
       "roles": {
-        "default": "qwen3.8-flash-next:low",
-        "smol": "qwen3.8-flash-next:low",
-        "slow": "qwen3.8-flash-next:low",
-        "plan": "qwen3.8-flash-next:low",
-        "commit": "qwen3.8-flash-next:low",
-        "designer": "qwen3.8-flash-next:low",
-        "advisor": "qwen3.8-flash-next:low",
-        "tiny": "qwen3.8-flash-next:low",
-        "vision": "qwen3.8-flash-next:low",
-        "task": "qwen3.8-flash-next:low"
+        "default": "q38fn:low",
+        "smol": "q38fn:low",
+        "slow": "q38fn:low",
+        "plan": "q38fn:low",
+        "commit": "q38fn:low",
+        "designer": "q38fn:low",
+        "advisor": "q38fn:low",
+        "tiny": "q38fn:low",
+        "vision": "q38fn:low",
+        "task": "q38fn:low"
       }
     }
   },
@@ -46,6 +51,42 @@
     "deepseek/deepseek-v4-flash": {
       "target": "deepseek/deepseek-v4-flash-0731",
       "advertise": false
+    },
+    "ds4f": {
+      "target": "cloud/openrouter/ds4f",
+      "activeRoute": "cloud",
+      "routeProfiles": {
+        "cloud": { "target": "cloud/openrouter/ds4f" }
+      },
+      "advertise": true,
+      "description": "Stable DS4F route with operator-selectable local and cloud profiles"
+    },
+    "ds4fv": {
+      "target": "cloud/openrouter/ds4fv",
+      "activeRoute": "cloud",
+      "routeProfiles": {
+        "cloud": { "target": "cloud/openrouter/ds4fv" }
+      },
+      "advertise": true,
+      "description": "DeepSeek V4 Flash Vision via OpenRouter"
+    },
+    "q38fn": {
+      "target": "cloud/openrouter/q38fn",
+      "activeRoute": "cloud",
+      "routeProfiles": {
+        "cloud": { "target": "cloud/openrouter/q38fn" }
+      },
+      "advertise": true,
+      "description": "Stable Qwen3.8 Flash route with operator-selectable local and cloud profiles"
+    },
+    "glm53f": {
+      "target": "cloud/openrouter/glm53f",
+      "activeRoute": "cloud",
+      "routeProfiles": {
+        "cloud": { "target": "cloud/openrouter/glm53f" }
+      },
+      "advertise": true,
+      "description": "Stable GLM-5.3 Flash route with operator-selectable local and cloud profiles"
     }
   },
   "runtimePolicy": {
@@ -103,6 +144,30 @@
       "timeoutMs": 1800000
     },
     "openai-compatible-deepseek-v4-flash-0731": {
+      "type": "openai",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "timeoutMs": 1800000
+    },
+    "openai-compatible-openrouter-ds4f": {
+      "type": "openai",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "timeoutMs": 1800000
+    },
+    "openai-compatible-openrouter-ds4fv": {
+      "type": "openai",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "timeoutMs": 1800000
+    },
+    "openai-compatible-openrouter-q38fn": {
+      "type": "openai",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "timeoutMs": 1800000
+    },
+    "openai-compatible-openrouter-glm53f": {
       "type": "openai",
       "baseUrl": "https://openrouter.ai/api/v1",
       "apiKeyEnv": "OPENROUTER_API_KEY",
@@ -438,6 +503,62 @@
       "maxOutputTokens": 65536,
       "advertise": true,
       "tags": ["cloud", "external", "openrouter", "deepseek"]
+    },
+    {
+      "id": "cloud/openrouter/ds4f",
+      "name": "DeepSeek V4 Flash 0731 · OpenRouter fallback",
+      "kind": "chat",
+      "backend": "openai-compatible-openrouter-ds4f",
+      "upstreamModel": "deepseek/deepseek-v4-flash-0731",
+      "input": ["text"],
+      "output": ["text"],
+      "capabilities": ["chat", "streaming", "usage", "tools", "reasoning", "long-context", "structured-output"],
+      "contextWindow": 1048576,
+      "maxOutputTokens": 65536,
+      "advertise": false,
+      "tags": ["cloud", "external", "openrouter", "deepseek", "fallback"]
+    },
+    {
+      "id": "cloud/openrouter/ds4fv",
+      "name": "DeepSeek V4 Flash Vision Exp · OpenRouter",
+      "kind": "chat",
+      "backend": "openai-compatible-openrouter-ds4fv",
+      "upstreamModel": "deepseek/deepseek-v4-flash-vision-exp",
+      "input": ["text", "image"],
+      "output": ["text"],
+      "capabilities": ["chat", "streaming", "usage", "tools", "reasoning", "vision", "long-context"],
+      "contextWindow": 1048576,
+      "maxOutputTokens": 131072,
+      "advertise": false,
+      "tags": ["cloud", "external", "openrouter", "deepseek", "vision"]
+    },
+    {
+      "id": "cloud/openrouter/q38fn",
+      "name": "Qwen3.8 Flash · OpenRouter fallback",
+      "kind": "chat",
+      "backend": "openai-compatible-openrouter-q38fn",
+      "upstreamModel": "qwen/qwen3.8-flash",
+      "input": ["text", "image", "video"],
+      "output": ["text"],
+      "capabilities": ["chat", "streaming", "usage", "tools", "reasoning", "vision", "long-context", "structured-output"],
+      "contextWindow": 1000000,
+      "maxOutputTokens": 131072,
+      "advertise": false,
+      "tags": ["cloud", "external", "openrouter", "qwen", "fallback"]
+    },
+    {
+      "id": "cloud/openrouter/glm53f",
+      "name": "GLM-5.3 Flash · OpenRouter fallback",
+      "kind": "chat",
+      "backend": "openai-compatible-openrouter-glm53f",
+      "upstreamModel": "z-ai/glm-5.3-flash",
+      "input": ["text", "image", "video"],
+      "output": ["text"],
+      "capabilities": ["chat", "streaming", "usage", "tools", "reasoning", "vision", "long-context", "structured-output"],
+      "contextWindow": 1048576,
+      "maxOutputTokens": 131072,
+      "advertise": false,
+      "tags": ["cloud", "external", "openrouter", "glm", "fallback"]
     },
     {
       "id": "z-ai/glm-5.2",

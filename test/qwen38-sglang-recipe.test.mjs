@@ -22,7 +22,15 @@ assert.equal(recipe.models[0].settings.queueRetryAfterSeconds, 3);
 assert.equal(recipe.models[0].settings.requestStartupWaitMs, 1000);
 assert.equal(recipe.models[0].settings.startupRetryAfterSeconds, 15);
 assert.equal(recipe.models[0].settings.healthTimeoutMs, 5000);
-assert.equal(recipe.version, 18);
+assert.equal(recipe.version, 19);
+assert.equal(recipe.models[0].aliases[1].id, 'q38fn');
+assert.deepEqual(recipe.models[0].aliases[1].routeProfiles, {
+  'local-first': {
+    target: 'qwen3.8-flash-next',
+    fallbacks: ['cloud/openrouter/q38fn']
+  },
+  cloud: { target: 'cloud/openrouter/q38fn' }
+});
 assert.equal(recipe.models[0].settings.memoryGb, 80);
 assert.equal(recipe.models[0].settings.keepWarm, false);
 assert.equal(recipe.capabilities.includes('mtp'), false);

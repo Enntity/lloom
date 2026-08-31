@@ -4,7 +4,7 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm",
   "name": "2x DGX Spark DeepSeek V4 Flash DSpark (MiaAI validated)",
-  "version": 19,
+  "version": 18,
   "summary": "The pinned official DeepSeek V4 Flash 0731 two-Spark appliance with compiled vLLM MTP drain-deadlock hardening, DSpark speculative decode, dual-rail RoCE, current MiaAI stable defaults, atomic rank recovery, and no-progress self-healing.",
   "license": {
     "id": "MIT",
@@ -110,24 +110,6 @@
           "id": "dsv4f-local",
           "advertise": false,
           "description": "Strict local-only DS4F route for attributed benchmarks; never falls through to cloud."
-        },
-        {
-          "id": "ds4f-local",
-          "advertise": false,
-          "description": "Strict local-only DS4F route for canaries and benchmarks."
-        },
-        {
-          "id": "ds4f",
-          "fallbacks": ["cloud/openrouter/ds4f"],
-          "activeRoute": "local-first",
-          "routeProfiles": {
-            "local-first": {
-              "target": "deepseek-v4-flash-0731",
-              "fallbacks": ["cloud/openrouter/ds4f"]
-            },
-            "cloud": { "target": "cloud/openrouter/ds4f" }
-          },
-          "description": "Stable DS4F route: local Spark cluster first, OpenRouter during maintenance or outage."
         },
         {
           "id": "deepseek-v4-flash-0731",

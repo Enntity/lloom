@@ -73,6 +73,11 @@ await executable('lloom', '#!/usr/bin/env bash\n[[ "$1" == "models" ]]\n');
 
 run('install');
 assert.equal(JSON.parse(await fs.readFile(path.join(installed, 'package.json'))).version, 'new');
+assert.equal(
+  JSON.parse(await fs.readFile(path.join(lloomDir, 'config.json'))).server.inferenceEnabled,
+  false,
+  'worker deployment must make direct inference fail closed'
+);
 assert.equal(JSON.parse(await fs.readFile(path.join(lloomDir, 'releases', 'current.manifest.json'))).commit, commit);
 await fs.access(path.join(lloomDir, 'releases', commit.slice(0, 12), 'worker.prepared'));
 

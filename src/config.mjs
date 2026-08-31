@@ -95,6 +95,10 @@ function validateConfig(config, sourcePath, env) {
   const errors = [];
   const modelIds = new Set();
 
+  if (config.server?.inferenceEnabled != null && typeof config.server.inferenceEnabled !== 'boolean') {
+    errors.push('server.inferenceEnabled must be a boolean');
+  }
+
   for (const [index, model] of (config.models ?? []).entries()) {
     if (!model?.id) errors.push(`models[${index}] is missing id`);
     if (!model?.backend && !model?.targets?.length) {
@@ -164,6 +168,68 @@ function validateConfig(config, sourcePath, env) {
     );
     if (kinds.size > 1) {
       errors.push(`alias ${aliasId} targets models with different kinds: ${[...kinds].join(', ')}`);
+    }
+
+    const routeProfiles = typeof alias === 'string' ? null : alias?.routeProfiles;
+    if (routeProfiles != null) {
+      if (!routeProfiles || typeof routeProfiles !== 'object' || Array.isArray(routeProfiles)) {
+        errors.push(`alias ${aliasId} routeProfiles must be an object`);
+      } else {
+        const profileNames = Object.keys(routeProfiles);
+        if (!profileNames.length) errors.push(`alias ${aliasId} routeProfiles must not be empty`);
+        if (typeof alias.activeRoute !== 'string' || !routeProfiles[alias.activeRoute]) {
+          errors.push(`alias ${aliasId} activeRoute must name a configured route profile`);
+        }
+        for (const [profileName, profile] of Object.entries(routeProfiles)) {
+          if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
+            errors.push(`alias ${aliasId} route profile ${profileName} must be an object`);
+            continue;
+          }
+          const profileTargets = [
+            profile.target,
+            ...(Array.isArray(profile.fallbacks) ? profile.fallbacks : [])
+          ].filter(Boolean);
+          if (typeof profile.target !== 'string' || !profile.target.trim()) {
+            errors.push(`alias ${aliasId} route profile ${profileName} is missing target`);
+          }
+          if (profile.fallbacks != null && !Array.isArray(profile.fallbacks)) {
+            errors.push(`alias ${aliasId} route profile ${profileName} fallbacks must be an array`);
+          }
+          if (new Set(profileTargets).size !== profileTargets.length) {
+            errors.push(`alias ${aliasId} route profile ${profileName} has duplicate targets`);
+          }
+          for (const candidate of profileTargets) {
+            if (typeof candidate !== 'string' || !candidate.trim()) {
+              errors.push(`alias ${aliasId} route profile ${profileName} has an invalid target`);
+            } else if (!modelIds.has(candidate)) {
+              errors.push(`alias ${aliasId} route profile ${profileName} targets unknown model ${candidate}`);
+            }
+          }
+          const profileKinds = new Set(
+            profileTargets
+              .map((candidate) => (config.models ?? []).find((model) => model.id === candidate))
+              .filter(Boolean)
+              .map((model) => model.kind ?? 'chat')
+          );
+          if (profileKinds.size > 1) {
+            errors.push(
+              `alias ${aliasId} route profile ${profileName} targets models with different kinds: ${[
+                ...profileKinds
+              ].join(', ')}`
+            );
+          }
+        }
+        const active = routeProfiles[alias.activeRoute];
+        if (
+          active &&
+          (alias.target !== active.target ||
+            JSON.stringify(alias.fallbacks ?? []) !== JSON.stringify(active.fallbacks ?? []))
+        ) {
+          errors.push(`alias ${aliasId} active target order does not match route profile ${alias.activeRoute}`);
+        }
+      }
+    } else if (typeof alias !== 'string' && alias?.activeRoute != null) {
+      errors.push(`alias ${aliasId} activeRoute requires routeProfiles`);
     }
   }
 

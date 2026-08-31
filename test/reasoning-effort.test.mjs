@@ -112,6 +112,16 @@ const openRouter = {
   assert.equal(translated.reasoning_effort, undefined);
   assert.deepEqual(translated.reasoning, { effort: 'none', exclude: true });
 
+  const high = translateReasoningEffortForBackend(
+    {
+      model: openRouter.model.id,
+      reasoning_effort: 'high'
+    },
+    openRouter
+  );
+  assert.equal(high.reasoning_effort, undefined);
+  assert.deepEqual(high.reasoning, { effort: 'high' });
+
   const explicit = translateReasoningEffortForBackend(
     {
       model: openRouter.model.id,

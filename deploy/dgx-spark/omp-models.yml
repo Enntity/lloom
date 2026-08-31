@@ -14,7 +14,7 @@ providers:
       toolStrictMode: none
       thinkingFormat: qwen-chat-template
     models:
-      - id: qwen3.8-flash-next
+      - id: q38fn
         name: Qwen3.8 Flash Next NVFP4 TP=2 on ennspark01
         reasoning: true
         thinking:

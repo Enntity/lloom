@@ -922,21 +922,56 @@ function finishRecipeModelConfig(config, recipeModel, materializedModel, modelId
   }
   for (const aliasEntry of asArray(recipeModel.aliases)) {
     const aliasId = typeof aliasEntry === 'string' ? aliasEntry : aliasEntry?.id;
-    if (!aliasId || config.aliases[aliasId]) continue;
+    if (!aliasId) continue;
+    const existingAlias = asObject(config.aliases[aliasId]);
+    if (config.aliases[aliasId] && typeof aliasEntry === 'string') continue;
     const requestedFallbacks = typeof aliasEntry === 'string' ? [] : asArray(aliasEntry.fallbacks);
     const installedModelIds = new Set(config.models.map((model) => model.id));
+    const requestedRouteProfiles = typeof aliasEntry === 'string' ? {} : asObject(aliasEntry.routeProfiles);
+    const availableRequestedProfiles = Object.fromEntries(
+      Object.entries(requestedRouteProfiles).flatMap(([profileName, profile]) => {
+        const selected = asObject(profile);
+        if (!installedModelIds.has(selected.target)) return [];
+        return [
+          [
+            profileName,
+            {
+              target: selected.target,
+              ...(asArray(selected.fallbacks).length
+                ? { fallbacks: asArray(selected.fallbacks).filter((fallback) => installedModelIds.has(fallback)) }
+                : {})
+            }
+          ]
+        ];
+      })
+    );
+    const routeProfiles = {
+      ...asObject(existingAlias.routeProfiles),
+      ...availableRequestedProfiles
+    };
+    const requestedActiveRoute = typeof aliasEntry === 'string' ? null : aliasEntry.activeRoute;
+    const activeRoute = routeProfiles[existingAlias.activeRoute]
+      ? existingAlias.activeRoute
+      : routeProfiles[requestedActiveRoute]
+        ? requestedActiveRoute
+        : (Object.keys(routeProfiles)[0] ?? null);
+    const activeProfile = activeRoute ? routeProfiles[activeRoute] : null;
+    const activeFallbacks =
+      activeProfile?.fallbacks ?? requestedFallbacks.filter((fallback) => installedModelIds.has(fallback));
     config.aliases[aliasId] = {
-      target: modelId,
-      ...(requestedFallbacks.length
-        ? { fallbacks: requestedFallbacks.filter((fallback) => installedModelIds.has(fallback)) }
-        : {}),
-      advertise: typeof aliasEntry === 'string' ? true : aliasEntry.advertise !== false,
+      ...existingAlias,
+      target: activeProfile?.target ?? modelId,
+      fallbacks: activeFallbacks,
+      ...(activeRoute ? { activeRoute, routeProfiles } : {}),
+      advertise: existingAlias.advertise ?? (typeof aliasEntry === 'string' ? true : aliasEntry.advertise !== false),
       description:
+        existingAlias.description ??
         (typeof aliasEntry === 'string' ? null : aliasEntry.description) ??
         recipeModel.aliasDescription ??
         recipeModel.name ??
         modelId
     };
+    if (!activeFallbacks.length) delete config.aliases[aliasId].fallbacks;
   }
   if (recipeModel.setDefault === true) {
     config.defaults ??= {};

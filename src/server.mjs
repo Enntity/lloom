@@ -46,6 +46,7 @@ import { applyRecipePack, createRecipePackPlan } from './recipe-pack.mjs';
 import { buildRecipeIndexReport } from './recipe-index.mjs';
 import { loadRecipes } from './recipes.mjs';
 import { createRegistry, UnknownModelError } from './registry.mjs';
+import { routeProfileStatus, writeRouteProfile } from './route-control.mjs';
 import { RuntimeManager, runtimeWatchdogConfig } from './runtime-manager.mjs';
 import {
   applyRuntimePolicyPlan,
@@ -456,6 +457,30 @@ class RuntimeUnavailableError extends Error {
   }
 }
 
+class ModelTargetBackoffError extends Error {
+  constructor(resolved, state) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((state.until - Date.now()) / 1000));
+    super(`model target ${resolved.resolvedId} is temporarily unavailable; retry after ${retryAfterSeconds} seconds`);
+    this.name = 'ModelTargetBackoffError';
+    this.statusCode = state.statusCode === 429 ? 429 : 503;
+    this.code = 'MODEL_TARGET_BACKOFF';
+    this.type = 'runtime_admission_error';
+    this.model = resolved.requestedId;
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+class ModelTargetConfigurationError extends Error {
+  constructor(resolved, envName) {
+    super(`model target ${resolved.resolvedId} is unavailable because ${envName} is not configured`);
+    this.name = 'ModelTargetConfigurationError';
+    this.statusCode = 503;
+    this.code = 'MODEL_TARGET_NOT_CONFIGURED';
+    this.type = 'runtime_admission_error';
+    this.model = resolved.requestedId;
+  }
+}
+
 function isClientClosedError(error) {
   return error instanceof ClientClosedError || error?.name === 'ClientClosedError' || error?.code === 'client_closed';
 }
@@ -509,9 +534,18 @@ async function upstreamStatusError(upstream) {
   } catch {
     // Keep the raw upstream response as the diagnostic message.
   }
+  const retryAfter = upstream.headers.get('retry-after');
+  let retryAfterSeconds = null;
+  if (retryAfter && /^\d+(?:\.\d+)?$/.test(retryAfter.trim())) {
+    retryAfterSeconds = Math.max(1, Math.ceil(Number(retryAfter)));
+  } else if (retryAfter) {
+    const retryAt = Date.parse(retryAfter);
+    if (Number.isFinite(retryAt)) retryAfterSeconds = Math.max(1, Math.ceil((retryAt - Date.now()) / 1000));
+  }
   return Object.assign(new Error(message || `upstream status ${upstream.status}`), {
     code: 'upstream_error',
-    statusCode: upstream.status
+    statusCode: upstream.status,
+    ...(retryAfterSeconds == null ? {} : { retryAfterSeconds })
   });
 }
 
@@ -1784,7 +1818,81 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
   let reloadInFlight = Promise.resolve();
   let routingStatusCache = { at: 0, value: null, pending: null };
   const runtimeStartOperations = new Map();
+  const targetBackoffs = new Map();
   const configPath = config.sourcePath;
+
+  function targetKey(resolved) {
+    return `${resolved.backend?.baseUrl ?? resolved.model.backend ?? 'backend'}\n${resolved.model.upstreamModel}`;
+  }
+
+  function targetBackoffSettings() {
+    return {
+      baseMs: Math.max(100, Number(config.routing?.targetBackoffBaseMs ?? 1000)),
+      maxMs: Math.max(1000, Number(config.routing?.targetBackoffMaxMs ?? 60000))
+    };
+  }
+
+  function targetGate(resolved) {
+    const envName = resolved.backend?.apiKeyEnv;
+    if (envName && !process.env[envName]) {
+      return { allowed: false, error: new ModelTargetConfigurationError(resolved, envName) };
+    }
+    const key = targetKey(resolved);
+    const state = targetBackoffs.get(key);
+    if (!state) return { allowed: true, key, probe: false };
+    if (state.until > Date.now() || state.probeInFlight) {
+      return { allowed: false, key, error: new ModelTargetBackoffError(resolved, state) };
+    }
+    state.probeInFlight = true;
+    return { allowed: true, key, probe: true };
+  }
+
+  function noteTargetSuccess(resolved) {
+    targetBackoffs.delete(targetKey(resolved));
+  }
+
+  function noteTargetFailure(resolved, error) {
+    const key = targetKey(resolved);
+    const previous = targetBackoffs.get(key);
+    const failures = (previous?.failures ?? 0) + 1;
+    const settings = targetBackoffSettings();
+    const requestedMs = Number(error?.retryAfterSeconds) > 0 ? Number(error.retryAfterSeconds) * 1000 : null;
+    const exponentialMs = Math.min(settings.maxMs, settings.baseMs * 2 ** Math.min(16, failures - 1));
+    const delayMs = requestedMs ?? Math.max(settings.baseMs, Math.round(exponentialMs * (0.8 + Math.random() * 0.4)));
+    targetBackoffs.set(key, {
+      key,
+      model: resolved.resolvedId,
+      upstreamModel: resolved.model.upstreamModel,
+      backend: resolved.model.backend,
+      failures,
+      statusCode: errorStatusCode(error) || 503,
+      reason: error?.message ?? String(error),
+      until: Date.now() + delayMs,
+      retryAfterSeconds: Math.max(1, Math.ceil(delayMs / 1000)),
+      probeInFlight: false,
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  function releaseTargetProbe(resolved) {
+    const state = targetBackoffs.get(targetKey(resolved));
+    if (state) state.probeInFlight = false;
+  }
+
+  function targetBackoffStatus() {
+    const now = Date.now();
+    return [...targetBackoffs.values()].map((state) => ({
+      model: state.model,
+      upstreamModel: state.upstreamModel,
+      backend: state.backend,
+      failures: state.failures,
+      statusCode: state.statusCode,
+      reason: state.reason,
+      state: state.until > now ? 'open' : state.probeInFlight ? 'half-open' : 'probe-ready',
+      retryAfterSeconds: Math.max(0, Math.ceil((state.until - now) / 1000)),
+      updatedAt: state.updatedAt
+    }));
+  }
 
   function reloadConfig() {
     if (!configPath) return;
@@ -2330,13 +2438,33 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     }
     for (const [index, resolved] of candidates.entries()) {
       const hasNext = index < candidates.length - 1;
+      const gate = targetGate(resolved);
+      if (!gate.allowed) {
+        if (hasNext) {
+          logger.warn?.(`model target bypass ${resolved.requestedId}: ${resolved.resolvedId} (${gate.error.message})`);
+          continue;
+        }
+        throw gate.error;
+      }
       try {
-        return await recordModelRequest(
+        const result = await recordModelRequest(
           { route, resolved, stream, req, res },
           (context) => fn(resolved, { ...context, hasNext }),
           { deferUnsentErrors: hasNext }
         );
+        if (MODEL_FAILOVER_STATUS_CODES.has(Number(result?.status))) {
+          noteTargetFailure(
+            resolved,
+            Object.assign(new Error(`upstream status ${result.status}`), { statusCode: result.status })
+          );
+        } else {
+          noteTargetSuccess(resolved);
+        }
+        return result;
       } catch (error) {
+        if (shouldFailoverModelRequest(error, res)) noteTargetFailure(resolved, error);
+        else if (!isClientClosedError(error)) noteTargetSuccess(resolved);
+        else releaseTargetProbe(resolved);
         if (!hasNext || !shouldFailoverModelRequest(error, res)) throw error;
         logger.warn?.(
           `model failover ${resolved.requestedId}: ${resolved.resolvedId} -> ${candidates[index + 1].resolvedId} (${error?.message ?? error})`
@@ -3118,6 +3246,20 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         return;
       }
 
+      if (auth.routeKind === 'inference' && config.server?.inferenceEnabled === false) {
+        sendJson(
+          res,
+          503,
+          errorBody('this LLooM node is control-plane only; send inference to the cluster leader', {
+            type: 'service_unavailable',
+            code: 'worker_control_plane_only'
+          }),
+          { 'retry-after': '5' },
+          config
+        );
+        return;
+      }
+
       if (req.method === 'GET' && url.pathname === '/health') {
         sendJson(res, 200, { ok: true, name: config.name ?? 'LLooM' }, {}, config);
         return;
@@ -3151,7 +3293,25 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       if (req.method === 'GET' && url.pathname === '/gateway/routing') {
         sendJson(res, 200, {
           aliases: config.aliases ?? {},
-          defaults: config.defaults ?? {}
+          defaults: config.defaults ?? {},
+          profiles: routeProfileStatus(config),
+          targetBackoffs: targetBackoffStatus()
+        });
+        return;
+      }
+
+      const routeProfileMatch = url.pathname.match(/^\/gateway\/routes\/([^/]+)\/profile$/);
+      if (routeProfileMatch && req.method === 'POST') {
+        const aliasId = decodeURIComponent(routeProfileMatch[1]);
+        const body = await readJson(req);
+        const result = await writeRouteProfile(config, aliasId, body.profile);
+        if (result.changed) {
+          reloadConfig();
+          await reloadInFlight;
+        }
+        sendJson(res, 200, {
+          ...result,
+          route: routeProfileStatus(config, aliasId)[0] ?? null
         });
         return;
       }

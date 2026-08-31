@@ -2590,8 +2590,8 @@ assert.deepEqual(
   dsparkRefreshed.runtimes['deepseek-v4-flash-0731-cluster'].placement.members.map((member) => member.node),
   ['ennspark02', 'ennspark01']
 );
-assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-worker'].recipe.version, 18);
-assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-head'].recipe.version, 18);
+assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-worker'].recipe.version, 19);
+assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-head'].recipe.version, 19);
 assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-cluster'].keepWarm, false);
 assert.deepEqual(dsparkRefreshed.aliases['deepseek-v4-flash-0731'], {
   target: 'deepseek-v4-flash-0731',
@@ -3390,13 +3390,39 @@ assert(ompRoleYaml.includes('retry:'));
 assert(ompRoleYaml.includes('      - local-llm/Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16'));
 const sparkDeployConfig = JSON.parse(await fs.readFile(path.join('deploy', 'dgx-spark', 'config.json'), 'utf8'));
 assert.equal(sparkDeployConfig.clientCatalog.includeAliases, true);
+for (const aliasId of ['ds4f', 'ds4fv', 'q38fn', 'glm53f']) {
+  assert.equal(sparkDeployConfig.aliases[aliasId].activeRoute, 'cloud');
+  assert.match(sparkDeployConfig.aliases[aliasId].target, /^cloud\/openrouter\//);
+}
+const sparkProfileBase = structuredClone(sparkDeployConfig);
+sparkProfileBase.cluster = structuredClone(dsparkBase.cluster);
+const sparkQwenConfig = deriveUserConfig(sparkProfileBase, qwen38Recipe, {
+  modelRoot: '/models',
+  additive: true
+});
+assert.equal(sparkQwenConfig.aliases.q38fn.activeRoute, 'cloud');
+assert.equal(sparkQwenConfig.aliases.q38fn.target, 'cloud/openrouter/q38fn');
+assert.deepEqual(sparkQwenConfig.aliases.q38fn.routeProfiles['local-first'], {
+  target: 'qwen3.8-flash-next',
+  fallbacks: ['cloud/openrouter/q38fn']
+});
+const sparkQwenLocalFirst = structuredClone(sparkQwenConfig);
+sparkQwenLocalFirst.aliases.q38fn.activeRoute = 'local-first';
+sparkQwenLocalFirst.aliases.q38fn.target = 'qwen3.8-flash-next';
+sparkQwenLocalFirst.aliases.q38fn.fallbacks = ['cloud/openrouter/q38fn'];
+const sparkQwenRefreshed = deriveUserConfig(sparkQwenLocalFirst, qwen38Recipe, {
+  modelRoot: '/models',
+  additive: true
+});
+assert.equal(sparkQwenRefreshed.aliases.q38fn.activeRoute, 'local-first');
+assert.equal(sparkQwenRefreshed.aliases.q38fn.target, 'qwen3.8-flash-next');
 const sparkOmpConfig = renderOmpConfigYaml(sparkDeployConfig);
 for (const role of ['smol', 'slow', 'plan', 'commit', 'designer', 'advisor', 'tiny', 'vision', 'task']) {
-  assert(sparkOmpConfig.includes(`  ${role}: local-llm/qwen3.8-flash-next:low`));
+  assert(sparkOmpConfig.includes(`  ${role}: local-llm/q38fn:low`));
 }
-assert(sparkOmpConfig.includes('  default: local-llm/qwen3.8-flash-next:low'));
+assert(sparkOmpConfig.includes('  default: local-llm/q38fn:low'));
 const sparkOmpModelsTemplate = await fs.readFile(path.join('deploy', 'dgx-spark', 'omp-models.yml'), 'utf8');
-assert(sparkOmpModelsTemplate.includes('      - id: qwen3.8-flash-next\n'));
+assert(sparkOmpModelsTemplate.includes('      - id: q38fn\n'));
 assert(sparkOmpModelsTemplate.includes('        contextWindow: 262144\n'));
 assert(sparkOmpModelsTemplate.includes('        maxTokens: 32768\n'));
 const sparkClientConfig = structuredClone(registryConfig);

@@ -39,9 +39,11 @@ function embedding(model, value) {
 
 async function createFixture({
   primaryStatus = 503,
+  primaryHeaders = {},
   cloudStatus = 200,
   runtimeStatus = 'running',
-  preserveResident = false
+  preserveResident = false,
+  inferenceEnabled = true
 } = {}) {
   const hits = { primary: 0, cloud: 0, ensures: 0 };
   const operations = [];
@@ -52,7 +54,7 @@ async function createFixture({
       primaryStatus === 200
         ? completion('local-upstream', 'local')
         : JSON.stringify({ error: { message: `primary status ${primaryStatus}` } });
-    res.writeHead(primaryStatus, { 'content-type': 'application/json' });
+    res.writeHead(primaryStatus, { 'content-type': 'application/json', ...primaryHeaders });
     res.end(body);
   });
   const cloud = http.createServer(async (req, res) => {
@@ -86,7 +88,7 @@ async function createFixture({
   const cloudPort = await listen(cloud);
   const config = {
     name: 'model-failover-test',
-    server: { host: '127.0.0.1', port: 0 },
+    server: { host: '127.0.0.1', port: 0, inferenceEnabled },
     security: { allowMissingAuth: true, apiKeys: [] },
     logging: { metricsPersistence: false },
     cluster: { routingStatusCacheMs: 0 },
@@ -502,6 +504,34 @@ async function embed(url, body = {}) {
   assert.equal(recent[1].failedOver, true);
   assert.deepEqual(fixture.operations.slice(0, 2), ['ensure:primary-runtime', 'slot:primary-runtime']);
   assert(fixture.logs.some((line) => line.includes('stable-chat -> cloud-chat')));
+  await fixture.close();
+}
+
+// Retry-After opens a target circuit. New requests calmly bypass the known-bad
+// target until its advertised cooldown expires instead of hammering it.
+{
+  const fixture = await createFixture({ primaryStatus: 429, primaryHeaders: { 'retry-after': '30' } });
+  assert.equal((await chat(fixture.url)).status, 200);
+  assert.equal((await chat(fixture.url)).status, 200);
+  assert.deepEqual(fixture.hits, { primary: 1, cloud: 2, ensures: 1 });
+  const routing = await fetch(`${fixture.url}/gateway/routing`).then((response) => response.json());
+  const backoff = routing.targetBackoffs.find((entry) => entry.model === 'stable-chat');
+  assert.equal(backoff.state, 'open');
+  assert(backoff.retryAfterSeconds >= 29);
+  await fixture.close();
+}
+
+// A worker/control-plane LLooM remains healthy and administrable but refuses
+// direct inference, making an accidental client connection fail visibly.
+{
+  const fixture = await createFixture({ primaryStatus: 200, inferenceEnabled: false });
+  const response = await chat(fixture.url);
+  assert.equal(response.status, 503);
+  assert.equal(response.headers.get('retry-after'), '5');
+  assert.equal((await response.json()).error.code, 'worker_control_plane_only');
+  assert.deepEqual(fixture.hits, { primary: 0, cloud: 0, ensures: 0 });
+  assert.equal((await fetch(`${fixture.url}/health`)).status, 200);
+  assert.equal((await fetch(`${fixture.url}/gateway/routing`)).status, 200);
   await fixture.close();
 }
 

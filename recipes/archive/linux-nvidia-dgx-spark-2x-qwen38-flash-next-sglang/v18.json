@@ -4,7 +4,7 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang",
   "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 SGLang",
-  "version": 19,
+  "version": 18,
   "summary": "On-demand two-Spark SGLang TP=2 Qwen3.8 Flash Next with a measured two-request entity-workload envelope, LLooM-owned overflow queueing, scheduler-safe disconnect cancellation, stable target-only decode, native low-effort reasoning, SM121 QSA guards, NVFP4 KV, native 262K context, and reserved sidecar headroom.",
   "license": { "id": "MIT", "name": "Recipe metadata and launcher" },
   "provenance": {
@@ -63,27 +63,7 @@
       "upstreamModel": "qwen3.8-flash-next",
       "runtime": "qwen38-flash-next-cluster",
       "backendConfig": "qwen38-flash-next",
-      "aliases": [
-        "qwen38f-next",
-        {
-          "id": "q38fn",
-          "fallbacks": ["cloud/openrouter/q38fn"],
-          "activeRoute": "local-first",
-          "routeProfiles": {
-            "local-first": {
-              "target": "qwen3.8-flash-next",
-              "fallbacks": ["cloud/openrouter/q38fn"]
-            },
-            "cloud": { "target": "cloud/openrouter/q38fn" }
-          },
-          "description": "Stable Qwen3.8 Flash route: local Spark cluster first, OpenRouter during maintenance or outage."
-        },
-        {
-          "id": "q38fn-local",
-          "advertise": false,
-          "description": "Strict local-only Qwen3.8 Flash candidate route for canaries and benchmarks."
-        }
-      ],
+      "aliases": ["qwen38f-next", "q38fn"],
       "setDefault": true,
       "input": ["text", "image"],
       "output": ["text"],

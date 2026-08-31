@@ -83,6 +83,7 @@ const COMMAND_REGISTRY = [
   { name: 'doctor', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'serve', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'models', aliases: [], tier: 'primary', needsInstalledConfig: true },
+  { name: 'route', aliases: ['routing'], tier: 'primary', needsInstalledConfig: true },
   { name: 'integrate', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'integrations', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'add-model', aliases: ['model-add'], tier: 'primary', needsInstalledConfig: true },
@@ -195,6 +196,7 @@ Backends and runtimes:
   lloom keep-warm
 
 Models and clients:
+  lloom route [alias [profile]] [--apply --yes]
   lloom add-model <hf-url|repo-id|local-path|ollama:tag|lmstudio:id|openai:url#model> [--backend id] [--api-key-env NAME] [--input TYPE] [--capability ID] [--tag ID] [--keep-warm] [--default] [--go|--apply --yes]
   lloom remove-model <model-id> [--delete-files] [--apply --yes]
   lloom integrations [client-id|all] [--home path] [--generated-root path]
@@ -294,6 +296,8 @@ const INSTALLED_CONFIG_COMMANDS = new Set([
   'model-add',
   'models',
   'remove-model',
+  'route',
+  'routing',
   'runtime-admit',
   'runtime-plan',
   'runtime-policy',
@@ -320,6 +324,8 @@ const OPERATIONAL_CONFIG_COMMANDS = new Set([
   'model-add',
   'models',
   'remove-model',
+  'route',
+  'routing',
   'runtime-admit',
   'runtime-plan',
   'runtime-policy',
@@ -2247,6 +2253,41 @@ async function main() {
       });
       console.log(wantsJson(args) ? JSON.stringify(result, null, 2) : formatIntegrationResult(result, clientId));
     },
+    route: async ({ args, config }) => {
+      const aliasId = positional(args)[1];
+      const profile = positional(args)[2];
+      if (!profile) {
+        const routing = await gatewayRequest(config, '/gateway/routing', { timeoutMs: 10000 });
+        if (!routing) throw new Error(`LLooM gateway at ${gatewayUrlFor(config)} is not reachable`);
+        const routes = aliasId
+          ? (routing.profiles ?? []).filter((entry) => entry.alias === aliasId)
+          : (routing.profiles ?? []);
+        if (aliasId && !routes.length) throw new Error(`Unknown profiled route alias ${aliasId}`);
+        console.log(JSON.stringify({ routes, targetBackoffs: routing.targetBackoffs ?? [] }, null, 2));
+        return;
+      }
+      if (!aliasId) throw new Error('Missing route alias');
+      const plan = {
+        alias: aliasId,
+        profile,
+        applied: false,
+        next: `lloom route ${aliasId} ${profile} --apply --yes`
+      };
+      if (!hasFlag(args, '--apply')) {
+        console.log(JSON.stringify(plan, null, 2));
+        return;
+      }
+      if (!hasFlag(args, '--yes')) {
+        throw new Error('Refusing to switch a live route without --yes after reviewing the plan');
+      }
+      const result = await gatewayRequest(config, `/gateway/routes/${encodeURIComponent(aliasId)}/profile`, {
+        method: 'POST',
+        body: { profile },
+        timeoutMs: 30000
+      });
+      if (!result) throw new Error(`route switch failed through ${gatewayUrlFor(config)}`);
+      console.log(JSON.stringify({ ...result, applied: true }, null, 2));
+    },
     runtimes: async ({ args, config, command: _command }) => {
       const runtimeId = positional(args)[1] ?? 'all';
       const manager = runtimeManagerForCli(config);
@@ -2609,6 +2650,7 @@ async function main() {
   handlers['recipe-pack'] = handlers['recipe-import'];
   handlers['pack-submit'] = handlers['recipe-submit'];
   handlers['model-add'] = handlers['add-model'];
+  handlers['routing'] = handlers['route'];
   handlers['runtime-status'] = handlers['runtimes'];
   handlers['cluster-status'] = handlers['cluster'];
   handlers['runtime-policy'] = handlers['runtime-plan'];

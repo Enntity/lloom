@@ -4,7 +4,7 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm",
   "name": "2x DGX Spark GLM-5.3 Flash EXL3 DFlash2 vLLM",
-  "version": 9,
+  "version": 8,
   "summary": "MiaAI-Lab's GLM-5.3 Flash EXL3/TR3 4bpw TP=2 recipe with DFlash2-7 slot-shared KV, native SM121 kernels, resilient IPv4 RoCE discovery, prefix-cache and structured-output fixes, a practical 300 Ki-token context, measured 2K prefill chunks, vision, and a hard LLooM residency pin across both Sparks.",
   "license": { "id": "MIT", "name": "Recipe metadata and launcher" },
   "provenance": {
@@ -78,27 +78,7 @@
       "upstreamModel": "glm-5.3-flash-exl3",
       "runtime": "glm53-flash-exl3-cluster",
       "backendConfig": "glm53-flash-exl3",
-      "aliases": [
-        {
-          "id": "glm53f",
-          "fallbacks": ["cloud/openrouter/glm53f"],
-          "activeRoute": "local-first",
-          "routeProfiles": {
-            "local-first": {
-              "target": "glm-5.3-flash-exl3",
-              "fallbacks": ["cloud/openrouter/glm53f"]
-            },
-            "cloud": { "target": "cloud/openrouter/glm53f" }
-          },
-          "description": "Stable GLM-5.3 Flash route: local Spark cluster first, OpenRouter during maintenance or outage."
-        },
-        {
-          "id": "glm53f-local",
-          "advertise": false,
-          "description": "Strict local-only GLM-5.3 Flash candidate route for canaries and benchmarks."
-        },
-        "glm53-flash"
-      ],
+      "aliases": ["glm53f", "glm53-flash"],
       "setDefault": false,
       "input": ["text", "image", "video"],
       "output": ["text"],

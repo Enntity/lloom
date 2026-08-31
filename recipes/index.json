@@ -288,7 +288,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang",
       "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang.json",
-      "currentVersion": 18,
+      "currentVersion": 19,
       "versions": [
         {
           "version": 1,
@@ -411,9 +411,16 @@
         },
         {
           "version": 18,
+          "path": "archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang/v18.json",
+          "status": "archived",
+          "archivedAt": "2026-08-31T21:00:00.000Z",
+          "notes": "Uses target-only production decode after a single-request speculative-verify NaN, and atomically clears every cache allocator when the token-id-0 safety guard rejects a request."
+        },
+        {
+          "version": 19,
           "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-sglang.json",
           "status": "current",
-          "notes": "Uses target-only production decode after a single-request speculative-verify NaN, and atomically clears every cache allocator when the token-id-0 safety guard rejects a request."
+          "notes": "Adds stable q38fn local-first and cloud route profiles so Spark recipe work can be isolated from entity cognition without changing the model ID clients use."
         }
       ],
       "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 SGLang",
@@ -426,7 +433,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm",
       "path": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm.json",
-      "currentVersion": 8,
+      "currentVersion": 9,
       "versions": [
         {
           "version": 1,
@@ -472,9 +479,16 @@
         },
         {
           "version": 8,
+          "path": "archive/linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm/v8.json",
+          "status": "archived",
+          "archivedAt": "2026-08-31T21:00:00.000Z",
+          "notes": "Adopts MiaAI's measured 2K prefill chunk and raises the served context to a practical 300 Ki tokens while retaining LLooM's 9.5 GiB KV budget and health headroom."
+        },
+        {
+          "version": 9,
           "path": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm.json",
           "status": "current",
-          "notes": "Adopts MiaAI's measured 2K prefill chunk and raises the served context to a practical 300 Ki tokens while retaining LLooM's 9.5 GiB KV budget and health headroom."
+          "notes": "Adds stable glm53f local-first and cloud route profiles while preserving an explicit hidden local-only lane for attribution."
         }
       ],
       "name": "2x DGX Spark GLM-5.3 Flash EXL3 DFlash2 vLLM",
@@ -487,7 +501,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm",
       "path": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json",
-      "currentVersion": 18,
+      "currentVersion": 19,
       "versions": [
         {
           "version": 4,
@@ -589,9 +603,16 @@
         },
         {
           "version": 18,
+          "path": "archive/linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm/v18.json",
+          "status": "archived",
+          "archivedAt": "2026-08-31T21:00:00.000Z",
+          "notes": "Restores DSpark speculative decode on a locally pinned image with vLLM PR 51538's compiled top-k guard, adopts MiaAI's safe single-prefill default and Issue 133 Triton specialization fix, and enables both RoCE rails with persistent compiler caches and NCCL flight recording."
+        },
+        {
+          "version": 19,
           "path": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm.json",
           "status": "current",
-          "notes": "Restores DSpark speculative decode on a locally pinned image with vLLM PR 51538's compiled top-k guard, adopts MiaAI's safe single-prefill default and Issue 133 Triton specialization fix, and enables both RoCE rails with persistent compiler caches and NCCL flight recording."
+          "notes": "Adds stable ds4f local-first and cloud route profiles plus an explicit hidden local-only lane, preserving the existing DeepSeek compatibility aliases."
         }
       ],
       "name": "2x DGX Spark DeepSeek V4 Flash DSpark (MiaAI validated)",

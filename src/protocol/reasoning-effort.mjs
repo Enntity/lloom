@@ -112,16 +112,12 @@ function sglangThinkingBudgetProfile(resolved = {}) {
 export function translateReasoningEffortForBackend(body = {}, resolved = {}) {
   const profiledBody = applyChatTemplateBehaviorOverrides(body, resolved);
   const effort = normalizedEffort(profiledBody);
-  if (effort === 'none' && isOpenRouter(resolved)) {
-    const next = { ...profiledBody };
-    delete next.reasoning_effort;
+  if (effort && effort !== 'auto' && isOpenRouter(resolved)) {
+    const next = removeGatewayEffort(profiledBody);
     next.reasoning = {
-      ...(isObject(profiledBody.reasoning) ? profiledBody.reasoning : {}),
-      effort: 'none',
-      exclude:
-        isObject(profiledBody.reasoning) && Object.hasOwn(profiledBody.reasoning, 'exclude')
-          ? profiledBody.reasoning.exclude
-          : true
+      ...(isObject(next.reasoning) ? next.reasoning : {}),
+      effort,
+      ...(effort === 'none' && !Object.hasOwn(next.reasoning ?? {}, 'exclude') ? { exclude: true } : {})
     };
     return next;
   }

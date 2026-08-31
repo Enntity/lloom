@@ -151,6 +151,8 @@ Tune recipe flags from local benches:
 
 LLooM now discovers NVIDIA Sync clusters, ranks recipes by cluster provider and node count, and coordinates ordered distributed runtime members through authenticated LLooM gateways on each node.
 
+In the standard two-Spark layout, the leader owns the complete client-visible model catalog, external-provider credentials, and routing decisions. The worker receives only projected distributed runtime members and lifecycle commands. Set `server.inferenceEnabled: false` on the worker so an accidentally stale client endpoint returns a clear 503 instead of bypassing leader routing. Stable aliases with local and cloud route profiles let the leader keep entity cognition on the external provider while both Spark model processes are stopped, replaced, or canaried.
+
 For a directly connected two-Spark cluster:
 
 ```bash
