@@ -454,7 +454,7 @@ def _prepare_decode_tensors():
 
   console.log('dspark hotfix tests passed');
 
-  await import('./qwen38-sglang-recipe.test.mjs');
+  await import('./qwen38-vllm-recipe.test.mjs');
 } finally {
   rmSync(tempRoot, { recursive: true, force: true });
 }

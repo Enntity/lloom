@@ -10,11 +10,14 @@ otherwise attempts a BF16 embedding and fails on the checkpoint weight_scale.
 from __future__ import annotations
 
 import glob
+import hashlib
 import pathlib
 import re
+import sys
 
 
 MARKER = "# lloom: RadixArk NVFP4 uses the checkpoint's FP8 PLE shards"
+EXPECTED_SOURCE_SHA256 = "a71144c1d36e06f22a2da1b1ada900076597fe5e824a911e7ada86249a0993e7"
 
 
 def candidates() -> list[pathlib.Path]:
@@ -38,6 +41,13 @@ def patch(path: pathlib.Path) -> None:
         print(f"PLE loader patch already present: {path}", flush=True)
         return
 
+    source_sha256 = hashlib.sha256(source.encode()).hexdigest()
+    if source_sha256 != EXPECTED_SOURCE_SHA256:
+        raise RuntimeError(
+            f"refusing unknown PLE source at {path}: "
+            f"expected {EXPECTED_SOURCE_SHA256}, found {source_sha256}"
+        )
+
     class_match = re.search(r"^class (Qwen\w*PLEFp8EmbeddingMethod)\(", source, re.MULTILINE)
     if not class_match:
         raise RuntimeError(f"FP8 PLE method not found in {path}")
@@ -59,7 +69,7 @@ def patch(path: pathlib.Path) -> None:
     print(f"Applied FP8 PLE loader patch: {path}", flush=True)
 
 
-paths = candidates()
+paths = [pathlib.Path(sys.argv[1])] if len(sys.argv) == 2 else candidates()
 if len(paths) != 1:
     raise SystemExit(f"expected one Qwen PLE implementation, found {len(paths)}: {paths}")
 patch(paths[0])
