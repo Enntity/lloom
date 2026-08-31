@@ -726,14 +726,18 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
 
     function physicalTopologyModels(models) {
       const physical = new Map();
+      function add(model, routeId) {
+        if (!model?.id) return;
+        const existing = physical.get(model.id);
+        const routeIds = [...new Set([...(existing?.routeIds || model.routeIds || []), routeId].filter(Boolean))];
+        physical.set(model.id, { ...(existing || model), routeIds });
+      }
       for (const model of models || []) {
-        if (!model?.alias && model?.id && !physical.has(model.id)) physical.set(model.id, model);
+        if (!model?.alias) add(model);
       }
       for (const route of models || []) {
         if (!route?.alias) continue;
-        for (const model of route.memberModels || []) {
-          if (model?.id && !physical.has(model.id)) physical.set(model.id, model);
-        }
+        for (const model of route.memberModels || []) add(model, route.id);
       }
       return [...physical.values()];
     }
@@ -1082,16 +1086,19 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       }
       return "model";
     }
-    function modelNameParts(id) {
-      const raw = String(id || "");
+    function modelNameParts(model) {
+      const raw = [model?.id && shortModel(model.id), model?.name, model?.upstreamModel && shortModel(model.upstreamModel)]
+        .filter(Boolean)
+        .join(" ");
       const vendor = modelFamily(raw).toLowerCase();
-      const name = shortModel(raw).toLowerCase();
+      const name = raw.toLowerCase();
       const tokens = new Set(name.split(/[^a-z0-9]+/).filter(token => token && token.length > 1));
       return { vendor, name, tokens };
     }
-    function modelNameSimilarity(leftId, rightId) {
-      if (leftId === rightId) return 0;
-      const left = modelNameParts(leftId), right = modelNameParts(rightId);
+    function modelNameSimilarity(leftModel, rightModel) {
+      if (leftModel.id === rightModel.id) return 0;
+      if ((leftModel.routeIds || []).some(routeId => (rightModel.routeIds || []).includes(routeId))) return 1;
+      const left = modelNameParts(leftModel), right = modelNameParts(rightModel);
       let score = 0;
       if (left.vendor && left.vendor === right.vendor) score += .38;
       let shared = 0;
@@ -1106,6 +1113,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     }
     function clusterModelsByName(models) {
       const ids = models.map(model => model.id).sort();
+      const modelsById = new Map(models.map(model => [model.id, model]));
       const parent = new Map(ids.map(id => [id, id]));
       function find(id) {
         let root = id;
@@ -1126,7 +1134,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       }
       for (let left = 0; left < ids.length; left++) {
         for (let right = left + 1; right < ids.length; right++) {
-          if (modelNameSimilarity(ids[left], ids[right]) >= .42) union(ids[left], ids[right]);
+          if (modelNameSimilarity(modelsById.get(ids[left]), modelsById.get(ids[right])) >= .42) union(ids[left], ids[right]);
         }
       }
       const clusters = new Map();
@@ -1969,7 +1977,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           ...liveConnections.map(item => item.node).filter(Boolean),
           ...(liveConnections.length ? (runtimeState.members || []).map(member => member.node).filter(Boolean) : [])
         ])];
-        return { id: model.id, name: model.name || model.id, nodes, activeNodes, runtimeIds: [...runtimeIds, ...remoteRuntimeIds], runtimeStatus: runtimeState, inputTokens: Number(data.inputTokens || 0) + activeInput, inputEstimated, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveOutputRate, promptTokens: modelPromptTokens, promptPulseAt: modelPromptPulseAt, averageRate: data.decodeTokensPerSecond == null ? null : Number(data.decodeTokensPerSecond), state: stateLabel, lastActiveAt, agedOut };
+        return { id: model.id, name: model.name || model.id, upstreamModel: model.upstreamModel, routeIds: model.routeIds || [], nodes, activeNodes, runtimeIds: [...runtimeIds, ...remoteRuntimeIds], runtimeStatus: runtimeState, inputTokens: Number(data.inputTokens || 0) + activeInput, inputEstimated, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveOutputRate, promptTokens: modelPromptTokens, promptPulseAt: modelPromptPulseAt, averageRate: data.decodeTokensPerSecond == null ? null : Number(data.decodeTokensPerSecond), state: stateLabel, lastActiveAt, agedOut };
       });
       state.topologyCatalogModels = topologyModels;
       applyTopologyModelFilter();

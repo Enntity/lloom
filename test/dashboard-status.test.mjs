@@ -93,6 +93,36 @@ assert.deepEqual(
   Array.from(physicalModels, (model) => model.id),
   ['qwen3.8-flash-next', 'cloud/openrouter/q38fn']
 );
+assert.deepEqual(Array.from(physicalModels[0].routeIds), ['q38fn']);
+assert.deepEqual(Array.from(physicalModels[1].routeIds), ['q38fn']);
+
+const clusterStart = source.indexOf('    function shortModel(value)');
+const clusterEnd = source.indexOf('    function modelFieldDelta(', clusterStart);
+assert(clusterStart >= 0 && clusterEnd > clusterStart);
+const clusterContext = {};
+vm.runInNewContext(
+  source.slice(clusterStart, clusterEnd) + '\nglobalThis.clusterModelsByName = clusterModelsByName;',
+  clusterContext
+);
+const clusters = clusterContext.clusterModelsByName([
+  {
+    id: 'qwen3.8-flash-next',
+    name: 'Qwen3.8 Flash Next NVFP4',
+    upstreamModel: 'qwen3.8-flash-next',
+    routeIds: ['q38fn']
+  },
+  {
+    id: 'cloud/openrouter/q38fn',
+    name: 'Qwen3.8 Flash · OpenRouter',
+    upstreamModel: 'qwen/qwen3.8-flash',
+    routeIds: ['q38fn']
+  },
+  { id: 'z-ai/glm-5.2', name: 'GLM 5.2 · OpenRouter', upstreamModel: 'z-ai/glm-5.2', routeIds: [] }
+]);
+assert.deepEqual(
+  Array.from(clusters, (cluster) => Array.from(cluster)),
+  [['cloud/openrouter/q38fn', 'qwen3.8-flash-next'], ['z-ai/glm-5.2']]
+);
 
 const helperStart = source.indexOf('    function nodeAcceleratorSignals(node)');
 const helperEnd = source.indexOf('    function renderModelInspector()', helperStart);
