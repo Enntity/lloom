@@ -6,6 +6,7 @@ const catalog = JSON.parse(await fs.readFile(new URL('../deploy/dgx-spark/config
 const installed = {
   server: { host: '0.0.0.0', port: 8100 },
   aliases: {
+    'qwen38f-next': { target: 'qwen3.8-flash-next', advertise: true },
     q38fn: { target: 'qwen3.8-flash-next', advertise: true },
     glm53f: { target: 'glm-5.3-flash-exl3', advertise: true }
   },
@@ -22,6 +23,7 @@ const installed = {
 
 const merged = mergeSparkRouteCatalog(installed, catalog);
 assert.equal(merged.server.inferenceEnabled, true);
+assert.equal(merged.aliases['qwen38f-next'], undefined);
 assert.deepEqual(merged.aliases.q38fn.members, ['qwen3.8-flash-next', 'cloud/openrouter/q38fn']);
 assert.deepEqual(merged.aliases.ds4f.members, ['deepseek-v4-flash-0731', 'cloud/openrouter/ds4f']);
 assert.deepEqual(merged.aliases.ds4fv.members, ['cloud/openrouter/ds4fv']);

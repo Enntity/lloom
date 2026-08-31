@@ -584,6 +584,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
   <script>
     const state = {
       models: [],
+      physicalModels: [],
       backends: [],
       status: null,
       library: null,
@@ -721,6 +722,20 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         '"': "&quot;",
         "'": "&#39;",
       }[char]));
+    }
+
+    function physicalTopologyModels(models) {
+      const physical = new Map();
+      for (const model of models || []) {
+        if (!model?.alias && model?.id && !physical.has(model.id)) physical.set(model.id, model);
+      }
+      for (const route of models || []) {
+        if (!route?.alias) continue;
+        for (const model of route.memberModels || []) {
+          if (model?.id && !physical.has(model.id)) physical.set(model.id, model);
+        }
+      }
+      return [...physical.values()];
     }
 
     function renderModels() {
@@ -866,7 +881,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
 
     function renderModelInspector() {
       const inspector = $("#model-inspector");
-      const model = (state.models || []).find(item => item.id === state.selectedModelId);
+      const model = (state.physicalModels || []).find(item => item.id === state.selectedModelId);
       if (!model) {
         if (state.selectedModelId) closeModelInspector();
         return;
@@ -882,7 +897,6 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const observedRuntime = runtime || topologyModel.runtimeStatus || null;
       const details = [
         ["Gateway model", model.id],
-        ...(model.alias ? [["Ordered members", (model.aliasMembers || []).join(" → ") || "—"]] : []),
         ["Runtime", model.runtime || topologyModel.runtimeIds?.join(", ") || "external"],
         ["Runtime state", observedRuntime?.status || modelState],
         ["Context", model.contextWindow ? formatNumber(model.contextWindow) : "—"],
@@ -1671,7 +1685,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const vendor = modelFamily(point.model.id).toUpperCase();
         const vendorText = fitCanvasText(ctx, vendor, 54);
         const titleWidth = Math.max(24, cardWidth - 12 - 10 - ctx.measureText(vendorText).width - 12);
-        ctx.fillStyle = "rgba(242,245,247,.92)"; ctx.fillText(fitCanvasText(ctx, shortModel(point.model.id), titleWidth), cardLeft + 12, point.y - 15);
+        ctx.fillStyle = "rgba(242,245,247,.92)"; ctx.fillText(fitCanvasText(ctx, shortModel(point.model.name || point.model.id), titleWidth), cardLeft + 12, point.y - 15);
         ctx.textAlign = "right"; ctx.fillStyle = "rgba(143,180,255,.78)"; ctx.fillText(vendorText, cardLeft + cardWidth - 10, point.y - 15); ctx.textAlign = "left";
         ctx.fillStyle = "rgba(153,163,176,.9)";
         ctx.fillText((point.model.inputEstimated ? "~" : "") + formatCompact(point.model.inputTokens) + " in · " + formatCompact(point.model.outputTokens) + " out", cardLeft + 12, point.y + 4);
@@ -1857,7 +1871,6 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const fieldCapacity = Math.max(8, Math.min(24, Math.floor(availableArea / (170 * 48))));
       const inactiveCapacity = Math.max(0, fieldCapacity - active.length);
       const fading = [...recentById.values()].filter(item => !activeIds.has(item.id) && sampleAt - Date.parse(item.at) < 22500).slice(0, inactiveCapacity);
-      const catalogModelIds = new Set((state.models || []).map(model => model.id));
       const connections = active.map(item => ({ ...item, live: true, ageMs: 0 })).concat(fading.map(item => ({ ...item, ageMs: Math.max(0, sampleAt - Date.parse(item.at)) })));
       state.topologyConnections = connections.map(item => {
         const completedPrompt = completedPromptBursts.get(item.id);
@@ -1865,7 +1878,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const inputEstimated = item.live ? true : item.usage?.input_tokens == null;
         return {
           ...item,
-          model: item.requestedModel && catalogModelIds.has(item.requestedModel) ? item.requestedModel : item.model,
+          model: item.resolvedModel || item.model,
           fadeStartedAt: item.live ? activityRenderedAt : activityRenderedAt - item.ageMs,
           inputTokens: Math.round(Number(item.usage?.input_tokens || (item.requestBytes || 0) / 4)),
           outputTokens: Math.round(Number(item.usage?.output_tokens || item.outputChars / 4 || 0)),
@@ -1879,7 +1892,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       });
       const modelMetrics = new Map((metrics.models || []).map(model => [model.id, model]));
       const runtimeStates = state.status?.runtimeManager?.runtimes || {};
-      const topologyModels = (state.models || []).map(model => {
+      const topologyModels = (state.physicalModels || []).map(model => {
         const data = modelMetrics.get(model.id) || {};
         const modelConnections = state.topologyConnections.filter(item => item.model === model.id);
         const liveConnections = state.topologyConnections.filter(item => item.live && item.model === model.id);
@@ -1890,11 +1903,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const inputEstimated = liveConnections.some(item => item.inputEstimated);
         const activeInput = liveConnections.reduce((sum, item) => sum + item.inputTokens, 0);
         const activeOutput = liveConnections.reduce((sum, item) => sum + item.outputTokens, 0);
-        const memberModels = model.memberModels || [];
-        const modelTargets = [model, ...memberModels].flatMap(member => member.targets || []);
+        const modelTargets = model.targets || [];
         const runtimeIds = [...new Set([
           model.runtime,
-          ...memberModels.map(member => member.runtime),
           ...modelTargets.map(target => target.runtime)
         ].filter(Boolean))];
         const remoteRuntimeRefs = modelTargets
@@ -1938,20 +1949,14 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         // cold backend is not serving yet, and a draining backend remains
         // visibly evicting until the process/container is actually gone.
         const hasManagedRuntime = runtimeIds.length > 0 || remoteRuntimeRefs.length > 0;
-        const hasExternalMember = model.alias
-          ? memberModels.some(member => !member.runtime && !(member.targets || []).some(target => target.runtime))
-          : !hasManagedRuntime;
-        const liveManaged = liveConnections.some(connection => {
-          const member = memberModels.find(candidate => candidate.id === connection.resolvedModel);
-          return Boolean(member?.runtime || (member?.targets || []).some(target => target.runtime));
-        });
+        const isExternal = !hasManagedRuntime;
         const remoteOnlyUnreachable = !runtimeIds.length && remoteRuntimeRefs.length > 0
           && remoteRuntimeRefs.every(item => clusterNodes[item.node]?.reachable === false);
         const stateLabel = remoteOnlyUnreachable
           ? "unreachable"
           : liveConnections.length
-            ? liveManaged || (!model.alias && hasManagedRuntime) ? "serving" : "external-processing"
-            : transitioning || (runtimeLoaded ? "hot" : hasExternalMember ? "external" : runtimeStatus === "failed" ? "failed" : "cold");
+            ? hasManagedRuntime ? "serving" : "external-processing"
+            : transitioning || (runtimeLoaded ? "hot" : isExternal ? "external" : runtimeStatus === "failed" ? "failed" : "cold");
         const lastActiveAt = data.last?.at || runtimeState.lastRequestedAt || null;
         const lastActiveMs = Date.parse(lastActiveAt || "");
         const agedOut = stateLabel === "cold" && (!Number.isFinite(lastActiveMs) || sampleAt - lastActiveMs > TOPOLOGY_COLD_MODEL_TTL_MS);
@@ -1964,7 +1969,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           ...liveConnections.map(item => item.node).filter(Boolean),
           ...(liveConnections.length ? (runtimeState.members || []).map(member => member.node).filter(Boolean) : [])
         ])];
-        return { id: model.id, nodes, activeNodes, runtimeIds: [...runtimeIds, ...remoteRuntimeIds], runtimeStatus: runtimeState, inputTokens: Number(data.inputTokens || 0) + activeInput, inputEstimated, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveOutputRate, promptTokens: modelPromptTokens, promptPulseAt: modelPromptPulseAt, averageRate: data.decodeTokensPerSecond == null ? null : Number(data.decodeTokensPerSecond), state: stateLabel, lastActiveAt, agedOut };
+        return { id: model.id, name: model.name || model.id, nodes, activeNodes, runtimeIds: [...runtimeIds, ...remoteRuntimeIds], runtimeStatus: runtimeState, inputTokens: Number(data.inputTokens || 0) + activeInput, inputEstimated, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveOutputRate, promptTokens: modelPromptTokens, promptPulseAt: modelPromptPulseAt, averageRate: data.decodeTokensPerSecond == null ? null : Number(data.decodeTokensPerSecond), state: stateLabel, lastActiveAt, agedOut };
       });
       state.topologyCatalogModels = topologyModels;
       applyTopologyModelFilter();
@@ -2005,9 +2010,10 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           getJson("/gateway/library").catch(error => ({ error: error.message })),
           getJson("/gateway/backends").catch(error => ({ backends: [], error: error.message })),
         ]);
-        // Advertised aliases are the stable model surface. Their ordered
-        // members carry the physical local, federated, and external topology.
         state.models = models.models || [];
+        // Routing aliases remain in the catalog, but topology is physical:
+        // local, federated, and external members are independently visible.
+        state.physicalModels = physicalTopologyModels(state.models);
         state.status = status;
         state.library = library;
         state.backends = backends.backends || [];

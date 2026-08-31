@@ -59,6 +59,8 @@ export function mergeSparkRouteCatalog(installedInput, catalogInput) {
     delete installed.aliases[aliasId].activeRoute;
     delete installed.aliases[aliasId].routeProfiles;
   }
+  // Retired pre-stable Qwen shorthand. q38fn is the sole advertised route.
+  delete installed.aliases['qwen38f-next'];
 
   installed.server = {
     ...asObject(installed.server),

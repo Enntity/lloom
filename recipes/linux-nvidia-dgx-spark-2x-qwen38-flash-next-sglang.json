@@ -64,7 +64,6 @@
       "runtime": "qwen38-flash-next-cluster",
       "backendConfig": "qwen38-flash-next",
       "aliases": [
-        "qwen38f-next",
         {
           "id": "q38fn",
           "members": ["qwen3.8-flash-next", "cloud/openrouter/q38fn"],

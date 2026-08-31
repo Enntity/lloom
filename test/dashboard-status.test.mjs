@@ -16,11 +16,16 @@ assert(!source.includes('class="topology-key"'));
 assert(!source.includes('aria-label="Topology legend"'));
 assert(
   source.includes(
-    'transitioning || (runtimeLoaded ? "hot" : hasExternalMember ? "external" : runtimeStatus === "failed" ? "failed" : "cold")'
+    'transitioning || (runtimeLoaded ? "hot" : isExternal ? "external" : runtimeStatus === "failed" ? "failed" : "cold")'
   )
 );
 assert(source.includes('state.models = models.models || []'));
-assert(source.includes('["Ordered members", (model.aliasMembers || []).join(" → ") || "—"]'));
+assert(source.includes('state.physicalModels = physicalTopologyModels(state.models)'));
+assert(source.includes('for (const model of route.memberModels || [])'));
+assert(source.includes('const topologyModels = (state.physicalModels || []).map(model => {'));
+assert(source.includes('model: item.resolvedModel || item.model'));
+assert(!source.includes('const catalogModelIds = new Set'));
+assert(!source.includes('["Ordered members", (model.aliasMembers || []).join(" → ") || "—"]'));
 assert(!source.includes('transitioning || (liveConnections.length ? "serving"'));
 assert(source.includes('Number(totals.decodeTokensPerSecond) > 0'));
 assert(source.includes('const displayedOutputRate = liveOutputRate > 0 ? liveOutputRate : aggregateOutputRate || 0'));
@@ -63,6 +68,31 @@ assert(source.includes('(summary.recentErrors || 0) + " ERR/1M"'));
 assert(source.includes('["ERRORS/1M", summary.recentErrors || 0]'));
 assert(source.includes('recentErrors: Math.max(0, Number(metrics.rolling?.minute?.errors || 0))'));
 assert(!source.includes('errors: totals.errors || 0'));
+
+const physicalStart = source.indexOf('    function physicalTopologyModels(models)');
+const physicalEnd = source.indexOf('    function renderModels()', physicalStart);
+assert(physicalStart >= 0 && physicalEnd > physicalStart);
+const physicalContext = {};
+vm.runInNewContext(
+  source.slice(physicalStart, physicalEnd) + '\nglobalThis.physicalTopologyModels = physicalTopologyModels;',
+  physicalContext
+);
+const physicalModels = physicalContext.physicalTopologyModels([
+  { id: 'qwen3.8-flash-next', name: 'Qwen local' },
+  {
+    id: 'q38fn',
+    alias: true,
+    memberModels: [
+      { id: 'qwen3.8-flash-next', name: 'Qwen local duplicate' },
+      { id: 'cloud/openrouter/q38fn', name: 'Qwen external' }
+    ]
+  },
+  { id: 'qwen38f-next', alias: true, memberModels: [] }
+]);
+assert.deepEqual(
+  Array.from(physicalModels, (model) => model.id),
+  ['qwen3.8-flash-next', 'cloud/openrouter/q38fn']
+);
 
 const helperStart = source.indexOf('    function nodeAcceleratorSignals(node)');
 const helperEnd = source.indexOf('    function renderModelInspector()', helperStart);

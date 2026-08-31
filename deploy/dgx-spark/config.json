@@ -489,7 +489,7 @@
     },
     {
       "id": "cloud/openrouter/ds4f",
-      "name": "DeepSeek V4 Flash 0731 · OpenRouter fallback",
+      "name": "DeepSeek V4 Flash 0731 · OpenRouter",
       "kind": "chat",
       "backend": "openai-compatible-openrouter-ds4f",
       "upstreamModel": "deepseek/deepseek-v4-flash-0731",
@@ -499,7 +499,7 @@
       "contextWindow": 1048576,
       "maxOutputTokens": 65536,
       "advertise": false,
-      "tags": ["cloud", "external", "openrouter", "deepseek", "fallback"]
+      "tags": ["cloud", "external", "openrouter", "deepseek", "route-member"]
     },
     {
       "id": "cloud/openrouter/ds4fv",
@@ -517,7 +517,7 @@
     },
     {
       "id": "cloud/openrouter/q38fn",
-      "name": "Qwen3.8 Flash · OpenRouter fallback",
+      "name": "Qwen3.8 Flash · OpenRouter",
       "kind": "chat",
       "backend": "openai-compatible-openrouter-q38fn",
       "upstreamModel": "qwen/qwen3.8-flash",
@@ -527,11 +527,11 @@
       "contextWindow": 1000000,
       "maxOutputTokens": 131072,
       "advertise": false,
-      "tags": ["cloud", "external", "openrouter", "qwen", "fallback"]
+      "tags": ["cloud", "external", "openrouter", "qwen", "route-member"]
     },
     {
       "id": "cloud/openrouter/glm53f",
-      "name": "GLM-5.3 Flash · OpenRouter fallback",
+      "name": "GLM-5.3 Flash · OpenRouter",
       "kind": "chat",
       "backend": "openai-compatible-openrouter-glm53f",
       "upstreamModel": "z-ai/glm-5.3-flash",
@@ -541,7 +541,7 @@
       "contextWindow": 1048576,
       "maxOutputTokens": 131072,
       "advertise": false,
-      "tags": ["cloud", "external", "openrouter", "glm", "fallback"]
+      "tags": ["cloud", "external", "openrouter", "glm", "route-member"]
     },
     {
       "id": "z-ai/glm-5.2",

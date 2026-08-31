@@ -4976,7 +4976,9 @@ if (listened) {
     assert(dashboardHtml.includes('showAllTopologyModels: false'));
     assert(dashboardHtml.includes('Show all configured models, including inactive cold models'));
     assert(dashboardHtml.includes('state.models = models.models || []'));
-    assert(dashboardHtml.includes('Ordered members'));
+    assert(dashboardHtml.includes('state.physicalModels = physicalTopologyModels(state.models)'));
+    assert(dashboardHtml.includes('model: item.resolvedModel || item.model'));
+    assert(!dashboardHtml.includes('Ordered members'));
     assert(dashboardHtml.includes('["GPU", host.gpu?.utilization]'));
     assert(
       dashboardHtml.includes(
@@ -4994,9 +4996,7 @@ if (listened) {
     assert(!dashboardHtml.includes('smoothRate("summary:input"'));
     assert(!dashboardHtml.includes('liveInputRate'));
     assert(dashboardHtml.includes('"external-processing": 3'));
-    assert(
-      dashboardHtml.includes('? liveManaged || (!model.alias && hasManagedRuntime) ? "serving" : "external-processing"')
-    );
+    assert(dashboardHtml.includes('? hasManagedRuntime ? "serving" : "external-processing"'));
     assert(dashboardHtml.includes('externalProcessing ? "EXTERNAL PROCESSING"'));
     assert(dashboardHtml.includes('function liveNodeActivity(nodeId)'));
     assert(dashboardHtml.includes('...liveConnections.map(item => item.node).filter(Boolean)'));
