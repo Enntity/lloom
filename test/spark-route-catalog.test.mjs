@@ -7,7 +7,11 @@ const installed = {
   server: { host: '0.0.0.0', port: 8100 },
   aliases: {
     'qwen38f-next': { target: 'qwen3.8-flash-next', advertise: true },
-    q38fn: { target: 'qwen3.8-flash-next', advertise: true },
+    q38fn: {
+      target: 'qwen3.8-flash-next',
+      advertise: true,
+      suspendedMembers: ['qwen3.8-flash-next']
+    },
     glm53f: { target: 'glm-5.3-flash-exl3', advertise: true }
   },
   backends: {
@@ -25,10 +29,12 @@ const merged = mergeSparkRouteCatalog(installed, catalog);
 assert.equal(merged.server.inferenceEnabled, true);
 assert.equal(merged.aliases['qwen38f-next'], undefined);
 assert.deepEqual(merged.aliases.q38fn.members, ['qwen3.8-flash-next', 'cloud/openrouter/q38fn']);
+assert.deepEqual(merged.aliases.q38fn.suspendedMembers, ['qwen3.8-flash-next']);
 assert.deepEqual(merged.aliases.ds4f.members, ['deepseek-v4-flash-0731', 'cloud/openrouter/ds4f']);
 assert.deepEqual(merged.aliases.ds4fv.members, ['cloud/openrouter/ds4fv']);
 assert.deepEqual(merged.aliases.glm53f.members, ['glm-5.3-flash-exl3', 'cloud/openrouter/glm53f']);
 assert.equal(merged.clientCatalog.omp.roles.default, 'q38fn:low');
+assert.equal(merged.backends['openai-compatible-openrouter-q38fn'].structuredOutput.adapter, 'json-schema');
 for (const modelId of ['ds4f', 'ds4fv', 'q38fn', 'glm53f']) {
   assert(merged.models.some((model) => model.id === `cloud/openrouter/${modelId}`));
 }

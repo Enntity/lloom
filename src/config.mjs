@@ -163,6 +163,7 @@ function validateConfig(config, sourcePath, env) {
   for (const [aliasId, alias] of Object.entries(config.aliases ?? {})) {
     const members = typeof alias === 'string' ? [alias] : alias?.members;
     const optionalMembers = typeof alias === 'string' ? [] : alias?.optionalMembers;
+    const suspendedMembers = typeof alias === 'string' ? [] : alias?.suspendedMembers;
     if (!Array.isArray(members) || !members.length) errors.push(`alias ${aliasId} must declare at least one member`);
     const aliasResidencyFields = residencyFields(alias);
     if (aliasResidencyFields.length) {
@@ -176,10 +177,24 @@ function validateConfig(config, sourcePath, env) {
     if (optionalMembers != null && !Array.isArray(optionalMembers)) {
       errors.push(`alias ${aliasId} optionalMembers must be an array`);
     }
+    if (suspendedMembers != null && !Array.isArray(suspendedMembers)) {
+      errors.push(`alias ${aliasId} suspendedMembers must be an array`);
+    }
     const memberIds = Array.isArray(members) ? members : [];
     const optionalMemberIds = new Set(Array.isArray(optionalMembers) ? optionalMembers : []);
+    const suspendedMemberIds = Array.isArray(suspendedMembers) ? suspendedMembers : [];
     if (new Set(memberIds).size !== memberIds.length) {
       errors.push(`alias ${aliasId} has duplicate members`);
+    }
+    if (new Set(suspendedMemberIds).size !== suspendedMemberIds.length) {
+      errors.push(`alias ${aliasId} has duplicate suspended members`);
+    }
+    for (const candidate of suspendedMemberIds) {
+      if (typeof candidate !== 'string' || !candidate.trim()) {
+        errors.push(`alias ${aliasId} has an invalid suspended member`);
+      } else if (!memberIds.includes(candidate)) {
+        errors.push(`alias ${aliasId} suspended member ${candidate} is not present in members`);
+      }
     }
     for (const candidate of optionalMemberIds) {
       if (typeof candidate !== 'string' || !candidate.trim()) {

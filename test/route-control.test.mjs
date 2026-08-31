@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { loadConfig } from '../src/config.mjs';
-import { routeProfileStatus, writeRouteProfile } from '../src/route-control.mjs';
+import { routeProfileStatus, writeRouteMemberSuspension, writeRouteProfile } from '../src/route-control.mjs';
 
 const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'lloom-route-control-'));
 const configPath = path.join(directory, 'config.json');
@@ -44,6 +44,7 @@ try {
       alias: 'stable',
       activeRoute: 'local-first',
       members: ['local-model', 'cloud-model'],
+      suspendedMembers: [],
       profiles: ['local-first', 'cloud']
     }
   ]);
@@ -62,6 +63,20 @@ try {
   const restoredSource = JSON.parse(await fs.readFile(configPath, 'utf8'));
   assert.equal(restoredSource.aliases.stable.activeRoute, 'local-first');
   assert.deepEqual(restoredSource.aliases.stable.members, ['local-model', 'cloud-model']);
+
+  const suspend = await writeRouteMemberSuspension(config, 'stable', 'local-model', true);
+  assert.equal(suspend.changed, true);
+  assert.deepEqual(suspend.suspendedMembers, ['local-model']);
+  let controlled = JSON.parse(await fs.readFile(configPath, 'utf8'));
+  assert.deepEqual(controlled.aliases.stable.members, ['local-model', 'cloud-model']);
+  assert.deepEqual(controlled.aliases.stable.suspendedMembers, ['local-model']);
+  const suspendAgain = await writeRouteMemberSuspension(config, 'stable', 'local-model', true);
+  assert.equal(suspendAgain.changed, false);
+  const resume = await writeRouteMemberSuspension(config, 'stable', 'local-model', false);
+  assert.equal(resume.changed, true);
+  controlled = JSON.parse(await fs.readFile(configPath, 'utf8'));
+  assert.equal(controlled.aliases.stable.suspendedMembers, undefined);
+  await assert.rejects(writeRouteMemberSuspension(config, 'stable', 'missing-model', true), /is not a member of route/);
 
   const reloaded = await loadConfig(configPath, { env: { ...process.env, OPENROUTER_API_KEY: 'test' } });
   const unchanged = await writeRouteProfile(reloaded, 'stable', 'local-first');

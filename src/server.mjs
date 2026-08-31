@@ -46,7 +46,7 @@ import { applyRecipePack, createRecipePackPlan } from './recipe-pack.mjs';
 import { buildRecipeIndexReport } from './recipe-index.mjs';
 import { loadRecipes } from './recipes.mjs';
 import { createRegistry, UnknownModelError } from './registry.mjs';
-import { routeProfileStatus, writeRouteProfile } from './route-control.mjs';
+import { routeProfileStatus, writeRouteMemberSuspension, writeRouteProfile } from './route-control.mjs';
 import { RuntimeManager, runtimeWatchdogConfig } from './runtime-manager.mjs';
 import {
   applyRuntimePolicyPlan,
@@ -2007,7 +2007,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
               routeSelection: {
                 attempt: 1,
                 members: candidate.aliasMemberCount,
-                preferredModel: candidate.alias?.members?.[0],
+                preferredModel: candidate.resolvedId,
                 usedAlternative: candidate.aliasMemberIndex > 0,
                 readyAlternativeAvailable: false
               }
@@ -2073,7 +2073,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       routeSelection: {
         attempt: attemptIndex + 1,
         members: candidate.aliasMemberCount ?? ordered.length,
-        preferredModel: candidate.alias?.members?.[0] ?? candidates[0].resolvedId,
+        preferredModel: candidates[0].resolvedId,
         usedAlternative: candidate.aliasMemberIndex > 0 || candidate.resolvedId !== candidates[0].resolvedId,
         readyAlternativeAvailable: ordered.slice(attemptIndex + 1).some((alternative) => readySet.has(alternative)),
         ...(candidate !== candidates[0] ? { reason: 'preferred-member-unavailable' } : {})
@@ -3353,6 +3353,29 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         const aliasId = decodeURIComponent(routeProfileMatch[1]);
         const body = await readJson(req);
         const result = await writeRouteProfile(config, aliasId, body.profile);
+        if (result.changed) {
+          reloadConfig();
+          await reloadInFlight;
+        }
+        sendJson(res, 200, {
+          ...result,
+          route: routeProfileStatus(config, aliasId)[0] ?? null
+        });
+        return;
+      }
+
+      const routeMemberSuspensionMatch = url.pathname.match(
+        /^\/gateway\/routes\/([^/]+)\/members\/([^/]+)\/suspension$/
+      );
+      if (routeMemberSuspensionMatch && req.method === 'POST') {
+        const aliasId = decodeURIComponent(routeMemberSuspensionMatch[1]);
+        const memberId = decodeURIComponent(routeMemberSuspensionMatch[2]);
+        const body = await readJson(req);
+        if (typeof body.suspended !== 'boolean') {
+          sendJson(res, 400, errorBody('suspended must be a boolean', { code: 'bad_request' }));
+          return;
+        }
+        const result = await writeRouteMemberSuspension(config, aliasId, memberId, body.suspended);
         if (result.changed) {
           reloadConfig();
           await reloadInFlight;

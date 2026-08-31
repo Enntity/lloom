@@ -111,8 +111,10 @@ lloom up --go                 # install + integrate + start
 lloom down                    # stop the gateway and all managed model backends
 lloom doctor --no-runtimes
 lloom models
-lloom route q38fn                         # inspect active local/cloud profile
-lloom route q38fn cloud --apply --yes    # move new requests to the external provider
+lloom route q38fn                                                        # inspect member order and suspensions
+lloom route q38fn --suspend-member qwen3.8-flash-next --apply --yes      # keep stable traffic on cloud
+lloom runtime-stop qwen38-flash-next-cluster                             # stop local TP-2 after suspension
+lloom route q38fn --resume-member qwen3.8-flash-next --apply --yes       # restore preferred-local recovery
 lloom integrate omp --apply --yes
 lloom add-model mlx-community/Qwen3.6-27B-OptiQ-4bit --keep-warm --default --go           # Mac: install, download, start
 lloom remove-model mlx-community/Qwen3.6-27B-OptiQ-4bit                                  # preview safe cleanup
@@ -395,7 +397,7 @@ Current platform examples:
 
 These are recipe examples, not permanent global defaults. LLooM chooses from compatible local/community recipes and benchmark evidence for the detected machine.
 
-Durable route aliases such as `q38fn` are ordered sets of interchangeable model members. Members may be local runtimes, distributed TP models, federated models on other nodes, or external providers. LLooM selects the first member that can serve now and keeps the alias ID stable in the response. A cold higher-priority local member is recovered through normal admission in the background while the current request proceeds on the next viable member. `lloom route <alias>` reports the effective member order. See [Architecture](docs/architecture.md) for the retry and recovery boundaries.
+Durable route aliases such as `q38fn` are ordered sets of interchangeable model members. Members may be local runtimes, distributed TP models, federated models on other nodes, or external providers. LLooM selects the first member that can serve now and keeps the alias ID stable in the response. A cold higher-priority local member is recovered through normal admission in the background while the current request proceeds on the next viable member. Alias-scoped `suspendedMembers` remain visible in the route topology but are excluded from request selection and background recovery, allowing a local member to stay offline while its strict route or direct model ID is used for recipe testing. `lloom route <alias>` reports member order and suspensions; use `--suspend-member` and `--resume-member` with `--apply --yes` for guarded changes. See [Architecture](docs/architecture.md) for the retry and recovery boundaries.
 
 ## Architecture
 

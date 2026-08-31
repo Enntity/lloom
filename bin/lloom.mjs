@@ -196,7 +196,7 @@ Backends and runtimes:
   lloom keep-warm
 
 Models and clients:
-  lloom route [alias [profile]] [--apply --yes]
+  lloom route [alias [profile]] [--suspend-member model|--resume-member model] [--apply --yes]
   lloom add-model <hf-url|repo-id|local-path|ollama:tag|lmstudio:id|openai:url#model> [--backend id] [--api-key-env NAME] [--input TYPE] [--capability ID] [--tag ID] [--keep-warm] [--default] [--go|--apply --yes]
   lloom remove-model <model-id> [--delete-files] [--apply --yes]
   lloom integrations [client-id|all] [--home path] [--generated-root path]
@@ -2256,6 +2256,36 @@ async function main() {
     route: async ({ args, config }) => {
       const aliasId = positional(args)[1];
       const profile = positional(args)[2];
+      const suspendMember = argValue(args, '--suspend-member');
+      const resumeMember = argValue(args, '--resume-member');
+      if (suspendMember && resumeMember) throw new Error('Choose either --suspend-member or --resume-member');
+      const controlledMember = suspendMember || resumeMember;
+      if (controlledMember) {
+        if (!aliasId) throw new Error('Missing route alias');
+        const suspended = Boolean(suspendMember);
+        const plan = {
+          alias: aliasId,
+          member: controlledMember,
+          suspended,
+          applied: false,
+          next: `lloom route ${aliasId} --${suspended ? 'suspend' : 'resume'}-member ${controlledMember} --apply --yes`
+        };
+        if (!hasFlag(args, '--apply')) {
+          console.log(JSON.stringify(plan, null, 2));
+          return;
+        }
+        if (!hasFlag(args, '--yes')) {
+          throw new Error('Refusing to change a live route member without --yes after reviewing the plan');
+        }
+        const result = await gatewayRequest(
+          config,
+          `/gateway/routes/${encodeURIComponent(aliasId)}/members/${encodeURIComponent(controlledMember)}/suspension`,
+          { method: 'POST', body: { suspended }, timeoutMs: 30000 }
+        );
+        if (!result) throw new Error(`route member change failed through ${gatewayUrlFor(config)}`);
+        console.log(JSON.stringify({ ...result, applied: true }, null, 2));
+        return;
+      }
       if (!profile) {
         const routing = await gatewayRequest(config, '/gateway/routing', { timeoutMs: 10000 });
         if (!routing) throw new Error(`LLooM gateway at ${gatewayUrlFor(config)} is not reachable`);

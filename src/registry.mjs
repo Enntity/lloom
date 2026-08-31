@@ -97,6 +97,19 @@ export function aliasMemberIds(alias) {
   );
 }
 
+export function aliasSuspendedMemberIds(alias) {
+  if (!alias || typeof alias === 'string') return [];
+  const members = new Set(aliasMemberIds(alias));
+  return (Array.isArray(alias.suspendedMembers) ? alias.suspendedMembers : []).filter(
+    (member, index, all) => members.has(member) && all.indexOf(member) === index
+  );
+}
+
+export function aliasRoutableMemberIds(alias) {
+  const suspended = new Set(aliasSuspendedMemberIds(alias));
+  return aliasMemberIds(alias).filter((member) => !suspended.has(member));
+}
+
 // Backward-compatible export for integrations compiled against the former
 // primary/fallback vocabulary. New code should use aliasMemberIds.
 export const aliasTargetIds = aliasMemberIds;
@@ -126,7 +139,7 @@ export function createRegistry(config) {
     if (!requestedId) throw new UnknownModelError('(missing)');
 
     const alias = aliasMap.get(requestedId);
-    const memberIds = alias ? aliasMemberIds(alias) : [requestedId];
+    const memberIds = alias ? aliasRoutableMemberIds(alias) : [requestedId];
     const candidates = [];
     for (const [aliasMemberIndex, memberId] of memberIds.entries()) {
       const model = modelMap.get(memberId);
@@ -181,9 +194,11 @@ export function createRegistry(config) {
       const memberModels = aliasMemberIds(alias)
         .map((memberId) => modelMap.get(memberId))
         .filter(Boolean);
+      const routableMembers = new Set(aliasRoutableMemberIds(alias));
       const target = memberModels.find(
         (model) =>
           model &&
+          routableMembers.has(model.id) &&
           (!advertisedOnly ||
             availableTargets(config, model, {
               requireRuntimeEnabled
@@ -197,6 +212,7 @@ export function createRegistry(config) {
         id: alias.id,
         alias: true,
         aliasMembers: clone(aliasMemberIds(alias)),
+        suspendedMembers: clone(aliasSuspendedMemberIds(alias)),
         memberModels: clone(
           memberModels.map((model) => modelAvailableHere(config, model, { requireRuntimeEnabled: false }))
         ),

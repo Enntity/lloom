@@ -32,6 +32,7 @@ export function routeProfileStatus(config, aliasId = null) {
       alias: id,
       activeRoute: alias.activeRoute ?? null,
       members: Array.isArray(alias.members) ? [...alias.members] : [],
+      suspendedMembers: Array.isArray(alias.suspendedMembers) ? [...alias.suspendedMembers] : [],
       profiles: Object.keys(alias.routeProfiles ?? {})
     }));
 }
@@ -63,6 +64,8 @@ export async function writeRouteProfile(config, aliasId, profileName) {
 
   alias.activeRoute = profileName;
   alias.members = selected.members;
+  alias.suspendedMembers = (alias.suspendedMembers ?? []).filter((member) => selected.members.includes(member));
+  if (!alias.suspendedMembers.length) delete alias.suspendedMembers;
   if (selected.optionalMembers.length) alias.optionalMembers = selected.optionalMembers;
   else delete alias.optionalMembers;
   delete alias.target;
@@ -89,4 +92,37 @@ export async function writeRouteProfile(config, aliasId, profileName) {
     activeRoute: profileName,
     members: selected.members
   };
+}
+
+export async function writeRouteMemberSuspension(config, aliasId, memberId, suspended) {
+  if (!config.sourcePath) throw new Error('route member suspension requires a file-backed LLooM config');
+  const source = JSON.parse(await fs.readFile(config.sourcePath, 'utf8'));
+  const alias = object(source.aliases?.[aliasId]);
+  if (!alias) throw new Error(`unknown route alias: ${aliasId}`);
+  const members = Array.isArray(alias.members) ? alias.members : [];
+  if (!members.includes(memberId)) throw new Error(`model ${memberId} is not a member of route ${aliasId}`);
+
+  const current = new Set(Array.isArray(alias.suspendedMembers) ? alias.suspendedMembers : []);
+  const changed = suspended ? !current.has(memberId) : current.has(memberId);
+  if (suspended) current.add(memberId);
+  else current.delete(memberId);
+  const suspendedMembers = members.filter((member) => current.has(member));
+  if (!changed) return { changed: false, alias: aliasId, member: memberId, suspended, suspendedMembers };
+
+  if (suspendedMembers.length) alias.suspendedMembers = suspendedMembers;
+  else delete alias.suspendedMembers;
+  const mode = (await fs.stat(config.sourcePath)).mode;
+  const temporary = path.join(
+    path.dirname(config.sourcePath),
+    `.${path.basename(config.sourcePath)}.${process.pid}.${Date.now()}.route-member`
+  );
+  try {
+    await fs.writeFile(temporary, `${JSON.stringify(source, null, 2)}\n`, { mode });
+    await loadConfig(temporary);
+    await fs.rename(temporary, config.sourcePath);
+  } catch (error) {
+    await fs.unlink(temporary).catch(() => {});
+    throw error;
+  }
+  return { changed: true, alias: aliasId, member: memberId, suspended, suspendedMembers };
 }

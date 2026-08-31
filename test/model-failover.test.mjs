@@ -43,7 +43,8 @@ async function createFixture({
   cloudStatus = 200,
   runtimeStatus = 'running',
   preserveResident = false,
-  inferenceEnabled = true
+  inferenceEnabled = true,
+  suspendedMembers = []
 } = {}) {
   const hits = { primary: 0, cloud: 0, ensures: 0 };
   const operations = [];
@@ -106,6 +107,7 @@ async function createFixture({
     aliases: {
       'stable-chat': {
         members: ['stable-chat', 'cloud-chat'],
+        ...(suspendedMembers.length ? { suspendedMembers } : {}),
         advertise: false
       }
     },
@@ -418,6 +420,31 @@ async function embed(url, body = {}) {
   assert.equal(registry.catalogModels({ includeAliases: true }).filter((model) => model.id === 'local').length, 1);
 }
 
+// A suspended alias member stays in the route topology but is excluded from
+// request selection and therefore cannot trigger background runtime recovery.
+{
+  const registry = createRegistry({
+    aliases: { stable: { members: ['local', 'cloud'], suspendedMembers: ['local'], advertise: true } },
+    backends: { local: {}, cloud: {} },
+    runtimes: { local: { enabled: true } },
+    models: [
+      { id: 'local', backend: 'local', runtime: 'local', kind: 'chat' },
+      { id: 'cloud', backend: 'cloud', kind: 'chat' }
+    ]
+  });
+  assert.deepEqual(
+    registry.resolveCandidates('stable').map((candidate) => candidate.resolvedId),
+    ['cloud']
+  );
+  const route = registry.catalogModels({ includeAliases: true }).find((model) => model.id === 'stable');
+  assert.deepEqual(route.aliasMembers, ['local', 'cloud']);
+  assert.deepEqual(route.suspendedMembers, ['local']);
+  assert.deepEqual(
+    route.memberModels.map((model) => model.id),
+    ['local', 'cloud']
+  );
+}
+
 // Alias visibility is independent of member visibility. Exact provider and
 // local member IDs may stay hidden while the stable routed alias is advertised.
 {
@@ -463,6 +490,12 @@ async function embed(url, body = {}) {
   base.aliases.stable.members = ['chat', 'chat'];
   await writeFile(configPath, JSON.stringify(base));
   await assert.rejects(loadConfig(configPath), /has duplicate members/);
+  base.aliases.stable = { members: ['chat'], suspendedMembers: ['missing'] };
+  await writeFile(configPath, JSON.stringify(base));
+  await assert.rejects(loadConfig(configPath), /suspended member missing is not present in members/);
+  base.aliases.stable = { members: ['chat'], suspendedMembers: ['chat', 'chat'] };
+  await writeFile(configPath, JSON.stringify(base));
+  await assert.rejects(loadConfig(configPath), /has duplicate suspended members/);
   base.aliases.stable.members = ['chat', 'image'];
   await writeFile(configPath, JSON.stringify(base));
   await assert.rejects(loadConfig(configPath), /models with different kinds/);
@@ -505,6 +538,26 @@ async function embed(url, body = {}) {
     /local runtime workerLocal authority owner must be its host node worker/
   );
   await rm(directory, { recursive: true, force: true });
+}
+
+// Suspending a cold preferred member keeps it in the alias catalog while
+// preventing both request selection and backswing recovery.
+{
+  const fixture = await createFixture({
+    primaryStatus: 200,
+    runtimeStatus: 'stopped',
+    suspendedMembers: ['stable-chat']
+  });
+  const response = await chat(fixture.url);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).choices[0].message.content, 'cloud');
+  assert.deepEqual(fixture.hits, { primary: 0, cloud: 1, ensures: 0 });
+  assert.deepEqual(fixture.operations, []);
+  assert.deepEqual(fixture.admissionOptions, []);
+  const recent = fixture.app.metrics.snapshot().recent;
+  assert.equal(recent[0].resolvedModel, 'cloud-chat');
+  assert.equal(recent[0].failedOver, false);
+  await fixture.close();
 }
 
 // A retryable preferred member advances to the next member while preserving
