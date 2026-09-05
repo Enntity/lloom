@@ -31,6 +31,7 @@ const managedRuntime = {
     enabled: true,
     failureThreshold: 2,
     failureWindowMs: 10000,
+    failureStatuses: [499, 500, 502, 504],
     minNoProgressMs: 100,
     cooldownMs: 1000,
     drainTimeoutMs: 20
@@ -39,6 +40,32 @@ const managedRuntime = {
 
 {
   assert.equal(runtimeWatchdogConfig(managedRuntime).enabled, true);
+  for (const status of [499, 500, 502, 504]) {
+    const bufferedFailure = {
+      ok: false,
+      status,
+      stream: false,
+      durationMs: 300000,
+      runtimeDurationMs: 296630,
+      firstContentMs: null,
+      responseBytes: 0
+    };
+    assert.equal(
+      classifyRuntimeWatchdogOutcome(managedRuntime, bufferedFailure).kind,
+      'ignored',
+      `buffered ${status} without progress visibility must not condemn the runtime`
+    );
+    assert.equal(
+      classifyRuntimeWatchdogOutcome(managedRuntime, { ...bufferedFailure, stream: true }).kind,
+      'no-progress-failure',
+      'streaming no-progress failure remains detectable'
+    );
+    assert.equal(
+      classifyRuntimeWatchdogOutcome(managedRuntime, { ...bufferedFailure, stalled: true }).kind,
+      'no-progress-failure',
+      'explicit stall evidence is not suppressed'
+    );
+  }
   assert.equal(
     runtimeWatchdogConfig({ ...managedRuntime, management: 'external' }).enabled,
     false,
@@ -253,9 +280,10 @@ class TestRuntimeManager extends RuntimeManager {
     logger: { error() {}, warn() {} }
   });
   const gatewayPort = await listen(app.server);
-  const chat = (stream) =>
+  const chat = (stream, signal) =>
     fetch(`http://127.0.0.1:${gatewayPort}/v1/chat/completions`, {
       method: 'POST',
+      signal,
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         model: 'watchdog-model',
@@ -281,6 +309,27 @@ class TestRuntimeManager extends RuntimeManager {
     observations.some((outcome) => outcome.stalled === true && outcome.status === 504),
     true,
     'a streaming request with no progress still triggers the watchdog'
+  );
+
+  const beforeCancellation = observations.length;
+  const abort = new AbortController();
+  const cancelled = chat(false, abort.signal);
+  const cancellationTimer = setTimeout(() => abort.abort(), 40);
+  await assert.rejects(cancelled, { name: 'AbortError' });
+  clearTimeout(cancellationTimer);
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  const outcome = observations.slice(beforeCancellation).find((item) => item.status === 499);
+  assert.ok(outcome, 'gateway records cancelled buffered request');
+  assert.equal(outcome.stream, false);
+  assert.equal(outcome.firstContentMs, null);
+  assert.ok(outcome.runtimeDurationMs >= 20);
+  assert.equal(
+    classifyRuntimeWatchdogOutcome(
+      { ...managedRuntime, watchdog: { ...managedRuntime.watchdog, minNoProgressMs: 20, failureThreshold: 1 } },
+      outcome
+    ).kind,
+    'ignored',
+    'real cancelled buffered request cannot trigger restart'
   );
 
   await close(app.server);

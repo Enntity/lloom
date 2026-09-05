@@ -454,6 +454,13 @@ export function classifyRuntimeWatchdogOutcome(runtime, outcome = {}) {
   if (outcome.ok === true || madeProgress) {
     return { kind: 'progress', watchdog };
   }
+  // A buffered response exposes no incremental progress. Client cancellation
+  // or an upstream error before its complete body is therefore not evidence
+  // that the engine stopped generating. Keep explicit stall evidence and
+  // streaming detection intact; health checks still cover dead backends.
+  if (outcome.stream === false && outcome.stalled !== true) {
+    return { kind: 'ignored', watchdog };
+  }
   const status = Number(outcome.status);
   // Admission, model loading, and capacity waits are not runtime execution.
   // Prefer the time spent after admission when the caller can provide it so a
