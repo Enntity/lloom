@@ -109,10 +109,18 @@ export CUDA_PATH="${CUDA_PATH:-${CUDA_HOME}}"
 export CUDAToolkit_ROOT="${CUDAToolkit_ROOT:-${CUDA_HOME}}"
 export LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH:-}"
 
-encoding_source=""
-for candidate in /cache/huggingface/hub/models--deepseek-ai--DeepSeek-V4-Flash-0731/snapshots/*/encoding/encoding_dsv4.py; do
-  if [ -f "${candidate}" ]; then encoding_source="${candidate}"; break; fi
-done
+model_id="${DSPARK_MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}"
+model_revision="${DSPARK_MODEL_REVISION:-9e165c30e2704aec5d9d593cce3eebd58bbef1cb}"
+model_hub_dir="${model_id//\//--}"
+encoding_source="${DSPARK_ENCODING_FILE:-}"
+if [ -z "${encoding_source}" ] && [ -f "/cache/huggingface/hub/models--${model_hub_dir}/snapshots/${model_revision}/encoding/encoding_dsv4.py" ]; then
+  encoding_source="/cache/huggingface/hub/models--${model_hub_dir}/snapshots/${model_revision}/encoding/encoding_dsv4.py"
+fi
+if [ -z "${encoding_source}" ]; then
+  for candidate in /cache/huggingface/hub/models--"${model_hub_dir}"/snapshots/*/encoding/encoding_dsv4.py; do
+    if [ -f "${candidate}" ]; then encoding_source="${candidate}"; break; fi
+  done
+fi
 if [ -n "${encoding_source}" ]; then
   cp "${encoding_source}" /usr/local/lib/python3.12/dist-packages/vllm/tokenizers/deepseek_v4_encoding.py
 fi
@@ -129,8 +137,8 @@ fi
 python3 "${pack_runner}" \
   --manifest "${pack_manifest}" \
   --runtime-image "${DSPARK_RUNTIME_IMAGE}" \
-  --model "${DSPARK_MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}" \
-  --model-revision "${DSPARK_MODEL_REVISION:-9e165c30e2704aec5d9d593cce3eebd58bbef1cb}" \
+  --model "${model_id}" \
+  --model-revision "${model_revision}" \
   --vllm-root "${vllm_root}"
 
 python3 - <<'PY'
@@ -197,8 +205,23 @@ esac
 headless=()
 if [ "${NODE_RANK}" != "0" ]; then headless=(--headless); fi
 
-exec /usr/local/bin/vllm serve "${DSPARK_MODEL:-deepseek-ai/DeepSeek-V4-Flash-0731}" \
-  --revision "${DSPARK_MODEL_REVISION:-9e165c30e2704aec5d9d593cce3eebd58bbef1cb}" \
+async_scheduling_args=()
+case "${DSPARK_ASYNC_SCHEDULING:-1}" in
+  1) async_scheduling_args=(--async-scheduling) ;;
+  0) ;;
+  *) echo "DSPARK_ASYNC_SCHEDULING must be 0 or 1" >&2; exit 2 ;;
+esac
+
+limit_mm_args=()
+if [ -n "${LIMIT_MM_PER_PROMPT:-}" ]; then
+  case "${LIMIT_MM_PER_PROMPT}" in
+    image=*) limit_mm_args=(--limit-mm-per-prompt "{\"image\":${LIMIT_MM_PER_PROMPT#image=}}") ;;
+    *) limit_mm_args=(--limit-mm-per-prompt "${LIMIT_MM_PER_PROMPT}") ;;
+  esac
+fi
+
+exec /usr/local/bin/vllm serve "${model_id}" \
+  --revision "${model_revision}" \
   --served-model-name "${SERVED_MODEL_NAME:-deepseek-v4-flash-0731}" \
   --host "${VLLM_HOST:-${NODE_ADDRESS}}" --port "${VLLM_PORT:-8888}" \
   --trust-remote-code --tensor-parallel-size 2 --pipeline-parallel-size 1 \
@@ -208,8 +231,9 @@ exec /usr/local/bin/vllm serve "${DSPARK_MODEL:-deepseek-ai/DeepSeek-V4-Flash-07
   --long-prefill-token-threshold "${LONG_PREFILL_TOKEN_THRESHOLD:-1024}" \
   --max-cudagraph-capture-size "${cudagraph_capture_size}" \
   --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION:-0.80}" \
-  --enable-prefix-caching --enable-prompt-tokens-details --async-scheduling --enable-chunked-prefill \
+  --enable-prefix-caching --enable-prompt-tokens-details "${async_scheduling_args[@]}" --enable-chunked-prefill \
   "${speculation_args[@]}" --tokenizer-mode deepseek_v4 \
+  "${limit_mm_args[@]}" \
   --distributed-executor-backend mp --moe-backend flashinfer_b12x \
   --tool-call-parser deepseek_v4 --enable-auto-tool-choice --reasoning-parser deepseek_v4 \
   --reasoning-config '{"reasoning_parser":"deepseek_v4","reasoning_start_str":"<think>","reasoning_end_str":"</think>"}' \

@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "id": "miaai-ds4fv-9414dd58-sp",
+  "name": "MiaAI DeepSeek V4 Flash Vision 9414dd58 sequence-parallel patch pack",
+  "upstream": {
+    "repository": "https://github.com/MiaAI-Lab/DeepSeek-v4-Flash-DSpark-2x-DGX-Spark",
+    "commit": "9414dd58b0b34548032dfd30f5aa13c37f6b93b8",
+    "fetchedAt": "2026-09-05T05:00:00.000Z"
+  },
+  "compatibility": {
+    "runtimeImage": "ghcr.io/anemll/dspark-vllm-gx10:0.1.1@sha256:a83948492cf13df455170fb42885f5ef4db54fefe0feff0f841ecbff464ac9d8",
+    "runtimeName": "Anemll DSpark vLLM 0.1.1",
+    "model": "deepseek-ai/DeepSeek-V4-Flash-Vision-Exp",
+    "modelRevision": "86f746b36186f0e567729a5c06a8c918caba82a9",
+    "vllmRoot": "/usr/local/lib/python3.12/dist-packages/vllm"
+  },
+  "patches": [
+    { "id": "sp-indexer-prefill", "file": "patches/hotfix-dsv4-sp-indexer-prefill.py", "sha256": "bb508cbddb305d11f3f2e170881d0f7e678bf87a4783ba9f6edd07d01e93087e", "kind": "reference", "tier": "performance", "enabled": false },
+    { "id": "sm121-header-alias", "file": "patches/hotfix-deepgemm-sm121-mqa-header-alias.sh", "sha256": "b385b5f6f967b94cf5e4f02282786b620dd18843af6163ec8370b8bea01d2d79", "kind": "reference", "tier": "resilience", "enabled": false },
+    {
+      "id": "apply-current-vision-runtime",
+      "file": "apply-runtime.sh",
+      "sha256": "2a4c5e9dea74c19b865e8805f040822d12e06aac54db65ddb1dcef773cc56c95",
+      "kind": "shell",
+      "tier": "runtime",
+      "enabled": true,
+      "liveCanaryRequired": true,
+      "args": ["{file}"],
+      "env": { "VLLM_ROOT": "{vllmRoot}", "DSPARK_PACK_ROOT": "{packRoot}" }
+    },
+    { "id": "issue21-encoder", "file": "patches/hotfix-encoding-dsv4-issue21.py", "sha256": "c75d160245cb563d6e9a6adaee9bf7a4cd55ed5268b5ca89856977d293df9816", "kind": "reference", "tier": "correctness", "enabled": false },
+    { "id": "issue55-tool-truncation", "file": "patches/hotfix-dsv4-issue55-tool-truncation.py", "sha256": "0dbb8a18d41325d518c221b3cfbd148c3a092e37c1816ba565b62e28172dd773", "kind": "reference", "tier": "correctness", "enabled": false },
+    { "id": "issue22-nvfp4-mla", "file": "patches/hotfix-nvfp4-ds-mla-issue22.sh", "sha256": "52de6d0cd06f571cfdbbb856bfea4a098a5118ce769de739a18b51044300772a", "kind": "reference", "tier": "correctness", "enabled": false },
+    { "id": "gb10-spin-wait", "file": "patches/hotfix-gb10-spin-wait.sh", "sha256": "b7deed123348d78c8e7ae3f99d9107b59a798d0b3c7840b7cccaadfd8418de71", "kind": "reference", "tier": "performance", "enabled": false },
+    { "id": "issue117-shm", "file": "patches/hotfix-vllm-issue117-shm-ring-buffer.py", "sha256": "749c7992ac26da2922277259874f1926477bed7d30a48a291edec29784918689", "kind": "reference", "tier": "resilience", "enabled": false },
+    { "id": "mtp-buffer", "file": "patches/hotfix-dsv4-mtp-buffer-50312.sh", "sha256": "8ad604b767e09390a958cd6ffd907dd9260bb92d680b8d4d5e702ff61fb787f4", "kind": "reference", "tier": "performance", "enabled": false },
+    { "id": "skip-topk", "file": "patches/hotfix-dsv4-skip-topk-49486.sh", "sha256": "431eff0d51c107afacc8ddb76e34c5a57d146341bf5a0d982569e8f89fc474ed", "kind": "reference", "tier": "performance", "enabled": false },
+    { "id": "dense-prefill", "file": "patches/hotfix-dsv4-dense-prefill-indexer-48407.sh", "sha256": "6d731f1b03b6c17275c8f0af82ee5dfa3ff9d778d25468b4edc96fbd356ffa23", "kind": "reference", "tier": "performance", "enabled": false },
+    { "id": "skip-empty-c128", "file": "patches/hotfix-dsv4-skip-empty-c128-48957.sh", "sha256": "bcae8526f474f885f0af681aaa596e613fa94f8bf95847f1e71c5ea4970ccd27", "kind": "reference", "tier": "performance", "enabled": false },
+    { "id": "flashmla-workspace", "file": "patches/hotfix-dsv4-flashmla-workspace-50298.sh", "sha256": "213fd93fb6c4dd70f38eefbd331f0ce08b64331feb2ff03643394857acd96078", "kind": "reference", "tier": "performance", "enabled": false },
+    { "id": "grammar-advance", "file": "patches/hotfix-dsv4-grammar-advance.sh", "sha256": "6318c0959816156ba0015fba9d3d56e4e128acdfb778aee373d9bf227c6faaa5", "kind": "reference", "tier": "correctness", "enabled": false },
+    { "id": "vision-exp", "file": "patches/hotfix-dsv4-vision-exp.py", "sha256": "0f9ae3c8d07f29fff6c5bb27c3ced4e7cd3d7b87724a1300e9b6386469ed9362", "kind": "reference", "tier": "vision", "enabled": false },
+    { "id": "vision-init", "file": "patches/vision_exp/__init__.py", "sha256": "ab22bd0f2d77a29c7e9253c65104f07578c007debdadf09513e9998e0c22b81f", "kind": "reference", "tier": "vision", "enabled": false },
+    { "id": "vision-apply", "file": "patches/vision_exp/apply.py", "sha256": "bd29dba9a6588dbd51e3aa36a3a34db9bf270e3759822d12ad0fba33f63492d5", "kind": "reference", "tier": "vision", "enabled": false },
+    { "id": "vision-image-processor", "file": "patches/vision_exp/image_processor.py", "sha256": "3b820118ba8e439964e1078259dbc58774be239612b95fdbbd795de7958551bb", "kind": "reference", "tier": "vision", "enabled": false },
+    { "id": "vision-processor", "file": "patches/vision_exp/processor.py", "sha256": "165ee5a1fe128e1ebf0cbdc6d08d4145d39a11289c68f3c0eff548ff81ca6fed", "kind": "reference", "tier": "vision", "enabled": false },
+    { "id": "vision-tower", "file": "patches/vision_exp/vision.py", "sha256": "e29feb76d7b7abfc5ae15fd152ded145d3c7c370030dfd35a0d96565112b3891", "kind": "reference", "tier": "vision", "enabled": false },
+    { "id": "empty-encoder-output", "file": "patches/hotfix-vllm-empty-encoder-output.py", "sha256": "e417bcdcb6d62f4790885fe5c64bef3a3015a17cea00e3901eb3e2f4b7cf35a6", "kind": "reference", "tier": "correctness", "enabled": false },
+    { "id": "issue27-prefill", "file": "patches/hotfix-dsv4-issue27-partial-prefill-concurrency.py", "sha256": "c24df010f8116e4059e0335d0a9bed2bd43963368930992c640f384c51b6333b", "kind": "reference", "tier": "scheduler", "enabled": false },
+    { "id": "issue43-fairness", "file": "patches/hotfix-dsv4-issue43-decode-fairness-and-diag.py", "sha256": "0059144ce08e825354718c8b0aa3799dcf434045f40241f75a4211fe4f199dc4", "kind": "reference", "tier": "scheduler", "enabled": false },
+    { "id": "issue26-swa", "file": "patches/hotfix-dsv4-issue26-hybrid-swa-min.py", "sha256": "8c76a65207d5f30b898cf5f60e39b8a59e4febb3217c34fe57f6a7fb225a3c3f", "kind": "reference", "tier": "cache", "enabled": false },
+    { "id": "issue133-triton", "file": "patches/hotfix-dsv4-issue133-triton-specialization.py", "sha256": "64d23c25fdd40bf1d6418c217c76d90b6eed8991a26f66c92d002b4b45523b3f", "kind": "reference", "tier": "performance", "enabled": false },
+    { "id": "reasoning-stops", "file": "patches/hotfix-dsv4-suppress-stops-in-reasoning.py", "sha256": "618a66c58fc422ae65d0f08018fac69370657e4ead1285c8104a56f507f6279f", "kind": "reference", "tier": "correctness", "enabled": false },
+    { "id": "issue136-210-xgrammar", "file": "patches/hotfix-vllm-issue136-xgrammar-termination.py", "sha256": "143fef65d53e217a629a7b4e5e0186df5064c670e8237a8ecea8761cdd957371", "kind": "reference", "tier": "correctness", "enabled": false },
+    { "id": "issue191-tool-contract", "file": "patches/hotfix-vllm-issue191-toolcall-failclosed.py", "sha256": "35a3264c1da0b802a8bab115efdb489a41528605a5f2d20d3cac795f023c1066", "kind": "reference", "tier": "correctness", "enabled": false },
+    { "id": "dspark-block-k", "file": "patches/hotfix-vllm-dspark-block-k.py", "sha256": "9cfbc5bcf18084b55eb8f2f6238642fcc20f70dd08378c01b7039f65e649f77d", "kind": "reference", "tier": "performance", "enabled": false },
+    {"id":"vllm-rope-swa-fix","file":"patches/hotfix-vllm-rope-swa-fix.py","sha256":"92313363e556430c62c5b8e2f221a517b67bb8e2032cf3a0dc6abb12cde7abc3","kind":"reference","tier":"correctness","enabled":false},
+    {"id":"vllm-dspark-swa-prefix","file":"patches/hotfix-vllm-dspark-swa-prefix.py","sha256":"9eaf419a6fc2d821882f77b64e532690f11b5544e1f43adcae4534f1561c4df6","kind":"reference","tier":"correctness","enabled":false}
+  ]
+}

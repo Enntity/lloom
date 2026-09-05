@@ -29,19 +29,35 @@ function safeModelPath(runtime, modelRoot) {
 }
 
 function aliasesRemovedWithModel(aliases, modelId) {
-  const removed = new Set([modelId]);
+  const removedTargets = new Set([modelId]);
+  const removedAliases = new Set();
+  if (Object.hasOwn(aliases ?? {}, modelId)) removedAliases.add(modelId);
   let changed = true;
   while (changed) {
     changed = false;
     for (const [aliasId, alias] of Object.entries(aliases ?? {})) {
-      if (!removed.has(aliasId) && aliasTargets(alias).some((target) => removed.has(target))) {
-        removed.add(aliasId);
+      if (!removedAliases.has(aliasId) && aliasTargets(alias).some((target) => removedTargets.has(target))) {
+        removedAliases.add(aliasId);
+        removedTargets.add(aliasId);
         changed = true;
       }
     }
   }
-  removed.delete(modelId);
-  return [...removed];
+  return [...removedAliases];
+}
+
+function removableDistributedMembers(config, runtimeId, removeRuntime, otherModels) {
+  if (!removeRuntime || !runtimeId) return [];
+  const memberIds = (config.runtimes?.[runtimeId]?.placement?.members ?? [])
+    .map((member) => member?.runtime)
+    .filter(Boolean);
+  return memberIds.filter((memberId) => {
+    if (otherModels.some((model) => model.runtime === memberId)) return false;
+    return !Object.entries(config.runtimes ?? {}).some(
+      ([candidateId, runtime]) =>
+        candidateId !== runtimeId && (runtime?.placement?.members ?? []).some((member) => member?.runtime === memberId)
+    );
+  });
 }
 
 export function createModelRemovalPlan(
@@ -63,6 +79,7 @@ export function createModelRemovalPlan(
     : [];
   const removeBackend = Boolean(backendId && config.backends?.[backendId] && backendUsers.length === 0);
   const removeRuntime = Boolean(runtimeId && config.runtimes?.[runtimeId] && runtimeUsers.length === 0);
+  const runtimeMembers = removableDistributedMembers(config, runtimeId, removeRuntime, otherModels);
   const status = runtimeId ? (runtimeStatus.runtimes?.[runtimeId] ?? runtimeStatus[runtimeId] ?? {}) : {};
   const activeRequests = Number(status.activeRequests ?? 0);
   const aliases = aliasesRemovedWithModel(config.aliases, modelId);
@@ -97,6 +114,7 @@ export function createModelRemovalPlan(
   delete nextConfig.sourcePath;
   nextConfig.models = (nextConfig.models ?? []).filter((entry) => entry.id !== modelId);
   if (removeRuntime) delete nextConfig.runtimes?.[runtimeId];
+  for (const memberRuntimeId of runtimeMembers) delete nextConfig.runtimes?.[memberRuntimeId];
   if (removeBackend) delete nextConfig.backends?.[backendId];
   for (const aliasId of aliases) delete nextConfig.aliases?.[aliasId];
   if (nextConfig.clientCatalog?.modelOrder) {
@@ -117,6 +135,7 @@ export function createModelRemovalPlan(
       clientCatalogEntries: [...removedTargets],
       backend: removeBackend ? backendId : null,
       runtime: removeRuntime ? runtimeId : null,
+      runtimeMembers,
       stopRuntime: removeRuntime && runtimeLoaded(status),
       modelFiles: deleteFiles ? modelPath : null
     },

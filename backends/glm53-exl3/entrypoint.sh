@@ -18,14 +18,26 @@ if [[ "${SPEC_METHOD:-dflash}" == "dflash" && ! -f "${DFLASH_MODEL_DIR:-}/config
   exit 1
 fi
 
-# These are the exact runtime overlays retained at MiaAI-Lab commit 79f10b91.
-# They fail closed if their pinned vLLM anchors drift.
-python3 /opt/lloom/patch_glm_video_placeholders.py
-python3 /opt/lloom/patch_suppress_stops_in_reasoning.py
-python3 /opt/lloom/patch_scheduler_decode_floor.py
-python3 /opt/lloom/patch_glm5_drafter_group.py
-python3 /opt/lloom/patch_hybrid_prefix_hit.py
-python3 /opt/lloom/patch_xgrammar_termination.py
+# The comparison image is built from MiaAI-Lab commit eb0469f. Reapply its
+# baked runtime patches idempotently so launch fails closed if the image and
+# pinned source contract ever drift apart.
+for patch in \
+  patch_glm_video_placeholders.py \
+  patch_suppress_stops_in_reasoning.py \
+  patch_scheduler_decode_floor.py \
+  patch_glm5_drafter_group.py \
+  patch_hybrid_prefix_hit.py \
+  patch_xgrammar_termination.py \
+  patch_kpool_tail_slotmap.py \
+  patch_spinwait.py \
+  patch_indexer_workspace.py \
+  patch_ablit.py; do
+  [[ -f "/opt/glm53/${patch}" ]] || {
+    log "missing Mia eb0469f runtime patch: /opt/glm53/${patch}"
+    exit 1
+  }
+  python3 "/opt/glm53/${patch}"
+done
 
 if [[ -z "${LIMIT_MM_PER_PROMPT:-}" ]]; then
   LIMIT_MM_PER_PROMPT='{"image":4,"video":1}'
@@ -50,9 +62,9 @@ args=(
   --max-model-len "${MAX_MODEL_LEN:-1000000}"
   --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION:-0.87}"
   --max-num-seqs "${MAX_NUM_SEQS:-4}"
-  --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS:-2048}"
+  --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS:-7168}"
   --kv-cache-dtype "${KV_CACHE_DTYPE:-fp8}"
-  --chat-template /opt/lloom/chat_template.jinja
+  --chat-template /opt/glm53/chat_template.jinja
   --limit-mm-per-prompt "${LIMIT_MM_PER_PROMPT}"
   --skip-mm-profiling
 )
@@ -68,7 +80,7 @@ fi
 case "${SPEC_METHOD:-dflash}" in
   dflash)
     dflash_tokens="${DFLASH_TOKENS:-7}"
-    dflash_draft_tp="${DFLASH_DRAFT_TP:-1}"
+    dflash_draft_tp="${DFLASH_DRAFT_TP:-2}"
     [[ "${dflash_tokens}" =~ ^[0-9]+$ ]] || { log "invalid DFLASH_TOKENS=${dflash_tokens}"; exit 1; }
     [[ "${dflash_draft_tp}" =~ ^[0-9]+$ ]] || { log "invalid DFLASH_DRAFT_TP=${dflash_draft_tp}"; exit 1; }
     # Do not launch Python here: Mia's installed video .pth emits a status line
@@ -93,5 +105,5 @@ else
   args+=(--cudagraph-capture-sizes 1 2 4 8 16 24 32)
 fi
 
-log "starting vLLM with Mia EXL3/TR3 TP=${CLUSTER_NODE_COUNT}, spec=${SPEC_METHOD:-dflash}"
+log "starting Mia eb0469f vLLM with EXL3/TR3 TP=${CLUSTER_NODE_COUNT}, spec=${SPEC_METHOD:-dflash}, draft-tp=${DFLASH_DRAFT_TP:-2}, mnbt=${MAX_NUM_BATCHED_TOKENS:-7168}, E2=${EXL3_FAT_KERNEL:-1}"
 exec vllm serve "${MODEL_DIR}" "${args[@]}"

@@ -150,7 +150,11 @@ def apply_enabled(
         if not patch["enabled"]:
             print(f"[dspark-pack] disabled: {patch_id}")
             continue
-        variables = {"file": str(artifact), "vllmRoot": str(vllm_root)}
+        variables = {
+            "file": str(artifact),
+            "packRoot": str(artifact.parent.parent if artifact.parent.name == "patches" else artifact.parent),
+            "vllmRoot": str(vllm_root),
+        }
         interpreter = ALLOWED_KINDS[patch["kind"]]
         if interpreter is None:
             raise PackError(f"enabled patch has no interpreter: {patch_id}")

@@ -22,6 +22,7 @@ const requiredFiles = [
   'backends/dspark-vllm/entrypoint.sh',
   'backends/dspark-vllm/apply-patch-pack.py',
   'backends/dspark-vllm/packs/miaai-dsv4flash-d1b76251-defaults/manifest.json',
+  'backends/dspark-vllm/packs/miaai-ds4fv-f5665e8/manifest.json',
   'backends/mlx-audio/install.sh',
   'backends/mlx-audio/lloom_audio_server.py',
   'config/default.json',
@@ -69,12 +70,19 @@ const requiredFiles = [
   'clients/examples/omp-models.yml'
 ];
 
-const dsparkPackPath = 'backends/dspark-vllm/packs/miaai-dsv4flash-d1b76251-defaults';
-const dsparkPackManifest = JSON.parse(
-  await fs.readFile(path.join(process.cwd(), dsparkPackPath, 'manifest.json'), 'utf8')
-);
-for (const patchEntry of dsparkPackManifest.patches ?? []) {
-  requiredFiles.push(path.join(dsparkPackPath, patchEntry.file));
+const dsparkPackPaths = [
+  'backends/dspark-vllm/packs/miaai-dsv4flash-d1b76251-defaults',
+  'backends/dspark-vllm/packs/miaai-ds4fv-f5665e8',
+  'backends/dspark-vllm/packs/miaai-ds4fv-9414dd58',
+  'backends/dspark-vllm/packs/miaai-ds4fv-9414dd58-sp'
+];
+for (const dsparkPackPath of dsparkPackPaths) {
+  const dsparkPackManifest = JSON.parse(
+    await fs.readFile(path.join(process.cwd(), dsparkPackPath, 'manifest.json'), 'utf8')
+  );
+  for (const patchEntry of dsparkPackManifest.patches ?? []) {
+    requiredFiles.push(path.join(dsparkPackPath, patchEntry.file));
+  }
 }
 
 const forbiddenPrefixes = ['.lloom/', 'clients/generated/', 'data/', 'logs/', 'node_modules/', 'test/'];
@@ -347,7 +355,7 @@ try {
     LLOOM_HOME: path.join(homeRoot, '.lloom')
   });
   const health = await waitForHostHealth(baseUrl);
-  if (health?.data?.recipeCount !== 24 || health?.data?.benchmarkCount !== 12) {
+  if (health?.data?.recipeCount !== 25 || health?.data?.benchmarkCount !== 12) {
     fail('installed lloom-host is not serving packaged seed community data', [JSON.stringify(health?.data ?? null)]);
   }
 

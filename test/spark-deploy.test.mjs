@@ -5,6 +5,25 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { preserveSparkRoutes } from '../scripts/preserve-spark-routes.mjs';
+
+const routingBefore = {
+  aliases: { ds4fv: { members: ['cloud-qwen', 'local'], suspendedMembers: ['local'] } },
+  defaults: { chatModel: 'cloud-qwen' },
+  routing: { mode: 'fallback' }
+};
+const routingAfter = {
+  aliases: { ds4fv: { members: ['local', 'cloud-ds'] } },
+  defaults: { chatModel: 'local' },
+  runtimes: { local: { recipe: { version: 3 } } },
+  clientCatalog: { changed: true }
+};
+const preserved = preserveSparkRoutes(routingBefore, routingAfter);
+assert.deepEqual(preserved.aliases, routingBefore.aliases);
+assert.deepEqual(preserved.defaults, routingBefore.defaults);
+assert.deepEqual(preserved.runtimes, routingAfter.runtimes);
+assert.equal(Object.hasOwn(preserved, 'clientCatalog'), false);
+assert.notDeepEqual(routingAfter.aliases, routingBefore.aliases);
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const script = path.join(root, 'scripts', 'remote-stage-spark-worker.sh');
@@ -12,6 +31,14 @@ const headInstallScript = await fs.readFile(path.join(root, 'scripts', 'remote-i
 assert.match(headInstallScript, /adopting keep-warm startup/);
 assert.match(headInstallScript, /status" == "starting"/);
 assert.match(headInstallScript, /status" == "running"/);
+assert.match(headInstallScript, /runtime_previously_known="false"/);
+assert.match(headInstallScript, /if \[\[ -n "\$runtime" \]\] && lloom runtimes "\$runtime" >\/dev\/null 2>&1; then/);
+assert.match(headInstallScript, /if \[\[ "\$runtime_previously_known" == "true" \]\]; then/);
+assert(
+  headInstallScript.indexOf('lloom runtime-stop "$runtime" >/dev/null') <
+    headInstallScript.indexOf('npm install --global --prefix "$HOME/.local" "$artifact"'),
+  'an existing targeted runtime must release package bind mounts before npm replaces the installed tree'
+);
 assert.match(headInstallScript, /\[\[ "\$keep_warm" == "true" \]\] \|\| lloom runtime-stop/);
 assert.match(
   headInstallScript,

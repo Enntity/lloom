@@ -89,6 +89,7 @@ function compactRuntime(runtimeId, runtime, config) {
     cwd: runtime.cwd,
     port: runtime.port,
     healthUrl: runtime.healthUrl,
+    healthModel: runtime.healthModel,
     healthTimeoutMs: runtimeHealthTimeoutMs(runtime),
     startupTimeoutMs: runtime.startupTimeoutMs,
     watchdog: runtimeWatchdogConfig(runtime),
@@ -367,13 +368,16 @@ async function bootstrapDockerContainer(runtime) {
   };
 }
 
-async function healthOk(url, timeoutMs = 1500) {
+async function healthOk(url, timeoutMs = 1500, expectedModel = null) {
   if (!url) return false;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, { signal: controller.signal });
-    return response.ok;
+    if (!response.ok) return false;
+    if (!expectedModel) return true;
+    const body = await response.json();
+    return Array.isArray(body?.data) && body.data.some((model) => model?.id === expectedModel);
   } catch {
     return false;
   } finally {
@@ -390,7 +394,7 @@ async function runtimeHealthOk(runtime, timeoutMs = runtimeHealthTimeoutMs(runti
   if (runtime?.healthStrategy === 'container' && runtimeAdapter(runtime) === 'docker') {
     return (await dockerContainerState(runtime)).running === true;
   }
-  return healthOk(runtime?.healthUrl, timeoutMs);
+  return healthOk(runtime?.healthUrl, timeoutMs, runtime?.healthModel);
 }
 
 function runtimeMaxConcurrency(runtime) {

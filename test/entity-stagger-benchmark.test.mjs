@@ -62,9 +62,10 @@ const server = http.createServer(async (req, res) => {
   assert.equal(request.tools.length, 16);
   assert.equal(request.stream_options.include_usage, true);
   assert(JSON.stringify(request.messages).length >= 1000);
+  const reportedPromptTokens = JSON.stringify(request.messages).length >= 100_000 ? 20_000 : 250;
   active += 1;
   maxActive = Math.max(maxActive, active);
-  promptTokens += 250;
+  promptTokens += reportedPromptTokens;
   generationTokens += 8;
   res.writeHead(200, { 'content-type': 'text/event-stream' });
   res.write(
@@ -95,7 +96,11 @@ const server = http.createServer(async (req, res) => {
   res.write(
     `data: ${JSON.stringify({
       choices: [],
-      usage: { prompt_tokens: 250, completion_tokens: 8, total_tokens: 258 }
+      usage: {
+        prompt_tokens: reportedPromptTokens,
+        completion_tokens: 8,
+        total_tokens: reportedPromptTokens + 8
+      }
     })}\n\n`
   );
   active -= 1;
@@ -148,6 +153,46 @@ try {
   assert(result.gateway.samples > 0);
   assert(result.backend.after.generationTokens > result.backend.before.generationTokens);
   assert(maxActive >= 2);
+
+  const presetChild = spawn(
+    process.execPath,
+    [
+      path.join(process.cwd(), 'scripts', 'entity-stagger-benchmark.mjs'),
+      '--base-url',
+      `http://127.0.0.1:${port}/v1`,
+      '--model',
+      'entity-model',
+      '--preset',
+      'continuity-16k-stagger',
+      '--max-tokens',
+      '8',
+      '--first-content-timeout-ms',
+      '1000',
+      '--total-timeout-ms',
+      '5000'
+    ],
+    { stdio: ['ignore', 'pipe', 'pipe'] }
+  );
+  let presetStdout = '';
+  let presetStderr = '';
+  presetChild.stdout.on('data', (chunk) => {
+    presetStdout += chunk;
+  });
+  presetChild.stderr.on('data', (chunk) => {
+    presetStderr += chunk;
+  });
+  const presetExitCode = await new Promise((resolve) => presetChild.once('exit', resolve));
+  assert.equal(presetExitCode, 0, presetStderr);
+  const presetResult = JSON.parse(presetStdout);
+  assert.equal(presetResult.pass, true);
+  assert.equal(presetResult.preset, 'continuity-16k-stagger');
+  assert.deepEqual(
+    presetResult.profiles.map((profile) => profile.offsetMs),
+    [0, 1000, 2000, 3000]
+  );
+  assert(presetResult.results.every((entry) => entry.promptTokens >= 16_384));
+  assert.equal(typeof presetResult.ttftMs.mean, 'number');
+  assert(presetResult.ttftMs.max >= presetResult.ttftMs.min);
 } finally {
   await close(server);
 }

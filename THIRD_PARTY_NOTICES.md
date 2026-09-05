@@ -21,15 +21,17 @@ MTPLX's upstream NOTICE also identifies Apache-2.0 material from `vllm-metal` an
 
 ## MiaAI Lab DeepSeek V4 Flash DSpark Hotfixes
 
-The files under `backends/dspark-vllm/packs/miaai-dsv4flash-d1b76251-defaults/patches/` are vendored from MiaAI Lab's two-DGX-Spark DeepSeek V4 Flash recipe. The adjacent LLooM manifest and pack runner provide provenance, compatibility, enablement policy, and integrity checks. The `miaai-dsv4flash-d1b76251` and earlier `miaai-dsv4flash-909776b5` packs remain packaged for recipe-v8 and recipe-v7 rollback:
+The files under `backends/dspark-vllm/packs/miaai-ds4fv-9414dd58-sp/patches/`, `backends/dspark-vllm/packs/miaai-ds4fv-9414dd58/patches/`, `backends/dspark-vllm/packs/miaai-ds4fv-f5665e8/patches/`, and `backends/dspark-vllm/packs/miaai-dsv4flash-d1b76251-defaults/patches/` are vendored from MiaAI Lab's two-DGX-Spark DeepSeek V4 Flash recipe. The adjacent LLooM manifests and pack runner provide provenance, compatibility, enablement policy, and integrity checks. The `miaai-dsv4flash-d1b76251` and earlier `miaai-dsv4flash-909776b5` packs remain packaged for recipe rollback:
 
 - Project: DeepSeek-v4-Flash-DSpark-2x-DGX-Spark
 - Source: <https://github.com/MiaAI-Lab/DeepSeek-v4-Flash-DSpark-2x-DGX-Spark>
-- Current revision: `d1b76251535daef578d8751b04b39c29ad7ecdf9`
+- Current Vision revision: `9414dd58b0b34548032dfd30f5aa13c37f6b93b8`
+- Archived Vision revision: `f5665e8bcde8304654c77a7d58069fdd677198f9`
+- Current text-lane revision: `d1b76251535daef578d8751b04b39c29ad7ecdf9`
 - Archived revision: `909776b5f43154e373efe1ba6cd8d61a1d17515d`
 - License: MIT
 
-Some patch payloads modify or reproduce small portions of vLLM and retain their Apache-2.0 lineage; see [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt). LLooM adapts the launch integration and testability without representing these hotfixes as an official vLLM release.
+Some patch payloads modify or reproduce small portions of vLLM and retain their Apache-2.0 lineage; see [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt). The stock vLLM source fixtures under the Vision packs' `scripts/fixtures/` directories also retain their Apache-2.0 headers and license. LLooM adapts the launch integration and testability without representing these hotfixes as an official vLLM release.
 
 ## MiaAI Lab GLM-5.3 Flash EXL3 Runtime Overlays
 

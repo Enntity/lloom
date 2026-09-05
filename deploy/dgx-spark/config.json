@@ -57,9 +57,9 @@
       "description": "Stable DS4F route across ordered local and cloud members"
     },
     "ds4fv": {
-      "members": ["cloud/openrouter/ds4fv"],
+      "members": ["deepseek-v4-flash-vision-exp", "cloud/openrouter/ds4fv"],
       "advertise": true,
-      "description": "DeepSeek V4 Flash Vision via OpenRouter"
+      "description": "Stable DeepSeek V4 Flash Vision route across local Spark and OpenRouter"
     },
     "q38fn": {
       "members": ["cloud/openrouter/q38fn"],
@@ -110,7 +110,7 @@
     },
     "macbook-embeddings-primary": {
       "type": "openai",
-      "baseUrl": "http://100.87.11.88:8101/v1",
+      "baseUrl": "http://10.20.30.13:8101/v1",
       "apiKeyEnv": "LLOOM_MACBOOK_API_KEY",
       "timeoutMs": 1800000
     },
@@ -130,6 +130,11 @@
       "type": "openai",
       "baseUrl": "https://openrouter.ai/api/v1",
       "apiKeyEnv": "OPENROUTER_API_KEY",
+      "timeoutMs": 1800000
+    },
+    "deepseek-v4-flash-vision-exp": {
+      "type": "openai",
+      "baseUrl": "http://10.20.30.12:8888/v1",
       "timeoutMs": 1800000
     },
     "openai-compatible-openrouter-ds4f": {
@@ -503,6 +508,20 @@
       "maxOutputTokens": 65536,
       "advertise": false,
       "tags": ["cloud", "external", "openrouter", "deepseek", "route-member"]
+    },
+    {
+      "id": "deepseek-v4-flash-vision-exp",
+      "name": "DeepSeek V4 Flash Vision Exp · 2x DGX Spark",
+      "kind": "chat",
+      "backend": "deepseek-v4-flash-vision-exp",
+      "upstreamModel": "deepseek-v4-flash-vision-exp",
+      "input": ["text", "image"],
+      "output": ["text"],
+      "capabilities": ["chat", "streaming", "usage", "tools", "reasoning", "vision", "long-context", "speculative-decoding"],
+      "contextWindow": 1048576,
+      "maxOutputTokens": 131072,
+      "advertise": false,
+      "tags": ["local", "spark", "deepseek", "vision", "route-member"]
     },
     {
       "id": "cloud/openrouter/ds4fv",

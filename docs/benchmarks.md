@@ -13,6 +13,22 @@ npm run benchmark:qualitative -- \
 
 The harness preserves raw messages, usage, latency, tool-call structure, and rubric prompts. Its output is diagnostic evidence, not a `benchmark-suite.v1` leaderboard submission and not a substitute for matched throughput or long-context canaries.
 
+For queueing and prefill/decode interference, run the entity-shaped stagger
+preset through the same gateway route:
+
+```bash
+npm run benchmark:entity-stagger -- \
+  --model candidate-model \
+  --preset continuity-16k-stagger
+```
+
+The preset launches four synthetic cognition requests at 0, 1, 2, and 3
+seconds. Each request carries a 128 KB continuity-shaped prompt and only
+passes if the provider reports at least 16,384 input tokens. Results include
+per-request first-content latency and aggregate TTFT minimum, mean, median,
+p95, and maximum. First content means an actual streamed reasoning, answer, or
+tool-call delta; transport headers and empty SSE events do not count.
+
 Inspect all evidence:
 
 ```zsh

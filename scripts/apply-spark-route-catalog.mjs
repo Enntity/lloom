@@ -6,7 +6,7 @@ import { loadConfig } from '../src/config.mjs';
 
 const STABLE_ROUTES = Object.freeze({
   ds4f: { localModel: 'deepseek-v4-flash-0731', cloudModel: 'cloud/openrouter/ds4f' },
-  ds4fv: { localModel: null, cloudModel: 'cloud/openrouter/ds4fv' },
+  ds4fv: { localModel: 'deepseek-v4-flash-vision-exp', cloudModel: 'cloud/openrouter/ds4fv' },
   q38fn: { localModel: 'qwen3.8-flash-next', cloudModel: 'cloud/openrouter/q38fn' },
   glm53f: { localModel: 'glm-5.3-flash-exl3', cloudModel: 'cloud/openrouter/glm53f' }
 });

@@ -349,6 +349,7 @@ function buildExplicitRecipeRuntime({
     ...(Number.isFinite(Number(runtimeSettings.healthTimeoutMs))
       ? { healthTimeoutMs: positiveInteger(runtimeSettings.healthTimeoutMs, 1500) }
       : {}),
+    ...(runtimeSettings.healthModel ? { healthModel: templateString(runtimeSettings.healthModel, variables) } : {}),
     recipe: {
       id: recipe.id,
       version: recipe.version ?? 1,
@@ -730,6 +731,7 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
           ? { healthTimeoutMs: positiveInteger(settings.healthTimeoutMs, 1500) }
           : {}),
         healthUrl: `${clusterNodeBackendOrigin(leader)}:${port}${settings.healthPath ?? '/health'}`,
+        ...(settings.healthModel ? { healthModel: String(settings.healthModel) } : {}),
         recipe: { id: recipe.id, version: recipe.version ?? 1, source: recipe.filePath ?? null },
         authority: {
           owner: leaderNode,

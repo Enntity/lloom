@@ -9,9 +9,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const backendRoot = path.join(root, 'backends', 'glm53-exl3');
 const recipe = await loadRecipeById('linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm');
 
-assert.equal(recipe.version, 9);
+assert.equal(recipe.version, 10);
 assert.equal(recipe.models[0].gatewayModel, 'glm-5.3-flash-exl3');
-assert.equal(recipe.models[0].settings.contextWindow, 307200);
+assert.equal(recipe.models[0].settings.contextWindow, 1000000);
 assert.equal(recipe.models[0].settings.memoryGb, 100);
 assert.equal(recipe.models[0].settings.maxActiveRequests, 4);
 assert.equal(recipe.models[0].settings.keepWarm, true);
@@ -57,31 +57,28 @@ assert.deepEqual(
 );
 for (const member of members) {
   const bootstrap = member.runtimeSettings.bootstrap;
-  assert.equal(
-    bootstrap.image,
-    'ghcr.io/miaai-lab/glm-5.3-flash-2x-dgx-sparks@sha256:9bb1557a4234fce63d59599e44d10747eabd742beb337eebf9e7070be8a0fd58'
-  );
+  assert.equal(bootstrap.image, 'lloom-glm53-mia-eb0469:exl3');
+  assert.equal(bootstrap.pull, false);
   const rendered = bootstrap.createArgs.join(' ');
   assert.match(rendered, /MODEL_DIR=\/models\/Mia-AiLab--GLM-5\.3-Flash-EXL3-TR3-4bpw/);
   assert.match(rendered, /DFLASH_MODEL_DIR=\/models\/incoai--GLM-5\.3-Flash-DFlash2/);
   assert.match(rendered, /SPEC_METHOD=dflash/);
   assert.match(rendered, /DFLASH_TOKENS=7/);
-  assert.match(rendered, /MAX_MODEL_LEN=307200/);
-  assert.match(rendered, /GPU_MEMORY_UTILIZATION=0\.79/);
-  assert.match(rendered, /KV_CACHE_MEMORY_BYTES=10200547328/);
-  assert.match(rendered, /MAX_NUM_BATCHED_TOKENS=2048/);
+  assert.match(rendered, /DFLASH_DRAFT_TP=2/);
+  assert.match(rendered, /MAX_MODEL_LEN=1000000/);
+  assert.match(rendered, /GPU_MEMORY_UTILIZATION=0\.87/);
+  assert.doesNotMatch(rendered, /KV_CACHE_MEMORY_BYTES=/);
+  assert.match(rendered, /MAX_NUM_BATCHED_TOKENS=7168/);
   assert.match(rendered, /GLM53_MIXED_PREFILL_CHUNK=skip/);
+  assert.match(rendered, /GLM53_INDEXER_WORKSPACE=rightsize/);
+  assert.match(rendered, /GLM53_SPINWAIT_MS=stock/);
+  assert.match(rendered, /EXL3_FAT_KERNEL=1/);
+  assert.match(rendered, /ABLIT=0/);
   assert.match(rendered, /NCCL_IB_ADDR_FAMILY=AF_INET/);
   assert.match(rendered, /NCCL_CROSS_NIC=1/);
   assert.match(rendered, /NCCL_IB_MERGE_NICS=1/);
   assert.doesNotMatch(rendered, /NCCL_IB_GID_INDEX=/);
-  for (const overlay of [
-    'patch_glm5_drafter_group.py',
-    'patch_hybrid_prefix_hit.py',
-    'patch_xgrammar_termination.py'
-  ]) {
-    assert.match(rendered, new RegExp(`${overlay}.*readonly`));
-  }
+  assert.doesNotMatch(rendered, /patch_glm5_drafter_group\.py.*readonly/);
   assert.deepEqual(bootstrap.command, ['/opt/lloom/entrypoint.sh']);
 }
 
@@ -97,6 +94,13 @@ for (const expected of [
   'patch_glm5_drafter_group.py',
   'patch_hybrid_prefix_hit.py',
   'patch_xgrammar_termination.py',
+  'patch_kpool_tail_slotmap.py',
+  'patch_spinwait.py',
+  'patch_indexer_workspace.py',
+  'patch_ablit.py',
+  '/opt/glm53/chat_template.jinja',
+  'DFLASH_DRAFT_TP:-2',
+  'MAX_NUM_BATCHED_TOKENS:-7168',
   '--headless'
 ]) {
   assert(entrypoint.includes(expected), `missing GLM launch control: ${expected}`);
@@ -115,5 +119,10 @@ for (const [name, expected] of Object.entries(sourceHashes)) {
   const bytes = await fs.readFile(path.join(backendRoot, name));
   assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'), expected, `${name} drifted from Mia 79f10b91`);
 }
+
+const builder = await fs.readFile(path.join(backendRoot, 'build-mia-image.sh'), 'utf8');
+assert.match(builder, /eb0469fbb2b49fd7c025f594a3339a121e58f7a9/);
+assert.match(builder, /lloom-glm53-mia-eb0469:exl3/);
+assert.match(builder, /docker build/);
 
 console.log('glm53 exl3 recipe tests passed');

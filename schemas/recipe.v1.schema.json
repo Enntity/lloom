@@ -476,6 +476,10 @@
                   "healthUrl": {
                     "type": "string"
                   },
+                  "healthModel": {
+                    "type": "string",
+                    "description": "Exact model id that must be advertised by an OpenAI-compatible /v1/models health response."
+                  },
                   "warmupPath": {
                     "type": "string"
                   },

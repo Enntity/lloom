@@ -857,6 +857,7 @@ assert.deepEqual(
     'apple-silicon-ternary-bonsai-27b',
     'high-memory-local-image-generation',
     'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm',
+    'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-vision-mia-vllm',
     'linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm',
     'linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm',
     'linux-nvidia-dgx-spark-cluster-flux2-klein-4b',
@@ -1028,7 +1029,7 @@ const recipeIndexReport = await buildRecipeIndexReport(config, {
 });
 assert.equal(recipeIndexReport.ok, true);
 assert.equal(recipeIndexReport.index.id, 'lloom-community-recipes');
-assert.equal(recipeIndexReport.recipes.length, 19);
+assert.equal(recipeIndexReport.recipes.length, 20);
 const indexedSparkRecipe = recipeIndexReport.recipes.find(
   (candidate) => candidate.id === 'linux-nvidia-gb10-qwen36-unsloth-vllm'
 );
@@ -1356,6 +1357,40 @@ assert.equal(sharedRemovalPlan.cleanup.backend, null);
 assert.equal(sharedRemovalPlan.cleanup.runtime, null);
 assert.deepEqual(sharedRemovalPlan.preserved.backend.usedBy, ['keep-me']);
 assert.deepEqual(sharedRemovalPlan.preserved.runtime.usedBy, ['keep-me']);
+
+const distributedRemovalPlan = createModelRemovalPlan(
+  {
+    models: [
+      { id: 'cluster-model', backend: 'cluster-backend', runtime: 'cluster-runtime' },
+      { id: 'cloud-model', backend: 'cloud-backend' }
+    ],
+    backends: { 'cluster-backend': { type: 'openai' }, 'cloud-backend': { type: 'openai' } },
+    runtimes: {
+      'cluster-runtime': {
+        placement: {
+          mode: 'distributed',
+          members: [{ runtime: 'cluster-worker' }, { runtime: 'cluster-head' }]
+        }
+      },
+      'cluster-worker': { adapter: 'docker' },
+      'cluster-head': { adapter: 'docker' }
+    },
+    aliases: {
+      'cluster-model': { members: ['cluster-model', 'cloud-model'] },
+      stable: { members: ['cluster-model', 'cloud-model'] }
+    },
+    defaults: {},
+    clientCatalog: { modelOrder: ['cluster-model', 'stable', 'cloud-model'] }
+  },
+  { modelId: 'cluster-model' }
+);
+assert.deepEqual(distributedRemovalPlan.cleanup.aliases, ['cluster-model', 'stable']);
+assert.deepEqual(distributedRemovalPlan.cleanup.runtimeMembers, ['cluster-worker', 'cluster-head']);
+assert.equal(distributedRemovalPlan.config.runtimes['cluster-runtime'], undefined);
+assert.equal(distributedRemovalPlan.config.runtimes['cluster-worker'], undefined);
+assert.equal(distributedRemovalPlan.config.runtimes['cluster-head'], undefined);
+assert.equal(distributedRemovalPlan.config.aliases['cluster-model'], undefined);
+assert.equal(distributedRemovalPlan.config.aliases.stable, undefined);
 
 const deleteModelRoot = path.join(tempDir, 'delete-models');
 const deleteModelPath = path.join(deleteModelRoot, 'synthetic--delete-me');
@@ -2459,6 +2494,7 @@ assert.equal(sparkConfig.runtimes['unsloth-qwen36-35b-a3b-nvfp4'].adapter, 'dock
 assert.equal(sparkConfig.runtimes['unsloth-qwen36-35b-a3b-nvfp4'].keepWarm, false);
 assert.equal(sparkConfig.runtimes['unsloth-qwen36-27b-nvfp4'].keepWarm, false);
 const dsparkRecipe = await loadRecipeById('linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm');
+const ds4fvRecipe = await loadRecipeById('linux-nvidia-dgx-spark-2x-deepseek-v4-flash-vision-mia-vllm');
 const dsparkBase = structuredClone(config);
 dsparkBase.backends['openrouter-deepseek-v4-flash'] = { baseUrl: 'https://openrouter.ai/api/v1' };
 dsparkBase.models.push({
@@ -2474,6 +2510,16 @@ dsparkBase.cluster = {
     ennspark02: { endpoint: 'http://spark-two:8100', backendHost: '10.20.30.11' }
   }
 };
+const ds4fvConfig = deriveUserConfig(dsparkBase, ds4fvRecipe, { modelRoot: '/models', additive: true });
+assert.equal(ds4fvConfig.backends['deepseek-v4-flash-vision-exp'].baseUrl, 'http://10.20.30.12:8888/v1');
+assert.equal(ds4fvConfig.runtimes['deepseek-v4-flash-vision-exp-cluster'].keepWarm, true);
+assert.equal(ds4fvConfig.runtimes['deepseek-v4-flash-vision-exp-cluster'].healthModel, 'deepseek-v4-flash-vision-exp');
+assert.equal(ds4fvConfig.runtimes['deepseek-v4-flash-vision-exp-head'].healthModel, 'deepseek-v4-flash-vision-exp');
+assert.deepEqual(
+  ds4fvConfig.runtimes['deepseek-v4-flash-vision-exp-cluster'].placement.members.map((member) => member.node),
+  ['ennspark02', 'ennspark01']
+);
+assert.deepEqual(ds4fvConfig.aliases.ds4fv.members, ['deepseek-v4-flash-vision-exp']);
 const qwen38Recipe = await loadRecipeById('linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm');
 const qwen38Config = deriveUserConfig(dsparkBase, qwen38Recipe, { modelRoot: '/models', additive: true });
 assert.equal(qwen38Config.runtimes['qwen38-flash-next-cluster'].healthTimeoutMs, 5000);
@@ -3388,9 +3434,14 @@ assert(ompRoleYaml.includes('retry:'));
 assert(ompRoleYaml.includes('      - local-llm/Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16'));
 const sparkDeployConfig = JSON.parse(await fs.readFile(path.join('deploy', 'dgx-spark', 'config.json'), 'utf8'));
 assert.equal(sparkDeployConfig.clientCatalog.includeAliases, true);
-for (const aliasId of ['ds4f', 'ds4fv', 'q38fn', 'glm53f']) {
+for (const aliasId of ['ds4f', 'q38fn', 'glm53f']) {
   assert.deepEqual(sparkDeployConfig.aliases[aliasId].members, [`cloud/openrouter/${aliasId}`]);
 }
+assert.deepEqual(sparkDeployConfig.aliases.ds4fv.members, ['deepseek-v4-flash-vision-exp', 'cloud/openrouter/ds4fv']);
+const sparkDs4fvLocal = sparkDeployConfig.models.find((model) => model.id === 'deepseek-v4-flash-vision-exp');
+assert.equal(sparkDs4fvLocal.backend, 'deepseek-v4-flash-vision-exp');
+assert.equal(sparkDs4fvLocal.upstreamModel, 'deepseek-v4-flash-vision-exp');
+assert.deepEqual(sparkDs4fvLocal.input, ['text', 'image']);
 const sparkProfileBase = structuredClone(sparkDeployConfig);
 sparkProfileBase.cluster = structuredClone(dsparkBase.cluster);
 const sparkQwenConfig = deriveUserConfig(sparkProfileBase, qwen38Recipe, {
@@ -5842,7 +5893,7 @@ if (listened) {
       try {
         assert.equal(autoHostPlan.ok, true);
         assert(autoHostPlan.host.autoStarted.pid);
-        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, 24);
+        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, 25);
         assert.equal(autoHostPlan.plans[0].recommendation.id, 'apple-silicon-qwen36-35b-a3b-mtplx-pack');
         assert.equal(autoHostPlan.plans[0].plan.roots.recipesRoot, autoHostRecipesRoot);
         assert.equal(autoHostPlan.plans[0].plan.roots.benchmarksRoot, autoHostBenchmarksRoot);

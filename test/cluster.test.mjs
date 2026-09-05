@@ -471,6 +471,31 @@ slowHealthManager.config.runtimes.slow.healthTimeoutMs = 100;
 assert.equal(await slowHealthManager.isHealthy('slow'), true, 'loaded backends may use a wider health probe budget');
 await new Promise((resolve) => slowHealthServer.close(resolve));
 
+const modelHealthServer = http.createServer((_request, response) => {
+  response.writeHead(200, { 'content-type': 'application/json' });
+  response.end(JSON.stringify({ object: 'list', data: [{ id: 'served-model' }] }));
+});
+await new Promise((resolve) => modelHealthServer.listen(0, '127.0.0.1', resolve));
+const modelHealthManager = new RuntimeManager({
+  runtimes: {
+    exact: {
+      enabled: true,
+      managed: false,
+      healthUrl: `http://127.0.0.1:${modelHealthServer.address().port}/v1/models`,
+      healthModel: 'served-model'
+    },
+    stale: {
+      enabled: true,
+      managed: false,
+      healthUrl: `http://127.0.0.1:${modelHealthServer.address().port}/v1/models`,
+      healthModel: 'retired-model'
+    }
+  }
+});
+assert.equal(await modelHealthManager.isHealthy('exact'), true, 'health accepts the expected served model');
+assert.equal(await modelHealthManager.isHealthy('stale'), false, 'health rejects another model on the same port');
+await new Promise((resolve) => modelHealthServer.close(resolve));
+
 const adoptingConfig = structuredClone(distributedConfig);
 adoptingConfig.runtimes.split.healthUrl = 'http://127.0.0.1:1/health';
 const adoptingCalls = [];

@@ -15,6 +15,12 @@ Community orchestration notes (Spark forums / sparkrun / spark-vllm-docker) conv
 
 ## What LLooM already does
 
+When updating a local recipe while keeping an intentional cloud route, pass
+`--preserve-routes` to `npm run deploy:spark -- ...`. The installer stages recipe
+configuration, retains the leader's aliases (including ordering and suspended
+members), defaults, routing and client catalog, then publishes it atomically.
+Benchmark the explicit local model ID before changing the public alias.
+
 - **Machine profile**: `nvidia-smi` → CUDA devices; tags `cuda`, `nvidia-gpu`, and (when applicable) `blackwell` / `dgx-spark` / `gb10`.
 - **Backend catalog**: install/link paths for `vllm` and `sglang` (`linux-x64` + `linux-arm64`).
 - **Runtime manager**: multi-runtime ports (`8201+`), keep-warm, concurrency slots, memory admission, `ensureRuntime` on request.

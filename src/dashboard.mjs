@@ -599,14 +599,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       connectionKey: "",
       threadNodes: new Map(),
       modelNodes: new Map(),
-      modelLayoutIdsKey: "",
-      modelLayoutField: null,
-      modelLayoutWorkingField: null,
       modelLayoutTargetKey: "",
-      modelLayoutTargets: new Map(),
-      modelLayoutStableFrames: 0,
-      modelLayoutSettled: false,
       topologyWorldScale: 1,
+      topologySceneKey: "",
       topologyCamera: { manual: 1, current: 1, panX: 0, panY: 0 },
       topologyPanDrag: null,
       topologyZoomAnchor: null,
@@ -953,7 +948,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const topologyChanged = visibleModelKey !== state.topologyVisibleModelKey;
       state.topologyVisibleModelKey = visibleModelKey;
       state.topologyModels = visibleModels;
-      if (topologyChanged) fitTopologyCameraToModels(visibleModels.length);
+      if (topologyChanged) fitTopologyCameraToModels();
       if (state.selectedModelId && !state.topologyModels.some(model => model.id === state.selectedModelId)) closeModelInspector();
       renderTopologyModelFilter();
       renderModelInspector();
@@ -1086,180 +1081,124 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       }
       return "model";
     }
-    function modelNameParts(model) {
-      const raw = [model?.id && shortModel(model.id), model?.name, model?.upstreamModel && shortModel(model.upstreamModel)]
-        .filter(Boolean)
-        .join(" ");
-      const vendor = modelFamily(raw).toLowerCase();
-      const name = raw.toLowerCase();
-      const tokens = new Set(name.split(/[^a-z0-9]+/).filter(token => token && token.length > 1));
-      return { vendor, name, tokens };
+    function modelPlacementColumn(model) {
+      if (model?.placement === "external") return "external";
+      if (model?.placement === "local") return "local";
+      return (model?.runtimeIds || []).length > 0 ? "local" : "external";
     }
-    function modelNameSimilarity(leftModel, rightModel) {
-      if (leftModel.id === rightModel.id) return 0;
-      if ((leftModel.routeIds || []).some(routeId => (rightModel.routeIds || []).includes(routeId))) return 1;
-      const left = modelNameParts(leftModel), right = modelNameParts(rightModel);
-      let score = 0;
-      if (left.vendor && left.vendor === right.vendor) score += .38;
-      let shared = 0;
-      for (const token of left.tokens) if (right.tokens.has(token)) shared += 1;
-      const union = left.tokens.size + right.tokens.size - shared;
-      if (union > 0) score += .55 * (shared / union);
-      let prefix = 0;
-      const limit = Math.min(left.name.length, right.name.length, 18);
-      while (prefix < limit && left.name[prefix] === right.name[prefix]) prefix += 1;
-      if (prefix >= 4) score += Math.min(.22, prefix * .018);
-      return Math.min(1, score);
+    function compareTopologyModels(left, right) {
+      const leftLabel = String(left?.name || left?.id || "");
+      const rightLabel = String(right?.name || right?.id || "");
+      return leftLabel.localeCompare(rightLabel, undefined, { numeric: true, sensitivity: "base" })
+        || String(left?.id || "").localeCompare(String(right?.id || ""));
     }
-    function clusterModelsByName(models) {
-      const ids = models.map(model => model.id).sort();
-      const modelsById = new Map(models.map(model => [model.id, model]));
-      const parent = new Map(ids.map(id => [id, id]));
-      function find(id) {
-        let root = id;
-        while (parent.get(root) !== root) root = parent.get(root);
-        let cursor = id;
-        while (cursor !== root) {
-          const next = parent.get(cursor);
-          parent.set(cursor, root);
-          cursor = next;
-        }
-        return root;
+    function topologyModelColumns(models, availableWidth = 0, availableHeight = Infinity) {
+      const byColumn = new Map([["local", []], ["external", []]]);
+      for (const model of models || []) byColumn.get(modelPlacementColumn(model)).push(model);
+      const groups = ["local", "external"]
+        .map(id => ({ id, models: byColumn.get(id).sort(compareTopologyModels), count: 1 }))
+        .filter(group => group.models.length > 0);
+      const capacity = Math.max(groups.length, Math.floor((availableWidth - 36 + 36) / (220 + 36)));
+      const rows = Math.max(1, Math.floor((availableHeight + 18) / (68 + 18)));
+      // Give spare horizontal space to the tallest group that still overflows.
+      // Choose from viewport dimensions, never the auto-scaled world or traffic.
+      for (let used = groups.length; used < capacity; used += 1) {
+        const candidate = groups.filter(group => Math.ceil(group.models.length / group.count) > rows)
+          .sort((a, b) => Math.ceil(b.models.length / b.count) - Math.ceil(a.models.length / a.count))[0];
+        if (!candidate) break;
+        candidate.count += 1;
       }
-      function union(left, right) {
-        const a = find(left), b = find(right);
-        if (a === b) return;
-        if (a < b) parent.set(b, a);
-        else parent.set(a, b);
-      }
-      for (let left = 0; left < ids.length; left++) {
-        for (let right = left + 1; right < ids.length; right++) {
-          if (modelNameSimilarity(modelsById.get(ids[left]), modelsById.get(ids[right])) >= .42) union(ids[left], ids[right]);
-        }
-      }
-      const clusters = new Map();
-      for (const id of ids) {
-        const root = find(id);
-        if (!clusters.has(root)) clusters.set(root, []);
-        clusters.get(root).push(id);
-      }
-      return [...clusters.values()]
-        .map(members => members.slice().sort())
-        .sort((a, b) => a[0].localeCompare(b[0]));
+      return groups.flatMap(group => {
+        return Array.from({ length: group.count }, (_, index) => ({
+          id: index ? group.id + ":" + index : group.id,
+          models: group.models.slice(
+            Math.floor(index * group.models.length / group.count),
+            Math.floor((index + 1) * group.models.length / group.count)
+          )
+        })).filter(column => column.models.length);
+      });
     }
-    function modelFieldDelta(previous, next) {
-      if (!previous || !next) return Infinity;
-      return Math.max(
-        Math.abs(previous.left - next.left),
-        Math.abs(previous.right - next.right),
-        Math.abs(previous.top - next.top),
-        Math.abs(previous.bottom - next.bottom)
-      );
+    function hashUnit(seed) {
+      const value = Math.sin(seed * 91.733) * 43758.5453;
+      return value - Math.floor(value);
     }
-    function clampModelPoint(x, y, field) {
-      return {
-        x: Math.max(field.left + 110, Math.min(field.right - 110, x)),
-        y: Math.max(field.top + 34, Math.min(field.bottom - 34, y))
-      };
+    function topologyLeftReserve(clusterNodes) {
+      // Room for connection labels, the gateway/node cards, and their links.
+      return clusterNodes?.length ? 500 : 410;
     }
-    function assignClusterOrbitTargets(models, field) {
-      const clusters = clusterModelsByName(models);
-      const cardW = 220, cardH = 68, gapX = 18, gapY = 14;
+    function topologyViewportColumns(models, width, height, clusterNodes = []) {
+      const reserve = topologyLeftReserve(clusterNodes);
+      let best = topologyModelColumns(models);
+      let bestScale = Infinity;
+      // Compare the fit of the whole scene. A small compression of ingress can
+      // make another model column more readable than shrinking a tall stack.
+      for (let count = best.length; count <= models.length && count > 0; count += 1) {
+        const columns = topologyModelColumns(models, count * 256, 68);
+        const rows = Math.max(0, ...columns.map(column => column.models.length));
+        const scale = Math.max(1, (reserve + topologyRackWidth(columns)) / width,
+          (214 + rows * 68 + Math.max(0, rows - 1) * 18) / height);
+        if (scale < bestScale) { best = columns; bestScale = scale; }
+        if (scale === 1 || (reserve + topologyRackWidth(columns)) / width > bestScale) break;
+      }
+      return best;
+    }
+    function topologyRackWidth(columns) {
+      return columns.length * 220 + Math.max(0, columns.length - 1) * 36 + 36;
+    }
+    function topologyRequiredWorldScale(models, clusterNodes, viewportWidth, viewportHeight) {
+      const columns = topologyViewportColumns(models, viewportWidth, viewportHeight, clusterNodes);
+      const columnCount = columns.length;
+      const maxColumnModels = Math.max(0, ...columns.map(column => column.models.length));
+      const cardW = 220, cardH = 68, gapX = 36, gapY = 18;
+      const rackWidth = columnCount * cardW + Math.max(0, columnCount - 1) * gapX + 36;
+      const rackHeight = maxColumnModels * cardH + Math.max(0, maxColumnModels - 1) * gapY;
+      const modelWidthScale = columnCount
+        ? (topologyLeftReserve(clusterNodes) + rackWidth) / Math.max(1, viewportWidth)
+        : 1;
+      const modelHeightScale = (128 + rackHeight + 86) / Math.max(1, viewportHeight);
+      const nodeCardsHeight = (clusterNodes || []).reduce((sum, node) => {
+        const resources = nodeResourceRows(node);
+        return sum + Math.max(100, 82 + resources.length * 18);
+      }, 0);
+      const nodeStackHeight = clusterNodes?.length
+        ? 78 + nodeCardsHeight + Math.max(0, clusterNodes.length - 1) * 16
+        : 340;
+      const nodeHeightScale = (nodeStackHeight + 150) / Math.max(1, viewportHeight);
+      return Math.max(1, modelWidthScale, modelHeightScale, nodeHeightScale);
+    }
+    function assignModelColumnTargets(models, field) {
+      const columns = field.columns || topologyModelColumns(models, field.right - field.left, field.bottom - field.top);
+      const cardW = 220, cardH = 68, gapX = 36, gapY = 18;
       const pitchX = cardW + gapX, pitchY = cardH + gapY;
-      const spanX = Math.max(pitchX, field.right - field.left - cardW);
-      const midX = (field.left + field.right) / 2;
-      const usableH = Math.max(pitchY, field.bottom - field.top - cardH);
-      const usableW = Math.max(pitchX, field.right - field.left - cardW);
-      const footprints = clusters.map(members => {
-        const n = Math.max(1, members.length);
-        // Wide cards can't share a tiny ellipse — pack each family on a
-        // card-clearing grid (constellation), then orbit that block's center.
-        const cols = Math.max(1, Math.min(n, Math.max(1, Math.floor(usableW / pitchX))));
-        const rows = Math.ceil(n / cols);
-        return {
-          members,
-          n,
-          cols,
-          rows,
-          width: cols * pitchX - gapX,
-          height: rows * pitchY - gapY
-        };
-      });
-      // Prefer a vertical stack of family blocks; spill into columns if the rack is short.
-      // Keep families visually distinct with generous inter-cluster air.
-      const blockGap = 72;
-      let clusterCols = 1;
-      let packedHeight = footprints.reduce((sum, item) => sum + item.height, 0) + Math.max(0, footprints.length - 1) * blockGap;
-      while (clusterCols < footprints.length && packedHeight > usableH) {
-        clusterCols += 1;
-        const colHeights = Array.from({ length: clusterCols }, () => 0);
-        footprints.forEach((item, index) => {
-          const col = index % clusterCols;
-          colHeights[col] += item.height + (colHeights[col] ? blockGap : 0);
-        });
-        packedHeight = Math.max(...colHeights);
-      }
-      const colWidths = Array.from({ length: clusterCols }, () => 0);
-      footprints.forEach((item, index) => {
-        const col = index % clusterCols;
-        colWidths[col] = Math.max(colWidths[col], item.width);
-      });
-      const totalWidth = colWidths.reduce((sum, width) => sum + width, 0) + Math.max(0, clusterCols - 1) * blockGap;
-      const startX = midX - totalWidth / 2;
-      const colX = [];
-      let xCursor = startX;
-      for (let col = 0; col < clusterCols; col++) {
-        colX.push(xCursor + colWidths[col] / 2);
-        xCursor += colWidths[col] + blockGap;
-      }
-      const colY = Array.from({ length: clusterCols }, () => field.top + 34);
+      const rackWidth = columns.length * cardW + Math.max(0, columns.length - 1) * gapX;
+      const startX = (field.left + field.right - rackWidth) / 2 + cardW / 2;
       const targets = new Map();
-      footprints.forEach((item, clusterIndex) => {
-        const col = clusterIndex % clusterCols;
-        const seed = [...item.members[0]].reduce((sum, character) => sum + character.charCodeAt(0), clusterIndex + 1);
-        const centerX = colX[col] + (hashUnit(seed * 7) - .5) * Math.min(20, spanX * .06);
-        const centerY = colY[col] + item.height / 2;
-        item.members.forEach((id, memberIndex) => {
-          const slotCol = item.cols === 1 ? 0 : memberIndex % item.cols;
-          const slotRow = item.cols === 1 ? memberIndex : Math.floor(memberIndex / item.cols);
-          const localX = (slotCol - (item.cols - 1) / 2) * pitchX;
-          const localY = (slotRow - (item.rows - 1) / 2) * pitchY;
-          // Slight orbital twist so multi-member families don't look like a spreadsheet.
-          const twist = item.n === 1 ? 0 : Math.sin((memberIndex + 1) * 1.7) * Math.min(14, pitchX * .06);
-          const point = clampModelPoint(centerX + localX + twist, centerY + localY, field);
-          targets.set(id, { x: point.x, y: point.y, centerX, centerY });
+      const layoutColumns = [];
+      columns.forEach((column, columnIndex) => {
+        const columnX = startX + columnIndex * pitchX;
+        const rackHeight = column.models.length * cardH + Math.max(0, column.models.length - 1) * gapY;
+        const rackTop = (field.top + field.bottom - rackHeight) / 2;
+        column.models.forEach((model, modelIndex) => {
+          // A tiny deterministic horizontal sway keeps the rack from feeling
+          // mechanically typeset without sacrificing column readability.
+          const seed = [...model.id].reduce((sum, character) => sum + character.charCodeAt(0), modelIndex + 1);
+          const sway = column.models.length === 1 ? 0 : (hashUnit(seed * 7) - .5) * 14;
+          targets.set(model.id, {
+            x: columnX + sway,
+            y: rackTop + cardH / 2 + modelIndex * pitchY,
+            centerX: columnX,
+            centerY: (field.top + field.bottom) / 2
+          });
         });
-        colY[col] += item.height + blockGap;
+        layoutColumns.push({
+          id: column.id,
+          x: columnX,
+          top: rackTop,
+          bottom: rackTop + rackHeight,
+          modelIds: column.models.map(model => model.id)
+        });
       });
-      return { targets };
-    }
-
-    function separateModelTargets(targets, field) {
-      const points = [...targets.entries()].map(([id, point]) => ({ id, ...point }));
-      const cardWidth = 220, cardHeight = 68, gapX = 12, gapY = 12;
-      for (let pass = 0; pass < 64; pass++) {
-        let moved = false;
-        for (let left = 0; left < points.length; left++) for (let right = left + 1; right < points.length; right++) {
-          const a = points[left], b = points[right];
-          const dx = b.x - a.x, dy = b.y - a.y;
-          const xOverlap = cardWidth + gapX - Math.abs(dx), yOverlap = cardHeight + gapY - Math.abs(dy);
-          if (xOverlap <= 0 || yOverlap <= 0) continue;
-          moved = true;
-          if (xOverlap / (cardWidth + gapX) < yOverlap / (cardHeight + gapY)) {
-            const direction = Math.sign(dx) || (a.id < b.id ? 1 : -1);
-            const shift = xOverlap / 2 + .05;
-            a.x -= direction * shift; b.x += direction * shift;
-          } else {
-            const direction = Math.sign(dy) || (a.id < b.id ? 1 : -1);
-            const shift = yOverlap / 2 + .05;
-            a.y -= direction * shift; b.y += direction * shift;
-          }
-          Object.assign(a, clampModelPoint(a.x, a.y, field));
-          Object.assign(b, clampModelPoint(b.x, b.y, field));
-        }
-        if (!moved) break;
-      }
-      return new Map(points.map(point => [point.id, point]));
+      return { targets, columns: layoutColumns };
     }
 
     function smoothRate(key, target, now) {
@@ -1291,11 +1230,6 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       return Number.isFinite(pulseAt) && now - pulseAt < PROMPT_PULSE_MS
         ? Math.max(0, Number(tokens || 0))
         : 0;
-    }
-
-    function hashUnit(seed) {
-      const value = Math.sin(seed * 91.733) * 43758.5453;
-      return value - Math.floor(value);
     }
 
     function pointOnPath(from, via, to, progress) {
@@ -1379,86 +1313,15 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         state.smoothedRates.delete("model:" + id + ":in");
         state.smoothedRates.delete("model:" + id + ":out");
       }
-      const snapshotField = () => ({ left: field.left, right: field.right, top: field.top, bottom: field.bottom });
-      const idsKey = models.map(model => model.id).sort().join("|");
-      if (idsKey !== state.modelLayoutIdsKey) {
-        state.modelLayoutIdsKey = idsKey;
-        state.modelLayoutSettled = false;
-        state.modelLayoutStableFrames = 0;
-        state.modelLayoutWorkingField = snapshotField();
-      }
-      if (state.modelLayoutSettled && modelFieldDelta(state.modelLayoutField, field) >= 16) {
-        state.modelLayoutSettled = false;
-        state.modelLayoutStableFrames = 0;
-        state.modelLayoutWorkingField = snapshotField();
-      }
-      if (!state.modelLayoutWorkingField) state.modelLayoutWorkingField = snapshotField();
-      // While still settling, let the rack grow with world-scale so constellation
-      // slots aren't frozen into the first undersized frame.
-      if (!state.modelLayoutSettled) {
-        const working = state.modelLayoutWorkingField;
-        const liveArea = Math.max(1, (field.right - field.left) * (field.bottom - field.top));
-        const workArea = Math.max(1, (working.right - working.left) * (working.bottom - working.top));
-        if (liveArea > workArea * 1.02) state.modelLayoutWorkingField = snapshotField();
-      }
-      const layoutField = state.modelLayoutWorkingField;
-      const targetKey = idsKey + "@" + [layoutField.left, layoutField.right, layoutField.top, layoutField.bottom].map(value => Math.round(value)).join(":");
-      if (targetKey !== state.modelLayoutTargetKey) {
-        const orbit = assignClusterOrbitTargets(models, layoutField);
-        state.modelLayoutTargets = separateModelTargets(orbit.targets, layoutField);
-        state.modelLayoutTargetKey = targetKey;
-      }
-      const fallbackX = (layoutField.left + layoutField.right) / 2;
-      const fallbackY = (layoutField.top + layoutField.bottom) / 2;
-      models.forEach(model => {
-        const slot = state.modelLayoutTargets.get(model.id) || { x: fallbackX, y: fallbackY, centerX: fallbackX, centerY: fallbackY };
-        let node = state.modelNodes.get(model.id);
-        if (!node) {
-          // Start already seated in the constellation slot.
-          node = { x: slot.x, y: slot.y, vx: 0, vy: 0, targetX: slot.x, targetY: slot.y };
-          state.modelNodes.set(model.id, node);
-          state.modelLayoutSettled = false;
-          state.modelLayoutStableFrames = 0;
-          state.modelLayoutWorkingField = snapshotField();
-        }
-        node.targetX = slot.x;
-        node.targetY = slot.y;
-      });
-      if (state.modelLayoutSettled) return;
-      const nodes = models.map(model => state.modelNodes.get(model.id));
-      for (const node of nodes) {
-        node.vx += (node.targetX - node.x) * .024;
-        node.vy += (node.targetY - node.y) * .024;
-      }
-      // Destination slots are already separated. Let cards pass through one
-      // another while reseating so a topology change cannot trap the rack in
-      // a locally ordered arrangement.
-      const previousPositions = nodes.map(node => ({ x: node.x, y: node.y }));
-      for (const node of nodes) {
-        const halfWidth = 110, halfHeight = 34;
-        if (node.x < layoutField.left + halfWidth) node.vx += (layoutField.left + halfWidth - node.x) * .03;
-        if (node.x > layoutField.right - halfWidth) node.vx -= (node.x - layoutField.right + halfWidth) * .03;
-        if (node.y < layoutField.top + halfHeight) node.vy += (layoutField.top + halfHeight - node.y) * .03;
-        if (node.y > layoutField.bottom - halfHeight) node.vy -= (node.y - layoutField.bottom + halfHeight) * .03;
-        node.vx *= .70; node.vy *= .70;
-        node.x += node.vx; node.y += node.vy;
-        node.x = Math.max(layoutField.left + halfWidth, Math.min(layoutField.right - halfWidth, node.x));
-        node.y = Math.max(layoutField.top + halfHeight, Math.min(layoutField.bottom - halfHeight, node.y));
-      }
-      const maxMovement = nodes.reduce((maximum, node, index) => Math.max(maximum, Math.abs(node.x - previousPositions[index].x), Math.abs(node.y - previousPositions[index].y)), 0);
-      const maxTargetError = nodes.reduce((maximum, node) => Math.max(maximum, Math.hypot(node.targetX - node.x, node.targetY - node.y)), 0);
-      state.modelLayoutStableFrames = maxMovement < .08 && maxTargetError < 5 ? state.modelLayoutStableFrames + 1 : 0;
-      if (state.modelLayoutStableFrames >= 8) {
-        for (const node of nodes) {
-          node.x = Math.round(node.targetX);
-          node.y = Math.round(node.targetY);
-          node.vx = 0;
-          node.vy = 0;
-        }
-        state.modelLayoutSettled = true;
-        state.modelLayoutStableFrames = 0;
-        state.modelLayoutField = { left: layoutField.left, right: layoutField.right, top: layoutField.top, bottom: layoutField.bottom };
-      }
+      const layoutKey = models.map(model => [model.id, modelPlacementColumn(model), model.name || ""].join(":")).sort().join("|")
+        + "@" + [field.left, field.right, field.top, field.bottom].join(":")
+        + "@" + (field.columns || []).map(column => column.id + ":" + column.models.length).join("|");
+      if (layoutKey === state.modelLayoutTargetKey) return;
+      const { targets } = assignModelColumnTargets(models, field);
+      // A responsive reflow is atomic: old coordinates must never be drawn in
+      // a newly sized world. Traffic animation remains independent of layout.
+      for (const [id, slot] of targets) state.modelNodes.set(id, { x: slot.x, y: slot.y });
+      state.modelLayoutTargetKey = layoutKey;
     }
 
     function drawTopology(now) {
@@ -1468,18 +1331,20 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       if (canvas.width !== Math.round(viewportWidth) || canvas.height !== Math.round(viewportHeight)) { canvas.width = Math.round(viewportWidth); canvas.height = Math.round(viewportHeight); }
       const ctx = canvas.getContext("2d");
       ctx.clearRect(0, 0, viewportWidth, viewportHeight);
-      const modelCount = (state.topologyModels || []).length;
+      const models = state.topologyModels || [];
       const clusterNodes = state.status?.cluster?.enabled ? Object.values(state.status?.cluster?.nodes || {}) : [];
-      const connectionCount = (state.topologyConnections || []).length;
+      const modelColumns = topologyViewportColumns(models, viewportWidth, viewportHeight, clusterNodes);
       // Keep the model rack anchored. Traffic comes and goes constantly and
       // must not resize the world or make settled model cards jitter.
-      const targetWorldScale = Math.max(1, Math.sqrt(Math.max(1, modelCount / 6, clusterNodes.length / 5)));
-      const worldEase = targetWorldScale > state.topologyWorldScale ? .18 : .06;
-      state.topologyWorldScale += (targetWorldScale - state.topologyWorldScale) * worldEase;
-      if (Math.abs(targetWorldScale - state.topologyWorldScale) < .002) state.topologyWorldScale = targetWorldScale;
+      const targetWorldScale = topologyRequiredWorldScale(models, clusterNodes, viewportWidth, viewportHeight);
+      const sceneKey = [viewportWidth, viewportHeight, targetWorldScale, ...modelColumns.map(column => column.id + ":" + column.models.length)].join("|");
+      const reflow = sceneKey !== state.topologySceneKey;
+      state.topologySceneKey = sceneKey;
+      state.topologyWorldScale = targetWorldScale;
       const fitZoom = 1 / state.topologyWorldScale;
       const targetZoom = Math.max(TOPOLOGY_MIN_ZOOM, Math.min(TOPOLOGY_MAX_ZOOM, fitZoom * state.topologyCamera.manual));
-      state.topologyCamera.current += (targetZoom - state.topologyCamera.current) * .12;
+      if (reflow) state.topologyCamera.current = targetZoom;
+      else state.topologyCamera.current += (targetZoom - state.topologyCamera.current) * .12;
       if (Math.abs(targetZoom - state.topologyCamera.current) < .002) state.topologyCamera.current = targetZoom;
       const zoom = state.topologyCamera.current;
       // Content density owns the logical world size. The camera only chooses
@@ -1500,11 +1365,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       ctx.translate(viewportWidth / 2 + panX, viewportHeight / 2 + panY);
       ctx.scale(zoom, zoom);
       ctx.translate(-width / 2, -height / 2);
-      const models = state.topologyModels || [];
-      const rackFraction = Math.min(.5, .27 + Math.max(0, models.length - 3) * .045);
-      const modelField = { left: width * (1 - rackFraction), right: width - 18, top: 105, bottom: height - 28 };
+      const modelField = { left: width - topologyRackWidth(modelColumns), right: width - 18, top: 128, bottom: height - 86, columns: modelColumns };
       const clusterEnabled = clusterNodes.length > 0;
-      const center = { x: modelField.left - (clusterEnabled ? 190 : 105), y: height * .53 };
+      const center = { x: modelField.left - (clusterEnabled ? 128 : 105), y: height * .53 };
       const nodeCardWidth = clusterEnabled ? 184 : 140;
       const nodeCardGap = clusterEnabled ? 16 : 0;
       const clusterHeaderHeight = clusterEnabled ? 78 : 0;
@@ -1713,7 +1576,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const bSeed = Number(String(b.id).replace(/\D/g, "")) || 1;
         return hashUnit(aSeed * 29) - hashUnit(bSeed * 29);
       });
-      const threadField = { left: 62, right: gate.left - 170, top: 112, bottom: height - 45 };
+      const threadField = { left: 62, right: gate.left - 130, top: 112, bottom: height - 45 };
       updateThreadLayout(orderedConnections, threadField);
       orderedConnections.forEach((connection, index) => {
         const seed = Number(String(connection.id).replace(/\D/g, "")) || index + 1;
@@ -1766,7 +1629,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         ].join(" · ");
         ctx.fillStyle = "rgba(143,180,255,.82)";
         ctx.fillText(fitCanvasText(ctx, clusterTraffic, nodeCardWidth + 24), center.x, gate.top + 51);
-        const clusterResults = formatRate(smoothedOutputRate) + " ~T/S · " + (summary.recentErrors || 0) + " ERR/1M";
+        const clusterResults = summary.outputPending
+          ? "BUFFERED · " + (summary.recentErrors || 0) + " ERR/1M"
+          : formatRate(smoothedOutputRate) + " ~T/S · " + (summary.recentErrors || 0) + " ERR/1M";
         ctx.fillText(fitCanvasText(ctx, clusterResults, nodeCardWidth + 24), center.x, gate.top + 66);
       } else {
         const chassis = ctx.createLinearGradient(gate.left, 0, gate.right, 0);
@@ -1858,8 +1723,12 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         : Number(totals.decodeTokensPerSecond) > 0
           ? Number(totals.decodeTokensPerSecond)
           : null;
-      const displayedOutputRate = liveOutputRate > 0 ? liveOutputRate : aggregateOutputRate || 0;
-      $("#fabric-rate").textContent = aggregateOutputRate == null ? "—" : formatRate(aggregateOutputRate);
+      const bufferedOutputPending = active.some(item => item.stream === false && !item.responseBytes);
+      const displayedOutputRate = liveOutputRate > 0 ? liveOutputRate : bufferedOutputPending ? 0 : aggregateOutputRate || 0;
+      $("#fabric-rate").textContent = bufferedOutputPending && liveOutputRate <= 0
+        ? "—"
+        : aggregateOutputRate == null ? "—" : formatRate(aggregateOutputRate);
+      $("#fabric-rate-label").textContent = bufferedOutputPending && liveOutputRate <= 0 ? "buffered" : "tok/s";
       $("#fabric-active").textContent = formatNumber(active.length);
       state.topologySummary = {
         active: active.length,
@@ -1867,6 +1736,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         promptEstimated,
         promptPulseAt: promptTokens > 0 ? activityRenderedAt : null,
         outputRate: displayedOutputRate,
+        outputPending: bufferedOutputPending,
         averageInputRate,
         averageOutputRate: aggregateOutputRate || 0,
         recentErrors: Math.max(0, Number(metrics.rolling?.minute?.errors || 0)),
@@ -1977,7 +1847,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           ...liveConnections.map(item => item.node).filter(Boolean),
           ...(liveConnections.length ? (runtimeState.members || []).map(member => member.node).filter(Boolean) : [])
         ])];
-        return { id: model.id, name: model.name || model.id, upstreamModel: model.upstreamModel, routeIds: model.routeIds || [], nodes, activeNodes, runtimeIds: [...runtimeIds, ...remoteRuntimeIds], runtimeStatus: runtimeState, inputTokens: Number(data.inputTokens || 0) + activeInput, inputEstimated, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveOutputRate, promptTokens: modelPromptTokens, promptPulseAt: modelPromptPulseAt, averageRate: data.decodeTokensPerSecond == null ? null : Number(data.decodeTokensPerSecond), state: stateLabel, lastActiveAt, agedOut };
+        return { id: model.id, name: model.name || model.id, upstreamModel: model.upstreamModel, routeIds: model.routeIds || [], placement: isExternal ? "external" : "local", nodes, activeNodes, runtimeIds: [...runtimeIds, ...remoteRuntimeIds], runtimeStatus: runtimeState, inputTokens: Number(data.inputTokens || 0) + activeInput, inputEstimated, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveOutputRate, promptTokens: modelPromptTokens, promptPulseAt: modelPromptPulseAt, averageRate: data.decodeTokensPerSecond == null ? null : Number(data.decodeTokensPerSecond), state: stateLabel, lastActiveAt, agedOut };
       });
       state.topologyCatalogModels = topologyModels;
       applyTopologyModelFilter();
@@ -2071,8 +1941,15 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       state.showAllTopologyModels = !state.showAllTopologyModels;
       applyTopologyModelFilter();
     });
-    function fitTopologyCameraToModels(modelCount = (state.topologyModels || []).length) {
-      const worldScale = Math.max(1, Math.sqrt(Math.max(1, modelCount / 6)));
+    function fitTopologyCameraToModels() {
+      const canvas = $("#topology-canvas");
+      const clusterNodes = state.status?.cluster?.enabled ? Object.values(state.status?.cluster?.nodes || {}) : [];
+      const worldScale = topologyRequiredWorldScale(
+        state.topologyModels || [],
+        clusterNodes,
+        canvas?.clientWidth || 1200,
+        canvas?.clientHeight || 640
+      );
       state.topologyCamera.manual = 1;
       state.topologyCamera.current = 1 / worldScale;
       state.topologyCamera.panX = 0;

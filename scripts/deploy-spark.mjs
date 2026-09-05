@@ -26,6 +26,7 @@ else remoteArgs.push('-');
 remoteArgs.push(String(flags.entity || 'Jinx'));
 remoteArgs.push(String(flags.recipe || '-'));
 remoteArgs.push(`${remoteDir}/spark-route-catalog.json`);
+remoteArgs.push(flags['preserve-routes'] ? 'true' : 'false');
 const stagedWorkers = [];
 try {
   for (const workerHost of workerHosts) {

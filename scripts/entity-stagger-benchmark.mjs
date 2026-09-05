@@ -9,6 +9,14 @@ const DEFAULT_PROFILES = [
   { name: 'cognition-medium', promptBytes: 160_000, offsetMs: 20_000 },
   { name: 'followup-short', promptBytes: 80_000, offsetMs: 40_000 }
 ];
+const PROFILE_PRESETS = {
+  'continuity-16k-stagger': Array.from({ length: 4 }, (_, index) => ({
+    name: `cognition-16k-${index + 1}`,
+    promptBytes: 128_000,
+    minPromptTokens: 16_384,
+    offsetMs: index * 1_000
+  }))
+};
 
 function parseArgs(argv) {
   const flags = {};
@@ -48,6 +56,16 @@ function parseProfiles(value) {
     }
     return { name, promptBytes, offsetMs };
   });
+}
+
+function resolveProfiles(flags) {
+  if (flags.preset && flags.profiles) throw new Error('use either --preset or --profiles, not both');
+  if (!flags.preset) return parseProfiles(flags.profiles);
+  const preset = PROFILE_PRESETS[flags.preset];
+  if (!preset) {
+    throw new Error(`unknown preset ${flags.preset}; expected one of: ${Object.keys(PROFILE_PRESETS).join(', ')}`);
+  }
+  return preset.map((profile) => ({ ...profile }));
 }
 
 function sleep(milliseconds) {
@@ -120,6 +138,8 @@ async function runOne(options) {
   let toolDeltaSeen = false;
   let finishReason = null;
   let usage = null;
+  let responseModel = null;
+  let provider = null;
   let firstTimer = setTimeout(
     () => controller.abort(new Error(`no model content after ${options.firstContentTimeoutMs}ms`)),
     options.firstContentTimeoutMs
@@ -187,6 +207,8 @@ async function runOne(options) {
           if (!data || data === '[DONE]') continue;
           const value = JSON.parse(data);
           if (value?.usage) usage = value.usage;
+          if (typeof value?.model === 'string') responseModel = value.model;
+          if (typeof value?.provider === 'string') provider = value.provider;
           const content = contentFromChunk(value);
           if ((content.chars > 0 || content.toolDelta) && firstContentAt == null) {
             firstContentAt = Date.now();
@@ -207,6 +229,7 @@ async function runOne(options) {
       profile: profile.name,
       ok: true,
       requestedPromptBytes: profile.promptBytes,
+      requiredMinPromptTokens: profile.minPromptTokens ?? null,
       arrivalOffsetMs: started - suiteStarted,
       firstContentMs: firstContentAt - started,
       durationMs: ended - started,
@@ -215,6 +238,8 @@ async function runOne(options) {
       completionTokens,
       completionTokensPerSecond: (completionTokens * 1000) / decodeMs,
       responseBytes,
+      responseModel,
+      provider,
       toolDeltaSeen,
       finishReason
     };
@@ -306,7 +331,7 @@ async function main() {
   const flags = parseArgs(process.argv.slice(2));
   const model = flags.model;
   if (!model) throw new Error('use --model MODEL_ID');
-  const profiles = parseProfiles(flags.profiles);
+  const profiles = resolveProfiles(flags);
   const apiKey = resolveApiKey(flags);
   const baseUrl = flags['base-url'] || DEFAULT_BASE_URL;
   const gatewayStatusUrl =
@@ -343,31 +368,50 @@ async function main() {
   const after = await waitForIdle(metricsUrl);
   const promptTokens = results.reduce((sum, result) => sum + Number(result.promptTokens || 0), 0);
   const completionTokens = results.reduce((sum, result) => sum + Number(result.completionTokens || 0), 0);
+  const ttftValues = results
+    .filter((result) => result.ok && Number.isFinite(result.firstContentMs))
+    .map((result) => result.firstContentMs)
+    .sort((left, right) => left - right);
+  const percentile = (fraction) =>
+    ttftValues.length ? ttftValues[Math.max(0, Math.ceil(ttftValues.length * fraction) - 1)] : null;
+  const ttftMs = {
+    min: ttftValues[0] ?? null,
+    mean: ttftValues.length ? ttftValues.reduce((sum, value) => sum + value, 0) / ttftValues.length : null,
+    median: percentile(0.5),
+    p95: percentile(0.95),
+    max: ttftValues.at(-1) ?? null
+  };
   const pass =
-    results.every((result) => result.ok && result.promptTokens > 0 && result.completionTokens > 0) &&
+    results.every(
+      (result) =>
+        result.ok && result.promptTokens >= Number(result.requiredMinPromptTokens || 1) && result.completionTokens > 0
+    ) &&
     (!after || (after.running === 0 && after.waiting === 0)) &&
     (!before || !after || after.generationTokens > before.generationTokens);
-  console.log(
-    JSON.stringify(
-      {
-        pass,
-        runId: options.runId,
-        model,
-        runtime: flags.runtime || null,
-        profiles,
-        maxTokens: options.maxTokens,
-        makespanMs: ended - suiteStarted,
-        promptTokens,
-        completionTokens,
-        aggregateCompletionTokensPerSecond: (completionTokens * 1000) / Math.max(1, ended - suiteStarted),
-        results,
-        gateway,
-        backend: before && after ? { before, after } : null
-      },
-      null,
-      2
-    )
-  );
+  const artifact = {
+    pass,
+    runId: options.runId,
+    model,
+    runtime: flags.runtime || null,
+    preset: flags.preset || null,
+    profiles,
+    maxTokens: options.maxTokens,
+    makespanMs: ended - suiteStarted,
+    promptTokens,
+    completionTokens,
+    aggregateCompletionTokensPerSecond: (completionTokens * 1000) / Math.max(1, ended - suiteStarted),
+    ttftMs,
+    results,
+    gateway,
+    backend: before && after ? { before, after } : null
+  };
+  const serialized = `${JSON.stringify(artifact, null, 2)}\n`;
+  if (flags.output) {
+    fs.writeFileSync(flags.output, serialized);
+    console.error(`wrote ${flags.output}`);
+  } else {
+    process.stdout.write(serialized);
+  }
   if (!pass) process.exitCode = 1;
 }
 

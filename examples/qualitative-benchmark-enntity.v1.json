@@ -90,7 +90,7 @@
           }
         }
       ],
-      "toolChoice": "required",
+      "toolChoice": "auto",
       "expectedTool": {
         "name": "schedule_drain_retry",
         "arguments": {

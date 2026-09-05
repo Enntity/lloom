@@ -9,6 +9,7 @@ entity=${4:-Jinx}
 recipe=${5:-}
 [[ "$recipe" == "-" ]] && recipe=""
 route_catalog=${6:-}
+preserve_routes=${7:-false}
 export PATH="$HOME/.local/bin:$HOME/.local/opt/node-v22.17.0-linux-arm64/bin:$PATH"
 export NPM_CONFIG_CACHE="$HOME/.cache/npm-release"
 
@@ -51,22 +52,40 @@ if [[ -f "$installed/package.json" ]]; then
   rollback_artifact="$backup_root/$rollback_name"
 fi
 
-if [[ -n "$runtime" ]]; then
+runtime_previously_known="false"
+if [[ -n "$runtime" ]] && lloom runtimes "$runtime" >/dev/null 2>&1; then
+  runtime_previously_known="true"
+fi
+if [[ "$runtime_previously_known" == "true" ]]; then
   for _ in $(seq 1 240); do
     active=$(lloom runtimes "$runtime" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);const r=j.runtimes[process.argv[1]];console.log((r.activeRequests||0)+(r.queuedRequests||0))}catch{console.log(1)}})' "$runtime")
     [[ "$active" == "0" ]] && break
     sleep 1
   done
   [[ "${active:-1}" == "0" ]] || { echo "runtime did not drain" >&2; exit 1; }
+  # Runtime recipes bind files from the globally installed LLooM package into
+  # their containers. npm replaces that directory during install, so keeping a
+  # healthy container alive would leave it attached to the retired directory
+  # inode. Recreate the targeted runtime after the package swap so every mount
+  # resolves to the newly installed release.
+  lloom runtime-stop "$runtime" >/dev/null
 fi
 
 npm install --global --prefix "$HOME/.local" "$artifact" --omit=dev --ignore-scripts
-if [[ -n "$route_catalog" ]]; then
+if [[ -n "$route_catalog" && "$preserve_routes" != "true" ]]; then
   node "$HOME/.local/lib/node_modules/lloom/scripts/apply-spark-route-catalog.mjs" \
     "$config_path" "$route_catalog" --apply --yes >/dev/null
 fi
 if [[ -n "$recipe" ]]; then
-  lloom setup --recipe "$recipe" --additive --apply --yes >/dev/null
+  if [[ "$preserve_routes" == "true" && "$config_existed" == "true" ]]; then
+    staged_config="$release_root/config.staged.json"
+    lloom setup --recipe "$recipe" --config-out "$staged_config" --additive --apply --yes >/dev/null
+    node "$HOME/.local/lib/node_modules/lloom/scripts/preserve-spark-routes.mjs" "$config_backup" "$staged_config"
+    chmod --reference="$config_path" "$staged_config"
+    mv "$staged_config" "$config_path"
+  else
+    lloom setup --recipe "$recipe" --additive --apply --yes >/dev/null
+  fi
 fi
 systemctl --user restart lloom.service
 for _ in $(seq 1 60); do lloom models >/dev/null 2>&1 && break; sleep 1; done
