@@ -1656,12 +1656,17 @@ export class RuntimeManager {
     // Gateway managers capture both streams so backend aborts leave a trail.
     // CLI managers disable capture so their detached runtime does not keep the
     // short-lived command process open through an inherited pipe.
-    const child = spawn(runtime.command, args, {
-      cwd: runtime.cwd,
-      env: runtimeEnvironment(this.config, runtime),
-      stdio: ['ignore', this.captureOutput ? 'pipe' : 'ignore', this.captureOutput ? 'pipe' : 'ignore'],
-      detached: true
-    });
+    const supervised = process.platform !== 'win32';
+    const child = spawn(
+      supervised ? process.execPath : runtime.command,
+      supervised ? [path.join(packageRoot, 'src', 'runtime-supervisor.mjs'), runtime.command, ...args] : args,
+      {
+        cwd: runtime.cwd,
+        env: runtimeEnvironment(this.config, runtime),
+        stdio: ['ignore', this.captureOutput ? 'pipe' : 'ignore', this.captureOutput ? 'pipe' : 'ignore'],
+        detached: true
+      }
+    );
     child.unref();
     this.processes.set(runtimeId, child);
     state.starts += 1;
@@ -1950,7 +1955,9 @@ export class RuntimeManager {
     let processResult = null;
     if (child?.pid) {
       state.status = 'stopping';
-      processResult = await terminateProcessTree([child.pid]);
+      // Give the supervisor time to escalate its backend group before the
+      // outer tree cleanup can kill the supervisor itself.
+      processResult = await terminateProcessTree([child.pid], { termTimeoutMs: 3000 });
       this.processes.delete(runtimeId);
     }
     let portResult = null;

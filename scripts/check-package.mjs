@@ -88,6 +88,7 @@ for (const dsparkPackPath of dsparkPackPaths) {
 
 requiredFiles.push(
   'src/alias-resolution.mjs',
+  'src/runtime-supervisor.mjs',
   'recipes/linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm.json',
   'recipes/archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm/v4.json',
   'recipes/archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm/v5.json',

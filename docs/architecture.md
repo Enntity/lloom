@@ -222,6 +222,17 @@ latency remain separate acceptance requirements.
 
 Managed runtimes may opt into a request-evidence watchdog. It counts only configured long failures that produced no response content, requires the configured failure threshold inside a time window, and applies a restart cooldown. Buffered requests do not expose incremental engine progress: cancellation, timeout, or an error before their completed body does not count as a no-progress failure unless explicit stall evidence is supplied. Streaming stall detection and backend health checks remain enabled. Crossing the threshold pauses new admission for that runtime, drains active requests up to the configured limit, and restarts only that backend through the existing serialized lifecycle manager. Successful progress clears the streak. This complements health checks for semantic stalls where a backend still answers `/health`; it is disabled unless explicitly configured on a managed runtime.
 
+Managed command backends on POSIX run beneath a detached LLooM supervisor.
+The supervisor gives each backend its own process group, forwards logs while
+the gateway is connected, and keeps the backend alive when gateway log pipes
+close during a gateway-only restart. When the backend exits or the supervisor
+receives a stop signal, it terminates the backend group and escalates remaining
+workers after a bounded grace period. Thus a dead serving parent cannot leave
+model workers resident indefinitely. Docker uses its existing container lifecycle;
+Windows retains the existing command lifecycle. Previously started command
+backends acquire supervision on their next managed restart. This does not scan
+for or kill unrelated processes by executable name.
+
 Runtime policy is deliberately separate from process lifecycle. Runtime definitions can declare `memoryGb`, `policy.priority`, and one residency pin: `keepWarm`. Only a managed internal runtime can set `keepWarm: true`; external-provider models and aliases cannot pin compute. A keep-warm runtime starts automatically and is never an eviction candidate. If another internal runtime cannot fit without evicting it, admission fails with `runtime_keep_warm_conflict` and names the blocking runtime. `runtimePolicy` config sets the memory budget and active-request protection rules. `lloom runtime-plan <runtime-id>` and `GET /gateway/runtimes/plan?runtime=<runtime-id>` return a dry-run admission plan with projected memory, start actions, safe stop candidates, protected active runtimes, and warnings. `lloom runtime-admit <runtime-id> --apply --yes` and `POST /gateway/runtimes/:id/admit` apply that plan through explicit guarded stop/start calls. Applied admissions run under a gateway-local admission lock, so concurrent requests re-plan after earlier evictions and starts complete. Model requests only invoke runtime admission automatically when `runtimePolicy.autoEvict` is true.
 
 `sessionCache` is a generic LLooM policy block, but cache implementation is backend-specific. The runtime manager expands the policy into launch arguments for adapters that support it. MTPLX runtimes use `kind: "mtplx-ssd-session"` and are launched with `--ssd-session-cache`, `--ssd-session-cache-dir`, `--ssd-session-cache-max-size`, and `--ssd-session-cache-min-prefix-tokens` when configured. Unsupported adapters fail fast instead of silently ignoring a cache policy.
