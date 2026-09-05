@@ -357,6 +357,16 @@
                 "minimum": 0,
                 "description": "Maximum time a request may wait in LLooM's runtime queue before returning HTTP 429. Zero disables the timeout."
               },
+              "interactiveReservedSlots": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Runtime slots reserved for interactive requests. Defaults to zero and is capped at maxConcurrency minus one. Does not preempt active requests."
+              },
+              "interactiveReservedQueueSlots": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Queue positions reserved for interactive requests. Defaults to zero and is capped at maxQueuedRequests minus one."
+              },
               "queueRetryAfterSeconds": {
                 "type": "integer",
                 "minimum": 1,

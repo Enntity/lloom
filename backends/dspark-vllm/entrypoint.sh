@@ -134,12 +134,22 @@ if [ ! -f "${pack_runner}" ] || [ ! -f "${pack_manifest}" ]; then
   exit 1
 fi
 
+pack_options="$(dirname "${pack_manifest}")/launch-options.sh"
+for knob in DSPARK_ENABLE_DSML_RECOVERY DSPARK_ENABLE_MXFP4_INDEXER_CACHE DSPARK_ENABLE_ISSUE144_EFFORT_ALIGN; do
+  if [[ "${!knob:-0}" != "0" && ! -f "${pack_options}" ]]; then
+    echo "${knob} requires a supporting patch pack" >&2
+    exit 2
+  fi
+done
 python3 "${pack_runner}" \
   --manifest "${pack_manifest}" \
   --runtime-image "${DSPARK_RUNTIME_IMAGE}" \
   --model "${model_id}" \
   --model-revision "${model_revision}" \
   --vllm-root "${vllm_root}"
+
+dspark_attention_args=()
+if [[ -f "${pack_options}" ]]; then source "${pack_options}"; fi
 
 python3 - <<'PY'
 from pathlib import Path
@@ -232,7 +242,7 @@ exec /usr/local/bin/vllm serve "${model_id}" \
   --max-cudagraph-capture-size "${cudagraph_capture_size}" \
   --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION:-0.80}" \
   --enable-prefix-caching --enable-prompt-tokens-details "${async_scheduling_args[@]}" --enable-chunked-prefill \
-  "${speculation_args[@]}" --tokenizer-mode deepseek_v4 \
+  "${speculation_args[@]}" "${dspark_attention_args[@]}" --tokenizer-mode deepseek_v4 \
   "${limit_mm_args[@]}" \
   --distributed-executor-backend mp --moe-backend flashinfer_b12x \
   --tool-call-parser deepseek_v4 --enable-auto-tool-choice --reasoning-parser deepseek_v4 \

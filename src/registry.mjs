@@ -1,3 +1,5 @@
+import { aliasMemberIds, aliasSuspendedMemberIds, expandedAliasMemberIds } from './alias-resolution.mjs';
+export { aliasMemberIds, aliasSuspendedMemberIds, aliasRoutableMemberIds } from './alias-resolution.mjs';
 import {
   buildSpeechModelsSummary,
   listVoicesForModel,
@@ -86,30 +88,6 @@ function normalizeAlias(aliasId, alias) {
   };
 }
 
-export function aliasMemberIds(alias) {
-  if (typeof alias === 'string') return [alias];
-  const normalized = alias ?? {};
-  const members = Array.isArray(normalized.members)
-    ? normalized.members
-    : [normalized.target, ...(Array.isArray(normalized.fallbacks) ? normalized.fallbacks : [])];
-  return members.filter(
-    (member, index, all) => typeof member === 'string' && member.length > 0 && all.indexOf(member) === index
-  );
-}
-
-export function aliasSuspendedMemberIds(alias) {
-  if (!alias || typeof alias === 'string') return [];
-  const members = new Set(aliasMemberIds(alias));
-  return (Array.isArray(alias.suspendedMembers) ? alias.suspendedMembers : []).filter(
-    (member, index, all) => members.has(member) && all.indexOf(member) === index
-  );
-}
-
-export function aliasRoutableMemberIds(alias) {
-  const suspended = new Set(aliasSuspendedMemberIds(alias));
-  return aliasMemberIds(alias).filter((member) => !suspended.has(member));
-}
-
 // Backward-compatible export for integrations compiled against the former
 // primary/fallback vocabulary. New code should use aliasMemberIds.
 export const aliasTargetIds = aliasMemberIds;
@@ -139,7 +117,7 @@ export function createRegistry(config) {
     if (!requestedId) throw new UnknownModelError('(missing)');
 
     const alias = aliasMap.get(requestedId);
-    const memberIds = alias ? aliasRoutableMemberIds(alias) : [requestedId];
+    const memberIds = alias ? expandedAliasMemberIds(requestedId, config.aliases, modelMap) : [requestedId];
     const candidates = [];
     for (const [aliasMemberIndex, memberId] of memberIds.entries()) {
       const model = modelMap.get(memberId);
@@ -191,10 +169,10 @@ export function createRegistry(config) {
     const entries = [];
     for (const alias of aliasMap.values()) {
       if (advertisedOnly && !advertised(alias)) continue;
-      const memberModels = aliasMemberIds(alias)
+      const memberModels = expandedAliasMemberIds(alias.id, config.aliases, modelMap, { includeSuspended: true })
         .map((memberId) => modelMap.get(memberId))
         .filter(Boolean);
-      const routableMembers = new Set(aliasRoutableMemberIds(alias));
+      const routableMembers = new Set(expandedAliasMemberIds(alias.id, config.aliases, modelMap));
       const target = memberModels.find(
         (model) =>
           model &&

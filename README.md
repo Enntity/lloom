@@ -434,3 +434,25 @@ Please do not file public issues for suspected vulnerabilities. Follow [SECURITY
 ## License
 
 LLooM is licensed under the [MIT License](LICENSE). Files derived from or patching third-party projects remain under their upstream licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+### Nested model aliases
+
+Aliases may contain other aliases, for example
+`"enntity-presence": { "members": ["q38fn"] }`. Resolution expands members
+depth first in their declared order and deduplicates concrete models. Each
+child alias retains its suspension and fallback behavior; suspending a child
+on the parent excludes that entire branch. Discovery advertises the outer
+alias with its direct members and resolved model metadata. Responses and
+metrics preserve the requested outer alias and record the concrete model used.
+Unknown required members, cycles (including suspended branches), and mixed
+model kinds are rejected. A direct self-member is permitted only when it
+names a concrete model, preserving existing same-name model/alias routes.
+
+### Qwen3.8 Flash Next on two DGX Sparks
+
+The bundled [TP2 recipe v6](recipes/linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm.json)
+pins the official NVIDIA NVFP4 checkpoint and ARM64 vLLM image, with resident
+FP8 PLE, MTP3, full draft vocabulary, BF16 KV and bounded admission.
+[Configuration, upstream credits and measured comparisons](docs/q38fn-gap-closure-2026-09-05.md)
+include rollback versions and synthetic benchmark evidence. Machine addresses,
+credentials, runtime bindings and model weights are configured or downloaded locally.

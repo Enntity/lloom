@@ -105,6 +105,7 @@ async function createFixture({
       : {}),
     defaults: { chatModel: 'stable-chat' },
     aliases: {
+      'enntity-presence': { members: ['stable-chat'] },
       'stable-chat': {
         members: ['stable-chat', 'cloud-chat'],
         ...(suspendedMembers.length ? { suspendedMembers } : {}),
@@ -503,7 +504,32 @@ async function embed(url, body = {}) {
   await writeFile(configPath, JSON.stringify(base));
   await assert.rejects(loadConfig(configPath), /aliases resolve models and cannot pin compute/);
 
-  base.aliases.stable = { members: ['chat'] };
+  base.aliases = { stable: { members: ['inner', 'chat'] }, inner: { members: ['chat'] } };
+  await writeFile(configPath, JSON.stringify(base));
+  const nested = await loadConfig(configPath);
+  const nestedRegistry = createRegistry(nested);
+  assert.deepEqual(
+    nestedRegistry.resolveCandidates('stable').map((x) => x.resolvedId),
+    ['chat']
+  );
+  assert.deepEqual(nestedRegistry.catalogModels().find((x) => x.id === 'stable').aliasMembers, ['inner', 'chat']);
+  base.aliases.inner.members = ['stable'];
+  await writeFile(configPath, JSON.stringify(base));
+  await assert.rejects(loadConfig(configPath), /alias cycle/);
+  assert.throws(() => createRegistry(base).resolve('stable'), /alias cycle/);
+  base.aliases.inner = { members: ['inner'] };
+  await writeFile(configPath, JSON.stringify(base));
+  await assert.rejects(loadConfig(configPath), /alias cycle/);
+  base.aliases.inner.members = ['image'];
+  await writeFile(configPath, JSON.stringify(base));
+  await assert.rejects(loadConfig(configPath), /models with different kinds/);
+  base.aliases.inner = { members: ['chat'], suspendedMembers: ['chat'] };
+  base.aliases.stable.members = ['inner'];
+  await writeFile(configPath, JSON.stringify(base));
+  const suspended = createRegistry(await loadConfig(configPath));
+  assert.throws(() => suspended.resolve('stable'), /unknown local model/);
+  assert(!suspended.catalogModels().some((x) => x.id === 'stable'));
+  base.aliases = { stable: { members: ['chat'] } };
   base.runtimePolicy = { protectKeepWarm: false };
   base.runtimes = {
     legacyPin: { keepWarm: false, policy: { priority: 7, evictable: false } },
@@ -865,6 +891,34 @@ async function embed(url, body = {}) {
   assert.equal(body.choices[0].message.content, 'cloud');
   assert.deepEqual(fixture.hits, { primary: 0, cloud: 1, ensures: 0 });
   await fixture.close();
+}
+
+// Nested aliases preserve ordered fallback, requested identity and streaming.
+for (const stream of [false, true]) {
+  const fixture = await createFixture({ primaryStatus: 503 });
+  try {
+    const response = await chat(fixture.url, { model: 'enntity-presence', stream });
+    assert.equal(response.status, 200);
+    const output = await response.text();
+    assert(output.includes('enntity-presence'));
+    assert(output.includes('cloud'));
+    const recent = fixture.app.metrics.snapshot().recent;
+    assert(recent.every((entry) => entry.requestedModel === 'enntity-presence'));
+    assert.equal(recent.at(-1).resolvedModel, 'cloud-chat');
+    assert.deepEqual(fixture.hits, { primary: 1, cloud: 1, ensures: 1 });
+  } finally {
+    await fixture.close();
+  }
+}
+{
+  const fixture = await createFixture({ primaryStatus: 200, suspendedMembers: ['stable-chat'] });
+  try {
+    const response = await chat(fixture.url, { model: 'enntity-presence' });
+    assert.equal((await response.json()).choices[0].message.content, 'cloud');
+    assert.equal(fixture.hits.primary, 0);
+  } finally {
+    await fixture.close();
+  }
 }
 
 console.log('model failover tests passed');

@@ -1,0 +1,57 @@
+{
+  "id": "qwen-nvidia-8a728663-tony-ecab8552",
+  "upstream": "https://github.com/tonyd2wild/Qwen3.8-Flash-Next-NVFP4-DGX-Spark",
+  "upstreamRevision": "ecab8552325655f765173adf66c9981e28197d61",
+  "vllmRevision": "8a728663c1c3eeace834a95f5654fa653cc1998c",
+  "image": "vllm/vllm-openai@sha256:a551e05307cd2e0092139d84db32af9c97e67d2eeeff072d21e429131d8c23f0",
+  "files": [
+    {
+      "source": "ple_layer.py",
+      "target": "models/qwen4_exp/nvidia/ple_layer.py",
+      "sha256": "dfdc79b4a756fcc3b018f435cb9e5587eeb03bc02a8f1054a2018896ff2eb7b8",
+      "baseSha256": "859ae689a7a74b8e4d8ea8c62b3479dbb214314f4fb168ebc2cb963ab3e4a664"
+    },
+    {
+      "source": "compilation.py",
+      "target": "config/compilation.py",
+      "sha256": "dcc49535554b5642b1035122e0be13c4f1000c83db9d04a274329fe6254bedb9",
+      "baseSha256": "3a79ea08d48d44879ac8cbfee1c7d88f9bd72927d9bd12eee31743e8da8a4d7e"
+    },
+    {
+      "source": "ops_ple.py",
+      "target": "models/qwen4_exp/nvidia/ops/ple.py",
+      "sha256": "cc8994b653dd4b59d6ba35b6ec10af34017e9944482ec67cad6a32a02c5dd00a",
+      "baseSha256": "cec929bed9c525ce1ecf362966af0da6e382645f5002d878a2f545f40b38e08e"
+    },
+    {
+      "source": "ops_qsa.py",
+      "target": "models/qwen4_exp/nvidia/ops/qsa.py",
+      "sha256": "1e928e2994233496e9ef447768e8b63acbedc22e242d4b2fc9f4ed861a1616c3",
+      "baseSha256": "ce71c93ce3f88be26b113c9b238bd179546ccbef4be8b01988a1cc5748eb0e73"
+    },
+    {
+      "source": "qsa.py",
+      "target": "models/qwen4_exp/nvidia/qsa.py",
+      "sha256": "f2fc3fb43f6c6e84e892a995697fb59a85ee8df2ef2959943c96cf0233078da7",
+      "baseSha256": "c501c2d2b647bdc93be3c0102f36a84446767b20cbff123314173e04757a026d"
+    },
+    {
+      "source": "platforms_interface.py",
+      "target": "platforms/interface.py",
+      "sha256": "443b556b984b306c0274c58af8658ef853c664b8beae6deefda41908f789d26d",
+      "baseSha256": "377522c3d6e9c71a69fe74db5137ccc1dbd254f4c486d4342544af06b998b45a"
+    },
+    {
+      "source": "modelopt.py",
+      "target": "model_executor/layers/quantization/modelopt.py",
+      "sha256": "eff707e7f42b12a0483f41461aaaf786399e860077b767a76dc236a869c7e303",
+      "baseSha256": "e1b745a13699c3bc75254f942dfc360276a6bc223ddbb304425aaf45f46a26c7"
+    },
+    {
+      "source": "ple_mmap.py",
+      "target": "models/qwen4_exp/nvidia/ops/ple_mmap.py",
+      "sha256": "4979b3cddc35646330f9c370f496da259d7a69ea40b7d944a21bb886a67da4a7",
+      "baseSha256": null
+    }
+  ]
+}

@@ -1,3 +1,6 @@
 * text=auto eol=lf
 *.patch text eol=lf
 *.pem text eol=lf
+
+# Preserve the byte-pinned upstream fixture, including its original whitespace.
+backends/dspark-vllm/packs/miaai-ds4fv-7440c53/scripts/fixtures/sparse-attn-indexer-752a3a504-stock.py whitespace=-blank-at-eol

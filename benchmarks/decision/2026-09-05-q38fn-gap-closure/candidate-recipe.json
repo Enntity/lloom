@@ -1,0 +1,505 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm",
+  "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 vLLM",
+  "version": 6,
+  "summary": "Sufyan-reference candidate: resident PLE, full decode graphs without compilation, explicit 12 GiB BF16 KV per rank.",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe metadata and launcher"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "Adapted from tonyd2wild/Qwen3.8-Flash-Next-NVFP4-DGX-Spark ecab8552325655f765173adf66c9981e28197d61 and compared with MiaAI-Lab/Qwen3.8-Flash-Next-Dual-DGX-Sparks c2325b22602b51a5faf55fc2bebccc34f3f80b9f. Exact vLLM input/output hashes, NVIDIA revision, private RoCE, LLooM lifecycle and admission are pinned. See docs/q38fn-nvidia-tp2-2026-09-05.md for validation."
+  },
+  "links": [
+    {
+      "rel": "upstream",
+      "href": "https://github.com/tonyd2wild/Qwen3.8-Flash-Next-NVFP4-DGX-Spark/tree/ecab8552325655f765173adf66c9981e28197d61"
+    },
+    {
+      "rel": "comparison",
+      "href": "https://github.com/MiaAI-Lab/Qwen3.8-Flash-Next-Dual-DGX-Sparks/tree/c2325b22602b51a5faf55fc2bebccc34f3f80b9f"
+    },
+    {
+      "rel": "model",
+      "href": "https://huggingface.co/nvidia/Qwen3.8-Flash-Next-NVFP4/tree/fab0aecb760cec45227f6656abcaafa11abca87a"
+    },
+    {
+      "rel": "runtime",
+      "href": "https://github.com/vllm-project/vllm/tree/8a728663c1c3eeace834a95f5654fa653cc1998c"
+    }
+  ],
+  "keywords": [
+    "linux",
+    "nvidia",
+    "dgx-spark",
+    "cluster",
+    "qwen3.8",
+    "flash-next",
+    "nvfp4",
+    "vllm",
+    "mtp"
+  ],
+  "capabilities": [
+    "chat",
+    "responses",
+    "anthropic-messages",
+    "streaming",
+    "usage",
+    "tools",
+    "reasoning",
+    "vision",
+    "mtp",
+    "moe",
+    "long-context"
+  ],
+  "hardware": {
+    "family": "NVIDIA DGX Spark / GB10",
+    "testedMachine": "Two directly connected DGX Spark systems",
+    "notes": [
+      "TP2 across the private ConnectX RoCE fabric, worker-first managed startup; automatic IPv4 RoCE-v2 GID selection per host.",
+      "NVIDIA checkpoint weights are unchanged: main routed experts NVFP4, MTP routed experts block FP8, PLE per-tensor FP8. Exact-source overlays repair MTP dispatch and concurrent PLE state strides.",
+      "PLE rows are read from each host local NVMe with a bounded thread pool; the global scale and dequantization remain in the upstream model. Piecewise graphs keep CPU gathers outside graph capture.",
+      "Native 262144 context without YaRN. QSA main KV uses FP8 E4M3; QSA indexer and recurrent state retain their own backend precision. NVFP4 KV and reduced draft vocabulary are not selected.",
+      "Prefix caching remains disabled while the new engine hybrid-cache correctness issues are unresolved. Repeated-turn throughput must be measured without claiming cache hits.",
+      "GPU utilization 0.75 reserves host headroom for the disk-backed table and Runtime. LLooM owns a bounded queue; final admission and MTP depth are documented with gateway measurements."
+    ]
+  },
+  "requirements": {
+    "platforms": [
+      "linux-arm64"
+    ],
+    "memoryGb": 120,
+    "diskGb": 170,
+    "commands": [
+      "docker"
+    ],
+    "accelerators": [
+      "cuda",
+      "nvidia-gpu",
+      "blackwell",
+      "gb10"
+    ],
+    "cluster": {
+      "nodes": 2,
+      "provider": "nvidia-sync",
+      "topology": "direct"
+    }
+  },
+  "backend": {
+    "id": "docker-vllm",
+    "name": "Pinned vLLM Qwen3.8 Flash Next ARM64 image",
+    "type": "openai-compatible-server"
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-docker",
+        "title": "Check Docker",
+        "action": "check-command",
+        "command": "docker",
+        "args": [
+          "version"
+        ]
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "default",
+      "name": "Qwen3.8 Flash Next NVIDIA NVFP4",
+      "model": "nvidia/Qwen3.8-Flash-Next-NVFP4",
+      "gatewayModel": "qwen3.8-flash-next",
+      "upstreamModel": "qwen3.8-flash-next",
+      "runtime": "qwen38-flash-next-cluster",
+      "backendConfig": "qwen38-flash-next",
+      "aliases": [
+        {
+          "id": "q38fn",
+          "members": [
+            "qwen3.8-flash-next",
+            "cloud/openrouter/q38fn"
+          ],
+          "description": "Stable Qwen3.8 Flash route with ordered local Spark and OpenRouter members."
+        },
+        {
+          "id": "q38fn-local",
+          "advertise": false,
+          "description": "Strict local-only Qwen3.8 Flash candidate route for canaries and benchmarks."
+        }
+      ],
+      "setDefault": true,
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "usage",
+        "tools",
+        "reasoning",
+        "vision",
+        "mtp",
+        "moe",
+        "long-context"
+      ],
+      "settings": {
+        "port": 8889,
+        "contextWindow": 262144,
+        "maxOutputTokens": 32768,
+        "maxActiveRequests": 4,
+        "maxQueuedRequests": 8,
+        "queueTimeoutMs": 240000,
+        "queueRetryAfterSeconds": 3,
+        "requestStartupWaitMs": 1000,
+        "startupRetryAfterSeconds": 15,
+        "healthTimeoutMs": 5000,
+        "memoryGb": 108,
+        "priority": 200,
+        "keepWarm": false,
+        "startupTimeoutMs": 7200000,
+        "timeoutMs": 600000,
+        "behaviorOverrides": {
+          "chatTemplateKwargs": {
+            "reasoning_effort": "low"
+          }
+        },
+        "watchdog": {
+          "enabled": true,
+          "failureThreshold": 2,
+          "failureWindowMs": 600000,
+          "minNoProgressMs": 300000,
+          "cooldownMs": 600000,
+          "drainTimeoutMs": 30000,
+          "failureStatuses": [
+            500,
+            502,
+            504
+          ]
+        },
+        "placement": {
+          "mode": "distributed",
+          "members": [
+            {
+              "nodeRole": "worker",
+              "runtime": "qwen38-flash-next-worker",
+              "role": "worker",
+              "order": 10,
+              "healthStrategy": "container",
+              "resources": {
+                "memoryGb": 108
+              },
+              "runtimeSettings": {
+                "adapter": "docker",
+                "management": "managed",
+                "containerName": "lloom-qwen38-resident-${nodeId}",
+                "warmup": false,
+                "bootstrap": {
+                  "adapter": "docker",
+                  "image": "vllm/vllm-openai@sha256:df871f170ee7070fbdce162bde08fb616e311570c948a620be0d4b33fe02f87b",
+                  "pullTimeoutMs": 3600000,
+                  "createArgs": [
+                    "--restart",
+                    "no",
+                    "--network",
+                    "host",
+                    "--ipc",
+                    "host",
+                    "--shm-size",
+                    "32g",
+                    "--cap-add",
+                    "SYS_NICE",
+                    "--ulimit",
+                    "memlock=-1",
+                    "--ulimit",
+                    "stack=67108864",
+                    "--gpus",
+                    "all",
+                    "--device",
+                    "/dev/infiniband:/dev/infiniband",
+                    "--entrypoint",
+                    "/bin/bash",
+                    "-v",
+                    "${home}/.cache/huggingface:/root/.cache/huggingface",
+                    "-v",
+                    "${home}/.cache/vllm:/root/.cache/vllm",
+                    "-e",
+                    "NODE_ADDRESS=${nodeAddress}",
+                    "-e",
+                    "FABRIC_INTERFACE=${fabricInterface}",
+                    "-e",
+                    "NODE_RANK=${nodeRank}",
+                    "-e",
+                    "CLUSTER_NODE_COUNT=${clusterNodeCount}",
+                    "-e",
+                    "MASTER_ADDR=${leaderAddress}",
+                    "-e",
+                    "MASTER_PORT=50000",
+                    "-e",
+                    "VLLM_HOST_IP=${nodeAddress}",
+                    "-e",
+                    "VLLM_PORT=8889",
+                    "-e",
+                    "GLOO_SOCKET_IFNAME=${fabricInterface}",
+                    "-e",
+                    "NCCL_SOCKET_IFNAME=${fabricInterface}",
+                    "-e",
+                    "TP_SOCKET_IFNAME=${fabricInterface}",
+                    "-e",
+                    "NCCL_NET=IB",
+                    "-e",
+                    "NCCL_IB_DISABLE=0",
+                    "-e",
+                    "NCCL_IB_HCA=rocep1s0f0",
+                    "-e",
+                    "NCCL_IB_ADDR_FAMILY=AF_INET",
+                    "-e",
+                    "NCCL_IB_ROCE_VERSION_NUM=2",
+                    "-e",
+                    "NCCL_CROSS_NIC=0",
+                    "-e",
+                    "NCCL_CUMEM_ENABLE=0",
+                    "-e",
+                    "NCCL_NVLS_ENABLE=0",
+                    "-e",
+                    "NCCL_IGNORE_CPU_AFFINITY=1",
+                    "-e",
+                    "NCCL_DEBUG=WARN",
+                    "-e",
+                    "TORCH_NCCL_ASYNC_ERROR_HANDLING=1",
+                    "-e",
+                    "HF_HOME=/root/.cache/huggingface",
+                    "-e",
+                    "HF_HUB_OFFLINE=1",
+                    "-e",
+                    "TRANSFORMERS_OFFLINE=1",
+                    "-e",
+                    "QWEN_MODEL=nvidia/Qwen3.8-Flash-Next-NVFP4",
+                    "-e",
+                    "QWEN_MODEL_REVISION=fab0aecb760cec45227f6656abcaafa11abca87a",
+                    "-e",
+                    "SERVED_MODEL_NAME=qwen3.8-flash-next",
+                    "-e",
+                    "MAX_MODEL_LEN=262144",
+                    "-e",
+                    "MAX_NUM_SEQS=8",
+                    "-e",
+                    "MAX_NUM_BATCHED_TOKENS=8192",
+                    "-e",
+                    "GPU_MEMORY_UTILIZATION=0.75",
+                    "-e",
+                    "KV_CACHE_DTYPE=auto",
+                    "-e",
+                    "ENABLE_EXPERT_PARALLEL=0",
+                    "-e",
+                    "MTP_NUM_SPECULATIVE_TOKENS=3",
+                    "--mount",
+                    "type=bind,src=${lloomRoot}/backends/qwen38-vllm/nvidia-e962733e,dst=/opt/lloom/qwen-nvidia,readonly",
+                    "-e",
+                    "QWEN4EXP_PLE_MMAP=0",
+                    "-e",
+                    "QWEN4EXP_PLE_MMAP_THREADS=64",
+                    "-e",
+                    "VLLM_USE_DEEP_GEMM=0",
+                    "-e",
+                    "VLLM_USE_V2_MODEL_RUNNER=1",
+                    "-e",
+                    "VLLM_ENGINE_READY_TIMEOUT_S=3600",
+                    "-e",
+                    "CUTE_DSL_ARCH=sm_121a",
+                    "-e",
+                    "TORCH_CUDA_ARCH_LIST=12.1a",
+                    "-e",
+                    "FLASHINFER_CUDA_ARCH_LIST=12.1a",
+                    "-e",
+                    "FLASHINFER_DISABLE_VERSION_CHECK=1",
+                    "-e",
+                    "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True",
+                    "-e",
+                    "ENABLE_PREFIX_CACHING=0",
+                    "-v",
+                    "${lloomRoot}/backends/qwen38-vllm/nvidia-e962733e-resident:/opt/lloom/qwen-resident:ro"
+                  ],
+                  "command": [
+                    "/opt/lloom/qwen-resident/entrypoint.sh"
+                  ]
+                }
+              }
+            },
+            {
+              "nodeRole": "leader",
+              "runtime": "qwen38-flash-next-head",
+              "role": "head",
+              "order": 20,
+              "resources": {
+                "memoryGb": 108
+              },
+              "runtimeSettings": {
+                "adapter": "docker",
+                "management": "managed",
+                "containerName": "lloom-qwen38-resident-${nodeId}",
+                "healthUrl": "http://${leaderAddress}:8889/health",
+                "healthTimeoutMs": 5000,
+                "warmup": {
+                  "url": "http://${leaderAddress}:8889/v1/chat/completions",
+                  "method": "POST",
+                  "body": {
+                    "model": "qwen3.8-flash-next",
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": "Reply with OK."
+                      }
+                    ],
+                    "max_tokens": 32,
+                    "stream": false
+                  }
+                },
+                "bootstrap": {
+                  "adapter": "docker",
+                  "image": "vllm/vllm-openai@sha256:df871f170ee7070fbdce162bde08fb616e311570c948a620be0d4b33fe02f87b",
+                  "pullTimeoutMs": 3600000,
+                  "createArgs": [
+                    "--restart",
+                    "no",
+                    "--network",
+                    "host",
+                    "--ipc",
+                    "host",
+                    "--shm-size",
+                    "32g",
+                    "--cap-add",
+                    "SYS_NICE",
+                    "--ulimit",
+                    "memlock=-1",
+                    "--ulimit",
+                    "stack=67108864",
+                    "--gpus",
+                    "all",
+                    "--device",
+                    "/dev/infiniband:/dev/infiniband",
+                    "--entrypoint",
+                    "/bin/bash",
+                    "-v",
+                    "${home}/.cache/huggingface:/root/.cache/huggingface",
+                    "-v",
+                    "${home}/.cache/vllm:/root/.cache/vllm",
+                    "-e",
+                    "NODE_ADDRESS=${nodeAddress}",
+                    "-e",
+                    "FABRIC_INTERFACE=${fabricInterface}",
+                    "-e",
+                    "NODE_RANK=${nodeRank}",
+                    "-e",
+                    "CLUSTER_NODE_COUNT=${clusterNodeCount}",
+                    "-e",
+                    "MASTER_ADDR=${leaderAddress}",
+                    "-e",
+                    "MASTER_PORT=50000",
+                    "-e",
+                    "VLLM_HOST_IP=${nodeAddress}",
+                    "-e",
+                    "VLLM_PORT=8889",
+                    "-e",
+                    "GLOO_SOCKET_IFNAME=${fabricInterface}",
+                    "-e",
+                    "NCCL_SOCKET_IFNAME=${fabricInterface}",
+                    "-e",
+                    "TP_SOCKET_IFNAME=${fabricInterface}",
+                    "-e",
+                    "NCCL_NET=IB",
+                    "-e",
+                    "NCCL_IB_DISABLE=0",
+                    "-e",
+                    "NCCL_IB_HCA=rocep1s0f0",
+                    "-e",
+                    "NCCL_IB_ADDR_FAMILY=AF_INET",
+                    "-e",
+                    "NCCL_IB_ROCE_VERSION_NUM=2",
+                    "-e",
+                    "NCCL_CROSS_NIC=0",
+                    "-e",
+                    "NCCL_CUMEM_ENABLE=0",
+                    "-e",
+                    "NCCL_NVLS_ENABLE=0",
+                    "-e",
+                    "NCCL_IGNORE_CPU_AFFINITY=1",
+                    "-e",
+                    "NCCL_DEBUG=WARN",
+                    "-e",
+                    "TORCH_NCCL_ASYNC_ERROR_HANDLING=1",
+                    "-e",
+                    "HF_HOME=/root/.cache/huggingface",
+                    "-e",
+                    "HF_HUB_OFFLINE=1",
+                    "-e",
+                    "TRANSFORMERS_OFFLINE=1",
+                    "-e",
+                    "QWEN_MODEL=nvidia/Qwen3.8-Flash-Next-NVFP4",
+                    "-e",
+                    "QWEN_MODEL_REVISION=fab0aecb760cec45227f6656abcaafa11abca87a",
+                    "-e",
+                    "SERVED_MODEL_NAME=qwen3.8-flash-next",
+                    "-e",
+                    "MAX_MODEL_LEN=262144",
+                    "-e",
+                    "MAX_NUM_SEQS=8",
+                    "-e",
+                    "MAX_NUM_BATCHED_TOKENS=8192",
+                    "-e",
+                    "GPU_MEMORY_UTILIZATION=0.75",
+                    "-e",
+                    "KV_CACHE_DTYPE=auto",
+                    "-e",
+                    "ENABLE_EXPERT_PARALLEL=0",
+                    "-e",
+                    "MTP_NUM_SPECULATIVE_TOKENS=3",
+                    "--mount",
+                    "type=bind,src=${lloomRoot}/backends/qwen38-vllm/nvidia-e962733e,dst=/opt/lloom/qwen-nvidia,readonly",
+                    "-e",
+                    "QWEN4EXP_PLE_MMAP=0",
+                    "-e",
+                    "QWEN4EXP_PLE_MMAP_THREADS=64",
+                    "-e",
+                    "VLLM_USE_DEEP_GEMM=0",
+                    "-e",
+                    "VLLM_USE_V2_MODEL_RUNNER=1",
+                    "-e",
+                    "VLLM_ENGINE_READY_TIMEOUT_S=3600",
+                    "-e",
+                    "CUTE_DSL_ARCH=sm_121a",
+                    "-e",
+                    "TORCH_CUDA_ARCH_LIST=12.1a",
+                    "-e",
+                    "FLASHINFER_CUDA_ARCH_LIST=12.1a",
+                    "-e",
+                    "FLASHINFER_DISABLE_VERSION_CHECK=1",
+                    "-e",
+                    "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True",
+                    "-e",
+                    "ENABLE_PREFIX_CACHING=0",
+                    "-v",
+                    "${lloomRoot}/backends/qwen38-vllm/nvidia-e962733e-resident:/opt/lloom/qwen-resident:ro"
+                  ],
+                  "command": [
+                    "/opt/lloom/qwen-resident/entrypoint.sh"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

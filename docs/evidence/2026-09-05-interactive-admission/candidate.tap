@@ -1,0 +1,82 @@
+TAP version 13
+# Subtest: an aborted queued request leaves admission immediately and never executes
+ok 1 - an aborted queued request leaves admission immediately and never executes
+  ---
+  duration_ms: 1.988958
+  type: 'test'
+  ...
+# Subtest: aborting one waiter preserves FIFO order for remaining requests
+ok 2 - aborting one waiter preserves FIFO order for remaining requests
+  ---
+  duration_ms: 0.565875
+  type: 'test'
+  ...
+# Subtest: a full runtime queue returns a retryable 429 instead of growing without bound
+ok 3 - a full runtime queue returns a retryable 429 instead of growing without bound
+  ---
+  duration_ms: 0.322125
+  type: 'test'
+  ...
+# Subtest: a runtime queue waiter expires with retry guidance and is removed
+ok 4 - a runtime queue waiter expires with retry guidance and is removed
+  ---
+  duration_ms: 10.490417
+  type: 'test'
+  ...
+# Subtest: live concurrency increases release queued work without a runtime restart
+ok 5 - live concurrency increases release queued work without a runtime restart
+  ---
+  duration_ms: 0.6105
+  type: 'test'
+  ...
+# Subtest: live concurrency decreases do not admit another waiter above the new cap
+ok 6 - live concurrency decreases do not admit another waiter above the new cap
+  ---
+  duration_ms: 0.170209
+  type: 'test'
+  ...
+# Subtest: interactive work overtakes FIFO background work with bounded fairness
+ok 7 - interactive work overtakes FIFO background work with bounded fairness
+  ---
+  duration_ms: 0.538834
+  type: 'test'
+  ...
+# Subtest: a reserved slot stays available to interaction while standard work waits
+ok 8 - a reserved slot stays available to interaction while standard work waits
+  ---
+  duration_ms: 0.110042
+  type: 'test'
+  ...
+# Subtest: reserved queue capacity rejects standard overflow but accepts interaction within the total cap
+ok 9 - reserved queue capacity rejects standard overflow but accepts interaction within the total cap
+  ---
+  duration_ms: 0.344542
+  type: 'test'
+  ...
+# Subtest: interactive cancellation and provider failure preserve slot accounting through pause and resume
+ok 10 - interactive cancellation and provider failure preserve slot accounting through pause and resume
+  ---
+  duration_ms: 0.388792
+  type: 'test'
+  ...
+# Subtest: reservation changes are live, clamp to capacity, and preserve already active requests
+ok 11 - reservation changes are live, clamp to capacity, and preserve already active requests
+  ---
+  duration_ms: 0.2565
+  type: 'test'
+  ...
+# Subtest: gateway embeddings carry interactive admission through to completed metrics
+ok 12 - gateway embeddings carry interactive admission through to completed metrics
+  ---
+  duration_ms: 37.87075
+  type: 'test'
+  ...
+1..12
+# tests 12
+# suites 0
+# pass 12
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 221.942667

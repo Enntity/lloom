@@ -21,11 +21,12 @@ MTPLX's upstream NOTICE also identifies Apache-2.0 material from `vllm-metal` an
 
 ## MiaAI Lab DeepSeek V4 Flash DSpark Hotfixes
 
-The files under `backends/dspark-vllm/packs/miaai-ds4fv-9414dd58-sp/patches/`, `backends/dspark-vllm/packs/miaai-ds4fv-9414dd58/patches/`, `backends/dspark-vllm/packs/miaai-ds4fv-f5665e8/patches/`, and `backends/dspark-vllm/packs/miaai-dsv4flash-d1b76251-defaults/patches/` are vendored from MiaAI Lab's two-DGX-Spark DeepSeek V4 Flash recipe. The adjacent LLooM manifests and pack runner provide provenance, compatibility, enablement policy, and integrity checks. The `miaai-dsv4flash-d1b76251` and earlier `miaai-dsv4flash-909776b5` packs remain packaged for recipe rollback:
+The files under `backends/dspark-vllm/packs/miaai-ds4fv-7440c53/patches/`, `backends/dspark-vllm/packs/miaai-ds4fv-9414dd58-sp/patches/`, `backends/dspark-vllm/packs/miaai-ds4fv-9414dd58/patches/`, `backends/dspark-vllm/packs/miaai-ds4fv-f5665e8/patches/`, and `backends/dspark-vllm/packs/miaai-dsv4flash-d1b76251-defaults/patches/` are vendored from MiaAI Lab's two-DGX-Spark DeepSeek V4 Flash recipe. The adjacent LLooM manifests and pack runner provide provenance, compatibility, enablement policy, and integrity checks. The `miaai-dsv4flash-d1b76251` and earlier `miaai-dsv4flash-909776b5` packs remain packaged for recipe rollback:
 
 - Project: DeepSeek-v4-Flash-DSpark-2x-DGX-Spark
 - Source: <https://github.com/MiaAI-Lab/DeepSeek-v4-Flash-DSpark-2x-DGX-Spark>
-- Current Vision revision: `9414dd58b0b34548032dfd30f5aa13c37f6b93b8`
+- Current Vision revision: `7440c53c1f0352886e47b1909051784879fa0a24`
+- Archived Vision revision: `9414dd58b0b34548032dfd30f5aa13c37f6b93b8`
 - Archived Vision revision: `f5665e8bcde8304654c77a7d58069fdd677198f9`
 - Current text-lane revision: `d1b76251535daef578d8751b04b39c29ad7ecdf9`
 - Archived revision: `909776b5f43154e373efe1ba6cd8d61a1d17515d`
@@ -86,3 +87,23 @@ LLooM's server adapter preserves Chatterbox's built-in Perth watermarking. Model
 - Source: <https://huggingface.co/froggeric/Qwen-Fixed-Chat-Templates>
 - Revision: `23a40b0bd4d197c31d39e3c442fd2cd6100b3971`
 - License: Apache License 2.0; see [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt)
+
+## NVIDIA Qwen3.8 Flash Next vLLM TP2 overlays
+
+The `backends/qwen38-vllm/nvidia-*` bundles retain Apache-2.0 vLLM source
+and Tony DeAngelo / Tech2Wild (written by Kai) loader, PLE and QSA fixes:
+
+- [Tony / Tech2Wild ecab8552](https://github.com/tonyd2wild/Qwen3.8-Flash-Next-NVFP4-DGX-Spark/tree/ecab8552325655f765173adf66c9981e28197d61)
+- vLLM revisions `8a728663c1c3eeace834a95f5654fa653cc1998c` and
+  `e962733e08d10f7ca65dac4df99e116460b8b174`
+- Apache-2.0 licenses, exact payload hashes and detailed contributor credits
+  are retained in each bundle's `LICENSE`, `NOTICE.md` and `manifest.json`.
+
+The v6 launcher follows the execution configuration documented by
+[Sufyan / sfxnz fe8c291d](https://github.com/sfxnz/Qwen3.8-Flash-Next-NVFP4-vLLM-2x-DGX-Spark/tree/fe8c291de4efba34d5dcedbc8e19ebcf66bc1bc2).
+LLooM's launcher and guarded installer are MIT. The prefix-cache candidate
+contains Apache-2.0 substitutions credited to blazux in its adjacent notice;
+it is not enabled in the selected recipe. MiaAI and sparkDash comparison
+protocols are credited in the benchmark documentation; their AGPL serving code
+is not included in these NVIDIA bundles. Model weights are downloaded separately
+under their publisher's terms.

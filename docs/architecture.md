@@ -183,6 +183,43 @@ The CLI exposes the same runtime controls without requiring an already-running g
 
 Runtime definitions include command, args, cwd, env, health URL, timeout, port, warmup request, `maxConcurrency`, and optional backend features such as `sessionCache`. Model-facing routes acquire a runtime slot before contacting upstream. This lets MTPLX and other optimized text lanes run high concurrency while image, audio, or memory-heavy runtimes serialize with `maxConcurrency: 1`.
 
+Clients can label inference with `x-lloom-request-class: interactive`. The gateway
+normalizes every other value to `standard`. Queued requests remain FIFO within
+each class; interaction may overtake standard work, but after four interactive
+admissions the oldest eligible standard request gets a turn. The header does
+not grant authentication or bypass runtime residency, drain, or total capacity
+limits. It is scheduling metadata supplied by an authenticated caller (or an
+explicitly configured local unauthenticated client), not inferred from prompt text.
+
+Managed runtimes may reserve capacity with `interactiveReservedSlots` and
+`interactiveReservedQueueSlots`. Both default to zero. For example, a runtime
+with `maxConcurrency: 2`, `interactiveReservedSlots: 1`, `maxQueuedRequests: 8`,
+and `interactiveReservedQueueSlots: 1` admits at most one active standard
+request and at most seven queued standard requests. Interactive requests can
+use any free slot, within the total limits. Reservations are capped so at least
+one slot and, when enabled, one queue position remain available to standard
+work. A single-slot runtime supports queue priority but cannot reserve an
+additional execution slot. Unused reserved capacity stays idle; enable it only
+with a concurrency limit that the backend can sustain. Changes apply without
+restarting or canceling active requests. Queue-full and queue-timeout outcomes
+retain the existing retryable HTTP 429 contract.
+
+Active and completed metrics retain `requestClass`; completed requests also
+report `queueWaitMs` for the runtime slot wait, separately from total duration.
+Startup/admission before the slot queue is excluded from that field. Priority
+does not preempt active GPU work, reserve backend GPU time, or bypass a cloud
+provider's own queue. The normalized interactive label is forwarded only to
+backends identified by enabled `cluster.nodes.<node>.proxy` inference routes.
+Each gateway applies its own admission policy; the serving gateway consumes
+the label without forwarding it to a raw backend or cloud provider. Forwarding
+is recalculated for every selected failover target. Node membership alone,
+model metadata, and prompt text do not identify an inference proxy. Existing
+per-hop credentials and caller cancellation remain in use. Unmanaged cloud
+routes have no local runtime slots. Two-gateway synthetic text, voice, recall,
+and cancellation evidence is recorded in
+`docs/evidence/2026-09-05-federated-priority/`; real GPU capacity and native-client
+latency remain separate acceptance requirements.
+
 Managed runtimes may opt into a request-evidence watchdog. It counts only configured long failures that produced no response content, requires the configured failure threshold inside a time window, and applies a restart cooldown. Buffered requests do not expose incremental engine progress: cancellation, timeout, or an error before their completed body does not count as a no-progress failure unless explicit stall evidence is supplied. Streaming stall detection and backend health checks remain enabled. Crossing the threshold pauses new admission for that runtime, drains active requests up to the configured limit, and restarts only that backend through the existing serialized lifecycle manager. Successful progress clears the streak. This complements health checks for semantic stalls where a backend still answers `/health`; it is disabled unless explicitly configured on a managed runtime.
 
 Runtime policy is deliberately separate from process lifecycle. Runtime definitions can declare `memoryGb`, `policy.priority`, and one residency pin: `keepWarm`. Only a managed internal runtime can set `keepWarm: true`; external-provider models and aliases cannot pin compute. A keep-warm runtime starts automatically and is never an eviction candidate. If another internal runtime cannot fit without evicting it, admission fails with `runtime_keep_warm_conflict` and names the blocking runtime. `runtimePolicy` config sets the memory budget and active-request protection rules. `lloom runtime-plan <runtime-id>` and `GET /gateway/runtimes/plan?runtime=<runtime-id>` return a dry-run admission plan with projected memory, start actions, safe stop candidates, protected active runtimes, and warnings. `lloom runtime-admit <runtime-id> --apply --yes` and `POST /gateway/runtimes/:id/admit` apply that plan through explicit guarded stop/start calls. Applied admissions run under a gateway-local admission lock, so concurrent requests re-plan after earlier evictions and starts complete. Model requests only invoke runtime admission automatically when `runtimePolicy.autoEvict` is true.

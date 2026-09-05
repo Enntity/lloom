@@ -74,7 +74,8 @@ const dsparkPackPaths = [
   'backends/dspark-vllm/packs/miaai-dsv4flash-d1b76251-defaults',
   'backends/dspark-vllm/packs/miaai-ds4fv-f5665e8',
   'backends/dspark-vllm/packs/miaai-ds4fv-9414dd58',
-  'backends/dspark-vllm/packs/miaai-ds4fv-9414dd58-sp'
+  'backends/dspark-vllm/packs/miaai-ds4fv-9414dd58-sp',
+  'backends/dspark-vllm/packs/miaai-ds4fv-7440c53'
 ];
 for (const dsparkPackPath of dsparkPackPaths) {
   const dsparkPackManifest = JSON.parse(
@@ -83,6 +84,20 @@ for (const dsparkPackPath of dsparkPackPaths) {
   for (const patchEntry of dsparkPackManifest.patches ?? []) {
     requiredFiles.push(path.join(dsparkPackPath, patchEntry.file));
   }
+}
+
+requiredFiles.push(
+  'src/alias-resolution.mjs',
+  'recipes/linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm.json',
+  'recipes/archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm/v4.json',
+  'recipes/archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm/v5.json',
+  'backends/qwen38-vllm/nvidia-e962733e-resident/entrypoint.sh'
+);
+for (const pack of ['nvidia-8a728663', 'nvidia-e962733e']) {
+  const base = `backends/qwen38-vllm/${pack}`;
+  const manifest = JSON.parse(await fs.readFile(`${base}/manifest.json`, 'utf8'));
+  requiredFiles.push(`${base}/manifest.json`, `${base}/apply-overlays.py`, `${base}/LICENSE`, `${base}/NOTICE.md`);
+  for (const file of manifest.files) requiredFiles.push(`${base}/overlays/${file.source}`);
 }
 
 const forbiddenPrefixes = ['.lloom/', 'clients/generated/', 'data/', 'logs/', 'node_modules/', 'test/'];

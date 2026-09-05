@@ -47,7 +47,7 @@ import { buildRecipeIndexReport } from './recipe-index.mjs';
 import { loadRecipes } from './recipes.mjs';
 import { createRegistry, UnknownModelError } from './registry.mjs';
 import { routeProfileStatus, writeRouteMemberSuspension, writeRouteProfile } from './route-control.mjs';
-import { RuntimeManager, runtimeWatchdogConfig } from './runtime-manager.mjs';
+import { RuntimeManager, runtimeWatchdogConfig, normalizeRequestClass } from './runtime-manager.mjs';
 import {
   applyRuntimePolicyPlan,
   createRuntimePolicyPlan,
@@ -84,7 +84,7 @@ import {
   usageFromJsonText
 } from './protocol/index.mjs';
 import { assertBindAllowed, authorizeRequest, corsHeaders, securityPublicStatus } from './security.mjs';
-import { ClusterCoordinator, currentNodeId } from './cluster.mjs';
+import { ClusterCoordinator, currentNodeId, isFederatedGatewayBackend } from './cluster.mjs';
 
 const JSON_TYPE = 'application/json; charset=utf-8';
 const SSE_TYPE = 'text/event-stream; charset=utf-8';
@@ -1014,6 +1014,7 @@ export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } =
         caller: raw.caller ?? null,
         entity: raw.entity ?? null,
         purpose: raw.purpose ?? null,
+        requestClass: normalizeRequestClass(raw.requestClass),
         requestBytes: raw.requestBytes ?? 0,
         stream: raw.stream === true
       });
@@ -1051,10 +1052,12 @@ export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } =
         caller: raw.caller ?? live?.caller ?? null,
         entity: raw.entity ?? live?.entity ?? null,
         purpose: raw.purpose ?? live?.purpose ?? null,
+        requestClass: normalizeRequestClass(raw.requestClass ?? live?.requestClass),
         status: raw.status ?? 0,
         ok: raw.ok === true,
         stream: raw.stream === true,
         durationMs: raw.durationMs ?? 0,
+        queueWaitMs: raw.queueWaitMs ?? null,
         firstContentMs: raw.firstContentMs ?? null,
         lastContentMs: raw.lastContentMs ?? null,
         responseBytes: raw.responseBytes ?? 0,
@@ -2264,6 +2267,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     const started = Date.now();
     const requestBytes = Number(req.headers['content-length']) || 0;
     const attribution = requestEnntityAttribution(req);
+    const requestClass = normalizeRequestClass(req.headers['x-lloom-request-class']);
     const connectionId = metrics.begin({
       route,
       model: resolved.model.id,
@@ -2281,6 +2285,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       node: resolved.model.selectedNode,
       caller: requestCallerLabel(req),
       ...attribution,
+      requestClass,
       requestBytes,
       stream
     });
@@ -2290,6 +2295,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     let watchdogTimer = null;
     let watchdogArmed = false;
     let runtimeStartedAt = null;
+    let queueStartedAt = null;
     let lastProgressAt = started;
     const clearWatchdogTimer = () => {
       if (watchdogTimer) clearTimeout(watchdogTimer);
@@ -2336,6 +2342,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
           alternativeAvailable: resolved.routeSelection?.readyAlternativeAvailable === true,
           allowEviction: resolved.model.kind !== 'embedding'
         });
+        queueStartedAt = Date.now();
         return runtimeManager.withSlot(
           resolved.model.runtime,
           () => {
@@ -2348,7 +2355,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
               watchdog
             });
           },
-          { signal: client.signal }
+          { signal: client.signal, requestClass }
         );
       });
       const status = result?.status ?? 200;
@@ -2375,6 +2382,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         stream: result?.stream ?? stream,
         durationMs: Date.now() - started,
         runtimeDurationMs: runtimeStartedAt == null ? 0 : Date.now() - runtimeStartedAt,
+        queueWaitMs: queueStartedAt == null ? null : (runtimeStartedAt ?? Date.now()) - queueStartedAt,
         firstContentMs: result?.firstContentMs ?? timing.firstContentMs,
         lastContentMs: result?.lastContentMs ?? timing.lastContentMs,
         responseBytes: result?.responseBytes ?? 0,
@@ -2415,6 +2423,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         stream,
         durationMs: Date.now() - started,
         runtimeDurationMs: runtimeStartedAt == null ? 0 : Date.now() - runtimeStartedAt,
+        queueWaitMs: queueStartedAt == null ? null : (runtimeStartedAt ?? Date.now()) - queueStartedAt,
         firstContentMs: timing.firstContentMs,
         lastContentMs: timing.lastContentMs,
         responseBytes: 0,
@@ -2517,6 +2526,13 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     throw new UnknownModelError(modelId);
   }
 
+  function inferenceGatewayHeaders(req, resolved) {
+    if (!isFederatedGatewayBackend(config, resolved.model.backend)) return {};
+    return normalizeRequestClass(req.headers['x-lloom-request-class']) === 'interactive'
+      ? { 'x-lloom-request-class': 'interactive' }
+      : {};
+  }
+
   async function handleOpenAIChat(req, res) {
     const body = await readJson(req);
     await recordModelRequestWithFailover(
@@ -2536,6 +2552,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
           resolved
         );
         const upstream = await fetchUpstream({
+          headers: inferenceGatewayHeaders(req, resolved),
           backend: resolved.backend,
           path: '/v1/chat/completions',
           signal,
@@ -2587,6 +2604,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       async ({ signal, timing, watchdog }) => {
         watchdog.arm();
         const upstream = await fetchUpstream({
+          headers: inferenceGatewayHeaders(req, resolved),
           backend: resolved.backend,
           path: '/v1/images/generations',
           signal,
@@ -2672,7 +2690,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
           path: '/v1/images/edits',
           signal,
           dispatcher: longRunningMediaDispatcher,
-          headers: { 'content-type': type },
+          headers: { ...inferenceGatewayHeaders(req, resolved), 'content-type': type },
           body: upstreamBody
         });
         return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
@@ -2710,6 +2728,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       async ({ signal, timing, watchdog }) => {
         watchdog.arm();
         const upstream = await fetchUpstream({
+          headers: inferenceGatewayHeaders(req, resolved),
           backend: resolved.backend,
           path: '/v1/videos/generations',
           signal,
@@ -2749,6 +2768,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       async (resolved, { signal, timing, watchdog, hasNext }) => {
         watchdog.arm();
         const upstream = await fetchUpstream({
+          headers: inferenceGatewayHeaders(req, resolved),
           backend: resolved.backend,
           path: '/v1/embeddings',
           signal,
@@ -2838,6 +2858,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       async ({ signal, timing, watchdog }) => {
         watchdog.arm();
         const upstream = await fetchUpstream({
+          headers: inferenceGatewayHeaders(req, resolved),
           backend: resolved.backend,
           path: '/v1/audio/speech',
           signal,
@@ -2921,6 +2942,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
             body: upstreamBody,
             signal,
             headers: {
+              ...inferenceGatewayHeaders(req, resolved),
               'content-type': type
             }
           });
@@ -3077,6 +3099,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         async ({ signal, timing, watchdog }) => {
           watchdog.arm();
           const upstream = await fetchUpstream({
+            headers: inferenceGatewayHeaders(req, resolved),
             backend: resolved.backend,
             path: '/v1/audio/transcriptions',
             signal,
@@ -3138,6 +3161,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
           body: upstreamBody,
           signal,
           headers: {
+            ...inferenceGatewayHeaders(req, resolved),
             'content-type': type
           }
         });
@@ -3160,6 +3184,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         watchdog.arm();
         const normalizedRequest = prepareStructuredOutputForBackend(responsesToOpenAIChat(body, resolved), resolved);
         const upstream = await fetchUpstream({
+          headers: inferenceGatewayHeaders(req, resolved),
           backend: resolved.backend,
           path: '/v1/chat/completions',
           signal,
@@ -3218,6 +3243,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       async (resolved, { signal, timing, watchdog, hasNext }) => {
         watchdog.arm();
         const upstream = await fetchUpstream({
+          headers: inferenceGatewayHeaders(req, resolved),
           backend: resolved.backend,
           path: '/v1/chat/completions',
           signal,

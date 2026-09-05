@@ -2133,6 +2133,8 @@ const portableRecipe = {
         contextWindow: 65536,
         maxOutputTokens: 4096,
         maxActiveRequests: 7,
+        interactiveReservedSlots: 1,
+        interactiveReservedQueueSlots: 2,
         memoryGb: 12,
         sessionCache: true,
         runtime: {
@@ -2199,6 +2201,8 @@ assert.equal(portableDerivedConfig.clientCatalog.modelOrder[0], 'Example/Portabl
 assert.equal(portableDerivedConfig.backends['mtplx-example-portable-mtplx-speed'].baseUrl, 'http://127.0.0.1:8201/v1');
 assert.equal(portableDerivedConfig.runtimes['mtplx-portable-community-speed'].port, 8201);
 assert.equal(portableDerivedConfig.runtimes['mtplx-portable-community-speed'].memoryGb, 12);
+assert.equal(portableDerivedConfig.runtimes['mtplx-portable-community-speed'].interactiveReservedSlots, 1);
+assert.equal(portableDerivedConfig.runtimes['mtplx-portable-community-speed'].interactiveReservedQueueSlots, 2);
 assert.equal(
   portableDerivedConfig.runtimes['mtplx-portable-community-speed'].sessionCache.dir,
   '/sessions/mtplx-portable-community-speed'

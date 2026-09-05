@@ -1,0 +1,25 @@
+TAP version 13
+# Subtest: federated embeddings uses serving-node reserved capacity without forwarding provider credentials
+not ok 1 - federated embeddings uses serving-node reserved capacity without forwarding provider credentials
+  ---
+  duration_ms: 2048.7545
+  type: 'test'
+  location: '/tmp/lloom-baseline/test/federated-priority.test.mjs:209:3'
+  failureType: 'testCodeFailure'
+  error: 'Timed out waiting for interactive provider request while background remains queued'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    waitFor (file:///tmp/lloom-baseline/test/federated-priority.test.mjs:12:36)
+    async TestContext.<anonymous> (file:///tmp/lloom-baseline/test/federated-priority.test.mjs:218:7)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2170.50775

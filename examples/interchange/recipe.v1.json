@@ -67,6 +67,8 @@
         "maxOutputTokens": 32768,
         "draftDepth": 2,
         "maxActiveRequests": 8,
+        "interactiveReservedSlots": 1,
+        "interactiveReservedQueueSlots": 1,
         "memoryGb": 42,
         "reasoning": "auto",
         "preserveThinking": "auto",

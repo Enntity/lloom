@@ -1,0 +1,40 @@
+{
+  "id": "qwen-nvidia-e962733e-tony-ecab8552",
+  "upstream": "https://github.com/tonyd2wild/Qwen3.8-Flash-Next-NVFP4-DGX-Spark",
+  "upstreamRevision": "ecab8552325655f765173adf66c9981e28197d61",
+  "vllmRevision": "e962733e08d10f7ca65dac4df99e116460b8b174",
+  "image": "vllm/vllm-openai@sha256:df871f170ee7070fbdce162bde08fb616e311570c948a620be0d4b33fe02f87b",
+  "files": [
+    {
+      "source": "ple_layer.py",
+      "target": "models/qwen4_exp/nvidia/ple_layer.py",
+      "sha256": "dfdc79b4a756fcc3b018f435cb9e5587eeb03bc02a8f1054a2018896ff2eb7b8",
+      "baseSha256": "859ae689a7a74b8e4d8ea8c62b3479dbb214314f4fb168ebc2cb963ab3e4a664"
+    },
+    {
+      "source": "compilation.py",
+      "target": "config/compilation.py",
+      "sha256": "dcc49535554b5642b1035122e0be13c4f1000c83db9d04a274329fe6254bedb9",
+      "baseSha256": "3a79ea08d48d44879ac8cbfee1c7d88f9bd72927d9bd12eee31743e8da8a4d7e"
+    },
+    {
+      "source": "ops_ple.py",
+      "target": "models/qwen4_exp/nvidia/ops/ple.py",
+      "sha256": "cc8994b653dd4b59d6ba35b6ec10af34017e9944482ec67cad6a32a02c5dd00a",
+      "baseSha256": "cec929bed9c525ce1ecf362966af0da6e382645f5002d878a2f545f40b38e08e"
+    },
+    {
+      "source": "modelopt.py",
+      "target": "model_executor/layers/quantization/modelopt.py",
+      "sha256": "8ddff0401b67fdc2afa2d73bfb8fab2404b4b2d61d0ab7295334052ee053d690",
+      "baseSha256": "27a9e0f9d8352afdc421c3ff735da2b87f9ca365271ce7ade380c173c2d3fe01"
+    },
+    {
+      "source": "ple_mmap.py",
+      "target": "models/qwen4_exp/nvidia/ops/ple_mmap.py",
+      "sha256": "4979b3cddc35646330f9c370f496da259d7a69ea40b7d944a21bb886a67da4a7",
+      "baseSha256": null
+    }
+  ],
+  "integration": "Exact-source PLE and MTP port only; newest native QSA uses BF16 KV. Older FP8 KV overlays are not applied to its changed packed selection format."
+}

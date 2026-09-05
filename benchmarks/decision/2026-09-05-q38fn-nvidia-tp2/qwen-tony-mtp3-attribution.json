@@ -1,0 +1,50 @@
+[
+  {
+    "caller": "qwen-nvidia-benchmark-1788633205",
+    "requestedModel": "q38fn-local",
+    "resolvedModel": "qwen3.8-flash-next",
+    "upstreamModel": "qwen3.8-flash-next",
+    "backend": "qwen38-flash-next",
+    "status": 200
+  },
+  {
+    "caller": "qwen-nvidia-benchmark-1788633205",
+    "requestedModel": "q38fn-local",
+    "resolvedModel": "qwen3.8-flash-next",
+    "upstreamModel": "qwen3.8-flash-next",
+    "backend": "qwen38-flash-next",
+    "status": 200
+  },
+  {
+    "caller": "qwen-nvidia-benchmark-1788633205",
+    "requestedModel": "q38fn-local",
+    "resolvedModel": "qwen3.8-flash-next",
+    "upstreamModel": "qwen3.8-flash-next",
+    "backend": "qwen38-flash-next",
+    "status": 200
+  },
+  {
+    "caller": "qwen-nvidia-benchmark-1788633205",
+    "requestedModel": "q38fn-local",
+    "resolvedModel": "qwen3.8-flash-next",
+    "upstreamModel": "qwen3.8-flash-next",
+    "backend": "qwen38-flash-next",
+    "status": 200
+  },
+  {
+    "caller": "qwen-nvidia-benchmark-1788633205",
+    "requestedModel": "q38fn-local",
+    "resolvedModel": "qwen3.8-flash-next",
+    "upstreamModel": "qwen3.8-flash-next",
+    "backend": "qwen38-flash-next",
+    "status": 200
+  },
+  {
+    "caller": "qwen-nvidia-benchmark-1788633205",
+    "requestedModel": "q38fn-local",
+    "resolvedModel": "qwen3.8-flash-next",
+    "upstreamModel": "qwen3.8-flash-next",
+    "backend": "qwen38-flash-next",
+    "status": 200
+  }
+]

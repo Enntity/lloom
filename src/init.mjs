@@ -363,6 +363,14 @@ function buildExplicitRecipeRuntime({
   };
 }
 
+function interactiveAdmissionSettings(settings) {
+  return Object.fromEntries(
+    ['interactiveReservedSlots', 'interactiveReservedQueueSlots']
+      .filter((key) => Number.isFinite(Number(settings[key])))
+      .map((key) => [key, Math.max(0, Math.floor(Number(settings[key])))])
+  );
+}
+
 function buildRecipeRuntime({
   recipe,
   recipeModel,
@@ -387,6 +395,7 @@ function buildRecipeRuntime({
       ? { healthTimeoutMs: positiveInteger(settings.healthTimeoutMs, 1500) }
       : {}),
     maxConcurrency: maxActiveRequests,
+    ...interactiveAdmissionSettings(settings),
     ...(Number.isFinite(Number(settings.maxQueuedRequests))
       ? { maxQueuedRequests: Math.max(0, Math.floor(Number(settings.maxQueuedRequests))) }
       : {}),
@@ -703,6 +712,7 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
         enabled: true,
         keepWarm: settings.keepWarm === true,
         maxConcurrency: positiveInteger(settings.maxActiveRequests, backendId === 'mtplx' ? 10 : 4),
+        ...interactiveAdmissionSettings(settings),
         ...(Number.isFinite(Number(settings.maxQueuedRequests))
           ? { maxQueuedRequests: Math.max(0, Math.floor(Number(settings.maxQueuedRequests))) }
           : {}),

@@ -1,0 +1,24 @@
+{
+  "baselineKind": "Previous server transport with candidate proxy-recognition helper; includes prior interactive scheduler",
+  "baselineHead": "08c63ca5c6c65283abd6a5d56032da22ea639eaa",
+  "files": {
+    "src/server.mjs": {
+      "candidate": "bc8ce7b2fe85933795e5b2c65b86adb03b41fc1e2c4cb296db282293c5a26a8a",
+      "testedBaseline": "7e2df2944945fcd604c4e88e015735f95166f9cf6f88d3a9ee6fc9280e2827b5",
+      "beforeThisStep": "7e2df2944945fcd604c4e88e015735f95166f9cf6f88d3a9ee6fc9280e2827b5"
+    },
+    "src/cluster.mjs": {
+      "candidate": "16f2fb056d8dc4acb1de80c2bf2482152c463ebae39a5f838255399d38d42dba",
+      "testedBaseline": "16f2fb056d8dc4acb1de80c2bf2482152c463ebae39a5f838255399d38d42dba",
+      "beforeThisStep": "fdd4a71801f67aaea4e12d5aac737224935f1d7dfb026fb54c78d4b34a30360b"
+    },
+    "package.json": {
+      "candidate": "f31245c728c28fa43d01316bb0a184a1bb46b03e037f131dc728c986a33debde",
+      "beforeThisStep": "f3598d183790ce3a327e1d9a09160d4e31da7ca58f510280445bbb0631cd6423"
+    },
+    "test/federated-priority.test.mjs": {
+      "candidate": "20fa2ffca4870bfe9c51ca428ce7738e05729c9144da35ae58d00700401bbb19",
+      "testedBaseline": "20fa2ffca4870bfe9c51ca428ce7738e05729c9144da35ae58d00700401bbb19"
+    }
+  }
+}

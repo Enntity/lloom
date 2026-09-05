@@ -82,6 +82,8 @@ function compactRuntime(runtimeId, runtime, config) {
     keepWarm: runtime.keepWarm === true,
     maxConcurrency: runtimeMaxConcurrency(runtime),
     maxQueuedRequests: runtimeMaxQueuedRequests(runtime),
+    interactiveReservedSlots: interactiveReservedSlots(runtime),
+    interactiveReservedQueueSlots: interactiveReservedQueueSlots(runtime),
     queueTimeoutMs: runtimeQueueTimeoutMs(runtime),
     command: runtime.command,
     args: runtime.args,
@@ -136,6 +138,8 @@ function distributedMembers(runtime) {
 const LIVE_ADMISSION_FIELDS = new Set([
   'maxConcurrency',
   'maxQueuedRequests',
+  'interactiveReservedSlots',
+  'interactiveReservedQueueSlots',
   'queueTimeoutMs',
   'queueRetryAfterSeconds',
   'requestStartupWaitMs',
@@ -653,6 +657,8 @@ export class RuntimeManager {
         starts: 0,
         stops: 0,
         activeRequests: 0,
+        activeInteractiveRequests: 0,
+        consecutiveInteractiveAdmissions: 0,
         queuedRequests: 0,
         admissionQueuedRequests: 0,
         lastRequestedAt: null,
@@ -942,6 +948,7 @@ export class RuntimeManager {
         starts: state.starts,
         stops: state.stops,
         activeRequests: state.activeRequests,
+        activeInteractiveRequests: state.activeInteractiveRequests,
         queuedRequests: state.queuedRequests,
         admissionQueuedRequests: state.admissionQueuedRequests,
         lastRequestedAt: state.lastRequestedAt,
@@ -1008,8 +1015,8 @@ export class RuntimeManager {
     };
   }
 
-  async withSlot(runtimeId, fn, { signal = null } = {}) {
-    const release = await this.acquireSlot(runtimeId, { signal });
+  async withSlot(runtimeId, fn, { signal = null, requestClass = 'standard' } = {}) {
+    const release = await this.acquireSlot(runtimeId, { signal, requestClass });
     try {
       return await fn();
     } finally {
@@ -1155,27 +1162,31 @@ export class RuntimeManager {
     return { runtimeId, restarted: true, forced, stop, start };
   }
 
-  acquireSlot(runtimeId, { signal = null } = {}) {
+  acquireSlot(runtimeId, { signal = null, requestClass = 'standard' } = {}) {
+    requestClass = normalizeRequestClass(requestClass);
     signal?.throwIfAborted?.();
     if (!runtimeId) return () => {};
     const runtime = this.getRuntime(runtimeId);
     if (!runtime) return () => {};
     const state = this.stateFor(runtimeId);
     state.lastRequestedAt = nowIso();
-    const maxConcurrency = runtimeMaxConcurrency(runtime);
-    if (!this.pausedRuntimes.has(runtimeId) && state.activeRequests < maxConcurrency) {
-      state.activeRequests += 1;
-      return () => this.releaseSlot(runtimeId);
+    if (this.canAdmitRequest(runtimeId, requestClass)) {
+      return this.activateSlot(runtimeId, requestClass);
     }
     const queue = this.queueFor(runtimeId);
     const maxQueuedRequests = runtimeMaxQueuedRequests(runtime);
     const retryAfterSeconds = runtimeQueueRetryAfterSeconds(runtime);
-    if (queue.length >= maxQueuedRequests) {
+    const standardQueued = queue.filter((entry) => entry.requestClass !== 'interactive').length;
+    if (
+      queue.length >= maxQueuedRequests ||
+      (requestClass !== 'interactive' && standardQueued >= maxQueuedRequests - interactiveReservedQueueSlots(runtime))
+    ) {
       return Promise.reject(new RuntimeQueueError(runtimeId, { reason: 'full', retryAfterSeconds }));
     }
     state.queuedRequests = queue.length + 1;
     return new Promise((resolve, reject) => {
       const entry = {
+        requestClass,
         resolve: (release) => {
           if (entry.timer) clearTimeout(entry.timer);
           signal?.removeEventListener?.('abort', entry.abort);
@@ -1206,33 +1217,73 @@ export class RuntimeManager {
     });
   }
 
-  releaseSlot(runtimeId) {
+  canAdmitRequest(runtimeId, requestClass) {
+    const state = this.stateFor(runtimeId);
+    const runtime = this.getRuntime(runtimeId);
+    const max = runtimeMaxConcurrency(runtime);
+    if (this.pausedRuntimes.has(runtimeId) || state.activeRequests >= max) return false;
+    return (
+      requestClass === 'interactive' ||
+      state.activeRequests - state.activeInteractiveRequests < max - interactiveReservedSlots(runtime)
+    );
+  }
+
+  activateSlot(runtimeId, requestClass) {
+    const state = this.stateFor(runtimeId);
+    state.activeRequests += 1;
+    if (requestClass === 'interactive') {
+      state.activeInteractiveRequests += 1;
+      state.consecutiveInteractiveAdmissions += 1;
+    } else {
+      state.consecutiveInteractiveAdmissions = 0;
+    }
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.releaseSlot(runtimeId, requestClass);
+    };
+  }
+
+  nextQueuedRequest(runtimeId) {
+    const queue = this.queueFor(runtimeId);
+    for (const entry of [...queue]) {
+      if (entry.signal?.aborted) entry.reject(entry.signal.reason ?? abortError());
+    }
+    const eligible = (entry) => this.canAdmitRequest(runtimeId, entry.requestClass);
+    const interactive = queue.findIndex((entry) => entry.requestClass === 'interactive' && eligible(entry));
+    const standard = queue.findIndex((entry) => entry.requestClass !== 'interactive' && eligible(entry));
+    // Four interactive admissions may overtake waiting standard work, then
+    // the oldest eligible standard request gets a turn. Neither class starves.
+    const index =
+      interactive >= 0 && (standard < 0 || this.stateFor(runtimeId).consecutiveInteractiveAdmissions < 4)
+        ? interactive
+        : standard;
+    return index < 0 ? null : queue.splice(index, 1)[0];
+  }
+
+  releaseSlot(runtimeId, requestClass = 'standard') {
     const state = this.stateFor(runtimeId);
     state.activeRequests = Math.max(0, state.activeRequests - 1);
+    if (requestClass === 'interactive')
+      state.activeInteractiveRequests = Math.max(0, state.activeInteractiveRequests - 1);
     if (state.activeRequests === 0) state.lastIdleAt = nowIso();
-    const queue = this.queueFor(runtimeId);
-    const maxConcurrency = runtimeMaxConcurrency(this.getRuntime(runtimeId));
-    const next =
-      this.pausedRuntimes.has(runtimeId) || state.activeRequests >= maxConcurrency ? null : takeQueuedEntry(queue);
-    state.queuedRequests = queue.length;
-    if (!next) return;
-    state.activeRequests += 1;
-    next.resolve(() => this.releaseSlot(runtimeId));
+    this.admitQueuedRequests(runtimeId);
+  }
+
+  admitQueuedRequests(runtimeId) {
+    let next;
+    while ((next = this.nextQueuedRequest(runtimeId))) {
+      next.resolve(this.activateSlot(runtimeId, next.requestClass));
+    }
+    this.stateFor(runtimeId).queuedRequests = this.queueFor(runtimeId).length;
   }
 
   resumeRuntime(runtimeId) {
     this.pausedRuntimes.delete(runtimeId);
     const state = this.stateFor(runtimeId);
     if (state.status === 'draining') this.setStatus(runtimeId, 'idle', 'resumed');
-    const queue = this.queueFor(runtimeId);
-    const maxConcurrency = runtimeMaxConcurrency(this.getRuntime(runtimeId));
-    while (state.activeRequests < maxConcurrency && queue.length > 0) {
-      const next = takeQueuedEntry(queue);
-      if (!next) break;
-      state.activeRequests += 1;
-      next.resolve(() => this.releaseSlot(runtimeId));
-    }
-    state.queuedRequests = queue.length;
+    this.admitQueuedRequests(runtimeId);
   }
 
   async drainRuntime(runtimeId, { timeoutMs = 300000, requestedBy, reason = 'eviction' } = {}) {
@@ -1919,16 +1970,19 @@ export class RuntimeManager {
   }
 }
 
-function takeQueuedEntry(queue) {
-  while (queue.length > 0) {
-    const entry = queue.shift();
-    if (entry?.signal?.aborted) {
-      entry.signal.removeEventListener?.('abort', entry.abort);
-      continue;
-    }
-    return entry;
-  }
-  return null;
+export function normalizeRequestClass(value) {
+  return value === 'interactive' ? 'interactive' : 'standard';
+}
+
+function interactiveReservedSlots(runtime) {
+  return Math.min(runtimeMaxConcurrency(runtime) - 1, integerAtLeast(runtime?.interactiveReservedSlots, 0, 0));
+}
+
+function interactiveReservedQueueSlots(runtime) {
+  return Math.min(
+    Math.max(0, runtimeMaxQueuedRequests(runtime) - 1),
+    integerAtLeast(runtime?.interactiveReservedQueueSlots, 0, 0)
+  );
 }
 
 function abortError() {

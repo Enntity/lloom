@@ -288,7 +288,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm",
       "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm.json",
-      "currentVersion": 4,
+      "currentVersion": 6,
       "versions": [
         {
           "version": 1,
@@ -313,17 +313,56 @@
         },
         {
           "version": 4,
+          "path": "archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm/v4.json",
+          "status": "archived",
+          "notes": "Selects MTP-3 and seven-request admission from entity-shaped concurrency 2-8 sweeps; rejects MTP-1 after lower throughput and an eight-request clean-drain failure.",
+          "archivedAt": "2026-09-05T18:00:00.000Z"
+        },
+        {
+          "version": 5,
+          "path": "archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm/v5.json",
+          "status": "archived",
+          "notes": "Two-Spark NVIDIA official NVFP4 with native 262K context, corrected MTP loading and PLE state strides, FP8 KV, disk-backed PLE, piecewise graphs, and bounded reasoning/tool admission.",
+          "archivedAt": "2026-09-05T20:10:00.000Z"
+        },
+        {
+          "version": 6,
           "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm.json",
           "status": "current",
-          "notes": "Selects MTP-3 and seven-request admission from entity-shaped concurrency 2-8 sweeps; rejects MTP-1 after lower throughput and an eight-request clean-drain failure."
+          "notes": "Two-Spark official NVIDIA NVFP4 with GPU-resident FP8 PLE, full decode graphs without compilation, MTP3, bounded BF16 KV, and local-first routing."
         }
       ],
       "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 vLLM",
-      "summary": "On-demand LLooM-managed vLLM TP2 plus expert-parallel Qwen3.8 Flash Next with native 262K context, MTP speculative decode, and bounded entity-workload admission.",
-      "tags": ["linux", "nvidia", "dgx-spark", "cluster", "qwen3.8", "flash-next", "nvfp4", "vllm", "mtp", "expert-parallel"],
-      "recommendedFor": ["Two directly connected DGX Sparks serving entity-shaped Qwen3.8 Flash Next workloads through LLooM"],
-      "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "tools", "reasoning", "vision", "mtp", "long-context"],
-      "source": { "type": "local", "url": "recipes/linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm.json" }
+      "summary": "Two-Spark official NVIDIA NVFP4 with GPU-resident FP8 PLE, full decode graphs without compilation, MTP3, bounded BF16 KV, and local-first routing.",
+      "tags": [
+        "linux",
+        "nvidia",
+        "dgx-spark",
+        "cluster",
+        "qwen3.8",
+        "flash-next",
+        "nvfp4",
+        "vllm",
+        "mtp"
+      ],
+      "recommendedFor": [
+        "Two directly connected DGX Sparks serving entity-shaped Qwen3.8 Flash Next workloads through LLooM"
+      ],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "tools",
+        "reasoning",
+        "vision",
+        "mtp",
+        "long-context"
+      ],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm.json"
+      }
     },
     {
       "id": "linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm",
@@ -527,7 +566,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-vision-mia-vllm",
       "path": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-vision-mia-vllm.json",
-      "currentVersion": 4,
+      "currentVersion": 6,
       "versions": [
         {
           "version": 1,
@@ -550,8 +589,8 @@
         },
         {
           "version": 4,
-          "path": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-vision-mia-vllm.json",
-          "status": "current",
+          "path": "archive/linux-nvidia-dgx-spark-2x-deepseek-v4-flash-vision-mia-vllm/v4.json",
+          "status": "archived",
           "notes": "Deployed and benchmarked sequence-parallel prefill profile with one inflight prefill; retained when the tuning session ended."
         },
         {
@@ -559,14 +598,44 @@
           "path": "archive/linux-nvidia-dgx-spark-2x-deepseek-v4-flash-vision-mia-vllm/v5.json",
           "status": "archived",
           "notes": "UNMEASURED candidate, never deployed: two inflight prefills and NCCL_GIN_ENABLE=0 from upstream 5cb77ab4. Archived when the user reclaimed the Sparks; not recommended without live testing."
+        },
+        {
+          "version": 6,
+          "path": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-vision-mia-vllm.json",
+          "status": "current",
+          "notes": "Upstream 7440c53 integrated; new features remain opt-in pending live validation. Measured v4 limits preserved; not yet deployed."
         }
       ],
-      "name": "2x DGX Spark DeepSeek V4 Flash Vision (MiaAI 9414dd58)",
+      "name": "2x DGX Spark DeepSeek V4 Flash Vision (MiaAI 7440c53)",
       "summary": "LLooM-managed two-node DeepSeek V4 Flash Vision TP=2 runtime on the NVIDIA Sync private fabric.",
-      "tags": ["linux", "nvidia", "dgx-spark", "cluster", "deepseek-v4-flash", "vision", "dspark", "vllm", "nvfp4"],
-      "recommendedFor": ["Two directly connected DGX Sparks managed by NVIDIA Sync"],
-      "capabilities": ["chat", "responses", "anthropic-messages", "streaming", "tools", "reasoning", "vision", "long-context"],
-      "source": { "type": "local", "url": "recipes/linux-nvidia-dgx-spark-2x-deepseek-v4-flash-vision-mia-vllm.json" }
+      "tags": [
+        "linux",
+        "nvidia",
+        "dgx-spark",
+        "cluster",
+        "deepseek-v4-flash",
+        "vision",
+        "dspark",
+        "vllm",
+        "nvfp4"
+      ],
+      "recommendedFor": [
+        "Two directly connected DGX Sparks managed by NVIDIA Sync"
+      ],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "tools",
+        "reasoning",
+        "vision",
+        "long-context"
+      ],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-dgx-spark-2x-deepseek-v4-flash-vision-mia-vllm.json"
+      }
     },
     {
       "id": "linux-nvidia-dgx-spark-cluster-flux2-klein-4b",

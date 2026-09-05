@@ -1,3 +1,4 @@
+import { expandedAliasMemberIds } from './alias-resolution.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -160,6 +161,20 @@ function validateConfig(config, sourcePath, env) {
 
   errors.push(...validateClusterConfig(config, env));
 
+  const aliases = config.aliases ?? {};
+  function expandedMembers(aliasId, profileMembers) {
+    try {
+      return expandedAliasMemberIds(
+        aliasId,
+        profileMembers ? { ...aliases, [aliasId]: { members: profileMembers } } : aliases,
+        modelIds,
+        { includeSuspended: true }
+      );
+    } catch (error) {
+      if (!errors.includes(error.message)) errors.push(error.message);
+      return [];
+    }
+  }
   for (const [aliasId, alias] of Object.entries(config.aliases ?? {})) {
     const members = typeof alias === 'string' ? [alias] : alias?.members;
     const optionalMembers = typeof alias === 'string' ? [] : alias?.optionalMembers;
@@ -206,12 +221,12 @@ function validateConfig(config, sourcePath, env) {
     for (const candidate of memberIds) {
       if (typeof candidate !== 'string' || !candidate.trim()) {
         errors.push(`alias ${aliasId} has an invalid member`);
-      } else if (!modelIds.has(candidate) && !optionalMemberIds.has(candidate)) {
+      } else if (!modelIds.has(candidate) && !Object.hasOwn(aliases, candidate) && !optionalMemberIds.has(candidate)) {
         errors.push(`alias ${aliasId} references unknown model ${candidate}`);
       }
     }
     const kinds = new Set(
-      memberIds
+      expandedMembers(aliasId)
         .map((candidate) => (config.models ?? []).find((model) => model.id === candidate))
         .filter(Boolean)
         .map((model) => model.kind ?? 'chat')
@@ -249,12 +264,12 @@ function validateConfig(config, sourcePath, env) {
           for (const candidate of profileMemberIds) {
             if (typeof candidate !== 'string' || !candidate.trim()) {
               errors.push(`alias ${aliasId} route profile ${profileName} has an invalid member`);
-            } else if (!modelIds.has(candidate)) {
+            } else if (!modelIds.has(candidate) && !Object.hasOwn(aliases, candidate)) {
               errors.push(`alias ${aliasId} route profile ${profileName} references unknown model ${candidate}`);
             }
           }
           const profileKinds = new Set(
-            profileMemberIds
+            expandedMembers(aliasId, profileMemberIds)
               .map((candidate) => (config.models ?? []).find((model) => model.id === candidate))
               .filter(Boolean)
               .map((model) => model.kind ?? 'chat')

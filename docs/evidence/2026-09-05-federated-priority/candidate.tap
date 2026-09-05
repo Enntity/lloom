@@ -1,0 +1,82 @@
+TAP version 13
+# Subtest: federated embeddings uses serving-node reserved capacity without forwarding provider credentials
+ok 1 - federated embeddings uses serving-node reserved capacity without forwarding provider credentials
+  ---
+  duration_ms: 44.938417
+  type: 'test'
+  ...
+# Subtest: federated buffered chat uses serving-node reserved capacity without forwarding provider credentials
+ok 2 - federated buffered chat uses serving-node reserved capacity without forwarding provider credentials
+  ---
+  duration_ms: 20.776834
+  type: 'test'
+  ...
+# Subtest: federated streamed chat uses serving-node reserved capacity without forwarding provider credentials
+ok 3 - federated streamed chat uses serving-node reserved capacity without forwarding provider credentials
+  ---
+  duration_ms: 13.428
+  type: 'test'
+  ...
+# Subtest: federated Responses uses serving-node reserved capacity without forwarding provider credentials
+ok 4 - federated Responses uses serving-node reserved capacity without forwarding provider credentials
+  ---
+  duration_ms: 11.873875
+  type: 'test'
+  ...
+# Subtest: federated Anthropic uses serving-node reserved capacity without forwarding provider credentials
+ok 5 - federated Anthropic uses serving-node reserved capacity without forwarding provider credentials
+  ---
+  duration_ms: 11.328292
+  type: 'test'
+  ...
+# Subtest: federated speech uses serving-node reserved capacity without forwarding provider credentials
+ok 6 - federated speech uses serving-node reserved capacity without forwarding provider credentials
+  ---
+  duration_ms: 13.122792
+  type: 'test'
+  ...
+# Subtest: federated multipart transcription uses serving-node reserved capacity without forwarding provider credentials
+ok 7 - federated multipart transcription uses serving-node reserved capacity without forwarding provider credentials
+  ---
+  duration_ms: 9.075042
+  type: 'test'
+  ...
+# Subtest: canceling a federated queued request removes it at the serving gateway
+ok 8 - canceling a federated queued request removes it at the serving gateway
+  ---
+  duration_ms: 4010.807875
+  type: 'test'
+  ...
+# Subtest: canceling a federated stream releases its interactive slot and upstream connection
+ok 9 - canceling a federated stream releases its interactive slot and upstream connection
+  ---
+  duration_ms: 3022.345167
+  type: 'test'
+  ...
+# Subtest: federated failover recalculates forwarding for the selected raw provider
+ok 10 - federated failover recalculates forwarding for the selected raw provider
+  ---
+  duration_ms: 25.768
+  type: 'test'
+  ...
+# Subtest: priority cannot bypass federation authentication and unknown classes stay standard
+ok 11 - priority cannot bypass federation authentication and unknown classes stay standard
+  ---
+  duration_ms: 10.723708
+  type: 'test'
+  ...
+# Subtest: only explicit enabled inference proxies identify gateway backends
+ok 12 - only explicit enabled inference proxies identify gateway backends
+  ---
+  duration_ms: 0.374875
+  type: 'test'
+  ...
+1..12
+# tests 12
+# suites 0
+# pass 12
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 7337.497083

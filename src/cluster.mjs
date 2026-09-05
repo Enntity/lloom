@@ -50,6 +50,20 @@ function proxyModels(node = {}) {
   );
 }
 
+// A remote node can also host raw backends. Only a configured inference proxy
+// identifies a gateway hop; node membership and model metadata are insufficient.
+export function isFederatedGatewayBackend(config, backendId) {
+  return Object.entries(asObject(config.cluster?.nodes)).some(([nodeId, node]) => {
+    const proxy = asObject(node.proxy);
+    return (
+      proxy.enabled !== false &&
+      proxyModels(node).length > 0 &&
+      Boolean(node.endpoint || proxy.baseUrl) &&
+      backendId === (proxy.backend ?? `lloom-node-${slug(nodeId)}`)
+    );
+  });
+}
+
 export function materializeFederatedNodes(config) {
   config.backends ??= {};
   config.models ??= [];
