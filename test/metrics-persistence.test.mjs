@@ -46,6 +46,66 @@ try {
   assert.equal(restored.snapshot({ period: 'today' }).totals.inputTokens, 11);
   assert.equal(restored.snapshot({ period: '7d' }).models[0]?.outputTokens, 7);
 
+  // Global throughput is time-weighted and counts concurrent generation once.
+  const RealDate = Date;
+  let clock = RealDate.parse('2026-09-05T12:00:00Z');
+  globalThis.Date = class extends RealDate {
+    constructor(...args) {
+      super(...(args.length ? args : [clock]));
+    }
+    static now() {
+      return clock;
+    }
+  };
+  try {
+    const flow = createMetricsStore();
+    const recordFlow = (store, model, durationMs, tokens) =>
+      store.record({
+        model,
+        route: '/v1/chat/completions',
+        ok: true,
+        stream: true,
+        durationMs,
+        firstContentMs: 1000,
+        lastContentMs: durationMs,
+        usage: { output_tokens: tokens + 1 }
+      });
+    recordFlow(flow, 'a', 3000, 100); // 2 seconds at 50 tok/s
+    recordFlow(flow, 'b', 2000, 100); // overlaps the final second
+    assert.equal(flow.snapshot().totals.activeDecodeTokensPerSecond, 100);
+    assert.equal(flow.snapshot().models.find((item) => item.id === 'a').decodeTokensPerSecond, 50);
+    clock += 3600_000; // idle time must not dilute the average
+    recordFlow(flow, 'a', 9000, 80); // 8 seconds at 10 tok/s
+    assert.equal(flow.snapshot().totals.activeDecodeTokensPerSecond, 28);
+    assert.equal(flow.snapshot().models.find((item) => item.id === 'a').decodeTokensPerSecond, 30);
+    flow.record({ model: 'buffered', stream: false, ok: true, durationMs: 5000, usage: { output_tokens: 9999 } });
+    assert.equal(flow.snapshot().totals.activeDecodeTokensPerSecond, 28);
+    assert.equal(flow.snapshot().totals.activeDecodeRateEstimated, false);
+    assert.equal(flow.snapshot().totals.generationIntervals, undefined);
+
+    const saved = flow.persistenceSnapshot();
+    const resumed = createMetricsStore({ initialSnapshot: saved });
+    assert.equal(resumed.snapshot().totals.activeDecodeTokensPerSecond, 28);
+    clock += 86400_000;
+    recordFlow(resumed, 'a', 2000, 50);
+    assert.equal(resumed.snapshot({ period: 'today' }).totals.activeDecodeTokensPerSecond, 50);
+    assert.equal(resumed.snapshot({ period: '7d' }).totals.activeDecodeTokensPerSecond, 30);
+    assert.equal(resumed.snapshot({ period: 'all' }).totals.activeDecodeTokensPerSecond, 30);
+
+    const legacy = createMetricsStore({
+      initialSnapshot: {
+        totals: { generationDurationMs: 2000, decodeTokens: 100, decodeSamples: 1 }
+      }
+    });
+    assert.equal(legacy.snapshot().totals.activeDecodeTokensPerSecond, 50);
+    assert.equal(legacy.snapshot().totals.activeDecodeRateEstimated, true);
+    recordFlow(legacy, 'a', 2000, 20);
+    assert.equal(legacy.snapshot().totals.activeDecodeTokensPerSecond, 40);
+    assert.equal(createMetricsStore().snapshot().totals.activeDecodeTokensPerSecond, null);
+  } finally {
+    globalThis.Date = RealDate;
+  }
+
   const rollingMetrics = createMetricsStore();
   rollingMetrics.record({
     id: 'conn_ok',

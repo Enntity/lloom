@@ -843,10 +843,33 @@ function runtimeRequesterNode(req, config) {
   return String(requester ?? '').trim() || currentNodeId(config);
 }
 
+// Keep disjoint generation intervals so concurrent streams share elapsed time.
+function mergeGenerationIntervals(intervals) {
+  const merged = [];
+  for (const [start, end] of intervals.slice().sort((a, b) => a[0] - b[0])) {
+    const previous = merged.at(-1);
+    if (previous && start <= previous[1]) previous[1] = Math.max(previous[1], end);
+    else merged.push([start, end]);
+  }
+  return merged;
+}
+
 function restoreMetricBucket(target, source) {
   if (!source || typeof source !== 'object') return target;
   for (const key of Object.keys(target)) {
     if (key === 'id') continue;
+    if (key === 'generationIntervals') {
+      target[key] = mergeGenerationIntervals(
+        (Array.isArray(source[key]) ? source[key] : []).filter(
+          (interval) =>
+            Array.isArray(interval) &&
+            interval.length === 2 &&
+            interval.every(Number.isFinite) &&
+            interval[1] > interval[0]
+        )
+      );
+      continue;
+    }
     if (key === 'recentDecodeRates') {
       target[key] = Array.isArray(source[key]) ? source[key].slice(-10).map(Number).filter(Number.isFinite) : [];
       continue;
@@ -857,6 +880,8 @@ function restoreMetricBucket(target, source) {
     }
     if (source[key] != null && Number.isFinite(Number(source[key]))) target[key] = Number(source[key]);
   }
+  // Older history has only summed request generation time; retain it as an estimate.
+  if (source.untrackedGenerationMs == null) target.untrackedGenerationMs = target.generationDurationMs;
   return target;
 }
 
@@ -891,6 +916,7 @@ function mergeMetricBucket(target, source) {
     'firstContentCount',
     'firstContentMs',
     'generationDurationMs',
+    'untrackedGenerationMs',
     'decodeTokens',
     'decodeSamples',
     'estimatedDecodeSamples',
@@ -909,6 +935,9 @@ function mergeMetricBucket(target, source) {
   if (source.maxFirstContentMs != null) {
     target.maxFirstContentMs = Math.max(target.maxFirstContentMs ?? 0, Number(source.maxFirstContentMs));
   }
+  target.generationIntervals = mergeGenerationIntervals(
+    target.generationIntervals.concat(source.generationIntervals || [])
+  );
   target.recentDecodeRates = target.recentDecodeRates.concat(source.recentDecodeRates || []).slice(-10);
   if (source.last && (!target.last || String(source.last.at || '') >= String(target.last.at || '')))
     target.last = source.last;
@@ -924,9 +953,13 @@ function mergeMetricMaps(target, source) {
 
 function serializeMetricGroup(group) {
   return {
-    totals: finalizeMetricBucket(group.totals),
-    models: [...group.models.values()].map(finalizeMetricBucket).sort((a, b) => a.id.localeCompare(b.id)),
-    routes: [...group.routes.values()].map(finalizeMetricBucket).sort((a, b) => a.id.localeCompare(b.id))
+    totals: finalizeMetricBucket(group.totals, true),
+    models: [...group.models.values()]
+      .map((bucket) => finalizeMetricBucket(bucket, true))
+      .sort((a, b) => a.id.localeCompare(b.id)),
+    routes: [...group.routes.values()]
+      .map((bucket) => finalizeMetricBucket(bucket, true))
+      .sort((a, b) => a.id.localeCompare(b.id))
   };
 }
 
@@ -971,6 +1004,12 @@ export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } =
         const decodeRate = (outputTokens - 1) / (decodeDurationMs / 1000);
         bucket.decodeTokens += outputTokens - 1;
         bucket.generationDurationMs += decodeDurationMs;
+        const startedAt = Date.parse(entry.at) - entry.durationMs;
+        const generationStart = startedAt + entry.firstContentMs;
+        bucket.generationIntervals = mergeGenerationIntervals([
+          ...bucket.generationIntervals,
+          [generationStart, generationStart + decodeDurationMs]
+        ]);
         bucket.decodeSamples += 1;
         bucket.recentDecodeRates.push(decodeRate);
         if (bucket.recentDecodeRates.length > 10) bucket.recentDecodeRates.shift();
@@ -1257,6 +1296,8 @@ function emptyMetricBucket(id) {
     minFirstContentMs: null,
     maxFirstContentMs: null,
     generationDurationMs: 0,
+    untrackedGenerationMs: 0,
+    generationIntervals: [],
     decodeTokens: 0,
     decodeSamples: 0,
     estimatedDecodeSamples: 0,
@@ -1268,13 +1309,21 @@ function emptyMetricBucket(id) {
   };
 }
 
-function finalizeMetricBucket(bucket) {
+function finalizeMetricBucket(bucket, includeIntervals = false) {
+  const { generationIntervals, ...publicBucket } = bucket;
+  const activeGenerationMs =
+    bucket.untrackedGenerationMs + generationIntervals.reduce((sum, [start, end]) => sum + end - start, 0);
   const durationSeconds = bucket.durationMs / 1000;
   const recentDecodeRate = bucket.recentDecodeRates.length
     ? bucket.recentDecodeRates.reduce((sum, rate) => sum + rate, 0) / bucket.recentDecodeRates.length
     : null;
   return {
-    ...bucket,
+    ...publicBucket,
+    ...(includeIntervals === true ? { generationIntervals } : {}),
+    activeGenerationMs,
+    activeDecodeTokensPerSecond:
+      activeGenerationMs > 0 ? Number((bucket.decodeTokens / (activeGenerationMs / 1000)).toFixed(2)) : null,
+    activeDecodeRateEstimated: bucket.untrackedGenerationMs > 0 || bucket.estimatedDecodeSamples > 0,
     avgDurationMs: bucket.requests ? Number((bucket.durationMs / bucket.requests).toFixed(2)) : 0,
     avgFirstContentMs: bucket.firstContentCount
       ? Number((bucket.firstContentMs / bucket.firstContentCount).toFixed(2))

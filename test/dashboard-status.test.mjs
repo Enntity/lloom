@@ -29,7 +29,11 @@ assert(source.includes('model: item.resolvedModel || item.model'));
 assert(!source.includes('const catalogModelIds = new Set'));
 assert(!source.includes('["Ordered members", (model.aliasMembers || []).join(" → ") || "—"]'));
 assert(!source.includes('transitioning || (liveConnections.length ? "serving"'));
-assert(source.includes('Number(totals.decodeTokensPerSecond) > 0'));
+assert(source.includes('const aggregateOutputRate = totals.activeDecodeTokensPerSecond ?? null'));
+assert(!source.includes('aggregateRateSamples'));
+assert(source.includes('["Rolling average (10 requests)", topologyModel.averageRate == null'));
+assert(!source.includes('["Live rate", formatRate(topologyModel.liveRate'));
+assert(source.includes('$("#fabric-rate-label").textContent = "avg tok/s"'));
 assert(
   source.includes('const bufferedOutputPending = active.some(item => item.stream === false && !item.responseBytes)')
 );
@@ -261,3 +265,61 @@ assert.deepEqual(
 assert.deepEqual(resourceLabels({ profile: { accelerators: ['cuda'] }, telemetry }), ['CPU', 'RAM', 'GPU', 'VRAM']);
 
 console.log('dashboard status tests passed');
+
+// Labels collide with the central column using their measured width, even
+// when old coordinates or a resize would place them inside the node cards.
+const threadContext = { state: { threadNodes: new Map(), smoothedRates: new Map() }, hashUnit: columnContext.hashUnit };
+vm.runInNewContext(
+  source.slice(source.indexOf('    function updateThreadLayout('), source.indexOf('    function updateModelLayout(')) +
+    '\nglobalThis.updateThreadLayout = updateThreadLayout;',
+  threadContext
+);
+const threads = [
+  { id: 'conn_1', labelWidth: 210 },
+  { id: 'conn_2', labelWidth: 120 }
+];
+threadContext.state.threadNodes.set('conn_1', { x: 800, y: 200, vx: 100, vy: 0 });
+for (const right of [400, 270, 500]) {
+  for (let frame = 0; frame < 50; frame++) {
+    threadContext.updateThreadLayout(threads, { left: 24, right, top: 100, bottom: 700 });
+    for (const thread of threads) {
+      const node = threadContext.state.threadNodes.get(thread.id);
+      assert(node.x >= 24);
+      assert(node.x + 10 + thread.labelWidth <= right);
+    }
+  }
+}
+
+// A buffered request never masks the selected period's average, including
+// after switching ranges while an old browser sample exists.
+const hudElements = new Map();
+const hudContext = {
+  state: { metrics: {}, trafficSample: null },
+  $: (selector) => {
+    if (!hudElements.has(selector)) hudElements.set(selector, {});
+    return hudElements.get(selector);
+  },
+  performance: { now: () => 1000 },
+  formatCompact: String,
+  formatNumber: String,
+  formatRate: String
+};
+vm.runInNewContext(
+  source.slice(source.indexOf('    function renderActivity()'), source.indexOf('      const recentById = new Map();')) +
+    '\n}\nglobalThis.renderActivity = renderActivity;',
+  hudContext
+);
+for (const [period, rate] of [
+  ['all', 28],
+  ['today', 50],
+  ['7d', null]
+]) {
+  hudContext.state.metrics = {
+    period,
+    totals: { activeDecodeTokensPerSecond: rate },
+    active: [{ id: 'buffered', stream: false, responseBytes: 0 }]
+  };
+  hudContext.renderActivity();
+  assert.equal(hudElements.get('#fabric-rate').textContent, rate == null ? '—' : String(rate));
+  assert.equal(hudElements.get('#fabric-rate-label').textContent, 'avg tok/s');
+}

@@ -594,7 +594,6 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       throughput: [],
       flows: new Map(),
       trafficSample: null,
-      aggregateRateSamples: [],
       smoothedRates: new Map(),
       connectionKey: "",
       threadNodes: new Map(),
@@ -903,7 +902,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         ["Queue", observedRuntime ? Number(observedRuntime.queuedRequests || 0) + Number(observedRuntime.admissionQueuedRequests || 0) : "—"],
         ["Input", formatCompact(topologyModel.inputTokens || 0) + " tokens"],
         ["Output", formatCompact(topologyModel.outputTokens || 0) + " tokens"],
-        ["Live rate", formatRate(topologyModel.liveRate || 0) + " tok/s"],
+        ["Rolling average (10 requests)", topologyModel.averageRate == null ? "—" : formatRate(topologyModel.averageRate) + " tok/s"],
         ["Last activity", topologyModel.lastActiveAt ? new Date(topologyModel.lastActiveAt).toLocaleString() : "Never"],
         ["Port", observedRuntime?.port || "—"]
       ];
@@ -1267,7 +1266,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         state.smoothedRates.delete("connection:" + id + ":in");
         state.smoothedRates.delete("connection:" + id + ":out");
       }
-      const centerX = (field.left + field.right) / 2, centerY = (field.top + field.bottom) / 2;
+      const centerY = (field.top + field.bottom) / 2;
       connections.forEach((connection, index) => {
         const seed = Number(String(connection.id).replace(/\D/g, "")) || index + 1;
         let node = state.threadNodes.get(connection.id);
@@ -1275,7 +1274,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           node = { x: field.left + hashUnit(seed * 3) * (field.right - field.left), y: field.top + hashUnit(seed * 11) * (field.bottom - field.top), vx: 0, vy: 0 };
           state.threadNodes.set(connection.id, node);
         }
-        node.vx += (centerX - node.x) * .0012;
+        node.labelWidth = connection.labelWidth || 170;
+        const right = Math.max(field.left, field.right - node.labelWidth - 10);
+        node.vx += ((field.left + right) / 2 - node.x) * .0012;
         node.vy += (centerY - node.y) * .0012;
       });
       const nodes = connections.map(item => state.threadNodes.get(item.id));
@@ -1287,7 +1288,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           a.vx -= dx / distance * charge; a.vy -= dy / distance * charge;
           b.vx += dx / distance * charge; b.vy += dy / distance * charge;
         }
-        const xOverlap = 170 - Math.abs(dx), yOverlap = 40 - Math.abs(dy);
+        const xOverlap = Math.min(a.x + 10 + a.labelWidth, b.x + 10 + b.labelWidth) - Math.max(a.x - 6, b.x - 6), yOverlap = 40 - Math.abs(dy);
         if (xOverlap > 0 && yOverlap > 0) {
           const force = .35 + 1.2 * Math.max(xOverlap / 170, yOverlap / 40);
           const angle = Math.atan2(dy || .1, dx || .1);
@@ -1298,11 +1299,15 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       for (const node of nodes) {
         const margin = 38;
         if (node.x < field.left + margin) node.vx += (field.left + margin - node.x) * .018;
-        if (node.x > field.right - margin) node.vx -= (node.x - field.right + margin) * .018;
+        const right = Math.max(field.left, field.right - node.labelWidth - 10);
+        if (node.x > right - margin) node.vx -= (node.x - right + margin) * .018;
         if (node.y < field.top + margin) node.vy += (field.top + margin - node.y) * .018;
         if (node.y > field.bottom - margin) node.vy -= (node.y - field.bottom + margin) * .018;
         node.vx *= .86; node.vy *= .86; node.x += node.vx; node.y += node.vy;
-        node.x = Math.max(field.left, Math.min(field.right, node.x)); node.y = Math.max(field.top, Math.min(field.bottom, node.y));
+        // Resolve the full label against the central column on every frame,
+        // including the first frame after resize or a change in statistics.
+        if (node.x > right) { node.x = right; node.vx = Math.min(0, node.vx); }
+        node.x = Math.max(field.left, node.x); node.y = Math.max(field.top, Math.min(field.bottom, node.y));
       }
     }
 
@@ -1576,8 +1581,18 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const bSeed = Number(String(b.id).replace(/\D/g, "")) || 1;
         return hashUnit(aSeed * 29) - hashUnit(bSeed * 29);
       });
-      const threadField = { left: 62, right: gate.left - 130, top: 112, bottom: height - 45 };
-      updateThreadLayout(orderedConnections, threadField);
+      const threadField = { left: 24, right: gate.left - 24, top: 112, bottom: height - 45 };
+      ctx.font = '11px "SFMono-Regular",monospace';
+      const connectionLabels = new Map(orderedConnections.map(connection => {
+        const outputRate = smoothRate("connection:" + connection.id + ":out", connection.outputRate, now);
+        const connectionRate = outputRate > .05 ? formatRate(outputRate) + " ~tok/s" : formatRate(connection.averageRate) + " avg tok/s";
+        const liveStats = connection.outputPending ? " · awaiting JSON" : " · " + connectionRate;
+        const maxWidth = Math.max(0, threadField.right - threadField.left - 10);
+        const title = fitCanvasText(ctx, connection.caller ? connection.caller + " · " + connection.id : connection.id, maxWidth);
+        const detail = fitCanvasText(ctx, (connection.inputEstimated ? "~" : "") + formatNumber(connection.inputTokens) + " in · " + formatNumber(connection.outputTokens) + " out" + liveStats, maxWidth);
+        return [connection.id, { title, detail, width: Math.max(ctx.measureText(title).width, ctx.measureText(detail).width) }];
+      }));
+      updateThreadLayout(orderedConnections.map(connection => ({ ...connection, labelWidth: connectionLabels.get(connection.id).width })), threadField);
       orderedConnections.forEach((connection, index) => {
         const seed = Number(String(connection.id).replace(/\D/g, "")) || index + 1;
         const from = state.threadNodes.get(connection.id);
@@ -1608,12 +1623,10 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         ctx.fillStyle = connection.live ? "#42d77d" : "rgba(153,163,176," + alpha * .7 + ")";
         ctx.beginPath(); ctx.arc(from.x, from.y, connection.live ? 6 : 4, 0, Math.PI * 2); ctx.fill();
         ctx.textAlign = "left"; ctx.fillStyle = "rgba(242,245,247," + alpha * .88 + ")";
-        const connectionLabel = connection.caller ? connection.caller + " · " + connection.id : connection.id;
-        ctx.fillText(connectionLabel, from.x + 10, from.y - 8);
+        const label = connectionLabels.get(connection.id);
+        ctx.fillText(label.title, from.x + 10, from.y - 8);
         ctx.fillStyle = "rgba(153,163,176," + alpha * .9 + ")";
-        const connectionRate = outputRate > .05 ? formatRate(outputRate) + " ~tok/s" : formatRate(connection.averageRate) + " avg tok/s";
-        const liveStats = connection.outputPending ? " · awaiting JSON" : " · " + connectionRate;
-        ctx.fillText((connection.inputEstimated ? "~" : "") + formatNumber(connection.inputTokens) + " in · " + formatNumber(connection.outputTokens) + " out" + liveStats, from.x + 10, from.y + 13);
+        ctx.fillText(label.detail, from.x + 10, from.y + 13);
       });
       const summary = state.topologySummary || {};
       const promptTokens = visiblePromptTokens(summary.promptTokens, summary.promptPulseAt, now);
@@ -1714,21 +1727,13 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const liveOutputRate = [...activeTraffic.values()].reduce((sum, item) => sum + item.outputRate, 0);
       const totalDurationSeconds = Math.max(.001, Number(totals.durationMs || 0) / 1000);
       const averageInputRate = Number(totals.inputTokens || 0) / totalDurationSeconds;
-      if (liveOutputRate > 0) {
-        state.aggregateRateSamples.push(liveOutputRate);
-        if (state.aggregateRateSamples.length > 10) state.aggregateRateSamples.shift();
-      }
-      const aggregateOutputRate = state.aggregateRateSamples.length
-        ? state.aggregateRateSamples.reduce((sum, rate) => sum + rate, 0) / state.aggregateRateSamples.length
-        : Number(totals.decodeTokensPerSecond) > 0
-          ? Number(totals.decodeTokensPerSecond)
-          : null;
+      const aggregateOutputRate = totals.activeDecodeTokensPerSecond ?? null;
       const bufferedOutputPending = active.some(item => item.stream === false && !item.responseBytes);
       const displayedOutputRate = liveOutputRate > 0 ? liveOutputRate : bufferedOutputPending ? 0 : aggregateOutputRate || 0;
-      $("#fabric-rate").textContent = bufferedOutputPending && liveOutputRate <= 0
-        ? "—"
-        : aggregateOutputRate == null ? "—" : formatRate(aggregateOutputRate);
-      $("#fabric-rate-label").textContent = bufferedOutputPending && liveOutputRate <= 0 ? "buffered" : "tok/s";
+      $("#fabric-rate").textContent = aggregateOutputRate == null ? "—" : (totals.activeDecodeRateEstimated ? "~" : "") + formatRate(aggregateOutputRate);
+      $("#fabric-rate-label").textContent = "avg tok/s";
+      $("#fabric-rate").title = "Output tokens per second of generation in the selected period; idle time excluded and concurrent streams combined."
+        + (totals.activeDecodeRateEstimated ? " Includes estimated tokens or older history without overlap timing." : "");
       $("#fabric-active").textContent = formatNumber(active.length);
       state.topologySummary = {
         active: active.length,
@@ -1933,7 +1938,6 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     $("#metrics-period").addEventListener("change", event => {
       state.metricsPeriod = event.currentTarget.value;
       state.trafficSample = null;
-      state.aggregateRateSamples = [];
       refreshActivity();
     });
     $("#topology-model-filter").addEventListener("click", () => {
