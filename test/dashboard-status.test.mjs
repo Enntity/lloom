@@ -34,18 +34,10 @@ assert(!source.includes('aggregateRateSamples'));
 assert(source.includes('["Rolling average (10 requests)", topologyModel.averageRate == null'));
 assert(!source.includes('["Live rate", formatRate(topologyModel.liveRate'));
 assert(source.includes('$("#fabric-rate-label").textContent = "avg tok/s"'));
-assert(
-  source.includes('const bufferedOutputPending = active.some(item => item.stream === false && !item.responseBytes)')
-);
-assert(
-  source.includes(
-    'const displayedOutputRate = liveOutputRate > 0 ? liveOutputRate : bufferedOutputPending ? 0 : aggregateOutputRate || 0'
-  )
-);
-assert(source.includes('const clusterResults = summary.outputPending'));
-assert(source.includes('? "BUFFERED · " + (summary.recentErrors || 0) + " ERR/1M"'));
-assert(source.includes('outputRate: displayedOutputRate'));
-assert(source.includes('outputPending: bufferedOutputPending'));
+assert(source.includes('outputRate: liveOutputRate'));
+assert(!source.includes('summary.outputPending'));
+assert(!source.includes('smoothRate("summary:output"'));
+assert(source.includes('const clusterResults = formatRate(instantaneousOutputRate)'));
 assert(source.includes('const instantaneousModelRate = Math.max(0, Number(point.model.liveRate || 0))'));
 assert(source.includes('const modelRateText = processing && instantaneousModelRate > .05'));
 assert(!source.includes('smoothRate("model:" + point.model.id + ":display"'));
@@ -323,3 +315,32 @@ for (const [period, rate] of [
   assert.equal(hudElements.get('#fabric-rate').textContent, rate == null ? '—' : String(rate));
   assert.equal(hudElements.get('#fabric-rate-label').textContent, 'avg tok/s');
 }
+
+// Concurrent streaming output is summed even while another request is buffered.
+const sampleAt = Date.parse('2026-09-06T01:00:00Z');
+hudContext.state.trafficSample = {
+  at: sampleAt - 2000,
+  active: new Map([
+    ['a', { outputChars: 400 }],
+    ['b', { outputChars: 800 }]
+  ])
+};
+hudContext.state.metrics = {
+  generatedAt: new Date(sampleAt).toISOString(),
+  period: 'all',
+  totals: { activeDecodeTokensPerSecond: 999 },
+  active: [
+    { id: 'a', stream: true, outputChars: 800 },
+    { id: 'b', stream: true, outputChars: 1600 },
+    { id: 'buffered', stream: false, responseBytes: 0 }
+  ]
+};
+hudContext.renderActivity();
+assert.equal(hudContext.state.topologySummary.outputRate, 150);
+hudContext.state.metrics.generatedAt = new Date(sampleAt + 2000).toISOString();
+hudContext.renderActivity();
+assert.equal(hudContext.state.topologySummary.outputRate, 0);
+hudContext.state.metrics.active = [];
+hudContext.renderActivity();
+assert.equal(hudContext.state.topologySummary.outputRate, 0);
+assert.equal(hudElements.get('#fabric-rate').textContent, '999');

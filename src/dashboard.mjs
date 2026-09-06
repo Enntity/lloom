@@ -1630,7 +1630,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       });
       const summary = state.topologySummary || {};
       const promptTokens = visiblePromptTokens(summary.promptTokens, summary.promptPulseAt, now);
-      const smoothedOutputRate = smoothRate("summary:output", summary.outputRate, now);
+      const instantaneousOutputRate = Math.max(0, Number(summary.outputRate || 0));
       ctx.textAlign = "center";
       if (clusterEnabled) {
         ctx.fillStyle = "#e9fffb"; ctx.font = '700 17px "SFMono-Regular",monospace'; ctx.fillText("LLooM", center.x, gate.top + 20);
@@ -1642,9 +1642,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         ].join(" · ");
         ctx.fillStyle = "rgba(143,180,255,.82)";
         ctx.fillText(fitCanvasText(ctx, clusterTraffic, nodeCardWidth + 24), center.x, gate.top + 51);
-        const clusterResults = summary.outputPending
-          ? "BUFFERED · " + (summary.recentErrors || 0) + " ERR/1M"
-          : formatRate(smoothedOutputRate) + " ~T/S · " + (summary.recentErrors || 0) + " ERR/1M";
+        const clusterResults = formatRate(instantaneousOutputRate) + " ~T/S · " + (summary.recentErrors || 0) + " ERR/1M";
         ctx.fillText(fitCanvasText(ctx, clusterResults, nodeCardWidth + 24), center.x, gate.top + 66);
       } else {
         const chassis = ctx.createLinearGradient(gate.left, 0, gate.right, 0);
@@ -1655,7 +1653,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         for (let i = 0; i < 9; i++) { const y = gate.top + 30 + i * 25; ctx.beginPath(); ctx.moveTo(gate.left + 13, y); ctx.lineTo(gate.right - 13, y); ctx.stroke(); }
         ctx.fillStyle = "#e9fffb"; ctx.font = '700 18px "SFMono-Regular",monospace'; ctx.fillText("LLooM", center.x, gate.top + 39);
         ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.font = '10px "SFMono-Regular",monospace'; ctx.fillText("ROUTING LOOM", center.x, gate.top + 57);
-        const statRows = [["ACTIVE", summary.active || 0], ["PROMPT", promptTokens > 0 ? (summary.promptEstimated ? "~" : "") + formatCompact(Math.round(promptTokens)) + " tok" : "—"], ["OUTPUT", formatRate(smoothedOutputRate) + " ~t/s"], ["ERRORS/1M", summary.recentErrors || 0]];
+        const statRows = [["ACTIVE", summary.active || 0], ["PROMPT", promptTokens > 0 ? (summary.promptEstimated ? "~" : "") + formatCompact(Math.round(promptTokens)) + " tok" : "—"], ["OUTPUT", formatRate(instantaneousOutputRate) + " ~t/s"], ["ERRORS/1M", summary.recentErrors || 0]];
         ctx.font = '11px "SFMono-Regular",monospace';
         statRows.forEach((row, index) => { const y = gate.top + 94 + index * 27; ctx.textAlign = "left"; ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.fillText(row[0], gate.left + 18, y); ctx.textAlign = "right"; ctx.fillStyle = "rgba(242,245,247,.95)"; ctx.fillText(String(row[1]), gate.right - 18, y); });
         const host = summary.host || {};
@@ -1728,8 +1726,6 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const totalDurationSeconds = Math.max(.001, Number(totals.durationMs || 0) / 1000);
       const averageInputRate = Number(totals.inputTokens || 0) / totalDurationSeconds;
       const aggregateOutputRate = totals.activeDecodeTokensPerSecond ?? null;
-      const bufferedOutputPending = active.some(item => item.stream === false && !item.responseBytes);
-      const displayedOutputRate = liveOutputRate > 0 ? liveOutputRate : bufferedOutputPending ? 0 : aggregateOutputRate || 0;
       $("#fabric-rate").textContent = aggregateOutputRate == null ? "—" : (totals.activeDecodeRateEstimated ? "~" : "") + formatRate(aggregateOutputRate);
       $("#fabric-rate-label").textContent = "avg tok/s";
       $("#fabric-rate").title = "Output tokens per second of generation in the selected period; idle time excluded and concurrent streams combined."
@@ -1740,8 +1736,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         promptTokens,
         promptEstimated,
         promptPulseAt: promptTokens > 0 ? activityRenderedAt : null,
-        outputRate: displayedOutputRate,
-        outputPending: bufferedOutputPending,
+        outputRate: liveOutputRate,
         averageInputRate,
         averageOutputRate: aggregateOutputRate || 0,
         recentErrors: Math.max(0, Number(metrics.rolling?.minute?.errors || 0)),
