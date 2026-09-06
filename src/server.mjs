@@ -1,3 +1,4 @@
+import { generateProviderVideo } from "./video-providers.mjs";
 import http from 'node:http';
 import {
   appendFileSync,
@@ -2776,6 +2777,14 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       },
       async ({ signal, timing, watchdog }) => {
         watchdog.arm();
+        if (resolved.backend.videoProvider) {
+          const upstream = await generateProviderVideo({
+            backend: resolved.backend,
+            body: { ...body, model: resolved.model.upstreamModel },
+            signal
+          });
+          return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
+        }
         const upstream = await fetchUpstream({
           headers: inferenceGatewayHeaders(req, resolved),
           backend: resolved.backend,
