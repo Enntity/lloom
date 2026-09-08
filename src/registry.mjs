@@ -190,6 +190,8 @@ export function createRegistry(config) {
         id: alias.id,
         alias: true,
         aliasMembers: clone(aliasMemberIds(alias)),
+        strategy: alias.strategy ?? 'ordered',
+        performanceMetric: alias.performanceMetric ?? 'completion',
         suspendedMembers: clone(aliasSuspendedMemberIds(alias)),
         memberModels: clone(
           memberModels.map((model) => modelAvailableHere(config, model, { requireRuntimeEnabled: false }))

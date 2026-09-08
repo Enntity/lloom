@@ -5,6 +5,129 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { createLloomServer, estimateRequestPromptTokens, retryRuntimeActionAfterConfigReload } from '../src/server.mjs';
+import { readErrorDiagnostic } from '../src/protocol/upstream-error.mjs';
+
+// Known failures must reach the client without waiting for upstream EOF.
+for (const scenario of [
+  'http-stream',
+  'http-buffered',
+  'sse-error',
+  'done',
+  'keepalive-stall',
+  'productive',
+  'no-headers'
+]) {
+  const upstream = http.createServer((_req, res) => {
+    if (scenario === 'no-headers') return;
+    if (scenario === 'keepalive-stall' || scenario === 'productive') {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      let count = 0;
+      const timer = setInterval(() => {
+        res.write(
+          scenario === 'productive'
+            ? 'data: {"choices":[{"delta":{"reasoning":"thinking"}}]}\n\n'
+            : ': OPENROUTER PROCESSING\n\n'
+        );
+        if (++count === 10 && scenario === 'productive') {
+          clearInterval(timer);
+          res.end('data: [DONE]\n\n');
+        }
+      }, 25);
+      res.on('close', () => clearInterval(timer));
+      return;
+    }
+    if (scenario.startsWith('http-')) {
+      res.writeHead(429, { 'content-type': 'application/json', 'retry-after': '7' });
+      res.write(JSON.stringify({ error: { message: 'Provider throttled', code: 429 } }));
+    } else {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.write(': OPENROUTER PROCESSING\n\n');
+      res.write(
+        scenario === 'done'
+          ? 'data: [DONE]\n\n'
+          : 'data: {"error":{"message":"Provider throttled","code":429},"choices":[{"delta":{"content":""},"finish_reason":"error"}]}\n\n'
+      );
+    }
+    // Deliberately leave the body open. The terminal protocol event is enough.
+  });
+  const upPort = await listen(upstream);
+  const app = createLloomServer(
+    {
+      server: { host: '127.0.0.1', port: 0 },
+      security: { allowMissingAuth: true, apiKeys: [] },
+      defaults: { chatModel: 'test-model' },
+      backends: {
+        local: { type: 'openai', baseUrl: `http://127.0.0.1:${upPort}/v1`, timeoutMs: 10000, streamIdleTimeoutMs: 150 }
+      },
+      models: [{ id: 'test-model', backend: 'local', upstreamModel: 'test', kind: 'chat' }],
+      runtimes: {}
+    },
+    { logger: { error() {}, warn() {} } }
+  );
+  const port = await listen(app.server);
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'test-model',
+        messages: [{ role: 'user', content: 'test' }],
+        stream: scenario !== 'http-buffered'
+      }),
+      signal: AbortSignal.timeout(2000)
+    });
+    const text = await response.text();
+    if (scenario.startsWith('http-')) {
+      assert.equal(response.status, 429);
+      assert.equal(response.headers.get('retry-after'), '7');
+      assert.equal(JSON.parse(text).error.message, 'Provider throttled');
+    } else if (scenario === 'keepalive-stall' || scenario === 'no-headers') {
+      assert.match(text, /upstream_no_progress/);
+      if (scenario === 'no-headers') assert.equal(response.status, 504);
+      else assert.match(text, /"status":504/);
+    } else if (scenario === 'sse-error') {
+      assert.match(text, /"status":429/);
+      assert.match(text, /\[DONE\]/);
+      const metrics = await (await fetch(`http://127.0.0.1:${port}/gateway/metrics`)).json();
+      const entry = metrics.recent.find((x) => x.model === 'test-model');
+      assert.equal(entry.status, 429);
+      assert(entry.responseBytes > 0, 'failure metrics retain forwarded processing frames');
+    } else assert.match(text, /\[DONE\]/);
+  } finally {
+    upstream.closeAllConnections();
+    await app.close({ stopRuntimes: false, httpGraceMs: 25 });
+    await close(upstream);
+  }
+}
+
+// A silent/truncated diagnostic has an absolute time bound; body failure does
+// not replace the HTTP error, and huge bodies have a memory bound.
+{
+  let cancelled = false;
+  const body = new ReadableStream({
+    start(c) {
+      c.enqueue(new TextEncoder().encode('{"error":'));
+    },
+    cancel() {
+      cancelled = true;
+    }
+  });
+  assert.equal(await readErrorDiagnostic(new Response(body), { timeoutMs: 20 }), '{"error":');
+  assert(cancelled);
+  assert.equal((await readErrorDiagnostic(new Response('x'.repeat(100)), { maxBytes: 8 })).length, 8);
+  assert.equal(
+    await readErrorDiagnostic(
+      new Response(
+        new ReadableStream({
+          start(c) {
+            c.error(new Error('reset'));
+          }
+        })
+      )
+    ),
+    ''
+  );
+}
 
 function listen(server) {
   return new Promise((resolve, reject) => {

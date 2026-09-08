@@ -3,6 +3,22 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAnthropicStreamTranslator, createResponsesStreamTranslator } from '../src/protocol/index.mjs';
+import { translateAnthropicStreamFromOpenAIBody } from '../src/protocol/stream-anthropic.mjs';
+import { translateResponsesStreamFromOpenAIBody } from '../src/protocol/stream-responses.mjs';
+
+for (const translate of [translateAnthropicStreamFromOpenAIBody, translateResponsesStreamFromOpenAIBody]) {
+  let cancelled = false;
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('data: {"error":{"code":429,"message":"busy"}}\n\n'));
+    },
+    cancel() {
+      cancelled = true;
+    }
+  });
+  await assert.rejects(translate(body, 'test'), (error) => error.statusCode === 429);
+  assert(cancelled, 'bridges cancel the failed upstream stream');
+}
 
 const fixturesRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures/protocol');
 

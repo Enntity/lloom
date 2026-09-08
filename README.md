@@ -456,3 +456,50 @@ FP8 PLE, MTP3, full draft vocabulary, BF16 KV and bounded admission.
 [Configuration, upstream credits and measured comparisons](docs/q38fn-gap-closure-2026-09-05.md)
 include rollback versions and synthetic benchmark evidence. Machine addresses,
 credentials, runtime bindings and model weights are configured or downloaded locally.
+
+### Fastest-member aliases
+
+Set `strategy: "fastest"` on an alias in the gateway config to select from any
+number of interchangeable models using recent performance and current load:
+
+```json
+{
+  "aliases": {
+    "fast-chat": {
+      "members": ["local-chat", "peer-chat", "cloud-chat"],
+      "strategy": "fastest",
+      "performanceMetric": "completion"
+    }
+  }
+}
+```
+
+Replace the member IDs with configured models or aliases. The requested alias ID
+stays stable in responses; metrics attribute each attempt to its concrete model.
+The outer alias selects the strategy across expanded leaves. Omit `strategy` (or
+use `"ordered"`) for the existing priority and failover behavior.
+
+The passive sampler observes real buffered and streaming requests, retaining up
+to 256 attempts per model for ten minutes. It sends no synthetic prompts. View
+`performance.models` in `GET /gateway/metrics`, or use
+`GET /gateway/metrics/models/<encoded-model-id>` for one concrete model. Statistics
+include successful mean/p95 duration, streaming time to first content, streaming
+output tokens per second when measurable, errors, and active requests. These
+recent observations are local to the gateway process and reset on restart;
+`period` controls the existing historical metrics, not this ten-minute window.
+
+The completion estimate uses streaming first-content latency plus expected output
+length divided by observed output rate. Chat, Responses, and Messages requests use
+the requested output-token limit, or 256 tokens when omitted. Without usable
+streaming measurements it falls back to mean successful request duration. Set
+`performanceMetric: "first-token"` to prefer streaming first-content latency
+instead (buffered-only models fall back to duration). This is a workload-dependent
+estimate, not a benchmark or a quality comparison; choose interchangeable members
+with the capabilities and context sizes your callers require.
+
+Selection penalizes current active/queued work and recent errors. Ready,
+credentialed members outside failure backoff are ranked first, with existing
+failover retained. Unsampled or expired members receive real requests to refresh
+measurements; failed attempts cannot masquerade as fast successes. A fastest alias
+does not start cold alternatives in the background just to measure them. Existing
+runtime admission remains authoritative when no ready member can serve.

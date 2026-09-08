@@ -1,3 +1,4 @@
+import { streamProviderError } from './upstream-error.mjs';
 /**
  * OpenAI Responses streaming bridge over chat-completions SSE.
  * Pure translator: consume chunks, emit { event, data } records (no HTTP).
@@ -364,6 +365,8 @@ export async function translateResponsesStreamFromOpenAIBody(body, requestedMode
     } catch {
       continue;
     }
+    const providerError = streamProviderError(chunk);
+    if (providerError) throw providerError;
     translator.handleChunk(chunk);
   }
   translator.finish();
@@ -407,6 +410,8 @@ export async function streamResponsesFromOpenAI(
       continue;
     }
     const beforeLen = translator.events.length;
+    const providerError = streamProviderError(chunk);
+    if (providerError) throw providerError;
     translator.handleChunk(chunk);
     if (!sawFirst && translator.firstContent) {
       sawFirst = true;

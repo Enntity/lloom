@@ -180,6 +180,12 @@ function validateConfig(config, sourcePath, env) {
     const optionalMembers = typeof alias === 'string' ? [] : alias?.optionalMembers;
     const suspendedMembers = typeof alias === 'string' ? [] : alias?.suspendedMembers;
     if (!Array.isArray(members) || !members.length) errors.push(`alias ${aliasId} must declare at least one member`);
+    if (alias?.strategy != null && !['ordered', 'fastest'].includes(alias.strategy)) {
+      errors.push(`alias ${aliasId} strategy must be ordered or fastest`);
+    }
+    if (alias?.performanceMetric != null && !['completion', 'first-token'].includes(alias.performanceMetric)) {
+      errors.push(`alias ${aliasId} performanceMetric must be completion or first-token`);
+    }
     const aliasResidencyFields = residencyFields(alias);
     if (aliasResidencyFields.length) {
       errors.push(

@@ -1,0 +1,153 @@
+{
+  "route": "cloud/openrouter/chat-capable",
+  "upstreamModel": "qwen/qwen3.8-flash",
+  "installedServerSha256": "418d54edbf48fa510a6fa38aa72987332443a421d8ab1337dd22222596672495",
+  "clientDeadlineMs": 300000,
+  "method": "Isolated installed LLooM gateway with raw upstream fetch tracing; retained later conversation tool rounds, then same sequence with one changed prefix. No tools executed. Original failed prompt had aged out of the live trace.",
+  "attempts": [
+    {
+      "variant": "retained-sequence",
+      "attempt": 1,
+      "completedAt": "2026-09-08T00:09:32.733Z",
+      "status": 200,
+      "durationMs": 4718,
+      "firstContentMs": 2727,
+      "requestBytes": 73338,
+      "inputTokens": 18721,
+      "generationId": "gen-1788826168-23aydafdYFfSZieK1oL4",
+      "upstreamHeadersMs": 2737
+    },
+    {
+      "variant": "retained-sequence",
+      "attempt": 2,
+      "completedAt": "2026-09-08T00:09:36.807Z",
+      "status": 200,
+      "durationMs": 4004,
+      "firstContentMs": 1267,
+      "requestBytes": 75117,
+      "inputTokens": 19173,
+      "generationId": "gen-1788826172-UaeA0ptms6LVyInE0Qt3",
+      "upstreamHeadersMs": 1270
+    },
+    {
+      "variant": "retained-sequence",
+      "attempt": 3,
+      "completedAt": "2026-09-08T00:09:41.808Z",
+      "status": 200,
+      "durationMs": 4918,
+      "firstContentMs": 1683,
+      "requestBytes": 87084,
+      "inputTokens": 22819,
+      "generationId": "gen-1788826176-DS3Bt2VPzqWd1TPpaOqD",
+      "upstreamHeadersMs": 1687
+    },
+    {
+      "variant": "retained-sequence",
+      "attempt": 4,
+      "completedAt": "2026-09-08T00:09:53.652Z",
+      "status": 200,
+      "durationMs": 11768,
+      "firstContentMs": 923,
+      "requestBytes": 73338,
+      "inputTokens": 18721,
+      "generationId": "gen-1788826181-R2Sj8QIDmmPoAPzhKZO5",
+      "upstreamHeadersMs": 925
+    },
+    {
+      "variant": "retained-sequence",
+      "attempt": 5,
+      "completedAt": "2026-09-08T00:09:56.873Z",
+      "status": 200,
+      "durationMs": 3150,
+      "firstContentMs": 1001,
+      "requestBytes": 75117,
+      "inputTokens": 19173,
+      "generationId": "gen-1788826193-Aeam13v2DBxHUtnxGkrg",
+      "upstreamHeadersMs": 1006
+    },
+    {
+      "variant": "retained-sequence",
+      "attempt": 6,
+      "completedAt": "2026-09-08T00:10:08.675Z",
+      "status": 200,
+      "durationMs": 11736,
+      "firstContentMs": 1093,
+      "requestBytes": 87084,
+      "inputTokens": 22819,
+      "generationId": "gen-1788826196-bCv3I10Wv8D0lNaEFfJ3",
+      "upstreamHeadersMs": 1097
+    },
+    {
+      "variant": "changed-prefix",
+      "attempt": 1,
+      "completedAt": "2026-09-08T00:11:27.832Z",
+      "status": 200,
+      "durationMs": 4389,
+      "firstContentMs": 2711,
+      "requestBytes": 73407,
+      "inputTokens": 18764,
+      "generationId": "gen-1788826283-kiT4ez8iZSsiYNXQkcz1",
+      "upstreamHeadersMs": 2726
+    },
+    {
+      "variant": "changed-prefix",
+      "attempt": 2,
+      "completedAt": "2026-09-08T00:11:31.042Z",
+      "status": 200,
+      "durationMs": 3144,
+      "firstContentMs": 1174,
+      "requestBytes": 75186,
+      "inputTokens": 19216,
+      "generationId": "gen-1788826287-ZkpB647hM5IiQNqJSruQ",
+      "upstreamHeadersMs": 1178
+    },
+    {
+      "variant": "changed-prefix",
+      "attempt": 3,
+      "completedAt": "2026-09-08T00:11:50.496Z",
+      "status": 200,
+      "durationMs": 19378,
+      "firstContentMs": 1430,
+      "requestBytes": 87153,
+      "inputTokens": 22862,
+      "generationId": "gen-1788826291-3TzTW17EuXThzffcBJ1Z",
+      "upstreamHeadersMs": 1433
+    },
+    {
+      "variant": "changed-prefix",
+      "attempt": 4,
+      "completedAt": "2026-09-08T00:11:53.668Z",
+      "status": 200,
+      "durationMs": 3109,
+      "firstContentMs": 1657,
+      "requestBytes": 73407,
+      "inputTokens": 18764,
+      "generationId": "gen-1788826310-Ufi7t31ES2qsa9lfK2Vb",
+      "upstreamHeadersMs": 1660
+    },
+    {
+      "variant": "changed-prefix",
+      "attempt": 5,
+      "completedAt": "2026-09-08T00:11:57.237Z",
+      "status": 200,
+      "durationMs": 3504,
+      "firstContentMs": 1065,
+      "requestBytes": 75186,
+      "inputTokens": 19216,
+      "generationId": "gen-1788826313-aHKoKBgZywhYKpNy8U8S",
+      "upstreamHeadersMs": 1069
+    },
+    {
+      "variant": "changed-prefix",
+      "attempt": 6,
+      "completedAt": "2026-09-08T00:12:02.565Z",
+      "status": 200,
+      "durationMs": 5274,
+      "firstContentMs": 1477,
+      "requestBytes": 87153,
+      "inputTokens": 22862,
+      "generationId": "gen-1788826317-8Wl55xykjSBmqnxVLHzv",
+      "upstreamHeadersMs": 1479
+    }
+  ]
+}

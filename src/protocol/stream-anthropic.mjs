@@ -1,3 +1,4 @@
+import { streamProviderError } from './upstream-error.mjs';
 /**
  * Anthropic Messages streaming bridge over OpenAI chat-completions SSE.
  * Pure translator: consume chunks, emit { event, data } records (no HTTP).
@@ -241,6 +242,8 @@ export async function translateAnthropicStreamFromOpenAIBody(body, requestedMode
     } catch {
       continue;
     }
+    const providerError = streamProviderError(chunk);
+    if (providerError) throw providerError;
     translator.handleChunk(chunk);
   }
   translator.finish();
@@ -283,6 +286,8 @@ export async function streamAnthropicFromOpenAI(
       continue;
     }
     const beforeLen = translator.events.length;
+    const providerError = streamProviderError(chunk);
+    if (providerError) throw providerError;
     translator.handleChunk(chunk);
     if (!sawFirst && translator.firstContent) {
       sawFirst = true;

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { materialize } from '../backends/sparkglm/materialize.mjs';
 import { planRecipe } from '../src/recipes.mjs';
+import { classifyRuntimeWatchdogOutcome } from '../src/runtime-manager.mjs';
 const image = 'sha256:' + 'a'.repeat(64);
 const recipe = await materialize({ image, sourceRevision: 'b'.repeat(40) });
 const plan = planRecipe(
@@ -164,6 +165,7 @@ const bounded = await materialize({
   kvCacheGiB: 6
 });
 assert.equal(bounded.models[0].settings.contextWindow, 49152);
+assert.equal(bounded.models[0].settings.maxPromptTokens, 0);
 assert.equal(bounded.models[0].settings.memoryGb, nv.models[0].settings.memoryGb);
 const largerCache = await materialize({ image, sourceRevision: 'b'.repeat(40), nvfp4: true, kvCacheGiB: 16 });
 assert.equal(largerCache.models[0].settings.memoryGb, nv.models[0].settings.memoryGb + 8);
@@ -203,8 +205,25 @@ for (const candidate of [
   const head = model.settings.placement.members.find((member) => member.role === 'head');
   assert.equal(head.runtimeSettings.healthUrl, 'http://${leaderAddress}:8890/v1/models');
   assert.equal(head.runtimeSettings.healthModel, model.upstreamModel);
-  assert.equal(
-    model.settings.placement.members.find((member) => member.role === 'worker').healthStrategy,
-    'container'
-  );
+  assert.equal(model.settings.placement.members.find((member) => member.role === 'worker').healthStrategy, 'container');
 }
+
+const fullWindow = await materialize({
+  image,
+  sourceRevision: 'b'.repeat(40),
+  nvfp4: true,
+  contextTokens: 1048576,
+  kvCacheGiB: 11
+});
+assert.equal(fullWindow.models[0].settings.watchdog.minNoProgressMs, 1800000);
+assert.equal(fullWindow.models[0].settings.watchdog.enabled, true);
+
+const fullWindowRuntime = { ...fullWindow.models[0].settings, management: 'managed' };
+assert.equal(
+  classifyRuntimeWatchdogOutcome(fullWindowRuntime, { status: 504, durationMs: 600012, stream: true }).kind,
+  'ignored'
+);
+assert.equal(
+  classifyRuntimeWatchdogOutcome(fullWindowRuntime, { status: 504, durationMs: 1800000, stream: true }).kind,
+  'no-progress-failure'
+);

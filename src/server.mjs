@@ -1,5 +1,8 @@
-import { generateProviderVideo } from "./video-providers.mjs";
+import { createPerformanceSampler } from './performance-sampler.mjs';
+import { generateProviderVideo } from './video-providers.mjs';
 import http from 'node:http';
+import { readErrorDiagnostic, streamProviderError } from './protocol/upstream-error.mjs';
+import { fetchWithStreamProgress } from './protocol/stream-progress.mjs';
 import {
   appendFileSync,
   existsSync,
@@ -304,7 +307,7 @@ function endResponseWithError(res, error, { stream = false, config = {}, status 
       // OpenAI-style stream error chunk, then DONE.
       res.write(
         `data: ${JSON.stringify({
-          error: { message, type, code }
+          error: { message, type, code, status }
         })}\n\n`
       );
       res.write('data: [DONE]\n\n');
@@ -517,7 +520,7 @@ export function shouldFailoverModelRequest(error, res = null) {
 }
 
 async function upstreamStatusError(upstream) {
-  const text = await upstream.text();
+  const text = await readErrorDiagnostic(upstream);
   let message = text;
   try {
     message = JSON.parse(text)?.error?.message ?? text;
@@ -535,6 +538,8 @@ async function upstreamStatusError(upstream) {
   return Object.assign(new Error(message || `upstream status ${upstream.status}`), {
     code: 'upstream_error',
     statusCode: upstream.status,
+    upstreamGenerationId: upstream.headers.get('x-generation-id'),
+    upstreamHeadersReceived: true,
     ...(retryAfterSeconds == null ? {} : { retryAfterSeconds })
   });
 }
@@ -627,6 +632,10 @@ function copyResponseHeaders(upstream) {
   const headers = {};
   const contentType = upstream.headers.get('content-type');
   if (contentType) headers['content-type'] = contentType;
+  for (const name of ['x-generation-id', 'retry-after']) {
+    const value = upstream.headers.get(name);
+    if (value) headers[name] = value;
+  }
   return headers;
 }
 
@@ -1104,7 +1113,9 @@ export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } =
         requestBytes: raw.requestBytes ?? 0,
         outputChars: live?.outputChars ?? 0,
         usage: raw.usage ?? null,
-        error: raw.error
+        error: raw.error,
+        upstreamGenerationId: raw.upstreamGenerationId ?? null,
+        upstreamHeadersReceived: raw.upstreamHeadersReceived ?? null
       };
       recent.push(entry);
       if (recent.length > maxRecent) recent.shift();
@@ -1334,17 +1345,25 @@ function finalizeMetricBucket(bucket, includeIntervals = false) {
   };
 }
 
-async function fetchUpstream({ backend, path, body, headers = {}, signal, dispatcher }) {
+async function fetchUpstream({ backend, path, body, headers = {}, signal, dispatcher = longRunningMediaDispatcher }) {
   const timeoutMs = backend.timeoutMs ?? 1800000;
   const fetchSignal = upstreamSignal(signal, timeoutMs);
   try {
-    return await fetch(upstreamUrl(backend, path), {
-      method: 'POST',
-      headers: backendHeaders(backend, headers),
-      body: JSON.stringify(body),
-      signal: fetchSignal,
-      dispatcher
-    });
+    const idleMs =
+      body.stream === true
+        ? (backend.streamIdleTimeoutMs ?? (new URL(backend.baseUrl).hostname === 'openrouter.ai' ? 60000 : 0))
+        : 0;
+    return await fetchWithStreamProgress(
+      (progressSignal) =>
+        fetch(upstreamUrl(backend, path), {
+          method: 'POST',
+          headers: backendHeaders(backend, headers),
+          body: JSON.stringify(body),
+          signal: progressSignal,
+          dispatcher
+        }),
+      { signal: fetchSignal, idleMs }
+    );
   } catch (error) {
     throw normalizeAbortError(error, fetchSignal, timeoutMs);
   }
@@ -1522,6 +1541,12 @@ async function proxyOpenAIChatStream(res, upstream, requestedModel, { signal, ti
     if (event.data && event.data !== '[DONE]') {
       const rewritten = rewriteJsonModelText(event.data, requestedModel);
       let value = rewritten.value;
+      const providerError = streamProviderError(value);
+      if (providerError)
+        throw Object.assign(providerError, {
+          upstreamGenerationId: upstream.headers.get('x-generation-id'),
+          upstreamHeadersReceived: true
+        });
       if (value && typeof value === 'object') {
         value = normalizeOpenAIChatCompletionChunk(value);
       }
@@ -1546,6 +1571,7 @@ async function proxyOpenAIChatStream(res, upstream, requestedModel, { signal, ti
     responseBytes += Buffer.byteLength(output);
     progress?.({ responseBytesDelta: Buffer.byteLength(output), outputCharsDelta: outputChars ?? 0 });
     res.write(output);
+    if (event.data === '[DONE]') break;
   }
   throwIfClientClosed(signal, res);
   res.end();
@@ -2050,7 +2076,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     };
   }
 
-  async function resolveRequestModels(modelId) {
+  async function resolveRequestModels(modelId, request = {}) {
     const candidates = await Promise.all(registry.resolveCandidates(modelId).map(resolveRequestCandidate));
     if (candidates.length <= 1) {
       return candidates.map((candidate) => ({
@@ -2089,10 +2115,22 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       if (backoff && (backoff.until > Date.now() || backoff.probeInFlight)) return false;
       return runtimeReadyNow(candidate);
     };
-    const readyMembers = candidates.filter(availableNow);
-    const readySet = new Set(readyMembers);
+    const strategy = candidates[0].alias?.strategy ?? 'ordered';
+    const readyCandidates = candidates.filter(availableNow);
+    const readyMembers =
+      strategy === 'fastest'
+        ? performanceSampler.rank(readyCandidates, {
+            metric: candidates[0].alias?.performanceMetric,
+            outputTokens:
+              Number(request.max_completion_tokens ?? request.max_tokens ?? request.max_output_tokens) > 0
+                ? Number(request.max_completion_tokens ?? request.max_tokens ?? request.max_output_tokens)
+                : 256,
+            runtimes: status?.runtimes ?? {}
+          })
+        : readyCandidates;
+    const readySet = new Set(readyMembers.map((candidate) => candidate.resolvedId));
     const ordered = readyMembers.length
-      ? [...readyMembers, ...candidates.filter((candidate) => !readySet.has(candidate))]
+      ? [...readyMembers, ...candidates.filter((candidate) => !readySet.has(candidate.resolvedId))]
       : candidates;
 
     // A cold higher-priority member must not hold the current request behind a
@@ -2101,7 +2139,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     // admission planner remains authoritative and alternativeAvailable keeps
     // this recovery non-evicting.
     const selectedReady = readyMembers[0];
-    if (selectedReady) {
+    if (selectedReady && strategy !== 'fastest') {
       const preferredUnavailable = candidates.find(
         (candidate) =>
           candidate.aliasMemberIndex < selectedReady.aliasMemberIndex &&
@@ -2128,8 +2166,15 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         members: candidate.aliasMemberCount ?? ordered.length,
         preferredModel: candidates[0].resolvedId,
         usedAlternative: candidate.aliasMemberIndex > 0 || candidate.resolvedId !== candidates[0].resolvedId,
-        readyAlternativeAvailable: ordered.slice(attemptIndex + 1).some((alternative) => readySet.has(alternative)),
-        ...(candidate !== candidates[0] ? { reason: 'preferred-member-unavailable' } : {})
+        readyAlternativeAvailable: ordered
+          .slice(attemptIndex + 1)
+          .some((alternative) => readySet.has(alternative.resolvedId)),
+        strategy,
+        ...(strategy === 'fastest'
+          ? { reason: 'recent-performance', estimatedCompletionMs: candidate.performanceScoreMs }
+          : candidate !== candidates[0]
+            ? { reason: 'preferred-member-unavailable' }
+            : {})
       }
     }));
   }
@@ -2149,20 +2194,25 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     }
   }
 
+  const performanceSampler = createPerformanceSampler();
   const metricsPersistence = createMetricsPersistence(config, { logger });
   const baseMetrics = createMetricsStore({ initialSnapshot: metricsPersistence.loadSnapshot() });
   const metrics = {
     begin(entry) {
-      return baseMetrics.begin(entry);
+      const id = baseMetrics.begin(entry);
+      performanceSampler.begin(id, entry);
+      return id;
     },
     end(id) {
       baseMetrics.end(id);
+      performanceSampler.end(id);
     },
     update(id, patch) {
       baseMetrics.update(id, patch);
     },
     record(entry) {
       baseMetrics.record(entry);
+      performanceSampler.record(entry);
       appendRequestLog({
         route: entry.route,
         model: entry.requestedModel ?? entry.model,
@@ -2186,7 +2236,11 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       metricsPersistence.schedule(baseMetrics.persistenceSnapshot());
     },
     snapshot(...args) {
-      return { ...baseMetrics.snapshot(...args), persistence: metricsPersistence.metadata() };
+      return {
+        ...baseMetrics.snapshot(...args),
+        persistence: metricsPersistence.metadata(),
+        performance: performanceSampler.snapshot(args[0]?.model)
+      };
     },
     flush() {
       metricsPersistence.flush();
@@ -2347,6 +2401,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     let runtimeStartedAt = null;
     let queueStartedAt = null;
     let lastProgressAt = started;
+    let forwardedBytes = 0;
     const clearWatchdogTimer = () => {
       if (watchdogTimer) clearTimeout(watchdogTimer);
       watchdogTimer = null;
@@ -2376,6 +2431,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       watchdogTimer.unref?.();
     };
     const progress = (patch) => {
+      forwardedBytes += Number(patch?.responseBytesDelta ?? 0);
       metrics.update(connectionId, patch);
       if (!watchdogArmed) return;
       const bytes = Number(patch?.responseBytesDelta ?? 0);
@@ -2476,9 +2532,11 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         queueWaitMs: queueStartedAt == null ? null : (runtimeStartedAt ?? Date.now()) - queueStartedAt,
         firstContentMs: timing.firstContentMs,
         lastContentMs: timing.lastContentMs,
-        responseBytes: 0,
+        responseBytes: forwardedBytes,
         requestBytes,
-        error: error?.message ?? String(error)
+        error: error?.message ?? String(error),
+        upstreamGenerationId: error?.upstreamGenerationId,
+        upstreamHeadersReceived: error?.upstreamHeadersReceived
       };
       metrics.record(outcome);
       noteRuntimeRequestOutcome(resolved.model.runtime, outcome);
@@ -2525,8 +2583,33 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     }
   }
 
-  async function recordModelRequestWithFailover({ route, modelId, stream, req, res, kind = 'chat' }, fn) {
-    const candidates = await resolveRequestModels(modelId);
+  async function recordModelRequestWithFailover({ route, modelId, stream, req, res, kind = 'chat', request = {} }, fn) {
+    let candidates = await resolveRequestModels(modelId, request);
+    // Re-rank immediately before begin() so concurrent resolutions observe work
+    // admitted by earlier requests rather than stampeding the same fast member.
+    if (candidates[0].alias?.strategy === 'fastest') {
+      const ready = candidates.filter((candidate) => Object.hasOwn(candidate, 'performanceScoreMs'));
+      const ranked = performanceSampler.rank(ready, {
+        metric: candidates[0].alias.performanceMetric,
+        outputTokens:
+          Number(request.max_completion_tokens ?? request.max_tokens ?? request.max_output_tokens) > 0
+            ? Number(request.max_completion_tokens ?? request.max_tokens ?? request.max_output_tokens)
+            : 256,
+        runtimes: routingStatusCache.value?.runtimes ?? {}
+      });
+      candidates = [
+        ...ranked,
+        ...candidates.filter((candidate) => !Object.hasOwn(candidate, 'performanceScoreMs'))
+      ].map((candidate, index) => ({
+        ...candidate,
+        routeSelection: {
+          ...candidate.routeSelection,
+          attempt: index + 1,
+          readyAlternativeAvailable: index < ranked.length - 1,
+          estimatedCompletionMs: candidate.performanceScoreMs
+        }
+      }));
+    }
     if ((candidates[0].model.kind ?? 'chat') !== kind) {
       sendJson(
         res,
@@ -2589,11 +2672,12 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       {
         route: '/v1/chat/completions',
         modelId: body.model ?? config.defaults?.chatModel,
+        request: body,
         stream: body.stream === true,
         req,
         res
       },
-      async (resolved, { signal, timing, progress, watchdog, hasNext }) => {
+      async (resolved, { signal, timing, progress, watchdog }) => {
         assertPromptWithinBudget(resolved, body, { logger });
         watchdog.arm();
         // Normalize history so reasoning_content is OpenAI-shaped before MTPLX render.
@@ -2611,7 +2695,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
             model: resolved.model.upstreamModel
           }
         });
-        if (!upstream.ok && (body.stream === true || (hasNext && MODEL_FAILOVER_STATUS_CODES.has(upstream.status)))) {
+        if (!upstream.ok) {
           // Avoid opening an SSE response for an already-failed upstream.
           throw await upstreamStatusError(upstream);
         }
@@ -3234,6 +3318,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       {
         route: '/v1/responses',
         modelId: body.model ?? config.defaults?.chatModel,
+        request: body,
         stream: body.stream === true,
         req,
         res
@@ -3294,6 +3379,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       {
         route: '/v1/messages',
         modelId: body.model ?? config.defaults?.chatModel,
+        request: body,
         stream: body.stream === true,
         req,
         res

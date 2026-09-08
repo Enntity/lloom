@@ -214,7 +214,14 @@ export async function materialize({
   for (const model of recipe.models) {
     if (![32, 64, 128].includes(exl3TempRows)) throw new Error('EXL3 temp rows must be 32, 64 or 128');
     if ((nvfp4 || nvfp4Tiny) && exl3TempRows !== 128) throw new Error('EXL3 temp rows do not apply to NVFP4');
-    if (contextTokens !== undefined) model.settings.contextWindow = contextTokens;
+    if (contextTokens !== undefined) {
+      model.settings.contextWindow = contextTokens;
+      // vLLM validates rendered token IDs against max_model_len. LLooM's
+      // character estimate otherwise rejects valid near-window requests.
+      model.settings.maxPromptTokens = 0;
+      // A full-window cold prefill can legitimately exceed ten minutes.
+      if (contextTokens > 524288) model.settings.watchdog.minNoProgressMs = 1800000;
+    }
     // Explicit cache growth must also reach LLooM's admission planner. Keep the
     // existing conservative reservation when a smaller cache is requested.
     const extraCacheGiB = Math.max(0, (kvCacheGiB ?? 8) - 8);

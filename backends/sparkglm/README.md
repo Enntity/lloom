@@ -101,3 +101,15 @@ remains 128; a lower threshold requires operator and TP2 integration evidence.
 Large prefill chunks also increase the padded sliding-window draft cache
 reservation. The observed 16K-chunk profile needed 15.2 GiB even for one 64K
 request; smaller chunks are essential to explore on memory-limited NVFP4.
+
+Explicit `--context-tokens` also sets `maxPromptTokens: 0` on the gateway model.
+This delegates token-budget validation to vLLM's exact rendered-token check; it
+does not change or disable `max_model_len`. The gateway's character estimate and
+98% rejection margin otherwise reject some valid near-window requests. The
+backend still rejects prompt plus output exceeding its configured context.
+
+For explicit contexts above 524288 tokens, the managed no-output watchdog budget
+is 30 minutes, matching the backend request deadline. The inherited ten-minute
+budget interrupted a valid progressing 1M cold prefill. Watchdog recovery remains
+enabled; this change permits the initial prefill silence and does not claim
+endurance qualification or make a cold 1M request interactive.
