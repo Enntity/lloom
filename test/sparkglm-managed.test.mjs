@@ -67,3 +67,22 @@ const split = await materialize({ image, workerImage: 'sha256:' + 'c'.repeat(64)
 assert.equal(split.models[0].settings.placement.members[0].runtimeSettings.bootstrap.image, 'sha256:' + 'c'.repeat(64));
 assert.equal(split.models[0].settings.placement.members[1].runtimeSettings.bootstrap.image, image);
 await assert.rejects(materialize({ image, workerImage: 'latest', sourceRevision: 'b'.repeat(40) }));
+
+const nt = await materialize({ image, sourceRevision: 'b'.repeat(40), nvfp4Tiny: true });
+assert.equal(nt.models[0].gatewayModel, 'sparkglm-tiny-nvfp4');
+assert.deepEqual(nt.models[0].aliases, []);
+assert.deepEqual(
+  planRecipe(
+    nt,
+    { models: [], runtimes: {} },
+    {
+      modelRoot: '/models',
+      platform: 'linux',
+      arch: 'arm64',
+      backendIds: new Set(['docker-vllm']),
+      checkLocalReferences: false
+    }
+  ).validationErrors,
+  []
+);
+await assert.rejects(materialize({ image, sourceRevision: 'b'.repeat(40), nvfp4Tiny: true, e3: true }));

@@ -56,3 +56,11 @@ pinned current compressed-tensors checkpoint. It cannot be combined with
 repeat EXL3 with matching limits before comparing performance. Native kernel
 execution and model quality require separate evidence. None of these options
 changes the production Presence alias or promotes an experimental backend.
+
+`--nvfp4-tiny` selects the separate `sparkglm-tiny-nvfp4` fixture. Build its
+reviewed dummy-loader image and metadata from SparkGLM's NVFP4 experiment
+first. The image must contain the guarded deterministic FP4 initializer;
+ordinary integer dummy weights are uninitialized in the underlying loader.
+This option uses no production aliases and cannot enable E3 or real NVFP4
+loading. Finish model downloads before full-model cold starts: downloader
+buffers count against GB10's shared memory budget.

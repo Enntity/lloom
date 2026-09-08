@@ -11,8 +11,11 @@ export async function materialize({
   sourceRevision,
   e3 = false,
   tiny = false,
-  nvfp4 = false
+  nvfp4 = false,
+  nvfp4Tiny = false
 }) {
+  if (nvfp4Tiny && (nvfp4 || e3)) throw new Error('NVFP4 fixture cannot use real-model or E3 options');
+  tiny = tiny || nvfp4Tiny;
   if (!/^sha256:[0-9a-f]{64}$/.test(image || '')) throw new Error('full local image ID required');
   if (!/^sha256:[0-9a-f]{64}$/.test(workerImage || '')) throw new Error('full worker image ID required');
   if (!/^[0-9a-f]{40}$/.test(sourceRevision || '')) throw new Error('full SparkGLM source revision required');
@@ -100,34 +103,42 @@ export async function materialize({
     }
   }
   if (tiny) {
-    recipe.id = 'linux-nvidia-dgx-spark-2x-sparkglm-tiny';
+    const fixtureId = nvfp4Tiny ? 'sparkglm-tiny-nvfp4' : 'sparkglm-tiny';
+    const fixtureDir = nvfp4Tiny ? 'sparkglm--tinyglm-nvfp4' : 'sparkglm--tinyglm';
+    recipe.id = `linux-nvidia-dgx-spark-2x-${fixtureId}`;
     recipe.name = 'SparkGLM synthetic TP2 integration fixture';
     recipe.setup.steps = recipe.setup.steps.filter((v) => v.id === 'check-docker');
     const model = recipe.models[0];
     model.name = 'tinyGLM synthetic integration fixture';
-    model.model = 'sparkglm/tinyglm';
-    model.gatewayModel = 'sparkglm-tiny';
-    model.upstreamModel = 'sparkglm-tiny';
-    model.backendConfig = 'sparkglm-tiny';
-    model.runtime = 'sparkglm-tiny-cluster';
+    model.model = nvfp4Tiny ? 'sparkglm/tinyglm-nvfp4' : 'sparkglm/tinyglm';
+    model.gatewayModel = fixtureId;
+    model.upstreamModel = fixtureId;
+    model.backendConfig = fixtureId;
+    model.runtime = `${fixtureId}-cluster`;
     model.aliases = [];
     model.input = ['text'];
     model.settings.contextWindow = 32768;
     model.settings.maxOutputTokens = 1024;
     model.settings.memoryGb = 24;
     for (const member of model.settings.placement.members) {
-      member.runtime = `sparkglm-tiny-${member.role}`;
+      member.runtime = `${fixtureId}-${member.role}`;
       member.resources.memoryGb = 24;
-      member.runtimeSettings.containerName = 'lloom-sparkglm-tiny-${nodeId}';
+      member.runtimeSettings.containerName = `lloom-${fixtureId}-` + '${nodeId}';
       member.runtimeSettings.bootstrap.createArgs = member.runtimeSettings.bootstrap.createArgs.map((v) =>
         String(v)
-          .replace(/^MODEL_DIR=.*/, 'MODEL_DIR=/models/sparkglm--tinyglm')
-          .replace(/^SERVED_MODEL_NAME=.*/, 'SERVED_MODEL_NAME=sparkglm-tiny')
+          .replace(/^MODEL_DIR=.*/, `MODEL_DIR=/models/${fixtureDir}`)
+          .replace(/^SERVED_MODEL_NAME=.*/, `SERVED_MODEL_NAME=${fixtureId}`)
           .replace(/^SPEC_METHOD=.*/, 'SPEC_METHOD=none')
           .replace(/^MAX_MODEL_LEN=.*/, 'MAX_MODEL_LEN=32768')
           .replace(/^GPU_MEMORY_UTILIZATION=.*/, 'GPU_MEMORY_UTILIZATION=0.15')
       );
-      member.runtimeSettings.bootstrap.createArgs.push('-e', 'SPARKGLM_TINY_DUMMY=1', '-e', 'LANGUAGE_MODEL_ONLY=1');
+      member.runtimeSettings.bootstrap.createArgs.push(
+        '-e',
+        nvfp4Tiny ? 'SPARKGLM_NVFP4_TINY=1' : 'SPARKGLM_TINY_DUMMY=1',
+        '-e',
+        'LANGUAGE_MODEL_ONLY=1'
+      );
+      if (nvfp4Tiny) member.runtimeSettings.bootstrap.createArgs.push('-e', 'QUANTIZATION=compressed-tensors');
     }
   }
   if (e3)
@@ -147,7 +158,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       sourceRevision: value('--source-revision'),
       e3: args.includes('--e3'),
       tiny: args.includes('--tiny'),
-      nvfp4: args.includes('--nvfp4')
+      nvfp4: args.includes('--nvfp4'),
+      nvfp4Tiny: args.includes('--nvfp4-tiny')
     });
     if (!args.includes('--output')) throw new Error('--output required');
     await fs.writeFile(value('--output'), JSON.stringify(recipe, null, 2) + '\n');

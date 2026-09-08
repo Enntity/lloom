@@ -82,6 +82,15 @@ PYSAFE
   [[ "${SPEC_METHOD:-dflash}" == "none" ]] || { log "tinyGLM requires SPEC_METHOD=none"; exit 1; }
   args+=(--load-format dummy --generation-config vllm)
 fi
+if [[ "${SPARKGLM_NVFP4_TINY:-0}" == "1" ]]; then
+  python3 -S - "${MODEL_DIR}/config.json" <<'PYSAFE'
+import json, sys
+if json.load(open(sys.argv[1])).get("_sparkglm_fixture") != "tinyglm-nvfp4-v1":
+    raise SystemExit("NVFP4 dummy loading requires the synthetic fixture")
+PYSAFE
+  [[ "${SPEC_METHOD:-dflash}" == "none" && "${QUANTIZATION:-exl3}" == "compressed-tensors" ]] || { log "invalid NVFP4 fixture options"; exit 1; }
+  args+=(--load-format dummy --generation-config vllm)
+fi
 if [[ "${LANGUAGE_MODEL_ONLY:-0}" == "1" ]]; then
   args+=(--language-model-only)
 fi
