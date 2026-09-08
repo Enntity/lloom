@@ -82,10 +82,16 @@ export async function materialize({
     model.settings.memoryGb = 112;
     const target = recipe.setup.steps.find((v) => v.id === 'download-target');
     Object.assign(target, {
+      title: 'Download pinned GLM-5.3 Flash NVFP4 target',
       model: model.model,
       revision: '240131d6a447c8d89acd428c5ddfc85598651744',
       downloadSizeBytes: 197897969933
     });
+    recipe.links = recipe.links.map((link) =>
+      link.rel === 'model' ? { ...link, href: `https://huggingface.co/${model.model}/tree/${target.revision}` } : link
+    );
+    recipe.keywords = recipe.keywords.filter((value) => !['exl3', 'tr3'].includes(value));
+    recipe.keywords.push('nvfp4', 'compressed-tensors');
     for (const member of model.settings.placement.members) {
       member.runtime = `sparkglm-nvfp4-${member.role}`;
       member.resources.memoryGb = 112;
@@ -159,6 +165,13 @@ export async function materialize({
     for (const member of recipe.models[0].settings.placement.members) {
       member.runtimeSettings.bootstrap.createArgs.push('-e', 'SPARKGLM_EXL3_E3=1');
     }
+  for (const model of recipe.models) {
+    for (const member of model.settings.placement.members) {
+      if (member.runtimeSettings.warmup?.body) {
+        member.runtimeSettings.warmup.body.model = model.upstreamModel;
+      }
+    }
+  }
   return recipe;
 }
 

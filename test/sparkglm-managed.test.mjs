@@ -49,6 +49,11 @@ assert.equal(
 );
 await assert.rejects(materialize({ image, sourceRevision: 'b'.repeat(40), tiny: true, nvfp4: true }));
 for (const candidate of [tiny, nv]) {
+  for (const member of candidate.models[0].settings.placement.members) {
+    if (member.runtimeSettings.warmup?.body) {
+      assert.equal(member.runtimeSettings.warmup.body.model, candidate.models[0].upstreamModel);
+    }
+  }
   const p = planRecipe(
     candidate,
     { models: [], runtimes: {} },
