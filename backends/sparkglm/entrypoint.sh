@@ -15,6 +15,17 @@ log() { printf '[sparkglm rank=%s] %s\n' "${NODE_RANK:-?}" "$*"; }
   exit 1
 }
 
+if [[ "${SPARKGLM_EXL3_E3:-0}" == "1" ]]; then
+  [[ -f /usr/local/lib/python3.12/dist-packages/sparkglm_e3.py && -f /usr/local/lib/python3.12/dist-packages/exl3_fat_moe_ext.so ]] || {
+    log "selected image does not contain the E3 adapter and extension"; exit 1;
+  }
+fi
+if [[ "${SPARKGLM_NVFP4_TINY:-0}" == "1" ]]; then
+  [[ -f /usr/local/lib/python3.12/dist-packages/sparkglm_nvfp4_tiny.py && -f /usr/local/lib/python3.12/dist-packages/sparkglm_nvfp4_tiny.pth ]] || {
+    log "selected image does not contain the guarded NVFP4 fixture initializer"; exit 1;
+  }
+fi
+
 if [[ "${SPEC_METHOD:-dflash}" == "dflash" && ! -f "${DFLASH_MODEL_DIR:-}/config.json" ]]; then
   log "missing DFlash2 config: ${DFLASH_MODEL_DIR:-unset}/config.json"
   exit 1
