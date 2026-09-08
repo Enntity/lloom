@@ -248,6 +248,16 @@ export async function materialize({
       }
     }
   }
+  // Profiles intentionally share the appliance port and run one at a time.
+  // A generic /health response must not make another registered model look loaded.
+  const served = recipe.models[0];
+  served.settings.healthPath = '/v1/models';
+  served.settings.healthModel = served.upstreamModel;
+  for (const member of served.settings.placement.members) {
+    if (member.role !== 'head') continue;
+    member.runtimeSettings.healthUrl = `http://${'${leaderAddress}'}:${served.settings.port}/v1/models`;
+    member.runtimeSettings.healthModel = served.upstreamModel;
+  }
   return recipe;
 }
 

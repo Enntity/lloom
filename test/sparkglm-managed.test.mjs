@@ -188,3 +188,23 @@ await assert.rejects(materialize({ image, sourceRevision: 'b'.repeat(40), exl3Te
 await assert.rejects(materialize({ image, sourceRevision: 'b'.repeat(40), nvfp4: true, exl3TempRows: 32 }));
 
 await assert.rejects(materialize({ image, sourceRevision: 'b'.repeat(40), draftTp: 1 }), /not implemented/);
+
+// A different GLM or synthetic fixture on the same appliance port is not healthy
+// for this profile. Cover every model identity after its final rewrite.
+for (const candidate of [
+  recipe,
+  tiny,
+  nv,
+  await materialize({ image, sourceRevision: 'b'.repeat(40), nvfp4Tiny: true })
+]) {
+  const model = candidate.models[0];
+  assert.equal(model.settings.healthPath, '/v1/models');
+  assert.equal(model.settings.healthModel, model.upstreamModel);
+  const head = model.settings.placement.members.find((member) => member.role === 'head');
+  assert.equal(head.runtimeSettings.healthUrl, 'http://${leaderAddress}:8890/v1/models');
+  assert.equal(head.runtimeSettings.healthModel, model.upstreamModel);
+  assert.equal(
+    model.settings.placement.members.find((member) => member.role === 'worker').healthStrategy,
+    'container'
+  );
+}
