@@ -21,7 +21,8 @@ export async function materialize({
   e3Policy = 'large',
   e3Trace = false,
   contextTokens,
-  kvCacheGiB
+  kvCacheGiB,
+  exl3TempRows = 128
 }) {
   if (
     contextTokens !== undefined &&
@@ -208,10 +209,13 @@ export async function materialize({
     );
   }
   for (const model of recipe.models) {
+    if (![32, 64, 128].includes(exl3TempRows)) throw new Error('EXL3 temp rows must be 32, 64 or 128');
+    if ((nvfp4 || nvfp4Tiny) && exl3TempRows !== 128) throw new Error('EXL3 temp rows do not apply to NVFP4');
     if (contextTokens !== undefined) model.settings.contextWindow = contextTokens;
     for (const member of model.settings.placement.members) {
       member.runtimeSettings.bootstrap.createArgs = member.runtimeSettings.bootstrap.createArgs.map((value) => {
         let result = String(value)
+          .replace(/^EXL3_TEMP_ROWS_FUSED=.*/, `EXL3_TEMP_ROWS_FUSED=${exl3TempRows}`)
           .replace(/^DFLASH_DRAFT_TP=.*/, `DFLASH_DRAFT_TP=${draftTp}`)
           .replace(/^MAX_NUM_BATCHED_TOKENS=.*/, `MAX_NUM_BATCHED_TOKENS=${prefillTokens}`);
         if (contextTokens !== undefined) result = result.replace(/^MAX_MODEL_LEN=.*/, `MAX_MODEL_LEN=${contextTokens}`);
@@ -244,6 +248,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const value = (k) => args[args.indexOf(k) + 1];
   try {
     const recipe = await materialize({
+      exl3TempRows: args.includes('--exl3-temp-rows') ? Number(value('--exl3-temp-rows')) : 128,
       contextTokens: args.includes('--context-tokens') ? Number(value('--context-tokens')) : undefined,
       kvCacheGiB: args.includes('--kv-cache-gib') ? Number(value('--kv-cache-gib')) : undefined,
       image: value('--image-id'),

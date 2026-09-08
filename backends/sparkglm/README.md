@@ -86,3 +86,6 @@ settings for each target; the matched-budget option is a diagnostic control.
 KV allocation. Context capability must be reported with results; vLLM retains
 its cache admission check. Increasing KV requires actual host memory headroom.
 MoE overrides also accept the guarded NVFP4 tiny fixture for backend validation.
+
+`--exl3-temp-rows 32|64|128` tunes the thin/fat expert threshold. The default
+remains 128; a lower threshold requires operator and TP2 integration evidence.

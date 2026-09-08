@@ -171,3 +171,12 @@ for (const member of bounded.models[0].settings.placement.members) {
 for (const opts of [{ contextTokens: 0 }, { contextTokens: 1048577 }, { kvCacheGiB: 0 }, { kvCacheGiB: 2.5 }])
   await assert.rejects(materialize({ image, sourceRevision: 'b'.repeat(40), ...opts }));
 await materialize({ image, sourceRevision: 'b'.repeat(40), nvfp4Tiny: true, moeBackend: 'humming' });
+
+const lowerCap = await materialize({ image, sourceRevision: 'b'.repeat(40), e3: true, exl3TempRows: 32 });
+assert.ok(
+  lowerCap.models[0].settings.placement.members.every((m) =>
+    m.runtimeSettings.bootstrap.createArgs.includes('EXL3_TEMP_ROWS_FUSED=32')
+  )
+);
+await assert.rejects(materialize({ image, sourceRevision: 'b'.repeat(40), exl3TempRows: 0 }));
+await assert.rejects(materialize({ image, sourceRevision: 'b'.repeat(40), nvfp4: true, exl3TempRows: 32 }));
