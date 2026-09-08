@@ -1284,7 +1284,7 @@ function finalizeMetricBucket(bucket) {
   };
 }
 
-async function fetchUpstream({ backend, path, body, headers = {}, signal, dispatcher }) {
+async function fetchUpstream({ backend, path, body, headers = {}, signal, dispatcher = longRunningMediaDispatcher }) {
   const timeoutMs = backend.timeoutMs ?? 1800000;
   const fetchSignal = upstreamSignal(signal, timeoutMs);
   try {
