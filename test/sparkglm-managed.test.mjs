@@ -86,3 +86,18 @@ assert.deepEqual(
   []
 );
 await assert.rejects(materialize({ image, sourceRevision: 'b'.repeat(40), nvfp4Tiny: true, e3: true }));
+
+const matched = await materialize({ image, sourceRevision: 'b'.repeat(40), nvfp4Budget: true });
+assert.equal(matched.models[0].gatewayModel, recipe.models[0].gatewayModel);
+assert.equal(matched.models[0].settings.contextWindow, nv.models[0].settings.contextWindow);
+for (let rank = 0; rank < 2; rank += 1) {
+  const exl = matched.models[0].settings.placement.members[rank];
+  const fp4 = nv.models[0].settings.placement.members[rank];
+  const budget = (member) =>
+    member.runtimeSettings.bootstrap.createArgs.filter((v) =>
+      /^(MAX_MODEL_LEN|KV_CACHE_MEMORY_BYTES|GPU_MEMORY_UTILIZATION|MAX_NUM_BATCHED_TOKENS|MAX_NUM_SEQS)=/.test(v)
+    );
+  assert.deepEqual(budget(exl), budget(fp4));
+  assert.equal(exl.resources.memoryGb, fp4.resources.memoryGb);
+}
+await assert.rejects(materialize({ image, sourceRevision: 'b'.repeat(40), tiny: true, nvfp4Budget: true }));

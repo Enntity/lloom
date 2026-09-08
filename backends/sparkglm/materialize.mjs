@@ -12,10 +12,12 @@ export async function materialize({
   e3 = false,
   tiny = false,
   nvfp4 = false,
-  nvfp4Tiny = false
+  nvfp4Tiny = false,
+  nvfp4Budget = false
 }) {
   if (nvfp4Tiny && (nvfp4 || e3)) throw new Error('NVFP4 fixture cannot use real-model or E3 options');
   tiny = tiny || nvfp4Tiny;
+  if (tiny && nvfp4Budget) throw new Error('Full-model comparison budget cannot use a tiny fixture');
   if (!/^sha256:[0-9a-f]{64}$/.test(image || '')) throw new Error('full local image ID required');
   if (!/^sha256:[0-9a-f]{64}$/.test(workerImage || '')) throw new Error('full worker image ID required');
   if (!/^[0-9a-f]{40}$/.test(sourceRevision || '')) throw new Error('full SparkGLM source revision required');
@@ -102,6 +104,18 @@ export async function materialize({
       );
     }
   }
+  if (nvfp4Budget && !nvfp4) {
+    const model = recipe.models[0];
+    model.settings.contextWindow = 262144;
+    model.settings.memoryGb = 112;
+    for (const member of model.settings.placement.members) {
+      member.resources.memoryGb = 112;
+      member.runtimeSettings.bootstrap.createArgs = member.runtimeSettings.bootstrap.createArgs.map((v) =>
+        String(v).replace(/^MAX_MODEL_LEN=.*/, 'MAX_MODEL_LEN=262144')
+      );
+      member.runtimeSettings.bootstrap.createArgs.push('-e', 'KV_CACHE_MEMORY_BYTES=8589934592');
+    }
+  }
   if (tiny) {
     const fixtureId = nvfp4Tiny ? 'sparkglm-tiny-nvfp4' : 'sparkglm-tiny';
     const fixtureDir = nvfp4Tiny ? 'sparkglm--tinyglm-nvfp4' : 'sparkglm--tinyglm';
@@ -159,7 +173,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       e3: args.includes('--e3'),
       tiny: args.includes('--tiny'),
       nvfp4: args.includes('--nvfp4'),
-      nvfp4Tiny: args.includes('--nvfp4-tiny')
+      nvfp4Tiny: args.includes('--nvfp4-tiny'),
+      nvfp4Budget: args.includes('--nvfp4-budget')
     });
     if (!args.includes('--output')) throw new Error('--output required');
     await fs.writeFile(value('--output'), JSON.stringify(recipe, null, 2) + '\n');

@@ -56,6 +56,9 @@ pinned current compressed-tensors checkpoint. It cannot be combined with
 repeat EXL3 with matching limits before comparing performance. Native kernel
 execution and model quality require separate evidence. None of these options
 changes the production Presence alias or promotes an experimental backend.
+Use `--nvfp4-budget` when materializing that EXL3 comparison arm; it selects
+the same explicit 8 GiB KV per rank, 262144 context, and admission reservation.
+It can be combined with `--e3`, but cannot be used with a tiny fixture.
 
 `--nvfp4-tiny` selects the separate `sparkglm-tiny-nvfp4` fixture. Build its
 reviewed dummy-loader image and metadata from SparkGLM's NVFP4 experiment
