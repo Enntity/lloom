@@ -215,7 +215,12 @@ export async function materialize({
     if (![32, 64, 128].includes(exl3TempRows)) throw new Error('EXL3 temp rows must be 32, 64 or 128');
     if ((nvfp4 || nvfp4Tiny) && exl3TempRows !== 128) throw new Error('EXL3 temp rows do not apply to NVFP4');
     if (contextTokens !== undefined) model.settings.contextWindow = contextTokens;
+    // Explicit cache growth must also reach LLooM's admission planner. Keep the
+    // existing conservative reservation when a smaller cache is requested.
+    const extraCacheGiB = Math.max(0, (kvCacheGiB ?? 8) - 8);
+    model.settings.memoryGb += extraCacheGiB;
     for (const member of model.settings.placement.members) {
+      member.resources.memoryGb += extraCacheGiB;
       member.runtimeSettings.bootstrap.createArgs = member.runtimeSettings.bootstrap.createArgs.map((value) => {
         let result = String(value)
           .replace(/^EXL3_TEMP_ROWS_FUSED=.*/, `EXL3_TEMP_ROWS_FUSED=${exl3TempRows}`)

@@ -88,6 +88,8 @@ settings for each target; the matched-budget option is a diagnostic control.
 `--context-tokens N` and `--kv-cache-gib N` explicitly tune context and per-rank
 KV allocation. Context capability must be reported with results; vLLM retains
 its cache admission check. Increasing KV requires actual host memory headroom.
+Budgets above 8 GiB also increase LLooM's per-rank admission reservation;
+smaller budgets preserve the existing conservative reservation.
 MoE overrides also accept the guarded NVFP4 tiny fixture for backend validation.
 
 `--exl3-temp-rows 32|64|128` tunes the thin/fat expert threshold. The default

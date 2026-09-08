@@ -164,6 +164,10 @@ const bounded = await materialize({
   kvCacheGiB: 6
 });
 assert.equal(bounded.models[0].settings.contextWindow, 49152);
+assert.equal(bounded.models[0].settings.memoryGb, nv.models[0].settings.memoryGb);
+const largerCache = await materialize({ image, sourceRevision: 'b'.repeat(40), nvfp4: true, kvCacheGiB: 16 });
+assert.equal(largerCache.models[0].settings.memoryGb, nv.models[0].settings.memoryGb + 8);
+assert.ok(largerCache.models[0].settings.placement.members.every((m) => m.resources.memoryGb === 120));
 for (const member of bounded.models[0].settings.placement.members) {
   const args = member.runtimeSettings.bootstrap.createArgs;
   assert.equal(args.filter((v) => String(v).startsWith('KV_CACHE_MEMORY_BYTES=')).length, 1);
