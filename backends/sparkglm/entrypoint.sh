@@ -10,6 +10,13 @@ log() { printf '[sparkglm rank=%s] %s\n' "${NODE_RANK:-?}" "$*"; }
 : "${MASTER_ADDR:?MASTER_ADDR is required}"
 : "${MODEL_DIR:?MODEL_DIR is required}"
 
+# The inherited DFlash loader preserves the target parallel configuration;
+# accepting draft TP1 here would silently run TP2 and mislabel measurements.
+if [[ "${SPEC_METHOD:-dflash}" == "dflash" && "${DFLASH_DRAFT_TP:-2}" != "${CLUSTER_NODE_COUNT}" ]]; then
+  log "independent DFlash draft TP is not implemented by this adapter; use target TP=${CLUSTER_NODE_COUNT}"
+  exit 1
+fi
+
 [[ -f "${MODEL_DIR}/config.json" ]] || {
   log "missing target config: ${MODEL_DIR}/config.json"
   exit 1

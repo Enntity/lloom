@@ -37,7 +37,8 @@ export async function materialize({
   if (!e3 && (e3Policy !== 'large' || e3Trace)) throw new Error('E3 policy controls require --e3');
   if (tiny && nvfp4Budget) throw new Error('Full-model comparison budget cannot use a tiny fixture');
   if (tiny && mxfp8Draft) throw new Error('Tiny fixtures have no speculative draft');
-  if (![1, 2].includes(draftTp)) throw new Error('Draft TP must be 1 or 2');
+  if (draftTp !== 2)
+    throw new Error('This SparkGLM DFlash loader uses target TP2; independent draft TP1 is not implemented');
   if (!Number.isInteger(prefillTokens) || prefillTokens < 128 || prefillTokens > 32768)
     throw new Error('Prefill token budget must be an integer in 128..32768');
   if (!['auto', 'flashinfer_cutlass', 'humming', 'marlin', 'flashinfer_b12x'].includes(moeBackend))

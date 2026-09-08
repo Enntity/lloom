@@ -114,7 +114,7 @@ const tuned = await materialize({
   sourceRevision: 'b'.repeat(40),
   nvfp4: true,
   mxfp8Draft: true,
-  draftTp: 1,
+  draftTp: 2,
   prefillTokens: 1024,
   moeBackend: 'humming'
 });
@@ -137,7 +137,7 @@ assert.equal(draft.revision, '610aa967a92bfeb97e3d848dcb8693553e8b6a55');
 for (const member of tuned.models[0].settings.placement.members) {
   const args = member.runtimeSettings.bootstrap.createArgs;
   assert(args.includes('DFLASH_MODEL_DIR=/models/' + draft.model.replace('/', '--')));
-  assert(args.includes('DFLASH_DRAFT_TP=1'));
+  assert(args.includes('DFLASH_DRAFT_TP=2'));
   assert(args.includes('MAX_NUM_BATCHED_TOKENS=1024'));
 }
 await assert.rejects(materialize({ image, sourceRevision: 'b'.repeat(40), draftTp: 3 }));
@@ -182,3 +182,5 @@ assert.ok(
 );
 await assert.rejects(materialize({ image, sourceRevision: 'b'.repeat(40), exl3TempRows: 0 }));
 await assert.rejects(materialize({ image, sourceRevision: 'b'.repeat(40), nvfp4: true, exl3TempRows: 32 }));
+
+await assert.rejects(materialize({ image, sourceRevision: 'b'.repeat(40), draftTp: 1 }), /not implemented/);

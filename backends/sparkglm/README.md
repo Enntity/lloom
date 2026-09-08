@@ -77,8 +77,9 @@ buffers count against GB10's shared memory budget.
 
 For performance experiments, `--mxfp8-draft` selects the separately pinned
 MXFP8 DFlash2 checkpoint and requires an image with its quantized selector,
-grouped-convolution and fused context K/V support. `--draft-tp 1|2` and
-`--prefill-tokens N` vary draft communication and prefill chunking. NVFP4 also
+grouped-convolution and fused context K/V support. `--prefill-tokens N` varies prefill chunking. Draft TP must remain 2: the
+inherited DFlash loader preserves the target parallel group even if vLLM accepts
+a TP1 configuration flag. This adapter rejects that misleading request early. NVFP4 also
 accepts an explicit `--moe-backend`; vLLM must still validate its compatibility,
 including SwiGLU clamping and mixed quantization. These are experiment controls,
 not recommended defaults. Final performance selection may use different tuned
@@ -91,3 +92,7 @@ MoE overrides also accept the guarded NVFP4 tiny fixture for backend validation.
 
 `--exl3-temp-rows 32|64|128` tunes the thin/fat expert threshold. The default
 remains 128; a lower threshold requires operator and TP2 integration evidence.
+
+Large prefill chunks also increase the padded sliding-window draft cache
+reservation. The observed 16K-chunk profile needed 15.2 GiB even for one 64K
+request; smaller chunks are essential to explore on memory-limited NVFP4.
