@@ -106,3 +106,38 @@ for (let rank = 0; rank < 2; rank += 1) {
   assert.equal(exl.resources.memoryGb, fp4.resources.memoryGb);
 }
 await assert.rejects(materialize({ image, sourceRevision: 'b'.repeat(40), tiny: true, nvfp4Budget: true }));
+
+const tuned = await materialize({
+  image,
+  sourceRevision: 'b'.repeat(40),
+  nvfp4: true,
+  mxfp8Draft: true,
+  draftTp: 1,
+  prefillTokens: 1024,
+  moeBackend: 'humming'
+});
+assert.deepEqual(
+  planRecipe(
+    tuned,
+    { models: [], runtimes: {} },
+    {
+      modelRoot: '/models',
+      platform: 'linux',
+      arch: 'arm64',
+      backendIds: new Set(['docker-vllm']),
+      checkLocalReferences: false
+    }
+  ).validationErrors,
+  []
+);
+const draft = tuned.setup.steps.find((step) => step.id === 'download-dflash2');
+assert.equal(draft.revision, '610aa967a92bfeb97e3d848dcb8693553e8b6a55');
+for (const member of tuned.models[0].settings.placement.members) {
+  const args = member.runtimeSettings.bootstrap.createArgs;
+  assert(args.includes('DFLASH_MODEL_DIR=/models/' + draft.model.replace('/', '--')));
+  assert(args.includes('DFLASH_DRAFT_TP=1'));
+  assert(args.includes('MAX_NUM_BATCHED_TOKENS=1024'));
+}
+await assert.rejects(materialize({ image, sourceRevision: 'b'.repeat(40), draftTp: 3 }));
+await assert.rejects(materialize({ image, sourceRevision: 'b'.repeat(40), prefillTokens: NaN }));
+await assert.rejects(materialize({ image, sourceRevision: 'b'.repeat(40), tiny: true, mxfp8Draft: true }));

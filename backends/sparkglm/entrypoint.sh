@@ -25,6 +25,11 @@ if [[ "${SPARKGLM_NVFP4_TINY:-0}" == "1" ]]; then
     log "selected image does not contain the guarded NVFP4 fixture initializer"; exit 1;
   }
 fi
+if [[ "${SPARKGLM_MXFP8_DRAFT:-0}" == "1" ]]; then
+  grep -q '_fused_kv_weight_scale' /opt/glm53/patch_dflash2.py || {
+    log "selected image does not contain MXFP8 DFlash2 context projection support"; exit 1;
+  }
+fi
 
 if [[ "${SPEC_METHOD:-dflash}" == "dflash" && ! -f "${DFLASH_MODEL_DIR:-}/config.json" ]]; then
   log "missing DFlash2 config: ${DFLASH_MODEL_DIR:-unset}/config.json"
@@ -108,6 +113,9 @@ fi
 
 if [[ -n "${KV_CACHE_MEMORY_BYTES:-}" ]]; then
   args+=(--kv-cache-memory-bytes "${KV_CACHE_MEMORY_BYTES}")
+fi
+if [[ -n "${MOE_BACKEND:-}" ]]; then
+  args+=(--moe-backend "${MOE_BACKEND}")
 fi
 
 if [[ "${NODE_RANK}" != "0" ]]; then

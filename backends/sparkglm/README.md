@@ -67,3 +67,12 @@ ordinary integer dummy weights are uninitialized in the underlying loader.
 This option uses no production aliases and cannot enable E3 or real NVFP4
 loading. Finish model downloads before full-model cold starts: downloader
 buffers count against GB10's shared memory budget.
+
+For performance experiments, `--mxfp8-draft` selects the separately pinned
+MXFP8 DFlash2 checkpoint and requires an image with its quantized selector,
+grouped-convolution and fused context K/V support. `--draft-tp 1|2` and
+`--prefill-tokens N` vary draft communication and prefill chunking. NVFP4 also
+accepts an explicit `--moe-backend`; vLLM must still validate its compatibility,
+including SwiGLU clamping and mixed quantization. These are experiment controls,
+not recommended defaults. Final performance selection may use different tuned
+settings for each target; the matched-budget option is a diagnostic control.

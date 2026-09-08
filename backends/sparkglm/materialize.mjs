@@ -13,11 +13,22 @@ export async function materialize({
   tiny = false,
   nvfp4 = false,
   nvfp4Tiny = false,
-  nvfp4Budget = false
+  nvfp4Budget = false,
+  mxfp8Draft = false,
+  draftTp = 2,
+  prefillTokens = 7168,
+  moeBackend = 'auto'
 }) {
   if (nvfp4Tiny && (nvfp4 || e3)) throw new Error('NVFP4 fixture cannot use real-model or E3 options');
   tiny = tiny || nvfp4Tiny;
   if (tiny && nvfp4Budget) throw new Error('Full-model comparison budget cannot use a tiny fixture');
+  if (tiny && mxfp8Draft) throw new Error('Tiny fixtures have no speculative draft');
+  if (![1, 2].includes(draftTp)) throw new Error('Draft TP must be 1 or 2');
+  if (!Number.isInteger(prefillTokens) || prefillTokens < 128 || prefillTokens > 32768)
+    throw new Error('Prefill token budget must be an integer in 128..32768');
+  if (!['auto', 'flashinfer_cutlass', 'humming', 'marlin', 'flashinfer_b12x'].includes(moeBackend))
+    throw new Error('Unsupported experimental MoE backend');
+  if (moeBackend !== 'auto' && !nvfp4) throw new Error('MoE backend override is for NVFP4 experiments');
   if (!/^sha256:[0-9a-f]{64}$/.test(image || '')) throw new Error('full local image ID required');
   if (!/^sha256:[0-9a-f]{64}$/.test(workerImage || '')) throw new Error('full worker image ID required');
   if (!/^[0-9a-f]{40}$/.test(sourceRevision || '')) throw new Error('full SparkGLM source revision required');
@@ -165,8 +176,36 @@ export async function materialize({
     for (const member of recipe.models[0].settings.placement.members) {
       member.runtimeSettings.bootstrap.createArgs.push('-e', 'SPARKGLM_EXL3_E3=1');
     }
+  if (mxfp8Draft) {
+    const draft = recipe.setup.steps.find((step) => step.id === 'download-dflash2');
+    Object.assign(draft, {
+      title: 'Download pinned GLM-5.3 Flash MXFP8 DFlash2 draft',
+      model: 'local-inference-lab/GLM-5.3-Flash-DFlash2-MXFP8',
+      revision: '610aa967a92bfeb97e3d848dcb8693553e8b6a55'
+    });
+    // The original BF16 byte estimate must not describe the quantized checkpoint.
+    delete draft.downloadSizeBytes;
+    recipe.links = recipe.links.map((link) =>
+      link.rel === 'draft-model'
+        ? { ...link, href: `https://huggingface.co/${draft.model}/tree/${draft.revision}` }
+        : link
+    );
+  }
   for (const model of recipe.models) {
     for (const member of model.settings.placement.members) {
+      member.runtimeSettings.bootstrap.createArgs = member.runtimeSettings.bootstrap.createArgs.map((value) => {
+        let result = String(value)
+          .replace(/^DFLASH_DRAFT_TP=.*/, `DFLASH_DRAFT_TP=${draftTp}`)
+          .replace(/^MAX_NUM_BATCHED_TOKENS=.*/, `MAX_NUM_BATCHED_TOKENS=${prefillTokens}`);
+        if (mxfp8Draft)
+          result = result.replace(
+            /^DFLASH_MODEL_DIR=.*/,
+            'DFLASH_MODEL_DIR=/models/local-inference-lab--GLM-5.3-Flash-DFlash2-MXFP8'
+          );
+        return result;
+      });
+      if (mxfp8Draft) member.runtimeSettings.bootstrap.createArgs.push('-e', 'SPARKGLM_MXFP8_DRAFT=1');
+      if (moeBackend !== 'auto') member.runtimeSettings.bootstrap.createArgs.push('-e', `MOE_BACKEND=${moeBackend}`);
       if (member.runtimeSettings.warmup?.body) {
         member.runtimeSettings.warmup.body.model = model.upstreamModel;
       }
@@ -187,7 +226,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       tiny: args.includes('--tiny'),
       nvfp4: args.includes('--nvfp4'),
       nvfp4Tiny: args.includes('--nvfp4-tiny'),
-      nvfp4Budget: args.includes('--nvfp4-budget')
+      nvfp4Budget: args.includes('--nvfp4-budget'),
+      mxfp8Draft: args.includes('--mxfp8-draft'),
+      draftTp: args.includes('--draft-tp') ? Number(value('--draft-tp')) : 2,
+      prefillTokens: args.includes('--prefill-tokens') ? Number(value('--prefill-tokens')) : 7168,
+      moeBackend: args.includes('--moe-backend') ? value('--moe-backend') : 'auto'
     });
     if (!args.includes('--output')) throw new Error('--output required');
     await fs.writeFile(value('--output'), JSON.stringify(recipe, null, 2) + '\n');
