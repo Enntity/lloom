@@ -153,3 +153,21 @@ for (const member of concurrent.models[0].settings.placement.members) {
   assert(member.runtimeSettings.bootstrap.createArgs.includes('SPARKGLM_EXL3_E3_POLICY=concurrent'));
 }
 await assert.rejects(materialize({ image, sourceRevision: 'b'.repeat(40), e3Policy: 'concurrent' }));
+
+const bounded = await materialize({
+  image,
+  sourceRevision: 'b'.repeat(40),
+  nvfp4: true,
+  contextTokens: 49152,
+  kvCacheGiB: 6
+});
+assert.equal(bounded.models[0].settings.contextWindow, 49152);
+for (const member of bounded.models[0].settings.placement.members) {
+  const args = member.runtimeSettings.bootstrap.createArgs;
+  assert.equal(args.filter((v) => String(v).startsWith('KV_CACHE_MEMORY_BYTES=')).length, 1);
+  assert.ok(args.includes('KV_CACHE_MEMORY_BYTES=6442450944'));
+  assert.ok(args.includes('MAX_MODEL_LEN=49152'));
+}
+for (const opts of [{ contextTokens: 0 }, { contextTokens: 1048577 }, { kvCacheGiB: 0 }, { kvCacheGiB: 2.5 }])
+  await assert.rejects(materialize({ image, sourceRevision: 'b'.repeat(40), ...opts }));
+await materialize({ image, sourceRevision: 'b'.repeat(40), nvfp4Tiny: true, moeBackend: 'humming' });

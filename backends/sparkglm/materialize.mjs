@@ -19,8 +19,17 @@ export async function materialize({
   prefillTokens = 7168,
   moeBackend = 'auto',
   e3Policy = 'large',
-  e3Trace = false
+  e3Trace = false,
+  contextTokens,
+  kvCacheGiB
 }) {
+  if (
+    contextTokens !== undefined &&
+    (!Number.isInteger(contextTokens) || contextTokens < 4096 || contextTokens > 1048576)
+  )
+    throw new Error('Context token limit must be an integer in 4096..1048576');
+  if (kvCacheGiB !== undefined && (!Number.isInteger(kvCacheGiB) || kvCacheGiB < 1 || kvCacheGiB > 32))
+    throw new Error('KV cache budget must be an integer in 1..32 GiB');
   if (nvfp4Tiny && (nvfp4 || e3)) throw new Error('NVFP4 fixture cannot use real-model or E3 options');
   tiny = tiny || nvfp4Tiny;
   if (!['large', 'concurrent'].includes(e3Policy)) throw new Error('Unknown E3 policy');
@@ -32,7 +41,7 @@ export async function materialize({
     throw new Error('Prefill token budget must be an integer in 128..32768');
   if (!['auto', 'flashinfer_cutlass', 'humming', 'marlin', 'flashinfer_b12x'].includes(moeBackend))
     throw new Error('Unsupported experimental MoE backend');
-  if (moeBackend !== 'auto' && !nvfp4) throw new Error('MoE backend override is for NVFP4 experiments');
+  if (moeBackend !== 'auto' && !nvfp4 && !nvfp4Tiny) throw new Error('MoE backend override is for NVFP4 experiments');
   if (!/^sha256:[0-9a-f]{64}$/.test(image || '')) throw new Error('full local image ID required');
   if (!/^sha256:[0-9a-f]{64}$/.test(workerImage || '')) throw new Error('full worker image ID required');
   if (!/^[0-9a-f]{40}$/.test(sourceRevision || '')) throw new Error('full SparkGLM source revision required');
@@ -93,7 +102,7 @@ export async function materialize({
     model.backendConfig = 'sparkglm-nvfp4';
     model.runtime = 'sparkglm-nvfp4-cluster';
     model.aliases = [];
-    model.settings.contextWindow = 262144;
+    model.settings.contextWindow = 65536;
     model.settings.memoryGb = 112;
     const target = recipe.setup.steps.find((v) => v.id === 'download-target');
     Object.assign(target, {
@@ -115,7 +124,7 @@ export async function materialize({
         String(v)
           .replace(/^MODEL_DIR=.*/, 'MODEL_DIR=/models/RedHatAI--GLM-5.3-Flash-NVFP4')
           .replace(/^SERVED_MODEL_NAME=.*/, 'SERVED_MODEL_NAME=sparkglm-nvfp4')
-          .replace(/^MAX_MODEL_LEN=.*/, 'MAX_MODEL_LEN=262144')
+          .replace(/^MAX_MODEL_LEN=.*/, 'MAX_MODEL_LEN=65536')
       );
       member.runtimeSettings.bootstrap.createArgs.push(
         '-e',
@@ -127,12 +136,12 @@ export async function materialize({
   }
   if (nvfp4Budget && !nvfp4) {
     const model = recipe.models[0];
-    model.settings.contextWindow = 262144;
+    model.settings.contextWindow = 65536;
     model.settings.memoryGb = 112;
     for (const member of model.settings.placement.members) {
       member.resources.memoryGb = 112;
       member.runtimeSettings.bootstrap.createArgs = member.runtimeSettings.bootstrap.createArgs.map((v) =>
-        String(v).replace(/^MAX_MODEL_LEN=.*/, 'MAX_MODEL_LEN=262144')
+        String(v).replace(/^MAX_MODEL_LEN=.*/, 'MAX_MODEL_LEN=65536')
       );
       member.runtimeSettings.bootstrap.createArgs.push('-e', 'KV_CACHE_MEMORY_BYTES=8589934592');
     }
@@ -199,11 +208,13 @@ export async function materialize({
     );
   }
   for (const model of recipe.models) {
+    if (contextTokens !== undefined) model.settings.contextWindow = contextTokens;
     for (const member of model.settings.placement.members) {
       member.runtimeSettings.bootstrap.createArgs = member.runtimeSettings.bootstrap.createArgs.map((value) => {
         let result = String(value)
           .replace(/^DFLASH_DRAFT_TP=.*/, `DFLASH_DRAFT_TP=${draftTp}`)
           .replace(/^MAX_NUM_BATCHED_TOKENS=.*/, `MAX_NUM_BATCHED_TOKENS=${prefillTokens}`);
+        if (contextTokens !== undefined) result = result.replace(/^MAX_MODEL_LEN=.*/, `MAX_MODEL_LEN=${contextTokens}`);
         if (mxfp8Draft)
           result = result.replace(
             /^DFLASH_MODEL_DIR=.*/,
@@ -211,6 +222,13 @@ export async function materialize({
           );
         return result;
       });
+      if (kvCacheGiB !== undefined) {
+        const args = member.runtimeSettings.bootstrap.createArgs;
+        const existing = args.findIndex((v) => String(v).startsWith('KV_CACHE_MEMORY_BYTES='));
+        const setting = `KV_CACHE_MEMORY_BYTES=${kvCacheGiB * 1073741824}`;
+        if (existing >= 0) args[existing] = setting;
+        else args.push('-e', setting);
+      }
       if (mxfp8Draft) member.runtimeSettings.bootstrap.createArgs.push('-e', 'SPARKGLM_MXFP8_DRAFT=1');
       if (moeBackend !== 'auto') member.runtimeSettings.bootstrap.createArgs.push('-e', `MOE_BACKEND=${moeBackend}`);
       if (member.runtimeSettings.warmup?.body) {
@@ -226,6 +244,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const value = (k) => args[args.indexOf(k) + 1];
   try {
     const recipe = await materialize({
+      contextTokens: args.includes('--context-tokens') ? Number(value('--context-tokens')) : undefined,
+      kvCacheGiB: args.includes('--kv-cache-gib') ? Number(value('--kv-cache-gib')) : undefined,
       image: value('--image-id'),
       workerImage: args.includes('--worker-image-id') ? value('--worker-image-id') : undefined,
       sourceRevision: value('--source-revision'),

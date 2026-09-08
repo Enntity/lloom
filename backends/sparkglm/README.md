@@ -56,12 +56,13 @@ image helper; `--e3-trace` records initial selection decisions for qualification
 
 `--nvfp4` generates the isolated `sparkglm-nvfp4` runtime for the separately
 pinned current compressed-tensors checkpoint. It cannot be combined with
-`--tiny` or `--e3`. This initial lane uses 8 GiB KV per rank and 262144 context;
-repeat EXL3 with matching limits before comparing performance. Native kernel
+`--tiny` or `--e3`. This initial lane uses 8 GiB KV per rank and 65536 context;
+The original 262144 context failed vLLM cache admission with this budget.
+Use matched limits for diagnostic comparisons and independently tune finalists. Native kernel
 execution and model quality require separate evidence. None of these options
 changes the production Presence alias or promotes an experimental backend.
 Use `--nvfp4-budget` when materializing that EXL3 comparison arm; it selects
-the same explicit 8 GiB KV per rank, 262144 context, and admission reservation.
+the same explicit 8 GiB KV per rank, 65536 context, and admission reservation.
 It can be combined with `--e3`, but cannot be used with a tiny fixture.
 
 `--nvfp4-tiny` selects the separate `sparkglm-tiny-nvfp4` fixture. Build its
@@ -80,3 +81,8 @@ accepts an explicit `--moe-backend`; vLLM must still validate its compatibility,
 including SwiGLU clamping and mixed quantization. These are experiment controls,
 not recommended defaults. Final performance selection may use different tuned
 settings for each target; the matched-budget option is a diagnostic control.
+
+`--context-tokens N` and `--kv-cache-gib N` explicitly tune context and per-rank
+KV allocation. Context capability must be reported with results; vLLM retains
+its cache admission check. Increasing KV requires actual host memory headroom.
+MoE overrides also accept the guarded NVFP4 tiny fixture for backend validation.
