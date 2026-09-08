@@ -17,10 +17,14 @@ export async function materialize({
   mxfp8Draft = false,
   draftTp = 2,
   prefillTokens = 7168,
-  moeBackend = 'auto'
+  moeBackend = 'auto',
+  e3Policy = 'large',
+  e3Trace = false
 }) {
   if (nvfp4Tiny && (nvfp4 || e3)) throw new Error('NVFP4 fixture cannot use real-model or E3 options');
   tiny = tiny || nvfp4Tiny;
+  if (!['large', 'concurrent'].includes(e3Policy)) throw new Error('Unknown E3 policy');
+  if (!e3 && (e3Policy !== 'large' || e3Trace)) throw new Error('E3 policy controls require --e3');
   if (tiny && nvfp4Budget) throw new Error('Full-model comparison budget cannot use a tiny fixture');
   if (tiny && mxfp8Draft) throw new Error('Tiny fixtures have no speculative draft');
   if (![1, 2].includes(draftTp)) throw new Error('Draft TP must be 1 or 2');
@@ -175,6 +179,9 @@ export async function materialize({
   if (e3)
     for (const member of recipe.models[0].settings.placement.members) {
       member.runtimeSettings.bootstrap.createArgs.push('-e', 'SPARKGLM_EXL3_E3=1');
+      if (e3Policy !== 'large')
+        member.runtimeSettings.bootstrap.createArgs.push('-e', `SPARKGLM_EXL3_E3_POLICY=${e3Policy}`);
+      if (e3Trace) member.runtimeSettings.bootstrap.createArgs.push('-e', 'SPARKGLM_EXL3_E3_TRACE=1');
     }
   if (mxfp8Draft) {
     const draft = recipe.setup.steps.find((step) => step.id === 'download-dflash2');
@@ -230,7 +237,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       mxfp8Draft: args.includes('--mxfp8-draft'),
       draftTp: args.includes('--draft-tp') ? Number(value('--draft-tp')) : 2,
       prefillTokens: args.includes('--prefill-tokens') ? Number(value('--prefill-tokens')) : 7168,
-      moeBackend: args.includes('--moe-backend') ? value('--moe-backend') : 'auto'
+      moeBackend: args.includes('--moe-backend') ? value('--moe-backend') : 'auto',
+      e3Policy: args.includes('--e3-policy') ? value('--e3-policy') : 'large',
+      e3Trace: args.includes('--e3-trace')
     });
     if (!args.includes('--output')) throw new Error('--output required');
     await fs.writeFile(value('--output'), JSON.stringify(recipe, null, 2) + '\n');

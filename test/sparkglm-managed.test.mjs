@@ -141,3 +141,15 @@ for (const member of tuned.models[0].settings.placement.members) {
 await assert.rejects(materialize({ image, sourceRevision: 'b'.repeat(40), draftTp: 3 }));
 await assert.rejects(materialize({ image, sourceRevision: 'b'.repeat(40), prefillTokens: NaN }));
 await assert.rejects(materialize({ image, sourceRevision: 'b'.repeat(40), tiny: true, mxfp8Draft: true }));
+const concurrent = await materialize({
+  image,
+  sourceRevision: 'b'.repeat(40),
+  e3: true,
+  tiny: true,
+  e3Policy: 'concurrent',
+  e3Trace: true
+});
+for (const member of concurrent.models[0].settings.placement.members) {
+  assert(member.runtimeSettings.bootstrap.createArgs.includes('SPARKGLM_EXL3_E3_POLICY=concurrent'));
+}
+await assert.rejects(materialize({ image, sourceRevision: 'b'.repeat(40), e3Policy: 'concurrent' }));

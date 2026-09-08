@@ -50,6 +50,10 @@ build the documented tinyGLM fixture on each host and expose its snapshot at
 the config identifies the synthetic `tinyglm-v1` fixture and speculation is
 disabled. Stop the full runtime before starting the fixture.
 
+`--e3-policy concurrent` selects the newer experimental CPU-metadata policy
+that keeps solo prefill on the reference path. It requires the corresponding
+image helper; `--e3-trace` records initial selection decisions for qualification.
+
 `--nvfp4` generates the isolated `sparkglm-nvfp4` runtime for the separately
 pinned current compressed-tensors checkpoint. It cannot be combined with
 `--tiny` or `--e3`. This initial lane uses 8 GiB KV per rank and 262144 context;

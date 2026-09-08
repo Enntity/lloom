@@ -19,6 +19,11 @@ if [[ "${SPARKGLM_EXL3_E3:-0}" == "1" ]]; then
   [[ -f /usr/local/lib/python3.12/dist-packages/sparkglm_e3.py && -f /usr/local/lib/python3.12/dist-packages/exl3_fat_moe_ext.so ]] || {
     log "selected image does not contain the E3 adapter and extension"; exit 1;
   }
+  if [[ "${SPARKGLM_EXL3_E3_POLICY:-large}" == "concurrent" ]]; then
+    [[ -f /usr/local/lib/python3.12/dist-packages/sparkglm_e3_policy.py ]] || {
+      log "selected image does not contain the concurrent E3 policy"; exit 1;
+    }
+  fi
 fi
 if [[ "${SPARKGLM_NVFP4_TINY:-0}" == "1" ]]; then
   [[ -f /usr/local/lib/python3.12/dist-packages/sparkglm_nvfp4_tiny.py && -f /usr/local/lib/python3.12/dist-packages/sparkglm_nvfp4_tiny.pth ]] || {
