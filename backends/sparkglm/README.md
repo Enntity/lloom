@@ -35,6 +35,8 @@ lloom runtime-stop glm53-flash-exl3-cluster --json
 ```
 
 Installing the profile does not set keep-warm or resume suspended routes.
+Independent Docker restart is disabled: LLooM owns distributed retries so a
+failed head cannot repeatedly reload beside a stale NCCL worker.
 Use `lloom route glm53f-local --json` to inspect the strict local canary alias.
 Verify a streamed tool-call through that alias and confirm gateway metrics
 attribute it to `glm-5.3-flash-exl3`, in addition to checking both rank image

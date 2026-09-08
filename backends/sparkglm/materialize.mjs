@@ -72,8 +72,10 @@ export async function materialize({
     const boot = member.runtimeSettings.bootstrap;
     boot.image = member.role === 'worker' ? workerImage : image;
     boot.pull = false;
-    boot.createArgs = boot.createArgs.map((v) =>
-      String(v)
+    // Independent Docker retries cannot reconstruct the peer's NCCL session.
+    // LLooM owns retrying the distributed runtime as a pair.
+    boot.createArgs = boot.createArgs.map((v, index, args) =>
+      String(index > 0 && args[index - 1] === '--restart' ? 'no' : v)
         .replace('backends/glm53-exl3/entrypoint.sh', 'backends/sparkglm/entrypoint.sh')
         .replace('GLM53_MIXED_PREFILL_CHUNK=skip', 'GLM53_MIXED_PREFILL_CHUNK=0')
         .replace('GLM53_SPINWAIT_MS=stock', 'GLM53_SPINWAIT_MS=16')

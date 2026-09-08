@@ -26,6 +26,8 @@ for (const m of members) {
   assert.equal(m.runtimeSettings.management, 'managed');
   assert.equal(m.runtimeSettings.bootstrap.image, image);
   assert.equal(m.runtimeSettings.bootstrap.pull, false);
+  const createArgs = m.runtimeSettings.bootstrap.createArgs;
+  assert.equal(createArgs[createArgs.indexOf('--restart') + 1], 'no');
   const args = m.runtimeSettings.bootstrap.createArgs.join(' ');
   assert.match(args, /backends\/sparkglm\/entrypoint.sh/);
   assert.match(args, /EXL3_GROUPED_PREFILL_K4=1/);
