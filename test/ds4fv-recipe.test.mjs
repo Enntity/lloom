@@ -8,10 +8,10 @@ import { loadRecipeById } from '../src/recipes.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const recipeId = 'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-vision-mia-vllm';
-const packRoot = path.join(root, 'backends', 'dspark-vllm', 'packs', 'miaai-ds4fv-7440c53');
+const packRoot = path.join(root, 'backends', 'dspark-vllm', 'packs', 'miaai-ds4fv-dfa4a92');
 const recipe = await loadRecipeById(recipeId);
 
-assert.equal(recipe.version, 6);
+assert.equal(recipe.version, 7);
 assert.equal(recipe.models[0].model, 'deepseek-ai/DeepSeek-V4-Flash-Vision-Exp');
 assert.equal(recipe.models[0].gatewayModel, 'deepseek-v4-flash-vision-exp');
 assert.equal(recipe.models[0].runtime, 'deepseek-v4-flash-vision-exp-cluster');
@@ -58,7 +58,7 @@ for (const member of members) {
     'DSPARK_ENABLE_DEEPGEMM_SM121_ALIAS=1',
     'DRAFT_SAMPLE_METHOD=probabilistic',
     'DSPARK_ISSUE191_TOOLCALL_MODE=failclosed',
-    'miaai-ds4fv-7440c53',
+    'miaai-ds4fv-dfa4a92',
     'DSPARK_ENABLE_DSML_RECOVERY=0',
     'DSPARK_ENABLE_MXFP4_INDEXER_CACHE=0',
     'DSPARK_ENABLE_ISSUE144_EFFORT_ALIGN=0',
@@ -125,7 +125,7 @@ assert.equal(head.runtimeSettings.healthUrl, 'http://${leaderAddress}:8888/v1/mo
 assert.equal(head.runtimeSettings.healthModel, 'deepseek-v4-flash-vision-exp');
 
 const manifest = JSON.parse(await fs.readFile(path.join(packRoot, 'manifest.json'), 'utf8'));
-assert.equal(manifest.upstream.commit, '7440c53c1f0352886e47b1909051784879fa0a24');
+assert.equal(manifest.upstream.commit, 'dfa4a92fcf10f19349fb65a608e476db5c0369d1');
 assert.equal(manifest.compatibility.model, recipe.models[0].model);
 assert.equal(manifest.compatibility.modelRevision, '86f746b36186f0e567729a5c06a8c918caba82a9');
 assert.deepEqual(
@@ -162,7 +162,8 @@ for (const script of [
   'test-dspark-swa-prefix.py',
   'test-dsml-recovery.py',
   'test-mxfp4-indexer-cache.py',
-  'test-issue144-effort-align.py'
+  'test-issue144-effort-align.py',
+  'test-c128a-prefill-cache.py'
 ]) {
   const source = await fs.readFile(path.join(packRoot, 'scripts', script), 'utf8');
   const classes = [...source.matchAll(/^class (\w+)\(unittest.TestCase\):/gm)]
@@ -185,7 +186,7 @@ for (const script of [
 
 const index = JSON.parse(await fs.readFile(path.join(root, 'recipes', 'index.json'), 'utf8'));
 const indexEntry = index.recipes.find((entry) => entry.id === recipeId);
-assert.equal(indexEntry.currentVersion, 6);
+assert.equal(indexEntry.currentVersion, 7);
 assert.deepEqual(
   indexEntry.versions.map(({ version, status }) => ({ version, status })),
   [
@@ -194,7 +195,8 @@ assert.deepEqual(
     { version: 3, status: 'archived' },
     { version: 4, status: 'archived' },
     { version: 5, status: 'archived' },
-    { version: 6, status: 'current' }
+    { version: 6, status: 'archived' },
+    { version: 7, status: 'current' }
   ]
 );
 assert(indexEntry.capabilities.includes('vision'));

@@ -3,9 +3,9 @@
   "schemaVersion": 1,
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-2x-deepseek-v4-flash-vision-mia-vllm",
-  "name": "2x DGX Spark DeepSeek V4 Flash Vision (MiaAI dfa4a92)",
-  "version": 7,
-  "summary": "The pinned DeepSeek V4 Flash Vision Exp two-Spark appliance with native image input, MiaAI's dfa4a92 correctness chain, trained block-k speculative decode, a 262K/16K agent-prefill profile, bounded LLooM request sequencing, dual-rail RoCE, atomic rank recovery, and model-identity health checks.",
+  "name": "2x DGX Spark DeepSeek V4 Flash Vision (MiaAI 7440c53)",
+  "version": 6,
+  "summary": "The pinned DeepSeek V4 Flash Vision Exp two-Spark appliance with native image input, MiaAI's 7440c53 correctness chain, trained block-k speculative decode, a 262K/16K agent-prefill profile, bounded LLooM request sequencing, dual-rail RoCE, atomic rank recovery, and model-identity health checks.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata and launcher"
@@ -13,7 +13,7 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "MiaAI-Lab DSv4 Vision recipe at dfa4a92fcf10f19349fb65a608e476db5c0369d1, official Vision checkpoint 86f746b36186f0e567729a5c06a8c918caba82a9, and immutable Anemll image sha256:a83948492cf13df455170fb42885f5ef4db54fefe0feff0f841ecbff464ac9d8"
+    "source": "MiaAI-Lab DSv4 Vision recipe at 7440c53c1f0352886e47b1909051784879fa0a24, official Vision checkpoint 86f746b36186f0e567729a5c06a8c918caba82a9, and immutable Anemll image sha256:a83948492cf13df455170fb42885f5ef4db54fefe0feff0f841ecbff464ac9d8"
   },
   "links": [
     {
@@ -29,7 +29,16 @@
       "href": "https://github.com/Anemll/dspark-vllm-gx10"
     }
   ],
-  "keywords": ["linux", "nvidia", "dgx-spark", "cluster", "deepseek-v4-flash", "dspark", "vllm", "miaai"],
+  "keywords": [
+    "linux",
+    "nvidia",
+    "dgx-spark",
+    "cluster",
+    "deepseek-v4-flash",
+    "dspark",
+    "vllm",
+    "miaai"
+  ],
   "capabilities": [
     "chat",
     "responses",
@@ -51,11 +60,20 @@
     ]
   },
   "requirements": {
-    "platforms": ["linux-arm64"],
+    "platforms": [
+      "linux-arm64"
+    ],
     "memoryGb": 120,
     "diskGb": 220,
-    "commands": ["docker"],
-    "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"],
+    "commands": [
+      "docker"
+    ],
+    "accelerators": [
+      "cuda",
+      "nvidia-gpu",
+      "blackwell",
+      "gb10"
+    ],
     "cluster": {
       "nodes": 2,
       "provider": "nvidia-sync",
@@ -74,7 +92,9 @@
         "title": "Check Docker",
         "action": "check-command",
         "command": "docker",
-        "args": ["version"]
+        "args": [
+          "version"
+        ]
       }
     ]
   },
@@ -99,8 +119,13 @@
         }
       ],
       "setDefault": false,
-      "input": ["text", "image"],
-      "output": ["text"],
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ],
       "capabilities": [
         "chat",
         "responses",
@@ -135,7 +160,12 @@
           "minNoProgressMs": 180000,
           "cooldownMs": 600000,
           "drainTimeoutMs": 30000,
-          "failureStatuses": [499, 500, 502, 504]
+          "failureStatuses": [
+            499,
+            500,
+            502,
+            504
+          ]
         },
         "placement": {
           "mode": "distributed",
@@ -186,9 +216,9 @@
                     "--mount",
                     "type=bind,src=${lloomRoot}/backends/dspark-vllm/apply-patch-pack.py,dst=/opt/lloom/apply-patch-pack.py,readonly",
                     "--mount",
-                    "type=bind,src=${lloomRoot}/backends/dspark-vllm/packs/miaai-ds4fv-dfa4a92,dst=/opt/lloom/patch-pack,readonly",
+                    "type=bind,src=${lloomRoot}/backends/dspark-vllm/packs/miaai-ds4fv-7440c53,dst=/opt/lloom/patch-pack,readonly",
                     "--mount",
-                    "type=bind,src=${lloomRoot}/backends/dspark-vllm/packs/miaai-ds4fv-dfa4a92/patches,dst=/opt/dspark-patches,readonly",
+                    "type=bind,src=${lloomRoot}/backends/dspark-vllm/packs/miaai-ds4fv-7440c53/patches,dst=/opt/dspark-patches,readonly",
                     "-e",
                     "NODE_ADDRESS=${nodeAddress}",
                     "-e",
@@ -326,7 +356,9 @@
                     "-e",
                     "TORCH_NCCL_DEBUG_INFO_PIPE_FILE=/tmp/fr_dump_pipe_"
                   ],
-                  "command": ["/opt/lloom/dspark-entrypoint.sh"],
+                  "command": [
+                    "/opt/lloom/dspark-entrypoint.sh"
+                  ],
                   "pull": false
                 }
               }
@@ -393,9 +425,9 @@
                     "--mount",
                     "type=bind,src=${lloomRoot}/backends/dspark-vllm/apply-patch-pack.py,dst=/opt/lloom/apply-patch-pack.py,readonly",
                     "--mount",
-                    "type=bind,src=${lloomRoot}/backends/dspark-vllm/packs/miaai-ds4fv-dfa4a92,dst=/opt/lloom/patch-pack,readonly",
+                    "type=bind,src=${lloomRoot}/backends/dspark-vllm/packs/miaai-ds4fv-7440c53,dst=/opt/lloom/patch-pack,readonly",
                     "--mount",
-                    "type=bind,src=${lloomRoot}/backends/dspark-vllm/packs/miaai-ds4fv-dfa4a92/patches,dst=/opt/dspark-patches,readonly",
+                    "type=bind,src=${lloomRoot}/backends/dspark-vllm/packs/miaai-ds4fv-7440c53/patches,dst=/opt/dspark-patches,readonly",
                     "-e",
                     "NODE_ADDRESS=${nodeAddress}",
                     "-e",
@@ -533,7 +565,9 @@
                     "-e",
                     "TORCH_NCCL_DEBUG_INFO_PIPE_FILE=/tmp/fr_dump_pipe_"
                   ],
-                  "command": ["/opt/lloom/dspark-entrypoint.sh"],
+                  "command": [
+                    "/opt/lloom/dspark-entrypoint.sh"
+                  ],
                   "pull": false
                 }
               }

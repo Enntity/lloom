@@ -1,0 +1,291 @@
+{
+  "upstream": "https://github.com/MiaAI-Lab/DeepSeek-v4-Flash-DSpark-2x-DGX-Spark",
+  "commit": "dfa4a92fcf10f19349fb65a608e476db5c0369d1",
+  "files": [
+    {
+      "path": "patches/hotfix-dsv4-flashmla-workspace-50298.sh",
+      "sha256": "213fd93fb6c4dd70f38eefbd331f0ce08b64331feb2ff03643394857acd96078",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-dsv4-issue43-decode-fairness-and-diag.py",
+      "sha256": "0059144ce08e825354718c8b0aa3799dcf434045f40241f75a4211fe4f199dc4",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-dsv4-skip-topk-49486.sh",
+      "sha256": "431eff0d51c107afacc8ddb76e34c5a57d146341bf5a0d982569e8f89fc474ed",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-dsv4-issue26-hybrid-swa-min.py",
+      "sha256": "8c76a65207d5f30b898cf5f60e39b8a59e4febb3217c34fe57f6a7fb225a3c3f",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-dsv4-vision-exp.py",
+      "sha256": "0f9ae3c8d07f29fff6c5bb27c3ced4e7cd3d7b87724a1300e9b6386469ed9362",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-dsv4-grammar-advance.sh",
+      "sha256": "6318c0959816156ba0015fba9d3d56e4e128acdfb778aee373d9bf227c6faaa5",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-vllm-rope-swa-fix.py",
+      "sha256": "92313363e556430c62c5b8e2f221a517b67bb8e2032cf3a0dc6abb12cde7abc3",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-dsv4-issue133-triton-specialization.py",
+      "sha256": "64d23c25fdd40bf1d6418c217c76d90b6eed8991a26f66c92d002b4b45523b3f",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-vllm-dsml-recovery.py",
+      "sha256": "841670dd0a6029ba02d2da5885fc93ef41b296176a25754cfdb9a959125bab89",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-vllm-c128a-prefill-cache.py",
+      "sha256": "755f5492c8137190b8970f45cee0991d2e0b746e370a7be14cd29cb9970019a7",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-vllm-issue191-toolcall-failclosed.py",
+      "sha256": "35a3264c1da0b802a8bab115efdb489a41528605a5f2d20d3cac795f023c1066",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-dsv4-sp-indexer-prefill.py",
+      "sha256": "bb508cbddb305d11f3f2e170881d0f7e678bf87a4783ba9f6edd07d01e93087e",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-nvfp4-ds-mla-issue22.sh",
+      "sha256": "52de6d0cd06f571cfdbbb856bfea4a098a5118ce769de739a18b51044300772a",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-dsv4-issue27-partial-prefill-concurrency.py",
+      "sha256": "c24df010f8116e4059e0335d0a9bed2bd43963368930992c640f384c51b6333b",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-encoding-dsv4-issue21.py",
+      "sha256": "c75d160245cb563d6e9a6adaee9bf7a4cd55ed5268b5ca89856977d293df9816",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-gb10-spin-wait.sh",
+      "sha256": "b7deed123348d78c8e7ae3f99d9107b59a798d0b3c7840b7cccaadfd8418de71",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-vllm-mxfp4-indexer-cache.py",
+      "sha256": "304526597e0513d3e059bdaa9f71f58b2c698eb3334dd2004389242543ee1e14",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-vllm-issue117-shm-ring-buffer.py",
+      "sha256": "749c7992ac26da2922277259874f1926477bed7d30a48a291edec29784918689",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-dsv4-issue144-effort-align.py",
+      "sha256": "bdf17b164e95eb29781444b54973bedc9be128e2810fbde19abedd138a724cc5",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-dsv4-issue55-tool-truncation.py",
+      "sha256": "0dbb8a18d41325d518c221b3cfbd148c3a092e37c1816ba565b62e28172dd773",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-dsv4-skip-empty-c128-48957.sh",
+      "sha256": "bcae8526f474f885f0af681aaa596e613fa94f8bf95847f1e71c5ea4970ccd27",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-dsv4-mtp-buffer-50312.sh",
+      "sha256": "8ad604b767e09390a958cd6ffd907dd9260bb92d680b8d4d5e702ff61fb787f4",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-dsv4-dense-prefill-indexer-48407.sh",
+      "sha256": "6d731f1b03b6c17275c8f0af82ee5dfa3ff9d778d25468b4edc96fbd356ffa23",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-vllm-issue136-xgrammar-termination.py",
+      "sha256": "143fef65d53e217a629a7b4e5e0186df5064c670e8237a8ecea8761cdd957371",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-vllm-dspark-swa-prefix.py",
+      "sha256": "9eaf419a6fc2d821882f77b64e532690f11b5544e1f43adcae4534f1561c4df6",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-vllm-dspark-block-k.py",
+      "sha256": "9cfbc5bcf18084b55eb8f2f6238642fcc20f70dd08378c01b7039f65e649f77d",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-dsv4-suppress-stops-in-reasoning.py",
+      "sha256": "618a66c58fc422ae65d0f08018fac69370657e4ead1285c8104a56f507f6279f",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-vllm-empty-encoder-output.py",
+      "sha256": "e417bcdcb6d62f4790885fe5c64bef3a3015a17cea00e3901eb3e2f4b7cf35a6",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/hotfix-deepgemm-sm121-mqa-header-alias.sh",
+      "sha256": "b385b5f6f967b94cf5e4f02282786b620dd18843af6163ec8370b8bea01d2d79",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/vision_exp/image_processor.py",
+      "sha256": "3b820118ba8e439964e1078259dbc58774be239612b95fdbbd795de7958551bb",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/vision_exp/vision.py",
+      "sha256": "e29feb76d7b7abfc5ae15fd152ded145d3c7c370030dfd35a0d96565112b3891",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/vision_exp/__init__.py",
+      "sha256": "ab22bd0f2d77a29c7e9253c65104f07578c007debdadf09513e9998e0c22b81f",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/vision_exp/processor.py",
+      "sha256": "6db9c42c19b1da7110eb57d430cd865fb0e4b52a105bddd307089f456b5ad61e",
+      "relationship": "copied"
+    },
+    {
+      "path": "patches/vision_exp/apply.py",
+      "sha256": "bd29dba9a6588dbd51e3aa36a3a34db9bf270e3759822d12ad0fba33f63492d5",
+      "relationship": "copied"
+    },
+    {
+      "path": "scripts/test-c128a-prefill-cache.py",
+      "sha256": "fab08ae2ba6b3e2ebf015beed69abe908363c9e4e5a7c2568bd2f009bade00d1",
+      "relationship": "copied"
+    },
+    {
+      "path": "scripts/test-dspark-swa-prefix.py",
+      "sha256": "c4d96508f8b0e4146344eab9c692496afa7f5d542cde19bc74228ff206b32647",
+      "relationship": "copied"
+    },
+    {
+      "path": "scripts/test-rope-swa-fix.py",
+      "sha256": "fdd40e013755fb9729637276a4961875cb087cc32d57cf93318e58f17d014b7c",
+      "relationship": "copied"
+    },
+    {
+      "path": "scripts/test-dsml-recovery.py",
+      "sha256": "006dd8f2696aa473ea40983ebb6dac9e8dfa68d39a7fb8f53cfda66f07b30a57",
+      "relationship": "copied"
+    },
+    {
+      "path": "scripts/test-mxfp4-indexer-cache.py",
+      "sha256": "cf9c3b05a90884884009ee0702732e43132255458b9e37c97ffc764557f70004",
+      "relationship": "copied"
+    },
+    {
+      "path": "scripts/test-issue144-effort-align.py",
+      "sha256": "de6ccf359c54e83c73cda09255e527534e5597db65c5578db0f704b035ec2eed",
+      "relationship": "copied"
+    },
+    {
+      "path": "scripts/fixtures/dspark-swa-prefix/scheduler-752a3a504-stock.py",
+      "sha256": "e25d4c9a95abdbe8e516714ed02574d929ca0d5e8c11c4cc73b84d3a3b905443",
+      "relationship": "copied"
+    },
+    {
+      "path": "scripts/fixtures/dspark-swa-prefix/kv_cache_manager-752a3a504-stock.py",
+      "sha256": "be9c50918c8cd01736102de4020e2a9a8650675bcd4eb4227d40d2bede6bb853",
+      "relationship": "copied"
+    },
+    {
+      "path": "scripts/fixtures/dspark-dsml-recovery/adapters-752a3a504-stock.py",
+      "sha256": "dc1c1317dbfb298e54b8d94ca0e66d2b0cb1e481c35cdcc60a815284bd8a6ef7",
+      "relationship": "copied"
+    },
+    {
+      "path": "scripts/fixtures/dspark-dsml-recovery/parser_engine-752a3a504-stock.py",
+      "sha256": "886bf6293b6b4cd082882e883c4c3d1ff16597500ed741f871a4ae67826db178",
+      "relationship": "copied"
+    },
+    {
+      "path": "scripts/fixtures/dspark-dsml-recovery/deepseek_v4-752a3a504-stock.py",
+      "sha256": "97d7cd3c2affb37c29948aba321454090341294756d46fde2bf9f3623c30ee6f",
+      "relationship": "copied"
+    },
+    {
+      "path": "scripts/fixtures/dspark-dsml-recovery/streaming_parser_engine-752a3a504-stock.py",
+      "sha256": "4ac9135e12f286d32f5d8725630b49a54b68d902815ad598923f7130d0899e0b",
+      "relationship": "copied"
+    },
+    {
+      "path": "scripts/fixtures/dspark-dsml-recovery/abstract_parser-752a3a504-stock.py",
+      "sha256": "fd4eb7a64ea97f59cfaec2b08c359fb460daa06e4ac5b42906b6877b34360859",
+      "relationship": "copied"
+    },
+    {
+      "path": "scripts/fixtures/dspark-dsml-recovery/parser_engine_config-752a3a504-stock.py",
+      "sha256": "0854bd50b239b3b5286f56e9254851f224822bf0e942c99f1fe3dabf3c2035a7",
+      "relationship": "copied"
+    },
+    {
+      "path": "scripts/fixtures/dspark-dsml-recovery/support/events-752a3a504.py",
+      "sha256": "493543e5832b721c67640c09a6ad664823423a98afe0bb53ba78518608047f0a",
+      "relationship": "copied"
+    },
+    {
+      "path": "scripts/fixtures/dspark-dsml-recovery/support/token_id_scanner-752a3a504.py",
+      "sha256": "c9db6d6a29865d65ba1adc523015488aad4d7dbef46b7539041e9efbe81bd034",
+      "relationship": "copied"
+    },
+    {
+      "path": "scripts/fixtures/dspark-dsml-recovery/support/incremental_lexer-752a3a504.py",
+      "sha256": "c58797ba16d60a6a4db365dc678b38b756df83eea566c6e34dac2785f55c4cce",
+      "relationship": "copied"
+    },
+    {
+      "path": "scripts/fixtures/dspark-dsml-recovery/support/tool_parsers_utils-752a3a504.py",
+      "sha256": "1e43768164c8907b29afd601ae7df09bf23418062a60a3e02da522810e31e10f",
+      "relationship": "copied"
+    },
+    {
+      "path": "scripts/fixtures/issue144-effort-align/encoding_dsv4-48095b345-snapshot.py",
+      "sha256": "b4bbb74bbb11a9c8ada04daa30cc7de7dba3abba08e9ade06d38b51a3d0d1701",
+      "relationship": "copied"
+    },
+    {
+      "path": "scripts/fixtures/issue144-effort-align/deepseek_v4_encoding-48095b345-live-chain.py",
+      "sha256": "07432ce4758143247b80ef269f5855cb4536fd610422e008cfeae36de65ad547",
+      "relationship": "copied"
+    },
+    {
+      "path": "scripts/fixtures/dspark-rope-swa/rope-752a3a504-stock.py",
+      "sha256": "0074271a6f26ce1538e0df3ae66eae30ff61d4d50ad0aa73ce0c53c4182670e7",
+      "relationship": "copied"
+    },
+    {
+      "path": "scripts/fixtures/dspark-mxfp4-indexer/indexer-752a3a504-stock.py",
+      "sha256": "02505c6c29505aa0b0607be0675ed11612f600b1caa6daa8d98f2a49937abc1b",
+      "relationship": "copied"
+    },
+    {
+      "path": "scripts/fixtures/c128a-prefill-cache/flashinfer-prefill.py",
+      "sha256": "c0f33a3fd29e39904c3e62228d3a18f88b283a277d882db123d3aa172874418c",
+      "relationship": "copied"
+    }
+  ]
+}
