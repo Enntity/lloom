@@ -1,0 +1,53 @@
+{
+  "at": "2026-09-09T14:36:27.443Z",
+  "chatModel": "qwen3.8-flash-next",
+  "runtimes": {
+    "qwen38-flash-next-worker": {
+      "status": "running",
+      "healthy": true,
+      "activeRequests": 0,
+      "queuedRequests": 0,
+      "keepWarm": false,
+      "lastIdleAt": null
+    },
+    "qwen38-flash-next-head": {
+      "status": "running",
+      "healthy": true,
+      "activeRequests": 0,
+      "queuedRequests": 0,
+      "keepWarm": false,
+      "lastIdleAt": null
+    },
+    "qwen38-flash-next-cluster": {
+      "status": "running",
+      "healthy": true,
+      "activeRequests": 3,
+      "queuedRequests": 0,
+      "keepWarm": false,
+      "lastIdleAt": "2026-09-09T14:36:14.635Z"
+    }
+  },
+  "aliases": {
+    "q38fn": {
+      "members": [
+        "qwen3.8-flash-next",
+        "cloud/openrouter/q38fn"
+      ]
+    },
+    "enntity-presence": {
+      "members": [
+        "qwen3.8-flash-next",
+        "deepseek/deepseek-v4-flash-0731"
+      ],
+      "activeRoute": "qwen-local-ds4f0731-fallback"
+    }
+  },
+  "recentPresence": {
+    "deepseek/deepseek-v4-flash-0731|openai-compatible-deepseek-v4-flash-0731|200": 12,
+    "qwen3.8-flash-next|qwen38-flash-next|200": 5
+  },
+  "testContainersRemoved": [
+    "lloom-qwen38-prefix-test-ennspark01",
+    "lloom-qwen38-prefix-test-ennspark02"
+  ]
+}

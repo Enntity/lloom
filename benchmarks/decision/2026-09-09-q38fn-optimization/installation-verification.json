@@ -1,0 +1,23 @@
+{
+  "date": "2026-09-09",
+  "verifiedOn": [
+    "ennspark01",
+    "ennspark02"
+  ],
+  "recipeVersion": 7,
+  "sha256": {
+    "entrypoint.sh": "5aeb2f38420f563cdb5d63c875871dcfc8839def790d038ed6fba3f58d5ade9f",
+    "apply-prefix-fixes.py": "08e65ccd755ff07a38f4553df4a14b5f88bcf687696f6e577d6ed68c20469111",
+    "recipe.json": "53adef6730bf241be8813fb86c86976742b6436dc8b676f6f568c72e71ddfdb1"
+  },
+  "validation": {
+    "check": "pass",
+    "lint": "pass",
+    "format": "pass",
+    "interchange": "pass",
+    "fullTests": "pass",
+    "packageInstallSmoke": "pass",
+    "helperSyntaxFiles": 11
+  },
+  "initialSandboxFailures": "Full tests and package checks required loopback listeners; reruns with the required permissions passed."
+}

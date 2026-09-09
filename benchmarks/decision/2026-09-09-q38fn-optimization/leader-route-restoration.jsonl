@@ -1,0 +1,4 @@
+{"alias":"q38fn","resume":"qwen3.8-flash-next","apply":true}
+{"changed":true,"alias":"q38fn","member":"qwen3.8-flash-next","suspended":false,"suspendedMembers":[],"route":{"alias":"q38fn","activeRoute":null,"members":["qwen3.8-flash-next","cloud/openrouter/q38fn"],"suspendedMembers":[],"profiles":[]}}
+{"alias":"enntity-presence","resume":"qwen3.8-flash-next","apply":true}
+{"changed":true,"alias":"enntity-presence","member":"qwen3.8-flash-next","suspended":false,"suspendedMembers":[],"route":{"alias":"enntity-presence","activeRoute":"qwen-local-ds4f0731-fallback","members":["qwen3.8-flash-next","deepseek/deepseek-v4-flash-0731"],"suspendedMembers":[],"profiles":["before-context-test","context-test-ds4f0731","sparkglm-presence-trial","qwen-local-ds4f0731-fallback","qwen-optimization-cloud"]}}

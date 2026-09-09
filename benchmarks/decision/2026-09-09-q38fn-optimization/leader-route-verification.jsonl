@@ -1,0 +1,3 @@
+{"alias":"q38fn","status":200,"responseModel":"q38fn","content":"Q38_LOCAL_READY","elapsedMs":1711.474542}
+{"alias":"enntity-presence","status":200,"responseModel":"enntity-presence","content":"Q38_LOCAL_READY","elapsedMs":1377.169751}
+{"at":"2026-09-09T14:35:50.084Z","caller":"q38-restored-1788964546920","chatModel":"qwen3.8-flash-next","attribution":[{"requestedModel":"q38fn","resolvedModel":"qwen3.8-flash-next","upstreamModel":"qwen3.8-flash-next","backend":"qwen38-flash-next","status":200},{"requestedModel":"enntity-presence","resolvedModel":"qwen3.8-flash-next","upstreamModel":"qwen3.8-flash-next","backend":"qwen38-flash-next","status":200}]}

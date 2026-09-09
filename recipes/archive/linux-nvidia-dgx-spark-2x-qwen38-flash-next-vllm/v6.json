@@ -4,8 +4,8 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm",
   "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 vLLM",
-  "version": 7,
-  "summary": "Two-Spark NVIDIA NVFP4 with GPU-resident PLE, MTP3, bounded BF16 KV, and validated hybrid prefix caching with retained replay boundaries.",
+  "version": 6,
+  "summary": "Two-Spark official NVIDIA NVFP4 with GPU-resident FP8 PLE, full decode graphs without compilation, MTP3, bounded BF16 KV, and local-first routing.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata and launcher"
@@ -13,7 +13,7 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "Sufyan sfxnz/Qwen3.8-Flash-Next-NVFP4-vLLM-2x-DGX-Spark fe8c291de4efba34d5dcedbc8e19ebcf66bc1bc2 reference execution mode on pinned vLLM e962733e08d10f7ca65dac4df99e116460b8b174. Retains source-guarded Tony/Tech2Wild PLE state-stride and mixed MTP loader fixes. Official NVIDIA revision and 20 GiB per-rank KV budget pinned. See docs/q38fn-gap-closure-2026-09-05.md for matched performance and validation. Prefix-cache block-size corrections derive from blazux/qwen3.8-Flash-DGX bd60fcb1b492ca920f74df7462f05da7b6d98f73, with exact-source guards and supported retention interval 1600 (vLLM issue 53504). See docs/q38fn-prefix-cache-2026-09-09.md for matched latency, cache correctness, 239K context and queue validation."
+    "source": "Sufyan sfxnz/Qwen3.8-Flash-Next-NVFP4-vLLM-2x-DGX-Spark fe8c291de4efba34d5dcedbc8e19ebcf66bc1bc2 reference execution mode on pinned vLLM e962733e08d10f7ca65dac4df99e116460b8b174. Retains source-guarded Tony/Tech2Wild PLE state-stride and mixed MTP loader fixes. Official NVIDIA revision and 20 GiB per-rank KV budget pinned. See docs/q38fn-gap-closure-2026-09-05.md for matched performance and validation."
   },
   "links": [
     {
@@ -31,14 +31,6 @@
     {
       "rel": "runtime",
       "href": "https://github.com/vllm-project/vllm/tree/e962733e08d10f7ca65dac4df99e116460b8b174"
-    },
-    {
-      "rel": "comparison",
-      "href": "https://github.com/blazux/qwen3.8-Flash-DGX/tree/bd60fcb1b492ca920f74df7462f05da7b6d98f73"
-    },
-    {
-      "rel": "issue",
-      "href": "https://github.com/vllm-project/vllm/issues/53504"
     }
   ],
   "keywords": [
@@ -73,7 +65,7 @@
       "NVIDIA checkpoint bytes are unchanged: main experts NVFP4, draft experts block FP8 and PLE per-tensor FP8. The full draft vocabulary is retained.",
       "PLE is GPU-resident and sharded across TP2. FULL_DECODE_ONLY graphs with compilation mode 0 follow the published reference; no disk gathers occur during inference.",
       "Native 262144 context, BF16 KV and explicit 21474836480 KV bytes per GPU. This byte budget takes precedence over GPU_MEMORY_UTILIZATION; final cache capacity is in the evidence.",
-      "Hybrid prefix caching uses align mode, guarded Mamba/scheduler block-size corrections and retention interval 1600. Exact cached early/middle retrieval passed through 239K tokens, concurrent reads and structured tools. No YaRN, reduced draft vocabulary or extra quantization is selected.",
+      "Prefix caching remains disabled pending hybrid-cache correctness evidence. No YaRN, reduced draft vocabulary or extra quantization is selected.",
       "LLooM bounds active and queued requests, and the validation includes mixed long inputs, repeated structured tools, reasoning, vision and clean drain."
     ]
   },
@@ -334,14 +326,12 @@
                     "-e",
                     "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True",
                     "-e",
-                    "ENABLE_PREFIX_CACHING=1",
+                    "ENABLE_PREFIX_CACHING=0",
                     "-v",
-                    "${lloomRoot}/backends/qwen38-vllm/nvidia-e962733e-prefix:/opt/lloom/qwen-prefix:ro",
-                    "-e",
-                    "PREFIX_CACHE_RETENTION_INTERVAL=1600"
+                    "${lloomRoot}/backends/qwen38-vllm/nvidia-e962733e-resident:/opt/lloom/qwen-resident:ro"
                   ],
                   "command": [
-                    "/opt/lloom/qwen-prefix/entrypoint.sh"
+                    "/opt/lloom/qwen-resident/entrypoint.sh"
                   ]
                 }
               }
@@ -497,14 +487,12 @@
                     "-e",
                     "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True",
                     "-e",
-                    "ENABLE_PREFIX_CACHING=1",
+                    "ENABLE_PREFIX_CACHING=0",
                     "-v",
-                    "${lloomRoot}/backends/qwen38-vllm/nvidia-e962733e-prefix:/opt/lloom/qwen-prefix:ro",
-                    "-e",
-                    "PREFIX_CACHE_RETENTION_INTERVAL=1600"
+                    "${lloomRoot}/backends/qwen38-vllm/nvidia-e962733e-resident:/opt/lloom/qwen-resident:ro"
                   ],
                   "command": [
-                    "/opt/lloom/qwen-prefix/entrypoint.sh"
+                    "/opt/lloom/qwen-resident/entrypoint.sh"
                   ]
                 }
               }

@@ -1,0 +1,48 @@
+[
+  {
+    "host": "ennspark01",
+    "containers": [
+      {
+        "name": "/lloom-qwen38-resident-ennspark01",
+        "image": "vllm/vllm-openai@sha256:df871f170ee7070fbdce162bde08fb616e311570c948a620be0d4b33fe02f87b",
+        "imageId": "sha256:39584ec79a77d56dd4e3585dab26307e0c72bea1946427fe54e43a176f9e5b7a",
+        "state": "running",
+        "command": [
+          "/opt/lloom/qwen-prefix/entrypoint.sh"
+        ]
+      },
+      {
+        "name": "/lloom-qwen38-prefix-test-ennspark01",
+        "image": "vllm/vllm-openai@sha256:df871f170ee7070fbdce162bde08fb616e311570c948a620be0d4b33fe02f87b",
+        "imageId": "sha256:39584ec79a77d56dd4e3585dab26307e0c72bea1946427fe54e43a176f9e5b7a",
+        "state": "exited",
+        "command": [
+          "/opt/lloom/qwen-prefix/entrypoint.sh"
+        ]
+      }
+    ]
+  },
+  {
+    "host": "ennspark02",
+    "containers": [
+      {
+        "name": "/lloom-qwen38-resident-ennspark02",
+        "image": "vllm/vllm-openai@sha256:df871f170ee7070fbdce162bde08fb616e311570c948a620be0d4b33fe02f87b",
+        "imageId": "sha256:39584ec79a77d56dd4e3585dab26307e0c72bea1946427fe54e43a176f9e5b7a",
+        "state": "running",
+        "command": [
+          "/opt/lloom/qwen-prefix/entrypoint.sh"
+        ]
+      },
+      {
+        "name": "/lloom-qwen38-prefix-test-ennspark02",
+        "image": "vllm/vllm-openai@sha256:df871f170ee7070fbdce162bde08fb616e311570c948a620be0d4b33fe02f87b",
+        "imageId": "sha256:39584ec79a77d56dd4e3585dab26307e0c72bea1946427fe54e43a176f9e5b7a",
+        "state": "exited",
+        "command": [
+          "/opt/lloom/qwen-prefix/entrypoint.sh"
+        ]
+      }
+    ]
+  }
+]

@@ -1,0 +1,1 @@
+{"probe": "direct worker inference", "status": 503, "code": "worker_control_plane_only", "interpretation": "Expected architectural restriction: worker API is control-plane only; canonical inference is served by leader. Worker route suspension was successfully removed."}

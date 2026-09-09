@@ -101,9 +101,11 @@ and Tony DeAngelo / Tech2Wild (written by Kai) loader, PLE and QSA fixes:
 
 The v6 launcher follows the execution configuration documented by
 [Sufyan / sfxnz fe8c291d](https://github.com/sfxnz/Qwen3.8-Flash-Next-NVFP4-vLLM-2x-DGX-Spark/tree/fe8c291de4efba34d5dcedbc8e19ebcf66bc1bc2).
-LLooM's launcher and guarded installer are MIT. The prefix-cache candidate
-contains Apache-2.0 substitutions credited to blazux in its adjacent notice;
-it is not enabled in the selected recipe. MiaAI and sparkDash comparison
+LLooM's launcher and guarded installer are MIT. Recipe v7's hybrid prefix-cache
+pack contains Apache-2.0 substitutions derived from
+[blazux bd60fcb1](https://github.com/blazux/qwen3.8-Flash-DGX/tree/bd60fcb1b492ca920f74df7462f05da7b6d98f73),
+credited in its adjacent notice and qualified in the September 9 evidence.
+MiaAI and sparkDash comparison
 protocols are credited in the benchmark documentation; their AGPL serving code
 is not included in these NVIDIA bundles. Model weights are downloaded separately
 under their publisher's terms.

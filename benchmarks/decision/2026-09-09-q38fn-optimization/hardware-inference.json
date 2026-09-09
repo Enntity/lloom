@@ -1,0 +1,22 @@
+[
+  {
+    "status": "fulfilled",
+    "value": {
+      "chunk_id": "6bbcfd",
+      "wall_time_seconds": 0.413098083,
+      "exit_code": 0,
+      "original_token_count": 389,
+      "output": "name, temperature.gpu, clocks.current.sm [MHz], power.draw [W]\nNVIDIA GB10, 64, 2424 MHz, 53.95 W\n\n==============NVSMI LOG==============\n\nTimestamp                                              : Wed Sep  9 07:33:21 2026\nDriver Version                                         : 580.173.02\nCUDA Version                                           : 13.0\n\nAttached GPUs                                          : 1\nGPU 0000000F:01:00.0\n    Performance State                                  : P0\n    Clocks Event Reasons\n        Idle                                           : Not Active\n        Applications Clocks Setting                    : Not Active\n        SW Power Cap                                   : Not Active\n        HW Slowdown                                    : Not Active\n            HW Thermal Slowdown                        : Not Active\n            HW Power Brake Slowdown                    : Not Active\n        Sync Boost                                     : Not Active\n        SW Thermal Slowdown                            : Not Active\n        Display Clock Setting                          : Not Active\n    Clocks Event Reasons Counters\n        SW Power Capping                               : 3236310535 us\n        Sync Boost                                     : 0 us\n        SW Thermal Slowdown                            : 2143349 us\n        HW Thermal Slowdown                            : 187706 us\n        HW Power Braking                               : 0 us\n    Sparse Operation Mode                              : N/A\n\n"
+    }
+  },
+  {
+    "status": "fulfilled",
+    "value": {
+      "chunk_id": "bea5a4",
+      "wall_time_seconds": 0.81156875,
+      "exit_code": 0,
+      "original_token_count": 388,
+      "output": "name, temperature.gpu, clocks.current.sm [MHz], power.draw [W]\nNVIDIA GB10, 61, 2502 MHz, 51.99 W\n\n==============NVSMI LOG==============\n\nTimestamp                                              : Wed Sep  9 07:33:21 2026\nDriver Version                                         : 580.173.02\nCUDA Version                                           : 13.0\n\nAttached GPUs                                          : 1\nGPU 0000000F:01:00.0\n    Performance State                                  : P0\n    Clocks Event Reasons\n        Idle                                           : Not Active\n        Applications Clocks Setting                    : Not Active\n        SW Power Cap                                   : Not Active\n        HW Slowdown                                    : Not Active\n            HW Thermal Slowdown                        : Not Active\n            HW Power Brake Slowdown                    : Not Active\n        Sync Boost                                     : Not Active\n        SW Thermal Slowdown                            : Not Active\n        Display Clock Setting                          : Not Active\n    Clocks Event Reasons Counters\n        SW Power Capping                               : 700433578 us\n        Sync Boost                                     : 0 us\n        SW Thermal Slowdown                            : 679230 us\n        HW Thermal Slowdown                            : 249244 us\n        HW Power Braking                               : 0 us\n    Sparse Operation Mode                              : N/A\n\n"
+    }
+  }
+]

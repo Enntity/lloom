@@ -399,7 +399,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm",
       "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm.json",
-      "currentVersion": 6,
+      "currentVersion": 7,
       "versions": [
         {
           "version": 1,
@@ -438,13 +438,20 @@
         },
         {
           "version": 6,
+          "path": "archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm/v6.json",
+          "status": "archived",
+          "notes": "Two-Spark official NVIDIA NVFP4 with GPU-resident FP8 PLE, full decode graphs without compilation, MTP3, bounded BF16 KV, and local-first routing.",
+          "archivedAt": "2026-09-09T14:05:00.000Z"
+        },
+        {
+          "version": 7,
           "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm.json",
           "status": "current",
-          "notes": "Two-Spark official NVIDIA NVFP4 with GPU-resident FP8 PLE, full decode graphs without compilation, MTP3, bounded BF16 KV, and local-first routing."
+          "notes": "Two-Spark NVIDIA NVFP4 with GPU-resident PLE, MTP3, bounded BF16 KV, and validated hybrid prefix caching with retained replay boundaries."
         }
       ],
       "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 vLLM",
-      "summary": "Two-Spark official NVIDIA NVFP4 with GPU-resident FP8 PLE, full decode graphs without compilation, MTP3, bounded BF16 KV, and local-first routing.",
+      "summary": "Two-Spark NVIDIA NVFP4 with GPU-resident PLE, MTP3, bounded BF16 KV, and validated hybrid prefix caching with retained replay boundaries.",
       "tags": ["linux", "nvidia", "dgx-spark", "cluster", "qwen3.8", "flash-next", "nvfp4", "vllm", "mtp"],
       "recommendedFor": [
         "Two directly connected DGX Sparks serving entity-shaped Qwen3.8 Flash Next workloads through LLooM"

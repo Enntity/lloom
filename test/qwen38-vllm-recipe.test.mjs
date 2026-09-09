@@ -12,7 +12,7 @@ const backendRoot = path.join(root, 'backends', 'qwen38-vllm');
 const recipe = await loadRecipeById('linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm');
 
 assert.equal(recipe.backend.id, 'docker-vllm');
-assert.equal(recipe.version, 6);
+assert.equal(recipe.version, 7);
 assert.equal(recipe.models[0].gatewayModel, 'qwen3.8-flash-next');
 assert.equal(recipe.models[0].settings.contextWindow, 262144);
 assert.equal(recipe.models[0].settings.maxActiveRequests, 4);
@@ -61,17 +61,18 @@ for (const member of members) {
     'QWEN_MODEL=nvidia/Qwen3.8-Flash-Next-NVFP4',
     'QWEN4EXP_PLE_MMAP=0',
     'VLLM_USE_DEEP_GEMM=0',
-    'ENABLE_PREFIX_CACHING=0'
+    'ENABLE_PREFIX_CACHING=1',
+    'PREFIX_CACHE_RETENTION_INTERVAL=1600'
   ]) {
     assert(rendered.includes(expected), `missing vLLM launch control: ${expected}`);
   }
   assert(!rendered.includes('YARN'));
   assert(!rendered.includes('NCCL_IB_GID_INDEX'));
-  assert.deepEqual(bootstrap.command, ['/opt/lloom/qwen-resident/entrypoint.sh']);
+  assert.deepEqual(bootstrap.command, ['/opt/lloom/qwen-prefix/entrypoint.sh']);
 }
 assert.equal(members.find((member) => member.role === 'head').runtimeSettings.healthTimeoutMs, 5000);
 
-const entrypoint = await fs.readFile(path.join(backendRoot, 'nvidia-e962733e-resident', 'entrypoint.sh'), 'utf8');
+const entrypoint = await fs.readFile(path.join(backendRoot, 'nvidia-e962733e-prefix', 'entrypoint.sh'), 'utf8');
 for (const expected of [
   'snapshots/${QWEN_MODEL_REVISION}',
   '--distributed-executor-backend mp',
@@ -86,8 +87,14 @@ for (const expected of [
 ]) {
   assert(entrypoint.includes(expected), `missing vLLM entrypoint control: ${expected}`);
 }
+assert(entrypoint.includes('--prefix-cache-retention-interval'));
+assert(entrypoint.includes('python3 /opt/lloom/qwen-prefix/apply-prefix-fixes.py'));
+const prefixSafety = spawnSync('python3', [path.join(backendRoot, 'nvidia-e962733e-prefix', 'test-prefix-fixes.py')], {
+  encoding: 'utf8'
+});
+assert.equal(prefixSafety.status, 0, prefixSafety.stderr);
 assert.match(entrypoint, /method\\":\\"mtp/);
-const shellCheck = spawnSync('bash', ['-n', path.join(backendRoot, 'nvidia-e962733e-resident', 'entrypoint.sh')], {
+const shellCheck = spawnSync('bash', ['-n', path.join(backendRoot, 'nvidia-e962733e-prefix', 'entrypoint.sh')], {
   encoding: 'utf8'
 });
 assert.equal(shellCheck.status, 0, shellCheck.stderr);

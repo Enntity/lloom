@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-09T14:24:02.881Z",
+  "method": "Local member suspended while both Sparks were used for authorized synthetic testing",
+  "presenceMembers": [
+    "qwen3.8-flash-next",
+    "deepseek/deepseek-v4-flash-0731"
+  ],
+  "suspendedMembers": [
+    "qwen3.8-flash-next"
+  ],
+  "recentPresenceAttributionCounts": {
+    "deepseek/deepseek-v4-flash-0731|openai-compatible-deepseek-v4-flash-0731|200": 33
+  }
+}
