@@ -395,8 +395,13 @@ function runtimeHealthTimeoutMs(runtime) {
 }
 
 async function runtimeHealthOk(runtime, timeoutMs = runtimeHealthTimeoutMs(runtime)) {
-  if (runtime?.healthStrategy === 'container' && runtimeAdapter(runtime) === 'docker') {
-    return (await dockerContainerState(runtime)).running === true;
+  if (runtimeAdapter(runtime) === 'docker') {
+    if (runtime?.healthStrategy === 'container' || runtimeManagement(runtime) === 'managed') {
+      // An endpoint may belong to another runtime reusing the same port/model.
+      // Managed Docker health must first be backed by its own live container.
+      if (!(await dockerContainerState(runtime)).running) return false;
+      if (runtime?.healthStrategy === 'container') return true;
+    }
   }
   return healthOk(runtime?.healthUrl, timeoutMs, runtime?.healthModel);
 }
