@@ -5897,7 +5897,14 @@ if (listened) {
       try {
         assert.equal(autoHostPlan.ok, true);
         assert(autoHostPlan.host.autoStarted.pid);
-        assert.equal(autoHostPlan.host.autoStarted.health.data.recipeCount, new Set([...(await loadRecipes()), ...(await loadRecipes(path.resolve("community/recipes")))].map(recipe => recipe.id)).size);
+        assert.equal(
+          autoHostPlan.host.autoStarted.health.data.recipeCount,
+          new Set(
+            [...(await loadRecipes()), ...(await loadRecipes(path.resolve('community/recipes')))].map(
+              (recipe) => recipe.id
+            )
+          ).size
+        );
         assert.equal(autoHostPlan.plans[0].recommendation.id, 'apple-silicon-qwen36-35b-a3b-mtplx-pack');
         assert.equal(autoHostPlan.plans[0].plan.roots.recipesRoot, autoHostRecipesRoot);
         assert.equal(autoHostPlan.plans[0].plan.roots.benchmarksRoot, autoHostBenchmarksRoot);
