@@ -1,3 +1,6 @@
+import { runtimeCapabilityModels } from './runtime-capabilities.mjs';
+import runtimeCapabilities from './runtime-capabilities.json' with { type: 'json' };
+import { executeWebFunction, webFunctionStatus } from './web-functions.mjs';
 import { createPerformanceSampler } from './performance-sampler.mjs';
 import { generateProviderVideo } from './video-providers.mjs';
 import http from 'node:http';
@@ -3485,6 +3488,33 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
 
       if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/gateway/dashboard')) {
         sendHtml(res, 200, renderDashboardPage(), {}, config);
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/v1/capabilities') {
+        sendJson(
+          res,
+          200,
+          { ...runtimeCapabilities, modelStatus: runtimeCapabilityModels(config), web: webFunctionStatus(config) },
+          {},
+          config
+        );
+        return;
+      }
+      if (req.method === 'POST' && ['/v1/web/search', '/v1/web/read'].includes(url.pathname)) {
+        const name = url.pathname.split('/').at(-1);
+        const body = await readJson(req);
+        const controller = new AbortController();
+        const onClose = () => {
+          if (!res.writableEnded) controller.abort();
+        };
+        res.once('close', onClose);
+        try {
+          const result = await executeWebFunction(name, body, config, { signal: controller.signal });
+          sendJson(res, result.status, result.body, result.headers || {}, config);
+        } finally {
+          res.off('close', onClose);
+        }
         return;
       }
 

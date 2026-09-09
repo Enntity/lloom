@@ -1311,7 +1311,7 @@ const removalPlan = createModelRemovalPlan(removableIntakeConfig, {
 assert.equal(removalPlan.ok, true);
 assert.equal(removalPlan.cleanup.backend, removalRuntimeId);
 assert.equal(removalPlan.cleanup.runtime, removalRuntimeId);
-assert.deepEqual(removalPlan.cleanup.aliases, ['quick', 'quicker']);
+assert.deepEqual(removalPlan.cleanup.aliases, ['quick', 'quicker', 'enntity-presence']);
 assert.deepEqual(removalPlan.cleanup.defaultKeys, ['chatModel']);
 assert.equal(removalPlan.cleanup.modelFiles, null);
 assert(removalPlan.preserved.modelFiles.includes('mlx-community--Qwen3.5-4B-Instruct-4bit'));

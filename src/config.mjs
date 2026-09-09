@@ -1,3 +1,5 @@
+import { applyRuntimeAliases } from './runtime-capabilities.mjs';
+import { validateWebFunctions } from './web-functions.mjs';
 import { expandedAliasMemberIds } from './alias-resolution.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -129,7 +131,7 @@ export function normalizeLegacyAliases(input) {
 }
 
 function validateConfig(config, sourcePath, env) {
-  const errors = [];
+  const errors = validateWebFunctions(config.web);
   const modelIds = new Set();
 
   if (config.server?.inferenceEnabled != null && typeof config.server.inferenceEnabled !== 'boolean') {
@@ -495,6 +497,7 @@ export async function loadConfig(
   });
 
   materializeFederatedNodes(config);
-  validateConfig(config, resolvedPath, env);
-  return config;
+  const resolved = applyRuntimeAliases(config);
+  validateConfig(resolved, resolvedPath, env);
+  return resolved;
 }
