@@ -5,7 +5,8 @@
     "communication": "chat-capable",
     "inbox": "enntity-presence",
     "embodiment": "chat-capable",
-    "embedding": "embedding"
+    "embedding": "embedding",
+    "perception": "multimodal"
   },
   "endpoints": {
     "models": "/v1",

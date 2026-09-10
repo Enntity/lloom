@@ -9,7 +9,9 @@ export function applyRuntimeAliases(config) {
     [contract.models.communication]:
       config.defaults?.chatCapableModel ||
       (ids.has('cloud/openrouter/chat-capable') ? 'cloud/openrouter/chat-capable' : null),
-    [contract.models.embedding]: config.defaults?.embeddingModel
+    [contract.models.embedding]: config.defaults?.embeddingModel,
+    [contract.models.perception]: config.defaults?.multimodalModel ||
+      (ids.has('google/gemini-3.1-flash-lite') ? 'google/gemini-3.1-flash-lite' : null)
   };
   for (const [name, target] of Object.entries(targets)) {
     if (!ids.has(name) && target && target !== name && ids.has(target))

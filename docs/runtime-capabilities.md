@@ -41,3 +41,5 @@ Explicit aliases always win. When the target exists, configuration loading suppl
 - `embedding` from `defaults.embeddingModel`.
 
 These names are routing contracts, not assumptions that a particular model has been installed. Missing targets remain absent and are reported by capability discovery. Provider/model metadata and keys for OpenRouter and Replicate stay in their existing backend definitions; they are not duplicated in Runtime or in this web-provider section.
+
+The shared `multimodal` perception alias uses `defaults.multimodalModel`, or the installed `google/gemini-3.1-flash-lite` route. An explicit alias is preserved. Runtime `InspectContent` forwards actual audio, video, images, and PDF using chat-completions content parts through this route; no new provider keys are needed in Runtime.
