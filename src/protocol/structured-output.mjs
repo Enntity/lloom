@@ -33,9 +33,25 @@ function supportsTools(resolved = {}) {
   );
 }
 
+function prepareToolChoiceForBackend(body, resolved) {
+  if (resolved.backend?.toolChoiceRequiresNonThinking !== true) return body;
+  const forced = body.tool_choice === 'required' || body.tool_choice?.type === 'function';
+  // A forced non-thinking call has no reasoning to replay. Keep that tool
+  // turn non-thinking rather than inventing reasoning or triggering provider 400s.
+  const messages = body.messages ?? [];
+  const lastUser = messages.findLastIndex((message) => message.role === 'user');
+  const missingToolReasoning = messages
+    .slice(lastUser + 1)
+    .some((message) => message.role === 'assistant' && message.tool_calls?.length && !message.reasoning_content);
+  if (!forced && !missingToolReasoning) return body;
+  // Some providers reject forced tools in thinking mode. Preserve the caller's
+  // tool constraint, including the tool synthesized for a schema-bound result.
+  return { ...body, thinking: { ...(isObject(body.thinking) ? body.thinking : {}), type: 'disabled' } };
+}
+
 export function prepareStructuredOutputForBackend(body = {}, resolved = {}) {
   const contract = isObject(body.lloom) ? body.lloom.outputSchema : null;
-  if (contract == null) return { body, output: null };
+  if (contract == null) return { body: prepareToolChoiceForBackend(body, resolved), output: null };
 
   const next = withoutOutputSchemaExtension(body);
   if (!isObject(contract) || !isObject(contract.schema)) {
@@ -110,7 +126,7 @@ export function prepareStructuredOutputForBackend(body = {}, resolved = {}) {
     };
   }
   return {
-    body: next,
+    body: prepareToolChoiceForBackend(next, resolved),
     output: {
       adapter,
       name

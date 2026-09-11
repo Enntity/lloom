@@ -675,6 +675,38 @@ function close(server) {
     for await (const chunk of req) raw += chunk;
     const request = JSON.parse(raw);
     requests.push(request);
+    const forced = request.tool_choice === 'required' || request.tool_choice?.type === 'function';
+    if (forced && request.thinking?.type !== 'disabled') {
+      res.writeHead(400, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'Thinking mode does not support this tool_choice' } }));
+      return;
+    }
+    if (request.stream) {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.end(
+        `data: ${JSON.stringify({
+          id: 'forced-tool-stream',
+          object: 'chat.completion.chunk',
+          choices: [
+            {
+              index: 0,
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: 'call_answer',
+                    type: 'function',
+                    function: { name: 'answer', arguments: '{"answer":"ok"}' }
+                  }
+                ]
+              },
+              finish_reason: 'tool_calls'
+            }
+          ]
+        })}\n\ndata: [DONE]\n\n`
+      );
+      return;
+    }
     const body = JSON.stringify({
       id: `completion-${requests.length}`,
       object: 'chat.completion',
@@ -712,6 +744,7 @@ function close(server) {
         type: 'openai',
         baseUrl: `http://127.0.0.1:${upstreamPort}/v1`,
         timeoutMs: 5000,
+        toolChoiceRequiresNonThinking: true,
         structuredOutput: { requireParameters: true }
       }
     },
@@ -773,6 +806,7 @@ function close(server) {
       function: { name: 'answer' }
     });
     assert.deepEqual(request.provider, { require_parameters: true });
+    assert.deepEqual(request.thinking, { type: 'disabled' });
   }
 
   const invalid = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
@@ -787,6 +821,40 @@ function close(server) {
   assert.equal(invalid.status, 400);
   assert.equal((await invalid.json()).error.code, 'invalid_structured_output');
   assert.equal(requests.length, 2);
+
+  for (const tool_choice of ['required', { type: 'function', function: { name: 'answer' } }]) {
+    const streamed = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'test-model',
+        messages: [{ role: 'user', content: 'hello' }],
+        tools: [{ type: 'function', function: { name: 'answer', parameters: schema } }],
+        tool_choice,
+        stream: true,
+        thinking: { type: 'enabled' }
+      })
+    });
+    assert.equal(streamed.status, 200);
+    const text = await streamed.text();
+    assert.match(text, /tool_calls/);
+    assert.match(text, /\[DONE\]/);
+    assert.deepEqual(requests.at(-1).tool_choice, tool_choice);
+    assert.deepEqual(requests.at(-1).thinking, { type: 'disabled' });
+  }
+
+  const ordinary = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'hello' }],
+      thinking: { type: 'enabled' }
+    })
+  });
+  assert.equal(ordinary.status, 200);
+  await ordinary.json();
+  assert.deepEqual(requests.at(-1).thinking, { type: 'enabled' });
 
   await close(app.server);
   await close(upstream);

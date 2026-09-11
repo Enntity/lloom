@@ -61,8 +61,11 @@ export function responseUsageFromOpenAI(usage = {}) {
     input_tokens: inputTokens,
     output_tokens: outputTokens,
     total_tokens: usage.total_tokens ?? inputTokens + outputTokens,
-    input_tokens_details: usage.prompt_tokens_details ?? usage.input_tokens_details ?? {},
-    output_tokens_details: usage.completion_tokens_details ?? usage.output_tokens_details ?? {}
+    input_tokens_details: { cached_tokens: 0, ...(usage.prompt_tokens_details ?? usage.input_tokens_details ?? {}) },
+    output_tokens_details: {
+      reasoning_tokens: 0,
+      ...(usage.completion_tokens_details ?? usage.output_tokens_details ?? {})
+    }
   };
 }
 

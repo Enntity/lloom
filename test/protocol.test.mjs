@@ -14,6 +14,33 @@ import {
 
 const resolved = { model: { upstreamModel: 'upstream-qwen' } };
 
+// Explicit provider compatibility preserves forced tools without disabling
+// thinking for normal chat or automatically selected tools.
+{
+  const backend = { toolChoiceRequiresNonThinking: true };
+  for (const tool_choice of ['required', { type: 'function', function: { name: 'answer' } }]) {
+    for (const stream of [false, true]) {
+      const body = { tool_choice, stream, thinking: { type: 'enabled' }, reasoning_effort: 'high' };
+      const prepared = prepareStructuredOutputForBackend(body, { backend }).body;
+      assert.deepEqual(prepared.thinking, { type: 'disabled' });
+      assert.deepEqual(prepared.tool_choice, tool_choice);
+      assert.equal(prepared.reasoning_effort, 'high');
+      assert.equal(body.thinking.type, 'enabled');
+      assert.equal(prepareStructuredOutputForBackend(body, {}).body, body);
+    }
+  }
+  for (const tool_choice of [undefined, 'auto', 'none']) {
+    const body = { tool_choice, thinking: { type: 'enabled' } };
+    assert.equal(prepareStructuredOutputForBackend(body, { backend }).body, body);
+  }
+  const prepared = prepareStructuredOutputForBackend(
+    { lloom: { outputSchema: { name: 'answer', schema: { type: 'object' } } } },
+    { backend, model: { supportsTools: true } }
+  );
+  assert.equal(prepared.body.tool_choice.function.name, 'answer');
+  assert.deepEqual(prepared.body.thinking, { type: 'disabled' });
+}
+
 // LLooM output contract → explicit backend protocol
 {
   const schema = {

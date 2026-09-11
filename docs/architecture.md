@@ -37,6 +37,14 @@ JSON Schema output. A backend can explicitly select `adapter: "tool"` or
 URLs, model names, or prompt text. Schema-bound calls are currently buffered
 (`stream: false`) so LLooM can normalize and verify the complete result.
 
+For providers such as the direct DeepSeek API that reject forced tools in
+thinking mode, set `backends.<id>.toolChoiceRequiresNonThinking: true`.
+LLooM disables thinking for required or named tools, including schema-bound
+output tools. It also keeps the current tool turn non-thinking when an assistant
+tool call has no reasoning to replay; a new user turn permits thinking again.
+This opt-in compatibility setting preserves tool constraints without inventing
+reasoning history. Ordinary calls outside those cases keep their thinking settings.
+
 ## Security Defaults
 
 | Setting                         | Default                                | Meaning                                                                                           |
@@ -120,6 +128,8 @@ An alias may intentionally have the same ID as one of its members. This preserve
 `/v1/images/edits` accepts the OpenAI-compatible multipart contract: one or more `image[]` file parts (or legacy `image`), a required `prompt`, and optional `mask`, `model`, `n`, `size`, and output fields. LLooM resolves and admits the selected image-editing runtime, rewrites only the multipart `model` field, and proxies image bytes without JSON or text transcoding. Models must advertise image input or the `image-editing` capability.
 
 `/v1/responses` is implemented as a bridge over chat-completions backends. It normalizes `input`, `instructions`, `max_output_tokens`, `output_text`, `tools`, `tool_choice`, function-call outputs, reasoning hints, and usage fields, and translates chat SSE into Responses-style streaming events with ordered `sequence_number` fields, reasoning text deltas, function-call argument deltas, and `response.incomplete` events for output-cap truncation.
+
+The Responses bridge also supports free-form custom tool round trips and preserves developer instructions as system messages on Chat backends. See [Codex DeepSeek workers](codex-deepseek-workers.md) for the conversion contract, limits, and client qualification.
 
 `/v1/messages` is implemented as an Anthropic Messages bridge over OpenAI-compatible chat-completions backends. It converts Anthropic text, image, `thinking`, `redacted_thinking`, `tools`, `tool_choice`, assistant `tool_use`, and user `tool_result` blocks into the matching OpenAI chat shapes, then maps OpenAI reasoning, text, and function-call responses back into Anthropic `thinking`, `text`, and `tool_use` content blocks. Streaming reasoning chunks are emitted as Anthropic `thinking_delta` events, streaming function-call chunks are emitted as Anthropic `input_json_delta` events, and usage is normalized from either chat-completions token names or Responses-style `input_tokens` / `output_tokens` fields.
 

@@ -3342,6 +3342,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         if (body.stream === true) {
           if (!upstream.ok) return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
           return streamResponsesFromOpenAI(res, upstream, resolved.requestedId, {
+            tools: body.tools,
             signal,
             timing,
             writeSse,
@@ -3365,7 +3366,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
           };
         }
         const responseJson = normalizeStructuredOutputChatCompletion(JSON.parse(text), normalizedRequest.output);
-        sendJson(res, 200, openAIToResponses(responseJson, resolved.requestedId));
+        sendJson(res, 200, openAIToResponses(responseJson, resolved.requestedId, { tools: body.tools }));
         return {
           status: 200,
           stream: false,

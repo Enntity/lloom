@@ -6,6 +6,8 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Added
 
+- Codex-compatible Responses custom tool round trips, preserved developer instructions, complete usage counters, and opt-in DeepSeek forced-tool reasoning compatibility.
+
 - Apple Silicon and DGX / NVIDIA Chatterbox TTS recipes (`apple-silicon-chatterbox`, `linux-nvidia-gb10-chatterbox`) with zero-shot clone, exaggeration, CFG, multilingual, turbo, named LLooM voices, and the OpenAI `/v1/audio/speech` contract.
 - Guarded `lloom remove-model` planning and apply support with shared-resource protection, config backups, and opt-in weight deletion.
 - One-step `lloom add-model <ref> --go` backend installation, model download, configuration, runtime startup, warmup, and health verification.

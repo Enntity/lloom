@@ -83,14 +83,15 @@ export function responsesInputToMessages(body) {
       }
       continue;
     }
-    if (item.type === 'function_call') {
+    if (item.type === 'function_call' || item.type === 'custom_tool_call') {
       const last = messages.at(-1);
       const toolCall = {
         id: item.call_id ?? item.id,
         type: 'function',
         function: {
           name: item.name,
-          arguments: item.arguments ?? '{}'
+          arguments:
+            item.type === 'custom_tool_call' ? JSON.stringify({ input: item.input ?? '' }) : (item.arguments ?? '{}')
         }
       };
       // Attach to prior assistant (with reasoning) when possible
@@ -106,7 +107,7 @@ export function responsesInputToMessages(body) {
       }
       continue;
     }
-    if (item.type === 'function_call_output') {
+    if (item.type === 'function_call_output' || item.type === 'custom_tool_call_output') {
       messages.push({
         role: 'tool',
         tool_call_id: item.call_id,
@@ -121,7 +122,8 @@ export function responsesInputToMessages(body) {
       });
       continue;
     }
-    const role = item.role === 'assistant' || item.role === 'system' ? item.role : 'user';
+    const role =
+      item.role === 'developer' ? 'system' : item.role === 'assistant' || item.role === 'system' ? item.role : 'user';
     const content = Array.isArray(item.content) ? item.content.map(responsesContentPartToOpenAI) : (item.content ?? '');
     const message = { role, content };
     // Pass through OpenAI-compatible reasoning fields if a client put them on input messages
@@ -141,9 +143,30 @@ export function responsesInputToMessages(body) {
 export function responsesToolsToOpenAI(tools) {
   if (!Array.isArray(tools) || !tools.length) return undefined;
   const converted = tools
-    .filter((tool) => tool?.function?.name || (tool?.type === 'function' && tool.name))
+    .filter((tool) => tool?.function?.name || (['function', 'custom'].includes(tool?.type) && tool.name))
     .map((tool) => {
       if (tool.function?.name) return tool;
+      if (tool.type === 'custom') {
+        return {
+          type: 'function',
+          function: {
+            name: tool.name,
+            description: [
+              tool.description,
+              'Pass the exact raw tool input as the input string.',
+              tool.format?.type === 'grammar' ? `Input grammar (${tool.format.syntax}):\n${tool.format.definition}` : ''
+            ]
+              .filter(Boolean)
+              .join('\n\n'),
+            parameters: {
+              type: 'object',
+              properties: { input: { type: 'string' } },
+              required: ['input'],
+              additionalProperties: false
+            }
+          }
+        };
+      }
       return {
         type: 'function',
         function: {
@@ -161,7 +184,7 @@ export function responsesToolsToOpenAI(tools) {
 
 export function responsesToolChoiceToOpenAI(toolChoice) {
   if (!toolChoice || typeof toolChoice === 'string') return toolChoice;
-  if (toolChoice.type === 'function' && toolChoice.name) {
+  if (['function', 'custom'].includes(toolChoice.type) && toolChoice.name) {
     return {
       type: 'function',
       function: {
@@ -185,6 +208,7 @@ export function responsesToOpenAIChat(body, resolvedModel) {
     stream_options: body.stream === true ? { include_usage: true } : undefined,
     tools: responsesToolsToOpenAI(body.tools),
     tool_choice: responsesToolChoiceToOpenAI(body.tool_choice),
+    ...(body.thinking ? { thinking: body.thinking } : {}),
     ...(body.lloom ? { lloom: body.lloom } : {}),
     ...(body.reasoning ? { reasoning: body.reasoning } : {}),
     ...(effort ? { reasoning_effort: effort } : {})
@@ -250,7 +274,25 @@ export function responseFunctionCallItems(toolCalls = []) {
     }));
 }
 
-export function openAIToResponses(responseJson, requestedModel) {
+/** Restore free-form tools wrapped as JSON functions for chat backends. */
+export function restoreResponsesToolItem(item, tools = []) {
+  if (item.type !== 'function_call' || !tools.some((tool) => tool.type === 'custom' && tool.name === item.name))
+    return item;
+  let parsed;
+  try {
+    parsed = JSON.parse(item.arguments);
+    if (typeof parsed?.input !== 'string') throw new Error('missing input');
+  } catch {
+    const error = new Error(`Upstream returned invalid input for custom tool ${item.name}`);
+    error.statusCode = 502;
+    error.code = 'invalid_custom_tool_input';
+    throw error;
+  }
+  const { arguments: _arguments, ...rest } = item;
+  return { ...rest, type: 'custom_tool_call', input: parsed.input };
+}
+
+export function openAIToResponses(responseJson, requestedModel, { tools = [] } = {}) {
   const normalized = normalizeOpenAIChatCompletionBody(responseJson) ?? responseJson;
   const choice = normalized.choices?.[0] ?? {};
   const text = openAIChoiceText(choice);
@@ -264,6 +306,10 @@ export function openAIToResponses(responseJson, requestedModel) {
       : []),
     ...(text ? [responseOutputTextItem(responseId, text)] : []),
     ...responseFunctionCallItems(choice.message?.tool_calls)
+      .filter(
+        (item) => status !== 'incomplete' || !tools.some((tool) => tool.type === 'custom' && tool.name === item.name)
+      )
+      .map((item) => restoreResponsesToolItem(item, tools))
   ];
   return {
     id: responseId,

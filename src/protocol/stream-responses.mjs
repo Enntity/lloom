@@ -4,7 +4,7 @@ import { streamProviderError } from './upstream-error.mjs';
  * Pure translator: consume chunks, emit { event, data } records (no HTTP).
  */
 
-import { responseReasoningItem } from './responses.mjs';
+import { responseReasoningItem, restoreResponsesToolItem } from './responses.mjs';
 import {
   openAIChoiceReasoning,
   openAIChoiceReasoningSummary,
@@ -19,7 +19,7 @@ import { normalizeOpenAIChatCompletionChunk } from './reasoning-normalize.mjs';
 
 export function createResponsesStreamTranslator(
   requestedModel,
-  { responseId = `resp_${Date.now()}`, createdAt = Math.floor(Date.now() / 1000) } = {}
+  { responseId = `resp_${Date.now()}`, createdAt = Math.floor(Date.now() / 1000), tools = [] } = {}
 ) {
   const events = [];
   let sequenceNumber = 0;
@@ -46,6 +46,35 @@ export function createResponsesStreamTranslator(
   };
 
   function emit(event, data) {
+    // JSON wrapper fragments are not valid free-form input. Buffer custom tool
+    // input until complete, then emit the decoded string with native events.
+    const custom = [...toolItems.values()].find(
+      (item) =>
+        item.outputIndex === data.output_index &&
+        tools.some((tool) => tool.type === 'custom' && tool.name === item.name)
+    );
+    if (custom && event === 'response.function_call_arguments.delta') return;
+    if (custom && event === 'response.function_call_arguments.done') {
+      const input = restoreResponsesToolItem(
+        { type: 'function_call', name: custom.name, arguments: data.arguments },
+        tools
+      ).input;
+      emit('response.custom_tool_call_input.delta', {
+        type: 'response.custom_tool_call_input.delta',
+        item_id: data.item_id,
+        output_index: data.output_index,
+        delta: input
+      });
+      event = 'response.custom_tool_call_input.done';
+      const { arguments: _arguments, ...rest } = data;
+      data = { ...rest, type: event, input };
+    }
+    if (custom && data.item?.type === 'function_call') {
+      data = {
+        ...data,
+        item: restoreResponsesToolItem({ ...data.item, arguments: data.item.arguments || '{"input":""}' }, tools)
+      };
+    }
     sequenceNumber += 1;
     events.push({
       event,
@@ -293,6 +322,12 @@ export function createResponsesStreamTranslator(
       output.push(item);
     }
     for (const item of [...toolItems.values()].sort((a, b) => a.outputIndex - b.outputIndex)) {
+      // Never hand an executor a custom call cut short by the output budget.
+      if (
+        responseStatusFromFinishReason(stopReason) === 'incomplete' &&
+        tools.some((tool) => tool.type === 'custom' && tool.name === item.name)
+      )
+        continue;
       addToolItemOutput(item);
       emitToolItemArguments(item);
       const completed = {
@@ -314,7 +349,7 @@ export function createResponsesStreamTranslator(
         output_index: item.outputIndex,
         item: completed
       });
-      output.push(completed);
+      output.push(restoreResponsesToolItem(completed, tools));
     }
     const status = responseStatusFromFinishReason(stopReason);
     const finalEvent = status === 'incomplete' ? 'response.incomplete' : 'response.completed';
@@ -382,13 +417,13 @@ export async function streamResponsesFromOpenAI(
   res,
   upstream,
   requestedModel,
-  { signal, timing, writeSse, throwIfClientClosed, setCors, sseHeaders, markFirstContent } = {}
+  { signal, timing, writeSse, throwIfClientClosed, setCors, sseHeaders, markFirstContent, tools = [] } = {}
 ) {
   throwIfClientClosed(signal, res);
   setCors(res);
   res.writeHead(200, sseHeaders());
 
-  const translator = createResponsesStreamTranslator(requestedModel);
+  const translator = createResponsesStreamTranslator(requestedModel, { tools });
   let sawFirst = false;
 
   function flush(newEvents) {
