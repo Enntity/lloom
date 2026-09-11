@@ -100,7 +100,15 @@ test('multimodal alias uses the declared default or available Gemini and preserv
   const { applyRuntimeAliases } = await import('../src/runtime-capabilities.mjs');
   const gemini = { id: 'google/gemini-3.1-flash-lite' };
   assert.deepEqual(applyRuntimeAliases({ models: [gemini] }).aliases.multimodal.members, [gemini.id]);
-  assert.deepEqual(applyRuntimeAliases({ defaults: { multimodalModel: 'custom' }, models: [gemini, { id: 'custom' }] }).aliases.multimodal.members, ['custom']);
-  assert.deepEqual(applyRuntimeAliases({ aliases: { multimodal: { members: ['chosen'] } }, models: [gemini] }).aliases.multimodal.members, ['chosen']);
+  assert.deepEqual(
+    applyRuntimeAliases({ defaults: { multimodalModel: 'custom' }, models: [gemini, { id: 'custom' }] }).aliases
+      .multimodal.members,
+    ['custom']
+  );
+  assert.deepEqual(
+    applyRuntimeAliases({ aliases: { multimodal: { members: ['chosen'] } }, models: [gemini] }).aliases.multimodal
+      .members,
+    ['chosen']
+  );
   assert.equal(applyRuntimeAliases({ models: [] }).aliases.multimodal, undefined);
 });
