@@ -17,6 +17,7 @@ All notable changes to LLooM will be documented in this file. The format follows
 - Qwen3.6 35B-A3B OptiQ recipe and context benchmark helper.
 - A separate DGX Spark ThinkingCap Qwen3.6-27B NVFP4 candidate recipe on released vLLM 0.25, preserving the established Unsloth default while token-efficiency and quality evidence are collected.
 - Public project governance, security, contribution, CI, and release metadata.
+- Configurable rate limits as metadata on any model or route alias: `maxConcurrent` queues with the runtime-slot model and a `rate` such as `"30/m"` enforces the standard token-bucket (`NGINX limit_req`) budget, with `retry-after` 429s, chain-composed limits across nested aliases and shared model budgets, live state under `rateLimits` in `GET /gateway/routing`, and no effect on target failure backoff.
 
 ### Changed
 

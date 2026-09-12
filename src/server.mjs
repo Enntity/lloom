@@ -56,6 +56,7 @@ import { createRegistry, UnknownModelError } from './registry.mjs';
 import { routeProfileStatus, writeRouteMemberSuspension, writeRouteProfile } from './route-control.mjs';
 import { mutateConfigSource } from './config-mutation.mjs';
 import { createModelMaintenanceController } from './model-maintenance-control.mjs';
+import { acquireRateLimitSlot, createRateLimitRegistry } from './rate-limit.mjs';
 import { RuntimeManager, runtimeWatchdogConfig, normalizeRequestClass } from './runtime-manager.mjs';
 import {
   applyRuntimePolicyPlan,
@@ -490,6 +491,22 @@ class ModelTargetConfigurationError extends Error {
   }
 }
 
+class ModelRateLimitError extends Error {
+  constructor(modelId, retryAfterSeconds, { queueFull = false } = {}) {
+    super(
+      queueFull
+        ? `rate limit queue for model ${modelId} is full; retry after ${retryAfterSeconds} seconds`
+        : `rate limit for model ${modelId} exceeded; retry after ${retryAfterSeconds} seconds`
+    );
+    this.name = 'ModelRateLimitError';
+    this.statusCode = 429;
+    this.code = queueFull ? 'MODEL_RATE_LIMIT_QUEUE_FULL' : 'MODEL_RATE_LIMITED';
+    this.type = 'rate_limit_error';
+    this.model = modelId;
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
 function isClientClosedError(error) {
   return error instanceof ClientClosedError || error?.name === 'ClientClosedError' || error?.code === 'client_closed';
 }
@@ -637,7 +654,13 @@ function copyResponseHeaders(upstream) {
   const headers = {};
   const contentType = upstream.headers.get('content-type');
   if (contentType) headers['content-type'] = contentType;
-  for (const name of ['x-generation-id', 'retry-after']) {
+  for (const name of [
+    'x-generation-id',
+    'retry-after',
+    'x-lloom-provider',
+    'x-lloom-provider-job-id',
+    'x-lloom-upstream-model'
+  ]) {
     const value = upstream.headers.get(name);
     if (value) headers[name] = value;
   }
@@ -1893,7 +1916,19 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
   const runtimeStartOperations = new Map();
   const runtimeRecoveryBackoffs = new Map();
   const targetBackoffs = new Map();
+  const rateLimitRegistry = createRateLimitRegistry(rateLimitSettingsFor(config));
   const configPath = config.sourcePath;
+
+  function rateLimitSettingsFor(configSnapshot = config) {
+    const limits = {};
+    for (const model of configSnapshot.models ?? []) {
+      if (model?.id && model.rateLimit) limits[model.id] = model.rateLimit;
+    }
+    for (const [aliasId, alias] of Object.entries(configSnapshot.aliases ?? {})) {
+      if (alias?.rateLimit && typeof alias === 'object') limits[aliasId] = alias.rateLimit;
+    }
+    return limits;
+  }
 
   function targetKey(resolved) {
     return `${resolved.backend?.baseUrl ?? resolved.model.backend ?? 'backend'}\n${resolved.model.upstreamModel}`;
@@ -2008,6 +2043,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         // the validated on-disk catalog immediately while runtimeManager
         // reconciles physical processes against its previous snapshot.
         registry = createRegistry(nextConfig);
+        rateLimitRegistry.sync(rateLimitSettingsFor(nextConfig));
         const result = await runtimeManager.reconfigure(nextConfig);
         for (const key of Object.keys(config)) delete config[key];
         Object.assign(config, nextConfig);
@@ -2381,11 +2417,64 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     }
   }
 
+  const RATE_LIMIT_QUEUE_CAPACITY = 256;
+
+  /**
+   * Gate a request through every rateLimit declared on its resolution chain
+   * (the requested alias, any nested aliases, and the concrete model). Limits
+   * compose: the outer alias and the model each enforce their own concurrency
+   * and rate budget. A single limiter per scope id is shared across aliases so
+   * a model reachable through two aliases contributes to one queue.
+   */
+  async function admitRateLimited(resolved, scopeIds, { signal = null, started = Date.now() } = {}) {
+    if (!scopeIds.length) return () => {};
+    const limited = scopeIds.filter((id) => rateLimitRegistry.limiter(id));
+    if (!limited.length) return () => {};
+    // FIFO fairness across scopes: acquire semaphore slots first (queued in
+    // call order), then rate budget. Failover between candidates happens
+    // outside this function and re-admits with its own scope ids.
+    const releases = [];
+    const releaseAll = () => {
+      while (releases.length) releases.pop()();
+    };
+    try {
+      for (const id of limited) {
+        const entry = rateLimitRegistry.limiter(id);
+        if (entry.semaphore && entry.semaphore.queued >= RATE_LIMIT_QUEUE_CAPACITY) {
+          throw new ModelRateLimitError(resolved.requestedId, 5, { queueFull: true });
+        }
+        releases.push(await acquireRateLimitSlot(rateLimitRegistry, id, { signal }));
+      }
+      return releaseAll;
+    } catch (error) {
+      releaseAll();
+      if (error instanceof ModelRateLimitError) throw error;
+      if (isClientClosedError(error)) {
+        throw Object.assign(new ClientClosedError(), { cause: error });
+      }
+      if (error?.name === 'RateBudgetExhaustedError') {
+        const retryAfterSeconds = Math.max(1, Math.ceil(Number(error.retryAfterMs ?? 1000) / 1000));
+        throw new ModelRateLimitError(resolved.requestedId, retryAfterSeconds);
+      }
+      // Queue timeout or unexpected limiter failure maps to a retryable 429.
+      const waited = Math.max(1, Math.ceil((Date.now() - started) / 1000));
+      throw new ModelRateLimitError(resolved.requestedId, Math.max(2, waited), {
+        queueFull: error?.name === 'TimeoutError'
+      });
+    }
+  }
+
   async function recordModelRequest({ route, resolved, stream, req, res }, fn, { deferUnsentErrors = false } = {}) {
     const started = Date.now();
     const requestBytes = Number(req.headers['content-length']) || 0;
     const attribution = requestEnntityAttribution(req);
     const requestClass = normalizeRequestClass(req.headers['x-lloom-request-class']);
+    const rateLimitScopeIds = [...new Set([resolved.requestedId, ...(resolved.aliasChain ?? [])])];
+    const client = createClientCloseTracker(req, res);
+    const rateLimitRelease = await admitRateLimited(resolved, rateLimitScopeIds, {
+      signal: client.signal,
+      started
+    });
     const connectionId = metrics.begin({
       route,
       model: resolved.model.id,
@@ -2408,7 +2497,6 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       stream
     });
     const timing = createResponseTiming(started);
-    const client = createClientCloseTracker(req, res);
     const watchdogConfig = runtimeWatchdogConfig(config.runtimes?.[resolved.model.runtime]);
     let watchdogTimer = null;
     let watchdogArmed = false;
@@ -2416,6 +2504,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     let queueStartedAt = null;
     let lastProgressAt = started;
     let forwardedBytes = 0;
+    let watchdogHadContent = false;
     const clearWatchdogTimer = () => {
       if (watchdogTimer) clearTimeout(watchdogTimer);
       watchdogTimer = null;
@@ -2427,21 +2516,25 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       if (!watchdogConfig.enabled || stream !== true) return;
       watchdogArmed = true;
       clearWatchdogTimer();
-      watchdogTimer = setTimeout(() => {
-        watchdogTimer = null;
-        noteRuntimeRequestOutcome(resolved.model.runtime, {
-          id: connectionId,
-          route,
-          model: resolved.model.id,
-          status: 504,
-          ok: false,
-          durationMs: Date.now() - started,
-          runtimeDurationMs: runtimeStartedAt == null ? 0 : Date.now() - runtimeStartedAt,
-          stallDurationMs: Date.now() - lastProgressAt,
-          responseBytes: 0,
-          stalled: true
-        });
-      }, watchdogConfig.minNoProgressMs);
+      watchdogTimer = setTimeout(
+        () => {
+          watchdogTimer = null;
+          noteRuntimeRequestOutcome(resolved.model.runtime, {
+            id: connectionId,
+            route,
+            model: resolved.model.id,
+            status: 504,
+            ok: false,
+            durationMs: Date.now() - started,
+            runtimeDurationMs: runtimeStartedAt == null ? 0 : Date.now() - runtimeStartedAt,
+            stallDurationMs: Date.now() - lastProgressAt,
+            hadContent: watchdogHadContent,
+            responseBytes: 0,
+            stalled: true
+          });
+        },
+        watchdogHadContent ? watchdogConfig.idleContentTimeoutMs : watchdogConfig.firstContentTimeoutMs
+      );
       watchdogTimer.unref?.();
     };
     const progress = (patch) => {
@@ -2451,6 +2544,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       const bytes = Number(patch?.responseBytesDelta ?? 0);
       const chars = Number(patch?.outputCharsDelta ?? 0);
       if (bytes > 0 || chars > 0) {
+        watchdogHadContent = true;
         lastProgressAt = Date.now();
         armWatchdogTimer();
       }
@@ -2592,6 +2686,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       throw error;
     } finally {
       clearWatchdogTimer();
+      rateLimitRelease();
       metrics.end(connectionId);
       client.dispose();
     }
@@ -2661,6 +2756,11 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         }
         return result;
       } catch (error) {
+        if (error instanceof ModelRateLimitError) {
+          // A route-level limit rejection says nothing about target health; do
+          // not poison the target backoff or attempt failover past the cap.
+          throw error;
+        }
         if (shouldFailoverModelRequest(error, res)) noteTargetFailure(resolved, error);
         else if (!isClientClosedError(error)) noteTargetSuccess(resolved);
         else releaseTargetProbe(resolved);
@@ -2879,7 +2979,8 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
           const upstream = await generateProviderVideo({
             backend: resolved.backend,
             body: { ...body, model: resolved.model.upstreamModel },
-            signal
+            signal,
+            timeoutMs: resolved.backend.timeoutMs ?? 600000
           });
           return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
         }
@@ -3555,7 +3656,8 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
           // route listing.
           profiles: routes,
           targetBackoffs: targetBackoffStatus(),
-          runtimeRecoveryBackoffs: runtimeRecoveryBackoffStatus()
+          runtimeRecoveryBackoffs: runtimeRecoveryBackoffStatus(),
+          rateLimits: rateLimitRegistry.status()
         });
         return;
       }

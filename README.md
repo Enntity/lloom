@@ -504,6 +504,57 @@ measurements; failed attempts cannot masquerade as fast successes. A fastest ali
 does not start cold alternatives in the background just to measure them. Existing
 runtime admission remains authoritative when no ready member can serve.
 
+### Rate limits on models and aliases
+
+Set `rateLimit` on any model definition or route alias in the gateway config to
+cap concurrency, request rate, or both:
+
+```json
+{
+  "aliases": {
+    "jinx-cognition": {
+      "members": ["q38fn"],
+      "rateLimit": { "maxConcurrent": 2, "rate": "30/m" }
+    }
+  },
+  "models": [
+    {
+      "id": "cloud/openrouter/expensive",
+      "backend": "openrouter",
+      "rateLimit": "10/m"
+    }
+  ]
+}
+```
+
+`rateLimit` accepts a shorthand string `"<n>/(s|m|h|d)"` or an object with:
+
+- `maxConcurrent`: maximum in-flight requests through this scope. Extra
+  requests queue in FIFO order (bounded by 256 waiting requests) exactly like
+  runtime admission slots; overflow returns a retryable `429`
+  (`MODEL_RATE_LIMIT_QUEUE_FULL`).
+- `rate`: either `"<n>/(s|m|h|d)"` or `{ rate: n, period: "s" | "m" | "h" | "d" | milliseconds }`.
+- `burst`: extra tokens above the steady rate (default `n-1` for `rate: n/period`
+  so the first `n` requests pass back-to-back; `0` spaces every request at the
+  interval).
+
+The limiter is the standard token-bucket used by NGINX `limit_req` and Envoy's
+local rate limiter: tokens refill continuously at one per `rateMs`, requests
+over the budget fail fast with a retryable `429` (`MODEL_RATE_LIMITED`) and a
+`retry-after` header rather than queueing for minutes. No background timers:
+state advances lazily per request.
+
+Limits compose down the resolution chain. A request through
+`parent -> child -> model` consumes budget from every `rateLimit` on that path,
+and one limiter per id is shared across the gateway: two aliases pointing at the
+same limited model draw from the same budget, and a direct model ID request is
+limited identically. Rate-limit rejections never poison target failure backoff
+or trigger model failover; the 429 surfaces directly with `retry-after`.
+
+Live state (active, queued, next-allowed time per limiter) is exposed as
+`rateLimits` in `GET /gateway/routing`. Config reloads keep existing buckets
+for unchanged ids and prune removed ones.
+
 ### Temporarily free model hardware
 
 ```sh

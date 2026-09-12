@@ -1,4 +1,9 @@
-import { aliasMemberIds, aliasSuspendedMemberIds, expandedAliasMemberIds } from './alias-resolution.mjs';
+import {
+  aliasMemberIds,
+  aliasSuspendedMemberIds,
+  aliasChainsForLeaves,
+  expandedAliasMemberIds
+} from './alias-resolution.mjs';
 export { aliasMemberIds, aliasSuspendedMemberIds, aliasRoutableMemberIds } from './alias-resolution.mjs';
 import {
   buildSpeechModelsSummary,
@@ -121,6 +126,7 @@ export function createRegistry(config) {
 
     const alias = aliasMap.get(requestedId);
     const memberIds = alias ? expandedAliasMemberIds(requestedId, config.aliases, modelMap) : [requestedId];
+    const chains = alias ? aliasChainsForLeaves(requestedId, config.aliases, modelMap) : null;
     const candidates = [];
     for (const [aliasMemberIndex, memberId] of memberIds.entries()) {
       const model = modelMap.get(memberId);
@@ -144,6 +150,7 @@ export function createRegistry(config) {
         aliasMemberCount: memberIds.length,
         alias: alias ? clone(alias) : null,
         model: clone(resolvedModel),
+        ...(chains?.get(model.id) ? { aliasChain: clone(chains.get(model.id)) } : {}),
         backend: clone(backend),
         runtime: target.runtime ? clone(config.runtimes?.[target.runtime] ?? null) : null
       });

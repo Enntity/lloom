@@ -19,10 +19,13 @@ The gateway never guesses a stale model ID. If a client asks for an unknown mode
    - Non-loopback binds always require a configured API key for inference and admin reads.
    - Admin writes (`POST /gateway/*`) on non-loopback binds are denied unless `security.allowRemoteAdmin` is explicitly true **and** a valid API key is present.
 2. Resolve `body.model` through the registry.
-3. Acquire a concurrency slot for the model's runtime if the model has one.
-4. Start or verify the configured runtime if the model has one.
-5. Forward the request to the backend using the model's `upstreamModel`.
-6. Return the upstream stream or response body with gateway-safe headers.
+3. Admit through every `rateLimit` declared on the request's alias chain and
+   concrete model (`src/rate-limit.mjs`): concurrency waits in a bounded FIFO
+   queue, rate budget rejects fast with `429` and `retry-after`.
+4. Acquire a concurrency slot for the model's runtime if the model has one.
+5. Start or verify the configured runtime if the model has one.
+6. Forward the request to the backend using the model's `upstreamModel`.
+7. Return the upstream stream or response body with gateway-safe headers.
 
 OpenAI Responses and Anthropic Messages bridges live in pure modules under `src/protocol/` so request/response transforms can be unit-tested without the HTTP server.
 

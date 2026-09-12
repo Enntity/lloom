@@ -1,6 +1,7 @@
 import { applyRuntimeAliases } from './runtime-capabilities.mjs';
 import { validateWebFunctions } from './web-functions.mjs';
 import { expandedAliasMemberIds } from './alias-resolution.mjs';
+import { normalizeRateLimit } from './rate-limit.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -159,6 +160,13 @@ function validateConfig(config, sourcePath, env) {
         errors.push(`model ${model.id} references unknown backend ${target.backend}`);
       }
     }
+    if (model?.rateLimit != null) {
+      try {
+        normalizeRateLimit(model.rateLimit);
+      } catch (error) {
+        errors.push(`model ${model?.id ?? index} rateLimit: ${error.message}`);
+      }
+    }
   }
 
   errors.push(...validateClusterConfig(config, env));
@@ -187,6 +195,13 @@ function validateConfig(config, sourcePath, env) {
     }
     if (alias?.performanceMetric != null && !['completion', 'first-token'].includes(alias.performanceMetric)) {
       errors.push(`alias ${aliasId} performanceMetric must be completion or first-token`);
+    }
+    if (typeof alias !== 'string' && alias?.rateLimit != null) {
+      try {
+        normalizeRateLimit(alias.rateLimit);
+      } catch (error) {
+        errors.push(`alias ${aliasId} rateLimit: ${error.message}`);
+      }
     }
     const aliasResidencyFields = residencyFields(alias);
     if (aliasResidencyFields.length) {
@@ -403,6 +418,22 @@ function validateConfig(config, sourcePath, env) {
   }
 }
 
+/**
+ * Resolve rateLimit declarations to normalized settings in place. Strings and
+ * numbers keep their authoring form in sourceTemplate; the live config carries
+ * { maxConcurrent, rateMs, burst } so the gateway never re-parses per request.
+ */
+function normalizeConfigRateLimits(config) {
+  for (const model of config.models ?? []) {
+    if (model?.rateLimit != null) model.rateLimit = normalizeRateLimit(model.rateLimit);
+  }
+  for (const alias of Object.values(config.aliases ?? {})) {
+    if (alias && typeof alias === 'object' && alias.rateLimit != null) {
+      alias.rateLimit = normalizeRateLimit(alias.rateLimit);
+    }
+  }
+}
+
 export async function loadConfig(
   configPath = process.env.LLOOM_CONFIG || defaultConfigPath,
   { env = process.env } = {}
@@ -513,6 +544,7 @@ export async function loadConfig(
   });
 
   materializeFederatedNodes(config);
+  normalizeConfigRateLimits(config);
   const resolved = applyRuntimeAliases(config);
   validateConfig(resolved, resolvedPath, env);
   return resolved;

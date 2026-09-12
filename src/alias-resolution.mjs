@@ -45,3 +45,24 @@ export function expandedAliasMemberIds(aliasId, aliases, modelIds, { includeSusp
   expand(aliasId, []);
   return leaves;
 }
+
+/**
+ * Every alias id expanded to reach each leaf, keyed by leaf model id. A leaf
+ * reachable through several chains maps to the first (declaration-order) chain.
+ * Used to enforce rate limits declared on any alias or model in a resolution
+ * chain: a request through `parent -> child -> model` is gated by the limiters
+ * of all three ids.
+ */
+export function aliasChainsForLeaves(aliasId, aliases, modelIds, { includeSuspended = false } = {}) {
+  const chains = new Map();
+  function visit(id, path) {
+    if (!Object.hasOwn(aliases, id) || (modelIds.has(id) && id === path.at(-1))) {
+      if (!chains.has(id)) chains.set(id, [...path, id]);
+      return;
+    }
+    const members = includeSuspended ? aliasMemberIds(aliases[id]) : aliasRoutableMemberIds(aliases[id]);
+    for (const member of members) visit(member, [...path, id]);
+  }
+  visit(aliasId, []);
+  return chains;
+}
