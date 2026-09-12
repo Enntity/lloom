@@ -13,7 +13,7 @@ The normal `POST /v1/videos/generations` route accepts:
 }
 ```
 
-Topaz resolutions are `720p`, `1080p`, or `4k`; frame rate is an integer from 15 through 120. LLooM validates these inputs before submission, sends only the supported fields, polls inside the gateway, and returns the provider's video bytes. The existing Replicate image/audio talking-head contract remains supported. OpenRouter frame-conditioned generation retains the existing `frame_images` contract.
+Topaz resolutions are `720p`, `1080p`, or `4k`; frame rate is an integer from 15 through 60, matching the [provider schema](https://replicate.com/topazlabs/video-upscale/api/schema). LLooM validates these inputs before submission, sends only the supported fields, polls inside the gateway, and returns the provider's video bytes. The existing Replicate image/audio talking-head contract remains supported. OpenRouter frame-conditioned generation retains the existing `frame_images` contract.
 
 Responses expose `x-lloom-provider`, `x-lloom-provider-job-id`, and `x-lloom-upstream-model` for provenance. Provider download credentials never reach callers. Only trusted provider output origins are downloaded, without following redirects. `timeoutMs` on the selected backend bounds submission, polling and download. The existing JSON body limit is 64 MiB, including base64 expansion. Do not retry an ambiguous paid submission automatically.
 

@@ -75,6 +75,7 @@ for (const change of [
   { video: 'https://private.test/video.mp4' },
   { target_resolution: '8k' },
   { target_fps: 0 },
+  { target_fps: 61 },
   { target_fps: 24.5 }
 ]) {
   await assert.rejects(

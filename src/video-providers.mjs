@@ -116,7 +116,7 @@ export async function generateProviderVideo({
       if (!/^data:video\/mp4;base64,[A-Za-z0-9+/]+={0,2}$/.test(body.video || ''))
         throw new Error('video MP4 data URI required');
       if (!['720p', '1080p', '4k'].includes(body.target_resolution)) throw new Error('Invalid target_resolution');
-      if (!Number.isInteger(body.target_fps) || body.target_fps < 15 || body.target_fps > 120)
+      if (!Number.isInteger(body.target_fps) || body.target_fps < 15 || body.target_fps > 60)
         throw new Error('Invalid target_fps');
       input = { video: body.video, target_resolution: body.target_resolution, target_fps: body.target_fps };
     } else if (body.model === 'kwaivgi/kling-v3-video') {
