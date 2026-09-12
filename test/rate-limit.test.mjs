@@ -427,3 +427,95 @@ test('a fractional or zero maxConcurrent is rejected rather than silently unlimi
   }
   assert.deepEqual(normalizeRateLimit({ maxConcurrent: 2 }), { maxConcurrent: 2, burst: 0, rateMs: null });
 });
+
+test('releasing an old semaphore lease twice cannot release a newer request', async () => {
+  const semaphore = createSemaphore(1);
+  const first = await semaphore.acquire();
+  const secondPromise = semaphore.acquire();
+  first();
+  const second = await secondPromise;
+  first();
+  assert.equal(semaphore.active, 1, 'the second request still owns its slot');
+  second();
+});
+
+test('lowering concurrency preserves cancellation and timeout for queued requests', async () => {
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const semaphore = createSemaphore(3);
+    const held = await Promise.all(Array.from({ length: 3 }, () => semaphore.acquire()));
+    const abort = new AbortController();
+    const canceled = semaphore.acquire(abort.signal).catch((error) => error.name);
+    const timed = semaphore.acquire(null, { timeoutMs: 100 }).catch((error) => error.name);
+    semaphore.setLimit(1);
+    held[0]();
+    abort.abort();
+    assert.equal(semaphore.queued, 1, 'cancellation remains registered after a release above the new cap');
+    held[1]();
+    mock.timers.tick(100);
+    assert.equal(semaphore.queued, 0, 'the remaining waiter retains its timeout');
+    assert.equal(await canceled, 'AbortError');
+    assert.equal(await timed, 'TimeoutError');
+    held[2]();
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('a rate rejection releases a target recovery probe for later requests', async () => {
+  let hits = 0;
+  const fixture = await chatFixture(
+    { capped: { members: ['model-a'], rateLimit: '1/d' } },
+    {
+      handleUpstream: (req, res) => {
+        req.resume();
+        hits++;
+        res.writeHead(hits === 1 ? 503 : 200, { 'content-type': 'application/json', 'retry-after': '1' });
+        res.end(
+          JSON.stringify(
+            hits === 1
+              ? { error: { message: 'temporary' } }
+              : {
+                  choices: [{ message: { role: 'assistant', content: 'recovered' } }],
+                  usage: {}
+                }
+          )
+        );
+      }
+    }
+  );
+  const gateway = await chatGateway(fixture);
+  try {
+    assert.equal((await gateway.chat('capped')).status, 503);
+    await new Promise((resolve) => setTimeout(resolve, 1300));
+    assert.equal((await gateway.chat('capped')).status, 429);
+    assert.equal((await gateway.chat('model-a')).status, 200, 'an unlimited caller can still probe recovery');
+    assert.equal(hits, 2);
+  } finally {
+    await gateway.close();
+  }
+});
+
+test('removing a limiter or its concurrency cap releases existing waiters', async () => {
+  for (const next of [{}, { lane: '10/m' }]) {
+    const registry = createRateLimitRegistry({ lane: { maxConcurrent: 1 } });
+    const first = await acquireRateLimitSlot(registry, 'lane');
+    let admitted = false;
+    const queued = acquireRateLimitSlot(registry, 'lane').then((release) => {
+      admitted = true;
+      release();
+    });
+    registry.sync(next);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(admitted, true, 'removed limits must not keep old requests waiting');
+    first();
+    await queued;
+  }
+});
+
+test('invalid numeric rate limits fail validation and fresh buckets report available', () => {
+  for (const value of [{ maxConcurrent: 1.5 }, { rate: Infinity }, { rateMs: 100, burst: -1 }]) {
+    assert.throws(() => normalizeRateLimit(value), /rateLimit/);
+  }
+  assert.equal(createRateLimitRegistry({ lane: '1/m' }).status()[0].rateLimited, false);
+});

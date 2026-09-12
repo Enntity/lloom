@@ -2771,6 +2771,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         if (error instanceof ModelRateLimitError) {
           // A route-level limit rejection says nothing about target health; do
           // not poison the target backoff or attempt failover past the cap.
+          releaseTargetProbe(resolved);
           throw error;
         }
         if (shouldFailoverModelRequest(error, res)) noteTargetFailure(resolved, error);

@@ -26,7 +26,7 @@ function positiveNumber(value) {
 
 function positiveInteger(value) {
   const number = positiveNumber(value);
-  return number == null ? null : Math.floor(number);
+  return Number.isSafeInteger(number) ? number : null;
 }
 
 /** Normalize a `rateLimit` definition. Returns null when absent or not configured. */
@@ -55,7 +55,10 @@ export function normalizeRateLimit(value) {
     if (normalizedRateMs == null)
       throw new Error(`rateLimit.rateMs must be a positive number: ${JSON.stringify(settings.rateMs)}`);
     rateMs = normalizedRateMs;
-    burst = Number.isInteger(settings.burst) && settings.burst >= 0 ? settings.burst : 0;
+    if (settings.burst != null && (!Number.isSafeInteger(settings.burst) || settings.burst < 0)) {
+      throw new Error('rateLimit.burst must be a non-negative integer');
+    }
+    burst = settings.burst ?? 0;
     return { maxConcurrent, burst, rateMs };
   }
   const rate = settings.rate ?? settings.requestsPerMinute ?? settings.requests;
@@ -82,7 +85,8 @@ export function normalizeRateLimit(value) {
       rateMs = unitMs / count;
       rateCount = count;
     } else if (typeof rate === 'number') {
-      if (!(rate > 0)) throw new Error(`rateLimit.rate must be a positive number: ${JSON.stringify(rate)}`);
+      if (!Number.isFinite(rate) || !(rate > 0))
+        throw new Error(`rateLimit.rate must be a positive number: ${JSON.stringify(rate)}`);
       const period = settings.period ?? settings.per;
       const periodMs = period == null ? 60_000 : periodMsValue(period);
       if (periodMs == null) throw new Error(`rateLimit.period must be one of s, m, h, d or milliseconds`);
@@ -138,16 +142,18 @@ export function createSemaphore(limit) {
   function tryAdmit(entry) {
     if (active >= max) return false;
     active += 1;
-    entry.resolve(release);
+    cleanup(entry);
+    let released = false;
+    entry.resolve(() => {
+      if (released) return;
+      released = true;
+      release();
+    });
     return true;
   }
   function release() {
     if (active > 0) active -= 1;
-    const next = waiters.shift();
-    if (next) {
-      cleanup(next);
-      if (!tryAdmit(next)) waiters.unshift(next);
-    }
+    if (active < max && waiters.length) tryAdmit(waiters.shift());
   }
   function cleanup(entry) {
     clearTimeout(entry.timer);
@@ -192,11 +198,9 @@ export function createSemaphore(limit) {
         if (signal?.aborted) entry.onAbort();
         else {
           // Every wait is bounded, including the default: cap at MAX_WAIT_MS.
-          const waitMs = Math.min(timeoutMs, MAX_WAIT_MS);
-          if (waitMs > 0) {
-            entry.timer = setTimeout(() => fail(entry, timeoutError(waitMs)), waitMs);
-            entry.timer.unref?.();
-          }
+          const waitMs = Math.min(positiveNumber(timeoutMs) ?? MAX_WAIT_MS, MAX_WAIT_MS);
+          entry.timer = setTimeout(() => fail(entry, timeoutError(waitMs)), waitMs);
+          entry.timer.unref?.();
         }
       }
       return promise;
@@ -290,7 +294,12 @@ export function createRateLimitRegistry(limits = {}) {
       if (settings) normalized.set(id, settings);
     }
     for (const id of [...limiters.keys()]) {
-      if (!normalized.has(id)) limiters.delete(id);
+      if (!normalized.has(id)) {
+        const entry = limiters.get(id);
+        entry.gcra = null;
+        entry.semaphore?.setLimit(Number.MAX_SAFE_INTEGER);
+        limiters.delete(id);
+      }
     }
     for (const [id, settings] of normalized) {
       const entry = limiters.get(id);
@@ -315,7 +324,10 @@ export function createRateLimitRegistry(limits = {}) {
       if (settings.maxConcurrent) {
         if (entry.semaphore) entry.semaphore.setLimit(settings.maxConcurrent);
         else entry.semaphore = createSemaphore(settings.maxConcurrent);
-      } else entry.semaphore = null;
+      } else {
+        entry.semaphore?.setLimit(Number.MAX_SAFE_INTEGER);
+        entry.semaphore = null;
+      }
       if (settings.rateMs) {
         if (entry.gcra) entry.gcra.reconfigure(settings);
         else entry.gcra = createGcra(settings);
@@ -340,7 +352,7 @@ export function createRateLimitRegistry(limits = {}) {
         burst: entry.settings.burst ?? null,
         active: entry.semaphore?.active ?? 0,
         queued: entry.semaphore?.queued ?? 0,
-        rateLimited: entry.gcra ? !entry.gcra.active || entry.gcra.nextAllowedInMs(now) > 0 : false,
+        rateLimited: entry.gcra ? entry.gcra.nextAllowedInMs(now) > 0 : false,
         nextAllowedInMs: entry.gcra ? entry.gcra.nextAllowedInMs(now) : 0
       }));
     }
@@ -359,6 +371,7 @@ export async function acquireRateLimitSlot(
   signal?.throwIfAborted?.();
   const releaseSemaphore = entry.semaphore ? await entry.semaphore.acquire(signal, { timeoutMs }) : () => {};
   try {
+    signal?.throwIfAborted?.();
     if (rateBudget && entry.gcra) {
       // Rate budget fails fast with the delay until the next conforming
       // arrival, so callers surface a retryable rejection instead of silently
