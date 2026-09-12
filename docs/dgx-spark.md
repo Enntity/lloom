@@ -186,6 +186,7 @@ Replicated placement remains available when each Spark should run an independent
 
 ## See also
 
+- [Spark GPU takeover](spark-gpu-takeover.md) — reclaim the Spark pair for an experiment  
 - `docs/backends.md` — backend install surface  
 - `community/recipes/linux-nvidia-*.json` — Spark-oriented seeds  
 - `community/benchmarks/linux-nvidia-qwen36-vllm.json` — seed evidence  
