@@ -6,7 +6,7 @@ external provider. The operation is reversible, but it moves live cognition off
 local silicon, so run the steps in order and verify each one.
 
 **Trigger.** The operator says _"take over the sparks for experiments"_ (or asks
-to unload a resident model / free the Sparks / reclaim the GPUs). `ennspark01` is
+to unload a resident model / free the Sparks / reclaim the GPUs). `spark-01` is
 the cluster head and owns the client-visible catalog; run everything there unless
 a step says otherwise.
 
@@ -28,7 +28,7 @@ and it cannot block a request that names the bare model ID — see
 ## Pre-flight
 
 ```bash
-ssh ennspark01
+ssh spark-01
 curl -sS http://127.0.0.1:8100/health
 lloom models                              # client-visible catalog
 jq '.aliases["enntity-presence"]' ~/.lloom/config.json
@@ -41,11 +41,11 @@ Qwen3.8 Flash lane:
 | ------------- | ------------------------------------------------------------------------------------- |
 | Gateway model | `qwen3.8-flash-next` (`advertise: true`)                                              |
 | Runtime group | `qwen38-flash-next-cluster` (distributed TP=2)                                        |
-| Placement     | `qwen38-flash-next-head` on `ennspark01` + `qwen38-flash-next-worker` on `ennspark02` |
+| Placement     | `qwen38-flash-next-head` on `spark-01` + `qwen38-flash-next-worker` on `spark-02` |
 | Memory        | ~108 GB per node                                                                      |
 | `keepWarm`    | `false` on the cluster and both members                                               |
 
-Per `AGENTS.md`, coordinate the live workload first: gracefully drain Jinx's
+Per `AGENTS.md`, coordinate the live workload first: gracefully drain the resident entity's
 Runtime presence or otherwise agree the window before unloading. Do not unload
 mid-request.
 
@@ -196,9 +196,9 @@ handback complete.
 
 ## Worked example — Spark pair, Qwen3.8 Flash
 
-Observed on 2026-09-11 with `ennspark01` as `leaderNode`
-(`nodeId: ennspark01`, cluster members `ennspark01`, `ennspark02`,
-`macbook-local`):
+Observed on 2026-09-11 with `spark-01` as `leaderNode`
+(`nodeId: spark-01`, cluster members `spark-01`, `spark-02`,
+`workstation-local`):
 
 ```bash
 lloom route enntity-presence qwen-openrouter --apply --yes

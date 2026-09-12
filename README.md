@@ -512,7 +512,7 @@ cap concurrency, request rate, or both:
 ```json
 {
   "aliases": {
-    "jinx-cognition": {
+    "cognition-route": {
       "members": ["q38fn"],
       "rateLimit": { "maxConcurrent": 2, "rate": "30/m" }
     }
