@@ -202,11 +202,82 @@ class TestRuntimeManager extends RuntimeManager {
   assert(status.events.some((event) => event.event === 'watchdog-restart-completed'));
 }
 
+// Phase budgets use idle time, not the total time of a long healthy request.
+{
+  const runtime = {
+    ...managedRuntime,
+    watchdog: { ...managedRuntime.watchdog, firstContentTimeoutMs: 1000, idleContentTimeoutMs: 50 }
+  };
+  assert.equal(
+    classifyRuntimeWatchdogOutcome(runtime, {
+      status: 504,
+      stalled: true,
+      runtimeDurationMs: 500,
+      stallDurationMs: 500
+    }).kind,
+    'ignored'
+  );
+  assert.equal(
+    classifyRuntimeWatchdogOutcome(runtime, {
+      status: 504,
+      stalled: true,
+      hadContent: true,
+      runtimeDurationMs: 10000,
+      stallDurationMs: 49
+    }).kind,
+    'ignored'
+  );
+  assert.equal(
+    classifyRuntimeWatchdogOutcome(runtime, {
+      status: 504,
+      stalled: true,
+      hadContent: true,
+      runtimeDurationMs: 10000,
+      stallDurationMs: 50
+    }).kind,
+    'no-progress-failure'
+  );
+}
+
+for (const mode of ['observe', 'defer', 'force', 'disable-during-drain', 'recover-during-drain']) {
+  const runtimeId = 'protected-runtime';
+  const runtime = {
+    ...managedRuntime,
+    watchdog: {
+      ...managedRuntime.watchdog,
+      failureThreshold: 1,
+      action: mode === 'observe' ? 'observe' : 'restart',
+      restartWithActiveRequests: mode === 'force'
+    }
+  };
+  const manager = new TestRuntimeManager({ runtimes: { [runtimeId]: runtime } });
+  const state = manager.stateFor(runtimeId);
+  state.status = 'running';
+  state.activeRequests = 3;
+  const result = manager.noteRequestOutcome(runtimeId, { status: 504, durationMs: 500 });
+  if (mode === 'disable-during-drain') runtime.watchdog.enabled = false;
+  if (mode === 'recover-during-drain') {
+    state.activeRequests = 0;
+    manager.noteRequestOutcome(runtimeId, { ok: true, status: 200, responseBytes: 10 });
+  }
+  if (mode === 'observe') {
+    assert.equal(result.reason, 'observe-only');
+    assert.equal(manager.pausedRuntimes.has(runtimeId), false);
+  } else {
+    await manager.watchdogOperations.get(runtimeId);
+  }
+  assert.equal(manager.lifecycleCalls.length, mode === 'force' ? 2 : 0);
+  assert.equal(state.watchdog.restarts, mode === 'force' ? 1 : 0);
+  assert.equal(manager.pausedRuntimes.has(runtimeId), false);
+  if (mode !== 'force') assert.equal(state.status, 'running');
+}
+
 // Buffered responses have no observable byte progress before completion. A
 // slow, successful response must not be classified as a runtime stall, while
 // the streaming no-progress watchdog remains active.
 {
   const observations = [];
+  let tailDelayMs = 0;
   const upstream = http.createServer(async (req, res) => {
     let raw = '';
     for await (const chunk of req) raw += chunk;
@@ -222,6 +293,7 @@ class TestRuntimeManager extends RuntimeManager {
           choices: [{ index: 0, delta: { role: 'assistant', content: 'ok' }, finish_reason: null }]
         })}\n\n`
       );
+      if (tailDelayMs) await new Promise((resolve) => setTimeout(resolve, tailDelayMs));
       res.end('data: [DONE]\n\n');
       return;
     }
@@ -309,6 +381,27 @@ class TestRuntimeManager extends RuntimeManager {
     observations.some((outcome) => outcome.stalled === true && outcome.status === 504),
     true,
     'a streaming request with no progress still triggers the watchdog'
+  );
+
+  observations.length = 0;
+  config.runtimes['watchdog-runtime'].watchdog.firstContentTimeoutMs = 500;
+  config.runtimes['watchdog-runtime'].watchdog.idleContentTimeoutMs = 20;
+  await (await chat(true)).text();
+  assert.equal(
+    observations.some((item) => item.stalled),
+    false,
+    'longer first-content allowance protects a slow prefill'
+  );
+  observations.length = 0;
+  tailDelayMs = 80;
+  await (await chat(true)).text();
+  const idleStall = observations.find((item) => item.stalled);
+  assert.ok(idleStall, 'shorter idle budget detects silence after content');
+  assert.equal(idleStall.hadContent, true);
+  assert.ok(idleStall.stallDurationMs < idleStall.runtimeDurationMs);
+  assert.equal(
+    classifyRuntimeWatchdogOutcome(config.runtimes['watchdog-runtime'], idleStall).kind,
+    'no-progress-failure'
   );
 
   const beforeCancellation = observations.length;

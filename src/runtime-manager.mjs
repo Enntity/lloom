@@ -442,11 +442,16 @@ export function runtimeWatchdogConfig(runtime) {
         .map(Number)
         .filter((status) => Number.isInteger(status) && status >= 400 && status <= 599)
     : [499, 502, 504];
+  const minNoProgressMs = integerAtLeast(configured?.minNoProgressMs, 120000, 0);
   return {
     enabled: configured?.enabled === true && runtimeManagement(runtime) === 'managed',
+    action: configured?.action === 'observe' ? 'observe' : 'restart',
+    restartWithActiveRequests: configured?.restartWithActiveRequests === true,
+    firstContentTimeoutMs: integerAtLeast(configured?.firstContentTimeoutMs, minNoProgressMs, 0),
+    idleContentTimeoutMs: integerAtLeast(configured?.idleContentTimeoutMs, minNoProgressMs, 0),
     failureThreshold: integerAtLeast(configured?.failureThreshold, 2, 1),
     failureWindowMs: integerAtLeast(configured?.failureWindowMs, 600000, 1),
-    minNoProgressMs: integerAtLeast(configured?.minNoProgressMs, 120000, 0),
+    minNoProgressMs,
     cooldownMs: integerAtLeast(configured?.cooldownMs, 600000, 0),
     drainTimeoutMs: integerAtLeast(configured?.drainTimeoutMs, 30000, 0),
     failureStatuses: failureStatuses.length > 0 ? failureStatuses : [499, 502, 504]
@@ -479,11 +484,20 @@ export function classifyRuntimeWatchdogOutcome(runtime, outcome = {}) {
   // Prefer the time spent after admission when the caller can provide it so a
   // client that gives up during a long cold start cannot condemn the newly
   // healthy runtime as stalled.
-  const durationMs = Number(outcome.runtimeDurationMs ?? outcome.durationMs ?? 0);
+  const durationMs = Number(
+    outcome.stalled === true
+      ? (outcome.stallDurationMs ?? outcome.runtimeDurationMs ?? outcome.durationMs ?? 0)
+      : (outcome.runtimeDurationMs ?? outcome.durationMs ?? 0)
+  );
+  const hasContent =
+    outcome.hadContent === true ||
+    responseBytes > 0 ||
+    (firstContentMs != null && Number.isFinite(firstContentMs) && firstContentMs >= 0);
+  const timeoutMs = hasContent ? watchdog.idleContentTimeoutMs : watchdog.firstContentTimeoutMs;
   if (!watchdog.failureStatuses.includes(status) || !Number.isFinite(durationMs)) {
     return { kind: 'ignored', watchdog };
   }
-  if (durationMs < watchdog.minNoProgressMs) {
+  if (durationMs < timeoutMs) {
     return { kind: 'ignored', watchdog };
   }
   return {
@@ -1084,6 +1098,7 @@ export class RuntimeManager {
     const state = this.stateFor(runtimeId);
     const watchdogState = state.watchdog;
     if (classification.kind === 'progress') {
+      watchdogState.progressVersion = (watchdogState.progressVersion ?? 0) + 1;
       if (watchdogState.consecutiveFailures > 0) {
         this.record({
           runtimeId,
@@ -1115,6 +1130,9 @@ export class RuntimeManager {
       failureThreshold: classification.watchdog.failureThreshold
     });
 
+    if (classification.watchdog.action === 'observe') {
+      return { runtimeId, action: 'observed', reason: 'observe-only' };
+    }
     if (watchdogState.consecutiveFailures < classification.watchdog.failureThreshold) {
       return { runtimeId, action: 'observed', reason: 'below-threshold' };
     }
@@ -1137,6 +1155,7 @@ export class RuntimeManager {
     watchdogState.restartRequestedAt = new Date(now).toISOString();
     watchdogState.lastError = null;
     this.pausedRuntimes.add(runtimeId);
+    const previousStatus = state.status;
     this.setStatus(runtimeId, 'draining', 'watchdog');
     this.record({
       runtimeId,
@@ -1144,10 +1163,16 @@ export class RuntimeManager {
       status: classification.status,
       durationMs: classification.durationMs
     });
+    const progressVersion = watchdogState.progressVersion ?? 0;
     const operation = this.withRuntimeLifecycleLock(runtimeId, (signal) =>
-      this.restartForWatchdogUnlocked(runtimeId, classification.watchdog, { signal })
+      this.restartForWatchdogUnlocked(runtimeId, classification.watchdog, { signal, progressVersion })
     )
       .then((result) => {
+        if (!result.restarted) {
+          this.setStatus(runtimeId, previousStatus, 'watchdog-deferred');
+          this.record({ runtimeId, event: 'watchdog-restart-deferred', result });
+          return result;
+        }
         watchdogState.restarts += 1;
         watchdogState.lastRestartAt = nowIso();
         watchdogState.lastError = null;
@@ -1174,7 +1199,7 @@ export class RuntimeManager {
     return { runtimeId, action: 'restart-requested', reason: 'failure-threshold' };
   }
 
-  async restartForWatchdogUnlocked(runtimeId, watchdog, { signal } = {}) {
+  async restartForWatchdogUnlocked(runtimeId, watchdog, { signal, progressVersion } = {}) {
     const state = this.stateFor(runtimeId);
     const deadline = Date.now() + watchdog.drainTimeoutMs;
     while (state.activeRequests > 0 && Date.now() < deadline) {
@@ -1190,6 +1215,16 @@ export class RuntimeManager {
         activeRequests: state.activeRequests,
         drainTimeoutMs: watchdog.drainTimeoutMs
       });
+    }
+    if (progressVersion != null && (state.watchdog.progressVersion ?? 0) !== progressVersion) {
+      return { runtimeId, restarted: false, reason: 'request-progress' };
+    }
+    const currentPolicy = runtimeWatchdogConfig(this.getRuntime(runtimeId));
+    if (!currentPolicy.enabled || currentPolicy.action === 'observe') {
+      return { runtimeId, restarted: false, reason: 'policy-changed' };
+    }
+    if (forced && !currentPolicy.restartWithActiveRequests) {
+      return { runtimeId, restarted: false, reason: 'active-requests', activeRequests: state.activeRequests };
     }
     const stop = await this.stopUnlocked(runtimeId);
     signal?.throwIfAborted?.();

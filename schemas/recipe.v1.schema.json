@@ -503,6 +503,10 @@
                       "enabled": {
                         "type": "boolean"
                       },
+                      "action": { "enum": ["observe", "restart"] },
+                      "firstContentTimeoutMs": { "type": "integer", "minimum": 0 },
+                      "idleContentTimeoutMs": { "type": "integer", "minimum": 0 },
+                      "restartWithActiveRequests": { "type": "boolean" },
                       "failureThreshold": {
                         "type": "integer",
                         "minimum": 1
