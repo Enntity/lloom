@@ -408,12 +408,13 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       <div class="topology-hud">
         <div class="topology-hud-panel"><div class="topology-title-line"><div class="fabric-title">LLooM // LIVE TOPOLOGY</div><span id="activity-state" class="pill"><span class="dot pulse"></span><span>connecting</span></span></div><div class="muted mono">connections → gateway → models · <span id="metrics-scope">this process</span> · select a model for details</div></div>
         <div class="topology-hud-right">
+          <button id="topology-view-mode" class="topology-model-filter" type="button" aria-pressed="false" title="Columnar view: fixed local and external model racks with no force layout">VIEW: COLUMNS</button>
           <button id="topology-model-filter" class="topology-model-filter" type="button" aria-pressed="false" title="Show all configured models, including inactive cold models">ALL MODELS</button>
           <div class="topology-metrics"><select id="metrics-period" class="metrics-period" aria-label="Metrics period"><option value="today">TODAY</option><option value="7d">7 DAYS</option><option value="30d">30 DAYS</option><option value="all" selected>ALL TIME</option></select><div class="fabric-totals"><div class="fabric-total"><strong id="fabric-in">0</strong><span>tokens in</span></div><div class="fabric-total"><strong id="fabric-out">0</strong><span>tokens out</span></div><div class="fabric-total"><strong id="fabric-rate">—</strong><span id="fabric-rate-label">tok/s</span></div><div class="fabric-total"><strong id="fabric-active">0</strong><span>active</span></div></div></div>
         </div>
       </div>
       <canvas id="topology-canvas" class="topology-canvas" tabindex="0" aria-label="Animated connections flowing through LLooM to configured models. Click to enable pan and wheel zoom; press Escape to release."></canvas>
-      <div class="topology-zoom" aria-label="Topology zoom and pan controls"><span id="topology-interaction-state" class="topology-interaction-state">CLICK TO PAN / ZOOM</span><button id="topology-zoom-out" type="button" aria-label="Zoom out">−</button><span id="topology-zoom-output" class="topology-zoom-output">100%</span><button id="topology-zoom-in" type="button" aria-label="Zoom in">+</button><button id="topology-zoom-reset" type="button" aria-label="Reset view">↺</button></div>
+      <div class="topology-zoom" aria-label="Topology zoom and pan controls"><span id="topology-interaction-state" class="topology-interaction-state">CLICK TO PAN / ZOOM</span><span id="topology-camera-state" class="topology-interaction-state" hidden>AUTO</span><button id="topology-zoom-out" type="button" aria-label="Zoom out">−</button><span id="topology-zoom-output" class="topology-zoom-output">100%</span><button id="topology-zoom-in" type="button" aria-label="Zoom in">+</button><button id="topology-zoom-reset" type="button" aria-label="Reset view">↺</button></div>
       <aside id="model-inspector" class="model-inspector" aria-label="Selected model details" aria-hidden="true">
         <div class="model-inspector-head"><div><div id="model-inspector-state" class="pill"><span class="dot"></span><span>model</span></div><div id="model-inspector-title" class="model-inspector-title">Model</div></div><button id="model-inspector-close" type="button" aria-label="Close model details">×</button></div>
         <div class="model-inspector-body"><div id="model-inspector-details" class="model-detail-grid"></div><div id="model-inspector-tags"></div><div class="model-inspector-actions"><button id="model-start" data-action="start" type="button">Start</button><button id="model-warm" data-action="warmup" class="primary" type="button">Warm</button><button id="model-stop" data-action="stop" class="danger" type="button">Stop</button></div></div>
@@ -600,8 +601,11 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       modelNodes: new Map(),
       modelLayoutTargetKey: "",
       topologyWorldScale: 1,
+      topologyFitZoom: 1,
       topologySceneKey: "",
-      topologyCamera: { manual: 1, current: 1, panX: 0, panY: 0 },
+      topologyCamera: { manual: 1, current: 1, panX: 0, panY: 0, autoFollow: true },
+      topologyViewMode: "columns",
+      actionModelNodes: new Map(),
       topologyPanDrag: null,
       topologyZoomAnchor: null,
       topologyRaisedModelId: null,
@@ -923,6 +927,25 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       renderModelInspector();
     }
 
+    function renderTopologyViewMode() {
+      const button = $("#topology-view-mode");
+      const action = state.topologyViewMode === "action";
+      button.setAttribute("aria-pressed", String(action));
+      button.textContent = action ? "VIEW: ACTION" : "VIEW: COLUMNS";
+      button.title = action
+        ? "Action view: the camera follows live models and the cards use weighted force physics"
+        : "Columnar view: fixed local and external model racks with no force layout";
+    }
+
+    function renderTopologyCameraState() {
+      const marker = $("#topology-camera-state");
+      const action = state.topologyViewMode === "action";
+      marker.hidden = !action;
+      if (!action) return;
+      marker.textContent = state.topologyCamera.autoFollow ? "AUTO" : "MANUAL";
+      marker.classList.toggle("active", Boolean(state.topologyCamera.autoFollow));
+    }
+
     function renderTopologyModelFilter() {
       const button = $("#topology-model-filter");
       const count = state.topologyAgedModelCount || 0;
@@ -1200,6 +1223,202 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       return { targets, columns: layoutColumns };
     }
 
+    // Optional action view. The loom stays where it is; incoming requests keep
+    // threading in from the left and models stay on the right. Activity only
+    // decides how far in a model sits: serving models slide in toward the loom,
+    // quiet ones drift back out toward the edge and off camera. Force physics
+    // keeps the cards apart and the camera frames whatever is live right now.
+    // Presentation-only; none of this touches routing or runtime state.
+    const ACTION_WORLD_SCALE = 2.35;
+    const ACTION_FRAME_WEIGHT = .45;
+    const ACTION_ACTIVITY_HALF_LIFE_MS = 150000;
+    const ACTION_CARD_HALF_W = 110;
+    const ACTION_CARD_HALF_H = 34;
+    const ACTION_LOOM_X = .42;
+    const ACTION_INNER_GAP = 300;
+    const ACTION_OUTER_GAP = 150;
+    const ACTION_LANE_MARGIN = 140;
+    const ACTION_SLOT_SPREAD = 280;
+    const ACTION_CAMERA_PADDING = 150;
+    const ACTION_ZOOM_MIN = .18;
+    const ACTION_ZOOM_MAX = 1.5;
+
+    // 0 means "parked at the edge and out of frame", 1 means "this is the
+    // action". Serving dominates; otherwise a model fades with a half-life
+    // measured from its last request, so recently used models stay in and quiet
+    // ones leave.
+    function modelActivityWeight(model, nowMs) {
+      if (model?.state === "serving" || model?.state === "external-processing") return 1;
+      if (model?.state === "warming" || model?.state === "queued") return .9;
+      const liveRate = Math.max(0, Number(model?.liveRate || 0));
+      if (liveRate > .05) return Math.min(1, .8 + Math.sqrt(liveRate) / 60);
+      const lastActiveMs = Date.parse(model?.lastActiveAt || "");
+      const recency = Number.isFinite(lastActiveMs)
+        ? Math.exp(-Math.max(0, nowMs - lastActiveMs) / ACTION_ACTIVITY_HALF_LIFE_MS)
+        : 0;
+      const floor = model?.state === "hot" || model?.state === "external" ? .22
+        : model?.state === "failed" || model?.state === "unreachable" ? .1
+          : .05;
+      return Math.max(floor, recency);
+    }
+
+    function actionFrameModels(models) {
+      return (models || []).filter(model => Number(model?.actionWeight || 0) >= ACTION_FRAME_WEIGHT);
+    }
+
+    // The loom is a fixed landmark: requests flow in from its left and models
+    // live to its right, so it never drifts across the world.
+    function actionLoomAnchor(field) {
+      return { x: field.left + (field.right - field.left) * ACTION_LOOM_X, y: (field.top + field.bottom) / 2 };
+    }
+
+    // Where a model wants to sit: a stable lane for its vertical position, and a
+    // horizontal offset set by activity. Serving models sit just right of the
+    // loom; quiet ones drift back out toward the world edge. Each model also
+    // carries a stable scatter so a shared activity level reads as a loose band
+    // rather than a hard column.
+    function actionModelSlot(model, field, anchor, innerSpread = .25) {
+      const weight = Math.max(0, Math.min(1, Number(model?.actionWeight || 0)));
+      const reach = Math.pow(1 - weight, 1.35);
+      const innerX = anchor.x + ACTION_INNER_GAP;
+      const outerX = field.right - ACTION_OUTER_GAP;
+      const seed = [...String(model?.id || "model")].reduce((sum, character) => sum + character.charCodeAt(0), 1);
+      const lane = hashUnit(seed * 7) * 2 - 1;
+      const laneSpread = Math.max(0, (field.bottom - field.top) / 2 - ACTION_LANE_MARGIN);
+      const jitter = (hashUnit(seed * 13) - .5) * 22;
+      const scatter = (hashUnit(seed * 23) - .5) * ACTION_SLOT_SPREAD;
+      const x = innerX + Math.max(0, outerX - innerX) * reach + scatter;
+      // Serving models also draw in toward the loom's axis; the fan only opens
+      // up as they drift back out, so live work stays compact and readable. How
+      // far the live band opens is set by how many models are live at once.
+      const spread = innerSpread + (1 - innerSpread) * reach;
+      return {
+        x: Math.max(field.left + ACTION_CARD_HALF_W, Math.min(field.right - ACTION_CARD_HALF_W, x)),
+        y: (field.top + field.bottom) / 2 + lane * laneSpread * spread + jitter
+      };
+    }
+
+    function updateActionModelLayout(models, field, steps = 1) {
+      const list = models || [];
+      const anchor = actionLoomAnchor(field);
+      const activeIds = new Set(list.map(model => model.id));
+      for (const id of state.actionModelNodes.keys()) if (!activeIds.has(id)) state.actionModelNodes.delete(id);
+      // Widen the live band enough to seat every serving card, so a busy loom
+      // spreads its work instead of piling cards on top of each other.
+      const laneSpread = Math.max(1, (field.bottom - field.top) / 2 - ACTION_LANE_MARGIN);
+      const liveCards = Math.max(1, actionFrameModels(list).length);
+      const innerSpread = Math.min(1, Math.max(.25, (liveCards * (ACTION_CARD_HALF_H * 2 + 14)) / (2 * laneSpread)));
+      const slots = new Map(list.map(model => [model.id, actionModelSlot(model, field, anchor, innerSpread)]));
+      for (const model of list) {
+        if (state.actionModelNodes.has(model.id)) continue;
+        // A model first seen in the action view starts where it belongs.
+        const slot = slots.get(model.id);
+        state.actionModelNodes.set(model.id, { x: slot.x, y: slot.y, vx: 0, vy: 0 });
+      }
+      for (let step = 0; step < steps; step++) {
+        for (const model of list) {
+          const node = state.actionModelNodes.get(model.id);
+          const slot = slots.get(model.id);
+          const weight = Math.max(0, Math.min(1, Number(model.actionWeight || 0)));
+          // Serving models answer quickly; quiet ones are allowed to drift.
+          const spring = .0022 + .0030 * weight;
+          node.vx += (slot.x - node.x) * spring;
+          node.vy += (slot.y - node.y) * spring;
+        }
+        const nodes = list.map(model => state.actionModelNodes.get(model.id));
+        for (let left = 0; left < nodes.length; left++) for (let right = left + 1; right < nodes.length; right++) {
+          const a = nodes[left], b = nodes[right];
+          const dx = b.x - a.x, dy = b.y - a.y;
+          const boxWidth = ACTION_CARD_HALF_W * 2 + 12, boxHeight = ACTION_CARD_HALF_H * 2 + 14;
+          const xOverlap = boxWidth - Math.abs(dx), yOverlap = boxHeight - Math.abs(dy);
+          if (xOverlap > 0 && yOverlap > 0) {
+            const horizontal = xOverlap / boxWidth, vertical = yOverlap / boxHeight;
+            // Separation has to outmuscle the spring at equilibrium, or packed
+            // cards settle into a permanent overlap.
+            if (horizontal < vertical) {
+              const force = .9 + horizontal * 1.8;
+              const direction = Math.sign(dx || hashUnit(left + right) - .5) || 1;
+              a.vx -= direction * force; b.vx += direction * force;
+            } else {
+              const force = .9 + vertical * 1.8;
+              const direction = Math.sign(dy || hashUnit(left * 3 + right) - .5) || 1;
+              a.vy -= direction * force; b.vy += direction * force;
+            }
+          }
+        }
+        for (const model of list) {
+          const node = state.actionModelNodes.get(model.id);
+          if (node.x < field.left + ACTION_CARD_HALF_W) node.vx += (field.left + ACTION_CARD_HALF_W - node.x) * .05;
+          if (node.x > field.right - ACTION_CARD_HALF_W) node.vx -= (node.x - field.right + ACTION_CARD_HALF_W) * .05;
+          if (node.y < field.top + ACTION_CARD_HALF_H) node.vy += (field.top + ACTION_CARD_HALF_H - node.y) * .05;
+          if (node.y > field.bottom - ACTION_CARD_HALF_H) node.vy -= (node.y - field.bottom + ACTION_CARD_HALF_H) * .05;
+          node.vx *= .88; node.vy *= .88;
+          node.x += node.vx; node.y += node.vy;
+          node.x = Math.max(field.left + ACTION_CARD_HALF_W, Math.min(field.right - ACTION_CARD_HALF_W, node.x));
+          node.y = Math.max(field.top + ACTION_CARD_HALF_H, Math.min(field.bottom - ACTION_CARD_HALF_H, node.y));
+        }
+      }
+      return { anchor, slots };
+    }
+
+    function actionBoundsOf(boxes) {
+      if (!boxes.length) return null;
+      let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+      for (const box of boxes) {
+        left = Math.min(left, box.left); right = Math.max(right, box.right);
+        top = Math.min(top, box.top); bottom = Math.max(bottom, box.bottom);
+      }
+      return {
+        centerX: (left + right) / 2,
+        centerY: (top + bottom) / 2,
+        width: Math.max(1, right - left),
+        height: Math.max(1, bottom - top)
+      };
+    }
+
+    // The camera holds exactly what is live: the loom plus every serving model
+    // and every live request thread. Extra work widens the frame, and so zooms
+    // out; quiet models are simply left outside it.
+    function actionCameraFrame(models, loomBox, threads) {
+      const boxes = [loomBox];
+      const framed = actionFrameModels(models);
+      for (const model of framed) {
+        const node = state.actionModelNodes.get(model.id);
+        if (!node) continue;
+        boxes.push({
+          left: node.x - ACTION_CARD_HALF_W,
+          right: node.x + ACTION_CARD_HALF_W,
+          top: node.y - ACTION_CARD_HALF_H,
+          bottom: node.y + ACTION_CARD_HALF_H
+        });
+      }
+      for (const thread of threads || []) {
+        boxes.push({
+          left: thread.x - 8,
+          right: thread.x + 10 + (thread.labelWidth || 170),
+          top: thread.y - 20,
+          bottom: thread.y + 18
+        });
+      }
+      if (!framed.length) {
+        // Nothing is live: keep the near field in shot rather than a lone loom.
+        boxes.push({
+          left: loomBox.right,
+          right: loomBox.right + ACTION_INNER_GAP,
+          top: loomBox.top,
+          bottom: loomBox.bottom
+        });
+      }
+      return actionBoundsOf(boxes);
+    }
+
+    function actionCameraZoom(bounds, viewportWidth, viewportHeight) {
+      const usableWidth = Math.max(1, viewportWidth - ACTION_CAMERA_PADDING * 2);
+      const usableHeight = Math.max(1, viewportHeight - ACTION_CAMERA_PADDING * 2);
+      const fit = Math.min(usableWidth / Math.max(1, bounds.width), usableHeight / Math.max(1, bounds.height));
+      return Math.max(ACTION_ZOOM_MIN, Math.min(ACTION_ZOOM_MAX, fit));
+    }
+
     function smoothRate(key, target, now) {
       const desired = Math.max(0, Number(target || 0));
       let sample = state.smoothedRates.get(key);
@@ -1329,7 +1548,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       state.modelLayoutTargetKey = layoutKey;
     }
 
-    function drawTopology(now) {
+    function drawTopology(now, reducedMotion = false) {
       const canvas = $("#topology-canvas");
       if (!canvas || !canvas.isConnected) return;
       const viewportWidth = Math.max(1, canvas.clientWidth), viewportHeight = Math.max(1, canvas.clientHeight);
@@ -1338,41 +1557,28 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       ctx.clearRect(0, 0, viewportWidth, viewportHeight);
       const models = state.topologyModels || [];
       const clusterNodes = state.status?.cluster?.enabled ? Object.values(state.status?.cluster?.nodes || {}) : [];
-      const modelColumns = topologyViewportColumns(models, viewportWidth, viewportHeight, clusterNodes);
+      const actionMode = state.topologyViewMode === "action";
+      const modelColumns = actionMode ? [] : topologyViewportColumns(models, viewportWidth, viewportHeight, clusterNodes);
       // Keep the model rack anchored. Traffic comes and goes constantly and
-      // must not resize the world or make settled model cards jitter.
-      const targetWorldScale = topologyRequiredWorldScale(models, clusterNodes, viewportWidth, viewportHeight);
-      const sceneKey = [viewportWidth, viewportHeight, targetWorldScale, ...modelColumns.map(column => column.id + ":" + column.models.length)].join("|");
+      // must not resize the world or make settled model cards jitter. The
+      // action view instead owns a fixed, larger world so quiet models can
+      // drift well outside the camera frame.
+      const targetWorldScale = actionMode
+        ? ACTION_WORLD_SCALE
+        : topologyRequiredWorldScale(models, clusterNodes, viewportWidth, viewportHeight);
+      const sceneKey = [state.topologyViewMode, viewportWidth, viewportHeight, targetWorldScale, ...modelColumns.map(column => column.id + ":" + column.models.length)].join("|");
       const reflow = sceneKey !== state.topologySceneKey;
       state.topologySceneKey = sceneKey;
       state.topologyWorldScale = targetWorldScale;
-      const fitZoom = 1 / state.topologyWorldScale;
-      const targetZoom = Math.max(TOPOLOGY_MIN_ZOOM, Math.min(TOPOLOGY_MAX_ZOOM, fitZoom * state.topologyCamera.manual));
-      if (reflow) state.topologyCamera.current = targetZoom;
-      else state.topologyCamera.current += (targetZoom - state.topologyCamera.current) * .12;
-      if (Math.abs(targetZoom - state.topologyCamera.current) < .002) state.topologyCamera.current = targetZoom;
-      const zoom = state.topologyCamera.current;
       // Content density owns the logical world size. The camera only chooses
       // how much of that stable world is visible and never changes its bounds.
       const width = viewportWidth * state.topologyWorldScale, height = viewportHeight * state.topologyWorldScale;
-      const zoomAnchor = state.topologyZoomAnchor;
-      if (zoomAnchor) {
-        // Keep the pre-zoom world point under the cursor while zoom eases in,
-        // instead of applying a one-shot pan jump against the unfinished zoom.
-        state.topologyCamera.panX = zoomAnchor.screenX - viewportWidth / 2 - (zoomAnchor.worldX - width / 2) * zoom;
-        state.topologyCamera.panY = zoomAnchor.screenY - viewportHeight / 2 - (zoomAnchor.worldY - height / 2) * zoom;
-        if (zoom === targetZoom) state.topologyZoomAnchor = null;
-      }
-      const panX = state.topologyCamera.panX || 0, panY = state.topologyCamera.panY || 0;
-      const zoomOutput = $("#topology-zoom-output");
-      if (zoomOutput) zoomOutput.textContent = Math.round(zoom * 100) + "%";
-      ctx.save();
-      ctx.translate(viewportWidth / 2 + panX, viewportHeight / 2 + panY);
-      ctx.scale(zoom, zoom);
-      ctx.translate(-width / 2, -height / 2);
-      const modelField = { left: width - topologyRackWidth(modelColumns), right: width - 18, top: 128, bottom: height - 86, columns: modelColumns };
+      // Content density owns the logical world size. The camera only chooses
+      // how much of that stable world is visible and never changes its bounds.
+      const modelField = actionMode
+        ? { left: 30, right: width - 30, top: 30, bottom: height - 30, columns: [] }
+        : { left: width - topologyRackWidth(modelColumns), right: width - 18, top: 128, bottom: height - 86, columns: modelColumns };
       const clusterEnabled = clusterNodes.length > 0;
-      const center = { x: modelField.left - (clusterEnabled ? 128 : 105), y: height * .53 };
       const nodeCardWidth = clusterEnabled ? 184 : 140;
       const nodeCardGap = clusterEnabled ? 16 : 0;
       const clusterHeaderHeight = clusterEnabled ? 78 : 0;
@@ -1383,17 +1589,87 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const clusterStackHeight = clusterEnabled
         ? clusterHeaderHeight + nodeCards.reduce((sum, card) => sum + card.height, 0) + Math.max(0, nodeCards.length - 1) * nodeCardGap
         : 340;
+      // The action view pins the loom as a landmark and lets activity decide how
+      // far in each model sits. The columnar view derives it from the rack.
+      const center = actionMode ? actionLoomAnchor(modelField) : { x: modelField.left - (clusterEnabled ? 128 : 105), y: height * .53 };
       const clusterStackTop = center.y - clusterStackHeight / 2;
       const gate = clusterEnabled
         ? { left: center.x - nodeCardWidth / 2, right: center.x + nodeCardWidth / 2, top: clusterStackTop, bottom: clusterStackTop + clusterStackHeight }
         : { left: center.x - 82, right: center.x + 82, top: center.y - 170, bottom: center.y + 170 };
-      updateModelLayout(models, modelField);
-      const modelPoints = new Map(models.map(model => {
-        const node = state.modelNodes.get(model.id);
-        return [model.id, { x: node.x, y: node.y, cardWidth: Math.min(220, modelField.right - modelField.left), model }];
-      }));
+      if (actionMode) updateActionModelLayout(models, modelField, reducedMotion ? 40 : 1);
+      // Request labels and thread positions are resolved before the camera so a
+      // live call is inside the frame on the same frame it appears in.
+      const connections = state.topologyConnections || [];
+      const orderedConnections = connections.slice().sort((a, b) => {
+        const aSeed = Number(String(a.id).replace(/\D/g, "")) || 1;
+        const bSeed = Number(String(b.id).replace(/\D/g, "")) || 1;
+        return hashUnit(aSeed * 29) - hashUnit(bSeed * 29);
+      });
+      const threadField = { left: 24, right: gate.left - 24, top: 112, bottom: height - 45 };
       ctx.font = '11px "SFMono-Regular",monospace';
       ctx.textAlign = "left";
+      const connectionLabels = new Map(orderedConnections.map(connection => {
+        const outputRate = smoothRate("connection:" + connection.id + ":out", connection.outputRate, now);
+        const connectionRate = outputRate > .05 ? formatRate(outputRate) + " ~tok/s" : formatRate(connection.averageRate) + " avg tok/s";
+        const liveStats = connection.outputPending ? " · awaiting JSON" : " · " + connectionRate;
+        const maxWidth = Math.max(0, threadField.right - threadField.left - 10);
+        const title = fitCanvasText(ctx, connection.caller ? connection.caller + " · " + connection.id : connection.id, maxWidth);
+        const detail = fitCanvasText(ctx, (connection.inputEstimated ? "~" : "") + formatNumber(connection.inputTokens) + " in · " + formatNumber(connection.outputTokens) + " out" + liveStats, maxWidth);
+        return [connection.id, { title, detail, width: Math.max(ctx.measureText(title).width, ctx.measureText(detail).width) }];
+      }));
+      updateThreadLayout(orderedConnections.map(connection => ({ ...connection, labelWidth: connectionLabels.get(connection.id).width })), threadField);
+      const liveThreads = orderedConnections
+        .filter(connection => connection.live)
+        .map(connection => {
+          const node = state.threadNodes.get(connection.id);
+          return node ? { x: node.x, y: node.y, labelWidth: connectionLabels.get(connection.id).width } : null;
+        })
+        .filter(Boolean);
+      // Racks set the zoom in the columnar view. The action view instead frames
+      // the loom plus everything currently live, so more work pans out.
+      const actionBounds = actionMode ? actionCameraFrame(models, gate, liveThreads) : null;
+      const fitZoom = actionMode
+        ? actionCameraZoom(actionBounds, viewportWidth, viewportHeight)
+        : 1 / state.topologyWorldScale;
+      state.topologyFitZoom = fitZoom;
+      const targetZoom = Math.max(TOPOLOGY_MIN_ZOOM, Math.min(TOPOLOGY_MAX_ZOOM, fitZoom * state.topologyCamera.manual));
+      if (reflow || reducedMotion) state.topologyCamera.current = targetZoom;
+      else state.topologyCamera.current += (targetZoom - state.topologyCamera.current) * .12;
+      if (Math.abs(targetZoom - state.topologyCamera.current) < .002) state.topologyCamera.current = targetZoom;
+      const zoom = state.topologyCamera.current;
+      const zoomAnchor = state.topologyZoomAnchor;
+      if (actionMode && state.topologyCamera.autoFollow && !zoomAnchor) {
+        const targetPanX = -(actionBounds.centerX - width / 2) * zoom;
+        const targetPanY = -(actionBounds.centerY - height / 2) * zoom;
+        if (reflow || reducedMotion) {
+          state.topologyCamera.panX = targetPanX;
+          state.topologyCamera.panY = targetPanY;
+        } else {
+          state.topologyCamera.panX += (targetPanX - state.topologyCamera.panX) * .1;
+          state.topologyCamera.panY += (targetPanY - state.topologyCamera.panY) * .1;
+        }
+      }
+      if (zoomAnchor) {
+        // Keep the pre-zoom world point under the cursor while zoom eases in,
+        // instead of applying a one-shot pan jump against the unfinished zoom.
+        state.topologyCamera.panX = zoomAnchor.screenX - viewportWidth / 2 - (zoomAnchor.worldX - width / 2) * zoom;
+        state.topologyCamera.panY = zoomAnchor.screenY - viewportHeight / 2 - (zoomAnchor.worldY - height / 2) * zoom;
+        if (zoom === targetZoom) state.topologyZoomAnchor = null;
+      }
+      const panX = state.topologyCamera.panX || 0, panY = state.topologyCamera.panY || 0;
+      const zoomOutput = $("#topology-zoom-output");
+      if (zoomOutput) zoomOutput.textContent = Math.round(zoom * 100) + "%";
+      renderTopologyCameraState();
+      ctx.save();
+      ctx.translate(viewportWidth / 2 + panX, viewportHeight / 2 + panY);
+      ctx.scale(zoom, zoom);
+      ctx.translate(-width / 2, -height / 2);
+      if (!actionMode) updateModelLayout(models, modelField);
+      const modelNodeStore = actionMode ? state.actionModelNodes : state.modelNodes;
+      const modelPoints = new Map(models.map(model => {
+        const node = modelNodeStore.get(model.id) || { x: modelField.left + 112, y: modelField.top + 34 };
+        return [model.id, { x: node.x, y: node.y, cardWidth: Math.min(220, modelField.right - modelField.left), model }];
+      }));
       const modelList = [...modelPoints.values()].sort((a, b) => a.y - b.y);
       const nodeX = clusterEnabled ? center.x : gate.right + Math.max(78, (modelField.left - gate.right) * .48);
       const nodePoints = new Map();
@@ -1575,24 +1851,6 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       }
       state.topologyHitCards = hitCards;
       state.topologyView = { viewportWidth, viewportHeight, width, height, zoom, panX, panY };
-      const connections = state.topologyConnections || [];
-      const orderedConnections = connections.slice().sort((a, b) => {
-        const aSeed = Number(String(a.id).replace(/\D/g, "")) || 1;
-        const bSeed = Number(String(b.id).replace(/\D/g, "")) || 1;
-        return hashUnit(aSeed * 29) - hashUnit(bSeed * 29);
-      });
-      const threadField = { left: 24, right: gate.left - 24, top: 112, bottom: height - 45 };
-      ctx.font = '11px "SFMono-Regular",monospace';
-      const connectionLabels = new Map(orderedConnections.map(connection => {
-        const outputRate = smoothRate("connection:" + connection.id + ":out", connection.outputRate, now);
-        const connectionRate = outputRate > .05 ? formatRate(outputRate) + " ~tok/s" : formatRate(connection.averageRate) + " avg tok/s";
-        const liveStats = connection.outputPending ? " · awaiting JSON" : " · " + connectionRate;
-        const maxWidth = Math.max(0, threadField.right - threadField.left - 10);
-        const title = fitCanvasText(ctx, connection.caller ? connection.caller + " · " + connection.id : connection.id, maxWidth);
-        const detail = fitCanvasText(ctx, (connection.inputEstimated ? "~" : "") + formatNumber(connection.inputTokens) + " in · " + formatNumber(connection.outputTokens) + " out" + liveStats, maxWidth);
-        return [connection.id, { title, detail, width: Math.max(ctx.measureText(title).width, ctx.measureText(detail).width) }];
-      }));
-      updateThreadLayout(orderedConnections.map(connection => ({ ...connection, labelWidth: connectionLabels.get(connection.id).width })), threadField);
       orderedConnections.forEach((connection, index) => {
         const seed = Number(String(connection.id).replace(/\D/g, "")) || index + 1;
         const from = state.threadNodes.get(connection.id);
@@ -1672,7 +1930,12 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     }
 
     function animateTopology() {
-      if (!document.hidden) drawTopology(window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : performance.now());
+      if (!document.hidden) {
+        const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        // Reduced motion still resolves the layout, it just settles it and
+        // snaps the camera instead of easing both across frames.
+        drawTopology(reducedMotion ? 0 : performance.now(), reducedMotion);
+      }
       setTimeout(animateTopology, 50);
     }
     animateTopology();
@@ -1837,6 +2100,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
             : transitioning || (runtimeLoaded ? "hot" : isExternal ? "external" : runtimeStatus === "failed" ? "failed" : "cold");
         const lastActiveAt = data.last?.at || runtimeState.lastRequestedAt || null;
         const lastActiveMs = Date.parse(lastActiveAt || "");
+        // Action-view weight: what the camera should keep in frame right now.
+        // Presentation only; it never affects routing or runtime state.
+        const actionWeight = modelActivityWeight({ state: stateLabel, liveRate, lastActiveAt }, sampleAt);
         const agedOut = stateLabel === "cold" && (!Number.isFinite(lastActiveMs) || sampleAt - lastActiveMs > TOPOLOGY_COLD_MODEL_TTL_MS);
         const nodes = [...new Set([
           ...((model.targets || []).map(target => target.node).filter(Boolean)),
@@ -1847,7 +2113,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           ...liveConnections.map(item => item.node).filter(Boolean),
           ...(liveConnections.length ? (runtimeState.members || []).map(member => member.node).filter(Boolean) : [])
         ])];
-        return { id: model.id, name: model.name || model.id, upstreamModel: model.upstreamModel, routeIds: model.routeIds || [], placement: isExternal ? "external" : "local", nodes, activeNodes, runtimeIds: [...runtimeIds, ...remoteRuntimeIds], runtimeStatus: runtimeState, inputTokens: Number(data.inputTokens || 0) + activeInput, inputEstimated, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveOutputRate, promptTokens: modelPromptTokens, promptPulseAt: modelPromptPulseAt, averageRate: data.decodeTokensPerSecond == null ? null : Number(data.decodeTokensPerSecond), state: stateLabel, lastActiveAt, agedOut };
+        return { id: model.id, name: model.name || model.id, upstreamModel: model.upstreamModel, routeIds: model.routeIds || [], placement: isExternal ? "external" : "local", nodes, activeNodes, runtimeIds: [...runtimeIds, ...remoteRuntimeIds], runtimeStatus: runtimeState, inputTokens: Number(data.inputTokens || 0) + activeInput, inputEstimated, outputTokens: Number(data.outputTokens || 0) + activeOutput, liveRate, liveOutputRate, promptTokens: modelPromptTokens, promptPulseAt: modelPromptPulseAt, averageRate: data.decodeTokensPerSecond == null ? null : Number(data.decodeTokensPerSecond), state: stateLabel, actionWeight, lastActiveAt, agedOut };
       });
       state.topologyCatalogModels = topologyModels;
       applyTopologyModelFilter();
@@ -1943,22 +2209,60 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     function fitTopologyCameraToModels() {
       const canvas = $("#topology-canvas");
       const clusterNodes = state.status?.cluster?.enabled ? Object.values(state.status?.cluster?.nodes || {}) : [];
-      const worldScale = topologyRequiredWorldScale(
-        state.topologyModels || [],
-        clusterNodes,
-        canvas?.clientWidth || 1200,
-        canvas?.clientHeight || 640
-      );
+      const actionMode = state.topologyViewMode === "action";
+      const worldScale = actionMode
+        ? ACTION_WORLD_SCALE
+        : topologyRequiredWorldScale(
+            state.topologyModels || [],
+            clusterNodes,
+            canvas?.clientWidth || 1200,
+            canvas?.clientHeight || 640
+          );
       state.topologyCamera.manual = 1;
-      state.topologyCamera.current = 1 / worldScale;
+      state.topologyCamera.autoFollow = true;
       state.topologyCamera.panX = 0;
       state.topologyCamera.panY = 0;
       state.topologyZoomAnchor = null;
       state.topologyWorldScale = worldScale;
+      state.topologyFitZoom = actionMode ? state.topologyFitZoom : 1 / worldScale;
+      // Re-resolve the scene so the next frame refits instead of easing from a
+      // camera that belonged to the previous mode or model set.
+      state.topologySceneKey = "";
+      state.modelLayoutTargetKey = "";
+      if (!actionMode) state.topologyCamera.current = 1 / worldScale;
+      renderTopologyViewMode();
     }
     function resetTopologyCamera() {
       fitTopologyCameraToModels();
     }
+    function seedActionModelNodes() {
+      // Start cards near their columnar positions so the first action frames
+      // read as the rack flowing into the live cluster rather than a jump cut.
+      for (const model of state.topologyModels || []) {
+        if (state.actionModelNodes.has(model.id)) continue;
+        const source = state.modelNodes.get(model.id);
+        if (source) state.actionModelNodes.set(model.id, { x: source.x, y: source.y, vx: 0, vy: 0 });
+      }
+    }
+    function setTopologyViewMode(mode) {
+      if (mode !== "action" && mode !== "columns") return;
+      if (state.topologyViewMode === mode) return;
+      state.topologyViewMode = mode;
+      state.topologyCamera.autoFollow = true;
+      state.topologyCamera.manual = 1;
+      state.topologyCamera.panX = 0;
+      state.topologyCamera.panY = 0;
+      state.topologyZoomAnchor = null;
+      state.topologyPanDrag = null;
+      if (mode === "action") seedActionModelNodes();
+      else state.actionModelNodes.clear();
+      try { localStorage.setItem("lloom_topology_view", mode); } catch { /* private mode */ }
+      fitTopologyCameraToModels();
+      renderTopologyCameraState();
+    }
+    $("#topology-view-mode").addEventListener("click", () => {
+      setTopologyViewMode(state.topologyViewMode === "action" ? "columns" : "action");
+    });
     function setTopologyInteractionFocused(focused, { focusCanvas = false } = {}) {
       const canvas = $("#topology-canvas");
       const interactionState = $("#topology-interaction-state");
@@ -1976,11 +2280,15 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const camera = state.topologyCamera;
       const view = state.topologyView;
       const beforeManual = camera.manual;
-      const fitZoom = 1 / Math.max(1, state.topologyWorldScale);
+      const fitZoom = state.topologyFitZoom || 1 / Math.max(1, state.topologyWorldScale);
       const beforeZoom = fitZoom * beforeManual;
       const nextZoom = Math.max(TOPOLOGY_MIN_ZOOM, Math.min(TOPOLOGY_MAX_ZOOM, beforeZoom + delta));
       camera.manual = nextZoom / fitZoom;
       if (camera.manual === beforeManual) return;
+      // A deliberate zoom takes the camera off auto-follow until reset, so the
+      // action view never fights the person driving it.
+      camera.autoFollow = false;
+      renderTopologyCameraState();
       if (!view || !anchor || !view.zoom) {
         state.topologyZoomAnchor = null;
         return;
@@ -2067,6 +2375,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       if (!drag.moved && (dx * dx + dy * dy) < 25) return;
       drag.moved = true;
       state.topologyZoomAnchor = null;
+      // Manual panning suspends the action-view auto-follow until reset.
+      state.topologyCamera.autoFollow = false;
+      renderTopologyCameraState();
       canvas.classList.add("is-panning");
       state.topologyCamera.panX = drag.originPanX + dx;
       state.topologyCamera.panY = drag.originPanY + dy;
@@ -2203,6 +2514,13 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       await refresh();
     });
 
+    {
+      let savedView = null;
+      try { savedView = localStorage.getItem("lloom_topology_view"); } catch { /* private mode */ }
+      if (savedView === "action") state.topologyViewMode = "action";
+      renderTopologyViewMode();
+      renderTopologyCameraState();
+    }
     refresh();
     refreshActivity();
     setInterval(refreshActivity, 1000);

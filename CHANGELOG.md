@@ -18,6 +18,7 @@ All notable changes to LLooM will be documented in this file. The format follows
 - A separate DGX Spark ThinkingCap Qwen3.6-27B NVFP4 candidate recipe on released vLLM 0.25, preserving the established Unsloth default while token-efficiency and quality evidence are collected.
 - Public project governance, security, contribution, CI, and release metadata.
 - Configurable rate limits as metadata on any model or route alias: `maxConcurrent` queues with the runtime-slot model and a `rate` such as `"30/m"` enforces the standard token-bucket (`NGINX limit_req`) budget, with `retry-after` 429s, chain-composed limits across nested aliases and shared model budgets, live state under `rateLimits` in `GET /gateway/routing`, and no effect on target failure backoff.
+- An optional action view for the live topology alongside the default columnar racks: the loom holds still, requests stay left and models stay right, but cards use weighted force physics and activity sets how far in a model sits — serving models draw in toward the loom while quiet ones drift back out toward the edge. The camera frames the loom plus every live request and serving model, pulling back as more work arrives, and quiet models are left outside the frame. Manual pan or zoom suspends following until the reset control, and the choice persists per browser.
 
 ### Changed
 

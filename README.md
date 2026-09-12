@@ -99,7 +99,7 @@ Then open OMP normally. The generated OMP config points at `http://127.0.0.1:810
 - Backend recipes for vLLM, SGLang, MTPLX, MLX LM, llama.cpp, Ollama, OptiQ, and stable-diffusion.cpp, with dedicated DGX Spark / GB10 and Apple Silicon recipes.
 - Community recipe packs and hardware-matched benchmark evidence so machines can select the best known model/backend recipe automatically instead of blindly chasing global tok/s.
 - Generated client profiles for OMP, OpenCode, Codex-compatible, Claude-compatible, Hermes, Zero, and any OpenAI-compatible client.
-- A small dashboard at `/` for local status and guarded setup actions.
+- A small dashboard at `/` for local status and guarded setup actions, with a live topology that can switch between the default columnar racks and an action view whose camera and cards follow live models.
 
 ## Daily Commands
 
