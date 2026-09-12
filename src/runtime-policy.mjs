@@ -1,3 +1,4 @@
+import { assertMaintenanceStartAllowed } from './model-maintenance.mjs';
 import os from 'node:os';
 import { readHostMemory } from './host-memory.mjs';
 import { RuntimeManager } from './runtime-manager.mjs';
@@ -544,6 +545,7 @@ export async function applyRuntimePolicyPlan(
   if (!requestedRuntimeId) throw new Error('requested runtime id is required');
 
   const applyPlan = async (admissionSignal) => {
+    assertMaintenanceStartAllowed(runtimeManager.config ?? config, requestedRuntimeId);
     const status = await runtimeManager.status();
     admissionSignal?.throwIfAborted?.();
     if (runtimeManager.clusterCoordinator) status.cluster = await runtimeManager.clusterCoordinator.status();

@@ -10,6 +10,7 @@ import {
   transcriptionSchemaForModel
 } from './tts-catalog.mjs';
 import { currentNodeId, modelTargets, runtimeAuthority } from './cluster.mjs';
+import { maintenanceBlocksRouting } from './model-maintenance.mjs';
 
 export class UnknownModelError extends Error {
   constructor(modelId) {
@@ -42,7 +43,9 @@ function availableTargets(config, model, { requireRuntimeEnabled = true } = {}) 
   return modelTargets(model).filter(
     (target) =>
       targetVisibleHere(config, target) &&
-      (!requireRuntimeEnabled || !target.runtime || config.runtimes?.[target.runtime]?.enabled !== false)
+      (!requireRuntimeEnabled ||
+        !target.runtime ||
+        (config.runtimes?.[target.runtime]?.enabled !== false && !maintenanceBlocksRouting(config, target.runtime)))
   );
 }
 

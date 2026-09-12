@@ -503,3 +503,15 @@ failover retained. Unsampled or expired members receive real requests to refresh
 measurements; failed attempts cannot masquerade as fast successes. A fastest alias
 does not start cold alternatives in the background just to measure them. Existing
 runtime admission remains authoritative when no ready member can serve.
+
+### Temporarily free model hardware
+
+```sh
+lloom suspend local-chat --apply --yes
+lloom resume local-chat --apply --yes
+```
+
+Suspend drains and unloads the managed model while its aliases use their remaining
+candidates. Resume restores eligibility after guarded loading and health checks.
+Omit `--apply --yes` to preview. See [model maintenance](docs/model-maintenance.md)
+for alias setup, distributed ownership, timeouts, and recovery.

@@ -164,6 +164,7 @@ CLI surface evolves; check `lloom help` before documenting a missing command or 
 - `ennspark01` is the common Spark host alias, but re-check SSH, config, active workload, container/image, and memory state.
 - Use Tailscale/private admin reachability where configured. Keep inference/admin authorization distinct.
 - Before changing Jinx's substrate, gracefully drain her Runtime presence or otherwise coordinate the live workload.
+- For temporary hardware takeover, use `lloom suspend <model-or-alias> --apply --yes` and `lloom resume <model-or-alias> --apply --yes` through the owner gateway; see `docs/model-maintenance.md`. Model maintenance gates all aliases and bare model calls, drains active work, verifies unloading, and restores routing only after health. Alias-member suspension alone does not unload or block direct calls. Older deployed gateways without these commands still require the legacy takeover procedure.
 - Sync LLooM credentials from the actual gateway environment; a 401 after a model change may be stale auth rather than model failure.
 - Do not call an alternate lane as a “light role model” if doing so causes disruptive swapping. Co-residency and quality must be demonstrated.
 - Do not deploy simply because local checks pass; deployment requires explicit authorization and live verification.

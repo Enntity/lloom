@@ -83,6 +83,8 @@ const COMMAND_REGISTRY = [
   { name: 'doctor', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'serve', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'models', aliases: [], tier: 'primary', needsInstalledConfig: true },
+  { name: 'suspend', aliases: [], tier: 'primary', needsInstalledConfig: true },
+  { name: 'resume', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'route', aliases: ['routing'], tier: 'primary', needsInstalledConfig: true },
   { name: 'integrate', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'integrations', aliases: [], tier: 'primary', needsInstalledConfig: true },
@@ -151,6 +153,8 @@ Primary commands:
   lloom doctor                     Readiness report (blockers, warnings, next actions)
   lloom serve                      Run the gateway (reads ~/.lloom/config.json)
   lloom models                     List gateway model IDs
+  lloom suspend <model> --apply --yes  Drain, unload, and suspend a model
+  lloom resume <model> --apply --yes   Load, verify health, and restore routing
   lloom integrate <client|all>     Write client configs (omp, opencode, codex, …)
   lloom add-model <ref>            Import an ad hoc model (dry-run; add --apply --yes)
   lloom remove-model <model-id>    Remove a model and its dedicated config resources
@@ -191,6 +195,8 @@ Backends and runtimes:
   lloom backend-install <backend-id> [--apply --yes] [--step step-id]
   lloom runtimes [runtime-id|all]
   lloom runtime-plan <runtime-id>
+  lloom suspend <model-or-alias> [--apply --yes] [--drain-timeout-ms 300000]
+  lloom resume <model-or-alias> [--apply --yes]
   lloom runtime-admit <runtime-id> [--apply --yes]
   lloom runtime-start|runtime-warmup|runtime-stop <runtime-id>
   lloom keep-warm
@@ -299,6 +305,8 @@ const INSTALLED_CONFIG_COMMANDS = new Set([
   'route',
   'routing',
   'runtime-admit',
+  'suspend',
+  'resume',
   'runtime-plan',
   'runtime-policy',
   'runtime-start',
@@ -327,6 +335,8 @@ const OPERATIONAL_CONFIG_COMMANDS = new Set([
   'route',
   'routing',
   'runtime-admit',
+  'suspend',
+  'resume',
   'runtime-plan',
   'runtime-policy',
   'runtime-start',
@@ -1033,7 +1043,24 @@ function gatewayAdminHeaders(config) {
   return key ? { authorization: `Bearer ${key}` } : {};
 }
 
-async function gatewayRequest(config, pathname, { method = 'GET', body, timeoutMs = 2000 } = {}) {
+async function modelMaintenanceCommand({ args, config, command }) {
+  const id = requireRuntimeId(args, command);
+  if (!id) return;
+  const drainTimeoutMs = Number(argValue(args, '--drain-timeout-ms') ?? 300000);
+  if (!Number.isInteger(drainTimeoutMs) || drainTimeoutMs < 0 || drainTimeoutMs > 7200000) {
+    throw new Error('--drain-timeout-ms must be an integer from 0 to 7200000');
+  }
+  const result = await gatewayRequest(config, `/gateway/models/${encodeURIComponent(id)}/${command}`, {
+    method: 'POST',
+    body: { apply: hasFlag(args, '--apply'), yes: hasFlag(args, '--yes'), drainTimeoutMs },
+    timeoutMs: hasFlag(args, '--apply') ? 14400000 : 10000,
+    throwOnError: true
+  });
+  if (!result) throw new Error(`model maintenance requires a reachable gateway at ${gatewayUrlFor(config)}`);
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function gatewayRequest(config, pathname, { method = 'GET', body, timeoutMs = 2000, throwOnError = false } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   // Node's built-in fetch otherwise inherits Undici's roughly five-minute
@@ -1055,9 +1082,16 @@ async function gatewayRequest(config, pathname, { method = 'GET', body, timeoutM
       signal: controller.signal,
       dispatcher
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      if (throwOnError) {
+        const detail = await response.json().catch(() => null);
+        throw new Error(detail?.error?.message ?? `gateway returned HTTP ${response.status}`);
+      }
+      return null;
+    }
     return await response.json();
-  } catch {
+  } catch (error) {
+    if (throwOnError) throw error;
     return null;
   } finally {
     clearTimeout(timer);
@@ -2485,6 +2519,8 @@ async function main() {
         )
       );
     },
+    suspend: modelMaintenanceCommand,
+    resume: modelMaintenanceCommand,
     'runtime-admit': async ({ args, config, command }) => {
       const runtimeId = requireRuntimeId(args, command);
       if (!runtimeId) return;

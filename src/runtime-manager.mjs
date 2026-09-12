@@ -16,6 +16,8 @@ import {
 } from './cluster.mjs';
 import { cleanupPortListener, terminateProcessTree } from './process-control.mjs';
 
+import { maintenanceBlocksRouting, assertMaintenanceStartAllowed, maintenanceError } from './model-maintenance.mjs';
+
 const execFileAsync = promisify(execFile);
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CHAT_TEMPLATE_OVERRIDES = new Map([
@@ -149,7 +151,9 @@ const LIVE_ADMISSION_FIELDS = new Set([
 
 function runtimeLifecycleConfig(runtime) {
   if (!runtime) return runtime ?? null;
-  return Object.fromEntries(Object.entries(runtime).filter(([key]) => !LIVE_ADMISSION_FIELDS.has(key)));
+  return Object.fromEntries(
+    Object.entries(runtime).filter(([key]) => key !== 'maintenance' && !LIVE_ADMISSION_FIELDS.has(key))
+  );
 }
 
 function runtimeLiveAdmissionConfig(runtime) {
@@ -735,7 +739,7 @@ export class RuntimeManager {
 
   keepWarmRuntimeIds() {
     return Object.entries(this.config.runtimes ?? {})
-      .filter(([, runtime]) => runtime.keepWarm === true)
+      .filter(([id, runtime]) => runtime.keepWarm === true && !maintenanceBlocksRouting(this.config, id))
       .sort(([, left], [, right]) => {
         const leftPriority = Number(left?.policy?.priority ?? left?.priority ?? 100);
         const rightPriority = Number(right?.policy?.priority ?? right?.priority ?? 100);
@@ -749,27 +753,58 @@ export class RuntimeManager {
     return Boolean(child?.pid && child.exitCode == null && child.signalCode == null);
   }
 
-  async runtimeAppearsLoaded(runtimeId) {
+  async runtimeAppearsLoaded(runtimeId, { requireConfirmation = false } = {}) {
     const runtime = this.getRuntime(runtimeId);
     if (!runtime) return false;
     const placement = runtimePlacement(runtime, this.config);
     if (this.clusterCoordinator && !this.clusterCoordinator.isLocalNode(placement.node)) {
       if (typeof this.clusterCoordinator.nodeStatus === 'function') {
         try {
-          const node = await this.clusterCoordinator.nodeStatus(placement.node);
+          const node = await this.clusterCoordinator.nodeStatus(placement.node, { refresh: requireConfirmation });
           const remote = node?.runtimeManager?.runtimes?.[runtimeId];
+          if (requireConfirmation && (node?.reachable === false || !remote || !remote.status)) {
+            throw new Error(`cannot confirm runtime ${runtimeId} state on ${placement.node}`);
+          }
+          if (requireConfirmation) {
+            const container = remote.container;
+            if (
+              container?.exists === false &&
+              container.error &&
+              !/no such (object|container)/i.test(container.error)
+            ) {
+              throw new Error(`cannot inspect runtime ${runtimeId} container on ${placement.node}`);
+            }
+            return (
+              remote.healthy === true ||
+              container?.running === true ||
+              !['idle', 'stopped', 'disabled', 'failed', 'exited', 'created', 'dead'].includes(remote.status)
+            );
+          }
           if (remote?.healthy === true || ['running', 'external', 'starting', 'warming'].includes(remote?.status)) {
             return true;
           }
-        } catch {
+        } catch (error) {
+          if (requireConfirmation) throw error;
           // Fall through to gateway-observed state when the node is unreachable.
         }
       }
+      if (requireConfirmation) throw new Error(`cannot confirm remote runtime ${runtimeId} without node status`);
       return ['running', 'external', 'starting', 'warming'].includes(this.stateFor(runtimeId).status);
     }
     if (await runtimeHealthOk(runtime)) return true;
     if (this.processRunning(runtimeId)) return true;
-    if (runtimeAdapter(runtime) === 'docker') return (await dockerContainerState(runtime)).running === true;
+    if (runtimeAdapter(runtime) === 'docker') {
+      const container = await dockerContainerState(runtime);
+      if (
+        requireConfirmation &&
+        container.exists === false &&
+        container.error &&
+        !/no such (object|container)/i.test(container.error)
+      ) {
+        throw new Error(`cannot inspect runtime ${runtimeId} container`);
+      }
+      return container.running === true;
+    }
     return ['running', 'external', 'starting', 'warming'].includes(this.stateFor(runtimeId).status);
   }
 
@@ -1169,6 +1204,7 @@ export class RuntimeManager {
 
   acquireSlot(runtimeId, { signal = null, requestClass = 'standard' } = {}) {
     requestClass = normalizeRequestClass(requestClass);
+    if (maintenanceBlocksRouting(this.config, runtimeId)) throw maintenanceError(runtimeId);
     signal?.throwIfAborted?.();
     if (!runtimeId) return () => {};
     const runtime = this.getRuntime(runtimeId);
@@ -1223,6 +1259,7 @@ export class RuntimeManager {
   }
 
   canAdmitRequest(runtimeId, requestClass) {
+    if (maintenanceBlocksRouting(this.config, runtimeId)) return false;
     const state = this.stateFor(runtimeId);
     const runtime = this.getRuntime(runtimeId);
     const max = runtimeMaxConcurrency(runtime);
@@ -1434,6 +1471,7 @@ export class RuntimeManager {
     runtimeId,
     { config = this.config, force = false, warmup = true, reason = 'runtime-admission', requestedBy } = {}
   ) {
+    assertMaintenanceStartAllowed(this.config, runtimeId);
     const { applyRuntimePolicyPlan } = await import('./runtime-policy.mjs');
     const requesterNode = this.assertRuntimeControl(runtimeId, requestedBy);
     return applyRuntimePolicyPlan(config, this, {
@@ -1448,6 +1486,7 @@ export class RuntimeManager {
   }
 
   async start(runtimeId, { force = false, warmup = true, reason = 'manual-start', requestedBy } = {}) {
+    assertMaintenanceStartAllowed(this.config, runtimeId);
     const requesterNode = runtimeId
       ? this.assertRuntimeControl(runtimeId, requestedBy)
       : this.requesterNode(requestedBy);
@@ -1463,6 +1502,7 @@ export class RuntimeManager {
   }
 
   async startUnlocked(runtimeId, { force = false, warmup = true, reason = 'manual-start', requestedBy, signal } = {}) {
+    assertMaintenanceStartAllowed(this.config, runtimeId);
     if (!runtimeId) return { runtimeId, started: false, reason: 'no-runtime' };
     const runtime = this.getRuntime(runtimeId);
     if (!runtime) return { runtimeId, started: false, reason: 'unknown-runtime' };

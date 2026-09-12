@@ -301,6 +301,22 @@ function validateConfig(config, sourcePath, env) {
   }
 
   for (const [runtimeId, runtime] of Object.entries(config.runtimes ?? {})) {
+    if (runtime.maintenance != null) {
+      const record = runtime.maintenance;
+      if (
+        !record ||
+        typeof record !== 'object' ||
+        Array.isArray(record) ||
+        !['suspended', 'resuming'].includes(record.state) ||
+        !['requestedModel', 'since', 'operationId'].every(
+          (key) => typeof record[key] === 'string' && record[key].length > 0
+        )
+      ) {
+        errors.push(
+          `runtime ${runtimeId} maintenance requires state suspended/resuming and requestedModel, since, operationId strings`
+        );
+      }
+    }
     if (runtime.keepWarm != null && typeof runtime.keepWarm !== 'boolean') {
       errors.push(`runtime ${runtimeId} keepWarm must be a boolean`);
     }

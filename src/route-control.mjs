@@ -1,6 +1,4 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import { loadConfig } from './config.mjs';
+import { mutateConfigSource } from './config-mutation.mjs';
 
 function object(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
@@ -43,86 +41,69 @@ export async function writeRouteProfile(config, aliasId, profileName) {
   // non-enumerable loader metadata out of that mutation. Always read the
   // current source file so a second route flip cannot act on the startup
   // template and falsely report that an outdated profile is already active.
-  const source = JSON.parse(await fs.readFile(config.sourcePath, 'utf8'));
-  const alias = object(source.aliases?.[aliasId]);
-  if (!alias) throw new Error(`unknown profiled route alias: ${aliasId}`);
-  const selected = normalizedProfile(alias.routeProfiles?.[profileName]);
-  if (!selected) throw new Error(`unknown route profile ${profileName} for alias ${aliasId}`);
+  let result = null;
+  await mutateConfigSource(config, (source) => {
+    const alias = object(source.aliases?.[aliasId]);
+    if (!alias) throw new Error(`unknown profiled route alias: ${aliasId}`);
+    const selected = normalizedProfile(alias.routeProfiles?.[profileName]);
+    if (!selected) throw new Error(`unknown route profile ${profileName} for alias ${aliasId}`);
 
-  const changed =
-    alias.activeRoute !== profileName ||
-    JSON.stringify(alias.members ?? []) !== JSON.stringify(selected.members) ||
-    JSON.stringify(alias.optionalMembers ?? []) !== JSON.stringify(selected.optionalMembers);
-  if (!changed) {
-    return {
-      changed: false,
+    const changed =
+      alias.activeRoute !== profileName ||
+      JSON.stringify(alias.members ?? []) !== JSON.stringify(selected.members) ||
+      JSON.stringify(alias.optionalMembers ?? []) !== JSON.stringify(selected.optionalMembers);
+    if (!changed) {
+      result = {
+        changed: false,
+        alias: aliasId,
+        activeRoute: profileName,
+        members: selected.members
+      };
+      return;
+    }
+
+    alias.activeRoute = profileName;
+    alias.members = selected.members;
+    alias.suspendedMembers = (alias.suspendedMembers ?? []).filter((member) => selected.members.includes(member));
+    if (!alias.suspendedMembers.length) delete alias.suspendedMembers;
+    if (selected.optionalMembers.length) alias.optionalMembers = selected.optionalMembers;
+    else delete alias.optionalMembers;
+    delete alias.target;
+    delete alias.fallbacks;
+    delete alias.optionalFallbacks;
+
+    result = {
+      changed: true,
       alias: aliasId,
       activeRoute: profileName,
       members: selected.members
     };
-  }
-
-  alias.activeRoute = profileName;
-  alias.members = selected.members;
-  alias.suspendedMembers = (alias.suspendedMembers ?? []).filter((member) => selected.members.includes(member));
-  if (!alias.suspendedMembers.length) delete alias.suspendedMembers;
-  if (selected.optionalMembers.length) alias.optionalMembers = selected.optionalMembers;
-  else delete alias.optionalMembers;
-  delete alias.target;
-  delete alias.fallbacks;
-  delete alias.optionalFallbacks;
-
-  const mode = (await fs.stat(config.sourcePath)).mode;
-  const temporary = path.join(
-    path.dirname(config.sourcePath),
-    `.${path.basename(config.sourcePath)}.${process.pid}.${Date.now()}.route`
-  );
-  try {
-    await fs.writeFile(temporary, `${JSON.stringify(source, null, 2)}\n`, { mode });
-    await loadConfig(temporary);
-    await fs.rename(temporary, config.sourcePath);
-  } catch (error) {
-    await fs.unlink(temporary).catch(() => {});
-    throw error;
-  }
-
-  return {
-    changed: true,
-    alias: aliasId,
-    activeRoute: profileName,
-    members: selected.members
-  };
+  });
+  return result;
 }
 
 export async function writeRouteMemberSuspension(config, aliasId, memberId, suspended) {
   if (!config.sourcePath) throw new Error('route member suspension requires a file-backed LLooM config');
-  const source = JSON.parse(await fs.readFile(config.sourcePath, 'utf8'));
-  const alias = object(source.aliases?.[aliasId]);
-  if (!alias) throw new Error(`unknown route alias: ${aliasId}`);
-  const members = Array.isArray(alias.members) ? alias.members : [];
-  if (!members.includes(memberId)) throw new Error(`model ${memberId} is not a member of route ${aliasId}`);
+  let result = null;
+  await mutateConfigSource(config, (source) => {
+    const alias = object(source.aliases?.[aliasId]);
+    if (!alias) throw new Error(`unknown route alias: ${aliasId}`);
+    const members = Array.isArray(alias.members) ? alias.members : [];
+    if (!members.includes(memberId)) throw new Error(`model ${memberId} is not a member of route ${aliasId}`);
 
-  const current = new Set(Array.isArray(alias.suspendedMembers) ? alias.suspendedMembers : []);
-  const changed = suspended ? !current.has(memberId) : current.has(memberId);
-  if (suspended) current.add(memberId);
-  else current.delete(memberId);
-  const suspendedMembers = members.filter((member) => current.has(member));
-  if (!changed) return { changed: false, alias: aliasId, member: memberId, suspended, suspendedMembers };
+    const current = new Set(Array.isArray(alias.suspendedMembers) ? alias.suspendedMembers : []);
+    const changed = suspended ? !current.has(memberId) : current.has(memberId);
+    if (suspended) current.add(memberId);
+    else current.delete(memberId);
+    const suspendedMembers = members.filter((member) => current.has(member));
+    if (!changed) {
+      result = { changed: false, alias: aliasId, member: memberId, suspended, suspendedMembers };
+      return;
+    }
 
-  if (suspendedMembers.length) alias.suspendedMembers = suspendedMembers;
-  else delete alias.suspendedMembers;
-  const mode = (await fs.stat(config.sourcePath)).mode;
-  const temporary = path.join(
-    path.dirname(config.sourcePath),
-    `.${path.basename(config.sourcePath)}.${process.pid}.${Date.now()}.route-member`
-  );
-  try {
-    await fs.writeFile(temporary, `${JSON.stringify(source, null, 2)}\n`, { mode });
-    await loadConfig(temporary);
-    await fs.rename(temporary, config.sourcePath);
-  } catch (error) {
-    await fs.unlink(temporary).catch(() => {});
-    throw error;
-  }
-  return { changed: true, alias: aliasId, member: memberId, suspended, suspendedMembers };
+    if (suspendedMembers.length) alias.suspendedMembers = suspendedMembers;
+    else delete alias.suspendedMembers;
+    result = { changed: true, alias: aliasId, member: memberId, suspended, suspendedMembers };
+  });
+  return result;
 }

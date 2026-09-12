@@ -54,6 +54,8 @@ import { buildRecipeIndexReport } from './recipe-index.mjs';
 import { loadRecipes } from './recipes.mjs';
 import { createRegistry, UnknownModelError } from './registry.mjs';
 import { routeProfileStatus, writeRouteMemberSuspension, writeRouteProfile } from './route-control.mjs';
+import { mutateConfigSource } from './config-mutation.mjs';
+import { createModelMaintenanceController } from './model-maintenance-control.mjs';
 import { RuntimeManager, runtimeWatchdogConfig, normalizeRequestClass } from './runtime-manager.mjs';
 import {
   applyRuntimePolicyPlan,
@@ -1997,7 +1999,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
 
   function reloadConfig() {
     if (!configPath) return;
-    reloadInFlight = reloadInFlight
+    const reload = reloadInFlight
       .catch(() => {})
       .then(async () => {
         const nextConfig = await loadConfig(configPath);
@@ -2012,9 +2014,18 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         clusterCoordinator.reconfigure(config);
         routingStatusCache = { at: 0, value: null, pending: null };
         logger.info?.(`reloaded LLooM config; changed runtimes: ${result.changed.join(', ') || 'none'}`);
-      })
-      .catch((error) => logger.error?.(`LLooM config reload failed: ${error?.message ?? error}`));
+      });
+    reloadInFlight = reload.catch((error) => logger.error?.(`LLooM config reload failed: ${error?.message ?? error}`));
+    return reload;
   }
+
+  const modelMaintenance = createModelMaintenanceController({
+    getConfig: () => config,
+    mutateSource: (mutate) => mutateConfigSource(config, mutate),
+    reload: reloadConfig,
+    manager: runtimeManager,
+    admit: (id, options) => runtimeManager.admit(id, options)
+  });
 
   function runRuntimeAdminAction(action) {
     return retryRuntimeActionAfterConfigReload(action, () => reloadInFlight);
@@ -3546,6 +3557,19 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
           targetBackoffs: targetBackoffStatus(),
           runtimeRecoveryBackoffs: runtimeRecoveryBackoffStatus()
         });
+        return;
+      }
+
+      const maintenanceMatch = url.pathname.match(/^\/gateway\/models\/([^/]+)\/(suspend|resume)$/);
+      if (maintenanceMatch && req.method === 'POST') {
+        const body = await readJson(req);
+        const result = await modelMaintenance.run(decodeURIComponent(maintenanceMatch[1]), maintenanceMatch[2], {
+          apply: body.apply ?? false,
+          yes: body.yes ?? false,
+          drainTimeoutMs: body.drainTimeoutMs ?? 300000,
+          requestedBy: runtimeRequesterNode(req, config)
+        });
+        sendJson(res, 200, result);
         return;
       }
 
