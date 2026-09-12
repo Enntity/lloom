@@ -1,0 +1,30 @@
+{
+  "backends": {
+    "openrouter-nb2lite": {
+      "type": "openai",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "timeoutMs": 180000
+    }
+  },
+  "models": [
+    {
+      "id": "google/gemini-3.1-flash-lite-image",
+      "kind": "image",
+      "backend": "openrouter-nb2lite",
+      "upstreamModel": "google/gemini-3.1-flash-lite-image",
+      "input": ["text"],
+      "output": ["image"]
+    }
+  ],
+  "aliases": {
+    "nb2lite": {
+      "members": ["google/gemini-3.1-flash-lite-image"],
+      "strategy": "ordered"
+    },
+    "cloud/openrouter/nb2lite": {
+      "members": ["google/gemini-3.1-flash-lite-image"],
+      "strategy": "ordered"
+    }
+  }
+}
