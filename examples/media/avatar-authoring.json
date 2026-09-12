@@ -1,0 +1,73 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 18100
+  },
+  "security": {
+    "allowMissingAuth": false,
+    "apiKeys": []
+  },
+  "backends": {
+    "replicate-video": {
+      "type": "openai",
+      "baseUrl": "https://api.replicate.com/v1",
+      "videoProvider": "replicate",
+      "apiKeyEnv": "REPLICATE_API_KEY",
+      "timeoutMs": 1800000
+    },
+    "openrouter-video": {
+      "type": "openai",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "videoProvider": "openrouter",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "timeoutMs": 1800000
+    }
+  },
+  "models": [
+    {
+      "id": "cloud/replicate/ltx-retake",
+      "backend": "replicate-video",
+      "upstreamModel": "lightricks/ltx-2.3-pro",
+      "kind": "video",
+      "input": ["text", "video"],
+      "output": ["video"]
+    },
+    {
+      "id": "cloud/replicate/topaz-video-upscale",
+      "backend": "replicate-video",
+      "upstreamModel": "topazlabs/video-upscale",
+      "kind": "video"
+    },
+    {
+      "id": "cloud/openrouter/kling-v3.0-std",
+      "backend": "openrouter-video",
+      "upstreamModel": "kwaivgi/kling-v3.0-std",
+      "kind": "video"
+    },
+    {
+      "id": "cloud/replicate/kling-o1-edit",
+      "backend": "replicate-video",
+      "upstreamModel": "kwaivgi/kling-o1",
+      "kind": "video"
+    },
+    {
+      "id": "cloud/replicate/kling-v3.0-standard",
+      "backend": "replicate-video",
+      "upstreamModel": "kwaivgi/kling-v3-video",
+      "kind": "video"
+    },
+    {
+      "id": "cloud/replicate/wan-short-join",
+      "backend": "replicate-video",
+      "upstreamModel": "lucataco/wan-2.2-first-last-frame",
+      "kind": "video"
+    },
+    {
+      "id": "cloud/replicate/vidu-join",
+      "backend": "replicate-video",
+      "upstreamModel": "vidu/q3-pro",
+      "kind": "video"
+    }
+  ],
+  "runtimes": {}
+}

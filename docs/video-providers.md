@@ -23,4 +23,34 @@ Provider API origins are fixed. Redirects are rejected. Download hosts are restr
 
 This lane requires a real provider canary before production use. Tests with mocked providers establish request translation, polling, and credential boundaries, not video quality or production availability.
 
+### Replace an interval with LTX 2.3 Pro
+
+An additive `kind: "video"` model with `upstreamModel: "lightricks/ltx-2.3-pro"`
+supports `task: "retake"`. Send `video` as an MP4 data URI, `prompt`,
+`retake_start_time` (seconds, at least zero), and `retake_duration` (2–20 seconds).
+The adapter fixes `retake_mode` to `replace_video` and resolution to `1080p`.
+`aspect_ratio` accepts `16:9` (default) or `9:16`; `fps` accepts 24 (default), 25,
+48, or 50. Prepare the input with the correct aspect ratio and ensure the edited
+interval fits within its duration.
+
+Retake regenerates a section with the surrounding video as context. It is not an
+extension API with a separately pinned end frame. This route rejects image/frame
+inputs and `task: "extend"` rather than silently forwarding unsupported controls.
+The caller must inspect the returned duration, context preservation, and joins.
+
+```json
+{
+  "model": "cloud/replicate/ltx-retake",
+  "task": "retake",
+  "video": "data:video/mp4;base64,...",
+  "prompt": "She returns naturally to her relaxed standing pose.",
+  "retake_start_time": 2,
+  "retake_duration": 2,
+  "aspect_ratio": "16:9",
+  "fps": 24
+}
+```
+
+Contract: [Replicate LTX 2.3 Pro](https://replicate.com/lightricks/ltx-2.3-pro/readme).
+
 Upstream contracts: https://replicate.com/bytedance/omni-human-1.5 and https://openrouter.ai/docs/guides/overview/multimodal/video-generation
