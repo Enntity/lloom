@@ -396,3 +396,28 @@ for (const duration of [0, 0.5, 17])
     /Invalid/
   );
 console.log('Vidu one-second high-resolution join contract passed');
+
+// A 2xx response carrying a non-JSON body must not surface the provider's
+// payload to the caller: `response.json()` errors embed the first bytes of the
+// body, and the gateway forwards `error.message` verbatim.
+await assert.rejects(
+  generateProviderVideo({
+    backend: { videoProvider: 'replicate', apiKey: 'test' },
+    body: {
+      model: 'topazlabs/video-upscale',
+      video: 'data:video/mp4;base64,YQ==',
+      target_resolution: '720p',
+      target_fps: 24
+    },
+    sleepFn: async () => {},
+    fetchFn: async () => new Response('LEAKMARK rest-of-provider-payload', { status: 200 })
+  }),
+  (error) => {
+    assert.ok(
+      !error.message.includes('LEAKMARK'),
+      `a provider body fragment must not reach the caller: ${error.message}`
+    );
+    return true;
+  }
+);
+console.log('A non-JSON provider response does not leak the provider body to callers');

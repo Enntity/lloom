@@ -1,3 +1,16 @@
+/**
+ * Parse a provider JSON body without echoing any of it back. `response.json()`
+ * failures embed the first bytes of the body in the error message, and gateway
+ * errors forward `error.message` verbatim to callers.
+ */
+async function providerJson(response, label) {
+  try {
+    return await response.json();
+  } catch {
+    throw new Error(`${label} returned a non-JSON response`);
+  }
+}
+
 /** Read-only recovery of an accepted job whose failure response lost attribution.
  * Filter inside LLooM; never return input media, prompts, or provider credentials.
  */
@@ -14,7 +27,7 @@ export async function findRecentVideoJob({ backend, model, prompt, fetchFn = fet
     headers: { Authorization: `Token ${key}` }
   });
   if (!response.ok) throw new Error(`Video job lookup returned HTTP ${response.status}`);
-  const body = await response.json();
+  const body = await providerJson(response, 'Video job lookup');
   return (body.results || [])
     .filter((job) => job.model === model && job.input?.prompt === prompt)
     .map((job) => ({
@@ -91,7 +104,7 @@ export async function generateProviderVideo({
       error.statusCode = r.status;
       throw error;
     }
-    return r.json();
+    return providerJson(r, `Video provider ${provider}`);
   };
   let job;
   if (provider === 'replicate') {
