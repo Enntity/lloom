@@ -1,0 +1,42 @@
+{
+  "models": [
+    {
+      "slug": "deepseek-flash",
+      "display_name": "DeepSeek worker",
+      "description": "Supervised coding worker through the LLooM Responses bridge.",
+      "default_reasoning_level": "high",
+      "supported_reasoning_levels": [{ "effort": "high", "description": "Provider high reasoning effort" }],
+      "shell_type": "unified_exec",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 1,
+      "base_instructions": "You are a coding worker. Complete only the assigned bounded task, use tools to verify your work, and report evidence and any uncertainty.",
+      "support_verbosity": false,
+      "apply_patch_tool_type": "freeform",
+      "truncation_policy": { "mode": "tokens", "limit": 10000 },
+      "context_window": 65536,
+      "effective_context_window_percent": 95,
+      "input_modalities": ["text", "image"],
+      "experimental_supported_tools": []
+    },
+    {
+      "slug": "cloud/openrouter/glm53f",
+      "display_name": "GLM worker",
+      "description": "Supervised coding worker through the LLooM Responses bridge.",
+      "default_reasoning_level": "high",
+      "supported_reasoning_levels": [{ "effort": "high", "description": "Provider high reasoning effort" }],
+      "shell_type": "unified_exec",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 1,
+      "base_instructions": "You are a coding worker. Complete only the assigned bounded task, use tools to verify your work, and report evidence and any uncertainty.",
+      "support_verbosity": false,
+      "apply_patch_tool_type": "freeform",
+      "truncation_policy": { "mode": "tokens", "limit": 10000 },
+      "context_window": 65536,
+      "effective_context_window_percent": 95,
+      "input_modalities": ["text", "image"],
+      "experimental_supported_tools": []
+    }
+  ]
+}

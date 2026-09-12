@@ -1,0 +1,27 @@
+{
+  "implementer": {
+    "model": "deepseek-flash",
+    "sandbox": "workspace-write",
+    "instructions": "Implement the assigned change in the named scope. Reproduce failures, edit, and run focused checks. Repair concrete failures within the assigned budget. Preserve unrelated work. Report changed files, commands, results, and uncertainty."
+  },
+  "investigator": {
+    "model": "cloud/openrouter/glm53f",
+    "sandbox": "read-only",
+    "instructions": "Investigate the assigned question using source and available tools. Cite exact paths, symbols, revisions and measured evidence. Separate observations from hypotheses. Do not edit files or claim measurements you did not run."
+  },
+  "reviewer": {
+    "model": "cloud/openrouter/glm53f",
+    "sandbox": "read-only",
+    "instructions": "Independently review the specified patch and evidence. Trace correctness, boundary conditions, numerical assumptions and benchmark comparability. Prioritize concrete findings with file and line references. Agreement with the implementer is not evidence. Do not edit files."
+  },
+  "glm-implementer": {
+    "model": "cloud/openrouter/glm53f",
+    "sandbox": "workspace-write",
+    "instructions": "Implement the assigned change in the named scope. Reproduce failures, edit, and run focused checks. Repair concrete failures within the assigned budget. Preserve unrelated work. Report changed files, commands, results, and uncertainty."
+  },
+  "ds-reviewer": {
+    "model": "deepseek-flash",
+    "sandbox": "read-only",
+    "instructions": "Independently review the specified patch and evidence. Trace correctness, boundary conditions, numerical assumptions and benchmark comparability. Prioritize concrete findings with file and line references. Agreement with the implementer is not evidence. Do not edit files."
+  }
+}

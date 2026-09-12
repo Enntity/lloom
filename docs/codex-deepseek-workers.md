@@ -104,3 +104,6 @@ Use absolute final-output paths for CLI workers. Enforce time/tool limits in the
 parent rather than trusting prompt limits. Tool-free, non-thinking calls worked
 well for small transformations and notes; always validate their output before
 execution. A reasoning-heavy call exhausted its output allowance without an answer.
+
+For reusable DS/GLM profiles, bounded retries, resource locks and compact reports,
+use the [research worker supervisor](research-workers.md).
