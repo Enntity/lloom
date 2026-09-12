@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { mock } from 'node:test';
 import http from 'node:http';
 import { loadConfig } from '../src/config.mjs';
 import fs from 'node:fs/promises';
@@ -122,6 +122,8 @@ test('the token bucket admits exactly n requests back-to-back then spaces by int
   assert.equal(bucket.tryAcquire(45_000).allowed, false, 'partial refill must not admit early');
   assert.equal(bucket.tryAcquire(60_000).allowed, true, 'the second interval admits again');
   // Steady-state average never exceeds the configured rate over the long run.
+  // `2/m` carries a burst of 1 plus the nominal token, so a full bucket admits
+  // two immediately and one per interval: 2 + floor(120s / 30s) = 6.
   const steady = createGcra(normalizeRateLimit('2/m'));
   let now = 0;
   let count = 0;
@@ -132,7 +134,9 @@ test('the token bucket admits exactly n requests back-to-back then spaces by int
       now += 1;
     } else now += decision.retryAfterMs;
   }
-  assert.ok(count >= 4 && count <= 5, `2/m must admit 4-5 requests over 120s, saw ${count}`);
+  const ceiling = steady.burst + 1 + Math.floor(120_000 / steady.intervalMs);
+  assert.ok(count <= ceiling, `2/m must not exceed ${ceiling} requests over 120s, saw ${count}`);
+  assert.ok(count >= ceiling - 1, `2/m must keep admitting at the steady rate over 120s, saw ${count}`);
 });
 
 test('the concurrency semaphore queues FIFO, respects aborts, and releases idempotently', async () => {
@@ -259,6 +263,25 @@ test('a model-level limit is shared by every alias that resolves to the model', 
     await fixture.close();
   }
 });
+
+test('a chain rejected by an inner limiter does not burn the outer budget', async () => {
+  const fixture = await chatGateway(
+    await chatFixture(
+      { capped: { members: ['model-a'], rateLimit: '2/m' } },
+      { models: [{ id: 'model-a', kind: 'chat', backend: 'fixture', upstreamModel: 'fixture', rateLimit: '1/m' }] }
+    )
+  );
+  try {
+    assert.equal((await fixture.chat('capped')).status, 200);
+    assert.equal((await fixture.chat('capped')).status, 429, 'the inner model budget rejects the second request');
+    const routing = await fixture.routing();
+    const outer = routing.rateLimits.find((entry) => entry.id === 'capped');
+    assert.ok(outer, 'the alias limiter is reported');
+    assert.equal(outer.nextAllowedInMs, 0, 'a rejected chain must not consume the alias budget it already passed');
+  } finally {
+    await fixture.close();
+  }
+});
 test('a concurrency-limited alias queues excess requests and never exceeds the cap', async () => {
   let inFlight = 0;
   let maxSeen = 0;
@@ -342,4 +365,65 @@ test('a client that disconnects while queued never reaches upstream and releases
   } finally {
     await close();
   }
+});
+
+// The burst test above only exercises the initial burst at t=0. These cover
+// steady-state refill, which is where a zero-burst limiter went wrong.
+test('a zero-burst limiter keeps admitting one request per interval', () => {
+  const bucket = createGcra(normalizeRateLimit('1/m'));
+  assert.equal(bucket.burst, 0);
+  let admitted = 0;
+  for (let i = 0; i < 5; i++) if (bucket.tryAcquire(i * 60_000).allowed) admitted++;
+  assert.equal(admitted, 5, '1/m must admit one request per interval, not one ever');
+
+  const explicit = createGcra(normalizeRateLimit({ rate: '6/m', burst: 0 }));
+  let explicitAdmitted = 0;
+  for (let i = 0; i < 5; i++) if (explicit.tryAcquire(i * 10_000).allowed) explicitAdmitted++;
+  assert.equal(explicitAdmitted, 5, 'an explicit burst of zero behaves the same way');
+});
+
+test('a queued rate-limit wait is capped by the maximum wait', async () => {
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const semaphore = createSemaphore(1);
+    const held = await semaphore.acquire();
+    let outcome = null;
+    const queued = semaphore.acquire().then(
+      (release) => {
+        outcome = 'admitted';
+        release();
+      },
+      (error) => {
+        outcome = error.name;
+      }
+    );
+    mock.timers.tick(5 * 60 * 1000);
+    await new Promise((resolve) => setImmediate(resolve));
+    held();
+    assert.equal(outcome, 'TimeoutError', 'the default queue wait must never be unbounded');
+    await queued;
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('registry sync applies changed settings to a surviving limiter', () => {
+  const registry = createRateLimitRegistry({ lane: '1/m' });
+  assert.equal(registry.limiter('lane').settings.rateMs, 60_000);
+  registry.sync({ lane: '600/m' });
+  assert.equal(registry.limiter('lane').settings.rateMs, 100, 'a changed rate must take effect');
+  assert.equal(registry.limiter('lane').gcra.intervalMs, 100);
+
+  const concurrency = createRateLimitRegistry({ lane: { maxConcurrent: 1 } });
+  assert.equal(concurrency.limiter('lane').semaphore.limit, 1);
+  concurrency.sync({ lane: { maxConcurrent: 3 } });
+  assert.equal(concurrency.limiter('lane').semaphore.limit, 3, 'a changed concurrency must take effect');
+  assert.equal(concurrency.size, 1, 'the surviving limiter is not duplicated');
+});
+
+test('a fractional or zero maxConcurrent is rejected rather than silently unlimited', () => {
+  for (const value of [{ maxConcurrent: 0.5 }, { maxConcurrent: 0 }, { maxConcurrent: 0.5, rate: '5/m' }]) {
+    assert.throws(() => normalizeRateLimit(value), /maxConcurrent/, JSON.stringify(value));
+  }
+  assert.deepEqual(normalizeRateLimit({ maxConcurrent: 2 }), { maxConcurrent: 2, burst: 0, rateMs: null });
 });

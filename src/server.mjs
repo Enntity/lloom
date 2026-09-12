@@ -56,7 +56,7 @@ import { createRegistry, UnknownModelError } from './registry.mjs';
 import { routeProfileStatus, writeRouteMemberSuspension, writeRouteProfile } from './route-control.mjs';
 import { mutateConfigSource } from './config-mutation.mjs';
 import { createModelMaintenanceController } from './model-maintenance-control.mjs';
-import { acquireRateLimitSlot, createRateLimitRegistry } from './rate-limit.mjs';
+import { acquireRateLimitSlot, consumeRateBudget, createRateLimitRegistry } from './rate-limit.mjs';
 import { RuntimeManager, runtimeWatchdogConfig, normalizeRequestClass } from './runtime-manager.mjs';
 import {
   applyRuntimePolicyPlan,
@@ -2443,8 +2443,12 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         if (entry.semaphore && entry.semaphore.queued >= RATE_LIMIT_QUEUE_CAPACITY) {
           throw new ModelRateLimitError(resolved.requestedId, 5, { queueFull: true });
         }
-        releases.push(await acquireRateLimitSlot(rateLimitRegistry, id, { signal }));
+        releases.push(await acquireRateLimitSlot(rateLimitRegistry, id, { signal, rateBudget: false }));
       }
+      // Consume rate budget only once every concurrency slot is held, and
+      // atomically, so an inner rejection cannot burn the budget of the outer
+      // scopes the request already passed.
+      consumeRateBudget(rateLimitRegistry, limited);
       return releaseAll;
     } catch (error) {
       releaseAll();
@@ -2471,10 +2475,18 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     const requestClass = normalizeRequestClass(req.headers['x-lloom-request-class']);
     const rateLimitScopeIds = [...new Set([resolved.requestedId, ...(resolved.aliasChain ?? [])])];
     const client = createClientCloseTracker(req, res);
-    const rateLimitRelease = await admitRateLimited(resolved, rateLimitScopeIds, {
-      signal: client.signal,
-      started
-    });
+    let rateLimitRelease;
+    try {
+      rateLimitRelease = await admitRateLimited(resolved, rateLimitScopeIds, {
+        signal: client.signal,
+        started
+      });
+    } catch (error) {
+      // A rejected admission never reaches the request lifecycle that would
+      // otherwise dispose these listeners.
+      client.dispose();
+      throw error;
+    }
     const connectionId = metrics.begin({
       route,
       model: resolved.model.id,

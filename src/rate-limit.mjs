@@ -40,7 +40,13 @@ export function normalizeRateLimit(value) {
     throw new Error('rateLimit must be a string like "20/m" or an object');
   }
   const settings = value.rateLimit ?? value;
-  const maxConcurrent = positiveInteger(settings.maxConcurrent ?? settings.concurrency);
+  const rawMaxConcurrent = settings.maxConcurrent ?? settings.concurrency;
+  const maxConcurrent = positiveInteger(rawMaxConcurrent);
+  // A fractional or zero value floors to 0, which would silently mean "no
+  // limit" instead of the limit the operator asked for.
+  if (rawMaxConcurrent != null && (maxConcurrent == null || maxConcurrent < 1)) {
+    throw new Error(`rateLimit.maxConcurrent must be a positive integer: ${JSON.stringify(rawMaxConcurrent)}`);
+  }
   let rateMs = null;
   let burst = null;
   if (settings.rateMs != null) {
@@ -50,14 +56,7 @@ export function normalizeRateLimit(value) {
       throw new Error(`rateLimit.rateMs must be a positive number: ${JSON.stringify(settings.rateMs)}`);
     rateMs = normalizedRateMs;
     burst = Number.isInteger(settings.burst) && settings.burst >= 0 ? settings.burst : 0;
-    const normalizedConcurrent = positiveInteger(settings.maxConcurrent);
-    if (normalizedConcurrent == null && settings.maxConcurrent != null) {
-      throw new Error(`rateLimit.maxConcurrent must be a positive integer: ${JSON.stringify(settings.maxConcurrent)}`);
-    }
-    if (normalizedConcurrent == null && rateMs == null) {
-      throw new Error('rateLimit must set maxConcurrent, a rate string like "20/m", or both');
-    }
-    return { maxConcurrent: normalizedConcurrent, burst, rateMs };
+    return { maxConcurrent, burst, rateMs };
   }
   const rate = settings.rate ?? settings.requestsPerMinute ?? settings.requests;
   let rateCount = null;
@@ -133,7 +132,7 @@ function periodMsValue(period) {
  * release function; `release()` is idempotent.
  */
 export function createSemaphore(limit) {
-  const max = Math.max(1, Math.floor(Number(limit) || 1));
+  let max = Math.max(1, Math.floor(Number(limit) || 1));
   let active = 0;
   const waiters = [];
   function tryAdmit(entry) {
@@ -170,6 +169,15 @@ export function createSemaphore(limit) {
     get limit() {
       return max;
     },
+    /** Apply a hot-reloaded limit, admitting queued waiters if it grew. */
+    setLimit(next) {
+      max = Math.max(1, Math.floor(Number(next) || 1));
+      while (active < max && waiters.length) {
+        const entry = waiters.shift();
+        cleanup(entry);
+        tryAdmit(entry);
+      }
+    },
     acquire(signal = null, { timeoutMs = MAX_WAIT_MS } = {}) {
       signal?.throwIfAborted?.();
       const entry = { signal, timer: null, onAbort: null, resolve: null, reject: null };
@@ -182,9 +190,13 @@ export function createSemaphore(limit) {
         waiters.push(entry);
         signal?.addEventListener?.('abort', entry.onAbort, { once: true });
         if (signal?.aborted) entry.onAbort();
-        else if (timeoutMs > 0 && timeoutMs < MAX_WAIT_MS) {
-          entry.timer = setTimeout(() => fail(entry, timeoutError(timeoutMs)), timeoutMs);
-          entry.timer.unref?.();
+        else {
+          // Every wait is bounded, including the default: cap at MAX_WAIT_MS.
+          const waitMs = Math.min(timeoutMs, MAX_WAIT_MS);
+          if (waitMs > 0) {
+            entry.timer = setTimeout(() => fail(entry, timeoutError(waitMs)), waitMs);
+            entry.timer.unref?.();
+          }
         }
       }
       return promise;
@@ -200,13 +212,16 @@ export function createSemaphore(limit) {
  * derived from elapsed time on each request.
  */
 export function createGcra({ rateMs, burst }) {
-  const intervalMs = Math.max(1, rateMs);
-  const capacity = Math.max(0, Math.floor(burst)); // extra burst tokens above the nominal cell
+  let intervalMs = Math.max(1, rateMs);
+  let capacity = Math.max(0, Math.floor(burst)); // extra burst tokens above the nominal cell
   let tokens = capacity + 1; // start full: one nominal token plus any burst tokens
   let last = null; // last refill/accept time
   function refill(now) {
     if (last == null) return;
-    tokens = Math.min(capacity, tokens + (now - last) / intervalMs);
+    // Refill to the full bucket (nominal token + burst), not merely to the
+    // burst allowance: capping at `capacity` starves a zero-burst limiter,
+    // which can then never admit again after its first request.
+    tokens = Math.min(capacity + 1, tokens + (now - last) / intervalMs);
     last = now;
   }
   return {
@@ -218,6 +233,12 @@ export function createGcra({ rateMs, burst }) {
     },
     get active() {
       return last != null;
+    },
+    /** Apply hot-reloaded settings in place, keeping the bucket's timing. */
+    reconfigure({ rateMs: nextRateMs, burst: nextBurst }) {
+      intervalMs = Math.max(1, nextRateMs);
+      capacity = Math.max(0, Math.floor(nextBurst));
+      tokens = Math.min(capacity + 1, tokens);
     },
     tryAcquire(now = Date.now()) {
       if (last == null) {
@@ -235,8 +256,12 @@ export function createGcra({ rateMs, burst }) {
     /** Peek at the next allowed time without consuming budget. */
     nextAllowedInMs(now = Date.now()) {
       if (last == null) return 0;
-      const projected = Math.min(capacity, tokens + Math.max(0, now - (last ?? now)) / intervalMs);
+      const projected = Math.min(capacity + 1, tokens + Math.max(0, now - (last ?? now)) / intervalMs);
       return projected >= 1 ? 0 : Math.ceil((1 - projected) * intervalMs);
+    },
+    /** Return a consumed token when a later limiter rejects the same chain. */
+    refund() {
+      tokens = Math.min(capacity + 1, tokens + 1);
     }
   };
 }
@@ -268,13 +293,34 @@ export function createRateLimitRegistry(limits = {}) {
       if (!normalized.has(id)) limiters.delete(id);
     }
     for (const [id, settings] of normalized) {
-      if (!limiters.has(id)) {
+      const entry = limiters.get(id);
+      if (!entry) {
         limiters.set(id, {
           settings,
           semaphore: settings.maxConcurrent ? createSemaphore(settings.maxConcurrent) : null,
           gcra: settings.rateMs ? createGcra(settings) : null
         });
+        continue;
       }
+      // A surviving id keeps its live slots, queue, and bucket state, but a
+      // changed limit must still take effect on reload. Reconfigure in place so
+      // tightening concurrency cannot transiently over-admit.
+      if (
+        entry.settings.maxConcurrent === settings.maxConcurrent &&
+        entry.settings.rateMs === settings.rateMs &&
+        entry.settings.burst === settings.burst
+      ) {
+        continue;
+      }
+      if (settings.maxConcurrent) {
+        if (entry.semaphore) entry.semaphore.setLimit(settings.maxConcurrent);
+        else entry.semaphore = createSemaphore(settings.maxConcurrent);
+      } else entry.semaphore = null;
+      if (settings.rateMs) {
+        if (entry.gcra) entry.gcra.reconfigure(settings);
+        else entry.gcra = createGcra(settings);
+      } else entry.gcra = null;
+      entry.settings = settings;
     }
   }
   sync(limits);
@@ -302,14 +348,18 @@ export function createRateLimitRegistry(limits = {}) {
 }
 
 /** Acquire semaphore and rate budget for `id`; returns a release function. */
-export async function acquireRateLimitSlot(registry, id, { signal = null, timeoutMs = MAX_WAIT_MS } = {}) {
+export async function acquireRateLimitSlot(
+  registry,
+  id,
+  { signal = null, timeoutMs = MAX_WAIT_MS, rateBudget = true } = {}
+) {
   const entry = registry.limiter(id);
   if (!entry) return () => {};
   // Concurrency waits in a bounded FIFO queue, exactly like runtime slots.
   signal?.throwIfAborted?.();
   const releaseSemaphore = entry.semaphore ? await entry.semaphore.acquire(signal, { timeoutMs }) : () => {};
   try {
-    if (entry.gcra) {
+    if (rateBudget && entry.gcra) {
       // Rate budget fails fast with the delay until the next conforming
       // arrival, so callers surface a retryable rejection instead of silently
       // queueing for minutes (the nginx limit_req default without burst delay).
@@ -333,6 +383,31 @@ export async function acquireRateLimitSlot(registry, id, { signal = null, timeou
     released = true;
     releaseSemaphore();
   };
+}
+
+/**
+ * Consume the rate budget of every id in a resolution chain. The check is
+ * atomic: if any limiter rejects, every token already taken is refunded, so a
+ * request that never reached a model costs no budget on the scopes it passed.
+ */
+export function consumeRateBudget(registry, ids) {
+  const consumed = [];
+  for (const id of ids) {
+    const gcra = registry.limiter(id)?.gcra;
+    if (!gcra) continue;
+    const decision = gcra.tryAcquire();
+    if (decision.allowed) {
+      consumed.push(gcra);
+      continue;
+    }
+    for (const taken of consumed) taken.refund();
+    const error = new Error(
+      `rate budget for ${id} exhausted; retry in ${Math.ceil(decision.retryAfterMs / 1000)} seconds`
+    );
+    error.name = 'RateBudgetExhaustedError';
+    error.retryAfterMs = decision.retryAfterMs;
+    throw error;
+  }
 }
 
 function abortError() {
