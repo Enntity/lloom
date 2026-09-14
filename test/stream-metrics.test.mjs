@@ -57,7 +57,8 @@ async function waitFor(read, predicate, label) {
   assert.fail(`Timed out: ${label}`);
 }
 
-async function exercise(route, fragment, stream = true) {
+async function exercise(route, fragment, stream = true, watchdog = false) {
+  const observations = [];
   const ready = deferred(),
     send = deferred(),
     finish = deferred();
@@ -69,7 +70,7 @@ async function exercise(route, fragment, stream = true) {
     res.flushHeaders();
     ready.resolve();
     await send.promise;
-    if (stream) res.write(sse(fragment.delta));
+    if (stream) res.write(sse(fragment.delta, fragment.extra));
     await finish.promise;
     if (stream) {
       if (fragment.last) res.write(sse(fragment.last));
@@ -94,10 +95,38 @@ async function exercise(route, fragment, stream = true) {
       security: { allowMissingAuth: true },
       logging: { metricsPersistence: false },
       backends: { external: { type: 'openai', baseUrl: `http://127.0.0.1:${upstreamPort}/v1` } },
-      models: [{ id: 'external', backend: 'external', upstreamModel: 'fixture', kind: 'chat' }],
-      runtimes: {}
+      models: [
+        {
+          id: 'external',
+          backend: 'external',
+          upstreamModel: 'fixture',
+          kind: 'chat',
+          ...(watchdog ? { runtime: 'test' } : {})
+        }
+      ],
+      runtimes: watchdog
+        ? {
+            test: {
+              enabled: true,
+              management: 'managed',
+              watchdog: { enabled: true, firstContentTimeoutMs: 2000, idleContentTimeoutMs: 30 }
+            }
+          }
+        : {}
     },
-    { logger: { error() {}, warn() {} } }
+    {
+      logger: { error() {}, warn() {} },
+      ...(watchdog
+        ? {
+            runtimeManager: {
+              ensure: async () => ({ healthy: true }),
+              withSlot: async (_id, fn) => fn(),
+              noteRequestOutcome: (_id, outcome) => observations.push(outcome),
+              status: async () => ({ runtimes: { test: { status: 'running', healthy: true } } })
+            }
+          }
+        : {})
+    }
   );
   const port = await listen(app.server);
   const metrics = async () => (await fetch(`http://127.0.0.1:${port}/gateway/metrics`)).json();
@@ -113,6 +142,14 @@ async function exercise(route, fragment, stream = true) {
     const before = await metrics();
     assert.equal(before.active.length, 1);
     assert.equal(before.active[0].outputChars ?? 0, 0, 'protocol envelopes contain no generated output');
+    if (watchdog) {
+      await delay(120);
+      assert.equal(
+        observations.some((o) => o.stalled),
+        false,
+        'protocol envelope must preserve the first-content timeout'
+      );
+    }
     send.resolve();
     if (stream) {
       const live = await waitFor(
@@ -126,6 +163,13 @@ async function exercise(route, fragment, stream = true) {
     } else {
       const pending = await metrics();
       assert.equal(pending.active[0].outputChars ?? 0, 0, 'buffered request has no live output estimate');
+    }
+    if (watchdog) {
+      await waitFor(
+        () => observations,
+        (items) => items.some((o) => o.stalled),
+        'idle watchdog after real output'
+      );
     }
     finish.resolve();
     const response = await received;
@@ -187,5 +231,17 @@ assert.equal(
 for (const route of routes) {
   for (const fragment of fragments) await exercise(route, fragment);
   await exercise(route, fragments[0], false);
+  await exercise(route, {
+    label: 'multiple choices',
+    delta: {},
+    chars: route === '/v1/chat/completions' ? 11 : 5,
+    extra: {
+      choices: [
+        { index: 0, delta: { content: 'first' } },
+        { index: 1, delta: { content: 'second' } }
+      ]
+    }
+  });
+  if (route !== '/v1/chat/completions') await exercise(route, fragments[0], true, true);
 }
 console.log('stream metrics: live content, reasoning, tools, final bytes/usage, and buffered requests passed');

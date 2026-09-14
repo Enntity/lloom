@@ -2553,7 +2553,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       if (!watchdogArmed) return;
       const bytes = Number(patch?.responseBytesDelta ?? 0);
       const chars = Number(patch?.outputCharsDelta ?? 0);
-      if (bytes > 0 || chars > 0) {
+      if (patch?.modelProgress ?? (bytes > 0 || chars > 0)) {
         watchdogHadContent = true;
         lastProgressAt = Date.now();
         armWatchdogTimer();

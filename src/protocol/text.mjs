@@ -169,8 +169,9 @@ export function openAIStreamChunkHasContent(chunk) {
 }
 
 /** Count generated deltas only; usage and completed message snapshots repeat output. */
-export function openAIStreamChunkGeneratedChars(chunk) {
-  return (chunk?.choices ?? []).reduce((total, choice) => {
+export function openAIStreamChunkGeneratedChars(chunk, { firstChoiceOnly = false } = {}) {
+  const choices = chunk?.choices ?? [];
+  return (firstChoiceOnly ? choices.slice(0, 1) : choices).reduce((total, choice) => {
     const delta = choice?.delta;
     if (!delta) return total;
     const toolChars = (delta.tool_calls ?? []).reduce(

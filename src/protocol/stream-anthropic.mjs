@@ -270,7 +270,7 @@ export async function streamAnthropicFromOpenAI(
   let sawFirst = false;
   let responseBytes = 0;
 
-  function flush(newEvents, outputCharsDelta = 0) {
+  function flush(newEvents, outputCharsDelta = 0, modelProgress = false) {
     let responseBytesDelta = 0;
     for (const item of newEvents) {
       writeSse(res, item.event, item.data, { signal });
@@ -279,7 +279,7 @@ export async function streamAnthropicFromOpenAI(
       );
     }
     responseBytes += responseBytesDelta;
-    progress?.({ responseBytesDelta, outputCharsDelta });
+    progress?.({ responseBytesDelta, outputCharsDelta, modelProgress });
   }
 
   flush(translator.events.slice());
@@ -301,7 +301,11 @@ export async function streamAnthropicFromOpenAI(
       sawFirst = true;
       markFirstContent?.(timing);
     }
-    flush(translator.events.slice(beforeLen), openAIStreamChunkGeneratedChars(chunk));
+    flush(
+      translator.events.slice(beforeLen),
+      openAIStreamChunkGeneratedChars(chunk, { firstChoiceOnly: true }),
+      openAIStreamChunkHasContent(chunk)
+    );
   }
 
   const beforeFinish = translator.events.length;

@@ -428,7 +428,7 @@ export async function streamResponsesFromOpenAI(
   let sawFirst = false;
   let responseBytes = 0;
 
-  function flush(newEvents, outputCharsDelta = 0) {
+  function flush(newEvents, outputCharsDelta = 0, modelProgress = false) {
     let responseBytesDelta = 0;
     for (const item of newEvents) {
       writeSse(res, item.event, item.data, { signal });
@@ -437,7 +437,7 @@ export async function streamResponsesFromOpenAI(
       );
     }
     responseBytes += responseBytesDelta;
-    progress?.({ responseBytesDelta, outputCharsDelta });
+    progress?.({ responseBytesDelta, outputCharsDelta, modelProgress });
   }
 
   flush(translator.events.slice());
@@ -459,7 +459,11 @@ export async function streamResponsesFromOpenAI(
       sawFirst = true;
       markFirstContent?.(timing);
     }
-    flush(translator.events.slice(beforeLen), openAIStreamChunkGeneratedChars(chunk));
+    flush(
+      translator.events.slice(beforeLen),
+      openAIStreamChunkGeneratedChars(chunk, { firstChoiceOnly: true }),
+      openAIStreamChunkHasContent(chunk)
+    );
   }
 
   const beforeFinish = translator.events.length;
@@ -468,7 +472,7 @@ export async function streamResponsesFromOpenAI(
   const done = 'data: [DONE]\n\n';
   res.write(done);
   responseBytes += Buffer.byteLength(done);
-  progress?.({ responseBytesDelta: Buffer.byteLength(done), outputCharsDelta: 0 });
+  progress?.({ responseBytesDelta: Buffer.byteLength(done), outputCharsDelta: 0, modelProgress: false });
   res.end();
   return {
     status: 200,
