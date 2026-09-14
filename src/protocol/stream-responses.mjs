@@ -9,6 +9,7 @@ import {
   openAIChoiceReasoning,
   openAIChoiceReasoningSummary,
   openAIChunkText,
+  openAIStreamChunkGeneratedChars,
   openAIStreamChunkHasContent,
   responseIncompleteDetails,
   responseStatusFromFinishReason,
@@ -417,7 +418,7 @@ export async function streamResponsesFromOpenAI(
   res,
   upstream,
   requestedModel,
-  { signal, timing, writeSse, throwIfClientClosed, setCors, sseHeaders, markFirstContent, tools = [] } = {}
+  { signal, timing, writeSse, throwIfClientClosed, setCors, sseHeaders, markFirstContent, progress, tools = [] } = {}
 ) {
   throwIfClientClosed(signal, res);
   setCors(res);
@@ -425,14 +426,20 @@ export async function streamResponsesFromOpenAI(
 
   const translator = createResponsesStreamTranslator(requestedModel, { tools });
   let sawFirst = false;
+  let responseBytes = 0;
 
-  function flush(newEvents) {
+  function flush(newEvents, outputCharsDelta = 0) {
+    let responseBytesDelta = 0;
     for (const item of newEvents) {
       writeSse(res, item.event, item.data, { signal });
+      responseBytesDelta += Buffer.byteLength(
+        (item.event ? `event: ${item.event}\n` : '') + `data: ${JSON.stringify(item.data)}\n\n`
+      );
     }
+    responseBytes += responseBytesDelta;
+    progress?.({ responseBytesDelta, outputCharsDelta });
   }
 
-  // Initial created/in_progress already in events
   flush(translator.events.slice());
 
   for await (const event of readSseEvents(upstream.body)) {
@@ -452,17 +459,21 @@ export async function streamResponsesFromOpenAI(
       sawFirst = true;
       markFirstContent?.(timing);
     }
-    flush(translator.events.slice(beforeLen));
+    flush(translator.events.slice(beforeLen), openAIStreamChunkGeneratedChars(chunk));
   }
 
   const beforeFinish = translator.events.length;
   translator.finish();
   flush(translator.events.slice(beforeFinish));
-  res.write('data: [DONE]\n\n');
+  const done = 'data: [DONE]\n\n';
+  res.write(done);
+  responseBytes += Buffer.byteLength(done);
+  progress?.({ responseBytesDelta: Buffer.byteLength(done), outputCharsDelta: 0 });
   res.end();
   return {
     status: 200,
     stream: true,
+    responseBytes,
     usage: translator.usage
   };
 }

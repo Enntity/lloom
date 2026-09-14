@@ -10,6 +10,7 @@ import {
   openAIChoiceReasoning,
   openAIChoiceReasoningSignature,
   openAIChunkText,
+  openAIStreamChunkGeneratedChars,
   openAIStreamChunkHasContent
 } from './text.mjs';
 import { readSseEvents } from './sse.mjs';
@@ -259,7 +260,7 @@ export async function streamAnthropicFromOpenAI(
   res,
   upstream,
   requestedModel,
-  { signal, timing, writeSse, throwIfClientClosed, setCors, sseHeaders, markFirstContent } = {}
+  { signal, timing, writeSse, throwIfClientClosed, setCors, sseHeaders, markFirstContent, progress } = {}
 ) {
   throwIfClientClosed(signal, res);
   setCors(res);
@@ -267,11 +268,18 @@ export async function streamAnthropicFromOpenAI(
 
   const translator = createAnthropicStreamTranslator(requestedModel);
   let sawFirst = false;
+  let responseBytes = 0;
 
-  function flush(newEvents) {
+  function flush(newEvents, outputCharsDelta = 0) {
+    let responseBytesDelta = 0;
     for (const item of newEvents) {
       writeSse(res, item.event, item.data, { signal });
+      responseBytesDelta += Buffer.byteLength(
+        (item.event ? `event: ${item.event}\n` : '') + `data: ${JSON.stringify(item.data)}\n\n`
+      );
     }
+    responseBytes += responseBytesDelta;
+    progress?.({ responseBytesDelta, outputCharsDelta });
   }
 
   flush(translator.events.slice());
@@ -293,7 +301,7 @@ export async function streamAnthropicFromOpenAI(
       sawFirst = true;
       markFirstContent?.(timing);
     }
-    flush(translator.events.slice(beforeLen));
+    flush(translator.events.slice(beforeLen), openAIStreamChunkGeneratedChars(chunk));
   }
 
   const beforeFinish = translator.events.length;
@@ -303,6 +311,7 @@ export async function streamAnthropicFromOpenAI(
   return {
     status: 200,
     stream: true,
+    responseBytes,
     usage: translator.usage
   };
 }

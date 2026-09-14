@@ -167,3 +167,22 @@ export function openAIStreamChunkHasContent(chunk) {
   if (openAIChoiceReasoningSignature(choice)) return true;
   return (choice.delta?.tool_calls?.length ?? 0) > 0 || (choice.message?.tool_calls?.length ?? 0) > 0;
 }
+
+/** Count generated deltas only; usage and completed message snapshots repeat output. */
+export function openAIStreamChunkGeneratedChars(chunk) {
+  return (chunk?.choices ?? []).reduce((total, choice) => {
+    const delta = choice?.delta;
+    if (!delta) return total;
+    const toolChars = (delta.tool_calls ?? []).reduce(
+      (sum, call) => sum + (typeof call?.function?.arguments === 'string' ? call.function.arguments.length : 0),
+      0
+    );
+    return (
+      total +
+      stringFromUnknown(delta.content ?? delta.text).length +
+      openAIReasoningText(delta).length +
+      openAIReasoningSummaryText(delta).length +
+      toolChars
+    );
+  }, 0);
+}

@@ -79,6 +79,7 @@ import {
   normalizeStructuredOutputChatCompletion,
   normalizeOpenAIChatRequestBody,
   translateReasoningEffortForBackend,
+  openAIStreamChunkGeneratedChars,
   openAIStreamChunkHasContent,
   openAIToAnthropic,
   openAIToResponses,
@@ -1584,10 +1585,7 @@ async function proxyOpenAIChatStream(res, upstream, requestedModel, { signal, ti
       if (openAIStreamChunkHasContent(value)) {
         markFirstContent(timing);
       }
-      outputChars = (value?.choices ?? []).reduce((sum, choice) => {
-        const delta = choice?.delta ?? {};
-        return sum + String(delta.content ?? '').length + String(delta.reasoning_content ?? '').length;
-      }, 0);
+      outputChars = openAIStreamChunkGeneratedChars(value);
       const dataText = value && typeof value === 'object' ? JSON.stringify(value) : rewritten.text;
       output = encodeSseBlock({
         ...event,
@@ -3451,7 +3449,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         req,
         res
       },
-      async (resolved, { signal, timing, watchdog, hasNext }) => {
+      async (resolved, { signal, timing, watchdog, progress, hasNext }) => {
         watchdog.arm();
         const normalizedRequest = prepareStructuredOutputForBackend(responsesToOpenAIChat(body, resolved), resolved);
         const upstream = await fetchUpstream({
@@ -3470,6 +3468,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
             tools: body.tools,
             signal,
             timing,
+            progress,
             writeSse,
             throwIfClientClosed,
             setCors: (r) => setCors(r, config),
@@ -3513,7 +3512,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         req,
         res
       },
-      async (resolved, { signal, timing, watchdog, hasNext }) => {
+      async (resolved, { signal, timing, watchdog, progress, hasNext }) => {
         watchdog.arm();
         const upstream = await fetchUpstream({
           headers: inferenceGatewayHeaders(req, resolved),
@@ -3530,6 +3529,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
           return streamAnthropicFromOpenAI(res, upstream, resolved.requestedId, {
             signal,
             timing,
+            progress,
             writeSse,
             throwIfClientClosed,
             setCors: (r) => setCors(r, config),
