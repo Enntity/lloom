@@ -868,6 +868,18 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         && Number.isFinite(Number(gpu?.memoryUsedMb));
     }
 
+    // The loom reads host telemetry directly, so it needs the same pressure
+    // first lookup the node cards use: raw os.freemem utilization reads ~100%
+    // on a healthy macOS host while the pressure figure tracks real headroom.
+    function hostResourceRows(host) {
+      const telemetry = host || {};
+      return [
+        ["CPU", telemetry.cpu?.utilization],
+        ["RAM", telemetry.memory?.pressureUtilization ?? telemetry.memory?.utilization],
+        ["GPU", telemetry.gpu?.utilization]
+      ];
+    }
+
     function nodeResourceRows(node) {
       const telemetry = node?.telemetry || {};
       const rows = [
@@ -1914,8 +1926,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const statRows = [["ACTIVE", summary.active || 0], ["PROMPT", promptTokens > 0 ? (summary.promptEstimated ? "~" : "") + formatCompact(Math.round(promptTokens)) + " tok" : "—"], ["OUTPUT", formatRate(instantaneousOutputRate) + " ~t/s"], ["ERRORS/1M", summary.recentErrors || 0]];
         ctx.font = '11px "SFMono-Regular",monospace';
         statRows.forEach((row, index) => { const y = gate.top + 94 + index * 27; ctx.textAlign = "left"; ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.fillText(row[0], gate.left + 18, y); ctx.textAlign = "right"; ctx.fillStyle = "rgba(242,245,247,.95)"; ctx.fillText(String(row[1]), gate.right - 18, y); });
-        const host = summary.host || {};
-        const resourceRows = [["CPU", host.cpu?.utilization], ["RAM", host.memory?.utilization], ["GPU", host.gpu?.utilization]];
+        const resourceRows = hostResourceRows(summary.host);
         ctx.font = '9px "SFMono-Regular",monospace';
         resourceRows.forEach((row, index) => {
           const y = gate.top + 218 + index * 24, value = row[1];
@@ -1924,7 +1935,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           if (value != null) { ctx.fillStyle = value > 90 ? "#ff6f7d" : value > 70 ? "#f3bd4f" : "#2fe6c8"; ctx.fillRect(gate.left + 51, y - 8, 74 * Math.max(0, Math.min(100, value)) / 100, 7); }
           ctx.textAlign = "right"; ctx.fillStyle = "rgba(242,245,247,.9)"; ctx.fillText(value == null ? "–" : Math.round(value) + "%", gate.right - 17, y);
         });
-        if (host.gpu) { ctx.textAlign = "center"; ctx.fillStyle = "rgba(153,163,176,.8)"; ctx.fillText(Math.round(host.gpu.temperatureC) + "°C · " + Math.round(host.gpu.powerDrawW) + "W", center.x, gate.bottom - 13); }
+        if (summary.host?.gpu) { ctx.textAlign = "center"; ctx.fillStyle = "rgba(153,163,176,.8)"; ctx.fillText(Math.round(summary.host.gpu.temperatureC) + "°C · " + Math.round(summary.host.gpu.powerDrawW) + "W", center.x, gate.bottom - 13); }
       }
       ctx.restore();
     }

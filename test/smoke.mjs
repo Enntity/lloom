@@ -5049,7 +5049,8 @@ if (listened) {
     assert(dashboardHtml.includes('state.physicalModels = physicalTopologyModels(state.models)'));
     assert(dashboardHtml.includes('model: item.resolvedModel || item.model'));
     assert(!dashboardHtml.includes('Ordered members'));
-    assert(dashboardHtml.includes('["GPU", host.gpu?.utilization]'));
+    assert(dashboardHtml.includes('const resourceRows = hostResourceRows(summary.host)'));
+    assert(dashboardHtml.includes('["RAM", telemetry.memory?.pressureUtilization ?? telemetry.memory?.utilization]'));
     assert(
       dashboardHtml.includes(
         'runtimeState.healthy === true || runtimeStatus === "running" || runtimeStatus === "external"'

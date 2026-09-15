@@ -370,7 +370,8 @@ const helperEnd = source.indexOf('    function renderModelInspector()', helperSt
 assert(helperStart >= 0 && helperEnd > helperStart);
 const helperContext = {};
 vm.runInNewContext(
-  source.slice(helperStart, helperEnd) + '\nglobalThis.nodeResourceRows = nodeResourceRows;',
+  source.slice(helperStart, helperEnd) +
+    '\nglobalThis.nodeResourceRows = nodeResourceRows;\nglobalThis.hostResourceRows = hostResourceRows;',
   helperContext
 );
 const resourceLabels = (node) => Array.from(helperContext.nodeResourceRows(node), ([label]) => label);
@@ -393,6 +394,16 @@ assert.deepEqual(
   ['CPU', 'RAM', 'GPU']
 );
 assert.deepEqual(resourceLabels({ profile: { accelerators: ['cuda'] }, telemetry }), ['CPU', 'RAM', 'GPU', 'VRAM']);
+
+// The loom paints host telemetry directly. macOS os.freemem() utilization sits
+// near 100% on a healthy host, so the RAM row must prefer the pressure figure
+// the node cards already use, and fall back to raw utilization without it.
+const hostRows = (host) => Object.fromEntries(helperContext.hostResourceRows(host));
+assert.equal(hostRows({ cpu: { utilization: 20 }, memory: { utilization: 99, pressureUtilization: 57 } }).RAM, 57);
+assert.equal(hostRows({ cpu: { utilization: 20 }, memory: { utilization: 99 } }).RAM, 99);
+assert.equal(hostRows({ cpu: { utilization: 20 } }).RAM, undefined);
+assert.equal(hostRows({ cpu: { utilization: 20 }, memory: { utilization: 99, pressureUtilization: 57 } }).CPU, 20);
+assert.deepEqual(Object.keys(hostRows({ cpu: {}, memory: {}, gpu: null })), ['CPU', 'RAM', 'GPU']);
 
 console.log('dashboard status tests passed');
 
