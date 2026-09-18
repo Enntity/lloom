@@ -603,9 +603,12 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       topologyWorldScale: 1,
       topologyFitZoom: 1,
       topologySceneKey: "",
-      topologyCamera: { manual: 1, current: 1, panX: 0, panY: 0, autoFollow: true },
+      // manual is the user's standing zoom multiplier, 1 when they have not set
+      // one. target/current are the action camera's aim and its eased position.
+      topologyCamera: { manual: 1, current: 1, target: 1, panX: 0, panY: 0, autoFollow: true, userZoom: null, frameKey: "", at: 0 },
       topologyViewMode: "columns",
       actionModelNodes: new Map(),
+      actionFramedIds: new Set(),
       topologyPanDrag: null,
       topologyZoomAnchor: null,
       topologyRaisedModelId: null,
@@ -1254,6 +1257,27 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     const ACTION_CAMERA_PADDING = 150;
     const ACTION_ZOOM_MIN = .18;
     const ACTION_ZOOM_MAX = 1.5;
+    // Zoom inertia. The camera only re-aims when the live set no longer fits, or
+    // when it has shrunk far enough that the frame is mostly empty, and it walks
+    // toward that aim at a bounded rate instead of snapping. Easing time
+    // constants have a short floor so a small correction never reads as drift.
+    const ACTION_ZOOM_IN_TC = 1.7;
+    const ACTION_ZOOM_OUT_TC = 2.6;
+    const ACTION_ZOOM_IN_SPEED = .5;
+    const ACTION_ZOOM_OUT_SPEED = .34;
+    const ACTION_ZOOM_EASE_FLOOR = .12;
+    const ACTION_ZOOM_SETTLE = .004;
+    // A refit has to earn it: at least this much of the frame must be empty
+    // before a shrunk live set may pull the camera back in, and a fresh aim
+    // within this fraction of the one already in place is not worth a move.
+    const ACTION_ZOOM_SHRINK = .62;
+    const ACTION_ZOOM_DEADZONE = .02;
+    // A live set that spills a few percent past the padding has not earned a
+    // camera move; one that spills well past it has.
+    const ACTION_ZOOM_OVERFLOW = 1.06;
+    // Panning is the part that has to be quick, so active work moves into view
+    // while the zoom behind it holds still.
+    const ACTION_PAN_EASE = .18;
 
     // 0 means "parked at the edge and out of frame", 1 means "this is the
     // action". Serving dominates; otherwise a model fades with a half-life
@@ -1284,6 +1308,15 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       return { x: field.left + (field.right - field.left) * ACTION_LOOM_X, y: (field.top + field.bottom) / 2 };
     }
 
+    // The band live cards use: it starts one gap right of the loom, which is as
+    // close as an active card is ever allowed to sit, and stops short of the
+    // world edge that quiet models drift out to. A card that just went live is
+    // seated at its left edge so it arrives where the work already is.
+    function actionLiveLane(field) {
+      const anchor = actionLoomAnchor(field);
+      return { left: anchor.x + ACTION_INNER_GAP, right: field.right - ACTION_OUTER_GAP };
+    }
+
     // Where a model wants to sit: a stable lane for its vertical position, and a
     // horizontal offset set by activity. Serving models sit just right of the
     // loom; quiet ones drift back out toward the world edge. Each model also
@@ -1292,10 +1325,11 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     function actionModelSlot(model, field, anchor, innerSpread = .25) {
       const weight = Math.max(0, Math.min(1, Number(model?.actionWeight || 0)));
       const reach = Math.pow(1 - weight, 1.35);
-      const innerX = anchor.x + ACTION_INNER_GAP;
-      const outerX = field.right - ACTION_OUTER_GAP;
+      const lane = actionLiveLane(field);
+      const innerX = lane.left;
+      const outerX = lane.right;
       const seed = [...String(model?.id || "model")].reduce((sum, character) => sum + character.charCodeAt(0), 1);
-      const lane = hashUnit(seed * 7) * 2 - 1;
+      const row = hashUnit(seed * 7) * 2 - 1;
       const laneSpread = Math.max(0, (field.bottom - field.top) / 2 - ACTION_LANE_MARGIN);
       const jitter = (hashUnit(seed * 13) - .5) * 22;
       const scatter = (hashUnit(seed * 23) - .5) * ACTION_SLOT_SPREAD;
@@ -1306,7 +1340,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const spread = innerSpread + (1 - innerSpread) * reach;
       return {
         x: Math.max(field.left + ACTION_CARD_HALF_W, Math.min(field.right - ACTION_CARD_HALF_W, x)),
-        y: (field.top + field.bottom) / 2 + lane * laneSpread * spread + jitter
+        y: (field.top + field.bottom) / 2 + row * laneSpread * spread + jitter
       };
     }
 
@@ -1429,6 +1463,121 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const usableHeight = Math.max(1, viewportHeight - ACTION_CAMERA_PADDING * 2);
       const fit = Math.min(usableWidth / Math.max(1, bounds.width), usableHeight / Math.max(1, bounds.height));
       return Math.max(ACTION_ZOOM_MIN, Math.min(ACTION_ZOOM_MAX, fit));
+    }
+
+    // World rectangle the camera is actually showing. A model that arrives in it
+    // crosses no frame edge, so it cannot be the thing that yanks the zoom. The
+    // zoom used is the camera's aim rather than its eased position, because a
+    // card seated "at the edge" must still be in frame once the easing lands.
+    function actionCameraViewRect(viewportWidth, viewportHeight) {
+      const view = state.topologyView;
+      const camera = state.topologyCamera;
+      const zoom = Math.max(.0001, camera.target || camera.current || view?.zoom || 1);
+      const width = Math.max(1, view?.width || 1), height = Math.max(1, view?.height || 1);
+      return {
+        left: width / 2 - ((view?.panX || 0) + Math.max(1, viewportWidth) / 2) / zoom,
+        right: width / 2 - ((view?.panX || 0) - Math.max(1, viewportWidth) / 2) / zoom,
+        top: height / 2 - ((view?.panY || 0) + Math.max(1, viewportHeight) / 2) / zoom,
+        bottom: height / 2 - ((view?.panY || 0) - Math.max(1, viewportHeight) / 2) / zoom
+      };
+    }
+
+    // A model that just became live seats where the camera can already see it
+    // rather than at the far slot its weight came from, so a new client shows up
+    // in the frame instead of dragging the frame out to reach it.
+    function bringActiveModelsIntoView(models, field, viewportWidth, viewportHeight) {
+      // A first action frame refits anyway, so arrivals only ever mean "went
+      // live since the last frame" once the camera has something to hold.
+      const framedIds = state.topologyView ? state.actionFramedIds : null;
+      const rect = state.topologyView ? actionCameraViewRect(viewportWidth, viewportHeight) : null;
+      const next = new Set();
+      const offCamera = [];
+      for (const model of models || []) {
+        if (Number(model?.actionWeight || 0) < ACTION_FRAME_WEIGHT) continue;
+        next.add(model.id);
+        if (!rect || framedIds?.has(model.id)) continue;
+        const node = state.actionModelNodes.get(model.id);
+        if (!node) continue;
+        const framed =
+          node.x - ACTION_CARD_HALF_W >= rect.left && node.x + ACTION_CARD_HALF_W <= rect.right &&
+          node.y - ACTION_CARD_HALF_H >= rect.top && node.y + ACTION_CARD_HALF_H <= rect.bottom;
+        if (!framed) offCamera.push(node);
+      }
+      state.actionFramedIds = next;
+      // No measured frame means no seat to choose, and the first action frame
+      // refits the camera anyway.
+      if (!rect || !offCamera.length) return;
+      // Seat the arrival in the frame the camera holds, as near its own slot as
+      // the live band allows. It then fans out with the rest of the physics.
+      const lane = actionLiveLane(field);
+      const left = Math.max(lane.left, rect.left + ACTION_CARD_HALF_W);
+      const right = Math.min(lane.right, rect.right - ACTION_CARD_HALF_W);
+      const top = Math.max(field.top + ACTION_CARD_HALF_H, rect.top + ACTION_CARD_HALF_H);
+      const bottom = Math.min(field.bottom - ACTION_CARD_HALF_H, rect.bottom - ACTION_CARD_HALF_H);
+      if (left > right || top > bottom) return;
+      for (const node of offCamera) {
+        node.x = Math.max(left, Math.min(right, node.x));
+        node.y = Math.max(top, Math.min(bottom, node.y));
+        node.vx = 0;
+        node.vy = 0;
+      }
+    }
+
+    // How much of the live frame the camera wants to hold. The fit is measured
+    // against a box whose aspect is pinned near square, so the aim tracks the
+    // extent of the live set rather than the loom-to-band gap: a wide frame no
+    // longer counts as small just because it is wide, and a card joining or
+    // leaving in the middle of the band does not re-aim the camera on its own.
+    function actionCameraFitZoom(bounds, viewportWidth, viewportHeight) {
+      const frameWidth = Math.max(1, Number(bounds?.width) || 0);
+      const frameHeight = Math.max(1, Number(bounds?.height) || 0);
+      const shape = Math.max(.5, Math.min(2.4, Math.sqrt(frameWidth / frameHeight)));
+      return actionCameraZoom({ width: frameWidth / shape, height: frameHeight * shape }, viewportWidth, viewportHeight);
+    }
+
+    // The camera answers the live set for two reasons and no others: it no
+    // longer fits, or it has shrunk to a fraction of what the camera framed and
+    // left the view mostly empty. Everything between those is held.
+    function actionCameraFollowsFrame(bounds, viewportWidth, viewportHeight) {
+      const camera = state.topologyCamera;
+      // A frame that could not be measured tells the camera nothing, so it holds.
+      const frame = bounds || actionBoundsOf([{ left: 0, right: 1, top: 0, bottom: 1 }]);
+      const fit = actionCameraFitZoom(frame, viewportWidth, viewportHeight);
+      const key = [
+        actionFrameModels(state.topologyModels).map(model => model.id).sort().join("|"),
+        Math.round(frame.width), Math.round(frame.height),
+        viewportWidth, viewportHeight
+      ].join("@");
+      const resting = Math.abs((camera.target || 0) - (camera.current || 0)) < ACTION_ZOOM_SETTLE;
+      if (resting && camera.frameKey === key) return { zoom: camera.target || fit, changed: false };
+      const held = camera.target || camera.current || fit;
+      const usableWidth = Math.max(1, viewportWidth - ACTION_CAMERA_PADDING * 2);
+      const usableHeight = Math.max(1, viewportHeight - ACTION_CAMERA_PADDING * 2);
+      // Normalize both axes onto one scale so "too big" and "way smaller" are
+      // judged on the same basis, whichever axis the band happens to grow along.
+      const extent = Math.max((frame.width / usableWidth) * held, (frame.height / usableHeight) * held);
+      const changed = (resting && camera.frameKey !== key) || extent > ACTION_ZOOM_OVERFLOW || extent < ACTION_ZOOM_SHRINK;
+      camera.frameKey = key;
+      if (!changed) return { zoom: held, changed: false };
+      const settled = Math.abs(fit - held) / Math.max(held, fit);
+      return { zoom: settled < ACTION_ZOOM_DEADZONE ? held : fit, changed: true };
+    }
+
+    // Zoom moves toward its aim at a bounded rate with different time constants
+    // for the two directions, so a new client nudges the camera instead of
+    // throwing it. Reduced motion and resize refits land in one step.
+    function trackActionZoom(target, settle) {
+      const camera = state.topologyCamera;
+      const current = Math.max(ACTION_ZOOM_MIN, Math.min(ACTION_ZOOM_MAX, Number(camera.current) || target));
+      camera.target = target;
+      const delta = target - current;
+      if (settle || Math.abs(delta) < ACTION_ZOOM_SETTLE) return (camera.current = target);
+      const now = performance.now();
+      const elapsed = Math.max(.001, Math.min(.1, (now - (camera.at || now)) / 1000));
+      camera.at = now;
+      const easing = Math.max(Math.abs(delta) / (delta > 0 ? ACTION_ZOOM_IN_TC : ACTION_ZOOM_OUT_TC), ACTION_ZOOM_EASE_FLOOR);
+      const step = Math.min(Math.abs(delta), easing * elapsed, (delta > 0 ? ACTION_ZOOM_IN_SPEED : ACTION_ZOOM_OUT_SPEED) * elapsed);
+      return (camera.current = current + Math.sign(delta) * step);
     }
 
     function smoothRate(key, target, now) {
@@ -1608,7 +1757,13 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const gate = clusterEnabled
         ? { left: center.x - nodeCardWidth / 2, right: center.x + nodeCardWidth / 2, top: clusterStackTop, bottom: clusterStackTop + clusterStackHeight }
         : { left: center.x - 82, right: center.x + 82, top: center.y - 170, bottom: center.y + 170 };
-      if (actionMode) updateActionModelLayout(models, modelField, reducedMotion ? 40 : 1);
+      if (actionMode) {
+        updateActionModelLayout(models, modelField, reducedMotion ? 40 : 1);
+        // Cards that just went live are seated inside the frame the camera is
+        // holding, so activity arriving off camera cannot zoom it out.
+        bringActiveModelsIntoView(models, modelField, viewportWidth, viewportHeight);
+        updateActionModelLayout(models, modelField, reducedMotion ? 40 : 1);
+      }
       // Request labels and thread positions are resolved before the camera so a
       // live call is inside the frame on the same frame it appears in.
       const connections = state.topologyConnections || [];
@@ -1638,16 +1793,25 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         })
         .filter(Boolean);
       // Racks set the zoom in the columnar view. The action view instead frames
-      // the loom plus everything currently live, so more work pans out.
+      // the loom plus everything currently live: the pan tracks the growing band
+      // and the zoom only moves when the band stops fitting or shrinks away.
       const actionBounds = actionMode ? actionCameraFrame(models, gate, liveThreads) : null;
-      const fitZoom = actionMode
-        ? actionCameraZoom(actionBounds, viewportWidth, viewportHeight)
-        : 1 / state.topologyWorldScale;
-      state.topologyFitZoom = fitZoom;
-      const targetZoom = Math.max(TOPOLOGY_MIN_ZOOM, Math.min(TOPOLOGY_MAX_ZOOM, fitZoom * state.topologyCamera.manual));
-      if (reflow || reducedMotion) state.topologyCamera.current = targetZoom;
-      else state.topologyCamera.current += (targetZoom - state.topologyCamera.current) * .12;
-      if (Math.abs(targetZoom - state.topologyCamera.current) < .002) state.topologyCamera.current = targetZoom;
+      let targetZoom;
+      if (actionMode) {
+        const frame = actionCameraFollowsFrame(actionBounds, viewportWidth, viewportHeight);
+        // topologyFitZoom stays the pure geometric fit, so a manual zoom keeps
+        // meaning "the zoom the user set" from frame to frame.
+        state.topologyFitZoom = frame.zoom;
+        const userZoom = Number(state.topologyCamera.userZoom) || 0;
+        targetZoom = Math.max(TOPOLOGY_MIN_ZOOM, Math.min(TOPOLOGY_MAX_ZOOM, userZoom > 0 ? Math.min(frame.zoom, userZoom) : frame.zoom));
+      } else {
+        targetZoom = Math.max(TOPOLOGY_MIN_ZOOM, Math.min(TOPOLOGY_MAX_ZOOM, (1 / state.topologyWorldScale) * state.topologyCamera.manual));
+        state.topologyFitZoom = 1 / state.topologyWorldScale;
+      }
+      // Reduced motion has no easing to give, and the first action frame has no
+      // previous camera to ease from, so both land in one step. Everything else
+      // walks, including a model set that changed underneath the view.
+      trackActionZoom(targetZoom, reducedMotion || (actionMode && !state.topologyView));
       const zoom = state.topologyCamera.current;
       const zoomAnchor = state.topologyZoomAnchor;
       if (actionMode && state.topologyCamera.autoFollow && !zoomAnchor) {
@@ -1657,8 +1821,8 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           state.topologyCamera.panX = targetPanX;
           state.topologyCamera.panY = targetPanY;
         } else {
-          state.topologyCamera.panX += (targetPanX - state.topologyCamera.panX) * .1;
-          state.topologyCamera.panY += (targetPanY - state.topologyCamera.panY) * .1;
+          state.topologyCamera.panX += (targetPanX - state.topologyCamera.panX) * ACTION_PAN_EASE;
+          state.topologyCamera.panY += (targetPanY - state.topologyCamera.panY) * ACTION_PAN_EASE;
         }
       }
       if (zoomAnchor) {
@@ -2230,7 +2394,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
             canvas?.clientHeight || 640
           );
       state.topologyCamera.manual = 1;
+      state.topologyCamera.userZoom = null;
       state.topologyCamera.autoFollow = true;
+      state.topologyCamera.frameKey = "";
       state.topologyCamera.panX = 0;
       state.topologyCamera.panY = 0;
       state.topologyZoomAnchor = null;
@@ -2261,10 +2427,13 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       state.topologyViewMode = mode;
       state.topologyCamera.autoFollow = true;
       state.topologyCamera.manual = 1;
+      state.topologyCamera.userZoom = null;
+      state.topologyCamera.frameKey = "";
       state.topologyCamera.panX = 0;
       state.topologyCamera.panY = 0;
       state.topologyZoomAnchor = null;
       state.topologyPanDrag = null;
+      state.actionFramedIds = new Set();
       if (mode === "action") seedActionModelNodes();
       else state.actionModelNodes.clear();
       try { localStorage.setItem("lloom_topology_view", mode); } catch { /* private mode */ }
@@ -2290,15 +2459,24 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     function adjustTopologyZoom(delta, anchor) {
       const camera = state.topologyCamera;
       const view = state.topologyView;
-      const beforeManual = camera.manual;
-      const fitZoom = state.topologyFitZoom || 1 / Math.max(1, state.topologyWorldScale);
+      // The fit the user is aiming against is the camera's current aim, not a
+      // fresh refit, so a wheel notch nudges the zoom that is actually on screen.
+      const fitZoom = state.topologyFitZoom || camera.target || 1;
+      // Where the camera is aiming right now: the user's own zoom once they have
+      // set one, otherwise the fit scaled by their multiplier.
+      const beforeManual = camera.userZoom ? camera.userZoom / fitZoom : camera.manual;
       const beforeZoom = fitZoom * beforeManual;
       const nextZoom = Math.max(TOPOLOGY_MIN_ZOOM, Math.min(TOPOLOGY_MAX_ZOOM, beforeZoom + delta));
-      camera.manual = nextZoom / fitZoom;
-      if (camera.manual === beforeManual) return;
+      if (nextZoom === beforeZoom) return;
       // A deliberate zoom takes the camera off auto-follow until reset, so the
       // action view never fights the person driving it.
+      camera.manual = nextZoom / fitZoom;
+      camera.userZoom = nextZoom;
       camera.autoFollow = false;
+      // A user zoom is a ceiling on the automatic camera as much as a floor:
+      // even a live set that overflows is fitted no wider than they asked for.
+      if (camera.userZoom > fitZoom) camera.userZoom = fitZoom;
+      camera.manual = camera.userZoom / fitZoom;
       renderTopologyCameraState();
       if (!view || !anchor || !view.zoom) {
         state.topologyZoomAnchor = null;

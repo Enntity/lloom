@@ -208,6 +208,8 @@ vm.runInNewContext(
     '\nglobalThis.actionFrameModels = actionFrameModels;' +
     '\nglobalThis.actionLoomAnchor = actionLoomAnchor;' +
     '\nglobalThis.actionModelSlot = actionModelSlot;' +
+    '\nglobalThis.actionLiveLane = actionLiveLane;' +
+    '\nglobalThis.actionModelSlot = actionModelSlot;' +
     '\nglobalThis.actionCameraFrame = actionCameraFrame;' +
     '\nglobalThis.actionCameraZoom = actionCameraZoom;' +
     '\nglobalThis.updateActionModelLayout = updateActionModelLayout;',
@@ -323,6 +325,163 @@ const wideZoom = actionContext.actionCameraZoom({ width: 4200, height: 3200 }, 1
 assert(tightZoom > wideZoom);
 assert(tightZoom <= actionContext.ACTION_ZOOM_MAX);
 assert.equal(actionContext.actionCameraZoom({ width: 1, height: 1 }, 1920, 1080), actionContext.ACTION_ZOOM_MAX);
+assert(
+  source.includes('const actionWeight = modelActivityWeight({ state: stateLabel, liveRate, lastActiveAt }, sampleAt)')
+);
+// The camera is deliberately slow to re-aim. A live set it already holds, or
+// one that spills only slightly past its padding, must not move the zoom at all.
+const cameraField = { left: 0, right: 2400, top: 0, bottom: 1400 };
+const cameraLoom = {
+  left: actionAnchor.x - 92,
+  right: actionAnchor.x + 92,
+  top: actionAnchor.y - 170,
+  bottom: actionAnchor.y + 170
+};
+const cameraViewportWidth = 1451,
+  cameraViewportHeight = 976;
+const cameraLive = [
+  { id: 'client/one', actionWeight: 1 },
+  { id: 'client/two', actionWeight: 1 }
+];
+const cameraIdle = [
+  { id: 'quiet/one', actionWeight: 0 },
+  { id: 'quiet/two', actionWeight: 0 }
+];
+const cameraModels = [...cameraLive, ...cameraIdle];
+const cameraState = {
+  actionModelNodes: new Map([['client/one', { x: 1200, y: 700, vx: 0, vy: 0 }]]),
+  actionFramedIds: new Set(['client/one']),
+  topologyModels: cameraModels,
+  topologyView: {
+    viewportWidth: cameraViewportWidth,
+    viewportHeight: cameraViewportHeight,
+    width: 2400,
+    height: 1400,
+    zoom: 0.8,
+    panX: 0,
+    panY: 0
+  },
+  topologyCamera: {
+    manual: 1,
+    current: 0.8,
+    target: 0.8,
+    panX: 0,
+    panY: 0,
+    autoFollow: true,
+    userZoom: null,
+    frameKey: '',
+    at: 0
+  }
+};
+let cameraClock = 0;
+const cameraContext = {
+  state: cameraState,
+  hashUnit: columnContext.hashUnit,
+  performance: { now: () => cameraClock }
+};
+vm.runInNewContext(
+  source.slice(actionStart, actionEnd) +
+    '\nglobalThis.actionLiveLane = actionLiveLane;' +
+    '\nglobalThis.actionCameraFrame = actionCameraFrame;' +
+    '\nglobalThis.actionCameraFitZoom = actionCameraFitZoom;' +
+    '\nglobalThis.actionCameraFollowsFrame = actionCameraFollowsFrame;' +
+    '\nglobalThis.trackActionZoom = trackActionZoom;' +
+    '\nglobalThis.bringActiveModelsIntoView = bringActiveModelsIntoView;' +
+    '\nglobalThis.updateActionModelLayout = updateActionModelLayout;',
+  cameraContext
+);
+// Mirrors the render loop: lay the band out, seat off-camera arrivals, then let
+// the camera answer the frame at whatever zoom is actually on screen.
+const cameraFrame = (models, elapsed = 16.7) => {
+  cameraClock += elapsed;
+  cameraContext.updateActionModelLayout(models, cameraField, 1);
+  cameraContext.bringActiveModelsIntoView(models, cameraField, cameraViewportWidth, cameraViewportHeight);
+  cameraContext.updateActionModelLayout(models, cameraField, 1);
+  const bounds = cameraContext.actionCameraFrame(models, cameraLoom, []);
+  const frame = cameraContext.actionCameraFollowsFrame(bounds, cameraViewportWidth, cameraViewportHeight);
+  const aim =
+    cameraState.topologyCamera.userZoom > 0 ? Math.min(frame.zoom, cameraState.topologyCamera.userZoom) : frame.zoom;
+  cameraState.topologyView.zoom = cameraContext.trackActionZoom(aim, false);
+  return { ...frame, bounds, aim, render: cameraState.topologyView.zoom, key: cameraState.topologyCamera.frameKey };
+};
+cameraFrame(cameraLive);
+for (let frame = 0; frame < 60; frame += 1) cameraFrame(cameraLive);
+const cameraSettled = cameraFrame(cameraLive);
+// A client arriving from beyond the world lands in the frame the camera is
+// already holding, so a new live model no longer drags the zoom out to meet it.
+cameraState.actionModelNodes.set('client/two', { x: cameraField.right - 100, y: 60, vx: 0, vy: 0 });
+cameraState.actionFramedIds = new Set(['client/one']);
+const cameraArrival = cameraFrame(cameraLive);
+assert(
+  Math.abs(cameraArrival.render - cameraSettled.render) < cameraSettled.render * 0.02,
+  'a new live client leaves the zoom on screen where it was'
+);
+assert(
+  cameraArrival.aim >=
+    Math.min(
+      cameraSettled.aim,
+      cameraArrival.bounds
+        ? cameraContext.actionCameraFitZoom(cameraArrival.bounds, cameraViewportWidth, cameraViewportHeight)
+        : cameraSettled.aim
+    ) -
+      0.0001,
+  'a new live client never aims the camera past the fit it already had'
+);
+const arrivedNode = cameraState.actionModelNodes.get('client/two');
+assert(
+  arrivedNode.x <= cameraField.right - 110 && arrivedNode.y >= cameraField.top + 34,
+  'an arriving card lands inside the world'
+);
+const arrivedScreen = {
+  x: (arrivedNode.x - cameraState.topologyView.width / 2) * cameraState.topologyView.zoom + cameraViewportWidth / 2,
+  y: (arrivedNode.y - cameraState.topologyView.height / 2) * cameraState.topologyView.zoom + cameraViewportHeight / 2
+};
+assert(
+  arrivedScreen.x > 0 &&
+    arrivedScreen.x < cameraViewportWidth &&
+    arrivedScreen.y > 0 &&
+    arrivedScreen.y < cameraViewportHeight,
+  'an arriving card is inside the frame the camera already holds'
+);
+// A live set that genuinely stops fitting refits, but never in one frame.
+cameraState.topologyCamera.current = cameraState.topologyCamera.target = 1.5;
+cameraState.topologyCamera.frameKey = '';
+cameraState.topologyView.zoom = 1.5;
+cameraState.actionFramedIds = new Set();
+const cameraCrowd = [
+  ...Array.from({ length: 8 }, (_, index) => ({ id: 'client/' + index, actionWeight: 1 })),
+  ...cameraIdle
+];
+const cameraOverflow = cameraFrame(cameraCrowd);
+assert(cameraOverflow.bounds.height > cameraViewportHeight / 1.5, 'the crowded live set does not fit the camera');
+assert(
+  cameraOverflow.zoom >=
+    cameraContext.actionCameraFitZoom(cameraOverflow.bounds, cameraViewportWidth, cameraViewportHeight),
+  'a crowded live set refits the camera, but eases toward the fit rather than accepting the whole overflow'
+);
+assert(cameraOverflow.render < 1.5 && cameraOverflow.render > 1.5 - 0.05, 'the refit eases instead of jumping');
+// A live set that shrank away is allowed to pull the camera back in, just as slowly.
+let cameraStep = cameraOverflow.render;
+for (let frame = 0; frame < 40; frame += 1) {
+  const step = cameraFrame(cameraCrowd);
+  assert(Math.abs(step.render - cameraStep) < 0.03, 'every refit frame is a small step');
+  cameraStep = step.render;
+}
+const cameraBusy = cameraFrame(cameraCrowd).render;
+const cameraQuiet = cameraFrame([...cameraLive, ...cameraIdle]);
+assert(cameraQuiet.zoom > cameraBusy, 'a live set that shrank away pulls the camera back in');
+assert(cameraQuiet.render - cameraBusy < 0.05, 'the shrink refit eases instead of jumping');
+// A zoom the user set is a setting: the fit cannot take the camera past it.
+cameraState.topologyCamera.userZoom = 1.1;
+cameraState.topologyCamera.current = cameraState.topologyCamera.target = 1.1;
+cameraState.topologyView.zoom = 1.1;
+cameraState.topologyCamera.frameKey = '';
+const cameraManual = cameraFrame(cameraCrowd);
+assert.equal(cameraManual.aim, Math.min(cameraManual.zoom, 1.1), 'a manual zoom is the ceiling on the automatic fit');
+assert(
+  source.includes('const userZoom = Number(state.topologyCamera.userZoom) || 0'),
+  'the action camera renders through the user zoom rather than only the fit'
+);
 assert(
   source.includes('const actionWeight = modelActivityWeight({ state: stateLabel, liveRate, lastActiveAt }, sampleAt)')
 );
