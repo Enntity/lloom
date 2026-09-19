@@ -5036,7 +5036,11 @@ if (listened) {
     assert(dashboardHtml.includes('function actionCameraFrame('));
     assert(dashboardHtml.includes('const ACTION_WORLD_SCALE ='));
     assert(dashboardHtml.includes('actionWeight, lastActiveAt, agedOut'));
-    assert(dashboardHtml.includes('updateActionModelLayout(models, modelField, reducedMotion ? 40 : 1)'));
+    assert(
+      dashboardHtml.includes(
+        'updateActionModelLayout(models, modelField, reducedMotion ? 40 : 1, reflow || reducedMotion)'
+      )
+    );
     assert(dashboardHtml.includes('const modelNodeStore = actionMode ? state.actionModelNodes : state.modelNodes'));
     assert(dashboardHtml.includes('class="topology-metrics"'));
     assert(dashboardHtml.includes('tabindex="0"'));

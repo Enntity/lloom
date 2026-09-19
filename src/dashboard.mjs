@@ -608,7 +608,6 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       topologyCamera: { manual: 1, current: 1, target: 1, panX: 0, panY: 0, autoFollow: true, userZoom: null, frameKey: "", at: 0 },
       topologyViewMode: "columns",
       actionModelNodes: new Map(),
-      actionFramedIds: new Set(),
       topologyPanDrag: null,
       topologyZoomAnchor: null,
       topologyRaisedModelId: null,
@@ -985,7 +984,18 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const topologyChanged = visibleModelKey !== state.topologyVisibleModelKey;
       state.topologyVisibleModelKey = visibleModelKey;
       state.topologyModels = visibleModels;
-      if (topologyChanged) fitTopologyCameraToModels();
+      if (topologyChanged) {
+        // A visible-set change still needs fresh layout targets, but a manual
+        // action zoom owns the camera until Reset. Refreshing telemetry must
+        // not silently hand zoom and pan back to the automatic camera.
+        const userOwnedActionCamera = state.topologyViewMode === "action"
+          && (Number(state.topologyCamera.userZoom) > 0 || !state.topologyCamera.autoFollow);
+        if (userOwnedActionCamera) {
+          state.topologySceneKey = "";
+          state.modelLayoutTargetKey = "";
+          state.topologyCamera.frameKey = "";
+        } else fitTopologyCameraToModels();
+      }
       if (state.selectedModelId && !state.topologyModels.some(model => model.id === state.selectedModelId)) closeModelInspector();
       renderTopologyModelFilter();
       renderModelInspector();
@@ -1245,7 +1255,8 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     // keeps the cards apart and the camera frames whatever is live right now.
     // Presentation-only; none of this touches routing or runtime state.
     const ACTION_WORLD_SCALE = 2.35;
-    const ACTION_FRAME_WEIGHT = .45;
+    // Recently used cards drift outward on this half-life. Recency affects card
+    // motion only; actionServingModels defines the camera's active set.
     const ACTION_ACTIVITY_HALF_LIFE_MS = 150000;
     const ACTION_CARD_HALF_W = 110;
     const ACTION_CARD_HALF_H = 34;
@@ -1254,27 +1265,25 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     const ACTION_OUTER_GAP = 150;
     const ACTION_LANE_MARGIN = 140;
     const ACTION_SLOT_SPREAD = 280;
-    const ACTION_CAMERA_PADDING = 150;
+    const ACTION_CAMERA_PADDING = 90;
     const ACTION_ZOOM_MIN = .18;
     const ACTION_ZOOM_MAX = 1.5;
-    // Zoom inertia. The camera only re-aims when the live set no longer fits, or
-    // when it has shrunk far enough that the frame is mostly empty, and it walks
-    // toward that aim at a bounded rate instead of snapping. Easing time
-    // constants have a short floor so a small correction never reads as drift.
+    // Zoom inertia. A widened active set is a real reason to pull back, but it
+    // walks there over seconds at a bounded rate instead of snapping, so arriving
+    // work never throws the camera. Pulling in is quicker than falling back.
     const ACTION_ZOOM_IN_TC = 1.7;
     const ACTION_ZOOM_OUT_TC = 2.6;
     const ACTION_ZOOM_IN_SPEED = .5;
     const ACTION_ZOOM_OUT_SPEED = .34;
     const ACTION_ZOOM_EASE_FLOOR = .12;
     const ACTION_ZOOM_SETTLE = .004;
-    // A refit has to earn it: at least this much of the frame must be empty
-    // before a shrunk live set may pull the camera back in, and a fresh aim
-    // within this fraction of the one already in place is not worth a move.
-    const ACTION_ZOOM_SHRINK = .62;
-    const ACTION_ZOOM_DEADZONE = .02;
-    // A live set that spills a few percent past the padding has not earned a
-    // camera move; one that spills well past it has.
-    const ACTION_ZOOM_OVERFLOW = 1.06;
+    // A fresh aim within this fraction of the one already in place is not worth
+    // a move, so requests arriving and finishing do not make the camera hunt.
+    const ACTION_ZOOM_DEADZONE = .05;
+    // The camera never frames less than this, so a single client does not zoom
+    // the loom off the edge of the screen to fill it with one card.
+    const ACTION_FRAME_MIN_W = 840;
+    const ACTION_FRAME_MIN_H = 520;
     // Panning is the part that has to be quick, so active work moves into view
     // while the zoom behind it holds still.
     const ACTION_PAN_EASE = .18;
@@ -1298,8 +1307,14 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       return Math.max(floor, recency);
     }
 
-    function actionFrameModels(models) {
-      return (models || []).filter(model => Number(model?.actionWeight || 0) >= ACTION_FRAME_WEIGHT);
+    // Strict serving predicate: a model is in the camera's active set exactly
+    // while it is serving live traffic or externally processing. It is
+    // deliberately not derived from actionWeight, because the weight also
+    // carries recency: a model that finished a request keeps a decaying weight
+    // for minutes, and letting that weight seat it in the frame is what used to
+    // drag the zoom back out after the work stopped.
+    function actionServingModels(models) {
+      return (models || []).filter(model => model?.state === "serving" || model?.state === "external-processing");
     }
 
     // The loom is a fixed landmark: requests flow in from its left and models
@@ -1310,56 +1325,78 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
 
     // The band live cards use: it starts one gap right of the loom, which is as
     // close as an active card is ever allowed to sit, and stops short of the
-    // world edge that quiet models drift out to. A card that just went live is
-    // seated at its left edge so it arrives where the work already is.
+    // world edge that quiet models drift out to.
     function actionLiveLane(field) {
       const anchor = actionLoomAnchor(field);
       return { left: anchor.x + ACTION_INNER_GAP, right: field.right - ACTION_OUTER_GAP };
     }
 
-    // Where a model wants to sit: a stable lane for its vertical position, and a
-    // horizontal offset set by activity. Serving models sit just right of the
-    // loom; quiet ones drift back out toward the world edge. Each model also
-    // carries a stable scatter so a shared activity level reads as a loose band
-    // rather than a hard column.
-    function actionModelSlot(model, field, anchor, innerSpread = .25) {
-      const weight = Math.max(0, Math.min(1, Number(model?.actionWeight || 0)));
-      const reach = Math.pow(1 - weight, 1.35);
-      const lane = actionLiveLane(field);
-      const innerX = lane.left;
-      const outerX = lane.right;
+    // A stable hash coordinate in [-1, 1] for a model.
+    function actionModelSeed(model, salt) {
       const seed = [...String(model?.id || "model")].reduce((sum, character) => sum + character.charCodeAt(0), 1);
-      const row = hashUnit(seed * 7) * 2 - 1;
-      const laneSpread = Math.max(0, (field.bottom - field.top) / 2 - ACTION_LANE_MARGIN);
-      const jitter = (hashUnit(seed * 13) - .5) * 22;
-      const scatter = (hashUnit(seed * 23) - .5) * ACTION_SLOT_SPREAD;
-      const x = innerX + Math.max(0, outerX - innerX) * reach + scatter;
-      // Serving models also draw in toward the loom's axis; the fan only opens
-      // up as they drift back out, so live work stays compact and readable. How
-      // far the live band opens is set by how many models are live at once.
-      const spread = innerSpread + (1 - innerSpread) * reach;
+      return hashUnit(seed * salt) * 2 - 1;
+    }
+
+    // Where the active cluster packs. It is a loose grid just right of the loom,
+    // sized from the loom outward, so however many models are serving they stay
+    // inside a block the camera can hold at full zoom. The grid leaves a clear
+    // card-and-a-half between rows so the physics pass separates neighbours in
+    // whichever axis has room rather than stacking two cards in one cell.
+    function actionCenterBlock(field, anchor, count, index, model) {
+      const cards = Math.max(1, count);
+      const columns = Math.max(1, Math.min(3, Math.ceil(Math.sqrt(cards))));
+      const rows = Math.max(1, Math.ceil(cards / columns));
+      const centerX = anchor.x + ACTION_INNER_GAP * .72 + ACTION_CARD_HALF_W + (columns - 1) * ACTION_CARD_HALF_W;
+      const centerY = anchor.y;
+      const column = index % columns;
+      const row = Math.min(rows - 1, Math.floor(index / columns));
       return {
-        x: Math.max(field.left + ACTION_CARD_HALF_W, Math.min(field.right - ACTION_CARD_HALF_W, x)),
-        y: (field.top + field.bottom) / 2 + row * laneSpread * spread + jitter
+        x: centerX + (column - (columns - 1) / 2) * ACTION_CARD_HALF_W * 2.05 + actionModelSeed(model, 13) * 16,
+        y: centerY + (row - (rows - 1) / 2) * ACTION_CARD_HALF_H * 2.7 + actionModelSeed(model, 17) * 14
       };
     }
 
-    function updateActionModelLayout(models, field, steps = 1) {
+    // Where a model wants to sit. An active card seeks the middle of the frame,
+    // holding a cell of the active block; as it goes quiet it drifts back out to
+    // a stable outer lane. The block is the same for every live model, so a
+    // serving cluster stays compact instead of fanning out to wherever activity
+    // happened to place it, and the camera can stay zoomed in on it.
+    function actionModelSlot(model, field, anchor, center = null) {
+      const serving = model?.state === "serving" || model?.state === "external-processing";
+      const lane = actionLiveLane(field);
+      const laneSpread = Math.max(0, (field.bottom - field.top) / 2 - ACTION_LANE_MARGIN);
+      const outerX = lane.right + ACTION_CARD_HALF_W + actionModelSeed(model, 23) * ACTION_SLOT_SPREAD;
+      const outerY = anchor.y + actionModelSeed(model, 7) * laneSpread;
+      const seek = serving ? 1 : 0;
+      const targetX = center ? center.x : lane.left;
+      const targetY = center ? center.y : anchor.y;
+      const x = outerX + (targetX - outerX) * seek;
+      const y = outerY + (targetY - outerY) * seek + actionModelSeed(model, 11) * 5;
+      return {
+        x: Math.max(field.left + ACTION_CARD_HALF_W, Math.min(field.right - ACTION_CARD_HALF_W, x)),
+        y: Math.max(field.top + ACTION_CARD_HALF_H, Math.min(field.bottom - ACTION_CARD_HALF_H, y))
+      };
+    }
+
+    function updateActionModelLayout(models, field, steps = 1, settleServing = false) {
       const list = models || [];
       const anchor = actionLoomAnchor(field);
       const activeIds = new Set(list.map(model => model.id));
       for (const id of state.actionModelNodes.keys()) if (!activeIds.has(id)) state.actionModelNodes.delete(id);
-      // Widen the live band enough to seat every serving card, so a busy loom
-      // spreads its work instead of piling cards on top of each other.
-      const laneSpread = Math.max(1, (field.bottom - field.top) / 2 - ACTION_LANE_MARGIN);
-      const liveCards = Math.max(1, actionFrameModels(list).length);
-      const innerSpread = Math.min(1, Math.max(.25, (liveCards * (ACTION_CARD_HALF_H * 2 + 14)) / (2 * laneSpread)));
-      const slots = new Map(list.map(model => [model.id, actionModelSlot(model, field, anchor, innerSpread)]));
+      // Active cards pack into one block whose size follows how many of them
+      // there are, so the camera keeps framing a cluster rather than a crowd.
+      // The block seats exactly the models that are serving right now, and it is
+      // ordered by id so metric ordering alone cannot rearrange the cells.
+      const live = actionServingModels(list).slice().sort((a, b) => String(a.id).localeCompare(String(b.id)));
+      const centers = new Map(live.map((model, index) => [model.id, actionCenterBlock(field, anchor, live.length, index, model)]));
+      const slots = new Map(list.map(model => [model.id, actionModelSlot(model, field, anchor, centers.get(model.id) || null)]));
       for (const model of list) {
-        if (state.actionModelNodes.has(model.id)) continue;
-        // A model first seen in the action view starts where it belongs.
+        const serving = centers.has(model.id);
+        const node = state.actionModelNodes.get(model.id);
         const slot = slots.get(model.id);
-        state.actionModelNodes.set(model.id, { x: slot.x, y: slot.y, vx: 0, vy: 0 });
+        if (!node || (serving && (!node.serving || settleServing))) {
+          state.actionModelNodes.set(model.id, { x: slot.x, y: slot.y, vx: 0, vy: 0, serving });
+        } else node.serving = serving;
       }
       for (let step = 0; step < steps; step++) {
         for (const model of list) {
@@ -1422,20 +1459,23 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       };
     }
 
-    // The camera holds exactly what is live: the loom plus every serving model
-    // and every live request thread. Extra work widens the frame, and so zooms
-    // out; quiet models are simply left outside it.
-    function actionCameraFrame(models, loomBox, threads) {
-      const boxes = [loomBox];
-      const framed = actionFrameModels(models);
-      for (const model of framed) {
-        const node = state.actionModelNodes.get(model.id);
-        if (!node) continue;
+    // What the camera is zoomed into: every model that is serving
+    // traffic and every request thread those calls are running. Inactive models
+    // are deliberately not part of it - they are expected to sit out of shot, so
+    // their drift can never pull the camera back. The frame is measured from
+    // where the active cards are *going* rather than where they are, so a card
+    // still flying home cannot stretch it on the way.
+    function actionCameraFrame(models, loomBox, threads, slots) {
+      const boxes = [];
+      const live = actionServingModels(models);
+      for (const model of live) {
+        const slot = slots?.get(model.id);
+        if (!slot) continue;
         boxes.push({
-          left: node.x - ACTION_CARD_HALF_W,
-          right: node.x + ACTION_CARD_HALF_W,
-          top: node.y - ACTION_CARD_HALF_H,
-          bottom: node.y + ACTION_CARD_HALF_H
+          left: slot.x - ACTION_CARD_HALF_W,
+          right: slot.x + ACTION_CARD_HALF_W,
+          top: slot.y - ACTION_CARD_HALF_H,
+          bottom: slot.y + ACTION_CARD_HALF_H
         });
       }
       for (const thread of threads || []) {
@@ -1446,16 +1486,22 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           bottom: thread.y + 18
         });
       }
-      if (!framed.length) {
-        // Nothing is live: keep the near field in shot rather than a lone loom.
-        boxes.push({
+      if (!boxes.length) {
+        // With no active work, keep the loom and its near field in view.
+        boxes.push(loomBox, {
           left: loomBox.right,
           right: loomBox.right + ACTION_INNER_GAP,
           top: loomBox.top,
           bottom: loomBox.bottom
         });
       }
-      return actionBoundsOf(boxes);
+      const bounds = actionBoundsOf(boxes);
+      // Keep a small working area around active cards. Inactive machine cards
+      // do not enlarge it; the rest of the topology may remain out of shot.
+      const centerX = bounds.centerX;
+      const width = Math.max(bounds.width, ACTION_FRAME_MIN_W);
+      const height = Math.max(bounds.height, ACTION_FRAME_MIN_H);
+      return { centerX, centerY: bounds.centerY, width, height };
     }
 
     function actionCameraZoom(bounds, viewportWidth, viewportHeight) {
@@ -1465,107 +1511,30 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       return Math.max(ACTION_ZOOM_MIN, Math.min(ACTION_ZOOM_MAX, fit));
     }
 
-    // World rectangle the camera is actually showing. A model that arrives in it
-    // crosses no frame edge, so it cannot be the thing that yanks the zoom. The
-    // zoom used is the camera's aim rather than its eased position, because a
-    // card seated "at the edge" must still be in frame once the easing lands.
-    function actionCameraViewRect(viewportWidth, viewportHeight) {
-      const view = state.topologyView;
-      const camera = state.topologyCamera;
-      const zoom = Math.max(.0001, camera.target || camera.current || view?.zoom || 1);
-      const width = Math.max(1, view?.width || 1), height = Math.max(1, view?.height || 1);
-      return {
-        left: width / 2 - ((view?.panX || 0) + Math.max(1, viewportWidth) / 2) / zoom,
-        right: width / 2 - ((view?.panX || 0) - Math.max(1, viewportWidth) / 2) / zoom,
-        top: height / 2 - ((view?.panY || 0) + Math.max(1, viewportHeight) / 2) / zoom,
-        bottom: height / 2 - ((view?.panY || 0) - Math.max(1, viewportHeight) / 2) / zoom
-      };
-    }
-
-    // A model that just became live seats where the camera can already see it
-    // rather than at the far slot its weight came from, so a new client shows up
-    // in the frame instead of dragging the frame out to reach it.
-    function bringActiveModelsIntoView(models, field, viewportWidth, viewportHeight) {
-      // A first action frame refits anyway, so arrivals only ever mean "went
-      // live since the last frame" once the camera has something to hold.
-      const framedIds = state.topologyView ? state.actionFramedIds : null;
-      const rect = state.topologyView ? actionCameraViewRect(viewportWidth, viewportHeight) : null;
-      const next = new Set();
-      const offCamera = [];
-      for (const model of models || []) {
-        if (Number(model?.actionWeight || 0) < ACTION_FRAME_WEIGHT) continue;
-        next.add(model.id);
-        if (!rect || framedIds?.has(model.id)) continue;
-        const node = state.actionModelNodes.get(model.id);
-        if (!node) continue;
-        const framed =
-          node.x - ACTION_CARD_HALF_W >= rect.left && node.x + ACTION_CARD_HALF_W <= rect.right &&
-          node.y - ACTION_CARD_HALF_H >= rect.top && node.y + ACTION_CARD_HALF_H <= rect.bottom;
-        if (!framed) offCamera.push(node);
-      }
-      state.actionFramedIds = next;
-      // No measured frame means no seat to choose, and the first action frame
-      // refits the camera anyway.
-      if (!rect || !offCamera.length) return;
-      // Seat the arrival in the frame the camera holds, as near its own slot as
-      // the live band allows. It then fans out with the rest of the physics.
-      const lane = actionLiveLane(field);
-      const left = Math.max(lane.left, rect.left + ACTION_CARD_HALF_W);
-      const right = Math.min(lane.right, rect.right - ACTION_CARD_HALF_W);
-      const top = Math.max(field.top + ACTION_CARD_HALF_H, rect.top + ACTION_CARD_HALF_H);
-      const bottom = Math.min(field.bottom - ACTION_CARD_HALF_H, rect.bottom - ACTION_CARD_HALF_H);
-      if (left > right || top > bottom) return;
-      for (const node of offCamera) {
-        node.x = Math.max(left, Math.min(right, node.x));
-        node.y = Math.max(top, Math.min(bottom, node.y));
-        node.vx = 0;
-        node.vy = 0;
-      }
-    }
-
-    // How much of the live frame the camera wants to hold. The fit is measured
-    // against a box whose aspect is pinned near square, so the aim tracks the
-    // extent of the live set rather than the loom-to-band gap: a wide frame no
-    // longer counts as small just because it is wide, and a card joining or
-    // leaving in the middle of the band does not re-aim the camera on its own.
-    function actionCameraFitZoom(bounds, viewportWidth, viewportHeight) {
-      const frameWidth = Math.max(1, Number(bounds?.width) || 0);
-      const frameHeight = Math.max(1, Number(bounds?.height) || 0);
-      const shape = Math.max(.5, Math.min(2.4, Math.sqrt(frameWidth / frameHeight)));
-      return actionCameraZoom({ width: frameWidth / shape, height: frameHeight * shape }, viewportWidth, viewportHeight);
-    }
-
-    // The camera answers the live set for two reasons and no others: it no
-    // longer fits, or it has shrunk to a fraction of what the camera framed and
-    // left the view mostly empty. Everything between those is held.
+    // The zoom that holds the active frame. Until the user takes the zoom over by
+    // hand this is simply the fit, recomputed from the active set; the easing in
+    // trackActionZoom is what keeps that from being jumpy. A fresh aim within the
+    // deadzone of the last one is not worth a move.
     function actionCameraFollowsFrame(bounds, viewportWidth, viewportHeight) {
       const camera = state.topologyCamera;
-      // A frame that could not be measured tells the camera nothing, so it holds.
-      const frame = bounds || actionBoundsOf([{ left: 0, right: 1, top: 0, bottom: 1 }]);
-      const fit = actionCameraFitZoom(frame, viewportWidth, viewportHeight);
+      const fit = actionCameraZoom(bounds, viewportWidth, viewportHeight);
       const key = [
-        actionFrameModels(state.topologyModels).map(model => model.id).sort().join("|"),
-        Math.round(frame.width), Math.round(frame.height),
+        actionServingModels(state.topologyModels).map(model => model.id).sort().join("|"),
         viewportWidth, viewportHeight
       ].join("@");
-      const resting = Math.abs((camera.target || 0) - (camera.current || 0)) < ACTION_ZOOM_SETTLE;
-      if (resting && camera.frameKey === key) return { zoom: camera.target || fit, changed: false };
-      const held = camera.target || camera.current || fit;
-      const usableWidth = Math.max(1, viewportWidth - ACTION_CAMERA_PADDING * 2);
-      const usableHeight = Math.max(1, viewportHeight - ACTION_CAMERA_PADDING * 2);
-      // Normalize both axes onto one scale so "too big" and "way smaller" are
-      // judged on the same basis, whichever axis the band happens to grow along.
-      const extent = Math.max((frame.width / usableWidth) * held, (frame.height / usableHeight) * held);
-      const changed = (resting && camera.frameKey !== key) || extent > ACTION_ZOOM_OVERFLOW || extent < ACTION_ZOOM_SHRINK;
-      camera.frameKey = key;
-      if (!changed) return { zoom: held, changed: false };
+      // A changed viewport or a wait that now includes more clients than the
+      // camera can show is not held behind the deadzone.
+      const fresh = camera.frameKey !== key || !camera.target;
+      const held = fresh ? fit : camera.target;
       const settled = Math.abs(fit - held) / Math.max(held, fit);
-      return { zoom: settled < ACTION_ZOOM_DEADZONE ? held : fit, changed: true };
+      const clips = bounds.width * held > viewportWidth - 24 || bounds.height * held > viewportHeight - 24;
+      camera.frameKey = key;
+      return { zoom: !clips && settled < ACTION_ZOOM_DEADZONE ? held : fit };
     }
 
     // Zoom moves toward its aim at a bounded rate with different time constants
-    // for the two directions, so a new client nudges the camera instead of
-    // throwing it. Reduced motion and resize refits land in one step.
+    // for the two directions, so new work nudges the camera instead of throwing
+    // it. Reduced motion and the first action frame land in one step.
     function trackActionZoom(target, settle) {
       const camera = state.topologyCamera;
       const current = Math.max(ACTION_ZOOM_MIN, Math.min(ACTION_ZOOM_MAX, Number(camera.current) || target));
@@ -1639,7 +1608,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       };
     }
 
-    function updateThreadLayout(connections, field) {
+    function updateThreadLayout(connections, field, actionMode = false, settleLive = false) {
       const activeIds = new Set(connections.map(item => item.id));
       for (const id of state.threadNodes.keys()) if (!activeIds.has(id)) {
         state.threadNodes.delete(id);
@@ -1647,17 +1616,35 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         state.smoothedRates.delete("connection:" + id + ":out");
       }
       const centerY = (field.top + field.bottom) / 2;
+      const liveRows = new Map(connections.filter(item => item.live).map((item, index, live) => [item.id, Math.max(field.top + 20, Math.min(field.bottom - 20, centerY + (index - (live.length - 1) / 2) * 52))]));
       connections.forEach((connection, index) => {
         const seed = Number(String(connection.id).replace(/\D/g, "")) || index + 1;
         let node = state.threadNodes.get(connection.id);
+        const arriving = !node || (connection.live && !node.live);
         if (!node) {
           node = { x: field.left + hashUnit(seed * 3) * (field.right - field.left), y: field.top + hashUnit(seed * 11) * (field.bottom - field.top), vx: 0, vy: 0 };
           state.threadNodes.set(connection.id, node);
         }
         node.labelWidth = connection.labelWidth || 170;
         const right = Math.max(field.left, field.right - node.labelWidth - 10);
-        node.vx += ((field.left + right) / 2 - node.x) * .0012;
-        node.vy += (centerY - node.y) * .0012;
+        // A live request seeks the loom, where its call is being served, instead
+        // of drifting in the middle of the approach lane. That keeps the active
+        // requests and the models they are calling inside one compact frame, so
+        // the action camera can stay zoomed in on them. Idle rows keep the far
+        // half of the lane and never pull on the camera.
+        const target = actionMode ? connection.live
+          ? { x: Math.max(field.left, (field.left + right) / 2 + (right - Math.max(field.left, (field.left + right) / 2)) * .72), y: liveRows.get(connection.id) }
+          : { x: field.left + (right - field.left) * .38, y: centerY }
+          : { x: (field.left + right) / 2, y: centerY };
+        if (actionMode && connection.live && (arriving || settleLive)) {
+          node.x = target.x;
+          node.y = target.y;
+          node.vx = 0; node.vy = 0;
+        }
+        node.live = Boolean(connection.live);
+        const spring = actionMode && connection.live ? .034 : .0012;
+        node.vx += (target.x - node.x) * spring;
+        node.vy += (target.y - node.y) * spring;
       });
       const nodes = connections.map(item => state.threadNodes.get(item.id));
       for (let left = 0; left < nodes.length; left++) for (let right = left + 1; right < nodes.length; right++) {
@@ -1727,7 +1714,10 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const targetWorldScale = actionMode
         ? ACTION_WORLD_SCALE
         : topologyRequiredWorldScale(models, clusterNodes, viewportWidth, viewportHeight);
-      const sceneKey = [state.topologyViewMode, viewportWidth, viewportHeight, targetWorldScale, ...modelColumns.map(column => column.id + ":" + column.models.length)].join("|");
+      const actionServingKey = actionMode
+        ? actionServingModels(models).map(model => model.id).sort().join("|")
+        : "";
+      const sceneKey = [state.topologyViewMode, viewportWidth, viewportHeight, targetWorldScale, actionServingKey, ...modelColumns.map(column => column.id + ":" + column.models.length)].join("|");
       const reflow = sceneKey !== state.topologySceneKey;
       state.topologySceneKey = sceneKey;
       state.topologyWorldScale = targetWorldScale;
@@ -1750,6 +1740,8 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const clusterStackHeight = clusterEnabled
         ? clusterHeaderHeight + nodeCards.reduce((sum, card) => sum + card.height, 0) + Math.max(0, nodeCards.length - 1) * nodeCardGap
         : 340;
+      // Racks set the zoom in the columnar view. The action view instead holds the
+      // active set: everything that is serving plus the requests it is running.
       // The action view pins the loom as a landmark and lets activity decide how
       // far in each model sits. The columnar view derives it from the rack.
       const center = actionMode ? actionLoomAnchor(modelField) : { x: modelField.left - (clusterEnabled ? 128 : 105), y: height * .53 };
@@ -1757,13 +1749,9 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const gate = clusterEnabled
         ? { left: center.x - nodeCardWidth / 2, right: center.x + nodeCardWidth / 2, top: clusterStackTop, bottom: clusterStackTop + clusterStackHeight }
         : { left: center.x - 82, right: center.x + 82, top: center.y - 170, bottom: center.y + 170 };
-      if (actionMode) {
-        updateActionModelLayout(models, modelField, reducedMotion ? 40 : 1);
-        // Cards that just went live are seated inside the frame the camera is
-        // holding, so activity arriving off camera cannot zoom it out.
-        bringActiveModelsIntoView(models, modelField, viewportWidth, viewportHeight);
-        updateActionModelLayout(models, modelField, reducedMotion ? 40 : 1);
-      }
+      const activeSlots = actionMode
+        ? updateActionModelLayout(models, modelField, reducedMotion ? 40 : 1, reflow || reducedMotion).slots
+        : null;
       // Request labels and thread positions are resolved before the camera so a
       // live call is inside the frame on the same frame it appears in.
       const connections = state.topologyConnections || [];
@@ -1784,7 +1772,12 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const detail = fitCanvasText(ctx, (connection.inputEstimated ? "~" : "") + formatNumber(connection.inputTokens) + " in · " + formatNumber(connection.outputTokens) + " out" + liveStats, maxWidth);
         return [connection.id, { title, detail, width: Math.max(ctx.measureText(title).width, ctx.measureText(detail).width) }];
       }));
-      updateThreadLayout(orderedConnections.map(connection => ({ ...connection, labelWidth: connectionLabels.get(connection.id).width })), threadField);
+      updateThreadLayout(
+        orderedConnections.map(connection => ({ ...connection, labelWidth: connectionLabels.get(connection.id).width })),
+        threadField,
+        actionMode,
+        reflow || reducedMotion
+      );
       const liveThreads = orderedConnections
         .filter(connection => connection.live)
         .map(connection => {
@@ -1792,18 +1785,17 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           return node ? { x: node.x, y: node.y, labelWidth: connectionLabels.get(connection.id).width } : null;
         })
         .filter(Boolean);
-      // Racks set the zoom in the columnar view. The action view instead frames
-      // the loom plus everything currently live: the pan tracks the growing band
-      // and the zoom only moves when the band stops fitting or shrinks away.
-      const actionBounds = actionMode ? actionCameraFrame(models, gate, liveThreads) : null;
+      // The pan follows that cluster; the zoom answers it too, slowly, unless the
+      // user set the zoom themselves, in which case it is simply not touched.
+      const actionBounds = actionMode ? actionCameraFrame(models, gate, liveThreads, activeSlots) : null;
       let targetZoom;
       if (actionMode) {
         const frame = actionCameraFollowsFrame(actionBounds, viewportWidth, viewportHeight);
-        // topologyFitZoom stays the pure geometric fit, so a manual zoom keeps
-        // meaning "the zoom the user set" from frame to frame.
         state.topologyFitZoom = frame.zoom;
         const userZoom = Number(state.topologyCamera.userZoom) || 0;
-        targetZoom = Math.max(TOPOLOGY_MIN_ZOOM, Math.min(TOPOLOGY_MAX_ZOOM, userZoom > 0 ? Math.min(frame.zoom, userZoom) : frame.zoom));
+        // A manual zoom means no autozoom at all until the reset control clears
+        // it: the camera keeps the user's zoom through anything the live set does.
+        targetZoom = Math.max(TOPOLOGY_MIN_ZOOM, Math.min(TOPOLOGY_MAX_ZOOM, userZoom > 0 ? userZoom : frame.zoom));
       } else {
         targetZoom = Math.max(TOPOLOGY_MIN_ZOOM, Math.min(TOPOLOGY_MAX_ZOOM, (1 / state.topologyWorldScale) * state.topologyCamera.manual));
         state.topologyFitZoom = 1 / state.topologyWorldScale;
@@ -2275,7 +2267,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
             : transitioning || (runtimeLoaded ? "hot" : isExternal ? "external" : runtimeStatus === "failed" ? "failed" : "cold");
         const lastActiveAt = data.last?.at || runtimeState.lastRequestedAt || null;
         const lastActiveMs = Date.parse(lastActiveAt || "");
-        // Action-view weight: what the camera should keep in frame right now.
+        // Activity weight controls card motion; current traffic controls framing.
         // Presentation only; it never affects routing or runtime state.
         const actionWeight = modelActivityWeight({ state: stateLabel, liveRate, lastActiveAt }, sampleAt);
         const agedOut = stateLabel === "cold" && (!Number.isFinite(lastActiveMs) || sampleAt - lastActiveMs > TOPOLOGY_COLD_MODEL_TTL_MS);
@@ -2433,7 +2425,6 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       state.topologyCamera.panY = 0;
       state.topologyZoomAnchor = null;
       state.topologyPanDrag = null;
-      state.actionFramedIds = new Set();
       if (mode === "action") seedActionModelNodes();
       else state.actionModelNodes.clear();
       try { localStorage.setItem("lloom_topology_view", mode); } catch { /* private mode */ }
@@ -2459,24 +2450,23 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     function adjustTopologyZoom(delta, anchor) {
       const camera = state.topologyCamera;
       const view = state.topologyView;
-      // The fit the user is aiming against is the camera's current aim, not a
-      // fresh refit, so a wheel notch nudges the zoom that is actually on screen.
-      const fitZoom = state.topologyFitZoom || camera.target || 1;
-      // Where the camera is aiming right now: the user's own zoom once they have
-      // set one, otherwise the fit scaled by their multiplier.
-      const beforeManual = camera.userZoom ? camera.userZoom / fitZoom : camera.manual;
-      const beforeZoom = fitZoom * beforeManual;
+      // A wheel notch nudges the zoom that is actually on screen. The camera's
+      // eased position is what the user can see, and it is also what the user's
+      // own zoom means once they have set one, so both paths start from there
+      // rather than from a fresh fit the camera may still be easing away from.
+      const userZoom = Number(camera.userZoom) || 0;
+      const beforeZoom = userZoom > 0
+        ? userZoom
+        : Math.max(TOPOLOGY_MIN_ZOOM, Math.min(TOPOLOGY_MAX_ZOOM, Number(camera.current) || camera.target || state.topologyFitZoom || 1));
       const nextZoom = Math.max(TOPOLOGY_MIN_ZOOM, Math.min(TOPOLOGY_MAX_ZOOM, beforeZoom + delta));
       if (nextZoom === beforeZoom) return;
-      // A deliberate zoom takes the camera off auto-follow until reset, so the
-      // action view never fights the person driving it.
-      camera.manual = nextZoom / fitZoom;
+      // A deliberate zoom owns only the zoom until reset. Automatic panning may
+      // still keep the active set centred unless the user also drags the view.
       camera.userZoom = nextZoom;
-      camera.autoFollow = false;
-      // A user zoom is a ceiling on the automatic camera as much as a floor:
-      // even a live set that overflows is fitted no wider than they asked for.
-      if (camera.userZoom > fitZoom) camera.userZoom = fitZoom;
-      camera.manual = camera.userZoom / fitZoom;
+      // A manual zoom is a setting, not a starting point for autozoom: it is not
+      // clamped against the fit and it may sit either side of it. Zooming in and
+      // zooming out are independent of the fit until the reset control clears it.
+      camera.manual = camera.userZoom / (state.topologyFitZoom || nextZoom);
       renderTopologyCameraState();
       if (!view || !anchor || !view.zoom) {
         state.topologyZoomAnchor = null;

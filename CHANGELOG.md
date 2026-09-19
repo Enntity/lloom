@@ -22,7 +22,7 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Changed
 
-- The action-view camera now holds its zoom: a new client or model is seated inside the frame the camera already has instead of dragging the zoom out to reach it, and the zoom re-aims only when the live set stops fitting or shrinks to a fraction of the frame. Refits walk at a bounded rate with separate pull-in and pull-out easing, panning follows live work faster, and a manual zoom stays the camera's setting, bounding the automatic fit, until the reset control clears it.
+- The action view frames only models serving traffic and their live requests. Active cards cluster near the loom; idle models and machine racks no longer pull the camera outward. Manual zoom holds independently of the automatic fit until Reset view restores it.
 - Federated nodes now retain sovereign lifecycle control over ordinary local runtimes, while tensor-parallel members explicitly delegate lifecycle authority to their leader and remain non-callable on workers.
 - Runtime residency now uses `keepWarm` as the single hard pin, keeps distributed-model pins on the logical runtime, and routes ready alias alternatives without eviction or capacity queuing; embeddings remain non-evicting even when requested by exact model ID.
 - The DGX Spark `embeddings` route now prefers Spark 01, then a federated MacBook, then OpenRouter; admission-aware embedding failover tries non-evicting destinations before allowing a local runtime eviction.

@@ -10,8 +10,8 @@ assert(source.includes('healthPill?.classList.remove("refreshing")'));
 assert(source.includes('setInterval(refresh, 2000)'));
 assert(source.includes('const TOPOLOGY_MIN_ZOOM = .18'));
 assert(source.includes('const TOPOLOGY_MAX_ZOOM = 1.5'));
-assert(source.includes('const beforeZoom = fitZoom * beforeManual'));
-assert(source.includes('camera.manual = nextZoom / fitZoom'));
+assert(source.includes('const beforeZoom = userZoom > 0'));
+assert(source.includes('camera.userZoom = nextZoom;'));
 assert(!source.includes('class="topology-key"'));
 assert(!source.includes('aria-label="Topology legend"'));
 assert(!source.includes('"LOCAL MODELS"'));
@@ -202,10 +202,9 @@ const actionContext = {
 };
 vm.runInNewContext(
   source.slice(actionStart, actionEnd) +
-    '\nglobalThis.ACTION_FRAME_WEIGHT = ACTION_FRAME_WEIGHT;' +
     '\nglobalThis.ACTION_ZOOM_MAX = ACTION_ZOOM_MAX;' +
     '\nglobalThis.modelActivityWeight = modelActivityWeight;' +
-    '\nglobalThis.actionFrameModels = actionFrameModels;' +
+    '\nglobalThis.actionServingModels = actionServingModels;' +
     '\nglobalThis.actionLoomAnchor = actionLoomAnchor;' +
     '\nglobalThis.actionModelSlot = actionModelSlot;' +
     '\nglobalThis.actionLiveLane = actionLiveLane;' +
@@ -219,16 +218,10 @@ const weightNow = Date.parse('2026-09-06T01:00:00Z');
 const actionWeight = (model) => actionContext.modelActivityWeight(model, weightNow);
 assert.equal(actionWeight({ state: 'serving' }), 1);
 assert.equal(actionWeight({ state: 'external-processing' }), 1);
-assert(actionWeight({ state: 'warming' }) >= actionContext.ACTION_FRAME_WEIGHT);
-assert(
-  actionWeight({ state: 'hot', lastActiveAt: new Date(weightNow - 5000).toISOString() }) >=
-    actionContext.ACTION_FRAME_WEIGHT
-);
-assert(
-  actionWeight({ state: 'hot', lastActiveAt: new Date(weightNow - 10 * 60000).toISOString() }) <
-    actionContext.ACTION_FRAME_WEIGHT
-);
-assert(actionWeight({ state: 'cold' }) < actionContext.ACTION_FRAME_WEIGHT);
+assert(actionWeight({ state: 'warming' }) >= 0.45);
+assert(actionWeight({ state: 'hot', lastActiveAt: new Date(weightNow - 5000).toISOString() }) >= 0.45);
+assert(actionWeight({ state: 'hot', lastActiveAt: new Date(weightNow - 10 * 60000).toISOString() }) < 0.45);
+assert(actionWeight({ state: 'cold' }) < 0.45);
 assert(
   actionWeight({ state: 'hot', lastActiveAt: new Date(weightNow - 20000).toISOString() }) >
     actionWeight({ state: 'hot', lastActiveAt: new Date(weightNow - 240000).toISOString() })
@@ -240,7 +233,7 @@ assert(actionAnchor.x > actionField.left && actionAnchor.x < actionField.right /
 assert.equal(actionAnchor.y, 700);
 
 // Serving pulls a model in toward the loom; going quiet pushes it back out.
-const actionServing = { id: 'serving-model', actionWeight: 1 };
+const actionServing = { id: 'serving-model', state: 'serving', actionWeight: 1 };
 const actionIdle = { id: 'idle-model', actionWeight: 0 };
 const servingSlot = actionContext.actionModelSlot(actionServing, actionField, actionAnchor);
 const idleSlot = actionContext.actionModelSlot(actionIdle, actionField, actionAnchor);
@@ -254,10 +247,10 @@ assert.equal(
 );
 
 const actionModels = [
-  { id: 'live-a', actionWeight: 1 },
-  { id: 'live-b', actionWeight: 1 },
-  { id: 'idle-a', actionWeight: 0 },
-  { id: 'idle-b', actionWeight: 0.05 }
+  { id: 'live-a', state: 'serving', actionWeight: 1 },
+  { id: 'live-b', state: 'external-processing', actionWeight: 1 },
+  { id: 'idle-a', state: 'cold', actionWeight: 0 },
+  { id: 'idle-b', state: 'hot', actionWeight: 0.05 }
 ];
 for (const model of actionModels) actionContext.state.actionModelNodes.delete(model.id);
 for (let step = 0; step < 600; step += 1) actionContext.updateActionModelLayout(actionModels, actionField);
@@ -288,26 +281,99 @@ const actionLoomBox = {
   top: actionAnchor.y - 170,
   bottom: actionAnchor.y + 170
 };
-const actionBounds = actionContext.actionCameraFrame(actionModels, actionLoomBox, []);
-for (const live of ['live-a', 'live-b']) {
-  const node = actionNodes.get(live);
-  assert(node.x >= actionBounds.centerX - actionBounds.width / 2, live + ' is inside the frame');
-  assert(node.x <= actionBounds.centerX + actionBounds.width / 2, live + ' is inside the frame');
-}
-for (const idle of ['idle-a', 'idle-b'])
-  assert(actionNodes.get(idle).x > actionBounds.centerX + actionBounds.width / 2, idle + ' is left outside the frame');
-const actionThreadBounds = actionContext.actionCameraFrame(actionModels, actionLoomBox, [
-  { x: 60, y: 300, labelWidth: 200 }
-]);
-assert(actionThreadBounds.width > actionBounds.width, 'a live request widens the frame');
-assert.equal(actionBounds.centerX - actionBounds.width / 2 <= actionLoomBox.left, true, 'the loom is always in frame');
-assert.equal(actionContext.actionFrameModels([{ id: 'cold', actionWeight: 0 }]).length, 0);
+// Active cards seek the middle of the frame. That is where the camera is
+// pointing, so a serving cluster stays inside a tight block instead of fanning
+// out to wherever activity first placed it.
+const actionSlots = new Map(
+  actionModels.map((model) => [model.id, actionContext.actionModelSlot(model, actionField, actionAnchor, null)])
+);
+const centeredSlots = new Map(
+  actionModels.map((model) => [
+    model.id,
+    actionContext.actionModelSlot(model, actionField, actionAnchor, { x: 1500, y: actionAnchor.y })
+  ])
+);
+for (const live of ['live-a', 'live-b'])
+  for (const idle of ['idle-a', 'idle-b']) {
+    const seeking = centeredSlots.get(live);
+    assert(Math.abs(seeking.x - 1500) <= 110, live + ' seeks the active block when it goes live');
+    assert(Math.abs(seeking.y - actionAnchor.y) <= 68, live + ' seeks the loom axis when it goes live');
+    assert(
+      Math.abs(seeking.x - 1500) < Math.abs(centeredSlots.get(idle).x - 1500),
+      live + ' sits nearer the block centre than quiet ' + idle
+    );
+  }
+assert(actionSlots.get('idle-b').x > actionSlots.get('live-a').x, 'a quiet model drifts back out');
 
-// A busy loom widens the live band and the camera pulls back instead of
-// stacking cards on top of each other.
-const crowdedActive = Array.from({ length: 12 }, (_, index) => ({ id: 'busy/' + index, actionWeight: 1 }));
+// The camera frames the loom plus the active cards and the requests they are
+// running. Quiet models are not part of the frame at all.
+const liveSlots = new Map(['live-a', 'live-b'].map((id) => [id, actionContext.state.actionModelNodes.get(id)]));
+const actionBounds = actionContext.actionCameraFrame(actionModels, actionLoomBox, [], liveSlots);
+for (const live of ['live-a', 'live-b']) {
+  const slot = liveSlots.get(live);
+  assert(slot.x >= actionBounds.centerX - actionBounds.width / 2, live + ' is inside the frame');
+  assert(slot.x <= actionBounds.centerX + actionBounds.width / 2, live + ' is inside the frame');
+}
+assert.equal(
+  actionContext.actionCameraFrame(actionModels, { ...actionLoomBox, top: -5000, bottom: 5000 }, [], liveSlots).height,
+  actionBounds.height,
+  'inactive machine racks cannot enlarge the active frame'
+);
+assert(
+  actionContext.actionCameraFrame(actionModels, actionLoomBox, [], new Map()).height >=
+    actionLoomBox.bottom - actionLoomBox.top,
+  'a live set with no seats yet falls back to framing the loom'
+);
+const actionThreadBounds = actionContext.actionCameraFrame(
+  actionModels,
+  actionLoomBox,
+  [{ x: 60, y: 300, labelWidth: 200 }],
+  liveSlots
+);
+assert(actionThreadBounds.width > actionBounds.width, 'a live request widens the frame');
+// The camera's active set is a strict serving predicate, not the recency
+// animation weight: a model that just stopped serving still carries a high
+// actionWeight, and it must not be framed.
+assert.equal(actionContext.actionServingModels([{ id: 'serving', state: 'serving' }]).length, 1);
+assert.equal(actionContext.actionServingModels([{ id: 'ext', state: 'external-processing' }]).length, 1);
+assert.equal(actionContext.actionServingModels([{ id: 'cold', state: 'cold' }]).length, 0);
+assert.equal(
+  actionContext.actionServingModels([
+    { id: 'fading', state: 'hot', actionWeight: 0.9, lastActiveAt: new Date(weightNow - 20000).toISOString() }
+  ]).length,
+  0,
+  'a high-recency idle model is not part of the serving set'
+);
+const fadingModels = [
+  { id: 'live-a', state: 'serving', actionWeight: 1 },
+  { id: 'live-b', state: 'serving', actionWeight: 1 },
+  { id: 'fading', state: 'hot', actionWeight: 0.9, lastActiveAt: new Date(weightNow - 20000).toISOString() }
+];
+const servingSlots = actionContext.updateActionModelLayout(fadingModels, actionField, 600).slots;
+assert.equal(servingSlots.has('fading'), true, 'a fading card still gets a slot to drift to');
+const servingBounds = actionContext.actionCameraFrame(fadingModels, actionLoomBox, [], servingSlots);
+const servingLiveSlots = new Map(['live-a', 'live-b'].map((id) => [id, servingSlots.get(id)]));
+for (const live of servingLiveSlots.values()) {
+  assert(live.x >= servingBounds.centerX - servingBounds.width / 2, 'a serving card is inside the frame');
+  assert(live.x <= servingBounds.centerX + servingBounds.width / 2, 'a serving card is inside the frame');
+}
+const fadingSlot = servingSlots.get('fading');
+assert(
+  fadingSlot.x - 110 > servingBounds.centerX + servingBounds.width / 2 ||
+    fadingSlot.x + 110 < servingBounds.centerX - servingBounds.width / 2,
+  'a fading idle card is expected out of shot'
+);
+actionContext.state.actionModelNodes.delete('fading');
+
+// A busy loom packs its active cards into that same block, so the camera keeps
+// holding one cluster instead of retreating across the world.
+const crowdedActive = Array.from({ length: 24 }, (_, index) => ({
+  id: 'busy/' + index,
+  state: 'serving',
+  actionWeight: 1
+}));
 for (const model of crowdedActive) actionContext.state.actionModelNodes.delete(model.id);
-for (let step = 0; step < 600; step += 1) actionContext.updateActionModelLayout(crowdedActive, actionField);
+const crowdedSlots = actionContext.updateActionModelLayout(crowdedActive, actionField, 600).slots;
 for (let left = 0; left < crowdedActive.length; left += 1)
   for (let right = left + 1; right < crowdedActive.length; right += 1) {
     const a = actionContext.state.actionModelNodes.get(crowdedActive[left].id);
@@ -317,8 +383,12 @@ for (let left = 0; left < crowdedActive.length; left += 1)
       'busy loom separates ' + crowdedActive[left].id + '/' + crowdedActive[right].id
     );
   }
-const crowdedBounds = actionContext.actionCameraFrame(crowdedActive, actionLoomBox, []);
-assert(crowdedBounds.height > actionBounds.height, 'more live models pull the camera back');
+const crowdedBounds = actionContext.actionCameraFrame(crowdedActive, actionLoomBox, [], crowdedSlots);
+assert(crowdedBounds.height > actionBounds.height, 'enough live models widen the frame vertically');
+assert(
+  crowdedBounds.width < (actionLoomBox.right - actionLoomBox.left) * 6,
+  'a busy loom still frames one cluster rather than the whole world'
+);
 
 const tightZoom = actionContext.actionCameraZoom({ width: 400, height: 300 }, 1920, 1080);
 const wideZoom = actionContext.actionCameraZoom({ width: 4200, height: 3200 }, 1920, 1080);
@@ -328,8 +398,9 @@ assert.equal(actionContext.actionCameraZoom({ width: 1, height: 1 }, 1920, 1080)
 assert(
   source.includes('const actionWeight = modelActivityWeight({ state: stateLabel, liveRate, lastActiveAt }, sampleAt)')
 );
-// The camera is deliberately slow to re-aim. A live set it already holds, or
-// one that spills only slightly past its padding, must not move the zoom at all.
+// The action camera holds the active set: the loom, every model that is serving,
+// and the requests those models are running. It is deliberately slow to re-aim,
+// and a zoom the user set switches autozoom off entirely.
 const cameraField = { left: 0, right: 2400, top: 0, bottom: 1400 };
 const cameraLoom = {
   left: actionAnchor.x - 92,
@@ -337,21 +408,19 @@ const cameraLoom = {
   top: actionAnchor.y - 170,
   bottom: actionAnchor.y + 170
 };
-const cameraViewportWidth = 1451,
-  cameraViewportHeight = 976;
+const cameraViewportWidth = 1451;
+const cameraViewportHeight = 976;
 const cameraLive = [
-  { id: 'client/one', actionWeight: 1 },
-  { id: 'client/two', actionWeight: 1 }
+  { id: 'client/one', state: 'serving', actionWeight: 1 },
+  { id: 'client/two', state: 'serving', actionWeight: 1 }
 ];
 const cameraIdle = [
   { id: 'quiet/one', actionWeight: 0 },
   { id: 'quiet/two', actionWeight: 0 }
 ];
-const cameraModels = [...cameraLive, ...cameraIdle];
 const cameraState = {
-  actionModelNodes: new Map([['client/one', { x: 1200, y: 700, vx: 0, vy: 0 }]]),
-  actionFramedIds: new Set(['client/one']),
-  topologyModels: cameraModels,
+  actionModelNodes: new Map(),
+  topologyModels: [...cameraLive, ...cameraIdle],
   topologyView: {
     viewportWidth: cameraViewportWidth,
     viewportHeight: cameraViewportHeight,
@@ -381,103 +450,167 @@ const cameraContext = {
 };
 vm.runInNewContext(
   source.slice(actionStart, actionEnd) +
+    '\nglobalThis.ACTION_ZOOM_MAX = ACTION_ZOOM_MAX;' +
     '\nglobalThis.actionLiveLane = actionLiveLane;' +
     '\nglobalThis.actionCameraFrame = actionCameraFrame;' +
-    '\nglobalThis.actionCameraFitZoom = actionCameraFitZoom;' +
+    '\nglobalThis.actionCameraZoom = actionCameraZoom;' +
     '\nglobalThis.actionCameraFollowsFrame = actionCameraFollowsFrame;' +
     '\nglobalThis.trackActionZoom = trackActionZoom;' +
-    '\nglobalThis.bringActiveModelsIntoView = bringActiveModelsIntoView;' +
     '\nglobalThis.updateActionModelLayout = updateActionModelLayout;',
   cameraContext
 );
-// Mirrors the render loop: lay the band out, seat off-camera arrivals, then let
-// the camera answer the frame at whatever zoom is actually on screen.
-const cameraFrame = (models, elapsed = 16.7) => {
+// Mirrors the render loop: lay the band out, frame the active set it wants to
+// settle into, then let the camera answer that frame.
+const cameraScreen = (node) => ({
+  x: (node.x - cameraState.topologyView.width / 2) * cameraState.topologyView.zoom + cameraViewportWidth / 2,
+  y: (node.y - cameraState.topologyView.height / 2) * cameraState.topologyView.zoom + cameraViewportHeight / 2
+});
+const cameraFrame = (models, threads = [], elapsed = 16.7) => {
   cameraClock += elapsed;
-  cameraContext.updateActionModelLayout(models, cameraField, 1);
-  cameraContext.bringActiveModelsIntoView(models, cameraField, cameraViewportWidth, cameraViewportHeight);
-  cameraContext.updateActionModelLayout(models, cameraField, 1);
-  const bounds = cameraContext.actionCameraFrame(models, cameraLoom, []);
+  const slots = cameraContext.updateActionModelLayout(models, cameraField, 1).slots;
+  const bounds = cameraContext.actionCameraFrame(models, cameraLoom, threads, slots);
   const frame = cameraContext.actionCameraFollowsFrame(bounds, cameraViewportWidth, cameraViewportHeight);
-  const aim =
-    cameraState.topologyCamera.userZoom > 0 ? Math.min(frame.zoom, cameraState.topologyCamera.userZoom) : frame.zoom;
+  const override = Number(cameraState.topologyCamera.userZoom) || 0;
+  const aim = override > 0 ? override : frame.zoom;
   cameraState.topologyView.zoom = cameraContext.trackActionZoom(aim, false);
-  return { ...frame, bounds, aim, render: cameraState.topologyView.zoom, key: cameraState.topologyCamera.frameKey };
+  return { bounds, aim, render: cameraState.topologyView.zoom, key: cameraState.topologyCamera.frameKey, slots };
 };
-cameraFrame(cameraLive);
-for (let frame = 0; frame < 60; frame += 1) cameraFrame(cameraLive);
-const cameraSettled = cameraFrame(cameraLive);
-// A client arriving from beyond the world lands in the frame the camera is
-// already holding, so a new live model no longer drags the zoom out to meet it.
+// The camera holds the active cluster, not the world: the frame is a fraction of
+// the field even when plenty of quiet models sit outside it.
+const cameraModels = [...cameraLive, ...cameraIdle];
+for (let frame = 0; frame < 300; frame += 1) cameraFrame(cameraModels);
+const cameraSettled = cameraFrame(cameraModels);
+assert.equal(cameraSettled.bounds.width, 840, 'a small live set is framed at the working minimum, not the world');
+assert(
+  cameraSettled.bounds.centerX + cameraSettled.bounds.width / 2 < cameraField.right - 110,
+  'the camera frames the live cluster, not the world'
+);
+for (const live of cameraLive) {
+  const screen = cameraScreen(cameraState.actionModelNodes.get(live.id));
+  assert(
+    screen.x > 0 && screen.x < cameraViewportWidth && screen.y > 0 && screen.y < cameraViewportHeight,
+    live.id + ' is on screen while it serves'
+  );
+}
+// Quiet models sit out of shot: the frame simply does not include them.
+const cameraFrameEdges = {
+  left: cameraSettled.bounds.centerX - cameraSettled.bounds.width / 2,
+  right: cameraSettled.bounds.centerX + cameraSettled.bounds.width / 2
+};
+for (const quiet of cameraIdle) {
+  const slot = cameraSettled.slots.get(quiet.id);
+  assert(
+    slot.x + 110 < cameraFrameEdges.left || slot.x - 110 > cameraFrameEdges.right,
+    quiet.id + ' is expected out of shot'
+  );
+}
+// The camera is zoomed in on the work, not pulled back across the topology, and
+// a crowd of inactive models changes nothing about it.
+assert(cameraSettled.render > 1.2, 'the camera stays zoomed in on a small active set');
+const cameraBusyCatalog = cameraFrame([
+  ...cameraLive,
+  ...Array.from({ length: 18 }, (_, index) => ({ id: 'dormant/' + index, actionWeight: 0 }))
+]);
+assert(
+  Math.abs(cameraBusyCatalog.render - cameraSettled.render) < cameraSettled.render * 0.05,
+  'eighteen inactive models do not move the camera'
+);
+// Its own slot governs the frame, so a card still travelling home cannot stretch
+// the frame on the way, and a client arriving from beyond the world does not
+// move the camera by more than the block it lands in.
 cameraState.actionModelNodes.set('client/two', { x: cameraField.right - 100, y: 60, vx: 0, vy: 0 });
-cameraState.actionFramedIds = new Set(['client/one']);
-const cameraArrival = cameraFrame(cameraLive);
+const cameraArrival = cameraFrame(cameraModels);
 assert(
   Math.abs(cameraArrival.render - cameraSettled.render) < cameraSettled.render * 0.02,
   'a new live client leaves the zoom on screen where it was'
 );
+cameraState.actionModelNodes.set('client/two', {
+  x: cameraArrival.bounds.centerX,
+  y: cameraArrival.bounds.centerY,
+  vx: 0,
+  vy: 0
+});
+// A request thread is part of the active set and widens the frame like the cards do.
+const cameraThreaded = cameraFrame(cameraModels, [{ x: 120, y: cameraLoom.top, labelWidth: 240 }]);
+assert(cameraThreaded.bounds.width > cameraArrival.bounds.width, 'a live request widens the frame');
 assert(
-  cameraArrival.aim >=
-    Math.min(
-      cameraSettled.aim,
-      cameraArrival.bounds
-        ? cameraContext.actionCameraFitZoom(cameraArrival.bounds, cameraViewportWidth, cameraViewportHeight)
-        : cameraSettled.aim
-    ) -
-      0.0001,
-  'a new live client never aims the camera past the fit it already had'
+  cameraThreaded.bounds.centerX < cameraArrival.bounds.centerX,
+  'a live request pulls the camera left toward the loom'
 );
-const arrivedNode = cameraState.actionModelNodes.get('client/two');
+// Live requests seek the loom rather than drifting in the approach lane, while
+// idle rows keep the far half of it, so a request stream cannot drag the camera
+// back across the world. This is the layout the draw loop feeds the camera.
+const threadLane = { left: 24, right: cameraLoom.left - 24, top: 112, bottom: 1400 - 45 };
+const threadCalls = [
+  { id: 'conn_1', live: true, labelWidth: 170 },
+  { id: 'conn_2', live: true, labelWidth: 220 },
+  { id: 'conn_3', live: false, labelWidth: 170 },
+  { id: 'conn_4', live: false, labelWidth: 200 }
+];
+const laneState = { threadNodes: new Map(), smoothedRates: new Map() };
+const laneContext = { state: laneState, hashUnit: columnContext.hashUnit };
+vm.runInNewContext(
+  source.slice(source.indexOf('    function updateThreadLayout('), source.indexOf('    function updateModelLayout(')) +
+    '\nglobalThis.updateThreadLayout = updateThreadLayout;',
+  laneContext
+);
+const threadMiddle = threadLane.left + (threadLane.right - threadLane.left) * 0.6;
+for (let frame = 0; frame < 400; frame += 1) laneContext.updateThreadLayout(threadCalls, threadLane, true);
+const laneX = (id) => laneState.threadNodes.get(id).x;
+for (const call of threadCalls) {
+  const node = laneState.threadNodes.get(call.id);
+  assert(node.x >= threadLane.left && node.x <= threadLane.right, call.id + ' stays inside the lane');
+}
+// Live requests stack up beside the loom and idle rows stay behind them, so the
+// span the camera has to frame is the working end of the lane, not all of it.
+for (const live of ['conn_1', 'conn_2'])
+  for (const idle of ['conn_3', 'conn_4'])
+    assert(laneX(live) > laneX(idle) + 150, live + ' seeks the loom ahead of idle ' + idle);
+assert(laneX('conn_1') > threadMiddle, 'a live request sits in the working end of the lane');
 assert(
-  arrivedNode.x <= cameraField.right - 110 && arrivedNode.y >= cameraField.top + 34,
-  'an arriving card lands inside the world'
+  laneState.threadNodes.get('conn_2').y !== laneState.threadNodes.get('conn_1').y,
+  'live requests stack rather than overlap'
 );
-const arrivedScreen = {
-  x: (arrivedNode.x - cameraState.topologyView.width / 2) * cameraState.topologyView.zoom + cameraViewportWidth / 2,
-  y: (arrivedNode.y - cameraState.topologyView.height / 2) * cameraState.topologyView.zoom + cameraViewportHeight / 2
-};
 assert(
-  arrivedScreen.x > 0 &&
-    arrivedScreen.x < cameraViewportWidth &&
-    arrivedScreen.y > 0 &&
-    arrivedScreen.y < cameraViewportHeight,
-  'an arriving card is inside the frame the camera already holds'
+  source.includes('const spring = actionMode && connection.live ? .034 : .0012'),
+  'live requests use the loom-seeking spring'
 );
-// A live set that genuinely stops fitting refits, but never in one frame.
-cameraState.topologyCamera.current = cameraState.topologyCamera.target = 1.5;
-cameraState.topologyCamera.frameKey = '';
-cameraState.topologyView.zoom = 1.5;
-cameraState.actionFramedIds = new Set();
+// A busy loom widens the active block, and the camera answers it slowly.
 const cameraCrowd = [
-  ...Array.from({ length: 8 }, (_, index) => ({ id: 'client/' + index, actionWeight: 1 })),
+  ...Array.from({ length: 24 }, (_, index) => ({ id: 'client/' + index, state: 'serving', actionWeight: 1 })),
   ...cameraIdle
 ];
-const cameraOverflow = cameraFrame(cameraCrowd);
-assert(cameraOverflow.bounds.height > cameraViewportHeight / 1.5, 'the crowded live set does not fit the camera');
+cameraState.topologyCamera.current = cameraState.topologyCamera.target = cameraContext.ACTION_ZOOM_MAX;
+cameraState.topologyCamera.frameKey = '';
+cameraState.topologyView.zoom = cameraContext.ACTION_ZOOM_MAX;
+const cameraCrowded = cameraFrame(cameraCrowd);
+assert(cameraCrowded.aim < cameraContext.ACTION_ZOOM_MAX, 'a crowded active block asks the camera to pull back');
 assert(
-  cameraOverflow.zoom >=
-    cameraContext.actionCameraFitZoom(cameraOverflow.bounds, cameraViewportWidth, cameraViewportHeight),
-  'a crowded live set refits the camera, but eases toward the fit rather than accepting the whole overflow'
+  cameraCrowded.render > cameraCrowded.aim && cameraCrowded.render < cameraContext.ACTION_ZOOM_MAX,
+  'the pull-back eases instead of jumping'
 );
-assert(cameraOverflow.render < 1.5 && cameraOverflow.render > 1.5 - 0.05, 'the refit eases instead of jumping');
-// A live set that shrank away is allowed to pull the camera back in, just as slowly.
-let cameraStep = cameraOverflow.render;
+let cameraStep = cameraCrowded.render;
 for (let frame = 0; frame < 40; frame += 1) {
   const step = cameraFrame(cameraCrowd);
-  assert(Math.abs(step.render - cameraStep) < 0.03, 'every refit frame is a small step');
+  assert(Math.abs(step.render - cameraStep) < 0.03, 'every pull-back frame is a small step');
   cameraStep = step.render;
 }
-const cameraBusy = cameraFrame(cameraCrowd).render;
-const cameraQuiet = cameraFrame([...cameraLive, ...cameraIdle]);
-assert(cameraQuiet.zoom > cameraBusy, 'a live set that shrank away pulls the camera back in');
-assert(cameraQuiet.render - cameraBusy < 0.05, 'the shrink refit eases instead of jumping');
-// A zoom the user set is a setting: the fit cannot take the camera past it.
-cameraState.topologyCamera.userZoom = 1.1;
-cameraState.topologyCamera.current = cameraState.topologyCamera.target = 1.1;
-cameraState.topologyView.zoom = 1.1;
+// A manual zoom switches autozoom off: the active set changes underneath it and
+// the zoom does not move at all until the reset control clears it.
+cameraState.topologyCamera.userZoom = 0.62;
+cameraState.topologyCamera.current = cameraState.topologyCamera.target = 0.62;
+cameraState.topologyView.zoom = 0.62;
 cameraState.topologyCamera.frameKey = '';
-const cameraManual = cameraFrame(cameraCrowd);
-assert.equal(cameraManual.aim, Math.min(cameraManual.zoom, 1.1), 'a manual zoom is the ceiling on the automatic fit');
+const cameraManualCrowd = cameraFrame(cameraCrowd);
+assert.equal(cameraManualCrowd.aim, 0.62, 'a manual zoom ignores an active set that wants to pull back');
+assert.equal(cameraManualCrowd.render, 0.62, 'a manual zoom does not drift while the active set changes');
+const cameraManualQuiet = cameraFrame(cameraModels);
+assert.equal(cameraManualQuiet.aim, 0.62, 'a manual zoom ignores an active set that shrank away');
+assert.equal(cameraManualQuiet.render, 0.62, 'a manual zoom stays exactly where the user put it');
+cameraState.topologyCamera.userZoom = null;
+cameraState.topologyCamera.frameKey = '';
+const cameraCleared = cameraFrame(cameraModels);
+assert(cameraCleared.aim > 0.62, 'clearing the manual zoom hands the camera back to the active set');
 assert(
   source.includes('const userZoom = Number(state.topologyCamera.userZoom) || 0'),
   'the action camera renders through the user zoom rather than only the fit'
@@ -841,7 +974,7 @@ const renderSandbox = {
 };
 vm.runInNewContext(
   source.match(/<script>([\s\S]*?)<\/script>/)[1] +
-    '\nglobalThis.__render = { state, refresh, refreshActivity, drawTopology };',
+    '\nglobalThis.__render = { state, refresh, refreshActivity, drawTopology, setTopologyViewMode, applyTopologyModelFilter };',
   renderSandbox,
   { filename: 'dashboard-render.js' }
 );
@@ -890,6 +1023,170 @@ assert(renderVisible(renderActive), 'serving model is inside the camera frame');
 assert(!renderVisible(renderIdle), 'quiet local model is outside the camera frame');
 assert(!renderVisible(renderExternal), 'quiet external model is outside the camera frame');
 assert.equal(renderState.topologyCamera.autoFollow, true);
+
+// A viewport reflow and a columns-to-action switch must seat the already-live
+// cards in the frame used by that same draw. The camera must never aim at a
+// destination while rendering those cards at stale world coordinates.
+const renderCanvas = renderElements.get('#topology-canvas');
+renderActive.x = 30;
+renderActive.y = 30;
+const renderThread = renderState.threadNodes.get('conn_1');
+renderThread.x = 24;
+renderThread.y = 112;
+renderCanvas.clientWidth = 1000;
+renderCanvas.clientHeight = 700;
+renderSandbox.__render.drawTopology(9000, false);
+assert(
+  renderVisible(renderState.actionModelNodes.get('local/active')),
+  'serving model is visible on the first resized frame'
+);
+assert(renderVisible(renderThread), 'live request is visible on the first resized frame');
+renderSandbox.__render.setTopologyViewMode('columns');
+renderSandbox.__render.drawTopology(9050, false);
+renderSandbox.__render.setTopologyViewMode('action');
+renderSandbox.__render.drawTopology(9100, false);
+assert(
+  renderVisible(renderState.actionModelNodes.get('local/active')),
+  'serving model is visible on the first action frame'
+);
+assert(renderVisible(renderState.threadNodes.get('conn_1')), 'live request is visible on the first action frame');
+
+// A live-set change must seat every newly serving card in the exact frame the
+// camera uses on that draw, even when the model was already present and quiet.
+renderPayloads['/gateway/metrics'].active.push({
+  id: 'conn_2',
+  model: 'cloud/idle',
+  resolvedModel: 'cloud/idle',
+  caller: 'Runtime',
+  stream: true,
+  outputChars: 200,
+  requestBytes: 200,
+  durationMs: 2500,
+  node: 'spark2'
+});
+await renderSandbox.__render.refreshActivity();
+renderSandbox.__render.drawTopology(9150, false);
+assert(
+  renderVisible(renderState.actionModelNodes.get('cloud/idle')),
+  'newly serving model is visible on the first active-set frame'
+);
+assert(
+  renderVisible(renderState.threadNodes.get('conn_2')),
+  'new live request is visible on the first active-set frame'
+);
 // Reduced motion settles the layout in one pass instead of easing it.
 renderSandbox.__render.drawTopology(0, true);
 assert(renderState.topologyCamera.autoFollow, 'reduced motion keeps following');
+
+// A catalog/filter refresh may invalidate the scene, but it cannot clear a
+// manual pan even when the user has not changed zoom.
+renderState.topologyCamera.userZoom = null;
+renderState.topologyCamera.panX = 41;
+renderState.topologyCamera.panY = -19;
+renderState.topologyCamera.autoFollow = false;
+const panFilteredCatalog = renderState.topologyCatalogModels.map((model) =>
+  model.id === 'local/idle' ? { ...model, agedOut: true } : model
+);
+renderSandbox.__render.applyTopologyModelFilter(panFilteredCatalog);
+assert.equal(renderState.topologyCamera.userZoom, null, 'pan-only filter refresh leaves zoom automatic');
+assert.equal(renderState.topologyCamera.panX, 41, 'pan-only filter refresh preserves horizontal pan');
+assert.equal(renderState.topologyCamera.panY, -19, 'pan-only filter refresh preserves vertical pan');
+assert.equal(renderState.topologyCamera.autoFollow, false, 'pan-only filter refresh preserves camera ownership');
+
+// The same rule applies to manual zoom plus pan. Only Reset returns ownership.
+renderState.topologyCamera.userZoom = 1.2;
+renderState.topologyCamera.current = 1.2;
+renderState.topologyCamera.target = 1.2;
+renderState.topologyCamera.panX = 77;
+renderState.topologyCamera.panY = -31;
+renderState.topologyCamera.autoFollow = false;
+const filteredCatalog = renderState.topologyCatalogModels.map((model) =>
+  model.id === 'local/idle' || model.id === 'cloud/idle' ? { ...model, agedOut: true } : model
+);
+renderSandbox.__render.applyTopologyModelFilter(filteredCatalog);
+assert.equal(renderState.topologyCamera.userZoom, 1.2, 'filter refresh preserves manual zoom');
+assert.equal(renderState.topologyCamera.current, 1.2, 'filter refresh preserves rendered zoom');
+assert.equal(renderState.topologyCamera.target, 1.2, 'filter refresh preserves the manual zoom target');
+assert.equal(renderState.topologyCamera.panX, 77, 'filter refresh preserves manual horizontal pan');
+assert.equal(renderState.topologyCamera.panY, -31, 'filter refresh preserves manual vertical pan');
+assert.equal(renderState.topologyCamera.autoFollow, false, 'filter refresh preserves manual camera ownership');
+assert.equal(renderState.topologySceneKey, '', 'filter refresh still invalidates the action layout');
+
+// Exercise the real UI zoom and reset handlers, including input during easing.
+const zoomContext = {
+  state: cameraState,
+  $: () => ({ clientWidth: cameraViewportWidth, clientHeight: cameraViewportHeight }),
+  renderTopologyCameraState() {},
+  renderTopologyViewMode() {},
+  topologyWorldFromScreen: () => ({ x: 0, y: 0 })
+};
+vm.runInNewContext(
+  'const TOPOLOGY_MIN_ZOOM=.18, TOPOLOGY_MAX_ZOOM=1.5, ACTION_WORLD_SCALE=2.35;' +
+    source.slice(
+      source.indexOf('    function adjustTopologyZoom('),
+      source.indexOf('    function topologyScreenPoint(')
+    ) +
+    source.slice(
+      source.indexOf('    function fitTopologyCameraToModels('),
+      source.indexOf('    function seedActionModelNodes(')
+    ),
+  zoomContext
+);
+cameraState.topologyViewMode = 'action';
+cameraState.topologyFitZoom = 0.7;
+cameraState.topologyCamera.current = 1;
+cameraState.topologyCamera.target = 0.7;
+cameraState.topologyCamera.userZoom = null;
+zoomContext.adjustTopologyZoom(0.1);
+assert.equal(cameraState.topologyCamera.userZoom, 1.1, 'manual zoom starts from visible zoom and can exceed fit');
+assert.equal(cameraState.topologyCamera.autoFollow, true, 'manual zoom keeps automatic centring active');
+zoomContext.adjustTopologyZoom(0.1);
+assert(Math.abs(cameraState.topologyCamera.userZoom - 1.2) < 1e-10, 'repeated input accumulates while easing');
+for (let frame = 0; frame < 300; frame += 1) cameraFrame(cameraCrowd);
+assert(Math.abs(cameraState.topologyCamera.current - 1.2) < 1e-10, 'active crowd cannot change manual zoom');
+for (let frame = 0; frame < 300; frame += 1) cameraFrame(cameraModels);
+assert(Math.abs(cameraState.topologyCamera.current - 1.2) < 1e-10, 'shrinking activity cannot change manual zoom');
+zoomContext.resetTopologyCamera();
+assert.equal(cameraState.topologyCamera.userZoom, null);
+assert.equal(cameraState.topologyCamera.autoFollow, true);
+assert.notEqual(cameraFrame(cameraModels).aim, 1.2, 'real reset handler restores automatic fit');
+
+// A fading idle neighbour never widens the serving model's frame.
+let servingReference;
+for (const seconds of [0, 30, 60, 90, 119, 121, 300]) {
+  const models = [
+    { id: 'keeps-serving', state: 'serving', actionWeight: 1 },
+    {
+      id: 'finished',
+      state: 'hot',
+      actionWeight: actionWeight({ state: 'hot', lastActiveAt: new Date(weightNow - seconds * 1000).toISOString() })
+    }
+  ];
+  const { slots } = actionContext.updateActionModelLayout(models, actionField, 1);
+  const frame = actionContext.actionCameraFrame(models, actionLoomBox, [], slots);
+  servingReference ??= JSON.stringify(frame);
+  assert.equal(
+    JSON.stringify(frame),
+    servingReference,
+    'idle recency must not change camera at ' + seconds + ' seconds'
+  );
+}
+
+// A small frame change is held despite its different width; a large one refits.
+cameraState.topologyCamera.target = 1;
+cameraState.topologyCamera.frameKey = '';
+cameraContext.actionCameraFollowsFrame({ width: 1271, height: 520 }, 1451, 976);
+assert.equal(cameraContext.actionCameraFollowsFrame({ width: 1283.71, height: 520 }, 1451, 976).zoom, 1);
+assert(cameraContext.actionCameraFollowsFrame({ width: 1600, height: 520 }, 1451, 976).zoom < 1);
+
+// Concurrent requests have distinct readable rows, including their first frame.
+const manyRequests = Array.from({ length: 8 }, (_, i) => ({ id: 'conn_' + (100 + i), live: true, labelWidth: 220 }));
+laneContext.updateThreadLayout(manyRequests, threadLane, true);
+for (let step = 0; step < 400; step++) laneContext.updateThreadLayout(manyRequests, threadLane, true);
+for (let i = 0; i < manyRequests.length; i++)
+  for (let j = i + 1; j < manyRequests.length; j++) {
+    const a = laneState.threadNodes.get(manyRequests[i].id),
+      b = laneState.threadNodes.get(manyRequests[j].id);
+    assert(Math.abs(a.y - b.y) >= 40 || Math.abs(a.x - b.x) >= 236, 'live request labels must not overlap');
+  }
+console.log('dashboard active-camera regressions passed');
