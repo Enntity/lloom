@@ -7,6 +7,17 @@ import { RuntimeManager } from '../src/runtime-manager.mjs';
 import { createPreferredResidencyReconciler } from '../src/runtime-residency.mjs';
 import { loadConfig } from '../src/config.mjs';
 
+// Promise.withResolvers is unavailable on the supported Node 20 runtime.
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 // ---------------------------------------------------------------------------
 // Eviction tiers: keep-warm pins are never candidates, preferred runtimes are
 // reclaimed only after ordinary idle evictables, even when the preferred
@@ -476,7 +487,7 @@ const toggleManager = fakeAdmissionManager({
   runtimePolicy: { memoryBudgetGb: 40 },
   runtimes: { image: { enabled: true, preferredWarm: true, memoryGb: 10 } }
 });
-toggleManager.gate = Promise.withResolvers();
+toggleManager.gate = deferred();
 const queuedToggle = applyRuntimePolicyPlan(toggleManager.config, toggleManager, {
   requestedRuntimeId: 'image',
   dryRun: false,
@@ -499,7 +510,7 @@ await assert.rejects(
 assert.deepEqual(toggleManager.sideEffects, []);
 
 const shutdownManager = fakeAdmissionManager(toggleManager.config);
-shutdownManager.gate = Promise.withResolvers();
+shutdownManager.gate = deferred();
 const queuedShutdown = applyRuntimePolicyPlan(shutdownManager.config, shutdownManager, {
   requestedRuntimeId: 'image',
   dryRun: false,
@@ -597,8 +608,8 @@ const closingManager = fakeAdmissionManager({
   runtimePolicy: { memoryBudgetGb: 40 },
   runtimes: { image: { enabled: true, preferredWarm: true, memoryGb: 10 } }
 });
-const admissionBarrier = Promise.withResolvers();
-const admissionQueued = Promise.withResolvers();
+const admissionBarrier = deferred();
+const admissionQueued = deferred();
 closingManager.admissionQueue = admissionBarrier.promise;
 closingManager.status = async () => oldStatus;
 closingManager.preferredWarmRuntimeIds = () => ['image'];
