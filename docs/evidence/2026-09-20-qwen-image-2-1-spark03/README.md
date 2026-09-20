@@ -49,25 +49,62 @@ The 1536x1024 case is 1.5 megapixels. The graph caps generation at 2 megapixels
 (`image_geometry`), which is below 2.1's native 2K, so a true 2048x2048 request
 is rejected by the shared geometry rule rather than by the model.
 
-## Editing is installed but not advertised
+## Why 2.1 editing is not advertised: the engine drops the reference image
 
-2.1 does generate and edit from one checkpoint, and the graph wires its
-reference path (the conditioning node returns the latent to sample and takes the
-loaded image in its autogrow `image_1` slot). It is fast at it: 21-26 s for an
-edit, against 265 s for 2512 Edit on the same reference.
+The first version of this record blamed the model, because 2.1 returned a new,
+tighter composition of a similar house instead of the requested edit. That was
+wrong. The conditioning node never received the reference image.
 
-It is not faithful enough to promise. Asked to recolour a roof and door while
-keeping the scene, 2.1 returned a new, tighter composition of a similar house,
-losing the cliff, the sea and the framing. The 2512 edit lane on the identical
-reference and instruction kept the scene and changed only what was asked. The
-artifacts are in `operations/qwen-image-2-1-spark03-20260920/`
-(`qwen21-edit-res0.png` against
-`qwen2512edit-same-ref.png`).
+`TextEncodeQwenImage21` takes its reference set through an autogrow input; the
+graph supplies exactly the shape the pinned official template uses
+(`inputs["images"] = {"image_1": ["5", 0]}`). Instrumenting the node inside the
+engine shows what it actually receives on a request that travels the normal
+bridge path:
 
-So the federated route advertises `image-generation` only, and `image-edit`
-still resolves to `ennspark03/Qwen/Qwen-Image-Edit-2511`. `ennspark03` continues
-to expose 2.1 with `image-editing` for direct callers, where a caller can judge
-the result itself.
+```
+[TRACE-NODE] 4 keys= ['clip', 'images', 'negative_prompt', 'prompt', 'resolution', 'vae']
+             images_raw= {'image_1': ['5', 0]}          <- as submitted
+[TRACE21]    images= []                                 <- as delivered to execute()
+```
+
+An empty mapping means the node encodes the prompt with no image slots and no
+reference latents, and the model then does what a text-to-image model does with
+a prompt about a roof and a door: it paints a roof and a door. Every 2.1 "edit"
+so far has been a text-to-image generation, which is why the results were fast,
+plausible and scene-free. The same run with the reference swapped for a
+completely different picture produced the same composition, and a same-graph
+submission with an empty `images` mapping produced the same bytes.
+
+What was ruled out before reaching that conclusion:
+
+- The bridge submits the right graph. It logs the node inputs it builds and the
+  JSON it posts, and both carry `{"image_1": ["5", 0]}`.
+- The input shape is right. ComfyUI's own `get_finalized_class_inputs` followed
+  by `build_nested_inputs` returns `{'image_1': ['5', 0]}` for that mapping,
+  both in isolation and for the bridge's exact inputs.
+- The engine is otherwise healthy. `Qwen/Qwen-Image-Edit-2511` edits the same
+  reference through the same bridge and keeps the scene exactly, changing only
+  the roof and the door. That run is 165-172 s.
+
+The loss therefore sits in this engine build's dynamic-input handling between
+validation and execution, not in the graph, the bridge, or the checkpoint. The
+node's other inputs (`clip`, `prompt`, `vae`, `resolution`) all arrive intact,
+so the fault is specific to the autogrow mapping.
+
+Until that is fixed, `image-edit` resolves to
+`ennspark03/Qwen/Qwen-Image-Edit-2511`, which is measured working on this
+engine, and the federated 2.1 route advertises `image-generation` only.
+`ennspark03` still exposes 2.1 with `image-editing`, because a direct caller that
+does not need a reference image is unaffected.
+
+### Next step for editing
+
+The explicit-image conditioning node (`TextEncodeQwenImageEditPlus`) is the
+proven path on this engine, but it has not yet been shown to work with the 2.1
+checkpoint: the first attempt to drive it produced a graph the engine rejected,
+and that rejection was in the test graph rather than in the node. Getting 2.1
+editing working means either establishing that node against the 2.1 checkpoint,
+or carrying the autogrow mapping through the engine. Neither is done here.
 
 ## Leader configuration
 
@@ -80,9 +117,11 @@ faithful edit still has a named route.
 ## Boundaries
 
 The comparison is single-concurrency and text-to-image only, on one machine
-class. Text fidelity, typography and transparency were not scored; 2.1 decodes
-RGBA and the graph saves PNG, but no transparent-background artifact was
-generated here. The 2.1 and 2512 figures come from the same host and window but
+class. No 2.1 edit figure is quoted anywhere in this record, because no 2.1 edit
+has been produced yet: the runs previously labelled "edit" were generations
+without a reference image (see above). Text fidelity, typography and
+transparency were not scored; 2.1 decodes RGBA and the graph saves PNG, but no
+transparent-background artifact was generated here. The 2.1 and 2512 figures come from the same host and window but
 not from an interleaved A/B run, so treat the ratio as an order-of-magnitude
 result rather than a controlled benchmark. The federated timing covers the
 Tailscale hop from `ennspark01` to `ennspark03` and one inline base64 payload.
