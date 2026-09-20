@@ -14,6 +14,9 @@ import model_paths  # noqa: E402
 # hand-placed symlink. The aggregate default root stays where it is.
 HOST_MODELS_ROOT = os.environ.get("LLOOM_MODELS_ROOT", "/opt/lloom-models")
 EXTRA_PATHS_FILE = "/data/extra_model_paths.yaml"
+CACHE_MODE = os.environ.get("LLOOM_COMFY_CACHE_MODE", "none")
+if CACHE_MODE not in ("none", "classic"):
+    raise SystemExit("LLOOM_COMFY_CACHE_MODE must be none or classic")
 
 children = []
 stopping = False
@@ -40,7 +43,7 @@ except OSError as error:
 comfy_args = [
     sys.executable, "/opt/ComfyUI/main.py", "--listen", "127.0.0.1",
     "--port", "8188", "--disable-auto-launch", "--disable-api-nodes", "--disable-all-custom-nodes",
-    "--cache-none", "--reserve-vram", "18", "--log-stdout",
+    "--cache-" + CACHE_MODE, "--reserve-vram", "18", "--log-stdout",
     "--input-directory", "/data/input", "--output-directory", "/data/output",
     "--temp-directory", "/data/temp",
 ]

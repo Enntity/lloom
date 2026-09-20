@@ -130,3 +130,12 @@ The Python tests use an in-process ComfyUI fake. They test request validation,
 graph construction, cancellation, single-flight execution, model path mapping
 and output cleanup. The gateway tests use real loopback HTTP servers. GPU
 artifact generation and a clean Docker build require separate host validation.
+
+## Workflow cache configuration
+
+Set `LLOOM_COMFY_CACHE_MODE=classic` in the managed runtime's Docker environment
+to retain ComfyUI's last-workflow node cache, including reusable model loaders.
+Dedicated music or video runtimes can reuse that cache across requests.
+The default, `none`, preserves the previous uncached behavior. Unsupported values
+fail startup. This setting does not pin a runtime or override LLooM admission;
+allow headroom for retained workflow tensors in its `memoryGb` estimate.
