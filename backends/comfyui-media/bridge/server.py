@@ -14,6 +14,7 @@ import base64
 import logging
 import os
 import time
+import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
@@ -292,7 +293,7 @@ def create_app(
             kwargs = {keyword: name for _frame, name, keyword in frames}
             try:
                 graph, output_node, out_kind = build_graph(
-                    model, payload, prefix="lloom", **kwargs
+                    model, payload, prefix="lloom_" + uuid.uuid4().hex, **kwargs
                 )
             except ValueError as exc:
                 # Surface the specific reason. A generic "invalid parameters"

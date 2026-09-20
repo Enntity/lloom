@@ -5,6 +5,8 @@ Uses the real execution resolver; no checkpoint or GPU is loaded.
 """
 from types import SimpleNamespace
 
+import comfy.options
+comfy.options.enable_args_parsing()
 import execution
 from comfy_api.latest import _io
 from comfy_extras.nodes_qwen import TextEncodeQwenImage21

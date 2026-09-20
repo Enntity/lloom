@@ -88,7 +88,7 @@ async def test_images_endpoint_serves_krea2():
     assert seen[0]["model"] == "Comfy-Org/Krea-2-Turbo"
     assert seen[0]["payload"]["size"] == "1024x768"
     assert seen[0]["image"] is None
-    assert seen[0]["prefix"] == "lloom"
+    assert seen[0]["prefix"].startswith("lloom_")
 
 
 async def test_images_endpoint_serves_ideogram4_with_its_new_fields():
@@ -176,3 +176,16 @@ async def test_music_is_rejected_at_speech_endpoint_before_submission():
     assert resp.status_code == 400
     assert resp.json()['error']['code'] == 'wrong_model_kind'
     assert seen == []
+
+
+async def test_identical_requests_have_distinct_save_nodes():
+    # The bridge deletes fetched files. A cached SaveImage must not point the
+    # next identical request at that deleted artifact; only its output prefix
+    # changes, so reusable model loaders can stay cached.
+    seen = []
+    payload = {"model": "Comfy-Org/Krea-2-Turbo", "prompt": "a red barn"}
+    for _ in range(2):
+        response = await post(png_fake(), capturing_builder("image", seen),
+                              "/v1/images/generations", payload)
+        assert response.status_code == 200
+    assert seen[0]["prefix"] != seen[1]["prefix"]

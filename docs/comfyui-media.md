@@ -139,3 +139,6 @@ Dedicated music or video runtimes can reuse that cache across requests.
 The default, `none`, preserves the previous uncached behavior. Unsupported values
 fail startup. This setting does not pin a runtime or override LLooM admission;
 allow headroom for retained workflow tensors in its `memoryGb` estimate.
+
+Each request uses a unique output-save prefix so cached graphs cannot reuse an
+artifact already deleted by bridge cleanup. Model-loader inputs remain stable.

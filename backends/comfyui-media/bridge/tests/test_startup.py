@@ -71,7 +71,7 @@ async def test_graph_wiring_passes_model_payload_and_prefix():
         fake.finish()
         assert (await asyncio.wait_for(task, timeout=5)).status_code == 200
         assert seen["model"] == "video-model"
-        assert seen["prefix"] == "lloom"
+        assert seen["prefix"].startswith("lloom_")
         assert seen["image"] is None
         assert seen["payload"]["duration"] == 5 and seen["payload"]["seed"] == 3
         await comfy.aclose()
@@ -137,7 +137,8 @@ async def test_real_graphs_module_is_used_when_importable(monkeypatch):
         await asyncio.wait_for(fake.submitted.wait(), timeout=3)
         fake.finish()
         assert (await asyncio.wait_for(task, timeout=5)).status_code == 200
-        assert calls["args"] == ("real-video", None, "lloom")
+        assert calls["args"][:2] == ("real-video", None)
+        assert calls["args"][2].startswith("lloom_")
         await comfy.aclose()
 
 
