@@ -1,0 +1,55 @@
+{
+  "id": "qwen-nvidia-e962733e-v8-ple-qsa-fusion",
+  "upstream": "https://github.com/vllm-project/vllm/pull/55309",
+  "upstreamRevision": "6d038dfdd5b301c91f4671a7131eddb4bcef057f",
+  "vllmRevision": "e962733e08d10f7ca65dac4df99e116460b8b174",
+  "image": "vllm/vllm-openai@sha256:df871f170ee7070fbdce162bde08fb616e311570c948a620be0d4b33fe02f87b",
+  "layer": "post-baseline",
+  "prerequisites": [
+    "backends/qwen38-vllm/nvidia-e962733e/apply-overlays.py (baseline Tony PLE/MTP overlays)",
+    "backends/qwen38-vllm/nvidia-e962733e-prefix/apply-prefix-fixes.py (hybrid mamba block-size prefix fixes)"
+  ],
+  "files": [
+    {
+      "source": "model.py",
+      "target": "models/qwen4_exp/nvidia/model.py",
+      "sha256": "2b4cc0baa6571f14326f4ad0dcb09d1781b5b849502b222e0b88a39bd810cb3f",
+      "baseSha256": "9cf6b2bc7c822c3f08900d0bb02c200ea4436bdfd63e21338b17ae73bacd2376"
+    },
+    {
+      "source": "ple_layer.py",
+      "target": "models/qwen4_exp/nvidia/ple_layer.py",
+      "sha256": "d3173c136345d0d4cdec59409aa546d16794a344a9757c33e63f2cfb450b7697",
+      "baseSha256": "dfdc79b4a756fcc3b018f435cb9e5587eeb03bc02a8f1054a2018896ff2eb7b8"
+    },
+    {
+      "source": "ops_ple.py",
+      "target": "models/qwen4_exp/nvidia/ops/ple.py",
+      "sha256": "68f3499f00c67742a8c3fcece071626d8d82e8a6e1c04e241922df61539d8e9b",
+      "baseSha256": "cc8994b653dd4b59d6ba35b6ec10af34017e9944482ec67cad6a32a02c5dd00a"
+    },
+    {
+      "source": "qsa.py",
+      "target": "models/qwen4_exp/nvidia/qsa.py",
+      "sha256": "0c0dcf17c533d33ca060bad14a1e70e572a8077753692820d9af71bfde8b9b12",
+      "baseSha256": "39eb1df919396967099af6b491c88de75d600915c69a1b7c9a61140862c33faf"
+    },
+    {
+      "source": "ops_qsa.py",
+      "target": "models/qwen4_exp/nvidia/ops/qsa.py",
+      "sha256": "8327f0899e47b2c65d95b3f46bdb2db8fb09110f04c5c178850d0c256e22bc04",
+      "baseSha256": "fd147fc639074cd4062200add4f694327d029bb2b9e560ff0491c735776ae636"
+    }
+  ],
+  "integration": "Exact-source guarded backport of vLLM PR 55309 (PLE residual fusion + QSA fused output gate, incl. follow-up round-off fix commit 6d038df) applied AFTER the baseline Tony PLE/MTP overlays and prefix fixes. Whole-file SHA256 guards accept the post-baseline source hash or the already-applied v8 hash. Full-vocabulary MTP3, BF16 KV only; no reduced draft vocab, no FP8/NVFP4 KV.",
+  "deferred": [
+    {
+      "pr": "54713",
+      "reason": "Replay-boundary scheduler rework depends on an architecture absent from pinned e962733e; a safe transfer needs many scheduler/dependency changes. Left out; prefix-cache retention of 1600 is preserved unchanged."
+    },
+    {
+      "pr": "55513",
+      "reason": "The mixed-quant MTP loader path is already present and guarded in the baseline Tony overlay; no equivalent correction remains to backport."
+    }
+  ]
+}

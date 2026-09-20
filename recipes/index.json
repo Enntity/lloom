@@ -399,7 +399,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm",
       "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm.json",
-      "currentVersion": 7,
+      "currentVersion": 8,
       "versions": [
         {
           "version": 1,
@@ -445,9 +445,16 @@
         },
         {
           "version": 7,
+          "path": "archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm/v7.json",
+          "status": "archived",
+          "archivedAt": "2026-09-20T19:40:40.950540Z",
+          "notes": "Two-Spark NVIDIA NVFP4 with GPU-resident PLE, MTP3, bounded BF16 KV at 20 GiB per rank, and validated hybrid prefix caching with retained replay boundaries."
+        },
+        {
+          "version": 8,
           "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm.json",
           "status": "current",
-          "notes": "Two-Spark NVIDIA NVFP4 with GPU-resident PLE, MTP3, bounded BF16 KV, and validated hybrid prefix caching with retained replay boundaries."
+          "notes": "Raises the per-rank BF16 KV budget to 28 GiB and adds a whole-file SHA256-guarded post-baseline backport of vLLM PR 55309 (PLE outer-residual fusion and fused QSA output gate), running as container lloom-qwen38-v8-${nodeId}. PR 54713 and PR 55513 are documented as not transplanted."
         }
       ],
       "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 vLLM",

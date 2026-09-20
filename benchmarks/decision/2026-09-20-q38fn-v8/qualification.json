@@ -1,0 +1,64 @@
+{
+  "date": "2026-09-20",
+  "recipeVersion": 8,
+  "modelRevision": "fab0aecb760cec45227f6656abcaafa11abca87a",
+  "vllmRevision": "e962733e08d10f7ca65dac4df99e116460b8b174",
+  "kvBytesPerRank": 30064771072,
+  "capacity": {
+    "baselineTokens": 1343310,
+    "candidateTokens": 1881768,
+    "increasePercent": 40.084418339772654
+  },
+  "serving": {
+    "passed": true,
+    "paging": {
+      "swapOutBytes": 0,
+      "swapInBytes": 113328128,
+      "pageSize": 4096
+    },
+    "baselineDate": "2026-09-09",
+    "baselineProseTokensPerSecond": 39.44587443373953,
+    "candidateProseTokensPerSecond": 40.11012542593575,
+    "changePercent": 1.6839555510729243,
+    "coldPrefillMs": 10572.213452,
+    "baselineColdPrefillMs": 9763.732517999999,
+    "warmPrefillMs": [
+      801.6077359999981,
+      793.6034959999997
+    ],
+    "nearLimitPromptTokens": 239656,
+    "nearLimitColdMs": 83075.14734800001,
+    "nearLimitWarmMs": 1908.4696689999982,
+    "checks": 39,
+    "limitation": "One serving workload at 28 GiB after rejecting a preliminary 32 GiB allocation trial; not a production eviction-rate or model-quality study."
+  },
+  "memory": {
+    "ennspark01": {
+      "availableGiB": 12.075481414794922,
+      "inferenceSwapOutBytes": 0,
+      "pageSize": 4096
+    },
+    "ennspark02": {
+      "availableGiB": 13.503192901611328,
+      "inferenceSwapOutBytes": 28672,
+      "pageSize": 4096
+    }
+  },
+  "gpuNumericalTests": {
+    "ennspark01": {
+      "passed": 22,
+      "mode": "isolated before model load"
+    },
+    "ennspark02": {
+      "passed": 22,
+      "mode": "same kernels while preliminary 32 GiB candidate resident"
+    }
+  },
+  "rejectedPreliminaryBudget": {
+    "kvGiB": 32,
+    "headNumericalFixtureAllocationFailures": 3,
+    "headNumericalMismatches": 0,
+    "servingWorkloadRun": false
+  },
+  "baselineScope": "Recorded September 9 v7 data, not a fresh paired run."
+}
