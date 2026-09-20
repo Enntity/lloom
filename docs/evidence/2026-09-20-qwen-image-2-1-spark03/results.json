@@ -1,0 +1,73 @@
+[
+ {
+  "case": "qwen21-1024-s25",
+  "status": "200",
+  "wallSeconds": 21.16,
+  "model": "Qwen/Qwen-Image-2.1",
+  "size": "1024x1024",
+  "steps": 25,
+  "path": "/v1/images/generations",
+  "ok": true,
+  "bytes": 1997238,
+  "file": "/tmp/qwen21-bench/qwen21-1024-s25.png"
+ },
+ {
+  "case": "qwen21-1024-s25-rerun",
+  "status": "200",
+  "wallSeconds": 21.16,
+  "model": "Qwen/Qwen-Image-2.1",
+  "size": "1024x1024",
+  "steps": 25,
+  "path": "/v1/images/generations",
+  "ok": true,
+  "bytes": 1997238,
+  "file": "/tmp/qwen21-bench/qwen21-1024-s25-rerun.png"
+ },
+ {
+  "case": "qwen21-1024-s8",
+  "status": "200",
+  "wallSeconds": 10.1,
+  "model": "Qwen/Qwen-Image-2.1",
+  "size": "1024x1024",
+  "steps": 8,
+  "path": "/v1/images/generations",
+  "ok": true,
+  "bytes": 1929289,
+  "file": "/tmp/qwen21-bench/qwen21-1024-s8.png"
+ },
+ {
+  "case": "qwen21-2048-s25",
+  "status": "400",
+  "wallSeconds": 0.04,
+  "model": "Qwen/Qwen-Image-2.1",
+  "size": "1536x1536",
+  "steps": 25,
+  "path": "/v1/images/generations",
+  "ok": false,
+  "error": "{\"error\": {\"message\": \"Image dimensions must be multiples of 32 and at most 2 megapixels\", \"type\": \"invalid_request_error\", \"code\": \"invalid_field\"}}"
+ },
+ {
+  "case": "qwen2512-1024-s50",
+  "status": "200",
+  "wallSeconds": 173.8,
+  "model": "Qwen/Qwen-Image-2512",
+  "size": "1024x1024",
+  "steps": 50,
+  "path": "/v1/images/generations",
+  "ok": true,
+  "bytes": 1573031,
+  "file": "/tmp/qwen21-bench/qwen2512-1024-s50.png"
+ },
+ {
+  "case": "qwen2512-lightning-1024-s4",
+  "status": "200",
+  "wallSeconds": 16.16,
+  "model": "Qwen/Qwen-Image-2512-Lightning",
+  "size": "1024x1024",
+  "steps": 4,
+  "path": "/v1/images/generations",
+  "ok": true,
+  "bytes": 1688298,
+  "file": "/tmp/qwen21-bench/qwen2512-lightning-1024-s4.png"
+ }
+]
