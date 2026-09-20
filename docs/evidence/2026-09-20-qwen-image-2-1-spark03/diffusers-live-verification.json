@@ -1,0 +1,118 @@
+{
+  "qualifiedRelease": {
+    "commit": "ad5401dc068ede032312cbae52b2114a3153b19e",
+    "sha256": "cd282c07f1ea8250f72cb0955452d55d4d8a24ad2da1a7c767619b20b9e6d6aa"
+  },
+  "owner": "ennspark03",
+  "runtime": "qwen-image-diffusers",
+  "image": "lloom/qwen-image-diffusers:source-22af06376c2b0336c4803c6a8607599e7f0bf1941a4722c513fb291a0d262697",
+  "privatePort": 8211,
+  "modelRevision": "b3179ad355be050328e483a9dfdd9e60cd62adfa",
+  "diffusersRevision": "80c7ed262aeffbeb43ef13ae04baeb9b84515a69",
+  "precision": {
+    "transformer": "BF16",
+    "textEncoder": "BF16",
+    "vae": "original FP32"
+  },
+  "modelLoadSeconds": 160.26,
+  "canaries": [
+    {
+      "endpoint": "/v1/images/generations",
+      "requestedModel": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "Change only the blue teapot to red. Keep its shape, the lemon, the table, the lighting, the background and the camera framing exactly as they are. Preserve the photographic appearance.",
+      "steps": 40,
+      "startedAt": "2026-09-20T18:05:25.816Z",
+      "elapsedMs": 64015,
+      "bytes": 1727195,
+      "scope": "owner JSON",
+      "artifact": "live-teapot.png",
+      "sha256": "a9c051573b9cc0608c5d4da6f6d5684a3730325dad0a6228fd617681ae6b20a5",
+      "referenceSha256": "c1f2069e78381b467da84124af7f4855c6e2543612aa62f40da803b146d21c82"
+    },
+    {
+      "endpoint": "/v1/images/edits",
+      "requestedModel": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "Change only the roof tiles to bright terracotta red and the front door to green. Keep the camera position, the framing, the sky, the sea and the stone walls exactly as they are.",
+      "steps": 40,
+      "startedAt": "2026-09-20T18:06:30.142Z",
+      "elapsedMs": 59342,
+      "bytes": 1838934,
+      "scope": "owner multipart",
+      "artifact": "live-cottage.png",
+      "sha256": "49f4c2e87f789c72bf9804d9764031a4b60cb9a9392f42a165e49cb4ea5b0b6f",
+      "referenceSha256": "d7cc4e9a33271cb95b8df45c78da8aaa2c6785fcdb42e3fd74085b5538450337"
+    },
+    {
+      "endpoint": "/v1/images/edits",
+      "requestedModel": "image-edit",
+      "prompt": "Change only the blue teapot to red. Keep its shape, the lemon, the table, the lighting, the background and the camera framing exactly as they are. Preserve the photographic appearance.",
+      "steps": 40,
+      "startedAt": "2026-09-20T18:09:11.956Z",
+      "elapsedMs": 59725,
+      "bytes": 1727195,
+      "scope": "fleet alias multipart",
+      "artifact": "qwen21-alias-edit.png",
+      "sha256": "a9c051573b9cc0608c5d4da6f6d5684a3730325dad0a6228fd617681ae6b20a5",
+      "referenceSha256": "c1f2069e78381b467da84124af7f4855c6e2543612aa62f40da803b146d21c82"
+    }
+  ],
+  "fleetAliasAttribution": {
+    "at": "2026-09-20T18:10:11.662Z",
+    "route": "/v1/images/edits",
+    "requestedModel": "image-edit",
+    "resolvedModel": "ennspark03/Qwen/Qwen-Image-2.1-Diffusers",
+    "node": "ennspark03",
+    "status": 200,
+    "failedOver": false,
+    "durationMs": 59590
+  },
+  "aliases": {
+    "image-fast": {
+      "members": [
+        "ennspark03/Qwen/Qwen-Image-2.1"
+      ],
+      "description": "Qwen Image 2.1 generation on Spark 3",
+      "advertise": true
+    },
+    "image-quality": {
+      "members": [
+        "ennspark03/Qwen/Qwen-Image-2.1"
+      ],
+      "description": "Qwen Image 2.1 generation on Spark 3",
+      "advertise": true
+    },
+    "image-quality-fast": {
+      "members": [
+        "ennspark03/Qwen/Qwen-Image-2.1"
+      ],
+      "description": "Qwen Image 2.1 generation on Spark 3",
+      "advertise": true
+    },
+    "image-edit": {
+      "members": [
+        "ennspark03/Qwen/Qwen-Image-2.1-Diffusers"
+      ],
+      "description": "Qwen Image 2.1 reference editing on Spark 3 via official Diffusers",
+      "advertise": true
+    }
+  },
+  "checks": {
+    "pythonBackend": "25 passed",
+    "recipePlan": "passed; defaults and existing runtimes preserved; no chat warmup",
+    "npmCheck": "passed",
+    "npmTests": "cluster, unit, entity-stagger passed; smoke passed after updating expected recipe list; community passed",
+    "interchange": "passed",
+    "installedPackage": "passed; 738 files",
+    "independentReview": "Codex review worker; multipart and model metadata findings fixed and re-reviewed"
+  },
+  "limitations": [
+    "Cottage edit also recolored adjacent window trim green.",
+    "Cold loading takes minutes; warmed 40-step edits took about one minute.",
+    "ComfyUI numerical divergence is unresolved; this rollout uses the independently verified official Diffusers path."
+  ],
+  "rolloutCorrections": [
+    "The initially planned port 8210 was occupied by another listener; only the new runtime was moved to verified-free loopback port 8211.",
+    "Waited for model readiness after the normal RUNTIME_STARTING response.",
+    "First fleet request raced the 500 ms config watcher and used the old alias; final canary ran after verifying the updated live catalog."
+  ]
+}

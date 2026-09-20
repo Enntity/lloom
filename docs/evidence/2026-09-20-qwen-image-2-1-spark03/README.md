@@ -164,3 +164,30 @@ This is a single quality canary, not a warmed serving-speed comparison.
 The additive `linux-nvidia-qwen-image-2-1-diffusers` recipe exposes this working
 editing path without changing the existing fast ComfyUI generation route. See
 [the backend contract](../../qwen-image-diffusers.md).
+
+
+## Managed Diffusers rollout
+
+The new standalone backend was installed additively on Spark 3 and qualified
+through LLooM, using the original BF16 transformer/encoder and FP32 VAE. The
+container binds only to `127.0.0.1:8211`; another listener occupied the initially
+planned port 8210. The managed model loaded in 160.26 seconds.
+
+The owner gateway produced the teapot edit through the JSON endpoint in 64.015
+seconds and the cottage edit through the multipart endpoint in 59.342 seconds.
+Both retained the scene and avoided the earlier severe texture/contrast change.
+The cottage edit also colored the adjacent window trim green; this is not a
+claim of pixel-exact editing.
+
+The fleet `image-edit` alias now resolves to
+`ennspark03/Qwen/Qwen-Image-2.1-Diffusers`. A real multipart request through that
+alias returned HTTP 200 in 59.725 seconds, attributed to Spark 3 with no failover.
+Its image matched the direct teapot canary byte for byte. The three generation
+aliases remain on `ennspark03/Qwen/Qwen-Image-2.1`; the existing Edit-2511 model
+remains configured for explicit fallback calls. Existing runtime definitions and
+other defaults were preserved by the additive setup.
+
+[The verification record](diffusers-live-verification.json) contains exact
+revisions, the qualified release and container identity, request attribution,
+artifact hashes, checks, and rollout corrections. Generated images remain in
+private evidence storage. No image payloads or credentials are committed.
