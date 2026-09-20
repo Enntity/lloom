@@ -1,4 +1,4 @@
-"""Private, single-flight image-edit backend for LLooM."""
+"""Private, single-flight image generation/editing backend for LLooM."""
 import asyncio
 import base64
 import binascii
@@ -22,8 +22,16 @@ from pipeline import GATEWAY_ID, MODEL_ID, GenerationCancelled, Runner
 MAX_BODY = 16 * 1024 * 1024
 MAX_IMAGE = 8 * 1024 * 1024
 MAX_PIXELS = 16 * 1024 * 1024
-ALLOWED = {"model", "prompt", "image", "seed", "steps", "cfg", "resolution", "n", "response_format"}
+GENERATION_SIZE = (1024, 1024)
+MIN_AXIS = 256
+MAX_AXIS = 2048
+AXIS_MULTIPLE = 32
+MAX_OUTPUT_PIXELS = 2 * 1024 * 1024
+EDIT_STEPS = 40
+GENERATION_STEPS = 25
+ALLOWED = {"model", "prompt", "image", "seed", "steps", "cfg", "resolution", "n", "response_format", "size"}
 DATA_URI = re.compile(r"data:image/(png|jpeg);base64,([A-Za-z0-9+/=]+)", re.IGNORECASE)
+SIZE = re.compile(r"([0-9]{1,4})x([0-9]{1,4})")
 
 
 class ApiError(Exception):
@@ -31,7 +39,7 @@ class ApiError(Exception):
         self.message, self.code, self.status = message, code, status
 
 
-def parse_request(payload):
+def _check_common(payload):
     if not isinstance(payload, dict):
         raise ApiError("Request body must be a JSON object")
     if set(payload) - ALLOWED:
@@ -41,17 +49,57 @@ def parse_request(payload):
     prompt = payload.get("prompt")
     if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 8192:
         raise ApiError("prompt must contain 1 to 8192 characters")
-    seed, steps = payload.get("seed", 42), payload.get("steps", 40)
+    seed = payload.get("seed", 42)
     if type(seed) is not int or not 0 <= seed < 2**63:
         raise ApiError("seed must be an integer between 0 and 2^63-1")
+    return prompt, seed
+
+
+def _check_steps(payload, default):
+    steps = payload.get("steps", default)
     if type(steps) is not int or not 1 <= steps <= 60:
         raise ApiError("steps must be an integer between 1 and 60")
+    return steps
+
+
+def _check_fixed(payload):
     for field, expected in (("cfg", 1), ("resolution", 1024), ("n", 1)):
         value = payload.get(field, expected)
         if type(value) not in (int, float) or value != expected:
             raise ApiError(f"{field} must be {expected}")
     if payload.get("response_format", "b64_json") != "b64_json":
         raise ApiError("Only response_format=b64_json is supported")
+
+
+def parse_size(payload):
+    size = payload.get("size", f"{GENERATION_SIZE[0]}x{GENERATION_SIZE[1]}")
+    if not isinstance(size, str):
+        raise ApiError("size must be WIDTHxHEIGHT such as 1024x1024")
+    match = SIZE.fullmatch(size)
+    if not match:
+        raise ApiError("size must be WIDTHxHEIGHT such as 1024x1024")
+    width, height = int(match[1]), int(match[2])
+    for axis, value in (("width", width), ("height", height)):
+        if not MIN_AXIS <= value <= MAX_AXIS:
+            raise ApiError(f"size {axis} must be between {MIN_AXIS} and {MAX_AXIS}")
+        if value % AXIS_MULTIPLE:
+            raise ApiError(f"size {axis} must be a multiple of {AXIS_MULTIPLE}")
+    if width * height > MAX_OUTPUT_PIXELS:
+        raise ApiError("size must be at most 2 megapixels")
+    return width, height
+
+
+def parse_generation(payload):
+    prompt, seed = _check_common(payload)
+    steps = _check_steps(payload, GENERATION_STEPS)
+    _check_fixed(payload)
+    if "image" in payload:
+        raise ApiError("image is not supported here; use /v1/images/edits")
+    width, height = parse_size(payload)
+    return {"prompt": prompt, "seed": seed, "steps": steps, "width": width, "height": height}
+
+
+def decode_image(payload):
     encoded = payload.get("image")
     if not isinstance(encoded, str) or len(encoded) > MAX_IMAGE * 4 // 3 + 100:
         raise ApiError("One inline PNG/JPEG image, at most 8 MiB, is required")
@@ -81,7 +129,22 @@ def parse_request(payload):
     height = round(math.sqrt(1024 * 1024 * h / w) / 32) * 32
     if min(width, height) < 32 or max(width, height) > 2048:
         raise ApiError("Image aspect ratio would exceed the 2048-pixel output-axis limit")
+    return width, height, image
+
+
+def parse_edit(payload):
+    prompt, seed = _check_common(payload)
+    steps = _check_steps(payload, EDIT_STEPS)
+    _check_fixed(payload)
+    if "size" in payload:
+        raise ApiError("size is not supported for editing; the output follows the reference image")
+    width, height, image = decode_image(payload)
     return {"prompt": prompt, "seed": seed, "steps": steps, "width": width, "height": height}, image
+
+
+def parse_request(payload):
+    """Backwards-compatible alias for the JSON edit-reference contract."""
+    return parse_edit(payload)
 
 
 async def read_bytes(request):
@@ -158,9 +221,10 @@ async def finish_worker(task):
         task.exception()  # Retrieve exceptions even after a disconnected client.
 
 
-async def run_edit(app, request, params, image):
+async def run_generate(app, request, params, image):
     if app.state.lock.locked():
-        image.close()
+        if image is not None:
+            image.close()
         raise ApiError("Image backend is busy", "backend_busy", 429)
     await app.state.lock.acquire()
     cancel = threading.Event()
@@ -182,7 +246,12 @@ async def run_edit(app, request, params, image):
             cancel.set()
         await finish_worker(task)
         app.state.lock.release()
-        image.close()
+        # Text-to-image has no reference image; only close a real decoded image.
+        if image is not None:
+            image.close()
+
+
+run_edit = run_generate
 
 
 def create_app(runner_factory=None):
@@ -210,14 +279,18 @@ def create_app(runner_factory=None):
 
     @app.get("/v1/models")
     async def models():
-        return {"object": "list", "data": [{"id": MODEL_ID, "object": "model", "created": 0, "owned_by": "Qwen", "capabilities": ["image-editing"]}]}
+        return {"object": "list", "data": [{"id": MODEL_ID, "object": "model", "created": 0, "owned_by": "Qwen", "capabilities": ["image-generation", "image-editing"]}]}
 
     @app.post("/v1/images/generations")
     async def generate(request: Request):
         if not app.state.ready:
             raise ApiError("Model is loading", "model_loading", 503)
-        params, image = parse_request(await read_body(request))
-        png = await run_edit(app, request, params, image)
+        payload = await read_body(request)
+        if isinstance(payload, dict) and "image" in payload:
+            params, reference = parse_edit(payload)
+        else:
+            params, reference = parse_generation(payload), None
+        png = await run_generate(app, request, params, reference)
         return {"created": int(time.time()), "data": [{"b64_json": base64.b64encode(png).decode("ascii")}]}
 
     @app.post("/v1/images/edits")
@@ -225,7 +298,7 @@ def create_app(runner_factory=None):
         if not app.state.ready:
             raise ApiError("Model is loading", "model_loading", 503)
         params, image = await read_multipart(request)
-        png = await run_edit(app, request, params, image)
+        png = await run_generate(app, request, params, image)
         return {"created": int(time.time()), "data": [{"b64_json": base64.b64encode(png).decode("ascii")}]}
 
     return app

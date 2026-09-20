@@ -1003,12 +1003,13 @@
       "id": "qwen-image-diffusers",
       "name": "Qwen Image Diffusers (NVIDIA Docker)",
       "kind": "openai-compatible-server",
-      "description": "Official Qwen Image 2.1 reference editing with BF16 transformer/encoder and FP32 VAE.",
+      "description": "Official Qwen Image 2.1 text-to-image generation and reference editing with BF16 transformer/encoder and FP32 VAE.",
       "platforms": [
         "linux-arm64",
         "linux-x64"
       ],
       "features": [
+        "image-generation",
         "image-editing",
         "cuda",
         "docker"

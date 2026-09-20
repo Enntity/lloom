@@ -44,6 +44,9 @@ class Runner:
             return args[-1] if args else None
 
         check_cancel()
+        # Text-to-image reuses this exact pipeline: the official pipeline accepts
+        # image=None for no-reference generation, so no second process, weight
+        # copy, or second Runner is created for generation requests.
         result = self.pipe(
             prompt=params["prompt"], image=image, width=params["width"], height=params["height"],
             output_resolution=1024, num_inference_steps=params["steps"], true_cfg_scale=1.0,

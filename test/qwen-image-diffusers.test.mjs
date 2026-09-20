@@ -41,7 +41,7 @@ try {
   const model = after.models.find((m) => m.id === 'Qwen/Qwen-Image-2.1-Diffusers');
   assert.ok(model);
   assert.equal(model.runtime, 'qwen-image-diffusers');
-  assert.deepEqual(model.capabilities, ['image-editing']);
+  assert.deepEqual(model.capabilities, ['image-generation', 'image-editing']);
   const runtime = after.runtimes['qwen-image-diffusers'];
   assert.equal(runtime.warmup, undefined, 'image runtime must not receive a chat warmup');
   const image = execFileSync('python3', ['backends/qwen-image-diffusers/install.py', '--print-image'], {

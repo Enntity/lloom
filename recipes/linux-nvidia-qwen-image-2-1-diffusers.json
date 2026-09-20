@@ -3,9 +3,9 @@
   "schemaVersion": 1,
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-qwen-image-2-1-diffusers",
-  "name": "Qwen Image 2.1 editing (Diffusers, NVIDIA)",
+  "name": "Qwen Image 2.1 generation and editing (Diffusers, NVIDIA)",
   "version": 1,
-  "summary": "Original Qwen Image 2.1 weights served through the official Diffusers editing pipeline in a separate managed runtime.",
+  "summary": "Original Qwen Image 2.1 weights served through the official Diffusers pipeline in a separate managed runtime, for text-to-image generation and reference editing.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata only; model weights are under the Qwen Research license"
@@ -29,18 +29,20 @@
     "cuda",
     "nvidia",
     "qwen-image-2.1",
+    "image-generation",
     "image-editing",
     "diffusers",
     "bf16"
   ],
   "capabilities": [
+    "image-generation",
     "image-editing"
   ],
   "hardware": {
     "family": "Linux NVIDIA CUDA",
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
     "notes": [
-      "One reference image and one generation at a time. Output follows the reference aspect ratio at about one megapixel.",
+      "One generation or edit at a time on a single pipeline. Text-to-image accepts an optional 32-pixel-aligned size from 256 to 2048 per axis at no more than 2 megapixels (default 1024x1024); editing follows the reference aspect ratio at about one megapixel.",
       "BF16 transformer and encoder; original FP32 VAE. Tested on NVIDIA GB10 with PyTorch 2.11/CUDA 13.",
       "Cold model loading is separate from inference and can take several minutes."
     ]
@@ -67,6 +69,7 @@
     "type": "openai-compatible-server",
     "features": [
       "cuda",
+      "image-generation",
       "image-editing"
     ]
   },
@@ -165,7 +168,7 @@
   },
   "models": [
     {
-      "role": "quality-image-edit",
+      "role": "quality-image-generate-edit",
       "model": "Qwen/Qwen-Image-2.1",
       "gatewayModel": "Qwen/Qwen-Image-2.1-Diffusers",
       "runtime": "qwen-image-diffusers",
@@ -179,6 +182,7 @@
         "image"
       ],
       "capabilities": [
+        "image-generation",
         "image-editing"
       ],
       "settings": {
@@ -195,7 +199,7 @@
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/qwen-image-diffusers:source-22af06376c2b0336c4803c6a8607599e7f0bf1941a4722c513fb291a0d262697",
+            "image": "lloom/qwen-image-diffusers:source-709d9a713b1a7340fd1cba799e45fc51690ef9a040c11e6c4457ac603c4a2d6d",
             "pull": false,
             "createArgs": [
               "--restart",
