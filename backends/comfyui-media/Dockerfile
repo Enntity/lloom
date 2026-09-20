@@ -13,6 +13,7 @@ COPY bridge /opt/lloom-media/bridge
 COPY graphs /opt/lloom-media/graphs
 COPY build /opt/lloom-media/build
 COPY model-roots.json /opt/lloom-media/model-roots.json
+RUN PYTHONPATH=/opt/ComfyUI:/opt/lloom-media/graphs python /opt/lloom-media/build/verify_qwen_inputs.py --cpu
 ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONPATH=/opt/lloom-media/graphs
 WORKDIR /opt/lloom-media
 ENTRYPOINT ["python", "/opt/lloom-media/build/launch.py"]

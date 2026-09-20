@@ -81,7 +81,8 @@ def test_edit_wires_reference_into_autogrow_and_samples_encoder_latent():
     graph, _, kind = build_graph(QWEN_21, {"prompt": "make it dusk"}, image_filename="lloom-abc.png")
     assert kind == "image"
     encode = only(graph, "TextEncodeQwenImage21")
-    assert encode["inputs"]["images"] == {"image_1": [node_id(graph, "LoadImage"), 0]}
+    assert encode["inputs"]["images.image_1"] == [node_id(graph, "LoadImage"), 0]
+    assert "images" not in encode["inputs"]
     assert only(graph, "LoadImage")["inputs"]["image"] == "lloom-abc.png"
     assert encode["inputs"]["vae"] == [node_id(graph, "VAELoader"), 0]
     # The node's own latent is the only geometry an edit may sample.

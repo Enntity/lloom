@@ -1,0 +1,93 @@
+{
+  "engine": "5ba116a40f1944f64e2e4a8ace826656e6293bf4",
+  "graphSha256": "500f4bc04f802d23de5578e4d6ae25beda7ef5ee62ae8ccb59080a2d0eab2e81",
+  "inputContract": {
+    "rejectedShape": "inputs.images.image_1 nested mapping",
+    "correctShape": "inputs[\"images.image_1\"] graph link",
+    "realEngineCpuVerifier": "passed"
+  },
+  "checks": {
+    "offlineMedia": "198 passed",
+    "recipeStandaloneAndAdditive": "14 passed",
+    "npmTest": "passed",
+    "npmCheck": "passed",
+    "interchange": "passed",
+    "package": "passed"
+  },
+  "canaries": [
+    {
+      "requestedModel": "Qwen/Qwen-Image-2.1",
+      "startedAt": "2026-09-20T16:49:22.929Z",
+      "elapsedMs": 29276,
+      "bytes": 2139284,
+      "reference": "qwen21-default-generation.png",
+      "artifact": "qwen21-teapot-edit.png",
+      "sha256": "2e6e03be773f53aff3ce4c3dedf294ee60f58754141436ab1a65a1031e43f499"
+    },
+    {
+      "requestedModel": "DEFAULT",
+      "startedAt": "2026-09-20T16:48:39.499Z",
+      "elapsedMs": 21178,
+      "bytes": 1816897,
+      "reference": null,
+      "artifact": "qwen21-default-generation.png",
+      "sha256": "c1f2069e78381b467da84124af7f4855c6e2543612aa62f40da803b146d21c82"
+    },
+    {
+      "requestedModel": "Qwen/Qwen-Image-2.1",
+      "startedAt": "2026-09-20T16:40:53.335Z",
+      "elapsedMs": 47352,
+      "bytes": 2277482,
+      "reference": "qwen21-1024-s25.png",
+      "artifact": "qwen21-fixed-edit.png",
+      "sha256": "676b97e2e1c9a7c41e95eb1ac8451540893f840a95de8de83e81a1a58b6f0b7f"
+    },
+    {
+      "requestedModel": "Qwen/Qwen-Image-2.1",
+      "startedAt": "2026-09-20T16:43:43.211Z",
+      "elapsedMs": 41322,
+      "bytes": 2317666,
+      "reference": "qwen21-1024-s25.png",
+      "artifact": "qwen21-edit-40.png",
+      "sha256": "0df1266f6ecc10cba9da959b31eca6d522786729dca7d828c3352cec404cefb1"
+    }
+  ],
+  "attribution": [
+    {
+      "id": "conn_186",
+      "at": "2026-09-20T16:41:40.667Z",
+      "route": "/v1/images/generations",
+      "requestedModel": "Qwen/Qwen-Image-2.1",
+      "resolvedModel": "Qwen/Qwen-Image-2.1",
+      "runtime": "spark03-premium",
+      "backend": "spark03-premium",
+      "status": 200,
+      "failedOver": false,
+      "durationMs": 47305
+    },
+    {
+      "id": "conn_192",
+      "at": "2026-09-20T16:44:24.510Z",
+      "route": "/v1/images/generations",
+      "requestedModel": "Qwen/Qwen-Image-2.1",
+      "resolvedModel": "Qwen/Qwen-Image-2.1",
+      "runtime": "spark03-premium",
+      "backend": "spark03-premium",
+      "status": 200,
+      "failedOver": false,
+      "durationMs": 41275
+    },
+    {
+      "id": "conn_199",
+      "at": "2026-09-20T16:49:00.655Z",
+      "route": "/v1/images/generations",
+      "requestedModel": "Qwen/Qwen-Image-2.1",
+      "resolvedModel": "Qwen/Qwen-Image-2.1",
+      "runtime": "spark03-premium",
+      "backend": "spark03-premium",
+      "status": 200,
+      "failedOver": false,
+      "durationMs": 21142
+    }
+  ]
+}

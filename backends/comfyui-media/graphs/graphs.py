@@ -565,9 +565,10 @@ def qwen_image_21(g, p, prompt, seed, image_filename):
                        negative_prompt=text(p, "negative_prompt", ""), resolution=resolution)
         positive, negative, latent = encode, [encode[0], 1], [encode[0], 2]
         image = g.add("LoadImage", image=image_filename)
-        # Autogrow inputs arrive as one named slot per image; the bridge decodes
-        # at most one conditioning image, so image_1 is the whole reference set.
-        g.nodes[encode[0]]["inputs"]["images"] = {"image_1": image}
+        # API graphs use flattened dynamic-input paths. ComfyUI resolves the
+        # link first, then builds the images dict passed to execute(). A nested
+        # dict here is not a graph edge and silently loses the reference.
+        g.nodes[encode[0]]["inputs"]["images.image_1"] = image
     else:
         width, height = image_geometry(p)
         # Without reference images the node resizes nothing, so its resolution

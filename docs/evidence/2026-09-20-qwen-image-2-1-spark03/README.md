@@ -38,88 +38,73 @@ and artifact transfer. `results.json` is the raw capture.
 | 2512 fp8 | 50 | 1024x1024 | 173.8 s | 1.6 MB PNG |
 | 2512 Lightning | 4 | 1024x1024 | 16.2 s | 1.7 MB PNG |
 
-The repeat at the same figure is the useful part: the lane is stable, not a warm
-first-call artifact. Against the previously advertised high-quality route
-(`Qwen/Qwen-Image-2512` at 50 steps) 2.1 is about eight times faster at
-comparable output quality, and it lands within about 5 s of the four-step
-Lightning lane while running five times the steps. That is the basis for making
-it the leader's default image endpoint rather than leaving 2512 in that slot.
+These single-request timings show lower latency than the previous quality
+route (`Qwen/Qwen-Image-2512` at 50 steps). They do not establish comparable
+quality or sustained-load stability.
 
 The 1536x1024 case is 1.5 megapixels. The graph caps generation at 2 megapixels
 (`image_geometry`), which is below 2.1's native 2K, so a true 2048x2048 request
 is rejected by the shared geometry rule rather than by the model.
 
-## Why 2.1 editing is not advertised: the engine drops the reference image
+## Reference-edit graph correction
 
-The first version of this record blamed the model, because 2.1 returned a new,
-tighter composition of a similar house instead of the requested edit. That was
-wrong. The conditioning node never received the reference image.
+The bridge originally submitted `inputs["images"] = {"image_1": ["5", 0]}`.
+ComfyUI API graphs require the flattened link
+`inputs["images.image_1"] = ["5", 0]`. The engine resolves that link before
+building the `images` mapping passed to `TextEncodeQwenImage21.execute()`.
 
-`TextEncodeQwenImage21` takes its reference set through an autogrow input; the
-graph supplies exactly the shape the pinned official template uses
-(`inputs["images"] = {"image_1": ["5", 0]}`). Instrumenting the node inside the
-engine shows what it actually receives on a request that travels the normal
-bridge path:
+The earlier explanation blaming the engine's autogrow handling was incorrect.
+Calling the nesting helper directly bypassed the execution stage that drops
+unknown inputs. On the installed engine, `execution.get_input_data()` drops the
+nested `images` object; the flattened path resolves the image and delivers it to
+the node. The previous purported edits were therefore text-only generations.
 
-```
-[TRACE-NODE] 4 keys= ['clip', 'images', 'negative_prompt', 'prompt', 'resolution', 'vae']
-             images_raw= {'image_1': ['5', 0]}          <- as submitted
-[TRACE21]    images= []                                 <- as delivered to execute()
-```
+The bridge now sends the flattened link. The graph test checks that API shape,
+and `build/verify_qwen_inputs.py` exercises the real engine input resolver with
+a reference sentinel. It also reproduces the old failure as a negative control.
+The Docker build runs this CPU-only check without loading weights. The engine
+revision and conditioning node remain unchanged.
 
-An empty mapping means the node encodes the prompt with no image slots and no
-reference latents, and the model then does what a text-to-image model does with
-a prompt about a roof and a door: it paints a roof and a door. Every 2.1 "edit"
-so far has been a text-to-image generation, which is why the results were fast,
-plausible and scene-free. The same run with the reference swapped for a
-completely different picture produced the same composition, and a same-graph
-submission with an empty `images` mapping produced the same bytes.
+The corrected gateway cottage edit took 47.3 s at 25 steps on the first run;
+a warm 40-step run took 41.3 s (one request each, different warm-up state).
+Both preserved composition and changed the roof/door colours, but introduced
+severe texture and contrast artifacts. A second reference (a blue teapot changed
+to red) reproduced the problem in 29.2 s. Generation through Spark 3's new
+model-omitted default completed in 21.1 s and looked clean.
 
-What was ruled out before reaching that conclusion:
+Bounded diagnostics kept the same cottage reference, instruction and seed:
 
-- The bridge submits the right graph. It logs the node inputs it builds and the
-  JSON it posts, and both carry `{"image_1": ["5", 0]}`.
-- The input shape is right. ComfyUI's own `get_finalized_class_inputs` followed
-  by `build_nested_inputs` returns `{'image_1': ['5', 0]}` for that mapping,
-  both in isolation and for the bridge's exact inputs.
-- The engine is otherwise healthy. `Qwen/Qwen-Image-Edit-2511` edits the same
-  reference through the same bridge and keeps the scene exactly, changing only
-  the roof and the door. That run is 165-172 s.
+- A VAE encode/decode round trip looked clean.
+- Disabling prefix caching produced identical RGB pixels to the cached edit.
+- Using the already installed FP8 Qwen3-VL encoder retained the distortion.
+- Using the full-precision transformer retained the distortion. Its pinned
+  artifact SHA-256 is
+  `89f4158d066cc33906a199fca85634f766892dd78f49b6698dabf187ac86c4bc`.
+- The engine's latent mean/std match the official VAE configuration. The
+  upstream reference-grid parity adjustment is zero for these equal 1024-square
+  source/target grids, so it cannot explain these failures.
 
-The loss therefore sits in this engine build's dynamic-input handling between
-validation and execution, not in the graph, the bridge, or the checkpoint. The
-node's other inputs (`clip`, `prompt`, `vae`, `resolution`) all arrive intact,
-so the fault is specific to the autogrow mapping.
-
-Until that is fixed, `image-edit` resolves to
-`ennspark03/Qwen/Qwen-Image-Edit-2511`, which is measured working on this
-engine, and the federated 2.1 route advertises `image-generation` only.
-`ennspark03` still exposes 2.1 with `image-editing`, because a direct caller that
-does not need a reference image is unaffected.
-
-### Next step for editing
-
-The explicit-image conditioning node (`TextEncodeQwenImageEditPlus`) is the
-proven path on this engine, but it has not yet been shown to work with the 2.1
-checkpoint: the first attempt to drive it produced a graph the engine rejected,
-and that rejection was in the test graph rather than in the node. Getting 2.1
-editing working means either establishing that node against the 2.1 checkpoint,
-or carrying the autogrow mapping through the engine. Neither is done here.
+These checks establish reference delivery and a remaining editing-quality
+failure. They do not identify its cause. The working Edit-2511 route remains the
+editing default. Experimental weights are retained, but the serving graph still
+uses the original pinned int8 weights.
 
 ## Leader configuration
 
-`ennspark01` now carries the proxy model `ennspark03/Qwen/Qwen-Image-2.1` on the
-`spark03-premium` remote runtime, and `defaults.imageModel` is the `image-quality`
-alias pointing at it. `image-fast` (Qwen-Image-2512-Lightning) and `image-edit`
-(Edit-2511) are unchanged, so a caller that wants the cheapest or the most
-faithful edit still has a named route.
+`ennspark01` carries `ennspark03/Qwen/Qwen-Image-2.1` on the
+`spark03-premium` remote runtime. `image-quality`, `image-fast` and
+`image-quality-fast` now resolve to it; `defaults.imageModel` remains
+`image-quality`. Spark 3's own `defaults.imageModel` now names
+`Qwen/Qwen-Image-2.1`, replacing FLUX. Explicit older model IDs remain available.
+`image-edit` still resolves to Edit-2511 because the corrected 2.1 edit path has
+not passed visual quality checks. No chat, embedding, audio or video defaults
+were changed.
 
 ## Boundaries
 
-The comparison is single-concurrency and text-to-image only, on one machine
-class. No 2.1 edit figure is quoted anywhere in this record, because no 2.1 edit
-has been produced yet: the runs previously labelled "edit" were generations
-without a reference image (see above). Text fidelity, typography and
+The original comparison is single-concurrency and text-to-image only, on one
+machine class. The runs originally labelled "edit" were generations without a
+reference image. Corrected edit checks are recorded separately above. Text fidelity, typography and
 transparency were not scored; 2.1 decodes RGBA and the graph saves PNG, but no
 transparent-background artifact was generated here. The 2.1 and 2512 figures come from the same host and window but
 not from an interleaved A/B run, so treat the ratio as an order-of-magnitude
@@ -139,3 +124,15 @@ curl -sS -X POST "$LLOOM_BASE_URL/v1/images/generations" \
 Recipe metadata is MIT licensed; the weights carry the Qwen Research license.
 The engine repin also moves the 2512, Lightning, Edit-2511, FLUX.2, Ideogram,
 Krea, MiniMax-H3, LTX, ACE-Step and YuE2 lanes onto the same engine build.
+
+## Verification of the reference fix
+
+The 198 offline media tests, 14 standalone/additive recipe checks, full
+`npm test`, `npm run check`, interchange checks and package installation smoke
+checks pass. The package check also needed its expected recipe count updated
+from 38 to 39 after the earlier Qwen 2.1 recipe addition. A Codex review worker
+found no must-fix issue in the reference-link correction or build verifier.
+
+`reference-fix-verification.json` records request attribution and artifact
+hashes. Generated diagnostic images are retained privately; the evidence
+record contains no image payloads or credentials.
