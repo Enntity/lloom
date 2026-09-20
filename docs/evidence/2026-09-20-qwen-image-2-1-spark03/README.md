@@ -136,3 +136,31 @@ found no must-fix issue in the reference-link correction or build verifier.
 `reference-fix-verification.json` records request attribution and artifact
 hashes. Generated diagnostic images are retained privately; the evidence
 record contains no image payloads or credentials.
+
+## Official Diffusers comparison
+
+A later controlled teapot edit succeeded with the original Qwen checkpoint
+`b3179ad355be050328e483a9dfdd9e60cd62adfa` and Diffusers
+`80c7ed262aeffbeb43ef13ae04baeb9b84515a69`. It preserved the soft photographic
+background and changed the teapot from blue to red. ComfyUI still produced the
+severe texture/contrast artifact with BF16 transformer and encoder execution
+and FP32 VAE execution. The implementations used the same reference, instruction,
+1024-square output, 40 steps, guidance 1, and seed 42. Equal seeds across different
+engines do not establish identical starting noise or bitwise numerical parity.
+
+Diffusers loaded the original FP32 VAE; ComfyUI loaded its BF16 VAE repack and
+upcast it for computation. The exact cause of the divergence remains unresolved.
+The result does establish that the severe failure is avoidable with this model;
+it should not be described as a general limitation of Qwen Image 2.1 editing.
+
+Diffusers inference took 63.295 seconds after 196.491 seconds of loading. Peak
+PyTorch allocated memory was 49,433,525,248 bytes, reserved 53,320,089,600 bytes.
+This is a single quality canary, not a warmed serving-speed comparison.
+
+- Reference PNG SHA-256: `c1f2069e78381b467da84124af7f4855c6e2543612aa62f40da803b146d21c82`
+- Diffusers PNG SHA-256: `90b33e75ac07ab2c233584e1fff4a70101590dd2a5f08b8048b24482967c570e`
+- ComfyUI explicit-BF16 PNG SHA-256: `dde81619d15ccf74784b1c21e6544c7ad5e2b2d40554b51d16cec8c794ea58e2`
+
+The additive `linux-nvidia-qwen-image-2-1-diffusers` recipe exposes this working
+editing path without changing the existing fast ComfyUI generation route. See
+[the backend contract](../../qwen-image-diffusers.md).

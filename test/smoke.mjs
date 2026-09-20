@@ -881,6 +881,7 @@ assert.deepEqual(
     'linux-nvidia-gb10-qwen36-unsloth-vllm',
     'linux-nvidia-gb10-ternary-bonsai-27b',
     'linux-nvidia-gb10-thinkingcap-qwen36-27b-vllm',
+    'linux-nvidia-qwen-image-2-1-diffusers',
     'linux-nvidia-qwen3-embedding-4b-vllm'
   ]
 );

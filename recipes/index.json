@@ -1100,6 +1100,19 @@
         "type": "local",
         "url": "recipes/linux-nvidia-comfyui-yue2-3b.json"
       }
+    },
+    {
+      "id": "linux-nvidia-qwen-image-2-1-diffusers",
+      "path": "linux-nvidia-qwen-image-2-1-diffusers.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-qwen-image-2-1-diffusers.json",
+          "status": "current"
+        }
+      ],
+      "name": "Qwen Image 2.1 editing (Diffusers, NVIDIA)"
     }
   ]
 }

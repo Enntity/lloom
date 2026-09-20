@@ -998,6 +998,53 @@
         "modes": ["buffered"],
         "notes": "The bridge serializes all modalities and retains its slot until ComfyUI proves the job terminal."
       }
+    },
+    {
+      "id": "qwen-image-diffusers",
+      "name": "Qwen Image Diffusers (NVIDIA Docker)",
+      "kind": "openai-compatible-server",
+      "description": "Official Qwen Image 2.1 reference editing with BF16 transformer/encoder and FP32 VAE.",
+      "platforms": [
+        "linux-arm64",
+        "linux-x64"
+      ],
+      "features": [
+        "image-editing",
+        "cuda",
+        "docker"
+      ],
+      "commands": [
+        "docker",
+        "python3"
+      ],
+      "setup": [
+        {
+          "id": "build-qwen-image-diffusers",
+          "title": "Build or reuse the source-pinned Qwen Image Diffusers backend",
+          "action": "command",
+          "command": "python3",
+          "args": [
+            "${repoRoot}/backends/qwen-image-diffusers/install.py",
+            "--install-root",
+            "${installRoot}",
+            "--shim-dir",
+            "${shimDir}"
+          ],
+          "alwaysRun": true
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "version-dependent",
+        "modes": [
+          "buffered"
+        ],
+        "notes": "Per-request cancellation is checked between denoising steps. The backend retains its sole generation slot until the worker thread exits; encoding and decoding are not immediately interruptible."
+      }
     }
   ]
 }

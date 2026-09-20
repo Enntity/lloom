@@ -1,0 +1,217 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-qwen-image-2-1-diffusers",
+  "name": "Qwen Image 2.1 editing (Diffusers, NVIDIA)",
+  "version": 1,
+  "summary": "Original Qwen Image 2.1 weights served through the official Diffusers editing pipeline in a separate managed runtime.",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe metadata only; model weights are under the Qwen Research license"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "Qwen/Qwen-Image-2.1 b3179ad355be050328e483a9dfdd9e60cd62adfa; Diffusers 80c7ed262aeffbeb43ef13ae04baeb9b84515a69; BF16 transformer/encoder, original FP32 VAE."
+  },
+  "links": [
+    {
+      "rel": "source",
+      "href": "https://huggingface.co/Qwen/Qwen-Image-2.1/tree/b3179ad355be050328e483a9dfdd9e60cd62adfa"
+    },
+    {
+      "rel": "source",
+      "href": "https://github.com/huggingface/diffusers/tree/80c7ed262aeffbeb43ef13ae04baeb9b84515a69"
+    }
+  ],
+  "keywords": [
+    "cuda",
+    "nvidia",
+    "qwen-image-2.1",
+    "image-editing",
+    "diffusers",
+    "bf16"
+  ],
+  "capabilities": [
+    "image-editing"
+  ],
+  "hardware": {
+    "family": "Linux NVIDIA CUDA",
+    "testedMachine": "DGX Spark / GB10 class NVIDIA system",
+    "notes": [
+      "One reference image and one generation at a time. Output follows the reference aspect ratio at about one megapixel.",
+      "BF16 transformer and encoder; original FP32 VAE. Tested on NVIDIA GB10 with PyTorch 2.11/CUDA 13.",
+      "Cold model loading is separate from inference and can take several minutes."
+    ]
+  },
+  "requirements": {
+    "platforms": [
+      "linux-x64",
+      "linux-arm64"
+    ],
+    "memoryGb": 70,
+    "diskGb": 45,
+    "commands": [
+      "docker",
+      "python3"
+    ],
+    "accelerators": [
+      "cuda",
+      "nvidia-gpu"
+    ]
+  },
+  "backend": {
+    "id": "qwen-image-diffusers",
+    "name": "Qwen Image Diffusers",
+    "type": "openai-compatible-server",
+    "features": [
+      "cuda",
+      "image-editing"
+    ]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-docker",
+        "title": "Check Docker CLI",
+        "action": "check-command",
+        "command": "docker",
+        "args": [
+          "--version"
+        ]
+      },
+      {
+        "id": "download-qwen-image-2-1-original",
+        "title": "Download original Qwen Image 2.1 checkpoint",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "Qwen/Qwen-Image-2.1",
+        "revision": "b3179ad355be050328e483a9dfdd9e60cd62adfa",
+        "include": [
+          "LICENSE",
+          "model_index.json",
+          "processor/added_tokens.json",
+          "processor/chat_template.jinja",
+          "processor/merges.txt",
+          "processor/preprocessor_config.json",
+          "processor/special_tokens_map.json",
+          "processor/tokenizer.json",
+          "processor/tokenizer_config.json",
+          "processor/video_preprocessor_config.json",
+          "processor/vocab.json",
+          "scheduler/scheduler_config.json",
+          "text_encoder/config.json",
+          "text_encoder/generation_config.json",
+          "text_encoder/model-00001-of-00004.safetensors",
+          "text_encoder/model-00002-of-00004.safetensors",
+          "text_encoder/model-00003-of-00004.safetensors",
+          "text_encoder/model-00004-of-00004.safetensors",
+          "text_encoder/model.safetensors.index.json",
+          "transformer/config.json",
+          "transformer/diffusion_pytorch_model-00001-of-00002.safetensors",
+          "transformer/diffusion_pytorch_model-00002-of-00002.safetensors",
+          "transformer/diffusion_pytorch_model.safetensors.index.json",
+          "vae/config.json",
+          "vae/diffusion_pytorch_model.safetensors"
+        ],
+        "downloadSizeBytes": 33131609424,
+        "integrity": {
+          "files": [
+            {
+              "path": "processor/tokenizer.json",
+              "sizeBytes": 11422654,
+              "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+            },
+            {
+              "path": "text_encoder/model-00001-of-00004.safetensors",
+              "sizeBytes": 4998056552,
+              "sha256": "dde00291b5f7fb92013895310a3da0ddba78674df9f10d505d375243dc01fc6f"
+            },
+            {
+              "path": "text_encoder/model-00002-of-00004.safetensors",
+              "sizeBytes": 4915962464,
+              "sha256": "9047faccc0a6d98496a52d55f27be1c94a9c259d1e283fbea0128d054a948d42"
+            },
+            {
+              "path": "text_encoder/model-00003-of-00004.safetensors",
+              "sizeBytes": 4915962496,
+              "sha256": "8c54187654c0176b73ae73785bf791dc9a14c9df7fb4310083a09d42048cb57e"
+            },
+            {
+              "path": "text_encoder/model-00004-of-00004.safetensors",
+              "sizeBytes": 2704357976,
+              "sha256": "5311532aaaeae3259eb6a7b2c600636be1159adf7ded35f53579f7d0e7d43cdd"
+            },
+            {
+              "path": "transformer/diffusion_pytorch_model-00001-of-00002.safetensors",
+              "sizeBytes": 9968332504,
+              "sha256": "9e6bc2d641e67bf277895ea8777141044a38f3edb7101bc469b2961dd7c36b4b"
+            },
+            {
+              "path": "transformer/diffusion_pytorch_model-00002-of-00002.safetensors",
+              "sizeBytes": 4261951904,
+              "sha256": "3aaf234dcbe128530479735854a346b5e3e66283b7c11db56f836bbd1c13ebaa"
+            },
+            {
+              "path": "vae/diffusion_pytorch_model.safetensors",
+              "sizeBytes": 1350989512,
+              "sha256": "a07a1b7c4ee2966a1b3bdc37de9b4f983d56937e46619f709a80b6e490675417"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "quality-image-edit",
+      "model": "Qwen/Qwen-Image-2.1",
+      "gatewayModel": "Qwen/Qwen-Image-2.1-Diffusers",
+      "runtime": "qwen-image-diffusers",
+      "backendConfig": "qwen-image-diffusers",
+      "kind": "image",
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "image"
+      ],
+      "capabilities": [
+        "image-editing"
+      ],
+      "settings": {
+        "memoryGb": 70,
+        "priority": 30,
+        "keepWarm": false,
+        "maxActiveRequests": 1,
+        "startupTimeoutMs": 900000,
+        "runtime": {
+          "adapter": "docker",
+          "management": "managed",
+          "containerName": "lloom-qwen-image-diffusers",
+          "healthUrl": "http://127.0.0.1:${port}/health",
+          "bootstrap": {
+            "adapter": "docker",
+            "image": "lloom/qwen-image-diffusers:source-22af06376c2b0336c4803c6a8607599e7f0bf1941a4722c513fb291a0d262697",
+            "pull": false,
+            "createArgs": [
+              "--restart",
+              "unless-stopped",
+              "--gpus",
+              "all",
+              "--shm-size",
+              "8g",
+              "-p",
+              "127.0.0.1:${port}:8000",
+              "-v",
+              "${modelRoot}:/models:ro"
+            ]
+          }
+        },
+        "timeoutMs": 1800000
+      }
+    }
+  ]
+}

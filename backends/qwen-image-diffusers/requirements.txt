@@ -1,0 +1,7 @@
+diffusers @ https://github.com/huggingface/diffusers/archive/80c7ed262aeffbeb43ef13ae04baeb9b84515a69.tar.gz
+transformers==5.17.0
+accelerate==1.15.0
+fastapi==0.135.1
+uvicorn==0.41.0
+Pillow==12.1.1
+python-multipart==0.0.22
