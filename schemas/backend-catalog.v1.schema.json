@@ -245,6 +245,10 @@
         "build": {
           "type": "string"
         },
+        "alwaysRun": {
+          "type": "boolean",
+          "description": "Re-run an idempotent setup step on apply to verify external artifacts rather than relying on recorded completion."
+        },
         "skipIfCommandAvailable": {
           "oneOf": [
             {

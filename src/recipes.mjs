@@ -151,15 +151,19 @@ export function planRecipe(
       if (step.revision) planned.revision = step.revision;
       if (step.downloadSizeBytes != null) planned.downloadSizeBytes = step.downloadSizeBytes;
       if (step.integrity) planned.integrity = step.integrity;
+      if (Array.isArray(step.include) && step.include.length) planned.include = step.include;
       planned.destination = path.posix.join(modelRoot, modelPathSegmentForRecipe(recipe, step.model));
-      planned.command = [
+      const selections = planned.include?.length ? planned.include.map((entry) => [entry]) : [undefined];
+      planned.commands = selections.map((include) => [
         'hf',
         'download',
         step.model,
         ...(step.revision ? ['--revision', step.revision] : []),
+        ...(include ? ['--include', ...include] : []),
         '--local-dir',
         planned.destination
-      ];
+      ]);
+      planned.command = planned.commands[0];
     } else if (['command', 'check-command'].includes(step.action)) {
       planned.command = commandLine(step, { modelRoot });
     }

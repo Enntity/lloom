@@ -856,6 +856,19 @@ assert.deepEqual(
     'apple-silicon-qwen36',
     'apple-silicon-ternary-bonsai-27b',
     'high-memory-local-image-generation',
+    'linux-nvidia-comfyui-ace-step-1-5-xl-sft',
+    'linux-nvidia-comfyui-ace-step-1-5-xl-turbo',
+    'linux-nvidia-comfyui-flux-2-klein-4b',
+    'linux-nvidia-comfyui-ideogram-4',
+    'linux-nvidia-comfyui-krea-2-turbo',
+    'linux-nvidia-comfyui-ltx-2-5',
+    'linux-nvidia-comfyui-minimax-h3-turbo',
+    'linux-nvidia-comfyui-minimax-h3',
+    'linux-nvidia-comfyui-minimax-music3',
+    'linux-nvidia-comfyui-qwen-image-2512-lightning',
+    'linux-nvidia-comfyui-qwen-image-2512',
+    'linux-nvidia-comfyui-qwen-image-edit-2511',
+    'linux-nvidia-comfyui-yue2-3b',
     'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm',
     'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-vision-mia-vllm',
     'linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm',
@@ -1029,7 +1042,7 @@ const recipeIndexReport = await buildRecipeIndexReport(config, {
 });
 assert.equal(recipeIndexReport.ok, true);
 assert.equal(recipeIndexReport.index.id, 'lloom-community-recipes');
-assert.equal(recipeIndexReport.recipes.length, 20);
+assert.equal(recipeIndexReport.recipes.length, 33);
 const indexedSparkRecipe = recipeIndexReport.recipes.find(
   (candidate) => candidate.id === 'linux-nvidia-gb10-qwen36-unsloth-vllm'
 );

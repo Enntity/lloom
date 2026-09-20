@@ -494,6 +494,10 @@ function inferAudioKind(reference) {
   ) {
     return 'audio_transcription';
   }
+  if (text.includes('music') || text.includes('ace-step') || text.includes('yue')) {
+    // Music lanes accept lyrics and style and return a song, so they are generation models, not speech.
+    return 'audio_generation';
+  }
   if (text.includes('tts') || text.includes('kokoro') || text.includes('speech')) {
     return 'audio_speech';
   }
@@ -504,6 +508,7 @@ function modelCapabilitiesForBackend(backend, reference) {
   if (backend === 'mlx-audio') {
     const kind = inferAudioKind(reference);
     if (kind === 'audio_transcription') return ['audio-transcription', 'stt', 'mlx'];
+    if (kind === 'audio_generation') return ['audio-generation', 'music-generation', 'mlx'];
     return ['audio-speech', 'tts', 'mlx'];
   }
   const capabilities = ['chat', 'streaming'];
@@ -659,9 +664,17 @@ export function createModelImportPlan(
   if (runtime) nextConfig.runtimes[runtimeId] = runtime;
   const selectedCapabilities = [...new Set([...modelCapabilitiesForBackend(backendId, reference), ...capabilities])];
   const audioKind = backendId === 'mlx-audio' ? inferAudioKind(reference) : null;
+  if (backendId === 'mlx-audio' && audioKind === 'audio_generation') {
+    // mlx-audio serves speech synthesis and transcription only; it has no music
+    // generation endpoint. Importing a song model here would advertise a route
+    // the backend cannot answer, so refuse instead of promising support.
+    throw new Error(
+      `${resolvedModelId} looks like a music generation model, but the mlx-audio backend only implements speech and transcription endpoints. Import music models through a dedicated ComfyUI recipe instead.`
+    );
+  }
   const kind = audioKind ?? 'chat';
   const selectedInput = [...new Set([...(kind === 'audio_transcription' ? ['audio'] : ['text']), ...input])];
-  const output = kind === 'audio_speech' ? ['audio'] : ['text'];
+  const output = kind === 'audio_speech' || kind === 'audio_generation' ? ['audio'] : ['text'];
   nextConfig.models.push({
     id: resolvedModelId,
     name: name ?? resolvedModelId.split('/').at(-1),
@@ -688,6 +701,7 @@ export function createModelImportPlan(
   if (setDefault) {
     nextConfig.defaults ??= {};
     if (kind === 'audio_speech') nextConfig.defaults.speechModel = resolvedModelId;
+    else if (kind === 'audio_generation') nextConfig.defaults.audioGenerationModel = resolvedModelId;
     else if (kind === 'audio_transcription') nextConfig.defaults.transcriptionModel = resolvedModelId;
     else nextConfig.defaults.chatModel = resolvedModelId;
   }

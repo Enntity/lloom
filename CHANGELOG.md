@@ -6,6 +6,10 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Added
 
+- Thirteen standalone NVIDIA ComfyUI media recipes, a public-source backend build, and shared runtime reuse for image, video and music generation.
+
+- Selective `include` paths or globs on recipe `download-model` steps, so a single-model lane fetches only the files its graph loads instead of every quantization in the model repository. Planned output reports the resolved `--include` command line.
+- First-class `audio_generation` models and the `POST /v1/audio/generations` route, with `GET /v1/audio/generations/models` and a `defaults.audioGenerationModel` fallback. Music and other audio-generation lanes no longer have to be registered as `audio_speech` to be reachable: `/v1/audio/speech` stays speech- and clone-only, and each route refuses the other's kind with `wrong_model_kind`. Recipe capabilities `audio-generation`, `music-generation` and `audio-music-generation` materialize as `audio_generation`.
 - Codex-compatible Responses custom tool round trips, preserved developer instructions, complete usage counters, and opt-in DeepSeek forced-tool reasoning compatibility.
 
 - Apple Silicon and DGX / NVIDIA Chatterbox TTS recipes (`apple-silicon-chatterbox`, `linux-nvidia-gb10-chatterbox`) with zero-shot clone, exaggeration, CFG, multilingual, turbo, named LLooM voices, and the OpenAI `/v1/audio/speech` contract.

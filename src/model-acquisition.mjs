@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { modelDirectoryComplete } from './model-files.mjs';
+import { matchIncludedFiles, modelDirectoryComplete, validModelFilePattern } from './model-files.mjs';
 
 export const MODEL_ACQUISITION_MANIFEST = '.lloom-acquisition.json';
 
@@ -25,12 +25,29 @@ export function acquisitionSpec(step = {}) {
     model: step.model,
     ...(step.revision ? { revision: String(step.revision) } : {}),
     ...(Number.isFinite(Number(step.downloadSizeBytes)) ? { downloadSizeBytes: Number(step.downloadSizeBytes) } : {}),
+    // `include` is either absent (download everything) or a list of repository
+    // paths/globs. Non-string entries are rejected by validation, so they are
+    // dropped here rather than coerced into surprising patterns.
+    include: (Array.isArray(step.include) ? step.include : []).filter((entry) => typeof entry === 'string'),
     files: (Array.isArray(integrity.files) ? integrity.files : []).map((file) => ({
       path: String(file.path ?? ''),
       ...(Number.isFinite(Number(file.sizeBytes)) ? { sizeBytes: Number(file.sizeBytes) } : {}),
       ...(file.sha256 ? { sha256: String(file.sha256).toLowerCase() } : {})
     }))
   };
+}
+
+function includeEntries(step) {
+  if (step.include == null) return [];
+  if (!Array.isArray(step.include)) return null;
+  return step.include;
+}
+
+// A repository-relative path or glob. Absolute paths and parent traversal would
+// let a recipe reach outside its own destination directory.
+function unsafeRepositoryPath(value) {
+  const text = String(value ?? '');
+  return !text || path.isAbsolute(text) || text.split(/[\\/]/).includes('..');
 }
 
 export function validateAcquisitionStep(step = {}) {
@@ -43,6 +60,20 @@ export function validateAcquisitionStep(step = {}) {
     (!Number.isInteger(Number(step.downloadSizeBytes)) || Number(step.downloadSizeBytes) < 0)
   ) {
     errors.push('downloadSizeBytes must be a non-negative integer');
+  }
+  const include = includeEntries(step);
+  if (include == null) {
+    errors.push('include must be an array of repository-relative paths or globs');
+  } else {
+    for (const [index, entry] of include.entries()) {
+      if (typeof entry !== 'string') {
+        errors.push(`include[${index}] must be a string`);
+      } else if (unsafeRepositoryPath(entry)) {
+        errors.push(`include[${index}] must be a repository-relative path or glob`);
+      } else if (!validModelFilePattern(entry)) {
+        errors.push(`include[${index}] contains an invalid glob pattern`);
+      }
+    }
   }
   for (const [index, file] of acquisitionSpec(step).files.entries()) {
     if (!file.path || path.isAbsolute(file.path) || file.path.split(/[\\/]/).includes('..')) {
@@ -80,13 +111,43 @@ async function readManifest(destination) {
 export async function modelAcquisitionStatus(step = {}) {
   const destination = step.destination;
   const spec = acquisitionSpec(step);
-  const payloadComplete = Boolean(destination && (await modelDirectoryComplete(destination)));
+  const payloadComplete = Boolean(
+    destination &&
+    (await modelDirectoryComplete(destination, {
+      include: spec.include.length ? spec.include : spec.files.map((file) => file.path)
+    }))
+  );
   if (!payloadComplete) return { complete: false, payloadComplete: false, verified: false, reason: 'payload-missing' };
-  const constrained = Boolean(spec.revision || spec.files.length);
+  const constrained = Boolean(spec.revision || spec.files.length || spec.include.length);
   if (!constrained) return { complete: true, payloadComplete: true, verified: false, reason: 'payload-present' };
   const manifest = await readManifest(destination);
   if (spec.revision && manifest?.revision !== spec.revision) {
     return { complete: false, payloadComplete: true, verified: false, reason: 'revision-unverified', manifest };
+  }
+  const selections = await matchIncludedFiles(destination, spec.include);
+  // A recorded superset can satisfy a smaller recipe. Exact requested hashes
+  // also prove an already-present selection without downloading it again.
+  const recorded = spec.include.every((pattern) => manifest?.include?.includes(pattern));
+  const hashCovered =
+    selections.length > 0 &&
+    selections.every(
+      (selection) =>
+        selection.matches.length > 0 &&
+        selection.matches.every((file) => spec.files.some((expected) => expected.path === file && expected.sha256))
+    );
+  if (spec.include.length && !recorded && !hashCovered) {
+    return { complete: false, payloadComplete: true, verified: false, reason: 'include-unverified', manifest };
+  }
+  for (const selection of selections) {
+    if (!selection.matches.length) {
+      return {
+        complete: false,
+        payloadComplete: true,
+        verified: false,
+        reason: `missing-include:${selection.pattern}`,
+        manifest
+      };
+    }
   }
   for (const expected of spec.files) {
     const filePath = path.join(destination, expected.path);
@@ -134,6 +195,8 @@ export async function modelAcquisitionStatus(step = {}) {
 }
 
 export async function prepareModelAcquisition(step = {}) {
+  const errors = validateAcquisitionStep(step);
+  if (errors.length) throw new Error(errors.join('; '));
   const destination = step.destination;
   const incomplete = `${destination}.incomplete`;
   await fs.mkdir(path.dirname(destination), { recursive: true });
@@ -160,11 +223,18 @@ export async function prepareModelAcquisition(step = {}) {
 
 export async function finalizeModelAcquisition(step, prepared) {
   const workStep = { ...step, destination: prepared.workPath };
+  const previous = await readManifest(prepared.workPath);
+  const reusable =
+    previous?.provider === prepared.spec.provider &&
+    previous?.model === prepared.spec.model &&
+    previous?.revision === prepared.spec.revision;
+  const include = [...new Set([...(reusable ? (previous.include ?? []) : []), ...prepared.spec.include])];
   const manifest = {
     version: 1,
     provider: prepared.spec.provider,
     model: prepared.spec.model,
     ...(prepared.spec.revision ? { revision: prepared.spec.revision } : {}),
+    ...(include.length ? { include } : {}),
     files: prepared.spec.files,
     completedAt: new Date().toISOString()
   };

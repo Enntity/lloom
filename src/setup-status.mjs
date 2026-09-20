@@ -235,20 +235,43 @@ async function recipeStepStatus(step, state) {
 }
 
 async function recipeModelStatus(recipePlan, selectedModelRoot) {
-  const downloads = new Map(
-    recipePlan.steps
-      .filter((step) => step.action === 'download-model' && step.model && step.destination)
-      .map((step) => [step.model, step.destination])
+  const downloads = recipePlan.steps.filter(
+    (step) => step.action === 'download-model' && step.model && step.destination
   );
   const models = [];
   for (const model of recipePlan.models) {
-    const destination = downloads.get(model.model) ?? path.posix.join(selectedModelRoot, model.model);
+    const direct = downloads.filter((step) => step.model === model.model);
+    // Composed workflows use several weight repositories and a distinct gateway
+    // ID. Their readiness requires every declared dependency, not an invented
+    // directory named after the gateway model.
+    const dependencies = direct.length ? direct : downloads;
+    const statuses = await Promise.all(
+      dependencies.map((step) =>
+        modelDirectoryStatus(step.destination, {
+          include: step.include?.length ? step.include : (step.integrity?.files ?? []).map((file) => file.path)
+        })
+      )
+    );
+    const complete = statuses.length > 0 && statuses.every((status) => status.complete);
+    const destination =
+      statuses.length === 1
+        ? statuses[0]
+        : statuses.length
+          ? {
+              path: selectedModelRoot,
+              exists: statuses.some((status) => status.exists),
+              populated: statuses.some((status) => status.populated),
+              complete,
+              status: complete ? 'present' : statuses.some((status) => status.exists) ? 'partial' : 'missing',
+              dependencies: statuses
+            }
+          : await modelDirectoryStatus(path.posix.join(selectedModelRoot, model.model));
     models.push({
       role: model.role,
       model: model.model,
       gatewayModel: model.gatewayModel,
       runtime: model.runtime,
-      destination: await modelDirectoryStatus(destination)
+      destination
     });
   }
   return models;

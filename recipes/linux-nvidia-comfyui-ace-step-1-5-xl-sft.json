@@ -1,0 +1,179 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-comfyui-ace-step-1-5-xl-sft",
+  "name": "ACE-Step/ACE-Step-1.5-XL-SFT (ComfyUI, NVIDIA)",
+  "version": 1,
+  "summary": "Install ACE-Step/ACE-Step-1.5-XL-SFT with a shared, locally built ComfyUI media backend.",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe metadata only; model weights retain their upstream licenses"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "ComfyUI 944386c233e02eaf877b1c8d5d513fb3d3a4d5e3; immutable provider revisions and per-file SHA-256 below."
+  },
+  "links": [
+    {
+      "rel": "source",
+      "href": "https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files/tree/694a9723ff772285c73f0700caacf944d3f02f8d"
+    }
+  ],
+  "keywords": [
+    "ace-step-1.5-xl-sft",
+    "cuda",
+    "fp8",
+    "nvfp4",
+    "nvidia",
+    "single-model"
+  ],
+  "capabilities": [
+    "audio-generation",
+    "music-generation"
+  ],
+  "hardware": {
+    "family": "Linux NVIDIA CUDA",
+    "testedMachine": "DGX Spark / GB10 class NVIDIA system",
+    "notes": [
+      "Standalone single-GPU serving; subsequent recipes share one managed ComfyUI runtime.",
+      "NVIDIA Container Toolkit with CUDA 13-compatible host driver required."
+    ]
+  },
+  "requirements": {
+    "platforms": [
+      "linux-x64",
+      "linux-arm64"
+    ],
+    "memoryGb": 95,
+    "diskGb": 39,
+    "commands": [
+      "docker",
+      "python3"
+    ],
+    "accelerators": [
+      "cuda",
+      "nvidia-gpu"
+    ]
+  },
+  "backend": {
+    "id": "comfyui-media",
+    "name": "ComfyUI media",
+    "type": "openai-compatible-server",
+    "features": [
+      "cuda",
+      "audio-generation",
+      "video-generation",
+      "image-generation",
+      "image-editing"
+    ]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-docker",
+        "title": "Check Docker CLI",
+        "action": "check-command",
+        "command": "docker",
+        "args": [
+          "--version"
+        ]
+      },
+      {
+        "id": "download-1-ace_step_1.5_comfyui_files",
+        "title": "Download Comfy-Org/ace_step_1.5_ComfyUI_files files for ace-step-1.5-xl-sft",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "Comfy-Org/ace_step_1.5_ComfyUI_files",
+        "revision": "694a9723ff772285c73f0700caacf944d3f02f8d",
+        "include": [
+          "split_files/diffusion_models/acestep_v1.5_xl_sft_bf16.safetensors",
+          "split_files/text_encoders/qwen_0.6b_ace15.safetensors",
+          "split_files/text_encoders/qwen_4b_ace15.safetensors",
+          "split_files/vae/ace_1.5_vae.safetensors"
+        ],
+        "downloadSizeBytes": 19882894142,
+        "integrity": {
+          "files": [
+            {
+              "path": "split_files/diffusion_models/acestep_v1.5_xl_sft_bf16.safetensors",
+              "sizeBytes": 9974719930,
+              "sha256": "3c05ae268353b3540fb1fd7db4fd77ffbda9802ec641b624e15648e030ecf3ce"
+            },
+            {
+              "path": "split_files/text_encoders/qwen_0.6b_ace15.safetensors",
+              "sizeBytes": 1191588248,
+              "sha256": "fd4590c82153b8ddb67e15a2e7aaa8afa8b83a858c8a9b82a4831063156aa7a7"
+            },
+            {
+              "path": "split_files/text_encoders/qwen_4b_ace15.safetensors",
+              "sizeBytes": 8379154232,
+              "sha256": "ffe5ffb855086c2ab55e467e9859fb01894781020a0376484dd19de166b79873"
+            },
+            {
+              "path": "split_files/vae/ace_1.5_vae.safetensors",
+              "sizeBytes": 337431732,
+              "sha256": "6de92e3a862acd287e08b024ac90f0783a8635451b728721a33ff03565bcb2bb"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "ace-step-1.5-xl-sft",
+      "model": "ACE-Step/ACE-Step-1.5-XL-SFT",
+      "gatewayModel": "ACE-Step/ACE-Step-1.5-XL-SFT",
+      "runtime": "comfyui-media",
+      "backendConfig": "comfyui-media",
+      "kind": "audio_generation",
+      "input": [
+        "text"
+      ],
+      "output": [
+        "audio"
+      ],
+      "capabilities": [
+        "audio-generation",
+        "music-generation"
+      ],
+      "settings": {
+        "memoryGb": 95,
+        "priority": 20,
+        "keepWarm": false,
+        "maxActiveRequests": 1,
+        "startupTimeoutMs": 900000,
+        "runtime": {
+          "adapter": "docker",
+          "management": "managed",
+          "containerName": "lloom-comfyui-media",
+          "healthUrl": "http://127.0.0.1:${port}/health",
+          "bootstrap": {
+            "adapter": "docker",
+            "image": "lloom/comfyui-media:source-a5f096e73c1442c654d0d4f82314e63f2d8e3375cf72707cd7046a521111b866",
+            "pull": false,
+            "createArgs": [
+              "--restart",
+              "unless-stopped",
+              "--gpus",
+              "all",
+              "--ipc",
+              "host",
+              "-p",
+              "127.0.0.1:${port}:8000",
+              "-v",
+              "${modelRoot}:/opt/lloom-models:ro",
+              "-v",
+              "lloom-comfyui-media-data:/data",
+              "-e",
+              "LLOOM_MEDIA_DATA_ROOT=/data"
+            ]
+          }
+        },
+        "timeoutMs": 1800000
+      }
+    }
+  ]
+}

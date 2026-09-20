@@ -91,6 +91,7 @@ LLooM currently fronts these local contracts:
 - `POST /v1/images/edits`
 - `POST /v1/videos/generations`
 - `POST /v1/audio/speech`
+- `POST /v1/audio/generations`
 - `POST /v1/audio/transcriptions`
 - `GET /gateway/onboarding/plan`
 - `POST /gateway/onboarding/apply`
@@ -139,6 +140,14 @@ The Responses bridge also supports free-form custom tool round trips and preserv
 `/v1/embeddings` proxies OpenAI-compatible embedding requests to models with `kind: "embedding"`, rewrites the selected gateway model to the upstream model ID, and preserves upstream usage fields.
 
 `/v1/audio/speech` proxies OpenAI-compatible speech-generation requests to models with `kind: "audio_speech"`. Raw upstream responses are forwarded as bytes so audio containers are not coerced through text decoding. JSON bodies accept OpenAI fields plus Qwen extensions (`instructions`/`instruct`, `ref_audio`, `ref_text`, `language`/`lang_code`); `instructions` is mirrored to `instruct` for mlx-audio. Multipart form-data is also accepted so clients can upload `ref_audio` for voice cloning.
+
+`/v1/audio/generations` is the music and general audio-generation route. It proxies to
+models with `kind: "audio_generation"` and rewrites the selected gateway model to the
+upstream model ID, forwarding raw media bytes and using the same long-running media
+dispatcher as `/v1/videos/generations`. A model of any other kind is refused with
+`wrong_model_kind`, and `/v1/audio/speech` likewise refuses generation models: a music
+lane takes lyrics and a style and returns a song, while a speech lane takes text and a
+named voice. `GET /v1/audio/generations/models` lists the generation catalog.
 
 Speech discovery (no inference required):
 

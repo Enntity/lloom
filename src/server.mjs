@@ -1501,6 +1501,49 @@ async function proxyRawResponse(res, upstream, { signal, timing, corsConfig } = 
   };
 }
 
+// Forward binary generation output without retaining the artifact in gateway memory.
+async function proxyRawResponseStreaming(res, upstream, { signal, timing, progress, corsConfig } = {}) {
+  throwIfClientClosed(signal, res);
+  setCors(res, corsConfig);
+  res.writeHead(upstream.status, copyResponseHeaders(upstream));
+  res.flushHeaders();
+  let responseBytes = 0;
+  if (upstream.body) {
+    for await (const chunk of upstream.body) {
+      throwIfClientClosed(signal, res);
+      const buffer = Buffer.from(chunk);
+      if (!buffer.length) continue;
+      markFirstContent(timing);
+      responseBytes += buffer.length;
+      progress?.({ responseBytesDelta: buffer.length, modelProgress: true });
+      if (!res.write(buffer)) {
+        await new Promise((resolve, reject) => {
+          const cleanup = () => {
+            res.off('drain', drained);
+            res.off('close', closed);
+            signal?.removeEventListener('abort', closed);
+          };
+          const drained = () => {
+            cleanup();
+            resolve();
+          };
+          const closed = () => {
+            cleanup();
+            reject(new ClientClosedError());
+          };
+          res.once('drain', drained);
+          res.once('close', closed);
+          signal?.addEventListener('abort', closed, { once: true });
+          if (signal?.aborted || res.destroyed) closed();
+        });
+      }
+    }
+  }
+  throwIfClientClosed(signal, res);
+  res.end();
+  return { status: upstream.status, stream: true, responseBytes, usage: null };
+}
+
 async function proxyOpenAIChatResponse(
   res,
   upstream,
@@ -2466,7 +2509,11 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     }
   }
 
-  async function recordModelRequest({ route, resolved, stream, req, res }, fn, { deferUnsentErrors = false } = {}) {
+  async function recordModelRequest(
+    { route, resolved, stream, binaryResponse = false, req, res },
+    fn,
+    { deferUnsentErrors = false } = {}
+  ) {
     const started = Date.now();
     const requestBytes = Number(req.headers['content-length']) || 0;
     const attribution = requestEnntityAttribution(req);
@@ -2644,7 +2691,8 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         ...attribution,
         status,
         ok: false,
-        stream,
+        // Binary generation is not progress-observable before artifact headers.
+        stream: stream && (!binaryResponse || res.headersSent),
         durationMs: Date.now() - started,
         runtimeDurationMs: runtimeStartedAt == null ? 0 : Date.now() - runtimeStartedAt,
         queueWaitMs: queueStartedAt == null ? null : (runtimeStartedAt ?? Date.now()) - queueStartedAt,
@@ -2676,6 +2724,11 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         shouldFailoverModelRequest(error, res)
       ) {
         throw error;
+      }
+      if (binaryResponse && res.headersSent) {
+        // A partial artifact cannot carry an SSE error suffix or a clean EOF.
+        res.destroy();
+        return { status, stream: true, responseBytes: forwardedBytes, usage: null, error: error.message };
       }
       // Upstream death mid-stream (Metal abort, connection reset): finish SSE/JSON without
       // rethrowing into the outer handler (which would try writeHead again and crash Node).
@@ -3011,6 +3064,54 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     );
   }
 
+  async function handleOpenAIAudioGenerations(req, res) {
+    const body = await readJson(req);
+    const modelId = body.model ?? config.defaults?.audioGenerationModel;
+    if (!modelId) {
+      sendJson(res, 400, errorBody('audio generation request requires model', { code: 'missing_model' }));
+      return;
+    }
+    const resolved = await resolveRequestModel(modelId);
+    if ((resolved.model.kind ?? 'chat') !== 'audio_generation') {
+      sendJson(
+        res,
+        400,
+        errorBody(`model ${resolved.requestedId} is not an audio generation model`, {
+          code: 'wrong_model_kind',
+          model: resolved.requestedId
+        })
+      );
+      return;
+    }
+    await recordModelRequest(
+      {
+        route: '/v1/audio/generations',
+        resolved,
+        stream: true,
+        binaryResponse: true,
+        req,
+        res
+      },
+      async ({ signal, timing, progress, watchdog }) => {
+        const upstream = await fetchUpstream({
+          headers: inferenceGatewayHeaders(req, resolved),
+          backend: resolved.backend,
+          path: '/v1/audio/generations',
+          signal,
+          dispatcher: longRunningMediaDispatcher,
+          body: {
+            ...body,
+            model: resolved.model.upstreamModel
+          }
+        });
+        // Generation may take minutes without output; start the stall watchdog
+        // only when the artifact response begins, then track each binary chunk.
+        watchdog.arm();
+        return proxyRawResponseStreaming(res, upstream, { signal, timing, progress, corsConfig: config });
+      }
+    );
+  }
+
   async function handleOpenAIEmbeddings(req, res) {
     const body = await readJson(req);
     const modelId = body.model ?? config.defaults?.embeddingModel;
@@ -3325,6 +3426,10 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
   async function handleSpeechCatalog(_req, res) {
     const profiles = await listVoiceProfiles({ voicesRoot: voicesRoot() });
     sendJson(res, 200, registry.speechCatalog({ voiceProfiles: profiles }));
+  }
+
+  async function handleAudioGenerationCatalog(_req, res) {
+    sendJson(res, 200, registry.audioGenerationCatalog());
   }
 
   async function resolveTranscriptionModel(modelId) {
@@ -3804,7 +3909,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         const manifest = buildClientIntegrationManifest(
           config,
           registry.clientModels({
-            kinds: ['chat', 'audio_speech', 'audio_transcription', 'image', 'video', 'embedding']
+            kinds: ['chat', 'audio_speech', 'audio_generation', 'audio_transcription', 'image', 'video', 'embedding']
           })
         );
         const validationErrors = validateClientIntegrationManifest(manifest);
@@ -4315,6 +4420,14 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
 
       if (
         req.method === 'GET' &&
+        (url.pathname === '/v1/audio/generations/models' || url.pathname === '/gateway/audio/generations/models')
+      ) {
+        await handleAudioGenerationCatalog(req, res);
+        return;
+      }
+
+      if (
+        req.method === 'GET' &&
         (url.pathname === '/v1/audio/transcriptions/schema' || url.pathname === '/gateway/audio/transcriptions/schema')
       ) {
         handleTranscriptionSchema(req, res, url);
@@ -4323,6 +4436,11 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
 
       if (req.method === 'POST' && url.pathname === '/v1/audio/speech') {
         await handleOpenAISpeech(req, res);
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/v1/audio/generations') {
+        await handleOpenAIAudioGenerations(req, res);
         return;
       }
 

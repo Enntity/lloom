@@ -76,16 +76,18 @@ function backendState(state, backendId) {
 function huggingFaceCommandCandidates(step, destination = step.destination) {
   const configured = process.env.LLOOM_HF_BIN || process.env.HF_HUB_CLI;
   const recipeOwned = destination ? path.join(path.dirname(destination), '.hf-cli', 'bin', 'hf') : null;
-  return [configured, recipeOwned, 'hf', 'huggingface-cli']
-    .filter(Boolean)
-    .map((command) => [
-      command,
-      'download',
-      step.model,
-      ...(step.revision ? ['--revision', step.revision] : []),
-      '--local-dir',
-      destination
-    ]);
+  return [configured, recipeOwned, 'hf', 'huggingface-cli'].filter(Boolean).map((command) => [
+    command,
+    'download',
+    step.model,
+    ...(step.revision ? ['--revision', step.revision] : []),
+    // A recipe that names files fetches only those. Model repositories often
+    // carry every quantization of a model, so a whole-repo download is the
+    // wrong default for any lane that serves one checkpoint.
+    ...(Array.isArray(step.include) ? step.include.flatMap((entry) => ['--include', String(entry)]) : []),
+    '--local-dir',
+    destination
+  ]);
 }
 
 async function commandAvailable(command, { env = process.env } = {}) {
@@ -181,11 +183,18 @@ async function executeDownloadModel(step, { env = process.env, stdio } = {}) {
   } catch (error) {
     return { ok: false, status: 'failed', command, stdout: '', stderr: error?.message ?? String(error) };
   }
-  const workCommand = huggingFaceCommandCandidates(step, prepared.workPath).find(
-    (candidate) => candidate[0] === command[0]
-  );
-  const execution = await executeCommand(workCommand, { env, stdio });
-  if (!execution.ok) return { ...execution, status: 'failed', partialDestination: prepared.workPath };
+  const selections = step.include?.length ? step.include.map((entry) => [entry]) : [undefined];
+  const commands = [];
+  let execution;
+  for (const include of selections) {
+    const workCommand = huggingFaceCommandCandidates({ ...step, include }, prepared.workPath).find(
+      (candidate) => candidate[0] === command[0]
+    );
+    commands.push(workCommand);
+    execution = await executeCommand(workCommand, { env, stdio });
+    if (!execution.ok) return { ...execution, commands, status: 'failed', partialDestination: prepared.workPath };
+  }
+  execution.commands = commands;
   try {
     const acquisition = await finalizeModelAcquisition(step, prepared);
     return { ...execution, status: 'completed', acquisition };
@@ -286,6 +295,7 @@ async function previousRecipeStepStillApplies(step) {
 }
 
 async function previousBackendStepStillApplies(step, { env = process.env } = {}) {
+  if (step.alwaysRun === true) return false;
   if (step.skip?.skip) return true;
 
   if (step.action === 'link-command') {

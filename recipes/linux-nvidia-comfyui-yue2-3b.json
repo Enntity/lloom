@@ -1,0 +1,162 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-comfyui-yue2-3b",
+  "name": "Comfy-Org/YuE2-3B (ComfyUI, NVIDIA)",
+  "version": 1,
+  "summary": "Install Comfy-Org/YuE2-3B with a shared, locally built ComfyUI media backend.",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe metadata only; model weights retain their upstream licenses"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "ComfyUI 944386c233e02eaf877b1c8d5d513fb3d3a4d5e3; immutable provider revisions and per-file SHA-256 below."
+  },
+  "links": [
+    {
+      "rel": "source",
+      "href": "https://huggingface.co/Comfy-Org/YuE2/tree/8e6fcf0f23252ed188b634bd50d44f4b01fba890"
+    }
+  ],
+  "keywords": [
+    "cuda",
+    "fp8",
+    "nvfp4",
+    "nvidia",
+    "single-model",
+    "yue2-3b"
+  ],
+  "capabilities": [
+    "audio-generation",
+    "music-generation",
+    "symbolic-score"
+  ],
+  "hardware": {
+    "family": "Linux NVIDIA CUDA",
+    "testedMachine": "DGX Spark / GB10 class NVIDIA system",
+    "notes": [
+      "Standalone single-GPU serving; subsequent recipes share one managed ComfyUI runtime.",
+      "NVIDIA Container Toolkit with CUDA 13-compatible host driver required."
+    ]
+  },
+  "requirements": {
+    "platforms": [
+      "linux-x64",
+      "linux-arm64"
+    ],
+    "memoryGb": 95,
+    "diskGb": 24,
+    "commands": [
+      "docker",
+      "python3"
+    ],
+    "accelerators": [
+      "cuda",
+      "nvidia-gpu"
+    ]
+  },
+  "backend": {
+    "id": "comfyui-media",
+    "name": "ComfyUI media",
+    "type": "openai-compatible-server",
+    "features": [
+      "cuda",
+      "audio-generation",
+      "video-generation",
+      "image-generation",
+      "image-editing"
+    ]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-docker",
+        "title": "Check Docker CLI",
+        "action": "check-command",
+        "command": "docker",
+        "args": [
+          "--version"
+        ]
+      },
+      {
+        "id": "download-1-yue2",
+        "title": "Download Comfy-Org/YuE2 files for yue2-3b",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "Comfy-Org/YuE2",
+        "revision": "8e6fcf0f23252ed188b634bd50d44f4b01fba890",
+        "include": [
+          "checkpoints/yue2_3b_int8_convrot.safetensors"
+        ],
+        "downloadSizeBytes": 3960938800,
+        "integrity": {
+          "files": [
+            {
+              "path": "checkpoints/yue2_3b_int8_convrot.safetensors",
+              "sizeBytes": 3960938800,
+              "sha256": "96fe199377309001ed8cd26a944baeee8cc31a20ba7c36d1d3c0a7e1f4149db6"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "yue2-3b",
+      "model": "Comfy-Org/YuE2-3B",
+      "gatewayModel": "Comfy-Org/YuE2-3B",
+      "runtime": "comfyui-media",
+      "backendConfig": "comfyui-media",
+      "kind": "audio_generation",
+      "input": [
+        "text"
+      ],
+      "output": [
+        "audio"
+      ],
+      "capabilities": [
+        "audio-generation",
+        "music-generation"
+      ],
+      "settings": {
+        "memoryGb": 95,
+        "priority": 20,
+        "keepWarm": false,
+        "maxActiveRequests": 1,
+        "startupTimeoutMs": 900000,
+        "runtime": {
+          "adapter": "docker",
+          "management": "managed",
+          "containerName": "lloom-comfyui-media",
+          "healthUrl": "http://127.0.0.1:${port}/health",
+          "bootstrap": {
+            "adapter": "docker",
+            "image": "lloom/comfyui-media:source-a5f096e73c1442c654d0d4f82314e63f2d8e3375cf72707cd7046a521111b866",
+            "pull": false,
+            "createArgs": [
+              "--restart",
+              "unless-stopped",
+              "--gpus",
+              "all",
+              "--ipc",
+              "host",
+              "-p",
+              "127.0.0.1:${port}:8000",
+              "-v",
+              "${modelRoot}:/opt/lloom-models:ro",
+              "-v",
+              "lloom-comfyui-media-data:/data",
+              "-e",
+              "LLOOM_MEDIA_DATA_ROOT=/data"
+            ]
+          }
+        },
+        "timeoutMs": 1800000
+      }
+    }
+  ]
+}

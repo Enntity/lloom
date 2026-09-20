@@ -303,6 +303,29 @@ export function createRegistry(config) {
     };
   }
 
+  function audioGenerationCatalog() {
+    const models = catalogModels({
+      includeAliases: true,
+      kinds: ['audio_generation'],
+      advertisedOnly: true
+    });
+    return {
+      object: 'audio.generation.catalog',
+      defaultModel: config.defaults?.audioGenerationModel ?? null,
+      endpoints: {
+        generations: '/v1/audio/generations',
+        models: '/v1/models'
+      },
+      models: models.map((model) => ({
+        id: model.id,
+        name: model.name ?? model.id,
+        backend: model.backend,
+        runtime: model.runtime,
+        upstreamModel: model.upstreamModel ?? model.id
+      }))
+    };
+  }
+
   function voices(modelId) {
     const resolved = resolveSpeechModel(modelId);
     return listVoicesForModel(resolved.model);
@@ -330,6 +353,7 @@ export function createRegistry(config) {
     clientModels,
     openAIModels,
     speechCatalog,
+    audioGenerationCatalog,
     voices,
     speechSchema,
     transcriptionSchema

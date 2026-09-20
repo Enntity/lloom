@@ -447,6 +447,7 @@ export async function planBackend(
           title: step.title ?? step.id,
           action: step.action,
           description: step.description,
+          ...(step.alwaysRun === true ? { alwaysRun: true } : {}),
           command: setupCommand(step, variables)
         };
         const skip = await setupSkip(step, variables);

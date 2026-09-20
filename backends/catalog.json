@@ -955,6 +955,49 @@
         "notes": "SGLang releases affected by issue #36333 need PR #36418 or an equivalent exact-source fix before disconnect reliably reaches the scheduler.",
         "evidence": ["https://github.com/sgl-project/sglang/issues/36333", "https://github.com/sgl-project/sglang/pull/36418"]
       }
+    },
+    {
+      "id": "comfyui-media",
+      "name": "ComfyUI media (NVIDIA Docker)",
+      "kind": "openai-compatible-server",
+      "description": "Locally built, source-pinned ComfyUI with fixed image, video and music workflows.",
+      "platforms": ["linux-arm64", "linux-x64"],
+      "features": [
+        "image-generation",
+        "image-editing",
+        "video-generation",
+        "audio-generation",
+        "music-generation",
+        "cuda",
+        "docker"
+      ],
+      "commands": ["docker", "python3"],
+      "setup": [
+        {
+          "id": "build-comfyui-media",
+          "title": "Build or reuse the source-pinned ComfyUI media image",
+          "action": "command",
+          "command": "python3",
+          "args": [
+            "${repoRoot}/backends/comfyui-media/install.py",
+            "--install-root",
+            "${installRoot}",
+            "--shim-dir",
+            "${shimDir}"
+          ],
+          "alwaysRun": true
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "version-dependent",
+        "modes": ["buffered"],
+        "notes": "The bridge serializes all modalities and retains its slot until ComfyUI proves the job terminal."
+      }
     }
   ]
 }

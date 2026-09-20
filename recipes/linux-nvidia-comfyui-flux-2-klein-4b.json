@@ -1,0 +1,216 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-comfyui-flux-2-klein-4b",
+  "name": "black-forest-labs/FLUX.2-klein-4B (ComfyUI, NVIDIA)",
+  "version": 1,
+  "summary": "Install black-forest-labs/FLUX.2-klein-4B with a shared, locally built ComfyUI media backend.",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe metadata only; model weights retain their upstream licenses"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "ComfyUI 944386c233e02eaf877b1c8d5d513fb3d3a4d5e3; immutable provider revisions and per-file SHA-256 below."
+  },
+  "links": [
+    {
+      "rel": "source",
+      "href": "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B"
+    },
+    {
+      "rel": "source",
+      "href": "https://huggingface.co/Comfy-Org/flux2-dev/tree/ab9055628ea245000e610f2aa2c96f4746093546"
+    },
+    {
+      "rel": "source",
+      "href": "https://huggingface.co/Comfy-Org/z_image_turbo/tree/08d04455279082882deaabc8d0d09fc914c071e1"
+    },
+    {
+      "rel": "source",
+      "href": "https://huggingface.co/black-forest-labs/FLUX.2-klein-4b-nvfp4/tree/1db2b2f776c24b76f1122e5f69ab1949fc620068"
+    }
+  ],
+  "keywords": [
+    "cuda",
+    "flux.2-klein-4b",
+    "fp8",
+    "nvfp4",
+    "nvidia",
+    "single-model"
+  ],
+  "capabilities": [
+    "image-generation",
+    "image-editing"
+  ],
+  "hardware": {
+    "family": "Linux NVIDIA CUDA",
+    "testedMachine": "DGX Spark / GB10 class NVIDIA system",
+    "notes": [
+      "Standalone single-GPU serving; subsequent recipes share one managed ComfyUI runtime.",
+      "NVIDIA Container Toolkit with CUDA 13-compatible host driver required."
+    ]
+  },
+  "requirements": {
+    "platforms": [
+      "linux-x64",
+      "linux-arm64"
+    ],
+    "memoryGb": 95,
+    "diskGb": 26,
+    "commands": [
+      "docker",
+      "python3"
+    ],
+    "accelerators": [
+      "cuda",
+      "nvidia-gpu"
+    ]
+  },
+  "backend": {
+    "id": "comfyui-media",
+    "name": "ComfyUI media",
+    "type": "openai-compatible-server",
+    "features": [
+      "cuda",
+      "audio-generation",
+      "video-generation",
+      "image-generation",
+      "image-editing"
+    ]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-docker",
+        "title": "Check Docker CLI",
+        "action": "check-command",
+        "command": "docker",
+        "args": [
+          "--version"
+        ]
+      },
+      {
+        "id": "download-1-flux2-dev",
+        "title": "Download Comfy-Org/flux2-dev files for flux2-klein-4b-nvfp4",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "Comfy-Org/flux2-dev",
+        "revision": "ab9055628ea245000e610f2aa2c96f4746093546",
+        "include": [
+          "split_files/vae/flux2-vae.safetensors"
+        ],
+        "downloadSizeBytes": 336213556,
+        "integrity": {
+          "files": [
+            {
+              "path": "split_files/vae/flux2-vae.safetensors",
+              "sizeBytes": 336213556,
+              "sha256": "d64f3a68e1cc4f9f4e29b6e0da38a0204fe9a49f2d4053f0ec1fa1ca02f9c4b5"
+            }
+          ]
+        }
+      },
+      {
+        "id": "download-2-z_image_turbo",
+        "title": "Download Comfy-Org/z_image_turbo files for flux2-klein-4b-nvfp4",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "Comfy-Org/z_image_turbo",
+        "revision": "08d04455279082882deaabc8d0d09fc914c071e1",
+        "include": [
+          "split_files/text_encoders/qwen_3_4b_fp4_mixed.safetensors"
+        ],
+        "downloadSizeBytes": 3479416193,
+        "integrity": {
+          "files": [
+            {
+              "path": "split_files/text_encoders/qwen_3_4b_fp4_mixed.safetensors",
+              "sizeBytes": 3479416193,
+              "sha256": "7ca32dcf07dfe7692945d80fff86e3a74cb83c6206b9b223ac6836b939bb85d6"
+            }
+          ]
+        }
+      },
+      {
+        "id": "download-3-flux.2-klein-4b-nvfp4",
+        "title": "Download black-forest-labs/FLUX.2-klein-4b-nvfp4 files for flux2-klein-4b-nvfp4",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "black-forest-labs/FLUX.2-klein-4b-nvfp4",
+        "revision": "1db2b2f776c24b76f1122e5f69ab1949fc620068",
+        "include": [
+          "flux-2-klein-4b-nvfp4.safetensors"
+        ],
+        "downloadSizeBytes": 2460413488,
+        "integrity": {
+          "files": [
+            {
+              "path": "flux-2-klein-4b-nvfp4.safetensors",
+              "sizeBytes": 2460413488,
+              "sha256": "d8c5007b6a3bbbdfd38538bbcef5101a55dfde81894f58d2e3c8701cdef3542b"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "flux2-klein-4b-nvfp4",
+      "model": "black-forest-labs/FLUX.2-klein-4B",
+      "gatewayModel": "black-forest-labs/FLUX.2-klein-4B",
+      "runtime": "comfyui-media",
+      "backendConfig": "comfyui-media",
+      "kind": "image",
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "image"
+      ],
+      "capabilities": [
+        "image-generation",
+        "image-editing"
+      ],
+      "settings": {
+        "memoryGb": 95,
+        "priority": 30,
+        "keepWarm": false,
+        "maxActiveRequests": 1,
+        "startupTimeoutMs": 900000,
+        "runtime": {
+          "adapter": "docker",
+          "management": "managed",
+          "containerName": "lloom-comfyui-media",
+          "healthUrl": "http://127.0.0.1:${port}/health",
+          "bootstrap": {
+            "adapter": "docker",
+            "image": "lloom/comfyui-media:source-a5f096e73c1442c654d0d4f82314e63f2d8e3375cf72707cd7046a521111b866",
+            "pull": false,
+            "createArgs": [
+              "--restart",
+              "unless-stopped",
+              "--gpus",
+              "all",
+              "--ipc",
+              "host",
+              "-p",
+              "127.0.0.1:${port}:8000",
+              "-v",
+              "${modelRoot}:/opt/lloom-models:ro",
+              "-v",
+              "lloom-comfyui-media-data:/data",
+              "-e",
+              "LLOOM_MEDIA_DATA_ROOT=/data"
+            ]
+          }
+        },
+        "timeoutMs": 1800000
+      }
+    }
+  ]
+}

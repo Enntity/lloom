@@ -187,6 +187,11 @@
                 "pattern": "^[a-fA-F0-9]{40,64}$",
                 "description": "Immutable provider revision used for reproducible acquisition."
               },
+              "include": {
+                "type": "array",
+                "description": "Repository-relative paths or globs to fetch instead of the whole model repository. A checkpoint repository usually carries every quantization, so a lane that serves one file should name it.",
+                "items": { "type": "string", "minLength": 1 }
+              },
               "downloadSizeBytes": {
                 "type": "integer",
                 "minimum": 0,

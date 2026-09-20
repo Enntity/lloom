@@ -1,0 +1,205 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-comfyui-minimax-h3-turbo",
+  "name": "MiniMaxAI/MiniMax-H3-Turbo (ComfyUI, NVIDIA)",
+  "version": 1,
+  "summary": "Install MiniMaxAI/MiniMax-H3-Turbo with a shared, locally built ComfyUI media backend.",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe metadata only; model weights retain their upstream licenses"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "ComfyUI 944386c233e02eaf877b1c8d5d513fb3d3a4d5e3; immutable provider revisions and per-file SHA-256 below."
+  },
+  "links": [
+    {
+      "rel": "source",
+      "href": "https://huggingface.co/Comfy-Org/MiniMax-H3/tree/7e75982b97cd5a41d2dcfa1904ee88d0686d6fd1"
+    },
+    {
+      "rel": "source",
+      "href": "https://huggingface.co/lightx2v/Minimax-h3-Turbo/tree/3ec17a324ced54151364f24f8b5fb6bf7e26414f"
+    }
+  ],
+  "keywords": [
+    "cuda",
+    "fp8",
+    "minimax-h3-turbo",
+    "nvfp4",
+    "nvidia",
+    "single-model"
+  ],
+  "capabilities": [
+    "video-generation",
+    "text-to-video"
+  ],
+  "hardware": {
+    "family": "Linux NVIDIA CUDA",
+    "testedMachine": "DGX Spark / GB10 class NVIDIA system",
+    "notes": [
+      "Standalone single-GPU serving; subsequent recipes share one managed ComfyUI runtime.",
+      "NVIDIA Container Toolkit with CUDA 13-compatible host driver required."
+    ]
+  },
+  "requirements": {
+    "platforms": [
+      "linux-x64",
+      "linux-arm64"
+    ],
+    "memoryGb": 95,
+    "diskGb": 61,
+    "commands": [
+      "docker",
+      "python3"
+    ],
+    "accelerators": [
+      "cuda",
+      "nvidia-gpu"
+    ]
+  },
+  "backend": {
+    "id": "comfyui-media",
+    "name": "ComfyUI media",
+    "type": "openai-compatible-server",
+    "features": [
+      "cuda",
+      "audio-generation",
+      "video-generation",
+      "image-generation",
+      "image-editing"
+    ]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-docker",
+        "title": "Check Docker CLI",
+        "action": "check-command",
+        "command": "docker",
+        "args": [
+          "--version"
+        ]
+      },
+      {
+        "id": "download-1-minimax-h3",
+        "title": "Download Comfy-Org/MiniMax-H3 files for minimax-h3-turbo",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "Comfy-Org/MiniMax-H3",
+        "revision": "7e75982b97cd5a41d2dcfa1904ee88d0686d6fd1",
+        "include": [
+          "diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+          "text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+          "vae/minimax_h3_audio_vae_fp32.safetensors",
+          "vae/minimax_h3_video_vae_fp16.safetensors"
+        ],
+        "downloadSizeBytes": 42470585471,
+        "integrity": {
+          "files": [
+            {
+              "path": "diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+              "sizeBytes": 20970379616,
+              "sha256": "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a"
+            },
+            {
+              "path": "text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+              "sizeBytes": 15687142551,
+              "sha256": "35a88d51044231fe332301d7a62aa81e3f2cba62febeb446e2c1e3e0ef76f2c6"
+            },
+            {
+              "path": "vae/minimax_h3_audio_vae_fp32.safetensors",
+              "sizeBytes": 605254808,
+              "sha256": "8e505d95dd1561d47abd43d4238fd40d9bb1ae9e147ed0a4cba778d76ae4db48"
+            },
+            {
+              "path": "vae/minimax_h3_video_vae_fp16.safetensors",
+              "sizeBytes": 5207808496,
+              "sha256": "7c1f131492e7eddacaac9069a61b81bdd39de5cc96561e677c5eab1cdce5e522"
+            }
+          ]
+        }
+      },
+      {
+        "id": "download-2-minimax-h3-turbo",
+        "title": "Download lightx2v/Minimax-h3-Turbo files for minimax-h3-turbo",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "lightx2v/Minimax-h3-Turbo",
+        "revision": "3ec17a324ced54151364f24f8b5fb6bf7e26414f",
+        "include": [
+          "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
+        ],
+        "downloadSizeBytes": 1956193000,
+        "integrity": {
+          "files": [
+            {
+              "path": "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
+              "sizeBytes": 1956193000,
+              "sha256": "2339acdf19bfe123f46b971ea35d367a84adb85de43627e1eceafa5a5b2b111e"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "minimax-h3-turbo",
+      "model": "MiniMaxAI/MiniMax-H3-Turbo",
+      "gatewayModel": "MiniMaxAI/MiniMax-H3-Turbo",
+      "runtime": "comfyui-media",
+      "backendConfig": "comfyui-media",
+      "kind": "video",
+      "input": [
+        "text"
+      ],
+      "output": [
+        "video",
+        "audio"
+      ],
+      "capabilities": [
+        "video-generation",
+        "text-to-video"
+      ],
+      "settings": {
+        "memoryGb": 95,
+        "priority": 20,
+        "keepWarm": false,
+        "maxActiveRequests": 1,
+        "startupTimeoutMs": 900000,
+        "runtime": {
+          "adapter": "docker",
+          "management": "managed",
+          "containerName": "lloom-comfyui-media",
+          "healthUrl": "http://127.0.0.1:${port}/health",
+          "bootstrap": {
+            "adapter": "docker",
+            "image": "lloom/comfyui-media:source-a5f096e73c1442c654d0d4f82314e63f2d8e3375cf72707cd7046a521111b866",
+            "pull": false,
+            "createArgs": [
+              "--restart",
+              "unless-stopped",
+              "--gpus",
+              "all",
+              "--ipc",
+              "host",
+              "-p",
+              "127.0.0.1:${port}:8000",
+              "-v",
+              "${modelRoot}:/opt/lloom-models:ro",
+              "-v",
+              "lloom-comfyui-media-data:/data",
+              "-e",
+              "LLOOM_MEDIA_DATA_ROOT=/data"
+            ]
+          }
+        },
+        "timeoutMs": 1800000
+      }
+    }
+  ]
+}

@@ -109,3 +109,18 @@ MiaAI and sparkDash comparison
 protocols are credited in the benchmark documentation; their AGPL serving code
 is not included in these NVIDIA bundles. Model weights are downloaded separately
 under their publisher's terms.
+
+## ComfyUI media backend
+
+The optional backend in `backends/comfyui-media` downloads and builds
+[ComfyUI](https://github.com/Comfy-Org/ComfyUI) at
+`944386c233e02eaf877b1c8d5d513fb3d3a4d5e3`. ComfyUI retains its
+[upstream license](https://github.com/Comfy-Org/ComfyUI/blob/944386c233e02eaf877b1c8d5d513fb3d3a4d5e3/LICENSE)
+and notices in the built image. ComfyUI source, third-party Python dependencies,
+and model weights are not included in the LLooM npm package. The fixed workflow
+builders use ComfyUI's native node contracts and public workflow examples.
+
+Each media recipe identifies its model and download sources. Their model-weight
+licenses are separate from LLooM's MIT license; no blanket commercial-use grant
+is made. See [ComfyUI media recipes](docs/comfyui-media.md) for installation and
+source details.

@@ -1,0 +1,6 @@
+**/__pycache__
+**/*.pyc
+**/test_*.py
+bridge/tests
+install.py
+README.md

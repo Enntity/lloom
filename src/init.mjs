@@ -159,6 +159,14 @@ function recipeModelKind(recipeModel) {
   const capabilities = new Set(asArray(recipeModel.capabilities));
   if (capabilities.has('video-generation')) return 'video';
   if (capabilities.has('image-generation') || capabilities.has('image-editing')) return 'image';
+  if (
+    capabilities.has('audio-generation') ||
+    capabilities.has('music-generation') ||
+    capabilities.has('audio-music-generation')
+  ) {
+    // A music/generation capability wins over speech: generation models accept lyrics and style, not named voices.
+    return 'audio_generation';
+  }
   if (capabilities.has('audio-speech') || capabilities.has('tts')) return 'audio_speech';
   if (capabilities.has('audio-transcription') || capabilities.has('stt')) return 'audio_transcription';
   if (capabilities.has('embedding')) return 'embedding';
@@ -177,6 +185,13 @@ function recipeModelOutput(recipeModel) {
   const capabilities = new Set(asArray(recipeModel.capabilities));
   if (capabilities.has('video-generation')) return ['video'];
   if (capabilities.has('image-generation')) return ['image'];
+  if (
+    capabilities.has('audio-generation') ||
+    capabilities.has('music-generation') ||
+    capabilities.has('audio-music-generation')
+  ) {
+    return ['audio'];
+  }
   if (capabilities.has('audio-speech') || capabilities.has('tts')) return ['audio'];
   if (capabilities.has('audio-transcription') || capabilities.has('stt')) return ['text'];
   return ['text'];
@@ -898,6 +913,17 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
       config.models.push(materializedModel);
     } else if (config.runtimes[runtimeId]?.recipe?.id === recipe.id) {
       Object.assign(existingModel, materializedModel);
+    } else if (backendId === 'comfyui-media') {
+      // Media recipes refresh their API contract when reusing an existing
+      // shared engine. Preserve the operator's upstream route.
+      for (const key of ['kind', 'input', 'output', 'capabilities', 'reasoning', 'supportsTools', 'tts', 'stt']) {
+        if (Object.hasOwn(materializedModel, key)) existingModel[key] = materializedModel[key];
+        else delete existingModel[key];
+      }
+      if (existingModel.kind === 'audio_generation' && config.defaults?.speechModel === modelId) {
+        delete config.defaults.speechModel;
+        config.defaults.audioGenerationModel ??= modelId;
+      }
     }
 
     finishRecipeModelConfig(config, recipeModel, materializedModel, modelId);
@@ -1004,6 +1030,7 @@ function finishRecipeModelConfig(config, recipeModel, materializedModel, modelId
     else if (kind === 'video') config.defaults.videoModel = modelId;
     else if (kind === 'embedding') config.defaults.embeddingModel = modelId;
     else if (kind === 'audio_speech') config.defaults.speechModel = modelId;
+    else if (kind === 'audio_generation') config.defaults.audioGenerationModel = modelId;
     else if (kind === 'audio_transcription') config.defaults.transcriptionModel = modelId;
     else config.defaults.chatModel = modelId;
   }
@@ -1190,7 +1217,15 @@ function restrictAdvertisedModelsToRecipe(config, recipe) {
     config.aliases[aliasId] = setAliasAdvertise(alias, selected);
   }
 
-  for (const key of ['chatModel', 'imageModel', 'videoModel', 'embeddingModel', 'speechModel', 'transcriptionModel']) {
+  for (const key of [
+    'chatModel',
+    'imageModel',
+    'videoModel',
+    'embeddingModel',
+    'speechModel',
+    'transcriptionModel',
+    'audioGenerationModel'
+  ]) {
     const modelId = config.defaults?.[key];
     if (modelId && !advertisedModelIds.has(modelId)) delete config.defaults[key];
   }

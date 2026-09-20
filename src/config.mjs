@@ -516,6 +516,7 @@ export async function loadConfig(
       embeddingModel: undefined,
       speechModel: undefined,
       transcriptionModel: undefined,
+      audioGenerationModel: undefined,
       ...asObject(expanded.defaults)
     },
     providers: asObject(expanded.providers),

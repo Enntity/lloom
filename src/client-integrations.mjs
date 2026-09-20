@@ -289,6 +289,8 @@ function gatewayEndpoints(baseUrl) {
     anthropicMessages: `${root}/messages`,
     images: `${root}/images/generations`,
     embeddings: `${root}/embeddings`,
+    audioGenerations: `${root}/audio/generations`,
+    audioGenerationCatalog: `${root}/audio/generations/models`,
     speech: `${root}/audio/speech`,
     speechSchema: `${root}/audio/speech/schema`,
     voices: `${root}/audio/voices`,
@@ -426,6 +428,7 @@ export function buildClientIntegrationManifest(config, models) {
         ...(discovery.tts ? { tts: discovery.tts } : {}),
         ...(discovery.stt ? { stt: discovery.stt } : {}),
         ...(discovery.speech ? { speech: discovery.speech } : {}),
+        ...(discovery.audioGeneration ? { audioGeneration: discovery.audioGeneration } : {}),
         ...(discovery.transcription ? { transcription: discovery.transcription } : {})
       };
     })

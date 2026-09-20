@@ -1,0 +1,59 @@
+{
+  "Lightricks--LTX-2.5": {
+    "diffusion_models": "diffusion_models",
+    "latent_upscale_models": "latent_upscale_models",
+    "text_encoders": "text_encoders",
+    "vae": "vae"
+  },
+  "Comfy-Org--MiniMax-Music-3": {
+    "diffusion_models": "diffusion_models",
+    "text_encoders": "text_encoders",
+    "vae": "vae"
+  },
+  "Comfy-Org--Qwen-Image_ComfyUI/split_files": {
+    "diffusion_models": "diffusion_models",
+    "text_encoders": "text_encoders",
+    "vae": "vae"
+  },
+  "lightx2v--Qwen-Image-2512-Lightning": {
+    "loras": "."
+  },
+  "Comfy-Org--Krea-2": {
+    "diffusion_models": "diffusion_models",
+    "text_encoders": "text_encoders"
+  },
+  "Comfy-Org--Qwen-Image-Edit_ComfyUI/split_files": {
+    "diffusion_models": "diffusion_models"
+  },
+  "Comfy-Org--ace_step_1.5_ComfyUI_files/split_files": {
+    "diffusion_models": "diffusion_models",
+    "text_encoders": "text_encoders",
+    "vae": "vae"
+  },
+  "Comfy-Org--Ideogram-4": {
+    "diffusion_models": "diffusion_models"
+  },
+  "Comfy-Org--Qwen3-VL": {
+    "text_encoders": "text_encoders"
+  },
+  "Comfy-Org--flux2-dev/split_files": {
+    "vae": "vae"
+  },
+  "Comfy-Org--MiniMax-H3": {
+    "diffusion_models": "diffusion_models",
+    "text_encoders": "text_encoders",
+    "vae": "vae"
+  },
+  "Comfy-Org--z_image_turbo/split_files": {
+    "text_encoders": "text_encoders"
+  },
+  "black-forest-labs--FLUX.2-klein-4b-nvfp4": {
+    "diffusion_models": "."
+  },
+  "lightx2v--Minimax-h3-Turbo": {
+    "loras": "."
+  },
+  "Comfy-Org--YuE2": {
+    "checkpoints": "checkpoints"
+  }
+}

@@ -820,6 +820,266 @@
         "type": "local",
         "url": "recipes/apple-silicon-qwen36.json"
       }
+    },
+    {
+      "id": "linux-nvidia-comfyui-ace-step-1-5-xl-sft",
+      "path": "linux-nvidia-comfyui-ace-step-1-5-xl-sft.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-comfyui-ace-step-1-5-xl-sft.json",
+          "status": "current"
+        }
+      ],
+      "name": "ACE-Step/ACE-Step-1.5-XL-SFT (ComfyUI, NVIDIA)",
+      "summary": "Install ACE-Step/ACE-Step-1.5-XL-SFT with a shared, locally built ComfyUI media backend.",
+      "tags": ["ace-step-1.5-xl-sft", "cuda", "fp8", "nvfp4", "nvidia", "single-model"],
+      "capabilities": ["audio-generation", "music-generation"],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-comfyui-ace-step-1-5-xl-sft.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-comfyui-ace-step-1-5-xl-turbo",
+      "path": "linux-nvidia-comfyui-ace-step-1-5-xl-turbo.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-comfyui-ace-step-1-5-xl-turbo.json",
+          "status": "current"
+        }
+      ],
+      "name": "ACE-Step/ACE-Step-1.5-XL-Turbo (ComfyUI, NVIDIA)",
+      "summary": "Install ACE-Step/ACE-Step-1.5-XL-Turbo with a shared, locally built ComfyUI media backend.",
+      "tags": ["ace-step-1.5-xl-turbo", "cuda", "fp8", "nvfp4", "nvidia", "single-model"],
+      "capabilities": ["audio-generation", "music-generation"],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-comfyui-ace-step-1-5-xl-turbo.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-comfyui-flux-2-klein-4b",
+      "path": "linux-nvidia-comfyui-flux-2-klein-4b.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-comfyui-flux-2-klein-4b.json",
+          "status": "current"
+        }
+      ],
+      "name": "black-forest-labs/FLUX.2-klein-4B (ComfyUI, NVIDIA)",
+      "summary": "Install black-forest-labs/FLUX.2-klein-4B with a shared, locally built ComfyUI media backend.",
+      "tags": ["cuda", "flux.2-klein-4b", "fp8", "nvfp4", "nvidia", "single-model"],
+      "capabilities": ["image-generation", "image-editing"],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-comfyui-flux-2-klein-4b.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-comfyui-ideogram-4",
+      "path": "linux-nvidia-comfyui-ideogram-4.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-comfyui-ideogram-4.json",
+          "status": "current"
+        }
+      ],
+      "name": "Comfy-Org/Ideogram-4 (ComfyUI, NVIDIA)",
+      "summary": "Install Comfy-Org/Ideogram-4 with a shared, locally built ComfyUI media backend.",
+      "tags": ["cuda", "fp8", "ideogram-4", "nvfp4", "nvidia", "single-model"],
+      "capabilities": ["image-generation", "typography", "layout-control", "2k-output"],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-comfyui-ideogram-4.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-comfyui-krea-2-turbo",
+      "path": "linux-nvidia-comfyui-krea-2-turbo.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-comfyui-krea-2-turbo.json",
+          "status": "current"
+        }
+      ],
+      "name": "Comfy-Org/Krea-2-Turbo (ComfyUI, NVIDIA)",
+      "summary": "Install Comfy-Org/Krea-2-Turbo with a shared, locally built ComfyUI media backend.",
+      "tags": ["cuda", "fp8", "krea-2-turbo", "nvfp4", "nvidia", "single-model"],
+      "capabilities": ["image-generation", "fast-generation"],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-comfyui-krea-2-turbo.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-comfyui-ltx-2-5",
+      "path": "linux-nvidia-comfyui-ltx-2-5.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-comfyui-ltx-2-5.json",
+          "status": "current"
+        }
+      ],
+      "name": "Lightricks/LTX-2.5 (ComfyUI, NVIDIA)",
+      "summary": "Install Lightricks/LTX-2.5 with a shared, locally built ComfyUI media backend.",
+      "tags": ["cuda", "fp8", "ltx-2.5", "nvfp4", "nvidia", "single-model"],
+      "capabilities": ["video-generation", "text-to-video", "image-to-video"],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-comfyui-ltx-2-5.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-comfyui-minimax-h3-turbo",
+      "path": "linux-nvidia-comfyui-minimax-h3-turbo.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-comfyui-minimax-h3-turbo.json",
+          "status": "current"
+        }
+      ],
+      "name": "MiniMaxAI/MiniMax-H3-Turbo (ComfyUI, NVIDIA)",
+      "summary": "Install MiniMaxAI/MiniMax-H3-Turbo with a shared, locally built ComfyUI media backend.",
+      "tags": ["cuda", "fp8", "minimax-h3-turbo", "nvfp4", "nvidia", "single-model"],
+      "capabilities": ["video-generation", "text-to-video"],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-comfyui-minimax-h3-turbo.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-comfyui-minimax-h3",
+      "path": "linux-nvidia-comfyui-minimax-h3.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-comfyui-minimax-h3.json",
+          "status": "current"
+        }
+      ],
+      "name": "MiniMaxAI/MiniMax-H3 (ComfyUI, NVIDIA)",
+      "summary": "Install MiniMaxAI/MiniMax-H3 with a shared, locally built ComfyUI media backend.",
+      "tags": ["cuda", "fp8", "minimax-h3", "nvfp4", "nvidia", "single-model"],
+      "capabilities": ["video-generation", "text-to-video", "image-to-video"],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-comfyui-minimax-h3.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-comfyui-minimax-music3",
+      "path": "linux-nvidia-comfyui-minimax-music3.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-comfyui-minimax-music3.json",
+          "status": "current"
+        }
+      ],
+      "name": "MiniMaxAI/MiniMax-Music3 (ComfyUI, NVIDIA)",
+      "summary": "Install MiniMaxAI/MiniMax-Music3 with a shared, locally built ComfyUI media backend.",
+      "tags": ["cuda", "fp8", "minimax-music3", "nvfp4", "nvidia", "single-model"],
+      "capabilities": ["audio-generation", "music-generation"],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-comfyui-minimax-music3.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-comfyui-qwen-image-2512-lightning",
+      "path": "linux-nvidia-comfyui-qwen-image-2512-lightning.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-comfyui-qwen-image-2512-lightning.json",
+          "status": "current"
+        }
+      ],
+      "name": "Qwen/Qwen-Image-2512-Lightning (ComfyUI, NVIDIA)",
+      "summary": "Install Qwen/Qwen-Image-2512-Lightning with a shared, locally built ComfyUI media backend.",
+      "tags": ["cuda", "fp8", "nvfp4", "nvidia", "qwen-image-2512-lightning", "single-model"],
+      "capabilities": ["image-generation"],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-comfyui-qwen-image-2512-lightning.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-comfyui-qwen-image-2512",
+      "path": "linux-nvidia-comfyui-qwen-image-2512.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-comfyui-qwen-image-2512.json",
+          "status": "current"
+        }
+      ],
+      "name": "Qwen/Qwen-Image-2512 (ComfyUI, NVIDIA)",
+      "summary": "Install Qwen/Qwen-Image-2512 with a shared, locally built ComfyUI media backend.",
+      "tags": ["cuda", "fp8", "nvfp4", "nvidia", "qwen-image-2512", "single-model"],
+      "capabilities": ["image-generation"],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-comfyui-qwen-image-2512.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-comfyui-qwen-image-edit-2511",
+      "path": "linux-nvidia-comfyui-qwen-image-edit-2511.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-comfyui-qwen-image-edit-2511.json",
+          "status": "current"
+        }
+      ],
+      "name": "Qwen/Qwen-Image-Edit-2511 (ComfyUI, NVIDIA)",
+      "summary": "Install Qwen/Qwen-Image-Edit-2511 with a shared, locally built ComfyUI media backend.",
+      "tags": ["cuda", "fp8", "nvfp4", "nvidia", "qwen-image-edit-2511", "single-model"],
+      "capabilities": ["image-generation", "image-editing"],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-comfyui-qwen-image-edit-2511.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-comfyui-yue2-3b",
+      "path": "linux-nvidia-comfyui-yue2-3b.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-comfyui-yue2-3b.json",
+          "status": "current"
+        }
+      ],
+      "name": "Comfy-Org/YuE2-3B (ComfyUI, NVIDIA)",
+      "summary": "Install Comfy-Org/YuE2-3B with a shared, locally built ComfyUI media backend.",
+      "tags": ["cuda", "fp8", "nvfp4", "nvidia", "single-model", "yue2-3b"],
+      "capabilities": ["audio-generation", "music-generation", "symbolic-score"],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-comfyui-yue2-3b.json"
+      }
     }
   ]
 }

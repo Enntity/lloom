@@ -661,6 +661,13 @@ export function modelDiscoveryMetadata(model) {
       family: stt.family
     };
   }
+  if ((model.kind ?? 'chat') === 'audio_generation') {
+    metadata.audioGeneration = {
+      endpoint: '/v1/audio/generations',
+      catalogEndpoint: '/v1/audio/generations/models',
+      object: 'music'
+    };
+  }
   return metadata;
 }
 
