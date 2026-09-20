@@ -15,6 +15,11 @@
     "text_encoders": "text_encoders",
     "vae": "vae"
   },
+  "Comfy-Org--Qwen-Image-2.1": {
+    "diffusion_models": "diffusion_models",
+    "text_encoders": "text_encoders",
+    "vae": "vae"
+  },
   "lightx2v--Qwen-Image-2512-Lightning": {
     "loras": "."
   },

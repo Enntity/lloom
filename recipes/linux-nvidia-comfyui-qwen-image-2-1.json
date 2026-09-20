@@ -2,48 +2,57 @@
   "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
   "schemaVersion": 1,
   "profile": "https://lloom.dev/profiles/interchange/v1",
-  "id": "linux-nvidia-comfyui-minimax-h3",
-  "name": "MiniMaxAI/MiniMax-H3 (ComfyUI, NVIDIA)",
+  "id": "linux-nvidia-comfyui-qwen-image-2-1",
+  "name": "Qwen/Qwen-Image-2.1 (ComfyUI, NVIDIA)",
   "version": 1,
-  "summary": "Install MiniMaxAI/MiniMax-H3 with a shared, locally built ComfyUI media backend.",
+  "summary": "Install Qwen/Qwen-Image-2.1, one DiT for generation and reference editing, with the shared ComfyUI media backend.",
   "license": {
     "id": "MIT",
-    "name": "Recipe metadata only; model weights retain their upstream licenses"
+    "name": "Recipe metadata only; model weights are under the Qwen Research license"
   },
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "ComfyUI 5ba116a40f1944f64e2e4a8ace826656e6293bf4; immutable provider revisions and per-file SHA-256 below."
+    "source": "ComfyUI 5ba116a40f1944f64e2e4a8ace826656e6293bf4 (Qwen-Image 2.1 support); immutable provider revisions and per-file SHA-256 below."
   },
   "links": [
     {
       "rel": "source",
-      "href": "https://huggingface.co/MiniMaxAI/MiniMax-H3"
+      "href": "https://huggingface.co/Qwen/Qwen-Image-2.1"
     },
     {
       "rel": "source",
-      "href": "https://huggingface.co/Comfy-Org/MiniMax-H3/tree/7e75982b97cd5a41d2dcfa1904ee88d0686d6fd1"
+      "href": "https://huggingface.co/Comfy-Org/Qwen-Image-2.1/tree/7562a343278731b94b18803d7de6d660cb56f841"
+    },
+    {
+      "rel": "source",
+      "href": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/image_qwen_image_2_1_t2i.json"
+    },
+    {
+      "rel": "source",
+      "href": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/image_qwen_image_2_1_image_edit.json"
     }
   ],
   "keywords": [
     "cuda",
-    "fp8",
-    "minimax-h3",
-    "nvfp4",
+    "int8",
     "nvidia",
+    "qwen-image-2.1",
+    "image-editing",
+    "transparency",
     "single-model"
   ],
   "capabilities": [
-    "video-generation",
-    "text-to-video",
-    "image-to-video"
+    "image-generation",
+    "image-editing"
   ],
   "hardware": {
     "family": "Linux NVIDIA CUDA",
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
     "notes": [
-      "Standalone single-GPU serving; subsequent recipes share one managed ComfyUI runtime.",
-      "NVIDIA Container Toolkit with CUDA 13-compatible host driver required."
+      "Standalone single-GPU serving; shares the one managed ComfyUI media runtime with the other image, video and music recipes.",
+      "NVIDIA Container Toolkit with a CUDA 13-compatible host driver required.",
+      "Weight format is int8 convrot for the DiT and text encoder, which the pinned engine runs with its own quantized kernels. No separate LoRA is needed: 2.1 samples at its own shift and cfg 1."
     ]
   },
   "requirements": {
@@ -52,7 +61,7 @@
       "linux-arm64"
     ],
     "memoryGb": 95,
-    "diskGb": 60,
+    "diskGb": 26,
     "commands": [
       "docker",
       "python3"
@@ -86,40 +95,34 @@
         ]
       },
       {
-        "id": "download-1-minimax-h3",
-        "title": "Download Comfy-Org/MiniMax-H3 files for minimax-h3",
+        "id": "download-1-qwen-image-2.1",
+        "title": "Download Comfy-Org/Qwen-Image-2.1 files for qwen-image-2.1-int8",
         "action": "download-model",
         "provider": "huggingface",
-        "model": "Comfy-Org/MiniMax-H3",
-        "revision": "7e75982b97cd5a41d2dcfa1904ee88d0686d6fd1",
+        "model": "Comfy-Org/Qwen-Image-2.1",
+        "revision": "7562a343278731b94b18803d7de6d660cb56f841",
         "include": [
-          "diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
-          "text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
-          "vae/minimax_h3_audio_vae_fp32.safetensors",
-          "vae/minimax_h3_video_vae_fp16.safetensors"
+          "diffusion_models/qwen_image_2.1_int8_convrot.safetensors",
+          "text_encoders/qwen3vl_8b_int8_convrot.safetensors",
+          "vae/qwen_image_2.1_vae_bf16.safetensors"
         ],
-        "downloadSizeBytes": 42470585471,
+        "downloadSizeBytes": 17284083112,
         "integrity": {
           "files": [
             {
-              "path": "diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
-              "sizeBytes": 20970379616,
-              "sha256": "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a"
+              "path": "diffusion_models/qwen_image_2.1_int8_convrot.safetensors",
+              "sizeBytes": 7256783064,
+              "sha256": "cb74113cb03faecd79611b01fd7fd642f0aa60d6f0b95086abee214d75eaa57d"
             },
             {
-              "path": "text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
-              "sizeBytes": 15687142551,
-              "sha256": "35a88d51044231fe332301d7a62aa81e3f2cba62febeb446e2c1e3e0ef76f2c6"
+              "path": "text_encoders/qwen3vl_8b_int8_convrot.safetensors",
+              "sizeBytes": 9350798360,
+              "sha256": "8bfd0f6e12abf2d2d697ecc888e5e90b0d6741d6708f05799f53afa560452e8f"
             },
             {
-              "path": "vae/minimax_h3_audio_vae_fp32.safetensors",
-              "sizeBytes": 605254808,
-              "sha256": "8e505d95dd1561d47abd43d4238fd40d9bb1ae9e147ed0a4cba778d76ae4db48"
-            },
-            {
-              "path": "vae/minimax_h3_video_vae_fp16.safetensors",
-              "sizeBytes": 5207808496,
-              "sha256": "7c1f131492e7eddacaac9069a61b81bdd39de5cc96561e677c5eab1cdce5e522"
+              "path": "vae/qwen_image_2.1_vae_bf16.safetensors",
+              "sizeBytes": 675509688,
+              "sha256": "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9"
             }
           ]
         }
@@ -128,28 +131,26 @@
   },
   "models": [
     {
-      "role": "minimax-h3",
-      "model": "MiniMaxAI/MiniMax-H3",
-      "gatewayModel": "MiniMaxAI/MiniMax-H3",
+      "role": "qwen-image-2.1-int8",
+      "model": "Qwen/Qwen-Image-2.1",
+      "gatewayModel": "Qwen/Qwen-Image-2.1",
       "runtime": "comfyui-media",
       "backendConfig": "comfyui-media",
-      "kind": "video",
+      "kind": "image",
       "input": [
         "text",
         "image"
       ],
       "output": [
-        "video",
-        "audio"
+        "image"
       ],
       "capabilities": [
-        "video-generation",
-        "text-to-video",
-        "image-to-video"
+        "image-generation",
+        "image-editing"
       ],
       "settings": {
         "memoryGb": 95,
-        "priority": 20,
+        "priority": 30,
         "keepWarm": false,
         "maxActiveRequests": 1,
         "startupTimeoutMs": 900000,

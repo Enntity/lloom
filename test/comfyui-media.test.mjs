@@ -10,7 +10,7 @@ import { createModelImportPlan } from '../src/model-intake.mjs';
 import { createSetupStatus } from '../src/setup-status.mjs';
 
 const recipes = (await loadRecipes()).filter((r) => r.id.startsWith('linux-nvidia-comfyui-'));
-assert.equal(recipes.length, 13);
+assert.equal(recipes.length, 14);
 const image = execFileSync('python3', ['backends/comfyui-media/install.py', '--print-image'], {
   encoding: 'utf8'
 }).trim();
@@ -79,7 +79,7 @@ try {
       assert.deepEqual(config.runtimes['comfyui-media'], runtime);
       assert.deepEqual(config.backends['comfyui-media'], backend);
     }
-    assert.equal(config.models.length, 13);
+    assert.equal(config.models.length, 14);
     assert.equal(config.models.filter((m) => m.kind === 'audio_generation').length, 4);
     assert.deepEqual(Object.keys(config.runtimes), ['comfyui-media']);
   }
@@ -174,7 +174,7 @@ try {
   );
   assert.ok(composedDestination.dependencies.every((dependency) => dependency.complete));
 
-  console.log('ComfyUI recipes: all 13 standalone; shared runtime and backend unchanged in both application orders');
+  console.log('ComfyUI recipes: all 14 standalone; shared runtime and backend unchanged in both application orders');
 } finally {
   await fs.rm(dir, { recursive: true, force: true });
 }

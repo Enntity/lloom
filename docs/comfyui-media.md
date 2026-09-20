@@ -24,7 +24,7 @@ lloom setup --recipe linux-nvidia-comfyui-ace-step-1-5-xl-turbo --additive --app
 ```
 
 The backend installer builds ComfyUI at commit
-[`944386c233e02eaf877b1c8d5d513fb3d3a4d5e3`](https://github.com/Comfy-Org/ComfyUI/commit/944386c233e02eaf877b1c8d5d513fb3d3a4d5e3)
+[`5ba116a40f1944f64e2e4a8ace826656e6293bf4`](https://github.com/Comfy-Org/ComfyUI/commit/5ba116a40f1944f64e2e4a8ace826656e6293bf4)
 with PyTorch 2.11.0/CUDA 13.0 and the bundled bridge. The image tag identifies the
 bundled build inputs by SHA-256. It is built locally, never pulled from a private
 registry. Reapplying setup checks its source label and reuses a matching image.
@@ -46,6 +46,14 @@ engines. This reuse applies to the managed runtime created by these recipes;
 an unrelated ComfyUI installation is not silently adopted. Docker backend ports
 remain bound to loopback. Clients use the authenticated LLooM gateway.
 
+Qwen-Image 2.1 is the one image family here that generates and edits from a
+single checkpoint. It samples at its own shift with classifier-free guidance off,
+so unlike `qwen-image-2512` it is not patched with an aura-flow shift and it needs
+no Lightning LoRA. Its own VAE decodes RGBA, so a prompt asking for a transparent
+background returns a PNG with a real alpha channel. Edits accept one reference
+image and follow that image's geometry; `resolution` sets the reference pixel
+budget instead of an explicit width and height.
+
 If the selected model already has a configured route, setup preserves its backend,
 runtime and upstream model ID while refreshing its media capabilities. This also
 migrates an existing music model from `audio_speech` to `audio_generation`; the
@@ -59,6 +67,7 @@ existing backend must support `/v1/audio/generations`.
 | `qwen-image-2512` | `Qwen/Qwen-Image-2512` | `/v1/images/generations` |
 | `qwen-image-2512-lightning` | `Qwen/Qwen-Image-2512-Lightning` | `/v1/images/generations` |
 | `qwen-image-edit-2511` | `Qwen/Qwen-Image-Edit-2511` | `/v1/images/generations` with inline image |
+| `qwen-image-2-1` | `Qwen/Qwen-Image-2.1` | `/v1/images/generations`, with inline image to edit |
 | `ideogram-4` | `Comfy-Org/Ideogram-4` | `/v1/images/generations` |
 | `krea-2-turbo` | `Comfy-Org/Krea-2-Turbo` | `/v1/images/generations` |
 | `minimax-h3` | `MiniMaxAI/MiniMax-H3` | `/v1/videos/generations` |

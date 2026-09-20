@@ -8,6 +8,7 @@ MODELS = {
     "Qwen/Qwen-Image-2512": {"kind": "image", "family": "qwen-image"},
     "Qwen/Qwen-Image-2512-Lightning": {"kind": "image", "family": "qwen-image-lightning"},
     "Qwen/Qwen-Image-Edit-2511": {"kind": "image", "family": "qwen-image-edit"},
+    "Qwen/Qwen-Image-2.1": {"kind": "image", "family": "qwen-image-21"},
     "Comfy-Org/Ideogram-4": {"kind": "image", "family": "ideogram4"},
     "Comfy-Org/Krea-2-Turbo": {"kind": "image", "family": "krea2"},
     "MiniMaxAI/MiniMax-H3": {"kind": "video"},
@@ -142,7 +143,9 @@ def build_graph(model_id, payload, image_filename=None, last_image_filename=None
         if not prompt.strip():
             raise ValueError("prompt is required")
         family = MODELS[model_id]["family"]
-        if family == "qwen-image-edit":
+        if family == "qwen-image-21":
+            result = qwen_image_21(g, payload, prompt, seed, image_filename)
+        elif family == "qwen-image-edit":
             if image_filename is None:
                 raise ValueError("Qwen image editing requires an image")
             result = qwen_image_edit(g, payload, prompt, seed, image_filename)
@@ -532,6 +535,49 @@ def qwen_image_edit(g, p, prompt, seed, image_filename):
     latent = g.add("VAEEncode", pixels=image, vae=vae)
     steps = number(p, "steps", 40, 20, 60, True)
     cfg = number(p, "cfg", 4.0, 1.0, 8.0)
+    sampled = g.sample(model, positive, negative, latent, seed, steps, cfg)
+    return g.add("VAEDecode", samples=sampled, vae=vae)
+
+
+def qwen_image_21(g, p, prompt, seed, image_filename):
+    """Qwen-Image 2.1: one DiT for generation, reference editing and RGBA output.
+
+    The graph mirrors the pinned official template. Its text-encode node splices
+    any reference image into the sequence as VAE latents and hands back the
+    latent it was built for, so an edit samples that latent while a
+    text-to-image request builds its own empty one.
+
+    There is deliberately no ``ModelSamplingAuraFlow``: 2.1 carries its own
+    sampling shift in the checkpoint, and the aura-flow patch (what the 2512
+    lane needs at 3.1) would override it. The template also runs cfg 1, where
+    the negative prompt is unused; it is still honoured if a caller raises cfg.
+    """
+    model = g.add("UNETLoader", unet_name="qwen_image_2.1_int8_convrot.safetensors", weight_dtype="default")
+    clip = g.add("CLIPLoader", clip_name="qwen3vl_8b_int8_convrot.safetensors", type="qwen_image", device="default")
+    vae = g.add("VAELoader", vae_name="qwen_image_2.1_vae_bf16.safetensors")
+    if image_filename is not None:
+        if any(field in p for field in ("size", "width", "height")):
+            raise ValueError("Qwen 2.1 edits follow the reference image; use resolution instead")
+        # The node resizes every reference to about resolution x resolution
+        # pixels at multiples of 32, preserving aspect ratio.
+        resolution = number(p, "resolution", 1024, 0, 2048, True, describe="the reference-image pixel budget")
+        encode = g.add("TextEncodeQwenImage21", clip=clip, vae=vae, prompt=prompt,
+                       negative_prompt=text(p, "negative_prompt", ""), resolution=resolution)
+        positive, negative, latent = encode, [encode[0], 1], [encode[0], 2]
+        image = g.add("LoadImage", image=image_filename)
+        # Autogrow inputs arrive as one named slot per image; the bridge decodes
+        # at most one conditioning image, so image_1 is the whole reference set.
+        g.nodes[encode[0]]["inputs"]["images"] = {"image_1": image}
+    else:
+        width, height = image_geometry(p)
+        # Without reference images the node resizes nothing, so its resolution
+        # is inert; generation geometry comes from the empty latent below.
+        encode = g.add("TextEncodeQwenImage21", clip=clip, vae=vae, prompt=prompt,
+                       negative_prompt=text(p, "negative_prompt", ""), resolution=1024)
+        positive, negative = encode, [encode[0], 1]
+        latent = g.add("EmptyLatentImage", width=width, height=height, batch_size=1)
+    steps = number(p, "steps", 25, 1, 60, True)
+    cfg = number(p, "cfg", 1.0, 1.0, 8.0)
     sampled = g.sample(model, positive, negative, latent, seed, steps, cfg)
     return g.add("VAEDecode", samples=sampled, vae=vae)
 

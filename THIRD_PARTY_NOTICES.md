@@ -114,8 +114,8 @@ under their publisher's terms.
 
 The optional backend in `backends/comfyui-media` downloads and builds
 [ComfyUI](https://github.com/Comfy-Org/ComfyUI) at
-`944386c233e02eaf877b1c8d5d513fb3d3a4d5e3`. ComfyUI retains its
-[upstream license](https://github.com/Comfy-Org/ComfyUI/blob/944386c233e02eaf877b1c8d5d513fb3d3a4d5e3/LICENSE)
+`5ba116a40f1944f64e2e4a8ace826656e6293bf4`. ComfyUI retains its
+[upstream license](https://github.com/Comfy-Org/ComfyUI/blob/5ba116a40f1944f64e2e4a8ace826656e6293bf4/LICENSE)
 and notices in the built image. ComfyUI source, third-party Python dependencies,
 and model weights are not included in the LLooM npm package. The fixed workflow
 builders use ComfyUI's native node contracts and public workflow examples.

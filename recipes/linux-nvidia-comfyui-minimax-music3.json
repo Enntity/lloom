@@ -13,7 +13,7 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "ComfyUI 944386c233e02eaf877b1c8d5d513fb3d3a4d5e3; immutable provider revisions and per-file SHA-256 below."
+    "source": "ComfyUI 5ba116a40f1944f64e2e4a8ace826656e6293bf4; immutable provider revisions and per-file SHA-256 below."
   },
   "links": [
     {
@@ -150,7 +150,7 @@
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/comfyui-media:source-a5f096e73c1442c654d0d4f82314e63f2d8e3375cf72707cd7046a521111b866",
+            "image": "lloom/comfyui-media:source-30af324a0cd47177353d2ece18c2b3769f563832acb81fd05a57024bda7d9f7e",
             "pull": false,
             "createArgs": [
               "--restart",
