@@ -188,6 +188,7 @@
         "maxActiveRequests": 1,
         "startupTimeoutMs": 900000,
         "runtime": {
+          "warmup": false,
           "adapter": "docker",
           "management": "managed",
           "containerName": "lloom-qwen-image-diffusers",
