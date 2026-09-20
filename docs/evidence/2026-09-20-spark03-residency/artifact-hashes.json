@@ -1,0 +1,77 @@
+[
+  {
+    "file": "qwen21-comfy-gen25.png",
+    "bytes": 1816897,
+    "sha256": "c1f2069e78381b467da84124af7f4855c6e2543612aa62f40da803b146d21c82"
+  },
+  {
+    "file": "qwen21-diffusers-gen25.png",
+    "bytes": 1686372,
+    "sha256": "065a10b9efd4a05d8d8759919a80928ff9e3ca322cde1df6af3c1a97d11c64da"
+  },
+  {
+    "file": "qwen21-diffusers-gen40.png",
+    "bytes": 1704386,
+    "sha256": "bccb16d2f29b67344cc75fa8ad82cd0f93ed1c84965158593dcf5b8c82511d63"
+  },
+  {
+    "file": "qwen21-gen40-edit40.png",
+    "bytes": 2186968,
+    "sha256": "3d99c78da526a31b85b5e5cce7c7df32c33c83d4c2dc0438c075da1855d074c3"
+  },
+  {
+    "file": "qwen21-newref-cold.png",
+    "bytes": 2196331,
+    "sha256": "d67e33defc535e5ed61f02112188311dc9f20e50c1b155335b37e1272e841e3c"
+  },
+  {
+    "file": "qwen21-newref-rgb-edit.png",
+    "bytes": 2195910,
+    "sha256": "d12103fd693aa6cae2ff936b34c6f22a881b1e7f00b91705b51dfa09c3829213"
+  },
+  {
+    "file": "qwen21-oldref-afteredit.png",
+    "bytes": 1727195,
+    "sha256": "a9c051573b9cc0608c5d4da6f6d5684a3730325dad0a6228fd617681ae6b20a5"
+  },
+  {
+    "file": "qwen21-unified-edit40.png",
+    "bytes": 2196331,
+    "sha256": "d67e33defc535e5ed61f02112188311dc9f20e50c1b155335b37e1272e841e3c"
+  },
+  {
+    "file": "spark03-default-edit.png",
+    "bytes": 1693808,
+    "sha256": "b25cd009f0d79590107083daa363aba320a0354c5ec340c785db852e4b7054a6"
+  },
+  {
+    "file": "spark03-default-generation.png",
+    "bytes": 1686372,
+    "sha256": "065a10b9efd4a05d8d8759919a80928ff9e3ca322cde1df6af3c1a97d11c64da"
+  },
+  {
+    "file": "spark03-fleet-default-edit.png",
+    "bytes": 1693808,
+    "sha256": "b25cd009f0d79590107083daa363aba320a0354c5ec340c785db852e4b7054a6"
+  },
+  {
+    "file": "spark03-fleet-default-generation.png",
+    "bytes": 1686372,
+    "sha256": "065a10b9efd4a05d8d8759919a80928ff9e3ca322cde1df6af3c1a97d11c64da"
+  },
+  {
+    "file": "spark03-music-canary.wav",
+    "bytes": 1920044,
+    "sha256": "fc0f95caefbf14f7dc8e1db6cb87a05a6c585a79f33467341ef3d4e7228a05a0"
+  },
+  {
+    "file": "spark03-video-canary.mp4",
+    "bytes": 465276,
+    "sha256": "a1eb1502853e106101d15486693cd1857241e4ff5bc0e44f40e24564671c9847"
+  },
+  {
+    "file": "spark03-video-frame.png",
+    "bytes": 589159,
+    "sha256": "2a19beb3987445dba2e0b7cf9eee41dd159b3b2102d930759a588f5e5163fbad"
+  }
+]

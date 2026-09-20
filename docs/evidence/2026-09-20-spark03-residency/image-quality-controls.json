@@ -1,0 +1,35 @@
+{
+  "source": "6126ada0d1c1c33f808f6a1711af683f3dfa8358",
+  "image": "lloom/qwen-image-diffusers:source-709d9a713b1a7340fd1cba799e45fc51690ef9a040c11e6c4457ac603c4a2d6d",
+  "comparison": {
+    "generation_steps": 25,
+    "comfy_int8_ms": 26297,
+    "diffusers_bf16_ms": 37756,
+    "resolution": "1024x1024",
+    "note": "Single paired sample, differing precision; not a generic engine speed ranking."
+  },
+  "edit": {
+    "steps": 40,
+    "warm_ms": 60803,
+    "sequential_and_cold_new_reference_sha256": "d67e33defc535e5ed61f02112188311dc9f20e50c1b155335b37e1272e841e3c",
+    "quality": "Severe color and texture artifacts on a new generated reference; original references edit cleanly. The exact cause remains unresolved after bounded controls."
+  },
+  "controls": [
+    {
+      "name": "cold new reference first",
+      "result": "Same bad SHA256 as sequential generation then edit"
+    },
+    {
+      "name": "original reference after new reference edit",
+      "result": "Clean output preserved"
+    },
+    {
+      "name": "strip generated reference alpha",
+      "result": "Same bad output"
+    },
+    {
+      "name": "40 step generation reference then 40 step edit",
+      "result": "Still severe artifacts"
+    }
+  ]
+}

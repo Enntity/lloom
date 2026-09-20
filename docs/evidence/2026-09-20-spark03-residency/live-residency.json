@@ -1,0 +1,491 @@
+{
+  "at": "2026-09-20T19:35:37.663Z",
+  "node": "ennspark03",
+  "defaults": {
+    "imageModel": "Qwen/Qwen-Image-2.1-Diffusers",
+    "videoModel": "Lightricks/LTX-2.5",
+    "embeddingModel": "Qwen/Qwen3-Embedding-4B",
+    "speechModel": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+    "transcriptionModel": "openai/whisper-large-v3-turbo",
+    "audioGenerationModel": "ACE-Step/ACE-Step-1.5-XL-SFT"
+  },
+  "runtimePolicy": {
+    "enabled": true,
+    "autoEvict": true,
+    "maxMemoryUtilization": 0.95,
+    "protectActiveRequests": true,
+    "admissionWaitMs": 120000,
+    "preferredWarmIdleMs": 30000
+  },
+  "runtimes": {
+    "qwen3-embedding-4b": {
+      "enabled": true,
+      "keepWarm": true,
+      "memoryGb": 12,
+      "containerName": "qwen3-embedding-4b",
+      "image": "vllm/vllm-openai@sha256:251eba5cc7c12fed0b75da22a9240e582b1c9e39f6fbc064f86781b963bd814f"
+    },
+    "spark03-tts-custom": {
+      "enabled": true,
+      "keepWarm": true,
+      "memoryGb": 10,
+      "containerName": "spark03-tts-custom",
+      "image": "sha256:7334704239eb6e3953aaf88682154c6b57ca2a020a593453caff5eb26e42966b"
+    },
+    "spark03-tts-clone": {
+      "enabled": true,
+      "keepWarm": true,
+      "memoryGb": 10,
+      "containerName": "spark03-tts-clone",
+      "image": "sha256:7334704239eb6e3953aaf88682154c6b57ca2a020a593453caff5eb26e42966b"
+    },
+    "spark03-tts-design": {
+      "enabled": true,
+      "keepWarm": true,
+      "memoryGb": 10,
+      "containerName": "spark03-tts-design",
+      "image": "sha256:7334704239eb6e3953aaf88682154c6b57ca2a020a593453caff5eb26e42966b"
+    },
+    "spark03-stt": {
+      "enabled": true,
+      "keepWarm": true,
+      "memoryGb": 6,
+      "containerName": "spark03-stt",
+      "image": "sha256:7334704239eb6e3953aaf88682154c6b57ca2a020a593453caff5eb26e42966b"
+    },
+    "qwen-image-diffusers": {
+      "enabled": true,
+      "keepWarm": false,
+      "preferredWarm": true,
+      "memoryGb": 70,
+      "containerName": "lloom-qwen-image-diffusers",
+      "image": "lloom/qwen-image-diffusers:source-709d9a713b1a7340fd1cba799e45fc51690ef9a040c11e6c4457ac603c4a2d6d"
+    },
+    "spark03-music": {
+      "enabled": true,
+      "keepWarm": false,
+      "memoryGb": 35,
+      "containerName": "spark03-music",
+      "image": "lloom/comfyui-media:source-b812f8cb1852f0360dd98b439f2e2ffc3039ae7d3d98482c07508a40319d9f34",
+      "cacheMode": "LLOOM_COMFY_CACHE_MODE=classic"
+    },
+    "spark03-ltx-video": {
+      "enabled": true,
+      "keepWarm": false,
+      "memoryGb": 70,
+      "containerName": "spark03-ltx-video",
+      "image": "lloom/comfyui-media:source-b812f8cb1852f0360dd98b439f2e2ffc3039ae7d3d98482c07508a40319d9f34",
+      "cacheMode": "LLOOM_COMFY_CACHE_MODE=classic"
+    }
+  },
+  "release": {
+    "commit": "67045de2fee8e4ae02b263cffbac1a03fe6cf275",
+    "sha256": "033ee10a3b0eff3c1234882ce795cdcb2bcf5c9e68fda2d62125f111fd33c20c"
+  },
+  "pinsUnchanged": {
+    "qwen3-embedding-4b": {
+      "pid": 421425,
+      "startedAt": "2026-09-18T05:09:38.094692828Z"
+    },
+    "spark03-tts-custom": {
+      "pid": 483748,
+      "startedAt": "2026-09-20T18:26:51.751217849Z"
+    },
+    "spark03-tts-clone": {
+      "pid": 486677,
+      "startedAt": "2026-09-20T18:27:26.920612634Z"
+    },
+    "spark03-tts-design": {
+      "pid": 489566,
+      "startedAt": "2026-09-20T18:28:01.19247968Z"
+    },
+    "spark03-stt": {
+      "pid": 492149,
+      "startedAt": "2026-09-20T18:28:36.71722672Z"
+    }
+  },
+  "finalMemory": [
+    "MemTotal:       127598836 kB",
+    "MemFree:         3588140 kB",
+    "MemAvailable:   36568920 kB"
+  ],
+  "events": [
+    {
+      "at": "2026-09-20T19:33:22.889Z",
+      "runtimeId": "qwen-image-diffusers",
+      "event": "healthy"
+    },
+    {
+      "at": "2026-09-20T19:33:22.889Z",
+      "runtimeId": "qwen-image-diffusers",
+      "event": "state",
+      "status": "running",
+      "reason": null
+    },
+    {
+      "at": "2026-09-20T19:30:21.211Z",
+      "runtimeId": "qwen-image-diffusers",
+      "event": "docker-start",
+      "reason": "preferred-warm-reconcile"
+    },
+    {
+      "at": "2026-09-20T19:30:20.854Z",
+      "runtimeId": "qwen-image-diffusers",
+      "event": "state",
+      "status": "starting",
+      "reason": "preferred-warm-reconcile"
+    },
+    {
+      "at": "2026-09-20T19:30:20.828Z",
+      "runtimeId": "spark03-ltx-video",
+      "event": "docker-stop"
+    },
+    {
+      "at": "2026-09-20T19:30:20.828Z",
+      "runtimeId": "spark03-ltx-video",
+      "event": "state",
+      "status": "stopped",
+      "reason": null
+    },
+    {
+      "at": "2026-09-20T19:30:19.548Z",
+      "runtimeId": "spark03-ltx-video",
+      "event": "state",
+      "status": "stopping",
+      "reason": "stop"
+    },
+    {
+      "at": "2026-09-20T19:30:19.534Z",
+      "runtimeId": "spark03-ltx-video",
+      "event": "state",
+      "status": "draining",
+      "reason": "eviction"
+    },
+    {
+      "at": "2026-09-20T19:28:30.921Z",
+      "runtimeId": "spark03-ltx-video",
+      "event": "state",
+      "status": "running",
+      "reason": null
+    },
+    {
+      "at": "2026-09-20T19:28:30.921Z",
+      "runtimeId": "spark03-ltx-video",
+      "warmed": true,
+      "status": 200,
+      "latencyMs": 56663,
+      "event": "warmup"
+    },
+    {
+      "at": "2026-09-20T19:27:34.258Z",
+      "runtimeId": "spark03-ltx-video",
+      "event": "state",
+      "status": "warming",
+      "reason": "warmup"
+    },
+    {
+      "at": "2026-09-20T19:27:34.258Z",
+      "runtimeId": "spark03-ltx-video",
+      "event": "healthy"
+    },
+    {
+      "at": "2026-09-20T19:27:34.258Z",
+      "runtimeId": "spark03-ltx-video",
+      "event": "state",
+      "status": "running",
+      "reason": null
+    },
+    {
+      "at": "2026-09-20T19:27:28.441Z",
+      "runtimeId": "spark03-ltx-video",
+      "event": "docker-start",
+      "reason": "model-request"
+    },
+    {
+      "at": "2026-09-20T19:27:28.221Z",
+      "runtimeId": "spark03-ltx-video",
+      "event": "state",
+      "status": "starting",
+      "reason": "model-request"
+    },
+    {
+      "at": "2026-09-20T19:27:28.191Z",
+      "runtimeId": "qwen-image-diffusers",
+      "event": "docker-stop"
+    },
+    {
+      "at": "2026-09-20T19:27:28.191Z",
+      "runtimeId": "qwen-image-diffusers",
+      "event": "state",
+      "status": "stopped",
+      "reason": null
+    },
+    {
+      "at": "2026-09-20T19:27:26.196Z",
+      "runtimeId": "qwen-image-diffusers",
+      "event": "state",
+      "status": "stopping",
+      "reason": "stop"
+    },
+    {
+      "at": "2026-09-20T19:27:26.181Z",
+      "runtimeId": "qwen-image-diffusers",
+      "event": "state",
+      "status": "draining",
+      "reason": "eviction"
+    },
+    {
+      "at": "2026-09-20T19:26:52.476Z",
+      "runtimeId": "qwen-image-diffusers",
+      "event": "healthy"
+    },
+    {
+      "at": "2026-09-20T19:26:52.476Z",
+      "runtimeId": "qwen-image-diffusers",
+      "event": "state",
+      "status": "running",
+      "reason": null
+    },
+    {
+      "at": "2026-09-20T19:23:50.913Z",
+      "runtimeId": "qwen-image-diffusers",
+      "event": "docker-start",
+      "reason": "preferred-warm-reconcile"
+    },
+    {
+      "at": "2026-09-20T19:23:50.563Z",
+      "runtimeId": "qwen-image-diffusers",
+      "event": "state",
+      "status": "starting",
+      "reason": "preferred-warm-reconcile"
+    },
+    {
+      "at": "2026-09-20T19:23:50.538Z",
+      "runtimeId": "spark03-ltx-video",
+      "event": "docker-stop"
+    },
+    {
+      "at": "2026-09-20T19:23:50.538Z",
+      "runtimeId": "spark03-ltx-video",
+      "event": "state",
+      "status": "stopped",
+      "reason": null
+    },
+    {
+      "at": "2026-09-20T19:23:49.468Z",
+      "runtimeId": "spark03-ltx-video",
+      "event": "state",
+      "status": "stopping",
+      "reason": "stop"
+    },
+    {
+      "at": "2026-09-20T19:23:49.457Z",
+      "runtimeId": "spark03-ltx-video",
+      "event": "state",
+      "status": "draining",
+      "reason": "eviction"
+    },
+    {
+      "at": "2026-09-20T19:22:10.171Z",
+      "runtimeId": "spark03-ltx-video",
+      "event": "state",
+      "status": "running",
+      "reason": null
+    },
+    {
+      "at": "2026-09-20T19:22:10.171Z",
+      "runtimeId": "spark03-ltx-video",
+      "warmed": true,
+      "status": 200,
+      "latencyMs": 44578,
+      "event": "warmup"
+    },
+    {
+      "at": "2026-09-20T19:21:25.593Z",
+      "runtimeId": "spark03-ltx-video",
+      "event": "state",
+      "status": "warming",
+      "reason": "warmup"
+    },
+    {
+      "at": "2026-09-20T19:21:25.593Z",
+      "runtimeId": "spark03-ltx-video",
+      "event": "healthy"
+    },
+    {
+      "at": "2026-09-20T19:21:25.593Z",
+      "runtimeId": "spark03-ltx-video",
+      "event": "state",
+      "status": "running",
+      "reason": null
+    },
+    {
+      "at": "2026-09-20T19:21:21.310Z",
+      "runtimeId": "spark03-ltx-video",
+      "event": "docker-start",
+      "reason": "model-request"
+    },
+    {
+      "at": "2026-09-20T19:21:21.126Z",
+      "runtimeId": "spark03-ltx-video",
+      "event": "state",
+      "status": "starting",
+      "reason": "model-request"
+    },
+    {
+      "at": "2026-09-20T19:21:21.126Z",
+      "runtimeId": "spark03-ltx-video",
+      "event": "docker-create",
+      "reason": "model-request"
+    },
+    {
+      "at": "2026-09-20T19:21:21.013Z",
+      "runtimeId": "spark03-music",
+      "event": "docker-stop"
+    },
+    {
+      "at": "2026-09-20T19:21:21.013Z",
+      "runtimeId": "spark03-music",
+      "event": "state",
+      "status": "stopped",
+      "reason": null
+    },
+    {
+      "at": "2026-09-20T19:21:19.844Z",
+      "runtimeId": "spark03-music",
+      "event": "state",
+      "status": "stopping",
+      "reason": "stop"
+    },
+    {
+      "at": "2026-09-20T19:21:19.830Z",
+      "runtimeId": "spark03-music",
+      "event": "state",
+      "status": "draining",
+      "reason": "eviction"
+    },
+    {
+      "at": "2026-09-20T19:21:05.652Z",
+      "runtimeId": "spark03-music",
+      "event": "state",
+      "status": "running",
+      "reason": null
+    },
+    {
+      "at": "2026-09-20T19:21:05.652Z",
+      "runtimeId": "spark03-music",
+      "warmed": true,
+      "status": 200,
+      "latencyMs": 11128,
+      "event": "warmup"
+    },
+    {
+      "at": "2026-09-20T19:20:54.524Z",
+      "runtimeId": "spark03-music",
+      "event": "state",
+      "status": "warming",
+      "reason": "warmup"
+    },
+    {
+      "at": "2026-09-20T19:20:54.524Z",
+      "runtimeId": "spark03-music",
+      "event": "healthy"
+    },
+    {
+      "at": "2026-09-20T19:20:54.524Z",
+      "runtimeId": "spark03-music",
+      "event": "state",
+      "status": "running",
+      "reason": null
+    },
+    {
+      "at": "2026-09-20T19:20:49.772Z",
+      "runtimeId": "spark03-music",
+      "event": "docker-start",
+      "reason": "model-request"
+    },
+    {
+      "at": "2026-09-20T19:20:49.581Z",
+      "runtimeId": "spark03-music",
+      "event": "state",
+      "status": "starting",
+      "reason": "model-request"
+    },
+    {
+      "at": "2026-09-20T19:20:46.539Z",
+      "runtimeId": "spark03-music",
+      "event": "docker-stop"
+    },
+    {
+      "at": "2026-09-20T19:20:46.539Z",
+      "runtimeId": "spark03-music",
+      "event": "state",
+      "status": "stopped",
+      "reason": null
+    },
+    {
+      "at": "2026-09-20T19:20:45.672Z",
+      "runtimeId": "spark03-music",
+      "event": "state",
+      "status": "stopping",
+      "reason": "stop"
+    },
+    {
+      "at": "2026-09-20T19:20:18.489Z",
+      "runtimeId": "spark03-stt",
+      "event": "state",
+      "status": "running",
+      "reason": null
+    },
+    {
+      "at": "2026-09-20T19:20:17.850Z",
+      "runtimeId": "spark03-tts-design",
+      "event": "state",
+      "status": "running",
+      "reason": null
+    },
+    {
+      "at": "2026-09-20T19:20:17.138Z",
+      "runtimeId": "spark03-tts-clone",
+      "event": "state",
+      "status": "running",
+      "reason": null
+    },
+    {
+      "at": "2026-09-20T19:20:16.509Z",
+      "runtimeId": "spark03-tts-custom",
+      "event": "state",
+      "status": "running",
+      "reason": null
+    },
+    {
+      "at": "2026-09-20T19:20:15.842Z",
+      "runtimeId": "qwen3-embedding-4b",
+      "event": "state",
+      "status": "running",
+      "reason": null
+    },
+    {
+      "at": "2026-09-20T19:20:15.842Z",
+      "runtimeId": "qwen3-embedding-4b",
+      "warmed": true,
+      "status": 200,
+      "latencyMs": 57,
+      "event": "warmup"
+    },
+    {
+      "at": "2026-09-20T19:20:15.785Z",
+      "runtimeId": "qwen3-embedding-4b",
+      "event": "state",
+      "status": "warming",
+      "reason": "warmup"
+    },
+    {
+      "at": "2026-09-20T19:20:15.785Z",
+      "runtimeId": "qwen3-embedding-4b",
+      "event": "state",
+      "status": "running",
+      "reason": null
+    }
+  ]
+}

@@ -1,0 +1,214 @@
+{
+  "receipts": [
+    {
+      "endpoint": "/v1/images/edits",
+      "requestedModel": "DEFAULT",
+      "prompt": "Change only the blue teapot to bright red. Keep the lemon, table, lighting and composition exactly the same.",
+      "steps": 40,
+      "startedAt": "2026-09-20T19:34:03.907Z",
+      "elapsedMs": 62138,
+      "bytes": 1693808,
+      "output": "spark03-default-edit.png"
+    },
+    {
+      "endpoint": "/v1/images/generations",
+      "requestedModel": "DEFAULT",
+      "prompt": "A blue ceramic teapot on a wooden table beside a lemon, soft daylight, realistic photograph.",
+      "steps": 25,
+      "startedAt": "2026-09-20T19:33:25.087Z",
+      "elapsedMs": 38639,
+      "bytes": 1686372,
+      "output": "spark03-default-generation.png"
+    },
+    {
+      "endpoint": "/v1/images/edits",
+      "requestedModel": "image-edit",
+      "prompt": "Change only the blue teapot to bright red. Keep the lemon, table, lighting and composition exactly the same.",
+      "steps": 40,
+      "startedAt": "2026-09-20T19:35:52.585Z",
+      "elapsedMs": 59566,
+      "bytes": 1693808,
+      "output": "spark03-fleet-default-edit.png"
+    },
+    {
+      "endpoint": "/v1/images/generations",
+      "requestedModel": "DEFAULT",
+      "prompt": "A blue ceramic teapot on a wooden table beside a lemon, soft daylight, realistic photograph.",
+      "steps": 25,
+      "startedAt": "2026-09-20T19:35:18.516Z",
+      "elapsedMs": 33883,
+      "bytes": 1686372,
+      "output": "spark03-fleet-default-generation.png"
+    },
+    {
+      "kind": "music",
+      "endpoint": "/v1/audio/generations",
+      "payload": {
+        "model": "ACE-Step/ACE-Step-1.5-XL-SFT",
+        "prompt": "Gentle instrumental acoustic guitar with warm piano, relaxed clear melody, no vocals.",
+        "duration": 10,
+        "steps": 50,
+        "response_format": "wav",
+        "seed": 42
+      },
+      "elapsedMs": 28822,
+      "bytes": 1920044,
+      "output": "spark03-music-canary.wav",
+      "receipt": "spark03-music-cache-first.json"
+    },
+    {
+      "kind": "music",
+      "endpoint": "/v1/audio/generations",
+      "payload": {
+        "model": "ACE-Step/ACE-Step-1.5-XL-SFT",
+        "prompt": "Gentle instrumental acoustic guitar with warm piano, relaxed clear melody, no vocals.",
+        "duration": 10,
+        "steps": 50,
+        "response_format": "wav",
+        "seed": 42
+      },
+      "elapsedMs": 1055,
+      "bytes": 1920044,
+      "output": "spark03-music-canary.wav",
+      "receipt": "spark03-music-cache-repeat.json"
+    },
+    {
+      "kind": "video",
+      "endpoint": "/v1/videos/generations",
+      "payload": {
+        "model": "Lightricks/LTX-2.5",
+        "prompt": "A calm seaside cottage in golden evening light. Grass sways gently in the breeze as the camera slowly moves forward. Natural realistic motion.",
+        "duration": 3,
+        "size": "768x512",
+        "response_format": "b64_json",
+        "seed": 42
+      },
+      "elapsedMs": 111439,
+      "bytes": 465309,
+      "output": "spark03-video-canary.mp4",
+      "receipt": "spark03-video-cache-first.json"
+    },
+    {
+      "kind": "video",
+      "endpoint": "/v1/videos/generations",
+      "payload": {
+        "model": "Lightricks/LTX-2.5",
+        "prompt": "A calm seaside cottage in golden evening light. Grass sways gently in the breeze as the camera slowly moves forward. Natural realistic motion.",
+        "duration": 3,
+        "size": "768x512",
+        "response_format": "b64_json",
+        "seed": 42
+      },
+      "elapsedMs": 1051,
+      "bytes": 465309,
+      "output": "spark03-video-canary.mp4",
+      "receipt": "spark03-video-cache-repeat.json"
+    }
+  ],
+  "imageAttribution": [
+    {
+      "at": "2026-09-20T19:35:06.040Z",
+      "route": "/v1/images/edits",
+      "requestedModel": "Qwen/Qwen-Image-2.1-Diffusers",
+      "resolvedModel": "Qwen/Qwen-Image-2.1-Diffusers",
+      "runtime": "qwen-image-diffusers",
+      "node": null,
+      "backend": "qwen-image-diffusers",
+      "status": 200,
+      "failedOver": false,
+      "durationMs": 62096
+    },
+    {
+      "at": "2026-09-20T19:34:03.715Z",
+      "route": "/v1/images/generations",
+      "requestedModel": "Qwen/Qwen-Image-2.1-Diffusers",
+      "resolvedModel": "Qwen/Qwen-Image-2.1-Diffusers",
+      "runtime": "qwen-image-diffusers",
+      "node": null,
+      "backend": "qwen-image-diffusers",
+      "status": 200,
+      "failedOver": false,
+      "durationMs": 38620
+    },
+    {
+      "at": "2026-09-20T19:36:52.142Z",
+      "route": "/v1/images/edits",
+      "requestedModel": "image-edit",
+      "resolvedModel": "ennspark03/Qwen/Qwen-Image-2.1-Diffusers",
+      "node": "ennspark03",
+      "backend": "lloom-node-ennspark03",
+      "status": 200,
+      "failedOver": false,
+      "durationMs": 59542
+    },
+    {
+      "at": "2026-09-20T19:35:52.390Z",
+      "route": "/v1/images/generations",
+      "requestedModel": "image-quality",
+      "resolvedModel": "ennspark03/Qwen/Qwen-Image-2.1-Diffusers",
+      "node": "ennspark03",
+      "backend": "lloom-node-ennspark03",
+      "status": 200,
+      "failedOver": false,
+      "durationMs": 33808
+    }
+  ],
+  "speech": [
+    {
+      "endpoint": "/v1/embeddings",
+      "model": "Qwen/Qwen3-Embedding-4B",
+      "elapsedMs": 134,
+      "bytes": 54943,
+      "status": 200,
+      "dimensions": 2560
+    },
+    {
+      "endpoint": "/v1/audio/speech",
+      "model": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+      "elapsedMs": 3101,
+      "bytes": 111404,
+      "status": 200
+    },
+    {
+      "endpoint": "/v1/audio/speech",
+      "model": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+      "elapsedMs": 2443,
+      "bytes": 115244,
+      "status": 200
+    },
+    {
+      "endpoint": "/v1/audio/speech",
+      "model": "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+      "elapsedMs": 2248,
+      "bytes": 99884,
+      "status": 200
+    },
+    {
+      "endpoint": "/v1/audio/transcriptions",
+      "model": "openai/whisper-large-v3-turbo",
+      "elapsedMs": 876,
+      "bytes": 49,
+      "status": 200,
+      "text": "The resident speech pipeline is ready.",
+      "source": "custom"
+    },
+    {
+      "endpoint": "/v1/audio/transcriptions",
+      "model": "openai/whisper-large-v3-turbo",
+      "elapsedMs": 245,
+      "bytes": 49,
+      "status": 200,
+      "text": "The resident speech pipeline is ready.",
+      "source": "clone"
+    },
+    {
+      "endpoint": "/v1/audio/transcriptions",
+      "model": "openai/whisper-large-v3-turbo",
+      "elapsedMs": 234,
+      "bytes": 49,
+      "status": 200,
+      "text": "The resident speech pipeline is ready.",
+      "source": "design"
+    }
+  ]
+}

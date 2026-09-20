@@ -1,5 +1,7 @@
 # Qwen-Image 2.1 on the Spark 3 media lane
 
+Later rollout: [resident essentials and one shared generation/editing pipeline](../2026-09-20-spark03-residency/README.md) supersedes the generation-default routing described below and records the remaining input-dependent edit artifacts.
+
 Measured September 20, 2026 through the live gateways, not from model cards. The
 work added Qwen-Image 2.1 to the shared ComfyUI media backend, installed it on
 `ennspark03` with the recipe below, and then federated it from `ennspark01` as

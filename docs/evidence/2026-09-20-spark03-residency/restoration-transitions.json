@@ -1,0 +1,41 @@
+[
+  {
+    "at": "2026-09-20T19:29:28.411Z",
+    "states": {
+      "qwen3-embedding-4b": "running",
+      "spark03-tts-custom": "running",
+      "spark03-tts-clone": "running",
+      "spark03-tts-design": "running",
+      "spark03-stt": "running",
+      "qwen-image-diffusers": "exited",
+      "spark03-music": "exited",
+      "spark03-ltx-video": "running"
+    }
+  },
+  {
+    "at": "2026-09-20T19:30:22.200Z",
+    "states": {
+      "qwen3-embedding-4b": "running",
+      "spark03-tts-custom": "running",
+      "spark03-tts-clone": "running",
+      "spark03-tts-design": "running",
+      "spark03-stt": "running",
+      "qwen-image-diffusers": "starting",
+      "spark03-music": "exited",
+      "spark03-ltx-video": "exited"
+    }
+  },
+  {
+    "at": "2026-09-20T19:33:24.988Z",
+    "states": {
+      "qwen3-embedding-4b": "running",
+      "spark03-tts-custom": "running",
+      "spark03-tts-clone": "running",
+      "spark03-tts-design": "running",
+      "spark03-stt": "running",
+      "qwen-image-diffusers": "running",
+      "spark03-music": "exited",
+      "spark03-ltx-video": "exited"
+    }
+  }
+]
