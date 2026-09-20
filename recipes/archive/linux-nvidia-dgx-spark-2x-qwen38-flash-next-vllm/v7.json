@@ -4,8 +4,8 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm",
   "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 vLLM",
-  "version": 8,
-  "summary": "Two-Spark NVIDIA NVFP4 with GPU-resident PLE, full-vocabulary MTP3, a 28 GiB per-rank BF16 cache, retained hybrid prefixes, and guarded upstream PLE/QSA kernel fusions.",
+  "version": 7,
+  "summary": "Two-Spark NVIDIA NVFP4 with GPU-resident PLE, MTP3, bounded BF16 KV, and validated hybrid prefix caching with retained replay boundaries.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata and launcher"
@@ -13,7 +13,7 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "Sufyan sfxnz/Qwen3.8-Flash-Next-NVFP4-vLLM-2x-DGX-Spark fe8c291de4efba34d5dcedbc8e19ebcf66bc1bc2 reference execution mode on pinned vLLM e962733e08d10f7ca65dac4df99e116460b8b174. Retains source-guarded Tony/Tech2Wild PLE state-stride and mixed MTP loader fixes. Official NVIDIA revision pinned; v8 raises the per-rank KV budget from 20 GiB to 28 GiB while keeping BF16 KV and the full MTP3 draft vocabulary. See docs/q38fn-gap-closure-2026-09-05.md for matched performance and validation. Prefix-cache block-size corrections derive from blazux/qwen3.8-Flash-DGX bd60fcb1b492ca920f74df7462f05da7b6d98f73, with exact-source guards and supported retention interval 1600 (vLLM issue 53504). See docs/q38fn-prefix-cache-2026-09-09.md for matched latency, cache correctness, 239K context and queue validation. v8 additionally applies the reviewed whole-file backport of vLLM PR 55309 (PLE outer-residual fusion and the fused QSA output gate) as a post-baseline overlay layer in backends/qwen38-vllm/nvidia-e962733e-v8, guarded by SHA256 against the baseline overlay output. PR 54713 (scheduler replay boundary) and PR 55513 (mixed-quant MTP loader, already covered by the baseline overlay) are deliberately not transplanted; see that directory's NOTICE.md. See docs/q38fn-v8-2026-09-20.md for qualification, memory limits, and the rejected 32 GiB validation attempt."
+    "source": "Sufyan sfxnz/Qwen3.8-Flash-Next-NVFP4-vLLM-2x-DGX-Spark fe8c291de4efba34d5dcedbc8e19ebcf66bc1bc2 reference execution mode on pinned vLLM e962733e08d10f7ca65dac4df99e116460b8b174. Retains source-guarded Tony/Tech2Wild PLE state-stride and mixed MTP loader fixes. Official NVIDIA revision and 20 GiB per-rank KV budget pinned. See docs/q38fn-gap-closure-2026-09-05.md for matched performance and validation. Prefix-cache block-size corrections derive from blazux/qwen3.8-Flash-DGX bd60fcb1b492ca920f74df7462f05da7b6d98f73, with exact-source guards and supported retention interval 1600 (vLLM issue 53504). See docs/q38fn-prefix-cache-2026-09-09.md for matched latency, cache correctness, 239K context and queue validation."
   },
   "links": [
     {
@@ -39,10 +39,6 @@
     {
       "rel": "issue",
       "href": "https://github.com/vllm-project/vllm/issues/53504"
-    },
-    {
-      "rel": "upstream",
-      "href": "https://github.com/vllm-project/vllm/pull/55309"
     }
   ],
   "keywords": [
@@ -76,10 +72,9 @@
       "TP2 across the private ConnectX RoCE fabric, worker-first managed startup; automatic IPv4 RoCE-v2 GID selection per host.",
       "NVIDIA checkpoint bytes are unchanged: main experts NVFP4, draft experts block FP8 and PLE per-tensor FP8. The full draft vocabulary is retained.",
       "PLE is GPU-resident and sharded across TP2. FULL_DECODE_ONLY graphs with compilation mode 0 follow the published reference; no disk gathers occur during inference.",
-      "Native 262144 context, BF16 KV and explicit 30064771072 KV bytes per GPU (28 GiB), raised from 21474836480 in v7 and overridable through KV_CACHE_MEMORY_BYTES. This byte budget takes precedence over GPU_MEMORY_UTILIZATION; final cache capacity is in the evidence.",
+      "Native 262144 context, BF16 KV and explicit 21474836480 KV bytes per GPU. This byte budget takes precedence over GPU_MEMORY_UTILIZATION; final cache capacity is in the evidence.",
       "Hybrid prefix caching uses align mode, guarded Mamba/scheduler block-size corrections and retention interval 1600. Exact cached early/middle retrieval passed through 239K tokens, concurrent reads and structured tools. No YaRN, reduced draft vocabulary or extra quantization is selected.",
-      "LLooM bounds active and queued requests, and the validation includes mixed long inputs, repeated structured tools, reasoning, vision and clean drain.",
-      "v8 adds upstream PLE residual and QSA output-gate fusions to the pinned backend. The prior lane must remain stopped while testing or serving v8 on the same pair. Full draft vocabulary and BF16 cache precision are retained."
+      "LLooM bounds active and queued requests, and the validation includes mixed long inputs, repeated structured tools, reasoning, vision and clean drain."
     ]
   },
   "requirements": {
@@ -177,7 +172,7 @@
         "requestStartupWaitMs": 1000,
         "startupRetryAfterSeconds": 15,
         "healthTimeoutMs": 5000,
-        "memoryGb": 110,
+        "memoryGb": 108,
         "priority": 200,
         "keepWarm": false,
         "startupTimeoutMs": 7200000,
@@ -210,12 +205,12 @@
               "order": 10,
               "healthStrategy": "container",
               "resources": {
-                "memoryGb": 110
+                "memoryGb": 108
               },
               "runtimeSettings": {
                 "adapter": "docker",
                 "management": "managed",
-                "containerName": "lloom-qwen38-v8-${nodeId}",
+                "containerName": "lloom-qwen38-resident-${nodeId}",
                 "warmup": false,
                 "bootstrap": {
                   "adapter": "docker",
@@ -316,12 +311,8 @@
                     "ENABLE_EXPERT_PARALLEL=0",
                     "-e",
                     "MTP_NUM_SPECULATIVE_TOKENS=3",
-                    "-e",
-                    "KV_CACHE_MEMORY_BYTES=30064771072",
                     "--mount",
                     "type=bind,src=${lloomRoot}/backends/qwen38-vllm/nvidia-e962733e,dst=/opt/lloom/qwen-nvidia,readonly",
-                    "--mount",
-                    "type=bind,src=${lloomRoot}/backends/qwen38-vllm/nvidia-e962733e-v8,dst=/opt/lloom/qwen-v8,readonly",
                     "-e",
                     "QWEN4EXP_PLE_MMAP=0",
                     "-e",
@@ -350,7 +341,7 @@
                     "PREFIX_CACHE_RETENTION_INTERVAL=1600"
                   ],
                   "command": [
-                    "/opt/lloom/qwen-v8/entrypoint.sh"
+                    "/opt/lloom/qwen-prefix/entrypoint.sh"
                   ]
                 }
               }
@@ -361,12 +352,12 @@
               "role": "head",
               "order": 20,
               "resources": {
-                "memoryGb": 110
+                "memoryGb": 108
               },
               "runtimeSettings": {
                 "adapter": "docker",
                 "management": "managed",
-                "containerName": "lloom-qwen38-v8-${nodeId}",
+                "containerName": "lloom-qwen38-resident-${nodeId}",
                 "healthUrl": "http://${leaderAddress}:8889/health",
                 "healthTimeoutMs": 5000,
                 "warmup": {
@@ -483,12 +474,8 @@
                     "ENABLE_EXPERT_PARALLEL=0",
                     "-e",
                     "MTP_NUM_SPECULATIVE_TOKENS=3",
-                    "-e",
-                    "KV_CACHE_MEMORY_BYTES=30064771072",
                     "--mount",
                     "type=bind,src=${lloomRoot}/backends/qwen38-vllm/nvidia-e962733e,dst=/opt/lloom/qwen-nvidia,readonly",
-                    "--mount",
-                    "type=bind,src=${lloomRoot}/backends/qwen38-vllm/nvidia-e962733e-v8,dst=/opt/lloom/qwen-v8,readonly",
                     "-e",
                     "QWEN4EXP_PLE_MMAP=0",
                     "-e",
@@ -517,7 +504,7 @@
                     "PREFIX_CACHE_RETENTION_INTERVAL=1600"
                   ],
                   "command": [
-                    "/opt/lloom/qwen-v8/entrypoint.sh"
+                    "/opt/lloom/qwen-prefix/entrypoint.sh"
                   ]
                 }
               }

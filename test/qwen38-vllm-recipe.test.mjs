@@ -12,12 +12,12 @@ const backendRoot = path.join(root, 'backends', 'qwen38-vllm');
 const recipe = await loadRecipeById('linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm');
 
 assert.equal(recipe.backend.id, 'docker-vllm');
-assert.equal(recipe.version, 7);
+assert.equal(recipe.version, 8);
 assert.equal(recipe.models[0].gatewayModel, 'qwen3.8-flash-next');
 assert.equal(recipe.models[0].settings.contextWindow, 262144);
 assert.equal(recipe.models[0].settings.maxActiveRequests, 4);
 assert.equal(recipe.models[0].settings.maxQueuedRequests, 8);
-assert.equal(recipe.models[0].settings.memoryGb, 108);
+assert.equal(recipe.models[0].settings.memoryGb, 110);
 assert.equal(recipe.models[0].settings.keepWarm, false);
 assert(recipe.capabilities.includes('mtp'));
 assert(recipe.models[0].capabilities.includes('mtp'));
@@ -36,7 +36,7 @@ assert.deepEqual(
   ['worker', 'head']
 );
 for (const member of members) {
-  assert.equal(member.resources.memoryGb, 108);
+  assert.equal(member.resources.memoryGb, 110);
   const bootstrap = member.runtimeSettings.bootstrap;
   assert.equal(
     bootstrap.image,
@@ -62,13 +62,15 @@ for (const member of members) {
     'QWEN4EXP_PLE_MMAP=0',
     'VLLM_USE_DEEP_GEMM=0',
     'ENABLE_PREFIX_CACHING=1',
-    'PREFIX_CACHE_RETENTION_INTERVAL=1600'
+    'PREFIX_CACHE_RETENTION_INTERVAL=1600',
+    'KV_CACHE_MEMORY_BYTES=30064771072',
+    'backends/qwen38-vllm/nvidia-e962733e-v8'
   ]) {
     assert(rendered.includes(expected), `missing vLLM launch control: ${expected}`);
   }
   assert(!rendered.includes('YARN'));
   assert(!rendered.includes('NCCL_IB_GID_INDEX'));
-  assert.deepEqual(bootstrap.command, ['/opt/lloom/qwen-prefix/entrypoint.sh']);
+  assert.deepEqual(bootstrap.command, ['/opt/lloom/qwen-v8/entrypoint.sh']);
 }
 assert.equal(members.find((member) => member.role === 'head').runtimeSettings.healthTimeoutMs, 5000);
 
@@ -154,3 +156,8 @@ await fs.access(
 await fs.access(path.join(root, 'recipes/archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm/v4.json'));
 await fs.access(path.join(root, 'recipes/archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm/v5.json'));
 console.log('qwen38 vllm recipe tests passed');
+
+for (const script of ['test-v8-apply.py', 'test-v8-overlays.py', 'test-v8-stack.py']) {
+  const result = spawnSync('python3', [path.join(backendRoot, 'nvidia-e962733e-v8', script)], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+}
