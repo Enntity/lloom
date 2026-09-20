@@ -865,6 +865,7 @@ assert.deepEqual(
     'linux-nvidia-comfyui-minimax-h3-turbo',
     'linux-nvidia-comfyui-minimax-h3',
     'linux-nvidia-comfyui-minimax-music3',
+    'linux-nvidia-comfyui-qwen-image-2-1',
     'linux-nvidia-comfyui-qwen-image-2512-lightning',
     'linux-nvidia-comfyui-qwen-image-2512',
     'linux-nvidia-comfyui-qwen-image-edit-2511',
@@ -1042,7 +1043,7 @@ const recipeIndexReport = await buildRecipeIndexReport(config, {
 });
 assert.equal(recipeIndexReport.ok, true);
 assert.equal(recipeIndexReport.index.id, 'lloom-community-recipes');
-assert.equal(recipeIndexReport.recipes.length, 33);
+assert.equal(recipeIndexReport.recipes.length, 34);
 const indexedSparkRecipe = recipeIndexReport.recipes.find(
   (candidate) => candidate.id === 'linux-nvidia-gb10-qwen36-unsloth-vllm'
 );

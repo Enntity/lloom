@@ -1002,6 +1002,26 @@
       }
     },
     {
+      "id": "linux-nvidia-comfyui-qwen-image-2-1",
+      "path": "linux-nvidia-comfyui-qwen-image-2-1.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-comfyui-qwen-image-2-1.json",
+          "status": "current"
+        }
+      ],
+      "name": "Qwen/Qwen-Image-2.1 (ComfyUI, NVIDIA)",
+      "summary": "Install Qwen/Qwen-Image-2.1, one DiT for generation and reference editing, with the shared ComfyUI media backend.",
+      "tags": ["cuda", "int8", "nvidia", "qwen-image-2.1", "image-editing", "transparency", "single-model"],
+      "capabilities": ["image-generation", "image-editing"],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-comfyui-qwen-image-2-1.json"
+      }
+    },
+    {
       "id": "linux-nvidia-comfyui-qwen-image-2512-lightning",
       "path": "linux-nvidia-comfyui-qwen-image-2512-lightning.json",
       "currentVersion": 1,
