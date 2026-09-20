@@ -1044,7 +1044,7 @@ const recipeIndexReport = await buildRecipeIndexReport(config, {
 });
 assert.equal(recipeIndexReport.ok, true);
 assert.equal(recipeIndexReport.index.id, 'lloom-community-recipes');
-assert.equal(recipeIndexReport.recipes.length, 34);
+assert.equal(recipeIndexReport.recipes.length, 35);
 const indexedSparkRecipe = recipeIndexReport.recipes.find(
   (candidate) => candidate.id === 'linux-nvidia-gb10-qwen36-unsloth-vllm'
 );

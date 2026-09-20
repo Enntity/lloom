@@ -71,6 +71,11 @@ console.log(JSON.stringify({State:{Running:running,Status:running?'running':'exi
   assert.equal(runtimes['wrong-model'].healthy, false);
   assert.equal(await manager.isHealthy('stopped-head'), false);
   assert.equal(await manager.isHealthy('live-head'), true);
+  manager.setStatus('live-head', 'warming', 'warmup');
+  assert.equal(await manager.isHealthy('live-head'), false, 'HTTP health must not bypass model warmup');
+  assert.equal(await manager.runtimeAppearsLoaded('live-head'), true);
+  manager.setStatus('live-head', 'running');
+  assert.equal(await manager.isHealthy('live-head'), true);
   assert.equal(await manager.runtimeAppearsLoaded('stopped-head'), false);
   assert.equal(await manager.runtimeAppearsLoaded('live-head'), true);
   console.log('Runtime health ownership: stopped/missing/shared-port, distributed and external cases passed');

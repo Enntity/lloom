@@ -27,6 +27,14 @@ const CHAT_TEMPLATE_OVERRIDES = new Map([
 const VLLM_CHAT_TEMPLATE_PATH = '/etc/lloom/chat-template.jinja';
 const DOCKER_RUNTIME_SPEC_LABEL = 'io.lloom.runtime-spec-sha256';
 
+function numberOrNull(value) {
+  if (value == null || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+const PREFERRED_WARM_DEFAULT_IDLE_MS = 30000;
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -146,7 +154,8 @@ const LIVE_ADMISSION_FIELDS = new Set([
   'queueRetryAfterSeconds',
   'requestStartupWaitMs',
   'startupRetryAfterSeconds',
-  'healthTimeoutMs'
+  'healthTimeoutMs',
+  'preferredWarm'
 ]);
 
 function runtimeLifecycleConfig(runtime) {
@@ -668,9 +677,47 @@ export class RuntimeManager {
     this.watchdogOperations = new Map();
     this.admissionQueue = Promise.resolve();
     this.activeAdmission = null;
+    // Set when the owning server begins shutting down. Queued background
+    // admissions must not start a runtime after shutdown has been requested;
+    // the guard is re-evaluated inside the admission mutex.
+    this.shuttingDown = false;
     this.events = [];
     this.clusterCoordinator = clusterCoordinator;
     this.clusterCoordinator?.attachRuntimeManager(this);
+  }
+
+  // Optional admission guard evaluated INSIDE the admission mutex, immediately
+  // before any side effects. It sees the freshest runtimeManager.config, so a
+  // queued admission whose runtime was disabled, suspended, unowned, or whose
+  // supervision was torn down is skipped safely rather than started.
+  resolveAdmissionGuard({ runtimeId, reason } = {}) {
+    if (!runtimeId) return { ok: true };
+    if (this.shuttingDown === true) {
+      return {
+        ok: false,
+        code: 'runtime_manager_shutdown',
+        message: `runtime manager is shutting down; ${runtimeId} admission skipped`
+      };
+    }
+    if (reason === 'preferred-warm-reconcile' || reason === 'preferred-warm') {
+      const runtime = this.config.runtimes?.[runtimeId];
+      if (!runtime || runtime.enabled !== true || runtime.preferredWarm !== true || runtime.keepWarm === true) {
+        return {
+          ok: false,
+          code: 'preferred_warm_revoked',
+          message: `preferred warm for ${runtimeId} was removed or disabled while queued`
+        };
+      }
+      const ownership = this.residencyOwnership(runtimeId);
+      if (ownership?.owned === false) {
+        return {
+          ok: false,
+          code: 'runtime_not_owned',
+          message: `preferred warm for ${runtimeId} is not owned here (${ownership.reason})`
+        };
+      }
+    }
+    return { ok: true };
   }
 
   stateFor(runtimeId) {
@@ -762,6 +809,36 @@ export class RuntimeManager {
       .map(([runtimeId]) => runtimeId);
   }
 
+  // Preferred residency is a soft tier: preferred runtimes are started when
+  // spare memory allows, evicted before hard keep-warm pins, and restored by
+  // periodic reconciliation when memory pressure clears.
+  preferredWarmRuntimeIds() {
+    return Object.entries(this.config.runtimes ?? {})
+      .filter(
+        ([id, runtime]) =>
+          runtime.preferredWarm === true && runtime.keepWarm !== true && !maintenanceBlocksRouting(this.config, id)
+      )
+      .sort(([, left], [, right]) => {
+        const leftPriority = Number(left?.policy?.priority ?? left?.priority ?? 0);
+        const rightPriority = Number(right?.policy?.priority ?? right?.priority ?? 0);
+        return rightPriority - leftPriority;
+      })
+      .map(([runtimeId]) => runtimeId);
+  }
+
+  // Ownership gate used by residency startup/reconciliation. Preferred-warm
+  // reconciliation must never start a runtime owned by another node or one
+  // suspended for maintenance.
+  residencyOwnership(runtimeId) {
+    if (maintenanceBlocksRouting(this.config, runtimeId)) {
+      return { owned: false, reason: 'maintenance-suspended' };
+    }
+    return keepWarmOwnership(this.config, runtimeId, {
+      nodeId: this.clusterCoordinator?.nodeId ?? currentNodeId(this.config),
+      leaderNode: this.config.cluster?.leaderNode
+    });
+  }
+
   processRunning(runtimeId) {
     const child = this.processes.get(runtimeId);
     return Boolean(child?.pid && child.exitCode == null && child.signalCode == null);
@@ -825,7 +902,10 @@ export class RuntimeManager {
   async isHealthy(runtimeId) {
     const runtime = this.getRuntime(runtimeId);
     if (!runtime) return false;
-    if (await runtimeHealthOk(runtime)) return true;
+    if (this.stateFor(runtimeId).status === 'warming') return false;
+    const healthy = await runtimeHealthOk(runtime);
+    if (this.stateFor(runtimeId).status === 'warming') return false;
+    if (healthy) return true;
     if (runtimePlacement(runtime, this.config).mode !== 'distributed') return false;
     const status = await this.status();
     return status.runtimes?.[runtimeId]?.healthy === true;
@@ -931,6 +1011,7 @@ export class RuntimeManager {
   async status({ localOnly = false } = {}) {
     const runtimes = {};
     const keepWarm = new Set(this.keepWarmRuntimeIds());
+    const preferredWarm = new Set(this.preferredWarmRuntimeIds());
     const remoteNodes = new Map();
     for (const [runtimeId, runtime] of Object.entries(this.config.runtimes ?? {})) {
       const placement = runtimePlacement(runtime, this.config);
@@ -999,6 +1080,7 @@ export class RuntimeManager {
         healthy,
         status,
         keepWarm: keepWarm.has(runtimeId),
+        preferredWarm: preferredWarm.has(runtimeId),
         starts: state.starts,
         stops: state.stops,
         activeRequests: state.activeRequests,
@@ -1043,6 +1125,7 @@ export class RuntimeManager {
           healthy,
           status: transitionalStatus ?? (healthy ? 'running' : anyLoaded ? 'starting' : 'stopped'),
           keepWarm: keepWarm.has(runtimeId),
+          preferredWarm: preferredWarm.has(runtimeId),
           starts: state.starts,
           stops: state.stops,
           activeRequests: state.activeRequests,
@@ -1504,7 +1587,17 @@ export class RuntimeManager {
 
   async admit(
     runtimeId,
-    { config = this.config, force = false, warmup = true, reason = 'runtime-admission', requestedBy } = {}
+    {
+      config = this.config,
+      force = false,
+      warmup = true,
+      reason = 'runtime-admission',
+      requestedBy,
+      allowEviction = true,
+      preferredRestore = false,
+      admissionGuard,
+      preferredWarmIdleMs = 0
+    } = {}
   ) {
     assertMaintenanceStartAllowed(this.config, runtimeId);
     const { applyRuntimePolicyPlan } = await import('./runtime-policy.mjs');
@@ -1516,6 +1609,10 @@ export class RuntimeManager {
       warmup,
       force,
       reason,
+      allowEviction,
+      preferredRestore,
+      admissionGuard,
+      preferredWarmIdleMs,
       requesterNode
     });
   }
@@ -1537,6 +1634,11 @@ export class RuntimeManager {
   }
 
   async startUnlocked(runtimeId, { force = false, warmup = true, reason = 'manual-start', requestedBy, signal } = {}) {
+    if (this.shuttingDown) {
+      const error = new Error('Runtime manager is shutting down');
+      error.code = 'runtime_manager_shutdown';
+      throw error;
+    }
     assertMaintenanceStartAllowed(this.config, runtimeId);
     if (!runtimeId) return { runtimeId, started: false, reason: 'no-runtime' };
     const runtime = this.getRuntime(runtimeId);
@@ -1915,49 +2017,77 @@ export class RuntimeManager {
       }
     };
     for (const runtimeId of this.keepWarmRuntimeIds()) {
+      results.push(
+        await this.startResidencyRuntime(runtimeId, {
+          admissionConfig,
+          reason: 'keep-warm'
+        })
+      );
+    }
+    if (results.some((result) => result.status === 'skipped')) return results;
+    // Preferred residency is a soft tier. Load hard pins first, then preferred
+    // runtimes that fit in currently available memory. Preferred startup must
+    // never evict a resident runtime.
+    for (const runtimeId of this.preferredWarmRuntimeIds()) {
+      results.push(
+        await this.startResidencyRuntime(runtimeId, {
+          admissionConfig,
+          reason: 'preferred-warm',
+          allowEviction: false
+        })
+      );
+    }
+    return results;
+  }
+
+  async startResidencyRuntime(runtimeId, { admissionConfig, reason, allowEviction = true } = {}) {
+    try {
       const runtime = this.getRuntime(runtimeId);
       if (!runtime) {
-        results.push({ runtimeId, started: false, reason: 'unknown-runtime' });
-        continue;
+        return { runtimeId, started: false, reason: 'unknown-runtime' };
       }
       if (runtime.enabled !== true) {
-        results.push({ runtimeId, started: false, reason: 'runtime-disabled' });
-        continue;
+        return { runtimeId, started: false, reason: 'runtime-disabled' };
       }
       const ownership = keepWarmOwnership(this.config, runtimeId, {
         nodeId: this.clusterCoordinator?.nodeId ?? currentNodeId(this.config),
         leaderNode: this.config.cluster?.leaderNode
       });
       if (!ownership.owned) {
-        results.push({ runtimeId, started: false, reason: ownership.reason });
-        continue;
+        return { runtimeId, started: false, reason: ownership.reason };
       }
-      try {
-        const result = await this.admit(runtimeId, {
-          config: admissionConfig,
-          warmup: true,
-          force: false,
-          reason: 'keep-warm'
-        });
-        results.push(result);
-        for (const warning of result.plan?.warnings ?? []) {
-          this.logger.warn?.(`Keep-warm ${runtimeId}: ${warning}`);
-        }
-      } catch (error) {
-        const warning = error?.message ?? String(error);
-        const result = {
-          runtimeId,
-          started: false,
-          status: 'skipped',
-          reason: String(error?.code || '').startsWith('runtime_capacity_') ? 'insufficient-memory' : 'start-failed',
-          warning
-        };
-        results.push(result);
-        this.record({ ...result, event: 'keep-warm-skipped' });
-        this.logger.warn?.(`Keep-warm skipped ${runtimeId}: ${warning}`);
+      const result = await this.admit(runtimeId, {
+        config: admissionConfig,
+        warmup: true,
+        force: false,
+        reason,
+        allowEviction,
+        preferredRestore: reason === 'preferred-warm-reconcile',
+        preferredWarmIdleMs:
+          reason === 'preferred-warm-reconcile'
+            ? (numberOrNull(this.config?.runtimePolicy?.preferredWarmIdleMs) ?? PREFERRED_WARM_DEFAULT_IDLE_MS)
+            : 0
+      });
+      for (const warning of result.plan?.warnings ?? []) {
+        this.logger.warn?.(`${reason} ${runtimeId}: ${warning}`);
       }
+      return result;
+    } catch (error) {
+      const warning = error?.message ?? String(error);
+      const result = {
+        runtimeId,
+        started: false,
+        status: 'skipped',
+        reason:
+          String(error?.code || '').startsWith('runtime_capacity_') || error?.code === 'runtime_eviction_forbidden'
+            ? 'insufficient-memory'
+            : 'start-failed',
+        warning
+      };
+      this.record({ ...result, event: reason === 'preferred-warm' ? 'preferred-warm-skipped' : 'keep-warm-skipped' });
+      this.logger.warn?.(`Residency skipped (${reason}) ${runtimeId}: ${warning}`);
+      return result;
     }
-    return results;
   }
 
   async stop(runtimeId, { requestedBy } = {}) {

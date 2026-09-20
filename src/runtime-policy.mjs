@@ -40,6 +40,24 @@ function runtimePriority(runtime, { requested = false, keepWarm = false } = {}) 
   return keepWarm ? 100 : 0;
 }
 
+// Residency tiers rank eviction candidates. Ordinary idle evictables are
+// reclaimed before preferred runtimes; preferred runtimes are reclaimed before
+// hard keep-warm pins (which protectedReasons removes from contention entirely).
+function runtimeResidencyTier(row) {
+  return row.preferredWarm ? 1 : 0;
+}
+
+// Background eviction candidates must have completed their last request at
+// least the configured grace window ago. This prevents a freshly-loaded
+// on-demand runtime from being evicted again immediately. A runtime with no
+// completion timestamp is treated as recently used and skipped.
+function idleLongEnough(row, idleMs) {
+  if (!(idleMs > 0)) return true;
+  const lastIdle = Math.max(Date.parse(row.lastIdleAt || 0) || 0, Date.parse(row.statusSince || 0) || 0);
+  if (lastIdle <= 0) return false;
+  return Date.now() - lastIdle >= idleMs;
+}
+
 function isRuntimeLoaded(status) {
   return (
     status?.healthy === true || ['running', 'external', 'starting', 'draining', 'stopping'].includes(status?.status)
@@ -174,6 +192,11 @@ function runtimeRows(config, status, requestedRuntimeId, requesterNode) {
       .filter(([, runtime]) => runtime.keepWarm === true)
       .map(([runtimeId]) => runtimeId)
   );
+  const preferredWarm = new Set(
+    Object.entries(config.runtimes ?? {})
+      .filter(([, runtime]) => runtime.preferredWarm === true && runtime.keepWarm !== true)
+      .map(([runtimeId]) => runtimeId)
+  );
   return Object.entries(config.runtimes ?? {}).map(([runtimeId, runtime]) => {
     const runtimeStatus = status?.runtimes?.[runtimeId] ?? {};
     const requested = runtimeId === requestedRuntimeId;
@@ -186,13 +209,16 @@ function runtimeRows(config, status, requestedRuntimeId, requesterNode) {
       enabled: runtime.enabled === true,
       requested,
       keepWarm: keepWarm.has(runtimeId),
+      preferredWarm: preferredWarm.has(runtimeId),
       loaded,
       healthy: runtimeStatus.healthy === true,
       status: runtimeStatus.status ?? 'unknown',
       activeRequests: runtimeStatus.activeRequests ?? 0,
       queuedRequests: runtimeStatus.queuedRequests ?? 0,
+      admissionQueuedRequests: runtimeStatus.admissionQueuedRequests ?? 0,
       lastRequestedAt: runtimeStatus.lastRequestedAt ?? null,
       lastIdleAt: runtimeStatus.lastIdleAt ?? null,
+      statusSince: runtimeStatus.statusSince ?? null,
       memoryGb,
       resourcesByNode: ownedByDistributedGroup ? {} : runtimeResourcesByNode(runtime, config),
       ownedByDistributedGroup,
@@ -213,7 +239,12 @@ function protectedReasons(row, policy) {
   if (row.requested) reasons.push('requested');
   if (row.authorityProtected) reasons.push(`authority-owner:${row.authority.owner}`);
   if (row.keepWarm) reasons.push('keep-warm-pin');
-  if (policy.protectActiveRequests && row.activeRequests > 0) reasons.push('active-requests');
+  if (
+    policy.protectActiveRequests &&
+    (row.activeRequests > 0 || row.queuedRequests > 0 || row.admissionQueuedRequests > 0)
+  ) {
+    reasons.push('active-requests');
+  }
   return reasons;
 }
 
@@ -252,7 +283,18 @@ function nodeMemoryProfile(config, nodeId, clusterStatus, fallbackProfile) {
   };
 }
 
-function clusterRuntimePolicyPlan(config, { requestedRuntimeId, profile, status, memoryProfile, requesterNode }) {
+function clusterRuntimePolicyPlan(
+  config,
+  {
+    requestedRuntimeId,
+    profile,
+    status,
+    memoryProfile,
+    requesterNode,
+    preferredRestore = false,
+    preferredWarmIdleMs = 0
+  }
+) {
   const policyTemplate = config.runtimePolicy ?? {};
   const rows = runtimeRows(config, status, requestedRuntimeId, requesterNode);
   const requested = requestedRuntimeId ? rows.find((row) => row.runtimeId === requestedRuntimeId) : null;
@@ -336,7 +378,23 @@ function clusterRuntimePolicyPlan(config, { requestedRuntimeId, profile, status,
   const candidates = rows
     .filter((row) => row.loaded)
     .filter((row) => protectedReasons(row, policy).length === 0)
+    // A background preferred-restore pass may evict idle ordinary runtimes, but
+    // only after the grace window, and only ones that are not themselves
+    // preferred (so two preferred runtimes cannot ping-pong each other). A
+    // normal request admission is unchanged and can still evict an idle
+    // preferred runtime under real pressure.
+    .filter(
+      (row) =>
+        !preferredRestore ||
+        (!row.preferredWarm &&
+          row.activeRequests === 0 &&
+          row.queuedRequests === 0 &&
+          row.admissionQueuedRequests === 0 &&
+          idleLongEnough(row, preferredWarmIdleMs))
+    )
     .sort((left, right) => {
+      const tier = runtimeResidencyTier(left) - runtimeResidencyTier(right);
+      if (tier !== 0) return tier;
       const leftUsed = Date.parse(left.lastRequestedAt || left.lastIdleAt || 0) || 0;
       const rightUsed = Date.parse(right.lastRequestedAt || right.lastIdleAt || 0) || 0;
       if (leftUsed !== rightUsed) return leftUsed - rightUsed;
@@ -404,7 +462,14 @@ function clusterRuntimePolicyPlan(config, { requestedRuntimeId, profile, status,
 
 export async function createRuntimePolicyPlan(
   config,
-  { requestedRuntimeId, profile, status, requesterNode = currentNodeId(config) } = {}
+  {
+    requestedRuntimeId,
+    profile,
+    status,
+    requesterNode = currentNodeId(config),
+    preferredRestore = false,
+    preferredWarmIdleMs = 0
+  } = {}
 ) {
   const runtimeStatus =
     status ??
@@ -419,7 +484,9 @@ export async function createRuntimePolicyPlan(
       profile,
       status: runtimeStatus,
       memoryProfile,
-      requesterNode
+      requesterNode,
+      preferredRestore,
+      preferredWarmIdleMs
     });
   }
   const policy = policyConfig(config, memoryProfile);
@@ -456,7 +523,18 @@ export async function createRuntimePolicyPlan(
   const candidates = rows
     .filter((row) => row.loaded)
     .filter((row) => protectedReasons(row, policy).length === 0)
+    .filter(
+      (row) =>
+        !preferredRestore ||
+        (!row.preferredWarm &&
+          row.activeRequests === 0 &&
+          row.queuedRequests === 0 &&
+          row.admissionQueuedRequests === 0 &&
+          idleLongEnough(row, preferredWarmIdleMs))
+    )
     .sort((left, right) => {
+      const tier = runtimeResidencyTier(left) - runtimeResidencyTier(right);
+      if (tier !== 0) return tier;
       const leftUsed = Date.parse(left.lastRequestedAt || left.lastIdleAt || 0) || 0;
       const rightUsed = Date.parse(right.lastRequestedAt || right.lastIdleAt || 0) || 0;
       if (leftUsed !== rightUsed) return leftUsed - rightUsed;
@@ -539,21 +617,69 @@ export async function applyRuntimePolicyPlan(
     reason = 'runtime-admission',
     alternativeAvailable = false,
     allowEviction = true,
+    preferredRestore = false,
+    preferredWarmIdleMs = 0,
+    admissionGuard,
+    profile,
     requesterNode = currentNodeId(config)
   } = {}
 ) {
   if (!requestedRuntimeId) throw new Error('requested runtime id is required');
 
   const applyPlan = async (admissionSignal) => {
-    assertMaintenanceStartAllowed(runtimeManager.config ?? config, requestedRuntimeId);
-    const status = await runtimeManager.status();
+    // Use the freshest runtime manager config inside the admission mutex so
+    // that config toggles/reloads queued behind an earlier admission cannot
+    // start a runtime the operator already disabled or suspended.
+    const isPreferred = preferredRestore || reason === 'preferred-warm';
+    const readLiveConfig = () => (isPreferred ? (runtimeManager.config ?? config) : config);
+    let planSource = null;
+    const assertFreshGuard = () => {
+      admissionSignal?.throwIfAborted?.();
+      if (isPreferred && planSource && readLiveConfig() !== planSource)
+        throw new RuntimeAdmissionError('Residency configuration changed; retry reconciliation', {
+          code: 'runtime_residency_changed'
+        });
+      if (admissionGuard && !admissionGuard())
+        throw new RuntimeAdmissionError('Residency reconciliation stopped', { code: 'runtime_residency_closed' });
+      assertMaintenanceStartAllowed(runtimeManager.config ?? readLiveConfig(), requestedRuntimeId);
+      if (typeof runtimeManager.resolveAdmissionGuard !== 'function') return;
+      const guard = runtimeManager.resolveAdmissionGuard({ runtimeId: requestedRuntimeId, reason });
+      if (guard && guard.ok === false) {
+        const error = new Error(guard.message ?? `admission guard rejected ${requestedRuntimeId}`);
+        error.code = guard.code ?? 'runtime_admission_guard';
+        error.temporary = false;
+        throw error;
+      }
+    };
+    let liveConfig = readLiveConfig();
     admissionSignal?.throwIfAborted?.();
+    assertFreshGuard();
+    const status = await runtimeManager.status();
+    liveConfig = readLiveConfig();
+    assertFreshGuard();
     if (runtimeManager.clusterCoordinator) status.cluster = await runtimeManager.clusterCoordinator.status();
-    const plan = await createRuntimePolicyPlan(config, {
+    liveConfig = readLiveConfig();
+    assertFreshGuard();
+    planSource = liveConfig;
+    const planConfig = isPreferred
+      ? { ...liveConfig, runtimePolicy: { ...liveConfig.runtimePolicy, enabled: true, protectActiveRequests: true } }
+      : liveConfig;
+    const idleGrace = preferredRestore
+      ? Number(liveConfig.runtimePolicy?.preferredWarmIdleMs ?? preferredWarmIdleMs)
+      : preferredWarmIdleMs;
+    const plan = await createRuntimePolicyPlan(planConfig, {
       requestedRuntimeId,
       status,
-      requesterNode
+      requesterNode,
+      preferredRestore,
+      preferredWarmIdleMs: idleGrace,
+      profile
     });
+    assertFreshGuard();
+    if (isPreferred && readLiveConfig() !== liveConfig)
+      throw new RuntimeAdmissionError('Residency configuration changed; retry reconciliation', {
+        code: 'runtime_residency_changed'
+      });
     if (dryRun) {
       return {
         dryRun: true,
@@ -642,12 +768,37 @@ export async function applyRuntimePolicyPlan(
 
     const results = [];
     for (const action of plan.actions) {
+      liveConfig = readLiveConfig();
+      assertFreshGuard();
       admissionSignal?.throwIfAborted?.();
       if (action.type === 'stop') {
+        const statusBeforeDrain = (runtimeManager.stateFor?.(action.runtimeId) ?? status.runtimes?.[action.runtimeId])
+          ?.statusSince;
+        const assertIdleVictim = (afterDrain = false) => {
+          if (!preferredRestore) return;
+          const current =
+            runtimeManager.config?.runtimes?.[action.runtimeId] ?? liveConfig.runtimes?.[action.runtimeId];
+          const state = runtimeManager.stateFor?.(action.runtimeId) ?? status.runtimes?.[action.runtimeId] ?? {};
+          if (
+            current?.keepWarm ||
+            current?.preferredWarm ||
+            state.activeRequests > 0 ||
+            state.queuedRequests > 0 ||
+            state.admissionQueuedRequests > 0 ||
+            !idleLongEnough(afterDrain ? { ...state, statusSince: statusBeforeDrain } : state, idleGrace)
+          ) {
+            throw new RuntimeAdmissionError('Resident work changed; retry reconciliation', {
+              code: 'runtime_residency_changed'
+            });
+          }
+        };
+        assertIdleVictim();
         if (typeof runtimeManager.drainRuntime === 'function') {
           await runtimeManager.drainRuntime(action.runtimeId, { requestedBy: requesterNode });
         }
         try {
+          assertFreshGuard();
+          assertIdleVictim(true);
           results.push({
             ...action,
             status: 'applied',
@@ -656,6 +807,8 @@ export async function applyRuntimePolicyPlan(
         } finally {
           runtimeManager.resumeRuntime?.(action.runtimeId);
         }
+        liveConfig = readLiveConfig();
+        assertFreshGuard();
       } else if (action.type === 'start') {
         results.push({
           ...action,
@@ -667,6 +820,8 @@ export async function applyRuntimePolicyPlan(
             requestedBy: requesterNode
           })
         });
+        liveConfig = readLiveConfig();
+        assertFreshGuard();
       }
     }
     if (!results.some((result) => result.type === 'start')) {
@@ -682,6 +837,8 @@ export async function applyRuntimePolicyPlan(
           requestedBy: requesterNode
         })
       });
+      liveConfig = readLiveConfig();
+      assertFreshGuard();
     }
 
     return {

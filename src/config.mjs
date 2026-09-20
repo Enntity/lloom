@@ -67,10 +67,10 @@ function envBoolean(env, name) {
 
 function residencyFields(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
-  const fields = ['keepWarm', 'pinned', 'evictable'].filter((field) => Object.hasOwn(value, field));
+  const fields = ['keepWarm', 'preferredWarm', 'pinned', 'evictable'].filter((field) => Object.hasOwn(value, field));
   if (value.policy && typeof value.policy === 'object' && !Array.isArray(value.policy)) {
     fields.push(
-      ...['keepWarm', 'pinned', 'evictable']
+      ...['keepWarm', 'preferredWarm', 'pinned', 'evictable']
         .filter((field) => Object.hasOwn(value.policy, field))
         .map((field) => `policy.${field}`)
     );
@@ -149,7 +149,7 @@ function validateConfig(config, sourcePath, env) {
     const modelResidencyFields = residencyFields(model);
     if (modelResidencyFields.length) {
       errors.push(
-        `model ${model?.id ?? index} cannot declare ${modelResidencyFields.join(', ')}; keepWarm is only valid on a managed internal runtime`
+        `model ${model?.id ?? index} cannot declare ${modelResidencyFields.join(', ')}; keepWarm is only valid on a managed internal runtime; preferredWarm is also only valid on a managed internal runtime`
       );
     }
     if (model?.runtime && !config.runtimes?.[model.runtime]) {
@@ -335,6 +335,14 @@ function validateConfig(config, sourcePath, env) {
     if (runtime.keepWarm != null && typeof runtime.keepWarm !== 'boolean') {
       errors.push(`runtime ${runtimeId} keepWarm must be a boolean`);
     }
+    if (runtime.preferredWarm != null && typeof runtime.preferredWarm !== 'boolean') {
+      errors.push(`runtime ${runtimeId} preferredWarm must be a boolean`);
+    }
+    if (runtime.keepWarm === true && runtime.preferredWarm === true) {
+      errors.push(
+        `runtime ${runtimeId} cannot set both keepWarm and preferredWarm; keepWarm is a hard pin and preferredWarm is a soft tier`
+      );
+    }
     if (runtime.authority != null) {
       if (!runtime.authority || typeof runtime.authority !== 'object' || Array.isArray(runtime.authority)) {
         errors.push(`runtime ${runtimeId} authority must be an object`);
@@ -353,6 +361,12 @@ function validateConfig(config, sourcePath, env) {
           errors.push(`runtime ${runtimeId} authority.group must be a runtime id`);
         }
       }
+    }
+  }
+  const preferredWarmIdleMs = config.runtimePolicy?.preferredWarmIdleMs;
+  if (preferredWarmIdleMs != null) {
+    if (typeof preferredWarmIdleMs !== 'number' || !Number.isFinite(preferredWarmIdleMs) || preferredWarmIdleMs < 0) {
+      errors.push('runtimePolicy.preferredWarmIdleMs must be a nonnegative finite number');
     }
   }
 
@@ -445,6 +459,11 @@ export async function loadConfig(
   if (Object.hasOwn(expanded, 'keepWarm')) {
     throw new Error(
       `Invalid LLooM config ${resolvedPath}: top-level keepWarm is not supported; use runtimes.<id>.keepWarm`
+    );
+  }
+  if (Object.hasOwn(expanded, 'preferredWarm')) {
+    throw new Error(
+      `Invalid LLooM config ${resolvedPath}: top-level preferredWarm is not supported; use runtimes.<id>.preferredWarm`
     );
   }
   const community = asObject(expanded.community);

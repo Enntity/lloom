@@ -58,6 +58,7 @@ import { mutateConfigSource } from './config-mutation.mjs';
 import { createModelMaintenanceController } from './model-maintenance-control.mjs';
 import { acquireRateLimitSlot, consumeRateBudget, createRateLimitRegistry } from './rate-limit.mjs';
 import { RuntimeManager, runtimeWatchdogConfig, normalizeRequestClass } from './runtime-manager.mjs';
+import { createPreferredResidencyReconciler } from './runtime-residency.mjs';
 import {
   applyRuntimePolicyPlan,
   createRuntimePolicyPlan,
@@ -1948,6 +1949,8 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     runtimeManager.clusterCoordinator = clusterCoordinator;
     clusterCoordinator.attachRuntimeManager(runtimeManager);
   }
+  const residencyReconciler = createPreferredResidencyReconciler(runtimeManager, { logger });
+  let residencyStartup = Promise.resolve();
   let registry = createRegistry(config);
   clusterCoordinator.attachModelCatalog(() =>
     registry.catalogModels({ includeAliases: false, advertisedOnly: true, requireRuntimeEnabled: false })
@@ -4297,6 +4300,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         }
         sendJson(res, 200, {
           keepWarm: runtimeManager.keepWarmRuntimeIds(),
+          preferredWarm: runtimeManager.preferredWarmRuntimeIds?.() ?? [],
           results: await runRuntimeAdminAction(() => runtimeManager.startKeepWarm())
         });
         return;
@@ -4566,13 +4570,24 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         server.once('error', onError);
         server.listen(config.server.port, config.server.host, () => {
           server.off('error', onError);
-          runtimeManager.startKeepWarm().catch((error) => logger.error?.(error));
+          residencyStartup = runtimeManager
+            .startKeepWarm()
+            .then(() => {
+              // The periodic preferred-restore timer starts only after the
+              // pinned (and then preferred) residency boot pass has settled.
+              if (!runtimeManager.shuttingDown) residencyReconciler.start();
+            })
+            .catch((error) => logger.error?.(error));
           if (configPath) watchFile(configPath, { interval: 500 }, reloadConfig);
           resolve(server);
         });
       });
     },
     async close({ stopRuntimes = true, httpGraceMs = 5000 } = {}) {
+      runtimeManager.shuttingDown = true;
+      await residencyReconciler.stop();
+      await residencyStartup;
+      await runtimeManager.admissionQueue;
       if (configPath) unwatchFile(configPath, reloadConfig);
       metrics.flush();
       let runtimeError = null;
