@@ -882,7 +882,8 @@ assert.deepEqual(
     'linux-nvidia-gb10-ternary-bonsai-27b',
     'linux-nvidia-gb10-thinkingcap-qwen36-27b-vllm',
     'linux-nvidia-qwen-image-2-1-diffusers',
-    'linux-nvidia-qwen3-embedding-4b-vllm'
+    'linux-nvidia-qwen3-embedding-4b-vllm',
+    'lloom-hear'
   ]
 );
 const benchmarkEvidence = await loadBenchmarkEvidence();
@@ -1044,7 +1045,7 @@ const recipeIndexReport = await buildRecipeIndexReport(config, {
 });
 assert.equal(recipeIndexReport.ok, true);
 assert.equal(recipeIndexReport.index.id, 'lloom-community-recipes');
-assert.equal(recipeIndexReport.recipes.length, 35);
+assert.equal(recipeIndexReport.recipes.length, 36);
 const indexedSparkRecipe = recipeIndexReport.recipes.find(
   (candidate) => candidate.id === 'linux-nvidia-gb10-qwen36-unsloth-vllm'
 );

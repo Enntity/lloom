@@ -1120,6 +1120,34 @@
         }
       ],
       "name": "Qwen Image 2.1 generation and editing (Diffusers, NVIDIA)"
+    },
+    {
+      "id": "lloom-hear",
+      "path": "lloom-hear.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "lloom-hear.json",
+          "status": "current"
+        }
+      ],
+      "name": "LLooM Hear - local sound and music perception",
+      "summary": "CPU audio analysis with loudness, tempo, key, timbre, signal-change estimates and an optional dashboard image. Generated interpretation is opt-in and uses a separately configured upstream model.",
+      "tags": [
+        "cpu",
+        "audio-analysis",
+        "audio-understanding",
+        "music",
+        "dsp",
+        "measurement",
+        "perception"
+      ],
+      "recommendedFor": [
+        "agents that natively understand only text and images but must reason about sound or music",
+        "any host with ffmpeg; no accelerator required",
+        "callers that need measured audio facts separated from generated description"
+      ]
     }
   ]
 }

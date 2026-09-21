@@ -50,6 +50,25 @@ Speech API extras: `voice` (named LLooM profile), `ref_audio` / `audio_prompt_pa
 Chatterbox keeps ResembleAI's built-in Perth watermark enabled. Only create or clone voices you own or have explicit permission to use, and disclose synthetic audio where appropriate.
 Community host seed recipes also publish split Apple Silicon MTPLX lanes plus a Linux/NVIDIA Qwen3.6 27B NVFP4 vLLM lane under `community/recipes/`; first-run onboarding can consume those signed packs directly from `lloom-host` and let machine-profile evidence decide which one fits.
 
+## LLooM Hear
+
+The `lloom-hear` recipe provides CPU sound and music analysis with a Markdown
+report, structured estimates, and an optional dashboard image. It requires
+Python 3.11 or newer, ffmpeg, and ffprobe.
+
+```sh
+lloom setup --recipe lloom-hear --additive --apply --yes
+lloom runtime-start hear
+```
+
+Call `model: "hear"` with inline `input_audio` in a non-streaming chat completion.
+Local paths and remote URLs require operator configuration. Interpretation is
+off by default; `hear.interpret: true` sends the analyzed segment to the configured
+upstream model. Handle abstention, withheld estimates, and key/tempo ambiguity.
+
+See [LLooM Hear](../backends/hear/README.md) for the calling convention, input
+limits, permissions, tests, and measurement limitations.
+
 ## Plan Contract
 
 Recipes are JSON documents with these top-level sections:

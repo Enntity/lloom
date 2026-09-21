@@ -1046,6 +1046,73 @@
         ],
         "notes": "Per-request cancellation is checked between denoising steps. The backend retains its sole generation slot until the worker thread exits; encoding and decoding are not immediately interruptible."
       }
+    },
+    {
+      "id": "hear",
+      "name": "LLooM Hear",
+      "kind": "openai-compatible-server",
+      "description": "CPU audio analysis with loudness, tempo, key, timbre, signal-change estimates and an optional dashboard image. Generated interpretation is opt-in and uses a separately configured upstream model.",
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-x64",
+        "linux-arm64"
+      ],
+      "features": [
+        "audio-analysis",
+        "audio-understanding",
+        "music",
+        "dsp",
+        "measurement",
+        "audio-captioning",
+        "vision-output"
+      ],
+      "commands": [
+        "lloom-hear-server"
+      ],
+      "setup": [
+        {
+          "id": "check-ffmpeg",
+          "title": "Check ffmpeg",
+          "action": "check-command",
+          "command": "ffmpeg",
+          "args": [
+            "-version"
+          ]
+        },
+        {
+          "id": "check-ffprobe",
+          "title": "Check ffprobe",
+          "action": "check-command",
+          "command": "ffprobe",
+          "args": [
+            "-version"
+          ]
+        },
+        {
+          "id": "install-hear",
+          "title": "Install LLooM Hear backend",
+          "action": "command",
+          "command": "bash",
+          "args": [
+            "${repoRoot}/backends/hear/install.sh"
+          ]
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health",
+        "chatPath": "/v1/chat/completions"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "partial",
+        "modes": [
+          "dsp",
+          "upstream-model"
+        ],
+        "notes": "DSP executor work cannot be preempted mid-analysis. Client disconnection does not guarantee immediate compute reclamation; duration and I/O deadlines bound processing."
+      }
     }
   ]
 }

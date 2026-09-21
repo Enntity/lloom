@@ -1,0 +1,178 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "lloom-hear",
+  "name": "LLooM Hear - local sound and music perception",
+  "version": 1,
+  "summary": "CPU audio analysis with loudness, tempo, key, timbre, signal-change estimates and an optional dashboard image. Generated interpretation is opt-in and uses a separately configured upstream model.",
+  "description": "Local DSP returns estimates and ambiguity or abstention flags. Optional generated interpretation is labeled separately from measurements. See the backend README for input limits, operator controls, and limitations.",
+  "license": {
+    "id": "MIT",
+    "name": "LLooM Hear backend and recipe license"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "LLooM Hear source and synthetic regression tests in backends/hear"
+  },
+  "links": [
+    {
+      "rel": "runtime",
+      "href": "https://librosa.org/",
+      "mediaType": "text/html"
+    }
+  ],
+  "keywords": [
+    "audio-analysis",
+    "audio-understanding",
+    "music",
+    "dsp",
+    "measurement",
+    "perception",
+    "hearing",
+    "librosa"
+  ],
+  "capabilities": [
+    "audio-analysis",
+    "audio-understanding",
+    "music",
+    "dsp",
+    "measurement",
+    "audio-captioning",
+    "vision-output"
+  ],
+  "hardware": {
+    "family": "CPU",
+    "notes": [
+      "CPU analysis; no accelerator required.",
+      "Requires Python 3.11 or newer, ffmpeg and ffprobe.",
+      "Interpretation is off by default; enabling it sends the audio segment to the configured upstream route.",
+      "Inline audio contributes to the gateway prompt estimate. The context allowance admits audio payloads and is not an upstream model context limit."
+    ]
+  },
+  "requirements": {
+    "platforms": [
+      "darwin-arm64",
+      "darwin-x64",
+      "linux-x64",
+      "linux-arm64"
+    ],
+    "memoryGb": 2,
+    "diskGb": 2,
+    "commands": [
+      "lloom-hear-server",
+      "ffmpeg",
+      "ffprobe"
+    ],
+    "accelerators": []
+  },
+  "backend": {
+    "id": "hear",
+    "name": "LLooM Hear",
+    "type": "openai-compatible-server",
+    "features": [
+      "audio-analysis",
+      "music",
+      "dsp",
+      "measurement",
+      "vision-output"
+    ]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-lloom-hear-server",
+        "title": "Check LLooM Hear server shim",
+        "action": "check-command",
+        "command": "lloom-hear-server",
+        "args": [
+          "--help"
+        ]
+      },
+      {
+        "id": "install-hear",
+        "title": "Install LLooM Hear backend",
+        "action": "command",
+        "command": "bash",
+        "args": [
+          "${repoRoot}/backends/hear/install.sh"
+        ]
+      },
+      {
+        "id": "check-ffmpeg",
+        "title": "Check ffmpeg",
+        "action": "check-command",
+        "command": "ffmpeg",
+        "args": [
+          "-version"
+        ]
+      },
+      {
+        "id": "check-ffprobe",
+        "title": "Check ffprobe",
+        "action": "check-command",
+        "command": "ffprobe",
+        "args": [
+          "-version"
+        ]
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "perception",
+      "name": "LLooM Hear",
+      "model": "hear",
+      "gatewayModel": "hear",
+      "runtime": "hear",
+      "backendConfig": "hear",
+      "input": [
+        "text",
+        "audio"
+      ],
+      "output": [
+        "text",
+        "image"
+      ],
+      "capabilities": [
+        "audio-analysis",
+        "audio-understanding",
+        "music",
+        "dsp",
+        "measurement",
+        "audio-captioning",
+        "vision-output"
+      ],
+      "aliases": [
+        "hear",
+        "listen"
+      ],
+      "settings": {
+        "contextWindow": 1048576,
+        "maxOutputTokens": 8192,
+        "maxActiveRequests": 2,
+        "memoryGb": 2,
+        "priority": 60,
+        "keepWarm": false,
+        "startupTimeoutMs": 300000,
+        "timeoutMs": 600000,
+        "runtime": {
+          "command": "lloom-hear-server",
+          "args": [
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "${port}"
+          ],
+          "env": {
+            "LLOOM_HEAR_UPSTREAM_URL": "http://127.0.0.1:8100/v1/chat/completions",
+            "LLOOM_HEAR_UPSTREAM_MODEL": "google/gemini-3.1-flash-lite"
+          },
+          "healthPath": "/health",
+          "warmup": false
+        }
+      }
+    }
+  ]
+}

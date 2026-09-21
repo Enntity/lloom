@@ -6,6 +6,8 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Added
 
+- LLooM Hear CPU audio analysis, with structured estimates, optional dashboard images, and opt-in upstream interpretation. File and URL inputs require operator configuration.
+
 - Thirteen standalone NVIDIA ComfyUI media recipes, a public-source backend build, and shared runtime reuse for image, video and music generation.
 
 - Selective `include` paths or globs on recipe `download-model` steps, so a single-model lane fetches only the files its graph loads instead of every quantization in the model repository. Planned output reports the resolved `--include` command line.

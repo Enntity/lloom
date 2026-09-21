@@ -31,6 +31,10 @@ const requiredFiles = [
   'backends/dspark-vllm/packs/miaai-ds4fv-f5665e8/manifest.json',
   'backends/mlx-audio/install.sh',
   'backends/mlx-audio/lloom_audio_server.py',
+  'backends/hear/lloom_hear_server.py',
+  'backends/hear/install.sh',
+  'backends/hear/README.md',
+  'recipes/lloom-hear.json',
   'config/default.json',
   'assets/chat-templates/qwen3-xml-tool-reminder.jinja',
   'assets/chat-templates/qwen-fixed-v21.3.jinja',
@@ -377,7 +381,7 @@ try {
     LLOOM_HOME: path.join(homeRoot, '.lloom')
   });
   const health = await waitForHostHealth(baseUrl);
-  if (health?.data?.recipeCount !== 40 || health?.data?.benchmarkCount !== 12) {
+  if (health?.data?.recipeCount !== 41 || health?.data?.benchmarkCount !== 12) {
     fail('installed lloom-host is not serving packaged seed community data', [JSON.stringify(health?.data ?? null)]);
   }
 
