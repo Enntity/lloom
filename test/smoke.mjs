@@ -5966,7 +5966,8 @@ if (listened) {
     if (process.platform === 'darwin' && process.arch === 'arm64') {
       assert.equal(libraryPlanJson.selected.recipeId, 'apple-silicon-qwen36-35b-a3b-optiq');
     } else {
-      assert.equal(libraryPlanJson.selected, null);
+      const compatible = libraryPlanJson.candidates.filter((candidate) => candidate.selectable);
+      assert.equal(libraryPlanJson.selected?.recipeId ?? null, compatible[0]?.recipeId ?? null);
     }
     assert.equal(
       libraryPlanJson.recipes.find((recipe) => recipe.id === 'apple-silicon-qwen36-35b-a3b-optiq')?.commands
