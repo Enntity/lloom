@@ -318,3 +318,12 @@ The current repository includes a static `lloom-host` development server that se
 Setup composes initialization, backend setup, recipe setup, generated clients, and client integration writes into one audited plan. It does not bypass the lower-level safety gates: dry-run is the default, and real execution requires explicit `--apply --yes`. Bootstrap remains the lower-level backend/model/client phase for an existing config.
 
 The default generated gateway port is `8100`; selected backend runtimes occupy the default backend range beginning at `8201`. `setup --port` and `setup --backend-port-range` retarget the generated provider URL, backend base URLs, runtime ports, health URLs, and warmup URLs together so custom port layouts remain internally consistent.
+
+
+### Dashboard memory map
+
+The Models view divides one machine’s physical memory into running backends, system/other applications, and available space. Protected headroom is an overlay within available memory, not additional capacity. Hover, keyboard focus, and selection preview the incoming model’s configured peak estimate against that machine’s live memory and safety reserve. These interactions are read-only. Normal inference prepares the model through admission; optional manual preparation uses the same guarded admission endpoint.
+
+Dashboard and node-status requests opt into passive memory attribution. A five-second shared cache reads process memory and loopback listeners with bounded subprocesses. Overlapping process trees are counted once; Docker PIDs are used only on Linux. Known local Ollama and LLooM audio servers also expose their loaded-model lists through bounded, read-only requests. A healthy server with an empty model cache is not a resident model. Routing and admission status do not request this dashboard sampling.
+
+On macOS, an optional bounded Python helper reads Darwin’s physical-footprint accounting, which includes charged Metal and compressed memory. If unavailable, attribution falls back to RSS. Process memory is approximate and does not describe all shared or cached allocations. Unmeasured running backends use visibly marked estimates. If attribution exceeds measured host use, blocks are reconciled to that measured total. The host’s available-memory reading remains authoritative. Remote nodes use their own observations and safety policy; distributed capacity is never pooled into a single fit promise. Preview estimates never override admission or the live memory safety guard.

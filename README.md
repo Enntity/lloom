@@ -100,7 +100,7 @@ Then open OMP normally. The generated OMP config points at `http://127.0.0.1:810
 - Backend recipes for vLLM, SGLang, MTPLX, MLX LM, llama.cpp, Ollama, OptiQ, and stable-diffusion.cpp, with dedicated DGX Spark / GB10 and Apple Silicon recipes.
 - Community recipe packs and hardware-matched benchmark evidence so machines can select the best known model/backend recipe automatically instead of blindly chasing global tok/s.
 - Generated client profiles for OMP, OpenCode, Codex-compatible, Claude-compatible, Hermes, Zero, and any OpenAI-compatible client.
-- A browser dashboard with Live, Models, Machines, Clients, and Settings. Inspect real topology, install models, choose their readiness, load or unload managed runtimes, and try chat through the gateway. The action camera follows serving models while preserving manual zoom.
+- A browser dashboard with Live, Models, Machines, Clients, and Settings. Inspect real topology and memory blocks, preview a model’s expected footprint by pointing or focusing, and use models directly through chat or connected apps. LLooM prepares models automatically; optional readiness and memory controls live under Options & details. The action camera follows serving models while preserving manual zoom.
 
 ## Daily Commands
 

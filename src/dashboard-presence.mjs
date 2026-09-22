@@ -66,6 +66,7 @@ export const presenceStyles = `
     .presence-dialog .actions { justify-content:flex-end; flex-wrap:wrap; }
     .presence-trial { margin-top:18px; }
     .presence-trial textarea { width:100%; padding:12px; background:var(--bg); color:var(--text); border:1px solid var(--line); resize:vertical; min-height:90px; }
+    .presence-trial pre:empty { display:none; }
     .presence-trial pre { white-space:pre-wrap; font-size:13px; line-height:1.7; }
     .topology { border:1px solid var(--line); border-radius:18px; min-height:600px; background:#080f15; box-shadow:none; }
     .topology::before,.topology::after { display:none; }
@@ -84,7 +85,14 @@ export const presenceStyles = `
     .model-inspector-title { font-weight:500; font-size:22px; }
     .model-detail-grid { grid-template-columns:1fr 1fr; }
     .model-detail strong { font-weight:400; }
-    .model-inspector-actions { grid-template-columns:repeat(3,minmax(0,1fr)); }
+    .model-inspector-actions { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .presence-availability {color:#acc8d6;font-size:13px;line-height:1.65;margin:0 0 14px}
+    .presence-advanced {margin-top:22px;border-top:1px solid var(--line);padding-top:14px}
+    .presence-advanced summary {color:#8faebd;font-size:12px;cursor:pointer}
+    .presence-advanced .model-inspector-actions {margin:16px 0}
+    #presence-connect {width:100%;margin-top:12px}
+    #presence-send {width:100%;margin-top:8px}
+    #presence-model-error:empty {display:none}
     .operations-dock { margin:0; border-radius:16px; }
     .operations-dock > summary { display:none; }
     .operations-content { padding:0; }

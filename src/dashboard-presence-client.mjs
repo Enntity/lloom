@@ -10,7 +10,7 @@ export const presenceScript = String.raw`
     let presenceMachineKey = "";
     let presenceInstallTimer = null;
     let presenceInstallSeen = null;
-    const presencePolicyNames = { auto:"Auto", preferred:"Prefer ready", always:"Always ready" };
+    const presencePolicyNames = { auto:"Automatic", preferred:"Prefer instant replies", always:"Keep ready" };
     function presenceNotice(message, error = false) {
       const toast = $("#presence-toast");
       toast.querySelector("span").textContent = message;
@@ -39,16 +39,22 @@ export const presenceScript = String.raw`
     function presencePolicy(runtime) {
       return runtime?.keepWarm ? "always" : runtime?.preferredWarm ? "preferred" : "auto";
     }
+    function presenceModelResident(model) {
+      const rt=presenceRuntime(model),usage=rt?.memoryUsage;
+      if(!rt?.healthy)return false;
+      if(usage?.residencyKnown&&Array.isArray(usage.loadedModelIds))return usage.loadedModelIds.some(id=>id===model.id||id===model.upstreamModel);
+      return true;
+    }
     function presenceModelLabel(model) {
       const runtime = presenceRuntime(model);
       if (model.alias) return "Route";
       if (!model.runtime) return model.federated ? "Shared model" : "External provider";
       if (runtime?.maintenance) return "Paused";
-      const transition={starting:"Loading",warming:"Warming",queued:"Queued",stopping:"Unloading",draining:"Finishing work",failed:"Needs attention",unreachable:"Unavailable",disabled:"Disabled"}[runtime?.status];
+      const transition={starting:"Getting ready",warming:"Getting ready",queued:"Waiting for room",stopping:"Freeing memory",draining:"Finishing work",failed:"Needs attention",unreachable:"Unavailable",disabled:"Disabled"}[runtime?.status];
       if(transition)return transition;
       if (runtime?.activeRequests > 0 && runtime?.healthy) return "Serving";
-      if (runtime?.healthy) return "Ready";
-      return "On demand";
+      if (presenceModelResident(model)) return "Ready to use";
+      return "Starts when needed";
     }
     function renderPresenceModels() {
       const search = $("#presence-search").value.trim().toLowerCase();
@@ -84,13 +90,16 @@ export const presenceScript = String.raw`
     }
     function presenceClientExample() {
       const model = $("#presence-client-model").value;
-      const body = JSON.stringify({model,messages:[{role:"user",content:"Hello"}]}, null, 2);
-      $("#presence-client-example").textContent = "POST " + endpoint + "/v1/chat/completions\nContent-Type: application/json\nAuthorization: Bearer YOUR_LLOOM_KEY\n\n" + body;
+      const selected=(state.physicalModels||[]).find(m=>m.id===model),kind=selected?.kind||'chat';
+      const templates={chat:['/v1/chat/completions',{model,messages:[{role:'user',content:'Hello'}]}],embedding:['/v1/embeddings',{model,input:'Text to search'}],image:['/v1/images/generations',{model,prompt:'A quiet mountain lake'}],audio_speech:['/v1/audio/speech',{model,input:'Hello there',voice:'default'}],audio_generation:['/v1/audio/generations',{model,prompt:'Gentle piano'}],video:['/v1/videos/generations',{model,prompt:'A quiet mountain lake'}]};
+      if(kind==='audio_transcription'){$("#presence-client-example").textContent="POST "+endpoint+"/v1/audio/transcriptions\nAuthorization: Bearer YOUR_LLOOM_KEY\nMultipart form: model="+model+", file=YOUR_AUDIO_FILE";return;}
+      const [route,body]=templates[kind]||templates.chat;
+      $("#presence-client-example").textContent = "POST " + endpoint + route + "\nContent-Type: application/json\nAuthorization: Bearer YOUR_LLOOM_KEY\n\n" + JSON.stringify(body,null,2);
     }
     function renderPresenceClients() {
       $("#presence-client-url").value = endpoint + "/v1";
       const select = $("#presence-client-model"), selected = select.value;
-      const models = (state.models || []).filter(model => (model.kind || "chat") === "chat");
+      const models = state.physicalModels || [];
       const key = models.map(m=>m.id).join("\n");
       if (select.dataset.models !== key) {
         select.innerHTML = models.map(m=>'<option value="' + escapeHtml(m.id) + '">' + escapeHtml(m.name || m.id) + '</option>').join("");
@@ -117,7 +126,15 @@ export const presenceScript = String.raw`
         button.disabled = presenceBusy || !runtime || runtime.enabled === false || runtime.management === "external" || runtime.remote === true || Boolean(runtime.maintenance);
         button.setAttribute("aria-pressed",String(Boolean(runtime) && presencePolicy(runtime) === button.dataset.residency));
       }
-      $("#presence-policy-hint").textContent = runtime ? "Readiness remains subject to memory admission. Use Load to start a cold model. Always ready prevents automatic eviction." : "Availability is managed by the upstream provider.";
+      const managed=runtime&&runtime.enabled!==false&&runtime.management!=="external"&&!runtime.remote&&!runtime.distributed&&!runtime.maintenance;
+      const transitioning=runtime&&['starting','warming','queued','draining','stopping'].includes(runtime.status);
+      for(const id of ['model-start','model-stop'])$("#"+id).disabled=presenceBusy||!managed||transitioning;
+      $("#model-start").textContent=transitioning?"Getting ready…":"Make ready now";
+      $("#model-stop").disabled||=Boolean(runtime?.activeRequests||runtime?.queuedRequests||runtime?.keepWarm);
+      $("#presence-send").disabled=presenceBusy||Boolean(runtime?.maintenance)||runtime?.enabled===false;
+      $("#presence-availability").textContent=!runtime?"Available through your connected provider.":runtime.maintenance?"Paused. This model is protected from starting.":transitioning?"LLooM is getting this ready for you.":runtime.status==='failed'?"This model needs attention. Open details to see what happened.":"Just use it. LLooM prepares this automatically when your app asks.";
+      $("#presence-policy-hint").textContent = !runtime?"Your provider manages availability.":presencePolicy(runtime)==="always"?"Kept ready for quick replies. Choose Automatic if you want LLooM to reclaim its memory.":presencePolicy(runtime)==="preferred"?"Stays ready when there is room. LLooM makes space when another model needs it.":"Recommended: LLooM gets this ready when needed. Your downloaded files stay on disk.";
+      $("#presence-model-error").textContent=runtime?.lastError||"";
     }
     async function presenceLoadIntegrations() {
       try {
@@ -188,21 +205,19 @@ export const presenceScript = String.raw`
     // Keep the model inspector available from every view, rather than clipping
     // it when the canvas is hidden.
     document.body.append($("#model-inspector"),$("#node-inspector"));
-    const policy = document.createElement("section");
-    policy.id = "presence-policy";
-    policy.innerHTML = '<h3>Keep this model available</h3><div class="presence-readiness">' + Object.entries(presencePolicyNames).map(([id,name])=>'<button type="button" data-residency="' + id + '" aria-pressed="false">' + name + '</button>').join("") + '</div><p id="presence-policy-hint" class="muted"></p>';
-    $("#model-inspector .model-inspector-body").append(policy);
-    const trial = document.createElement("section");
-    trial.id = "presence-trial"; trial.className = "presence-trial";
-    trial.innerHTML = '<label for="presence-prompt">Try this model</label><textarea id="presence-prompt" placeholder="Ask something…" maxlength="8000"></textarea><button id="presence-send" type="button">Send</button><pre id="presence-answer" aria-live="polite"></pre>';
-    $("#model-inspector .model-inspector-body").append(trial);
     const inspectorBody=$("#model-inspector .model-inspector-body");
-    const technical=document.createElement("details");
-    technical.innerHTML="<summary>Recipe &amp; runtime details</summary>";
-    technical.append($("#model-inspector-details"),$("#model-inspector-tags"));
-    inspectorBody.append(technical);
-    inspectorBody.prepend(policy,$("#model-inspector .model-inspector-actions"),trial);
-    $("#model-start").textContent="Load"; $("#model-warm").textContent="Warm up"; $("#model-stop").textContent="Unload";
+    const availability=document.createElement("p");availability.id="presence-availability";availability.className="presence-availability";inspectorBody.prepend(availability);
+    const policy = document.createElement("section");policy.id = "presence-policy";
+    policy.innerHTML = '<h3>When should this stay ready?</h3><div class="presence-readiness">' + Object.entries(presencePolicyNames).map(([id,name])=>'<button type="button" data-residency="' + id + '" aria-pressed="false">' + name + '</button>').join("") + '</div><p id="presence-policy-hint" class="muted"></p>';
+    const trial = document.createElement("section");trial.id = "presence-trial"; trial.className = "presence-trial";
+    trial.innerHTML = '<label for="presence-prompt">Ask anything</label><textarea id="presence-prompt" placeholder="What can I help you with?" maxlength="8000"></textarea><button id="presence-send" class="primary" type="button">Send message</button><pre id="presence-answer" aria-live="polite"></pre>';
+    inspectorBody.append(trial);
+    const connect=document.createElement("button");connect.type="button";connect.id="presence-connect";connect.textContent="Connect an app";inspectorBody.append(connect);
+    connect.addEventListener("click",()=>{const id=state.selectedModelId;presenceSetView("clients");if([...$("#presence-client-model").options].some(option=>option.value===id))$("#presence-client-model").value=id;presenceClientExample();});
+    const technical=document.createElement("details");technical.className="presence-advanced";
+    technical.innerHTML='<summary>Options & details</summary><p id="presence-model-error" role="status"></p>';
+    technical.append(policy,$("#model-inspector .model-inspector-actions"),$("#model-inspector-details"),$("#model-inspector-tags"));inspectorBody.append(technical);
+    $("#model-start").textContent="Make ready now";$("#model-warm").remove();$("#model-stop").textContent="Free up memory";
     const oldRenderModels = renderModels;
     renderModels = function() { oldRenderModels(); renderPresence(); };
     const oldRenderInspector = renderModelInspector;
@@ -253,21 +268,21 @@ export const presenceScript = String.raw`
         if(!model?.runtime || !ensureAdminKeyIfNeeded()) return;
         const path="/gateway/runtimes/"+encodeURIComponent(model.runtime)+"/residency";
         const accepted=await postJson(path,{policy:residency.dataset.residency,yes:true});
-        presenceNotice("Readiness saved. Waiting for the current load to finish before applying it.");
+        presenceNotice("Preference saved. LLooM will take care of it.");
         const poll=async()=>{
           try {
             const {job}=await getJson(path);
             if(!job || job.id!==accepted.id)return;
             if(job.status==='pending'){setTimeout(poll,1500);return;}
             await refresh();
-            presenceNotice(job.status==='failed'?"Readiness saved, but could not be applied: "+job.error:"Readiness applied: "+presencePolicyNames[job.policy]+".",job.status==='failed');
+            presenceNotice(job.status==='failed'?"Could not update availability: "+job.error:job.policy==='auto'?"LLooM will prepare this when your app needs it.":"Availability updated: "+presencePolicyNames[job.policy]+".",job.status==='failed');
           }catch(error){presenceNotice("Could not check readiness: "+error.message,true);}
         };
         setTimeout(poll,500);
       });
     });
     // Capture legacy runtime actions once, add bounded busy/error handling, and
-    // use normal admission for Load instead of a forced process start.
+    // keep preparation behind the normal admission and safety checks.
     document.addEventListener("click",event=>{
       const button=event.target.closest("button[data-runtime]");
       if(!button) return;
@@ -277,7 +292,7 @@ export const presenceScript = String.raw`
         const load=button.dataset.action==="start";
         const action=load?"admit":button.dataset.action;
         const result=await postJson("/gateway/runtimes/"+encodeURIComponent(button.dataset.runtime)+"/"+action,load?{apply:true,yes:true,force:false,warmup:true}:{});
-        oldShowOutput(result);await refresh();presenceNotice("Model operation complete.");
+        oldShowOutput(result);await refresh();presenceNotice(load?"Ready for your apps.":"Memory released. The model stays installed.");
       });
     },true);
     $("#presence-send").addEventListener("click",event=>presenceRun(event.currentTarget,async()=>{

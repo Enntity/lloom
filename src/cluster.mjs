@@ -682,7 +682,7 @@ export class ClusterCoordinator {
     }
   }
 
-  async localNodeStatus({ runtimeStatus = null } = {}) {
+  async localNodeStatus({ runtimeStatus = null, includeMemoryUsage = false } = {}) {
     const profile = typeof this.profile === 'function' ? await this.profile() : this.profile;
     const models = typeof this.models === 'function' ? await this.models() : this.models;
     return {
@@ -704,7 +704,9 @@ export class ClusterCoordinator {
       telemetry: this.telemetry ? await this.telemetry.snapshot() : null,
       runtimeManager:
         runtimeStatus ??
-        (this.runtimeManager ? await this.runtimeManager.status({ localOnly: true }) : { runtimes: {} })
+        (this.runtimeManager
+          ? await this.runtimeManager.status({ localOnly: true, includeMemoryUsage })
+          : { runtimes: {} })
     };
   }
 

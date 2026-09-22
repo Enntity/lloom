@@ -99,13 +99,97 @@ export const sceneStyles = `
   .scene-tools button {padding:8px 12px;font-size:11px;background:#0b171f;border-color:#223a48}
   .scene-follow {display:flex;gap:8px;align-items:center;font-size:11px;color:#acccdc}
   .scene-follow input {accent-color:#22d9f3;width:auto;margin:0}
-  .scene-memory-panel {padding:22px;margin-bottom:24px}
-  .scene-memory-panel h3 {display:flex;justify-content:space-between;font-size:16px;margin:0 0 18px;align-items:center}
-  .scene-memory-panel select {width:auto;max-width:180px;font-size:11px;padding:5px 8px;background:#0a161e}
-  .scene-memory-bar {display:flex;gap:2px;min-height:72px;border-radius:10px;overflow:hidden}
-  .scene-memory-segment {min-width:100px;flex:1;padding:14px 18px;background:linear-gradient(110deg,#35444f,#253945);color:#dde9f0;font-size:12px}
-  .scene-memory-segment strong {display:block;font-size:23px;margin-top:6px;font-weight:600}
-  .scene-memory-segment.available {background:linear-gradient(100deg,#349f9c,#55b4a7);color:#042322}
+  .scene-memory-panel {position:relative;z-index:6;background:linear-gradient(150deg,#0a1a2299,#060d12d8);padding:22px 24px 20px}
+  .scene-memory-panel h3 {display:flex;justify-content:space-between;gap:14px;font-size:15px;margin:0 0 6px;align-items:baseline;flex-wrap:wrap}
+  .scene-memory-panel h3 small {font-size:11px;color:#7d99ac;font-weight:400}
+  .scene-memory-panel select {width:auto;max-width:190px;font-size:11px;padding:5px 8px;background:#0a161e}
+  .scene-mem-sub {font-size:11.5px;color:#8ea9bb;margin:0 0 16px;line-height:1.5;max-width:66ch}
+  .scene-mem-head {display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:0 0 14px}
+  .scene-mem-total {display:flex;align-items:baseline;gap:9px;font-size:26px;font-weight:600;letter-spacing:-.6px;line-height:1}
+  .scene-mem-total span {font-size:12px;font-weight:400;color:#7f9cb0;letter-spacing:0;display:block;line-height:1.15}
+  .scene-mem-total em {font-style:normal;font-size:13px;color:#9fc4d6;font-weight:400}
+  .scene-mem-readouts {display:flex;gap:18px;flex-wrap:wrap;justify-content:flex-end}
+  .scene-mem-readout {text-align:right;min-width:86px}
+  .scene-mem-readout b {display:block;font-size:15px;font-weight:600;letter-spacing:-.2px;line-height:1.15}
+  .scene-mem-readout span {font-size:10px;letter-spacing:.7px;text-transform:uppercase;color:#6f8b9e}
+  .scene-mem-readout.used b {color:#e6f4fa}
+  .scene-mem-readout.free b {color:#5fe6d0}
+  .scene-mem-readout span.scene-mem-dot {display:inline-flex;align-items:center;gap:6px}
+  .scene-mem-readout span.scene-mem-dot::before {content:"";width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.85}
+  .scene-mem-readout.free span.scene-mem-dot {color:#4fd8c4}
+  .scene-mem-readout.used span.scene-mem-dot {color:#8fb2c5}
+  .scene-mem-instrument {position:relative;border:1px solid #1f3a47;border-radius:12px;background:linear-gradient(180deg,#08131a,#060e13);overflow:hidden;isolation:isolate}
+  .scene-mem-ruler {position:relative;height:20px;border-bottom:1px solid #16303d}
+  .scene-mem-ticks {position:absolute;inset:0;display:flex;pointer-events:none}
+  .scene-mem-tick {flex:1 0 0;min-width:0;border-left:1px solid #16303d;position:relative}
+  .scene-mem-tick span {position:absolute;left:6px;top:5px;font-size:9px;color:#5d7c8e;white-space:nowrap}
+  .scene-mem-grid {position:absolute;inset:20px 0 0;pointer-events:none;display:flex;opacity:.5}
+  .scene-mem-grid i {flex:1 0 0;min-width:0;border-left:1px solid #11eaf50a}
+  .scene-mem-bar {position:relative;display:flex;height:142px;cursor:default;margin-top:2px}
+  .scene-mem-bar[data-known="false"] {height:70px}
+  .scene-mem-block {position:relative;flex:0 0 auto;min-width:0;border:0;padding:0;margin:0;background:transparent;color:#dceaf2;font:inherit;text-align:left;overflow:hidden;cursor:pointer;transition:filter .22s ease,opacity .22s ease}
+  .scene-mem-block > .scene-mem-fill {position:absolute;inset:0;background:var(--seg-fill);opacity:.9;transition:opacity .22s ease,box-shadow .22s ease}
+  .scene-mem-block > .scene-mem-rim {position:absolute;inset:0;border-right:1px solid #04121a99;background:linear-gradient(180deg,#ffffff14,#ffffff00 42%,#00000038)}
+  .scene-mem-block > .scene-mem-face {position:relative;z-index:2;display:flex;flex-direction:column;justify-content:space-between;height:100%;padding:11px 12px;gap:6px}
+  .scene-mem-block em {font-style:normal;font-size:10px;letter-spacing:.5px;color:#eaf7fc;text-shadow:0 1px 3px #04121ad9;white-space:nowrap}
+  .scene-mem-block em i {font-style:normal;opacity:.72;margin-left:5px;font-size:9px}
+  .scene-mem-block b {font-size:15px;font-weight:600;letter-spacing:-.2px;text-shadow:0 1px 3px #04121ad9;white-space:nowrap}
+  .scene-mem-block.wide > .scene-mem-face {padding:11px 14px}
+  .scene-mem-block.narrow em,.scene-mem-block.narrow b {display:none}
+  .scene-mem-block[data-kind="available"] {color:#eafffb}
+  .scene-mem-block[data-kind="available"] > .scene-mem-rim {background:linear-gradient(180deg,#ffffff1f,#ffffff00 40%,#0000001f)}
+  .scene-mem-block.system > .scene-mem-fill {background-image:repeating-linear-gradient(135deg,#ffffff10 0 7px,#ffffff00 7px 14px)}
+  .scene-mem-block[data-estimated="true"] > .scene-mem-fill {opacity:.72;background-image:repeating-linear-gradient(115deg,#ffffff12 0 6px,#ffffff00 6px 13px)}
+  .scene-mem-block:hover > .scene-mem-fill,.scene-mem-block[data-preview="true"] > .scene-mem-fill {opacity:1;box-shadow:inset 0 0 30px #ffffff1f}
+  .scene-mem-block[data-selected="true"] > .scene-mem-rim {box-shadow:inset 0 0 0 1px #ffffff4d}
+  .scene-mem-block:focus-visible {outline:2px solid #6ff0ff;outline-offset:-2px}
+  .scene-mem-ghost {position:absolute;top:0;bottom:0;left:0;width:0;pointer-events:none;transition:width .34s cubic-bezier(.22,1,.36,1),left .34s cubic-bezier(.22,1,.36,1)}
+  .scene-mem-ghost > .scene-mem-ghost-fill {position:absolute;inset:0;border:1px dashed #7ce8ffd9;border-left:0;border-radius:0 8px 8px 0;background:repeating-linear-gradient(115deg,#7ce8ff2e 0 6px,#7ce8ff0d 6px 12px);box-shadow:0 0 22px #23dcf61f,inset 0 0 24px #23dcf614}
+  .scene-mem-ghost[data-overflow="true"] > .scene-mem-ghost-fill {border-color:#ffb487ee;background:repeating-linear-gradient(115deg,#ff9d6a3a 0 6px,#ff9d6a12 6px 12px);box-shadow:0 0 22px #ff9d6a26}
+  .scene-mem-ghost[data-mode="resident"] > .scene-mem-ghost-fill,.scene-mem-ghost[data-mode="external"] > .scene-mem-ghost-fill {border-style:solid;border-color:#7ce8ff77;background:#7ce8ff14}
+  .scene-mem-ghost-label {position:absolute;right:8px;bottom:8px;font-size:10px;color:#bdf1ff;background:#062028e0;border:1px solid #2a6273;border-radius:7px;padding:4px 8px;white-space:nowrap;pointer-events:none;box-shadow:0 6px 18px #0006}
+  .scene-mem-ghost[data-overflow="true"] .scene-mem-ghost-label {color:#ffd6bd;border-color:#9b5a39;background:#2a140ce8}
+  .scene-mem-overflow {position:absolute;inset:0;z-index:3;pointer-events:none;opacity:0;transition:opacity .25s ease;background:repeating-linear-gradient(135deg,#ff9d6a1c 0 8px,#ff9d6a00 8px 16px)}
+  .scene-mem-overflow[data-on="true"] {opacity:1}
+  .scene-mem-overflow b {position:absolute;right:8px;top:8px;font-size:10px;font-weight:500;color:#ffd0b4;background:#2a120ae0;border:1px solid #9b5a39;border-radius:7px;padding:4px 8px;white-space:nowrap}
+  .scene-mem-overlay {position:absolute;top:0;bottom:0;pointer-events:none;border-left:1px dashed #48e9c7aa;background:linear-gradient(90deg,#48e9c729,#48e9c700 75%);transition:opacity .22s ease}
+  .scene-mem-overlay b {position:absolute;left:7px;top:8px;font-size:9px;letter-spacing:.5px;color:#8bf0da;white-space:nowrap;text-shadow:0 1px 3px #04121ad9}
+  .scene-mem-reserve {position:absolute;top:0;bottom:0;left:auto;right:0;pointer-events:none}
+  .scene-mem-reserve::before {content:"";position:absolute;top:0;bottom:0;left:0;width:1px;background:linear-gradient(180deg,#ffd79a00,#ffd79acc 18%,#ffd79acc 82%,#ffd79a00)}
+  .scene-mem-reserve b {position:absolute;left:0;bottom:6px;font-size:9px;letter-spacing:.5px;color:#e7bd82;white-space:nowrap;transform:translateX(-100%) translateX(-6px);text-shadow:0 1px 3px #04121ad9}
+  .scene-mem-bar[data-mode="external"] .scene-mem-overlay,.scene-mem-bar[data-mode="unknown"] .scene-mem-overlay {background:linear-gradient(90deg,#8fa8b833,#8fa8b800 75%);border-left-color:#9fb6c4aa}
+  .scene-mem-forecast {margin:13px 0 0;font-size:12px;line-height:1.55;color:#a9c3d3;display:flex;gap:9px;align-items:flex-start}
+  .scene-mem-forecast .scene-mem-forecast-icon {flex-shrink:0;width:8px;height:8px;margin-top:5px;border-radius:50%;background:#7f9aab}
+  .scene-mem-forecast[data-status="fits"] .scene-mem-forecast-icon {background:#3fe3cf;box-shadow:0 0 10px #3fe3cf7a}
+  .scene-mem-forecast[data-status="tight"] .scene-mem-forecast-icon {background:#f5c86a;box-shadow:0 0 10px #f5c86a7a}
+  .scene-mem-forecast[data-status="blocked"] .scene-mem-forecast-icon {background:#ff9d6a;box-shadow:0 0 10px #ff9d6a7a}
+  .scene-mem-forecast[data-status="resident"] .scene-mem-forecast-icon {background:#4fe0f2;box-shadow:0 0 10px #4fe0f27a}
+  .scene-mem-forecast[data-status="external"] .scene-mem-forecast-icon,.scene-mem-forecast[data-status="other-node"] .scene-mem-forecast-icon {background:#9db7c7}
+  .scene-mem-forecast strong {color:#eaf6fb;font-weight:500}
+  .scene-mem-forecast p {margin:0;flex:1}
+  .scene-mem-forecast .scene-mem-hint {color:#7d99ac;font-size:11px;margin-top:4px;display:block}
+  .scene-mem-legend {display:grid;grid-template-columns:repeat(auto-fit,minmax(196px,1fr));gap:6px;margin:15px 0 0}
+  .scene-mem-key {display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:9px 11px;border:1px solid #1c333f;border-radius:10px;background:#0a151c;color:#d3e4ee;font:inherit;font-size:12px;min-height:38px;transition:border-color .2s ease,background .2s ease,box-shadow .2s ease}
+  .scene-mem-key:hover {border-color:#2c6072;background:#0d1d26}
+  .scene-mem-key[data-selected="true"] {border-color:#3ed4ea;box-shadow:0 0 0 1px #28b9d126,0 6px 20px #0ad0f014}
+  .scene-mem-key[data-preview="true"] {border-color:#2e7f92;background:#0e222c}
+  .scene-mem-key:focus-visible {outline:2px solid #6ff0ff;outline-offset:2px}
+  .scene-mem-swatch {width:12px;height:12px;border-radius:4px;flex-shrink:0;background:var(--seg-fill);box-shadow:0 0 0 1px #ffffff1a}
+  .scene-mem-key-name {flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .scene-mem-key-size {font-size:11px;color:#9db9c9;white-space:nowrap}
+  .scene-mem-key[data-estimated="true"] .scene-mem-key-size::after {content:" est.";color:#7d99ac}
+  .scene-mem-key em {font-style:normal;font-size:10px;color:#7d99ac;letter-spacing:.4px}
+  .scene-mem-rel {font-size:10px;color:#7d99ac;padding:4px 7px;border:1px solid #24404d;border-radius:7px;white-space:nowrap}
+  .scene-mem-key[data-preview="true"] .scene-mem-rel {color:#8bf0da;border-color:#2b6f7d}
+  .scene-mem-note {font-size:11px;color:#7d99ac;line-height:1.6;margin:13px 0 0;display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+  .scene-mem-note span.scene-mem-chip {display:inline-flex;align-items:center;gap:6px;border:1px solid #1f3a47;border-radius:20px;padding:4px 10px;background:#08131a}
+  .scene-mem-note span.scene-mem-chip::before {content:"";width:8px;height:8px;border-radius:3px;background:#3d5b6b}
+  .scene-mem-note span.scene-mem-chip.measured::before {background:#2ec9e0}
+  .scene-mem-note span.scene-mem-chip.estimated::before {background:repeating-linear-gradient(115deg,#f3c268 0 3px,#f3c26800 3px 6px)}
+  .scene-mem-empty {padding:22px;font-size:12px;color:#93aebe;line-height:1.6}
+  @keyframes sceneMemBreathe {0%,100%{opacity:.7}50%{opacity:1}}
+  .scene-mem-bar[data-preview="true"] .scene-mem-ghost > .scene-mem-ghost-fill {animation:sceneMemBreathe 2.6s ease-in-out infinite}
+  .scene-mem-sticky {position:sticky;top:12px;align-self:start;margin-bottom:16px}
   .scene-model-layout {display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:22px}
   .scene-model-list {display:flex;flex-direction:column;gap:9px}
   .scene-model-row {display:grid;grid-template-columns:44px minmax(130px,1.4fr) minmax(75px,.7fr) auto;gap:16px;align-items:center;border:1px solid #203541;border-radius:13px;padding:19px;background:linear-gradient(120deg,#111d2490,#09141b80);cursor:pointer;text-align:left;min-height:92px}
@@ -148,9 +232,27 @@ export const sceneStyles = `
   @media(min-width:1650px) {.scene-layout,.scene-model-layout {grid-template-columns:minmax(0,1fr) 360px}.scene-columns {gap:30px;padding:30px}.scene-diagram,.scene-columns,.scene-detail {min-height:610px}.scene-model-name{font-size:13px}}
   @media(max-width:1220px) {.scene-layout,.scene-model-layout {grid-template-columns:minmax(0,1fr) 280px;gap:12px}.scene-columns {grid-template-columns:120px 90px minmax(210px,1fr);gap:8px;padding:20px 15px}.scene-gateway {width:78px;height:78px}.scene-detail {padding:18px}.scene-mini-memory{width:58px}.scene-model-row {grid-template-columns:35px minmax(0,1fr) auto;gap:12px;padding:15px}.scene-row-policy{display:none}.scene-model-row > .scene-icon{width:35px;height:40px}.scene-model-row h3{font-size:14px}.scene-model-state{font-size:9px;padding:4px 6px}.scene-model-name{font-size:11px}}
   @media(max-width:1050px) {.scene-layout,.scene-model-layout {grid-template-columns:1fr}.scene-detail {min-height:0}.scene-detail:has(.scene-placeholder:not([hidden])){display:none}.scene-columns{grid-template-columns:minmax(125px,.8fr) minmax(100px,.8fr) minmax(230px,1.4fr);gap:20px}.scene-analytics{padding:20px;gap:18px}.scene-chart + .scene-chart{padding-left:18px}.scene-machine-list .presence-card{grid-template-columns:44px 1fr auto;gap:18px}.scene-machine-list .presence-card .machine-memory{grid-column:2 / -1;grid-row:2}.scene-model-row {grid-template-columns:40px minmax(0,1fr) auto auto}.scene-row-policy{display:block}}
-  @media(max-width:680px) {.presence-brand{display:none}.presence-nav{padding:8px}.presence-nav button[aria-current]::before{left:12px;right:12px;top:auto;bottom:0;width:auto;height:2px}body > header{display:none}main{padding-top:22px}.presence-heading h2{font-size:29px}.scene-columns{grid-template-columns:1fr 1fr;gap:18px;padding:20px;min-height:0}.scene-gateway-column{grid-column:2;grid-row:1}.scene-client-column{grid-column:1;grid-row:1}.scene-machine-column{grid-column:1/-1}.scene-gateway-wrap{min-height:210px;padding:30px 0 0}.scene-clients{padding:25px 0;gap:12px}.scene-diagram{min-height:0}.scene-machines{padding-top:16px}.scene-analytics{grid-template-columns:1fr;gap:22px}.scene-chart + .scene-chart{border-left:0;border-top:1px solid #20323e;padding:20px 0 0}.scene-chart svg{height:74px}.scene-model-row{grid-template-columns:34px minmax(0,1fr) auto;padding:15px 12px;gap:10px}.scene-model-row .scene-row-policy{display:none}.scene-row-status{font-size:10px}.scene-memory-panel{padding:18px}.scene-memory-segment{padding:12px;font-size:11px;min-width:80px}.scene-memory-segment strong{font-size:21px}.scene-add-capability{padding:18px;flex-wrap:wrap}.scene-add-capability button{width:100%;margin:0}.scene-network{padding:25px 18px;justify-content:flex-start}.scene-machine-list .presence-card{grid-template-columns:40px 1fr;gap:14px;padding:18px}.scene-machine-list .presence-card .actions{grid-column:1/-1}.scene-machine-list .presence-card .machine-memory{grid-column:1/-1;grid-row:auto}.scene-links{opacity:.85}.scene-model-name{font-size:12px}.scene-model-state{font-size:10px}}
-  @media(max-width:680px){.scene-detail:has(.model-inspector.open){position:fixed;z-index:80;left:12px;right:12px;bottom:12px;height:auto;max-height:calc(100dvh - 96px);background:linear-gradient(145deg,#122530,#09141c);box-shadow:0 -20px 70px #0009,0 0 0 1px #42616b66;padding:22px}.scene-detail:has(.model-inspector.open) .model-inspector-header{position:sticky;top:-22px;margin-top:-22px;padding-top:22px;background:#10212b;z-index:1}}
+  @media(max-width:680px) {.presence-brand{display:none}.presence-nav{padding:8px}.presence-nav button[aria-current]::before{left:12px;right:12px;top:auto;bottom:0;width:auto;height:2px}body > header{display:none}main{padding-top:22px}.presence-heading h2{font-size:29px}.scene-columns{grid-template-columns:1fr 1fr;gap:18px;padding:20px;min-height:0}.scene-gateway-column{grid-column:2;grid-row:1}.scene-client-column{grid-column:1;grid-row:1}.scene-machine-column{grid-column:1/-1}.scene-gateway-wrap{min-height:210px;padding:30px 0 0}.scene-clients{padding:25px 0;gap:12px}.scene-diagram{min-height:0}.scene-machines{padding-top:16px}.scene-analytics{grid-template-columns:1fr;gap:22px}.scene-chart + .scene-chart{border-left:0;border-top:1px solid #20323e;padding:20px 0 0}.scene-chart svg{height:74px}.scene-model-row{grid-template-columns:34px minmax(0,1fr) auto;padding:15px 12px;gap:10px}.scene-model-row .scene-row-policy{display:none}.scene-row-status{font-size:10px}.scene-memory-panel{padding:17px 15px 15px}.scene-mem-sticky{position:static}.scene-mem-bar{height:112px}.scene-mem-bar[data-known="false"]{height:60px}.scene-mem-legend{grid-template-columns:1fr}.scene-mem-readouts{gap:14px}.scene-mem-total{font-size:23px}.scene-mem-readout{min-width:72px}.scene-add-capability{padding:18px;flex-wrap:wrap}.scene-add-capability button{width:100%;margin:0}.scene-network{padding:25px 18px;justify-content:flex-start}.scene-machine-list .presence-card{grid-template-columns:40px 1fr;gap:14px;padding:18px}.scene-machine-list .presence-card .actions{grid-column:1/-1}.scene-machine-list .presence-card .machine-memory{grid-column:1/-1;grid-row:auto}.scene-links{opacity:.85}.scene-model-name{font-size:12px}.scene-model-state{font-size:10px}}
+  @media(max-width:1050px){.scene-detail:has(.model-inspector.open){position:fixed;z-index:80;left:12px;right:12px;bottom:12px;height:auto;max-height:calc(100dvh - 96px);background:linear-gradient(145deg,#122530,#09141c);box-shadow:0 -20px 70px #0009,0 0 0 1px #42616b66;padding:22px}.scene-detail:has(.model-inspector.open) .model-inspector-header{position:sticky;top:-22px;margin-top:-22px;padding-top:22px;background:#10212b;z-index:1}}
   @media(prefers-reduced-motion:reduce){.scene-gateway{animation:none!important}.scene-links .scene-particle{display:none}.scene-model{transition:none}}
+  .scene-memory-panel {padding:18px 20px;margin-bottom:20px;background:#0b151d}
+  .scene-memory-panel h3 {margin-bottom:14px}
+  .scene-mem-head {margin-bottom:12px}.scene-mem-total {font-size:22px}.scene-mem-total b {font-weight:500}
+  .scene-mem-bar {height:76px}.scene-mem-block {border-radius:0;transition:width .38s cubic-bezier(.22,1,.36,1),filter .2s,opacity .2s}
+  .scene-mem-face em {max-width:100%;overflow:hidden;text-overflow:ellipsis;font-size:10px}
+  .scene-mem-legend {grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:5px;margin-top:10px}
+  .scene-mem-key {padding:7px 9px;font-size:11px;min-height:44px;gap:7px}.scene-mem-key-size {font-size:10px}
+  .scene-mem-note {font-size:10px;margin:9px 0 0}.scene-mem-forecast {margin-top:10px;min-height:36px;font-size:12px}
+  .scene-mem-ruler {overflow:hidden}.scene-mem-tick {position:absolute;top:0;bottom:0;width:0}.scene-mem-tick:last-child span {left:auto;right:5px}
+  .scene-mem-reserve {right:0;background:repeating-linear-gradient(120deg,#edbe6c0d 0 5px,transparent 5px 10px)}
+  .scene-mem-reserve b {transform:none;left:6px;bottom:6px;font-size:8px;white-space:normal;line-height:1.2}
+  .scene-mem-ghost {z-index:3}.scene-mem-reserve {z-index:4}
+  .scene-model-row[data-preview="true"],.scene-model[data-preview="true"] {border-color:#53cada;box-shadow:inset 0 0 25px #36d9e507,0 0 20px #31b6ce0b}
+  .scene-row-footprint {color:#7dbbc8;font-size:11px;white-space:nowrap}
+  @media(min-width:1051px){.scene-memory-panel{position:sticky;top:12px;z-index:7}#scene-model-detail{align-self:start;position:sticky;top:12px;max-height:calc(100dvh - 24px);height:auto;min-height:440px}.scene-model-row{scroll-margin-top:390px}}
+  @media(max-width:680px){.scene-memory-panel{padding:16px 12px}.scene-mem-bar{height:64px}.scene-mem-legend{grid-template-columns:repeat(2,minmax(0,1fr))}.scene-mem-key{min-width:0}.scene-mem-head{gap:8px}.scene-mem-readouts{gap:10px}.scene-mem-total{font-size:20px}.scene-mem-forecast{font-size:11px}.scene-mem-reserve b{font-size:7px}.scene-mem-block.compact .scene-mem-face{display:none}.scene-row-footprint{display:block;margin-top:4px}}
+  @media(prefers-reduced-motion:reduce){.scene-mem-block,.scene-mem-ghost{transition:none!important}.scene-mem-ghost-fill{animation:none!important}}
+
 `;
 
 export const sceneScript = String.raw`
@@ -182,24 +284,88 @@ export const sceneScript = String.raw`
     function sceneDeviceIcon(node){return node.local || /apple|mac/i.test(node.profile?.platformId || node.profile?.cpuBrand || '')?'laptop':'server';}
     document.querySelector('.presence-brand').innerHTML=sceneLogo+'<span>LLooM<small>by Enntity</small></span>';
     const scene=document.createElement('section');scene.id='presence-scene';scene.dataset.presencePanel='live';
-    scene.innerHTML='<div class="scene-layout"><div class="scene-diagram"><svg id="scene-links" class="scene-links" aria-hidden="true"></svg><div class="scene-columns"><div class="scene-column scene-client-column"><h3>Clients</h3><p id="scene-client-count">Waiting for telemetry</p><div id="scene-clients" class="scene-clients"></div></div><div class="scene-column scene-gateway-column"><h3>LLooM Gateway</h3><p>Routes and balances</p><div class="scene-gateway-wrap"><div id="scene-gateway" class="scene-gateway">'+sceneLogo+'</div><strong>Gateway</strong><small id="scene-active">Connecting…</small></div></div><div class="scene-column scene-machine-column"><h3>Models on your machines</h3><p id="scene-machine-count"></p><div id="scene-machines" class="scene-machines"></div></div></div></div><aside id="scene-live-detail" class="scene-detail"><div class="scene-placeholder">'+sceneIcon('model')+'<h3>Your AI, together.</h3><p>Select a model to manage its memory, availability, and vendor recipe.</p></div></aside></div><div class="scene-analytics"><div class="scene-chart"><h3>Requests <span id="scene-requests-label"></span></h3><svg id="scene-request-chart" aria-label="Observed active requests over this session"></svg><div class="scene-chart-caption">Observed during this session</div></div><div class="scene-chart"><h3>Response time <span id="scene-latency-label"></span></h3><svg id="scene-latency-chart" aria-label="Observed completed request durations"></svg><div class="scene-chart-caption">Recent completed requests · includes generation time</div></div><div class="scene-chart"><h3>Machine memory <span>Used / total</span></h3><div id="scene-memory-list"></div></div></div><div class="scene-tools"><span id="scene-health">Waiting for gateway telemetry</span><div class="actions"><label class="scene-follow"><input type="checkbox" id="scene-follow">Follow activity</label><button type="button" id="scene-diagnostic">Detailed topology</button></div></div>';
+    scene.innerHTML='<div class="scene-layout"><div class="scene-diagram"><svg id="scene-links" class="scene-links" aria-hidden="true"></svg><div class="scene-columns"><div class="scene-column scene-client-column"><h3>Clients</h3><p id="scene-client-count">Waiting for telemetry</p><div id="scene-clients" class="scene-clients"></div></div><div class="scene-column scene-gateway-column"><h3>LLooM Gateway</h3><p>Routes and balances</p><div class="scene-gateway-wrap"><div id="scene-gateway" class="scene-gateway">'+sceneLogo+'</div><strong>Gateway</strong><small id="scene-active">Connecting…</small></div></div><div class="scene-column scene-machine-column"><h3>Models on your machines</h3><p id="scene-machine-count"></p><div id="scene-machines" class="scene-machines"></div></div></div></div><aside id="scene-live-detail" class="scene-detail"><div class="scene-placeholder">'+sceneIcon('model')+'<h3>Your AI, together.</h3><p>Choose a model to try it or connect an app.</p></div></aside></div><div class="scene-analytics"><div class="scene-chart"><h3>Requests <span id="scene-requests-label"></span></h3><svg id="scene-request-chart" aria-label="Observed active requests over this session"></svg><div class="scene-chart-caption">Observed during this session</div></div><div class="scene-chart"><h3>Response time <span id="scene-latency-label"></span></h3><svg id="scene-latency-chart" aria-label="Observed completed request durations"></svg><div class="scene-chart-caption">Recent completed requests · includes generation time</div></div><div class="scene-chart"><h3>Machine memory <span>Used / total</span></h3><div id="scene-memory-list"></div></div></div><div class="scene-tools"><span id="scene-health">Waiting for gateway telemetry</span><div class="actions"><label class="scene-follow"><input type="checkbox" id="scene-follow">Follow activity</label><button type="button" id="scene-diagnostic">Detailed topology</button></div></div>';
     $('.topology').before(scene);
     $('.topology').dataset.presencePanel='diagnostic';$('.topology').hidden=true;
     const modelLeft=document.createElement('div');modelLeft.className='scene-model-main';
     const modelLayout=document.createElement('div');modelLayout.className='scene-model-layout';$('#view-models').append(modelLayout);modelLayout.append(modelLeft);
-    const memoryPanel=document.createElement('section');memoryPanel.className='scene-memory-panel';memoryPanel.innerHTML='<h3>Your memory <select id="scene-memory-machine" aria-label="Memory by machine"></select></h3><div id="scene-memory-bar" class="scene-memory-bar"></div><p class="muted" style="font-size:11px;margin:13px 0 0">Downloads stay on disk when models leave memory.</p>';
+    const memoryPanel=document.createElement('section');memoryPanel.className='scene-memory-panel';memoryPanel.innerHTML='<h3>Room for your AI <select id="scene-memory-machine" aria-label="Memory by machine"></select></h3><div id="scene-memory-bar"></div><div id="scene-memory-forecast" class="scene-mem-forecast" role="status"><span class="scene-mem-forecast-icon" aria-hidden="true"></span><p>Point to a model to preview its memory.</p></div>';
     modelLeft.append(memoryPanel);
     const modelTabs=document.createElement('div');modelTabs.className='scene-model-tabs';modelTabs.innerHTML='<strong>Installed</strong><button type="button" data-add-model>Discover</button>';
     modelLeft.append(modelTabs,$('.presence-toolbar'));
     const chips=document.createElement('div');chips.className='scene-chips';chips.innerHTML=[['','All'],['chat','Chat & code'],['image','Images'],['audio','Voice'],['embedding','Search'],['video','Video']].map(([id,name])=>'<button type="button" data-scene-kind="'+id+'" aria-pressed="'+String(!id)+'">'+name+'</button>').join('');
     modelLeft.append(chips,$('#presence-models'));$('#presence-models').className='scene-model-list';$('#presence-kind').hidden=true;
     const capability=document.createElement('div');capability.className='scene-add-capability';capability.innerHTML=sceneIcon('plus')+'<div><strong>Add a capability</strong><p>Get more done with another model.</p></div><button class="primary" type="button" data-add-model>Find a model</button>';modelLeft.append(capability);
-    const modelDetail=document.createElement('aside');modelDetail.id='scene-model-detail';modelDetail.className='scene-detail';modelDetail.innerHTML='<div class="scene-placeholder">'+sceneIcon('model')+'<h3>Make room for more.</h3><p>Select a model to choose how it uses memory. Your downloaded files stay on disk.</p></div>';
+    const modelDetail=document.createElement('aside');modelDetail.id='scene-model-detail';modelDetail.className='scene-detail';modelDetail.innerHTML='<div class="scene-placeholder">'+sceneIcon('model')+'<h3>Ready when you are.</h3><p>Choose a model to try it or connect an app. LLooM takes care of getting it ready.</p></div>';
     modelLayout.append(modelLeft,modelDetail);$('#view-models').append(modelLayout);
     const network=document.createElement('div');network.id='scene-network';network.className='scene-network';$('#presence-machines').before(network);$('#presence-machines').className='scene-machine-list';
-    const inspectorMemory=document.createElement('div');inspectorMemory.className='scene-inspector-memory';inspectorMemory.id='scene-inspector-memory';$('#presence-policy').before(inspectorMemory);
+    const inspectorMemory=document.createElement('div');inspectorMemory.className='scene-inspector-memory';inspectorMemory.id='scene-inspector-memory';$('#presence-availability').after(inspectorMemory);
     let sceneClientKey='',sceneMachineKey='',sceneModelKey='',sceneNodeKey='',sceneLinkKey='',sceneSamples=[],sceneSampleAt=0;
     let sceneMemoryNode=null,sceneFollowing=false;
+    let sceneMemPointer=null,sceneMemFocus=null,sceneMemShape='',sceneMemPaint=false;
+    const sceneMemColors=['#25bbd8','#53d5b6','#709eec','#a58ceb','#e1b176','#dc93bd','#79c5ce','#a0bb78'];
+    function sceneMemColor(segment){return segment.kind==='system'?'#304955':segment.kind==='available'?'#123337':sceneMemColors[Math.abs(segment.colorIndex||0)%sceneMemColors.length];}
+    function sceneMemModelNode(id){
+      const model=(state.physicalModels||[]).find(m=>m.id===id),rt=model&&presenceRuntime(model);
+      if(!model?.runtime)return null;
+      return rt?.node||rt?.placement?.node||(!rt?.remote?sceneNodes().find(n=>n.local)?.id:null);
+    }
+    function sceneMemSnapshot(id=sceneMemPointer||sceneMemFocus||state.selectedModelId,ownNode=false){
+      const nodes=sceneNodes(),follow=sceneMemPointer||sceneMemFocus;
+      const target=ownNode?sceneMemModelNode(id):follow&&sceneMemModelNode(follow);
+      const node=nodes.find(n=>n.id===(target||sceneMemoryNode))||nodes.find(n=>n.local)||nodes[0];
+      return buildMemoryMap({node,runtimes:state.status?.runtimeManager?.runtimes||{},models:state.physicalModels||[],previewModelId:id,memorySafety:state.status?.runtimeManager?.memorySafety});
+    }
+    function sceneMemFormat(value){return typeof value==='number'&&Number.isFinite(value)?formatBytes(Math.max(0,value)):'—';}
+    function sceneMemText(memory){
+      const p=memory.preview;
+      if(!p)return 'Point to a model to see where it would fit. Nothing starts until you use it.';
+      const status={fits:'Expected to fit',tight:'Little room to spare',blocked:'Needs more room',resident:'Already available',external:'Runs elsewhere','other-node':'Runs on another machine',unknown:'Footprint not yet known',paused:'Paused'}[p.status]||'Checking room';
+      const delta=p.additionalBytes>0?' · about '+sceneMemFormat(p.additionalBytes)+' more':'';
+      const remaining=p.additionalBytes>0&&p.remainingBytes!=null?' · '+(p.remainingBytes<0?sceneMemFormat(-p.remainingBytes)+' over capacity':sceneMemFormat(p.remainingBytes)+' available after'):'';
+      return p.label+' · '+status+delta+remaining;
+    }
+    function sceneMemSchedule(){if(sceneMemPaint)return;sceneMemPaint=true;requestAnimationFrame(()=>{sceneMemPaint=false;sceneMemRender();});}
+    function sceneMemRender(){
+      const host=$('#scene-memory-bar');if(!host||typeof buildMemoryMap!=='function')return;
+      const memory=sceneMemSnapshot(),segments=memory.segments||[],p=memory.preview;
+      const select=$('#scene-memory-machine');if(memory.nodeId)select.value=memory.nodeId;
+      const shape=JSON.stringify([memory.nodeId,memory.known,segments.map(s=>[s.id,s.kind,s.modelIds])]);
+      if(shape!==sceneMemShape){
+        const focused=host.contains(document.activeElement)?document.activeElement.dataset.memoryFocus:null;
+        sceneMemShape=shape;
+        host.innerHTML=memory.known?'<div class="scene-mem-head"><div class="scene-mem-total"><b id="scene-mem-total"></b><span>total memory</span></div><div class="scene-mem-readouts"><div class="scene-mem-readout used"><b id="scene-mem-used"></b><span>In use</span></div><div class="scene-mem-readout free"><b id="scene-mem-free"></b><span>Available</span></div></div></div><div class="scene-mem-instrument"><div id="scene-mem-ruler" class="scene-mem-ruler"></div><div class="scene-mem-bar" id="scene-mem-track" role="group" aria-label="Memory blocks">'+segments.map((s,i)=>{const model=s.modelIds?.[0],tag=model?'button':'div';return '<'+tag+(model?' type="button" data-presence-model="'+escapeHtml(model)+'"':'')+' class="scene-mem-block" data-memory-index="'+i+'" data-memory-focus="block-'+i+'" data-kind="'+escapeHtml(s.kind)+'"><span class="scene-mem-fill"></span><span class="scene-mem-rim"></span><span class="scene-mem-face"><em></em><b></b></span></'+tag+'>';}).join('')+'<span id="scene-mem-ghost" class="scene-mem-ghost" hidden><span class="scene-mem-ghost-fill"></span></span><span id="scene-mem-reserve" class="scene-mem-reserve"><b>Protected headroom</b></span></div></div><div id="scene-mem-legend" class="scene-mem-legend">'+segments.map((s,i)=>{const model=s.modelIds?.[0],tag=model?'button':'div';return '<'+tag+(model?' type="button" data-presence-model="'+escapeHtml(model)+'"':'')+' class="scene-mem-key" data-memory-key="'+i+'" data-memory-focus="key-'+i+'"><span class="scene-mem-swatch"></span><span class="scene-mem-key-name"></span><span class="scene-mem-key-size"></span></'+tag+'>';}).join('')+'</div><p id="scene-mem-note" class="scene-mem-note"></p>':'<div class="scene-mem-empty">Waiting for a memory reading from this machine.</div>';
+        if(focused)host.querySelector('[data-memory-focus="'+CSS.escape(focused)+'"]')?.focus({preventScroll:true});
+      }
+      if(memory.known){
+        $('#scene-mem-total').textContent=sceneMemFormat(memory.totalBytes);
+        $('#scene-mem-used').textContent=sceneMemFormat(memory.usedBytes);
+        $('#scene-mem-free').textContent=sceneMemFormat(memory.availableBytes);
+        const ruler=$('#scene-mem-ruler'),rulerKey=String(memory.totalBytes);
+        if(ruler.dataset.total!==rulerKey){ruler.dataset.total=rulerKey;ruler.innerHTML=Array.from({length:5},(_,i)=>'<span class="scene-mem-tick" style="left:'+i*25+'%"><span>'+escapeHtml(sceneMemFormat(memory.totalBytes*i/4))+'</span></span>').join('');}
+        for(const [i,s] of segments.entries()){
+          const block=host.querySelector('[data-memory-index="'+i+'"]'),key=host.querySelector('[data-memory-key="'+i+'"]');
+          const isPreview=Boolean(p&&s.modelIds?.includes(p.modelId)),selected=Boolean(state.selectedModelId&&s.modelIds?.includes(state.selectedModelId));
+          for(const el of [block,key]){el.style.setProperty('--seg-fill',sceneMemColor(s));el.dataset.estimated=String(Boolean(s.estimated));el.dataset.selected=String(selected);el.dataset.preview=String(isPreview);el.setAttribute('aria-label',s.label+', '+sceneMemFormat(s.bytes)+(s.estimated?', approximate':''));el.title=s.label+' · '+sceneMemFormat(s.bytes)+(s.estimated?' (estimate)':'');}
+          block.style.width=Math.max(0,Math.min(100,s.percent||0))+'%';block.classList.toggle('narrow',s.percent<10);block.classList.toggle('compact',s.percent<20);
+          block.querySelector('em').textContent=s.label;block.querySelector('b').textContent=sceneMemFormat(s.bytes);
+          key.querySelector('.scene-mem-key-name').textContent=s.label;key.querySelector('.scene-mem-key-size').textContent=sceneMemFormat(s.bytes);
+        }
+        const ghost=$('#scene-mem-ghost'),delta=p?.additionalBytes;
+        ghost.hidden=!(delta>0);ghost.style.left=memory.usedBytes/memory.totalBytes*100+'%';ghost.style.width=Math.max(0,Math.min(delta||0,memory.availableBytes))/memory.totalBytes*100+'%';ghost.dataset.overflow=String(p?.status==='blocked');
+        $('#scene-mem-track').dataset.preview=String(Boolean(p));
+        const reserve=$('#scene-mem-reserve');reserve.hidden=!(memory.reserveBytes>0);reserve.style.width=memory.reserveBytes/memory.totalBytes*100+'%';reserve.title=sceneMemFormat(memory.reserveBytes)+' protected for your machine';reserve.querySelector('b').textContent=sceneMemFormat(memory.reserveBytes)+' reserved';
+        $('#scene-mem-note').textContent=memory.attributionNote||'Live memory use. Hover previews are estimates.';
+      }
+      const forecast=$('#scene-memory-forecast');forecast.dataset.status=p?.status||'idle';const forecastText=memory.known?sceneMemText(memory):'Memory is not available yet. LLooM will check before preparing a model.';if(forecast.querySelector('p').textContent!==forecastText)forecast.querySelector('p').textContent=forecastText;
+      for(const el of document.querySelectorAll('.scene-model-row,.scene-model'))el.dataset.preview=String(el.dataset.presenceModel===p?.modelId);
+      if(state.selectedModelId){const own=sceneMemSnapshot(state.selectedModelId,true).preview;$('#scene-inspector-memory').innerHTML='<span>'+(own?.additionalBytes>0?'Expected extra memory':'Memory')+'</span><strong>'+escapeHtml(own?.additionalBytes>0?'About '+sceneMemFormat(own.additionalBytes):own?.status==='resident'?'Already available':own?.status==='external'?'Runs elsewhere':'Checked when needed')+'</strong>';}
+    }
+    const sceneMemTarget=target=>target?.closest?.('[data-presence-model]')?.dataset.presenceModel||null;
+    document.addEventListener('pointerover',event=>{if(event.pointerType==='touch')return;const id=sceneMemTarget(event.target);if(id&&id!==sceneMemPointer){sceneMemPointer=id;sceneMemSchedule();}});
+    document.addEventListener('pointerout',event=>{if(event.pointerType==='touch')return;if(sceneMemTarget(event.target)&&sceneMemTarget(event.relatedTarget)!==sceneMemPointer){sceneMemPointer=sceneMemTarget(event.relatedTarget);sceneMemSchedule();}});
+    document.addEventListener('focusin',event=>{const id=sceneMemTarget(event.target);if(id)sceneMemPointer=null;if(id!==sceneMemFocus){sceneMemFocus=id;sceneMemSchedule();}});
+    document.addEventListener('focusout',event=>{sceneMemFocus=sceneMemTarget(event.relatedTarget);sceneMemSchedule();});
     function sceneMoveInspector(){
       const slot=presenceView==='models'?modelDetail:$('#scene-live-detail');
       if($('#model-inspector').parentElement!==slot)slot.append($('#model-inspector'));
@@ -207,15 +373,19 @@ export const sceneScript = String.raw`
       if(state.selectedModelId){const model=state.physicalModels.find(m=>m.id===state.selectedModelId),rt=model&&presenceRuntime(model);inspectorMemory.innerHTML='<span>Memory estimate</span><strong>'+(rt?.memoryGb!=null?escapeHtml(rt.memoryGb)+' GB':'Not reported')+'</strong>';}
     }
     const scenePreviousView=presenceSetView;
-    presenceSetView=function(name){scenePreviousView(name);sceneMoveInspector();renderScene();};
+    presenceSetView=function(name){sceneMemPointer=null;sceneMemFocus=null;scenePreviousView(name);sceneMoveInspector();renderScene();};
     const scenePreviousInspector=renderModelInspector;
-    renderModelInspector=function(){scenePreviousInspector();sceneMoveInspector();};
+    renderModelInspector=function(){scenePreviousInspector();sceneMoveInspector();sceneMemSchedule();};
     renderPresenceModels=function(){
       const search=$('#presence-search').value.trim().toLowerCase(),kind=$('#presence-kind').value;
       const models=(state.physicalModels||[]).filter(m=>(!search||(m.name+' '+m.id).toLowerCase().includes(search))&&(!kind||(m.kind||'chat').startsWith(kind))).sort((a,b)=>Number(Boolean(b.runtime))-Number(Boolean(a.runtime))||Number(Boolean(presenceRuntime(b)?.healthy))-Number(Boolean(presenceRuntime(a)?.healthy)));
       $('#presence-model-count').textContent=models.length+(models.length===1?' model':' models');
       const key=JSON.stringify(models.map(m=>[m.id,m.name,sceneKind(m),presenceModelLabel(m),presencePolicy(presenceRuntime(m)),state.selectedModelId===m.id]));if(key===sceneModelKey)return;sceneModelKey=key;
+      const catalog=$('#presence-models'),focused=catalog.contains(document.activeElement)?document.activeElement.closest('[data-presence-model]')?.dataset.presenceModel:null;
       $('#presence-models').innerHTML=models.map(model=>{const rt=presenceRuntime(model);return '<button type="button" class="scene-model-row" data-presence-model="'+escapeHtml(model.id)+'" data-selected="'+String(state.selectedModelId===model.id)+'" data-ready="'+String(Boolean(rt?.healthy||rt?.activeRequests))+'">'+sceneIcon(sceneModelIcon(model))+'<div><h3>'+escapeHtml(model.name||model.id)+'</h3><p>'+escapeHtml(sceneKind(model))+'</p></div><span class="scene-row-status">'+escapeHtml(presenceModelLabel(model))+'</span><span class="scene-row-policy">'+escapeHtml(rt?presencePolicyNames[presencePolicy(rt)]:'Upstream')+'</span></button>';}).join('')||'<div class="empty">No models match. Choose another filter or add a model.</div>';
+      if(focused)catalog.querySelector('[data-presence-model="'+CSS.escape(focused)+'"]')?.focus({preventScroll:true});
+      if(sceneMemPointer&&!models.some(m=>m.id===sceneMemPointer))sceneMemPointer=null;
+      sceneMemSchedule();
     };
     renderPresenceMachines=function(){
       const nodes=sceneNodes(),key=JSON.stringify(nodes.map(n=>[n.id,n.name,n.local,n.reachable,n.profile?.cpuBrand,sceneMemory(n)]));if(key===sceneNodeKey)return;sceneNodeKey=key;
@@ -254,7 +424,7 @@ export const sceneScript = String.raw`
       $('#scene-memory-list').innerHTML=nodes.slice(0,4).map(node=>{const m=sceneMemory(node);return '<div class="scene-memory-row"><span>'+escapeHtml(sceneNodeName(node))+'</span><i><b style="width:'+(m.known?m.percent:0)+'%"></b></i><span>'+(m.known?escapeHtml(formatBytes(m.used))+' / '+escapeHtml(formatBytes(m.total)):'Unknown')+'</span></div>';}).join('')||'<p class="muted">Memory telemetry unavailable</p>';
       $('#scene-health').textContent=state.status?.error?'Gateway telemetry needs attention':nodes.length?'Live gateway telemetry · '+(summary.recentErrors||0)+' errors in the last minute':'Connecting to your gateway…';
       const machineSelect=$('#scene-memory-machine');const optionsKey=nodes.map(n=>n.id).join('|');if(machineSelect.dataset.nodes!==optionsKey){machineSelect.dataset.nodes=optionsKey;machineSelect.innerHTML=nodes.map(n=>'<option value="'+escapeHtml(n.id)+'">'+escapeHtml(sceneNodeName(n))+'</option>').join('');if(nodes.some(n=>n.id===sceneMemoryNode))machineSelect.value=sceneMemoryNode;}
-      sceneMemoryNode=machineSelect.value;const memory=sceneMemory(nodes.find(n=>n.id===sceneMemoryNode));$('#scene-memory-bar').innerHTML=memory.known?'<div class="scene-memory-segment" style="flex:'+Math.max(1,memory.percent)+'">In use<strong>'+escapeHtml(formatBytes(memory.used))+'</strong></div><div class="scene-memory-segment available" style="flex:'+Math.max(1,100-memory.percent)+'">Available<strong>'+escapeHtml(formatBytes(memory.total-memory.used))+'</strong></div>':'<div class="scene-memory-segment">Waiting for a physical machine memory reading.</div>';
+      sceneMemRender();
       sceneMoveInspector();requestAnimationFrame(sceneDrawLinks);
     }
     function sceneDrawLinks(){
@@ -272,7 +442,7 @@ export const sceneScript = String.raw`
     $('#scene-memory-machine').addEventListener('change',()=>{sceneMemoryNode=$('#scene-memory-machine').value;renderScene();});
     $('#scene-follow').addEventListener('change',()=>{sceneFollowing=$('#scene-follow').checked;sceneMachineKey='';renderScene();});
     $('#scene-diagnostic').addEventListener('click',()=>{const detail=$('.topology');detail.hidden=!detail.hidden;if(!detail.hidden)detail.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});});
-    document.addEventListener('click',event=>{const kind=event.target.closest('[data-scene-kind]');if(kind){$('#presence-kind').value=kind.dataset.sceneKind;document.querySelectorAll('[data-scene-kind]').forEach(b=>b.setAttribute('aria-pressed',String(b===kind)));renderPresenceModels();}if(event.target.closest('[data-scene-all]'))presenceSetView('models');const selected=event.target.closest('[data-presence-model]');if(selected){sceneModelKey='';sceneMachineKey='';renderPresenceModels();renderScene();}});
+    document.addEventListener('click',event=>{const kind=event.target.closest('[data-scene-kind]');if(kind){$('#presence-kind').value=kind.dataset.sceneKind;document.querySelectorAll('[data-scene-kind]').forEach(b=>b.setAttribute('aria-pressed',String(b===kind)));renderPresenceModels();}if(event.target.closest('[data-scene-all]'))presenceSetView('models');const selected=event.target.closest('[data-presence-model]');if(selected){sceneMemoryNode=sceneMemModelNode(selected.dataset.presenceModel)||sceneMemoryNode;sceneModelKey='';sceneMachineKey='';renderPresenceModels();renderScene();}});
     $('#scene-machines').addEventListener('scroll',()=>{sceneLinkKey='';requestAnimationFrame(sceneDrawLinks);});
     window.addEventListener('resize',()=>{sceneLinkKey='';requestAnimationFrame(sceneDrawLinks);});
     document.addEventListener('visibilitychange',()=>{if(!document.hidden){sceneLinkKey='';renderScene();}});

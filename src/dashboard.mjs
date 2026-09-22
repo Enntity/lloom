@@ -1,3 +1,4 @@
+import { buildMemoryMap } from './dashboard-memory.mjs';
 import { presenceStyles, presenceNav, presenceViews } from './dashboard-presence.mjs';
 import { sceneStyles, sceneScript } from './dashboard-scene.mjs';
 import { presenceScript } from './dashboard-presence-client.mjs';
@@ -2744,6 +2745,12 @@ export function renderDashboardPage() {
     )
     .replace(
       '    refresh();\n    refreshActivity();',
-      () => presenceScript + sceneScript + '\n    refresh();\n    refreshActivity();'
+      () =>
+        'const buildMemoryMap = (' +
+        buildMemoryMap.toString() +
+        ');\n' +
+        presenceScript +
+        sceneScript +
+        '\n    refresh();\n    refreshActivity();'
     );
 }

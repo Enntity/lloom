@@ -16,6 +16,7 @@ import {
 } from './cluster.mjs';
 import { cleanupPortListener, terminateProcessTree } from './process-control.mjs';
 import { memorySafetyPolicy, createMemorySafetyGuard, RuntimeMemorySafetyError } from './runtime-memory-safety.mjs';
+import { createRuntimeMemoryUsageSampler } from './runtime-memory-usage.mjs';
 
 import { maintenanceBlocksRouting, assertMaintenanceStartAllowed, maintenanceError } from './model-maintenance.mjs';
 
@@ -667,11 +668,17 @@ export function effectiveRuntimeArgs(runtimeId, runtime) {
 }
 
 export class RuntimeManager {
-  constructor(config, { logger = console, captureOutput = true, clusterCoordinator = null, memorySampler } = {}) {
+  constructor(
+    config,
+    { logger = console, captureOutput = true, clusterCoordinator = null, memorySampler, memoryUsageSampler } = {}
+  ) {
     this.config = config;
     this.logger = logger;
     this.captureOutput = captureOutput;
     this.memorySampler = memorySampler;
+    this.memoryUsageSampler =
+      memoryUsageSampler ??
+      createRuntimeMemoryUsageSampler({ nodeId: currentNodeId(config), platform: process.platform });
     this.memorySafetyFailures = new Map();
     this.processes = new Map();
     this.state = new Map();
@@ -1049,11 +1056,12 @@ export class RuntimeManager {
     return aborted;
   }
 
-  async status({ localOnly = false } = {}) {
+  async status({ localOnly = false, includeMemoryUsage = false } = {}) {
     const runtimes = {};
     const keepWarm = new Set(this.keepWarmRuntimeIds());
     const preferredWarm = new Set(this.preferredWarmRuntimeIds());
     const remoteNodes = new Map();
+    const localRuntimeIds = [];
     for (const [runtimeId, runtime] of Object.entries(this.config.runtimes ?? {})) {
       const placement = runtimePlacement(runtime, this.config);
       if (placement.mode === 'distributed') continue;
@@ -1062,6 +1070,7 @@ export class RuntimeManager {
         ? !runtime.node || nodeId === currentNodeId(this.config)
         : this.clusterCoordinator.isLocalNode(nodeId);
       if (localOnly && !isLocal) continue;
+      if (isLocal) localRuntimeIds.push(runtimeId);
       if (!isLocal && this.clusterCoordinator) {
         if (!remoteNodes.has(nodeId)) remoteNodes.set(nodeId, this.clusterCoordinator.nodeStatus(nodeId));
         const node = await remoteNodes.get(nodeId);
@@ -1185,6 +1194,16 @@ export class RuntimeManager {
             ...state.watchdog
           }
         };
+      }
+    }
+    if (includeMemoryUsage && this.memoryUsageSampler && localRuntimeIds.length) {
+      try {
+        const usage = await this.memoryUsageSampler.sample({ runtimes, runtimeIds: localRuntimeIds });
+        for (const runtimeId of localRuntimeIds) {
+          if (usage[runtimeId]) runtimes[runtimeId].memoryUsage = usage[runtimeId];
+        }
+      } catch {
+        // Memory telemetry is observational only and must not change runtime health or lifecycle.
       }
     }
     return {
