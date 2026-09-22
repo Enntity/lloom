@@ -1,6 +1,7 @@
 import { defaultBackendVariables, getBackend, loadBackendCatalog } from './backend-catalog.mjs';
 import { applyBackend } from './installer.mjs';
 import { runCommand } from './process-control.mjs';
+import { modelAcquisitionStatus, prepareModelAcquisition, finalizeModelAcquisition } from './model-acquisition.mjs';
 
 export async function installImportedModelAssets(plan, { onProgress, backendCatalog, env = process.env } = {}) {
   const variables = defaultBackendVariables(env);
@@ -24,8 +25,17 @@ export async function installImportedModelAssets(plan, { onProgress, backendCata
   }
   if (!plan.download?.command) return;
   onProgress?.({ message: 'Downloading model files. Existing files are reused.' });
-  const [command, ...args] = plan.download.command;
+  const acquisition = plan.download.acquisition;
+  if (plan.reference?.type === 'huggingface' && !acquisition)
+    throw new Error('Hugging Face imports require a reviewed acquisition plan.');
+  if (acquisition && (await modelAcquisitionStatus(acquisition)).complete) return;
+  const prepared = acquisition ? await prepareModelAcquisition(acquisition) : null;
+  const planned = plan.download.command;
+  const [command, ...args] = prepared
+    ? planned.map((arg, index) => (planned[index - 1] === '--local-dir' ? prepared.workPath : arg))
+    : planned;
   const result = await runCommand(command, args, { allowFailure: true, env: installEnv, stdio: 'inherit' });
   if (result.code !== 0)
     throw new Error(result.stderr || 'Model download failed. Check the vendor requirements and credentials.');
+  if (prepared) await finalizeModelAcquisition(acquisition, prepared);
 }

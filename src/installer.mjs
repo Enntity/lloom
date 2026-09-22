@@ -113,16 +113,29 @@ async function resolveHuggingFaceDownloadCommand(step, { env = process.env } = {
 
 // Bind browser-reviewed downloads to the executable selected at review. If a
 // recipe installs its own CLI later, its deterministic path remains reviewed.
-export async function pinDownloadCommands(plan, { env = process.env } = {}) {
+export async function pinDownloadCommands(plan, { env = process.env, requireAvailable = false } = {}) {
   for (const step of plan.steps ?? []) {
-    if (step.action !== 'download-model') continue;
-    const resolved = await resolveHuggingFaceDownloadCommand(step, { env });
-    let executable = resolved?.[0];
+    const legacyDownload =
+      step.action === 'command' &&
+      Array.isArray(step.command) &&
+      ['hf', 'huggingface-cli'].includes(path.basename(step.command[0])) &&
+      step.command[1] === 'download';
+    if (step.action !== 'download-model' && !legacyDownload) continue;
+    const destinationIndex = step.command?.indexOf('--local-dir') ?? -1;
+    const destination = step.destination ?? (destinationIndex >= 0 ? step.command[destinationIndex + 1] : null);
+    const resolved = await resolveHuggingFaceDownloadCommand({ ...step, destination }, { env });
+    let executable = legacyDownload && path.isAbsolute(step.command[0]) ? step.command[0] : resolved?.[0];
     if (executable && !path.isAbsolute(executable)) {
       const which = await runCommand('/usr/bin/which', [executable], { env, allowFailure: true });
       executable = which.stdout.trim();
     }
-    step.downloadExecutable = executable || path.join(path.dirname(step.destination), '.hf-cli', 'bin', 'hf');
+    if (!executable && requireAvailable)
+      throw new Error(
+        'The Hugging Face downloader is not installed. Choose a vendor recipe or install the Hugging Face CLI, then review again.'
+      );
+    if (!executable && !destination)
+      throw new Error('A reviewed Hugging Face download needs an installed CLI or an explicit --local-dir.');
+    step.downloadExecutable = executable || path.join(path.dirname(destination), '.hf-cli', 'bin', 'hf');
     step.commands = (step.commands ?? [step.command]).map((command) => [step.downloadExecutable, ...command.slice(1)]);
     step.command = step.commands[0];
   }

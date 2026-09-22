@@ -344,3 +344,47 @@ test('reviewed downloads retain their executable when the environment changes', 
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+
+test('legacy command downloads retain the reviewed executable and all vendor arguments', async () => {
+  const { pinDownloadCommands, applyRecipe } = await import('../src/installer.mjs');
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lloom-reviewed-legacy-'));
+  try {
+    const executable = path.join(dir, 'hf');
+    await fs.writeFile(
+      executable,
+      '#!/bin/sh\nfor last do :; done\nmkdir -p "$last"\nprintf "reviewed" > "$last/model.gguf"\n',
+      { mode: 0o755 }
+    );
+    const destination = path.join(dir, 'model');
+    const args = [
+      'download',
+      'owner/model',
+      'model.gguf',
+      '--revision',
+      '1234567890abcdef1234567890abcdef12345678',
+      '--local-dir',
+      destination
+    ];
+    const reviewed = await pinDownloadCommands(
+      { validationErrors: [], steps: [{ id: 'legacy', action: 'command', command: ['hf', ...args] }] },
+      { env: { PATH: dir + ':/bin:/usr/bin' } }
+    );
+    assert.deepEqual(reviewed.steps[0].command, [executable, ...args]);
+    const report = await applyRecipe(
+      { id: 'legacy-reviewed' },
+      {},
+      {
+        reviewedPlan: reviewed,
+        dryRun: false,
+        yes: true,
+        statePath: path.join(dir, 'state.json'),
+        env: { PATH: '/bin:/usr/bin', LLOOM_HF_BIN: '/must-not-run' }
+      }
+    );
+    assert.equal(report.results[0].status, 'completed', JSON.stringify(report.results));
+    assert.deepEqual(report.results[0].command, [executable, ...args]);
+    assert.equal(await fs.readFile(path.join(destination, 'model.gguf'), 'utf8'), 'reviewed');
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});

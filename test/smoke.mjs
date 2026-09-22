@@ -1083,7 +1083,10 @@ assert.equal(libraryJson.recipes[0].id, 'apple-silicon-flux2-klein-4b');
 if (process.platform === 'darwin' && process.arch === 'arm64') {
   assert.equal(libraryJson.selected.recipeId, 'apple-silicon-qwen36-35b-a3b-optiq');
 } else {
-  assert.equal(libraryJson.selected, null);
+  // CPU-only hosts can now select the lightweight Hear recipe. A missing GPU
+  // does not imply that the entire vendor library is incompatible.
+  const compatible = libraryJson.candidates.filter((candidate) => candidate.selectable);
+  assert.equal(libraryJson.selected?.recipeId ?? null, compatible[0]?.recipeId ?? null);
 }
 const addModelCli = await runCommand(process.execPath, [
   path.join(process.cwd(), 'bin', 'lloom.mjs'),
@@ -1928,7 +1931,7 @@ assert(helpCli.includes('lloom integrate'));
 assert(!helpCli.includes('recipe-submit <pack-file-or-url>'));
 const helpFlagCli = (await runCommand(process.execPath, [path.join(process.cwd(), 'bin', 'lloom.mjs'), '--help']))
   .stdout;
-assert(helpFlagCli.includes('Start installed LLooM; preview setup on first run'));
+assert(helpFlagCli.includes('Start installed LLooM; guided setup on first run'));
 const advancedHelpCli = (
   await runCommand(process.execPath, [path.join(process.cwd(), 'bin', 'lloom.mjs'), 'help', 'advanced'])
 ).stdout;

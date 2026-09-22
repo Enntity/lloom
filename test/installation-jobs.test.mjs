@@ -6,6 +6,8 @@ import path from 'node:path';
 import { createInstallationJobs } from '../src/installation-jobs.mjs';
 import { createDashboardInstallation } from '../src/dashboard-installation.mjs';
 import { loadConfig } from '../src/config.mjs';
+import { installImportedModelAssets } from '../src/model-installation.mjs';
+import { MODEL_ACQUISITION_MANIFEST } from '../src/model-acquisition.mjs';
 
 test('review is read-only; apply is bound, serialized and idempotent across refresh', async () => {
   let release,
@@ -135,6 +137,91 @@ test('dashboard installation routes enforce browser origin and publish the revie
     assert(catalog.models.some((model) => model.id === 'http-test'));
   } finally {
     if (app) await app.close();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('browser imports require an immutable Hugging Face revision before creating a plan', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lloom-import-review-'));
+  try {
+    const file = path.join(dir, 'config.json');
+    await fs.writeFile(file, JSON.stringify({ models: [], runtimes: {}, paths: { modelRoot: dir } }));
+    const config = await loadConfig(file);
+    const executable = path.join(dir, 'hf');
+    const jobs = createDashboardInstallation({
+      getConfig: () => config,
+      reload: async () => {},
+      env: { PATH: dir, LLOOM_HF_BIN: executable }
+    });
+    for (const modelRef of ['owner/model-gguf', 'https://huggingface.co/owner/model-gguf/tree/main'])
+      await assert.rejects(jobs.review({ modelRef }), /pinned to a commit/);
+    const revision = '1234567890abcdef1234567890abcdef12345678';
+    await assert.rejects(
+      jobs.review({ modelRef: 'https://huggingface.co/owner/model-gguf/resolve/' + revision + '/model.gguf' }),
+      /downloader is not installed/
+    );
+    await fs.writeFile(executable, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    const reviewed = await jobs.review({
+      modelRef: 'https://huggingface.co/owner/model-gguf/resolve/' + revision + '/model.gguf'
+    });
+    assert.equal(reviewed.details.download.acquisition.revision, revision);
+    assert.deepEqual(reviewed.details.download.acquisition.include, ['model.gguf']);
+    assert(path.isAbsolute(reviewed.details.download.command[0]));
+    assert.deepEqual(
+      (await fs.readdir(dir)).sort(),
+      ['config.json', 'hf'],
+      'review must not create download directories'
+    );
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('import acquisition keeps failed payloads staged and verifies before publishing', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lloom-import-acquisition-'));
+  try {
+    const destination = path.join(dir, 'model');
+    const executable = path.join(dir, 'hf');
+    const revision = '1234567890abcdef1234567890abcdef12345678';
+    const acquisition = {
+      provider: 'huggingface',
+      model: 'owner/model',
+      revision,
+      destination,
+      include: ['model.gguf']
+    };
+    const command = [
+      executable,
+      'download',
+      acquisition.model,
+      '--revision',
+      revision,
+      '--include',
+      'model.gguf',
+      '--local-dir',
+      destination
+    ];
+    const plan = { additions: {}, reference: { type: 'huggingface' }, download: { command, acquisition } };
+    // A successful subprocess that writes the wrong payload must not publish it.
+    await fs.writeFile(executable, '#!/bin/sh\nfor last do :; done\nprintf "partial" > "$last/wrong.gguf"\n', {
+      mode: 0o755
+    });
+    await assert.rejects(installImportedModelAssets(plan), /verification failed/);
+    await assert.rejects(fs.access(destination), { code: 'ENOENT' });
+    await fs.access(destination + '.incomplete/wrong.gguf');
+    await fs.writeFile(executable, '#!/bin/sh\nfor last do :; done\nprintf "weights" > "$last/model.gguf"\n', {
+      mode: 0o755
+    });
+    await installImportedModelAssets(plan);
+    await assert.rejects(fs.access(destination + '.incomplete'), { code: 'ENOENT' });
+    const manifest = JSON.parse(await fs.readFile(path.join(destination, MODEL_ACQUISITION_MANIFEST), 'utf8'));
+    assert.equal(manifest.revision, revision);
+    assert.deepEqual(manifest.include, ['model.gguf']);
+    assert.equal(await fs.readFile(path.join(destination, 'model.gguf'), 'utf8'), 'weights');
+    // Verified data is reusable even after the original downloader disappears.
+    await fs.unlink(executable);
+    await installImportedModelAssets(plan);
+  } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
 });

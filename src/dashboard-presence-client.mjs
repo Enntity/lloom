@@ -29,7 +29,6 @@ export const presenceScript = String.raw`
       $(".operations-dock").open = name === "settings";
       closeModelInspector(); closeNodeInspector();
       if (name === "clients") presenceLoadIntegrations();
-      if (name === "machines") presenceDiscover();
       try { history.replaceState(null,"","#" + name); } catch {}
       renderPresence();
       window.scrollTo({top:0,behavior:"instant"});
@@ -116,16 +115,6 @@ export const presenceScript = String.raw`
         button.setAttribute("aria-pressed",String(Boolean(runtime) && presencePolicy(runtime) === button.dataset.residency));
       }
       $("#presence-policy-hint").textContent = runtime ? "Readiness remains subject to memory admission. Use Load to start a cold model. Always ready prevents automatic eviction." : "Availability is managed by the upstream provider.";
-    }
-    async function presenceDiscover() {
-      const button = $("#presence-discover");
-      if (button.disabled) return;
-      button.disabled = true;
-      try {
-        const result = await getJson("/gateway/discovery");
-        $("#nearby-machines").innerHTML = (result.peers || []).map(peer=>'<article class="presence-card"><h3>' + escapeHtml(peer.name || peer.id) + '</h3><p>Discovered · not connected</p><p>' + escapeHtml(peer.host || '') + '</p></article>').join("") || escapeHtml(result.warning || (result.enabled ? "No other LLooM installations found yet." : "Network discovery is not enabled on this gateway."));
-      } catch { $("#nearby-machines").textContent = "This gateway does not provide nearby discovery yet. Your configured peers are shown above."; }
-      finally { button.hidden = true; button.disabled = false; }
     }
     async function presenceLoadIntegrations() {
       try {
@@ -227,7 +216,6 @@ export const presenceScript = String.raw`
     $("#presence-toast button").addEventListener("click",()=>$("#presence-toast").hidden=true);
     $("#presence-search").addEventListener("input",()=>renderPresenceModels());
     $("#presence-kind").addEventListener("change",()=>renderPresenceModels());
-    $("#presence-discover").addEventListener("click",presenceDiscover);
     $("#presence-client-model").addEventListener("change",presenceClientExample);
     $("#presence-copy-url").addEventListener("click",event=>presenceRun(event.currentTarget,async()=>{await navigator.clipboard.writeText(endpoint+"/v1");presenceNotice("Gateway URL copied.");}));
     $("#presence-copy-example").addEventListener("click",event=>presenceRun(event.currentTarget,async()=>{await navigator.clipboard.writeText($("#presence-client-example").textContent);presenceNotice("Example request copied. Replace the key placeholder in your client.");}));
