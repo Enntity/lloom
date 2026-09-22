@@ -89,6 +89,7 @@ const COMMAND_REGISTRY = [
   { name: 'suspend', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'resume', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'route', aliases: ['routing'], tier: 'primary', needsInstalledConfig: true },
+  { name: 'fleet', aliases: ['profiles'], tier: 'primary', needsInstalledConfig: true },
   { name: 'integrate', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'integrations', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'add-model', aliases: ['model-add'], tier: 'primary', needsInstalledConfig: true },
@@ -307,6 +308,7 @@ const INSTALLED_CONFIG_COMMANDS = new Set([
   'keep-warm',
   'model-add',
   'models',
+  'fleet',
   'remove-model',
   'route',
   'routing',
@@ -337,6 +339,7 @@ const OPERATIONAL_CONFIG_COMMANDS = new Set([
   'keep-warm',
   'model-add',
   'models',
+  'fleet',
   'remove-model',
   'route',
   'routing',
@@ -2394,6 +2397,59 @@ async function main() {
       if (!result) throw new Error(`route switch failed through ${gatewayUrlFor(config)}`);
       console.log(JSON.stringify({ ...result, applied: true }, null, 2));
     },
+    fleet: async ({ args, config }) => {
+      const action = positional(args)[1] ?? 'list';
+      const name = positional(args)[2];
+      const apply = hasFlag(args, '--apply');
+      const yes = hasFlag(args, '--yes');
+      if (!['list', 'show', 'use', 'save'].includes(action)) {
+        throw new Error(`Unknown fleet action ${action}; use list, show, use, or save.`);
+      }
+      if (action === 'list') {
+        const result = await gatewayRequest(config, '/gateway/fleet/profiles', { timeoutMs: 10000 });
+        if (!result) throw new Error(`LLooM gateway at ${gatewayUrlFor(config)} is not reachable`);
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      if (!name) throw new Error(`Missing profile name for fleet ${action}.`);
+      if (action === 'show') {
+        const result = await gatewayRequest(config, `/gateway/fleet/profiles/${encodeURIComponent(name)}`, {
+          timeoutMs: 10000
+        });
+        if (!result) throw new Error(`LLooM gateway at ${gatewayUrlFor(config)} is not reachable`);
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      const isApply = action === 'use';
+      const plan = isApply
+        ? { action: 'use', profile: name, applied: false, next: `lloom fleet use ${name} --apply --yes` }
+        : {
+            action: 'save',
+            profile: name,
+            description: argValue(args, '--description') ?? '',
+            overwrite: hasFlag(args, '--overwrite'),
+            applied: false,
+            next: `lloom fleet save ${name}${hasFlag(args, '--overwrite') ? ' --overwrite' : ''} --apply --yes`
+          };
+      if (!apply) {
+        console.log(JSON.stringify(plan, null, 2));
+        return;
+      }
+      if (!yes) throw new Error(`Refusing to ${action} a fleet profile without --yes after reviewing the plan`);
+      const result = await gatewayRequest(
+        config,
+        `/gateway/fleet/profiles/${encodeURIComponent(name)}${isApply ? '?apply=1' : ''}`,
+        {
+          method: 'POST',
+          body: isApply
+            ? { yes: true }
+            : { yes: true, description: plan.description, overwrite: plan.overwrite },
+          timeoutMs: 60000
+        }
+      );
+      if (!result) throw new Error(`fleet profile ${action} failed through ${gatewayUrlFor(config)}`);
+      console.log(JSON.stringify({ ...result, applied: true }, null, 2));
+    },
     runtimes: async ({ args, config, command: _command }) => {
       const runtimeId = positional(args)[1] ?? 'all';
       const manager = runtimeManagerForCli(config);
@@ -2757,7 +2813,7 @@ async function main() {
   handlers['pack-export'] = handlers['recipe-export'];
   handlers['recipe-pack'] = handlers['recipe-import'];
   handlers['pack-submit'] = handlers['recipe-submit'];
-  handlers['model-add'] = handlers['add-model'];
+  handlers['profiles'] = handlers['fleet'];
   handlers['routing'] = handlers['route'];
   handlers['runtime-status'] = handlers['runtimes'];
   handlers['cluster-status'] = handlers['cluster'];

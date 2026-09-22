@@ -44,6 +44,7 @@ import {
   selectedRecipeIdFromCommunityPlan
 } from './community-client.mjs';
 import { defaultLloomHome, loadConfig } from './config.mjs';
+import { createFleetProfileController } from './config-profiles.mjs';
 import { createDoctorReport } from './doctor.mjs';
 import { readHostMemory } from './host-memory.mjs';
 import { MACHINE_PROFILE_MEDIA_TYPE, profileMachine, rankRecipes, validateMachineProfile } from './machine-profile.mjs';
@@ -2123,6 +2124,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
     onApplied: (id, policy, generation) => runtimeManager.settleDesiredResidency(id, policy, generation)
   });
   const dashboardInstallation = createDashboardInstallation({ getConfig: () => config, reload: reloadConfig });
+  const fleetProfiles = createFleetProfileController({ getConfig: () => config, reload: reloadConfig });
 
   async function routingStatus() {
     const cacheMs = Math.max(0, Number(config.cluster?.routingStatusCacheMs ?? 250));
@@ -3863,6 +3865,41 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
           route: routeProfileStatus(config, aliasId)[0] ?? null
         });
         return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/gateway/fleet/profiles') {
+        sendJson(res, 200, { ok: true, ...(await fleetProfiles.list()) });
+        return;
+      }
+      const fleetProfileMatch = url.pathname.match(/^\/gateway\/fleet\/profiles\/([^/]+)$/);
+      if (fleetProfileMatch) {
+        const name = decodeURIComponent(fleetProfileMatch[1]);
+        if (req.method === 'GET') {
+          sendJson(res, 200, { ok: true, ...(await fleetProfiles.plan(name)) });
+          return;
+        }
+        if (req.method === 'POST') {
+          const body = await readJson(req);
+          for (const key of Object.keys(body))
+            if (!['yes', 'description', 'overwrite'].includes(key))
+              throw Object.assign(new Error('Fleet profile accepts only yes, description, and overwrite.'), {
+                statusCode: 400
+              });
+          const isApply = url.searchParams.get('apply') === '1';
+          const result = isApply
+            ? await fleetProfiles.apply(name, { yes: body.yes })
+            : await fleetProfiles.save(name, {
+                yes: body.yes,
+                description: body.description,
+                overwrite: body.overwrite
+              });
+          if (isApply) {
+            reloadConfig();
+            await reloadInFlight;
+          }
+          sendJson(res, 200, { ok: true, ...result });
+          return;
+        }
       }
 
       if (req.method === 'GET' && url.pathname === '/gateway/status') {
