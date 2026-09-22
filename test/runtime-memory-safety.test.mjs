@@ -7,7 +7,12 @@ import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { RuntimeManager } from '../src/runtime-manager.mjs';
-import { memorySafetyPolicy, assertMemorySafety, createMemorySafetyGuard } from '../src/runtime-memory-safety.mjs';
+import {
+  memorySafetyPolicy,
+  assertMemorySafety,
+  createMemorySafetyGuard,
+  MemorySafetyConfigError
+} from '../src/runtime-memory-safety.mjs';
 import { readHostMemory } from '../src/host-memory.mjs';
 import { terminateProcessTree } from '../src/process-control.mjs';
 
@@ -95,7 +100,10 @@ test('hard limits include the host reserve, reject malformed telemetry, and use 
     memorySafetyPolicy({ runtimePolicy: { memorySafety: { minAvailableMemoryGb: 20 } } }, 96).minAvailableMemoryGb,
     20
   );
-  assert.throws(() => memorySafetyPolicy({ runtimePolicy: { memorySafety: { mode: 'YOLO-ish' } } }), /Invalid/);
+  assert.throws(
+    () => memorySafetyPolicy({ runtimePolicy: { memorySafety: { mode: 'YOLO-ish' } } }),
+    (error) => error instanceof MemorySafetyConfigError && /Invalid/.test(error.message) && error.statusCode === 500
+  );
 });
 
 test('strict Mac telemetry fails closed instead of substituting free memory', async () => {

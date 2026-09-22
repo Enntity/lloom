@@ -34,10 +34,23 @@ export function parseLinuxMeminfo(text) {
 }
 
 export function parseMacMemoryPressure(text, totalBytes) {
-  const match = String(text).match(/System-wide memory free percentage:\s*([\d.]+)%/i);
+  const text_ = String(text);
+  const page = (name) => Number(text_.match(new RegExp('^Pages ' + name + ':\\s*(\\d+)', 'm'))?.[1]);
+  const pageSize = Number(text_.match(/page size of (\d+)/)?.[1]) || 16384;
+  const free = page('free');
+  const inactive = page('inactive');
+  const speculative = page('speculative');
+  const purgeable = page('purgeable');
+  // XNU considers free + inactive + speculative + purgeable pages available;
+  // the "System-wide memory free percentage" is an opaque kernel estimate that
+  // can understate true availability while the file cache holds pages.
+  if ([free, inactive, speculative, purgeable].every(Number.isFinite)) {
+    return memorySnapshot(totalBytes, Math.min(totalBytes, (free + inactive + speculative + purgeable) * pageSize), 'macos-memory-pages');
+  }
+  const match = text_.match(/System-wide memory free percentage:\s*([\d.]+)%/i);
   const percentage = Number(match?.[1]);
   if (!Number.isFinite(percentage)) return null;
-  return memorySnapshot(totalBytes, (Number(totalBytes) * clamp(percentage, 0, 100)) / 100, 'macos-memory-pressure');
+  return memorySnapshot(totalBytes, (totalBytes * clamp(percentage, 0, 100)) / 100, 'macos-memory-pressure');
 }
 
 export async function readHostMemory({
@@ -60,7 +73,7 @@ export async function readHostMemory({
   }
   if (platform === 'darwin') {
     try {
-      const { stdout } = await execFileImpl('/usr/bin/memory_pressure', ['-Q'], { timeout: strict ? 750 : 1500 });
+      const { stdout } = await execFileImpl('/usr/bin/memory_pressure', [], { timeout: strict ? 750 : 1500 });
       const snapshot = parseMacMemoryPressure(stdout, totalBytes);
       if (snapshot) return snapshot;
     } catch (error) {

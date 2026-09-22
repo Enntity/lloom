@@ -3866,7 +3866,11 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       }
 
       if (req.method === 'GET' && url.pathname === '/gateway/status') {
-        const runtimeStatus = await runtimeManager.status({ includeMemoryUsage: true });
+        const runtimeStatus = await runtimeManager.status({
+          // Process sampling (ps, lsof, footprint probing) runs only when the
+          // memory scene asks for it; plain status polls skip the cost.
+          includeMemoryUsage: url.searchParams.get('memoryUsage') === '1'
+        });
         const clustered = Object.keys(config.cluster?.nodes ?? {}).length > 0;
         const localRuntimeStatus = clustered
           ? {
@@ -3891,7 +3895,9 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       if (req.method === 'GET' && url.pathname === '/gateway/node') {
         sendJson(res, 200, {
           ok: true,
-          node: await clusterCoordinator.localNodeStatus({ includeMemoryUsage: true })
+          node: await clusterCoordinator.localNodeStatus({
+            includeMemoryUsage: url.searchParams.get('memoryUsage') === '1'
+          })
         });
         return;
       }

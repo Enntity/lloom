@@ -125,11 +125,14 @@ export function createFirstRunServer({
       job.status = 'succeeded';
       job.stages.forEach((stage) => (stage.status = 'complete'));
       job.stage = { id: 'verify', status: job.ready ? 'complete' : 'pending', detail: job.detail };
-      job.stages.push({
+      const verifyStage = job.stages.find((stage) => stage.id === 'verify');
+      const finalVerify = {
         id: 'verify',
         title: job.ready ? 'Inference verified' : 'Inference not verified',
         status: job.ready ? 'complete' : 'pending'
-      });
+      };
+      if (verifyStage) Object.assign(verifyStage, finalVerify);
+      else job.stages.push(finalVerify);
     } catch (error) {
       job.status = 'failed';
       job.error = String(error.message).slice(0, 1500);

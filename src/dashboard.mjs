@@ -2334,7 +2334,8 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         const [health, models, status, library, backends] = await Promise.all([
           getJson("/health"),
           getJson("/gateway/models").catch(error => ({ models: [], error: error.message })),
-          getJson("/gateway/status").catch(error => ({ error: error.message })),
+          getJson("/gateway/status" + (typeof presenceView === "string" && presenceView === "live" ? "?memoryUsage=1" : ""))
+            .catch(error => ({ error: error.message })),
           getJson("/gateway/library").catch(error => ({ error: error.message })),
           getJson("/gateway/backends").catch(error => ({ backends: [], error: error.message })),
         ]);

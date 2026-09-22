@@ -719,7 +719,7 @@ export class ClusterCoordinator {
     if (!refresh && cached?.pending) return cached.pending;
     const pending = (async () => {
       try {
-        const result = await this.requestNode(nodeId, '/gateway/node');
+        const result = await this.requestNode(nodeId, '/gateway/node?memoryUsage=1');
         return {
           ...result.node,
           id: nodeId,

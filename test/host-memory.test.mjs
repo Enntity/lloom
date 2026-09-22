@@ -23,6 +23,34 @@ assert.equal(mac.availableBytes, Math.round(96 * gibibyte * 0.44));
 assert(Math.abs(mac.utilization - 56) < 0.000001);
 assert.equal(mac.source, 'macos-memory-pressure');
 
+// Full memory_pressure output: page counts (free+inactive+speculative+purgeable)
+// must win over the opaque free percentage.
+const paged = parseMacMemoryPressure(
+  `The system has 103079215104 (6291456 pages with a page size of 16384).
+
+Stats:
+Pages free: 100000
+Pages purgeable: 20000
+Pages purged: 349093517
+
+Page Q counts:
+Pages active: 2130087
+Pages inactive: 30000
+Pages speculative: 5000
+Pages throttled: 0
+Pages wired down: 495904
+
+System-wide memory free percentage: 1%`,
+  96 * gibibyte
+);
+assert.equal(paged.source, 'macos-memory-pages');
+assert.equal(paged.availableBytes, 155000 * 16384);
+
+// Percentage-only output keeps the legacy path.
+const percentOnly = parseMacMemoryPressure('System-wide memory free percentage: 44%', 96 * gibibyte);
+assert.equal(percentOnly.source, 'macos-memory-pressure');
+assert.equal(percentOnly.availableBytes, Math.round(96 * gibibyte * 0.44));
+
 const sampledMac = await readHostMemory({
   platform: 'darwin',
   totalBytes: 96 * gibibyte,

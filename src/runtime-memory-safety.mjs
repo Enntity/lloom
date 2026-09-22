@@ -17,6 +17,19 @@ export class RuntimeMemorySafetyError extends Error {
   }
 }
 
+// An operator configuration problem, not a transient load abort: wrong
+// statusCode/type so clients and the CLI report it as a config error.
+export class MemorySafetyConfigError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'MemorySafetyConfigError';
+    this.code = 'memory_safety_config_invalid';
+    this.type = 'memory_safety_config_error';
+    this.statusCode = 500;
+    this.temporary = false;
+  }
+}
+
 export function memorySafetyPolicy(config, totalMemoryGb = os.totalmem() / GiB) {
   const input = config.runtimePolicy?.memorySafety ?? {};
   const configuredReserve = config.runtimePolicy?.reserveMemoryGb;
@@ -38,7 +51,7 @@ export function memorySafetyPolicy(config, totalMemoryGb = os.totalmem() / GiB) 
     pollIntervalMs < 50 ||
     pollIntervalMs > 1000
   ) {
-    throw new RuntimeMemorySafetyError('Invalid memory safety limits; refusing to load a model.');
+    throw new MemorySafetyConfigError('Invalid memory safety limits; refusing to load a model.');
   }
   return { mode, minAvailableMemoryGb, maxMemoryUtilization, pollIntervalMs };
 }
