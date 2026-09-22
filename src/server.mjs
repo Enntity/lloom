@@ -2589,25 +2589,32 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       if (!watchdogConfig.enabled || stream !== true) return;
       watchdogArmed = true;
       clearWatchdogTimer();
-      watchdogTimer = setTimeout(
-        () => {
-          watchdogTimer = null;
-          noteRuntimeRequestOutcome(resolved.model.runtime, {
-            id: connectionId,
-            route,
-            model: resolved.model.id,
-            status: 504,
-            ok: false,
-            durationMs: Date.now() - started,
-            runtimeDurationMs: runtimeStartedAt == null ? 0 : Date.now() - runtimeStartedAt,
-            stallDurationMs: Date.now() - lastProgressAt,
-            hadContent: watchdogHadContent,
-            responseBytes: 0,
-            stalled: true
-          });
-        },
-        watchdogHadContent ? watchdogConfig.idleContentTimeoutMs : watchdogConfig.firstContentTimeoutMs
-      );
+      const timeoutMs = watchdogHadContent ? watchdogConfig.idleContentTimeoutMs : watchdogConfig.firstContentTimeoutMs;
+      const onTimeout = () => {
+        watchdogTimer = null;
+        const stallDurationMs = Date.now() - lastProgressAt;
+        // A timer may wake slightly before the wall-clock deadline. Keep
+        // waiting rather than report a stall that classification must ignore.
+        if (stallDurationMs < timeoutMs) {
+          watchdogTimer = setTimeout(onTimeout, timeoutMs - stallDurationMs);
+          watchdogTimer.unref?.();
+          return;
+        }
+        noteRuntimeRequestOutcome(resolved.model.runtime, {
+          id: connectionId,
+          route,
+          model: resolved.model.id,
+          status: 504,
+          ok: false,
+          durationMs: Date.now() - started,
+          runtimeDurationMs: runtimeStartedAt == null ? 0 : Date.now() - runtimeStartedAt,
+          stallDurationMs,
+          hadContent: watchdogHadContent,
+          responseBytes: 0,
+          stalled: true
+        });
+      };
+      watchdogTimer = setTimeout(onTimeout, timeoutMs);
       watchdogTimer.unref?.();
     };
     const progress = (patch) => {

@@ -398,6 +398,7 @@ for (const mode of ['observe', 'defer', 'force', 'disable-during-drain', 'recove
   const idleStall = observations.find((item) => item.stalled);
   assert.ok(idleStall, 'shorter idle budget detects silence after content');
   assert.equal(idleStall.hadContent, true);
+  assert.ok(idleStall.stallDurationMs >= 20, 'timer must not report a stall before its elapsed-time threshold');
   assert.ok(idleStall.stallDurationMs < idleStall.runtimeDurationMs);
   assert.equal(
     classifyRuntimeWatchdogOutcome(config.runtimes['watchdog-runtime'], idleStall).kind,
