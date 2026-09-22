@@ -63,8 +63,9 @@ including streaming requests:
 }
 ```
 
-Configured provider fields override client requests. Other client provider
-preferences remain intact. `only` must contain at least one nonempty provider
+Configured provider fields override client requests. Chat Completions retains
+other client provider preferences; the Responses and Anthropic bridges retain
+only the fields supported by their translators. `only` must contain at least one nonempty provider
 slug; `allow_fallbacks` defaults to false. Invalid policy objects fail before
 an upstream request is sent. The policy applies only to the exact
 `openrouter.ai` host. With the configuration above, an unavailable Z.ai endpoint
