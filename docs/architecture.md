@@ -48,6 +48,30 @@ tool call has no reasoning to replay; a new user turn permits thinking again.
 This opt-in compatibility setting preserves tool constraints without inventing
 reasoning history. Ordinary calls outside those cases keep their thinking settings.
 
+### OpenRouter provider restriction
+
+Set `openrouterProvider` on a dedicated OpenRouter backend to restrict its
+upstream providers across Chat Completions, Responses, and Anthropic Messages,
+including streaming requests:
+
+```json
+{
+  "type": "openai",
+  "baseUrl": "https://openrouter.ai/api/v1",
+  "apiKeyEnv": "OPENROUTER_API_KEY",
+  "openrouterProvider": { "only": ["z-ai"], "allow_fallbacks": false }
+}
+```
+
+Configured provider fields override client requests. Other client provider
+preferences remain intact. `only` must contain at least one nonempty provider
+slug; `allow_fallbacks` defaults to false. Invalid policy objects fail before
+an upstream request is sent. The policy applies only to the exact
+`openrouter.ai` host. With the configuration above, an unavailable Z.ai endpoint
+returns an error instead of switching to another provider. Models sharing this
+backend share its restriction; LLooM alias fallback rules remain separate.
+See [OpenRouter provider routing](https://openrouter.ai/docs/guides/routing/provider-selection).
+
 ## Security Defaults
 
 | Setting                         | Default                                | Meaning                                                                                           |

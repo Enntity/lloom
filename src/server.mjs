@@ -6,6 +6,7 @@ import { generateProviderVideo } from './video-providers.mjs';
 import http from 'node:http';
 import { readErrorDiagnostic, streamProviderError } from './protocol/upstream-error.mjs';
 import { fetchWithStreamProgress } from './protocol/stream-progress.mjs';
+import { applyOpenRouterProviderPolicy } from './protocol/openrouter-provider.mjs';
 import {
   appendFileSync,
   existsSync,
@@ -1388,7 +1389,7 @@ async function fetchUpstream({ backend, path, body, headers = {}, signal, dispat
         fetch(upstreamUrl(backend, path), {
           method: 'POST',
           headers: backendHeaders(backend, headers),
-          body: JSON.stringify(body),
+          body: JSON.stringify(path === '/v1/chat/completions' ? applyOpenRouterProviderPolicy(body, backend) : body),
           signal: progressSignal,
           dispatcher
         }),
