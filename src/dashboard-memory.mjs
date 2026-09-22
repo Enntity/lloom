@@ -65,10 +65,19 @@ function buildMemoryMap({ node = null, runtimes = {}, models = [], previewModelI
   function targetNodes(model) {
     return (Array.isArray(model?.targets) ? model.targets : [])
       .map((target) => {
-        if (typeof target === 'string') return target;
-        return target?.node ?? target?.id ?? null;
+        return typeof target === 'object' ? (target?.node ?? null) : null;
       })
       .filter(Boolean);
+  }
+
+  function modelRuntimeId(model) {
+    if (model?.runtime) return model.runtime;
+    const ids = uniqueSorted(
+      (model?.targets ?? [])
+        .filter((target) => !target.node || target.node === nodeId)
+        .map((target) => target.remoteRuntime ?? target.runtime)
+    );
+    return ids.length === 1 ? ids[0] : null;
   }
 
   function uniqueSorted(values) {
@@ -162,7 +171,7 @@ function buildMemoryMap({ node = null, runtimes = {}, models = [], previewModelI
     const modelIds = new Set();
     for (const runtimeId of group.runtimeIds) {
       for (const model of models ?? []) {
-        if (model?.runtime === runtimeId) {
+        if (modelRuntimeId(model) === runtimeId) {
           if (model.id) modelIds.add(model.id);
         }
       }
@@ -257,7 +266,7 @@ function buildMemoryMap({ node = null, runtimes = {}, models = [], previewModelI
   function previewModel(modelId) {
     const model = (models ?? []).find((item) => item?.id === modelId);
     if (!model) return null;
-    const runtimeId = model.runtime ?? null;
+    const runtimeId = modelRuntimeId(model);
     const runtime = runtimeId ? runtimes[runtimeId] : null;
     const label = model.name ?? model.id;
     const base = {
@@ -304,6 +313,8 @@ function buildMemoryMap({ node = null, runtimes = {}, models = [], previewModelI
     ) {
       return { ...base, status: 'paused', message: 'Paused; automatic starts are disabled.' };
     }
+    if (!runtimeId && (model.federated || targets.length > 0))
+      return { ...base, status: 'unknown', message: 'Waiting for model memory from this machine.' };
     if (!runtimeId) {
       return {
         ...base,
@@ -334,7 +345,7 @@ function buildMemoryMap({ node = null, runtimes = {}, models = [], previewModelI
       /(?:^|[/\\])(ollama|lloom-audio-server|lloom_audio_server(?:\.py)?)$/.test(String(part))
     );
     const sharedBackend = usage?.sharedRuntimeIds?.length > 1 || lazyBackend;
-    const modelsOnRuntime = (models ?? []).filter((item) => item?.runtime === runtimeId);
+    const modelsOnRuntime = (models ?? []).filter((item) => modelRuntimeId(item) === runtimeId);
     const runtimeIsSharedGroup = runtimeGroups.get(usage?.groupId ?? `runtime:${runtimeId}`)?.runtimeIds.length > 1;
     if (residentConfirmed) {
       return {

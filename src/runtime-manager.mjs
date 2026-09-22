@@ -18,7 +18,12 @@ import { cleanupPortListener, terminateProcessTree } from './process-control.mjs
 import { memorySafetyPolicy, createMemorySafetyGuard, RuntimeMemorySafetyError } from './runtime-memory-safety.mjs';
 import { createRuntimeMemoryUsageSampler } from './runtime-memory-usage.mjs';
 
-import { maintenanceBlocksRouting, assertMaintenanceStartAllowed, maintenanceError } from './model-maintenance.mjs';
+import {
+  runtimeMaintenance,
+  maintenanceBlocksRouting,
+  assertMaintenanceStartAllowed,
+  maintenanceError
+} from './model-maintenance.mjs';
 
 const execFileAsync = promisify(execFile);
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -92,6 +97,7 @@ function compactRuntime(runtimeId, runtime, config) {
   return {
     enabled: runtime.enabled === true,
     keepWarm: runtime.keepWarm === true,
+    maintenance: runtimeMaintenance(config, runtimeId),
     memoryGb: runtime.memoryGb ?? runtime.memory?.requiredGb ?? null,
     maxConcurrency: runtimeMaxConcurrency(runtime),
     maxQueuedRequests: runtimeMaxQueuedRequests(runtime),

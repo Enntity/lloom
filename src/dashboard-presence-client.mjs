@@ -43,7 +43,7 @@ export const presenceScript = String.raw`
       const rt=presenceRuntime(model),usage=rt?.memoryUsage;
       if(!rt?.healthy)return false;
       if(usage?.residencyKnown&&Array.isArray(usage.loadedModelIds))return usage.loadedModelIds.some(id=>id===model.id||id===model.upstreamModel);
-      return true;
+      return false;
     }
     function presenceModelLabel(model) {
       const runtime = presenceRuntime(model);

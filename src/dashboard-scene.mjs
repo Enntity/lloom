@@ -236,7 +236,7 @@ export const sceneStyles = `
   @media(max-width:1050px){.scene-detail:has(.model-inspector.open){position:fixed;z-index:80;left:12px;right:12px;bottom:12px;height:auto;max-height:calc(100dvh - 96px);background:linear-gradient(145deg,#122530,#09141c);box-shadow:0 -20px 70px #0009,0 0 0 1px #42616b66;padding:22px}.scene-detail:has(.model-inspector.open) .model-inspector-header{position:sticky;top:-22px;margin-top:-22px;padding-top:22px;background:#10212b;z-index:1}}
   @media(prefers-reduced-motion:reduce){.scene-gateway{animation:none!important}.scene-links .scene-particle{display:none}.scene-model{transition:none}}
   .scene-memory-panel {padding:18px 20px;margin-bottom:20px;background:#0b151d}
-  .scene-memory-panel h3 {margin-bottom:14px}
+  .scene-memory-panel h3 {margin-bottom:14px}.scene-memory-panel h3 small{display:block;color:#67dbe7;margin-top:5px}.scene-memory-panel h3 small[hidden]{display:none}
   .scene-mem-head {margin-bottom:12px}.scene-mem-total {font-size:22px}.scene-mem-total b {font-weight:500}
   .scene-mem-bar {height:76px}.scene-mem-block {border-radius:0;transition:width .38s cubic-bezier(.22,1,.36,1),filter .2s,opacity .2s}
   .scene-mem-face em {max-width:100%;overflow:hidden;text-overflow:ellipsis;font-size:10px}
@@ -289,7 +289,7 @@ export const sceneScript = String.raw`
     $('.topology').dataset.presencePanel='diagnostic';$('.topology').hidden=true;
     const modelLeft=document.createElement('div');modelLeft.className='scene-model-main';
     const modelLayout=document.createElement('div');modelLayout.className='scene-model-layout';$('#view-models').append(modelLayout);modelLayout.append(modelLeft);
-    const memoryPanel=document.createElement('section');memoryPanel.className='scene-memory-panel';memoryPanel.innerHTML='<h3>Room for your AI <select id="scene-memory-machine" aria-label="Memory by machine"></select></h3><div id="scene-memory-bar"></div><div id="scene-memory-forecast" class="scene-mem-forecast" role="status"><span class="scene-mem-forecast-icon" aria-hidden="true"></span><p>Point to a model to preview its memory.</p></div>';
+    const memoryPanel=document.createElement('section');memoryPanel.className='scene-memory-panel';memoryPanel.innerHTML='<h3><span>Room for your AI <small id="scene-memory-context" hidden></small></span><select id="scene-memory-machine" aria-label="Memory by machine"></select></h3><div id="scene-memory-bar"></div><div id="scene-memory-forecast" class="scene-mem-forecast" role="status"><span class="scene-mem-forecast-icon" aria-hidden="true"></span><p>Point to a model to preview its memory.</p></div>';
     modelLeft.append(memoryPanel);
     const modelTabs=document.createElement('div');modelTabs.className='scene-model-tabs';modelTabs.innerHTML='<strong>Installed</strong><button type="button" data-add-model>Discover</button>';
     modelLeft.append(modelTabs,$('.presence-toolbar'));
@@ -307,7 +307,7 @@ export const sceneScript = String.raw`
     function sceneMemColor(segment){return segment.kind==='system'?'#304955':segment.kind==='available'?'#123337':sceneMemColors[Math.abs(segment.colorIndex||0)%sceneMemColors.length];}
     function sceneMemModelNode(id){
       const model=(state.physicalModels||[]).find(m=>m.id===id),rt=model&&presenceRuntime(model);
-      if(!model?.runtime)return null;
+      if(!model?.runtime)return model?.targets?.find(target=>target.node)?.node||null;
       return rt?.node||rt?.placement?.node||(!rt?.remote?sceneNodes().find(n=>n.local)?.id:null);
     }
     function sceneMemSnapshot(id=sceneMemPointer||sceneMemFocus||state.selectedModelId,ownNode=false){
@@ -329,7 +329,7 @@ export const sceneScript = String.raw`
     function sceneMemRender(){
       const host=$('#scene-memory-bar');if(!host||typeof buildMemoryMap!=='function')return;
       const memory=sceneMemSnapshot(),segments=memory.segments||[],p=memory.preview;
-      const select=$('#scene-memory-machine');if(memory.nodeId)select.value=memory.nodeId;
+      const select=$('#scene-memory-machine'),nodes=sceneNodes(),base=sceneMemoryNode||nodes.find(n=>n.local)?.id||nodes[0]?.id; if(base)select.value=base;const context=$('#scene-memory-context');context.hidden=memory.nodeId===base;context.textContent=context.hidden?'':'Preview · '+sceneNodeName(nodes.find(n=>n.id===memory.nodeId)||{id:memory.nodeId});
       const shape=JSON.stringify([memory.nodeId,memory.known,segments.map(s=>[s.id,s.kind,s.modelIds])]);
       if(shape!==sceneMemShape){
         const focused=host.contains(document.activeElement)?document.activeElement.dataset.memoryFocus:null;
@@ -382,7 +382,7 @@ export const sceneScript = String.raw`
       $('#presence-model-count').textContent=models.length+(models.length===1?' model':' models');
       const key=JSON.stringify(models.map(m=>[m.id,m.name,sceneKind(m),presenceModelLabel(m),presencePolicy(presenceRuntime(m)),state.selectedModelId===m.id]));if(key===sceneModelKey)return;sceneModelKey=key;
       const catalog=$('#presence-models'),focused=catalog.contains(document.activeElement)?document.activeElement.closest('[data-presence-model]')?.dataset.presenceModel:null;
-      $('#presence-models').innerHTML=models.map(model=>{const rt=presenceRuntime(model);return '<button type="button" class="scene-model-row" data-presence-model="'+escapeHtml(model.id)+'" data-selected="'+String(state.selectedModelId===model.id)+'" data-ready="'+String(Boolean(rt?.healthy||rt?.activeRequests))+'">'+sceneIcon(sceneModelIcon(model))+'<div><h3>'+escapeHtml(model.name||model.id)+'</h3><p>'+escapeHtml(sceneKind(model))+'</p></div><span class="scene-row-status">'+escapeHtml(presenceModelLabel(model))+'</span><span class="scene-row-policy">'+escapeHtml(rt?presencePolicyNames[presencePolicy(rt)]:'Upstream')+'</span></button>';}).join('')||'<div class="empty">No models match. Choose another filter or add a model.</div>';
+      $('#presence-models').innerHTML=models.map(model=>{const rt=presenceRuntime(model);return '<button type="button" class="scene-model-row" data-presence-model="'+escapeHtml(model.id)+'" data-selected="'+String(state.selectedModelId===model.id)+'" data-ready="'+String(presenceModelResident(model)||Boolean(rt?.activeRequests))+'">'+sceneIcon(sceneModelIcon(model))+'<div><h3>'+escapeHtml(model.name||model.id)+'</h3><p>'+escapeHtml(sceneKind(model))+'</p></div><span class="scene-row-status">'+escapeHtml(presenceModelLabel(model))+'</span><span class="scene-row-policy">'+escapeHtml(rt?presencePolicyNames[presencePolicy(rt)]:'Upstream')+'</span></button>';}).join('')||'<div class="empty">No models match. Choose another filter or add a model.</div>';
       if(focused)catalog.querySelector('[data-presence-model="'+CSS.escape(focused)+'"]')?.focus({preventScroll:true});
       if(sceneMemPointer&&!models.some(m=>m.id===sceneMemPointer))sceneMemPointer=null;
       sceneMemSchedule();

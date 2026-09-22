@@ -356,3 +356,46 @@ test('a healthy single-model service may still need to allocate its weights', ()
   assert.equal(result.preview.status, 'fits');
   assert.equal(result.preview.additionalBytes, 31.875 * GiB);
 });
+
+test('replica identifiers are not machine identifiers', () => {
+  const result = map({
+    models: [{ id: 'cloud', targets: [{ id: 'default', backend: 'provider' }] }],
+    previewModelId: 'cloud'
+  });
+  assert.equal(result.preview.status, 'external');
+});
+
+test('a federated target resolves the observed runtime on its peer', () => {
+  const result = map({
+    node: {
+      id: 'peer',
+      reachable: true,
+      local: false,
+      telemetry: { memory: { totalBytes: 96 * GiB, availableBytes: 48 * GiB } },
+      runtimeManager: {
+        memorySafety: policy,
+        runtimes: {
+          audio: {
+            status: 'running',
+            healthy: true,
+            memoryGb: 8,
+            memoryUsage: { residentBytes: 4 * GiB, residencyKnown: true, loadedModelIds: ['voice'] }
+          }
+        }
+      }
+    },
+    models: [
+      {
+        id: 'peer/voice',
+        name: 'Peer voice',
+        upstreamModel: 'voice',
+        targets: [{ id: 'replica', node: 'peer', remoteRuntime: 'audio' }],
+        federated: true
+      }
+    ],
+    previewModelId: 'peer/voice'
+  });
+  assert.equal(result.preview.status, 'resident');
+  assert.equal(result.segments[0].runtimeId, 'audio');
+  assert.deepEqual(result.segments[0].modelIds, ['peer/voice']);
+});

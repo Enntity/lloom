@@ -6,6 +6,20 @@ const execFileAsync = promisify(execFile);
 const LSOF = process.platform === 'darwin' ? '/usr/sbin/lsof' : 'lsof';
 const MAX_MODEL_BODY_BYTES = 64 * 1024;
 
+async function withDeadline(work, milliseconds) {
+  let timer;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(work),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Memory observation timed out')), milliseconds);
+      })
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function positiveInteger(value) {
   const number = Number(value);
   return Number.isInteger(number) && number > 0 ? number : null;
@@ -188,7 +202,7 @@ export function createRuntimeMemoryUsageSampler({
     const at = now();
     if (processCache && at < processCache.expiresAt) return processCache.value;
     if (processInFlight) return processInFlight;
-    processInFlight = Promise.allSettled([psReader(), listenerReader()])
+    processInFlight = Promise.allSettled([withDeadline(psReader, 1000), withDeadline(listenerReader, 1000)])
       .then(async ([ps, lsof]) => {
         const value = {
           rows: ps.status === 'fulfilled' ? parseProcessRows(ps.value) : [],
@@ -198,7 +212,7 @@ export function createRuntimeMemoryUsageSampler({
         };
         if (platform === 'darwin' && value.rows.length) {
           try {
-            const footprints = await footprintReader(value.rows.map((row) => row.pid));
+            const footprints = await withDeadline(() => footprintReader(value.rows.map((row) => row.pid)), 1000);
             for (const row of value.rows) {
               const bytes = footprints?.[row.pid];
               if (typeof bytes === 'number' && Number.isFinite(bytes) && bytes >= 0) row.footprint = bytes;
@@ -223,23 +237,29 @@ export function createRuntimeMemoryUsageSampler({
     if (cached && at < cached.expiresAt) return cached.value;
     const inFlight = modelInFlight.get(key);
     if (inFlight) return inFlight;
-    const request = (async () => {
-      let timer = null;
-      let signal = null;
-      if (typeof AbortController === 'function' && modelTimeoutMs > 0) {
-        const controller = new AbortController();
-        signal = controller.signal;
-        timer = scheduleTimeout(() => controller.abort(new Error('model residency request timed out')), modelTimeoutMs);
-      }
-      try {
-        const response = await fetchImpl(url, { signal, redirect: 'error' });
-        if (!response?.ok) throw new Error(`model residency request failed (${response?.status ?? 'unknown'})`);
-        const body = await boundedText(response, MAX_MODEL_BODY_BYTES);
-        return extractLoadedModelIds(JSON.parse(body), kind);
-      } finally {
-        if (timer) clearTimeout(timer);
-      }
-    })()
+    const request = withDeadline(
+      async () => {
+        let timer = null;
+        let signal = null;
+        if (typeof AbortController === 'function' && modelTimeoutMs > 0) {
+          const controller = new AbortController();
+          signal = controller.signal;
+          timer = scheduleTimeout(
+            () => controller.abort(new Error('model residency request timed out')),
+            modelTimeoutMs
+          );
+        }
+        try {
+          const response = await fetchImpl(url, { signal, redirect: 'error' });
+          if (!response?.ok) throw new Error(`model residency request failed (${response?.status ?? 'unknown'})`);
+          const body = await boundedText(response, MAX_MODEL_BODY_BYTES);
+          return extractLoadedModelIds(JSON.parse(body), kind);
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
+      },
+      Math.max(1, modelTimeoutMs) + 50
+    )
       .then(
         (value) => {
           const result = { value, expiresAt: now() + cacheTtlMs };

@@ -363,3 +363,35 @@ test('Darwin footprint includes charged memory omitted by RSS and falls back cle
   assert.equal(absent.a.residentBytes, 20 * 1024);
   assert.equal(absent.a.source, 'process-rss');
 });
+
+test('an endpoint that ignores abort cannot hold status forever', async () => {
+  const usage = createRuntimeMemoryUsageSampler({
+    psReader: async () => '',
+    listenerReader: async () => '',
+    modelTimeoutMs: 10,
+    fetchImpl: async () => new Promise(() => {})
+  });
+  const result = await usage.sample({
+    runtimes: { a: { status: 'running', command: 'ollama', port: 8201 } },
+    runtimeIds: ['a']
+  });
+  assert.equal(result.a.residencyKnown, false);
+});
+
+test('runtime status exposes inherited maintenance to the dashboard', async () => {
+  const { RuntimeManager } = await import('../src/runtime-manager.mjs');
+  const manager = new RuntimeManager({
+    cluster: {},
+    models: [],
+    runtimes: {
+      a: { enabled: false },
+      group: {
+        enabled: false,
+        placement: { mode: 'distributed', members: [{ runtime: 'a' }] },
+        maintenance: { state: 'suspended' }
+      }
+    }
+  });
+  const result = await manager.status();
+  assert.equal(result.runtimes.a.maintenance.state, 'suspended');
+});
