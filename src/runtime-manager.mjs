@@ -15,6 +15,7 @@ import {
   runtimeResourcesByNode
 } from './cluster.mjs';
 import { cleanupPortListener, terminateProcessTree } from './process-control.mjs';
+import { memorySafetyPolicy, createMemorySafetyGuard, RuntimeMemorySafetyError } from './runtime-memory-safety.mjs';
 
 import { maintenanceBlocksRouting, assertMaintenanceStartAllowed, maintenanceError } from './model-maintenance.mjs';
 
@@ -337,6 +338,7 @@ async function dockerContainerState(runtime) {
     const state = inspected.State ?? {};
     return {
       exists: true,
+      id: inspected.Id ?? null,
       running: state.Running === true,
       status: state.Status ?? (state.Running ? 'running' : 'stopped'),
       pid: state.Pid ?? null,
@@ -665,10 +667,12 @@ export function effectiveRuntimeArgs(runtimeId, runtime) {
 }
 
 export class RuntimeManager {
-  constructor(config, { logger = console, captureOutput = true, clusterCoordinator = null } = {}) {
+  constructor(config, { logger = console, captureOutput = true, clusterCoordinator = null, memorySampler } = {}) {
     this.config = config;
     this.logger = logger;
     this.captureOutput = captureOutput;
+    this.memorySampler = memorySampler;
+    this.memorySafetyFailures = new Map();
     this.processes = new Map();
     this.state = new Map();
     this.queues = new Map();
@@ -1185,6 +1189,7 @@ export class RuntimeManager {
     }
     return {
       runtimes,
+      memorySafety: memorySafetyPolicy(this.config),
       events: this.events
     };
   }
@@ -1827,6 +1832,84 @@ export class RuntimeManager {
       };
     }
 
+    return this.startLocalWithMemorySafety(runtimeId, runtime, { force, warmup, reason, signal });
+  }
+
+  async startLocalWithMemorySafety(runtimeId, runtime, { force, warmup, reason, signal }) {
+    const policy = memorySafetyPolicy(this.config);
+    const previousFailure = this.memorySafetyFailures.get(runtimeId);
+    const manualRetry = ['manual-start', 'admin-start', 'admin-admit', 'cli-start', 'cli-admit'].includes(reason);
+    if (previousFailure && policy.mode !== 'yolo' && !manualRetry) throw previousFailure;
+    if (manualRetry || policy.mode === 'yolo') this.memorySafetyFailures.delete(runtimeId);
+    const owned = { child: null, containerId: null };
+    let cleanupPromise;
+    const cleanup = () =>
+      (cleanupPromise ??= (async () => {
+        if (owned.child?.pid && owned.child.exitCode == null && owned.child.signalCode == null) {
+          if (owned.child.connected) owned.child.send({ type: 'memory-safety-abort' }, () => {});
+          const result = await terminateProcessTree([owned.child.pid], { termTimeoutMs: 150, killTimeoutMs: 1000 });
+          if (result.survivors.length || result.failed.length)
+            throw new Error('Memory safety cleanup could not stop the owned process tree');
+        }
+        if (owned.containerId) {
+          await execFileAsync('docker', ['kill', owned.containerId], { timeout: 5000 }).catch(async (error) => {
+            const state = await dockerContainerState(runtime);
+            if (state.id === owned.containerId && state.running) throw error;
+          });
+        }
+      })());
+    const guard = createMemorySafetyGuard({
+      policy,
+      runtimeId,
+      sample: this.memorySampler,
+      onAbort: (error) => {
+        this.memorySafetyFailures.set(runtimeId, error);
+        this.record({ runtimeId, event: 'memory-safety-abort', message: error.message, snapshot: error.snapshot });
+        this.logger.error?.(error.message);
+        void cleanup().catch(() => {});
+      }
+    });
+    const combinedSignal = signal ? AbortSignal.any([signal, guard.signal]) : guard.signal;
+    try {
+      await guard.check();
+      combinedSignal.throwIfAborted();
+      guard.start();
+      const result = await this.startLocalUnlocked(runtimeId, runtime, {
+        force,
+        warmup,
+        reason,
+        signal: combinedSignal,
+        owned,
+        guard,
+        policy
+      });
+      await guard.check();
+      combinedSignal.throwIfAborted();
+      if (owned.child?.connected) owned.child.send({ type: 'memory-safety-complete' }, () => {});
+      return result;
+    } catch (cause) {
+      const error = guard.signal.aborted ? guard.signal.reason : cause;
+      if (owned.child || owned.containerId || guard.signal.aborted || combinedSignal.aborted) {
+        // A container start may have completed after the first abort cleanup.
+        await cleanupPromise?.catch(() => {});
+        cleanupPromise = null;
+        await cleanup();
+        const state = this.stateFor(runtimeId);
+        state.lastError = error.message;
+        this.setStatus(
+          runtimeId,
+          'failed',
+          error.code === 'runtime_memory_safety_abort' ? 'memory-safety-abort' : 'start-aborted'
+        );
+      }
+      throw error;
+    } finally {
+      await guard.stop();
+    }
+  }
+
+  async startLocalUnlocked(runtimeId, runtime, { force, warmup, reason, signal, owned, guard, policy }) {
+    const state = this.stateFor(runtimeId);
     if (runtimeAdapter(runtime) === 'docker') {
       if (runtimeManagement(runtime) !== 'managed') {
         return { runtimeId, started: false, healthy: false, reason: 'externally-managed' };
@@ -1853,7 +1936,11 @@ export class RuntimeManager {
         this.record({ runtimeId, event: 'docker-create', bootstrapResult, reason });
       }
       this.setStatus(runtimeId, 'starting', reason);
+      container = await dockerContainerState(runtime);
+      if (!container.running) owned.containerId = container.id;
+      signal.throwIfAborted();
       const processResult = await dockerLifecycle('start', runtime);
+      signal.throwIfAborted();
       state.starts += 1;
       state.startedAt = nowIso();
       this.record({ runtimeId, event: 'docker-start', processResult, reason });
@@ -1889,16 +1976,28 @@ export class RuntimeManager {
     // CLI managers disable capture so their detached runtime does not keep the
     // short-lived command process open through an inherited pipe.
     const supervised = process.platform !== 'win32';
+    signal.throwIfAborted();
     const child = spawn(
       supervised ? process.execPath : runtime.command,
       supervised ? [path.join(packageRoot, 'src', 'runtime-supervisor.mjs'), runtime.command, ...args] : args,
       {
         cwd: runtime.cwd,
-        env: runtimeEnvironment(this.config, runtime),
-        stdio: ['ignore', this.captureOutput ? 'pipe' : 'ignore', this.captureOutput ? 'pipe' : 'ignore'],
+        env: { ...runtimeEnvironment(this.config, runtime), LLOOM_MEMORY_SAFETY_POLICY: JSON.stringify(policy) },
+        stdio: [
+          'ignore',
+          this.captureOutput ? 'pipe' : 'ignore',
+          this.captureOutput ? 'pipe' : 'ignore',
+          ...(supervised ? ['ipc'] : [])
+        ],
         detached: true
       }
     );
+    owned.child = child;
+    child.on('message', (message) => {
+      if (message?.type === 'memory-safety-abort')
+        guard.trip(new RuntimeMemorySafetyError(message.message, { runtimeId, snapshot: message.snapshot, policy }));
+    });
+    child.channel?.unref();
     child.unref();
     this.processes.set(runtimeId, child);
     state.starts += 1;
@@ -1924,6 +2023,13 @@ export class RuntimeManager {
       this.record({ runtimeId, event: 'error', message: state.lastError });
     });
     child.on('exit', (code, signal) => {
+      if (code === 78 && policy.mode === 'enforce')
+        guard.trip(
+          new RuntimeMemorySafetyError('Backend supervisor rejected the load to protect host memory.', {
+            runtimeId,
+            policy
+          })
+        );
       const expectedStop = state.status === 'stopping' || ['SIGTERM', 'SIGKILL'].includes(signal);
       state.status = code === 0 || expectedStop ? 'stopped' : 'failed';
       state.stoppedAt = nowIso();
@@ -1936,6 +2042,34 @@ export class RuntimeManager {
       }
     });
 
+    if (supervised) {
+      // Health cannot authorize a load until the independent supervisor has
+      // checked memory and actually spawned this backend.
+      await new Promise((resolve, reject) => {
+        const finish = (error) => {
+          clearTimeout(timer);
+          child.off('message', onMessage);
+          child.off('exit', onExit);
+          child.off('error', onError);
+          signal.removeEventListener('abort', onAbort);
+          if (error) reject(error);
+          else resolve();
+        };
+        const onMessage = (message) => {
+          if (message?.type === 'memory-safety-ready') finish();
+        };
+        const onExit = () =>
+          finish(signal.reason ?? new Error(`runtime ${runtimeId} supervisor exited before startup`));
+        const onError = (error) => finish(error);
+        const onAbort = () => finish(signal.reason);
+        const timer = setTimeout(() => finish(new Error(`runtime ${runtimeId} supervisor startup timed out`)), 5000);
+        child.on('message', onMessage);
+        child.once('exit', onExit);
+        child.once('error', onError);
+        signal.addEventListener('abort', onAbort, { once: true });
+        if (signal.aborted) onAbort();
+      });
+    }
     const result = await this.waitForHealth(runtimeId, runtime, child, { signal });
     let warmupResult = null;
     if (result.healthy && warmup && runtime.warmup) {
@@ -1955,6 +2089,7 @@ export class RuntimeManager {
     while (Date.now() < deadline) {
       if (signal?.aborted) throw signal.reason ?? new Error(`runtime ${runtimeId} start aborted`);
       if (await runtimeHealthOk(runtime)) {
+        signal?.throwIfAborted?.();
         this.setStatus(runtimeId, 'running');
         this.record({ runtimeId, event: 'healthy' });
         return { runtimeId, healthy: true };
@@ -2025,6 +2160,7 @@ export class RuntimeManager {
         signal
       });
       const text = await response.text().catch(() => '');
+      signal?.throwIfAborted?.();
       const result = {
         runtimeId,
         warmed: response.ok,

@@ -1080,14 +1080,10 @@ const libraryCli = await runCommand(process.execPath, [
 const libraryJson = JSON.parse(libraryCli.stdout);
 assert.equal(libraryJson.index.id, 'lloom-community-recipes');
 assert.equal(libraryJson.recipes[0].id, 'apple-silicon-flux2-klein-4b');
-if (process.platform === 'darwin' && process.arch === 'arm64') {
-  assert.equal(libraryJson.selected.recipeId, 'apple-silicon-qwen36-35b-a3b-optiq');
-} else {
-  // CPU-only hosts can now select the lightweight Hear recipe. A missing GPU
-  // does not imply that the entire vendor library is incompatible.
-  const compatible = libraryJson.candidates.filter((candidate) => candidate.selectable);
-  assert.equal(libraryJson.selected?.recipeId ?? null, compatible[0]?.recipeId ?? null);
-}
+// Selection depends on the host's live memory and already-running backends.
+// Verify the ranked decision without requiring a particular local model lane.
+const compatibleLibraryCandidates = libraryJson.candidates.filter((candidate) => candidate.selectable);
+assert.equal(libraryJson.selected?.recipeId ?? null, compatibleLibraryCandidates[0]?.recipeId ?? null);
 const addModelCli = await runCommand(process.execPath, [
   path.join(process.cwd(), 'bin', 'lloom.mjs'),
   'add-model',
@@ -5963,12 +5959,8 @@ if (listened) {
     assert.equal(libraryResponse.status, 200);
     const libraryPlanJson = await libraryResponse.json();
     assert.equal(libraryPlanJson.index.id, 'lloom-community-recipes');
-    if (process.platform === 'darwin' && process.arch === 'arm64') {
-      assert.equal(libraryPlanJson.selected.recipeId, 'apple-silicon-qwen36-35b-a3b-optiq');
-    } else {
-      const compatible = libraryPlanJson.candidates.filter((candidate) => candidate.selectable);
-      assert.equal(libraryPlanJson.selected?.recipeId ?? null, compatible[0]?.recipeId ?? null);
-    }
+    const compatible = libraryPlanJson.candidates.filter((candidate) => candidate.selectable);
+    assert.equal(libraryPlanJson.selected?.recipeId ?? null, compatible[0]?.recipeId ?? null);
     assert.equal(
       libraryPlanJson.recipes.find((recipe) => recipe.id === 'apple-silicon-qwen36-35b-a3b-optiq')?.commands
         .installApply,

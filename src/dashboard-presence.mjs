@@ -15,6 +15,7 @@ export const presenceStyles = `
     .band,.empty { border-radius:14px; }
     .band-head h2,label { text-transform:none; letter-spacing:0; }
     .band-body { padding:22px; }
+    #presence-memory-safety { border:1px solid #b67c37; background:#392915; color:#ffd8a0; border-radius:12px; padding:14px 18px; margin-bottom:20px; }
     .presence-nav { position:fixed; top:0; bottom:0; left:0; width:190px; padding:26px 18px; background:#0b1219; border-right:1px solid var(--line); display:flex; flex-direction:column; gap:7px; z-index:20; }
     .presence-brand { padding:0 12px 30px; font-size:24px; letter-spacing:-1px; font-weight:500; }
     .presence-brand small { display:block; color:var(--muted); font-size:10px; letter-spacing:2px; margin-top:3px; }

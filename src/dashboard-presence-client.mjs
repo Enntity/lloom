@@ -102,6 +102,9 @@ export const presenceScript = String.raw`
     }
     function renderPresence() {
       if (!$("#presence-models")) return;
+      const safety = state.status?.runtimeManager?.memorySafety;
+      const warning = $("#presence-memory-safety");
+      if(warning) warning.hidden = safety?.mode !== "yolo";
       renderPresenceModels(); renderPresenceMachines(); renderPresenceClients(); renderPresencePolicy();
     }
     function renderPresencePolicy() {

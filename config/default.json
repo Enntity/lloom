@@ -31,7 +31,12 @@
     "enabled": true,
     "autoEvict": false,
     "reserveMemoryGb": 12,
-    "protectActiveRequests": true
+    "protectActiveRequests": true,
+    "memorySafety": {
+      "mode": "enforce",
+      "maxMemoryUtilization": 0.9,
+      "pollIntervalMs": 250
+    }
   },
   "community": {
     "hostUrl": "http://127.0.0.1:8110",

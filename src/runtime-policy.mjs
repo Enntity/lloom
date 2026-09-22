@@ -169,7 +169,7 @@ function policyConfig(config, profile = {}) {
       ? Math.max(0, totalMemoryGb * maxMemoryUtilization)
       : Math.max(0, totalMemoryGb - reserveMemoryGb));
   return {
-    enabled: policy.enabled !== false,
+    enabled: policy.enabled !== false && policy.memorySafety?.mode !== 'yolo',
     autoEvict: policy.autoEvict === true,
     totalMemoryGb,
     reserveMemoryGb,
@@ -338,8 +338,10 @@ function clusterRuntimePolicyPlan(
       0,
       totalMemoryGb - (numberOrNull(nodeProfile.availableMemoryGb) ?? totalMemoryGb)
     );
-    const predictive = maxMemoryUtilization != null && nodeProfile.availableMemoryGb != null;
-    const projectedMemoryGb = (predictive ? actualUsedMemoryGb : loadedMemoryGb) + requestedAddsMemoryGb;
+    // The host reserve protects every process, even when the operator only
+    // configured a reserve or an absolute budget (rather than a percentage).
+    const predictive = nodeProfile.availableMemoryGb != null;
+    const projectedMemoryGb = Math.max(actualUsedMemoryGb, loadedMemoryGb) + requestedAddsMemoryGb;
     const overBudgetGb = Math.max(0, projectedMemoryGb - memoryBudgetGb);
     nodes[nodeId] = {
       ...nodeProfile,
@@ -370,7 +372,7 @@ function clusterRuntimePolicyPlan(
   }
 
   const policy = {
-    enabled: policyTemplate.enabled !== false,
+    enabled: policyTemplate.enabled !== false && policyTemplate.memorySafety?.mode !== 'yolo',
     autoEvict: policyTemplate.autoEvict === true,
     protectActiveRequests: policyTemplate.protectActiveRequests !== false,
     clustered: true
@@ -505,8 +507,8 @@ export async function createRuntimePolicyPlan(
     0,
     policy.totalMemoryGb - (numberOrNull(memoryProfile.availableMemoryGb) ?? policy.totalMemoryGb)
   );
-  const predictive = policy.maxMemoryUtilization != null;
-  const projectedMemoryGb = (predictive ? actualUsedMemoryGb : loadedMemoryGb) + requestedAddsMemory;
+  const predictive = memoryProfile.availableMemoryGb != null;
+  const projectedMemoryGb = Math.max(actualUsedMemoryGb, loadedMemoryGb) + requestedAddsMemory;
   let overBudgetGb = requested?.loaded ? 0 : Math.max(0, projectedMemoryGb - policy.memoryBudgetGb);
 
   const actions = [];

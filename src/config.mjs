@@ -370,6 +370,30 @@ function validateConfig(config, sourcePath, env) {
     }
   }
 
+  const memorySafety = config.runtimePolicy?.memorySafety;
+  if (memorySafety != null) {
+    if (typeof memorySafety !== 'object' || Array.isArray(memorySafety)) {
+      errors.push('runtimePolicy.memorySafety must be an object');
+    } else {
+      if (memorySafety.mode != null && !['enforce', 'yolo'].includes(memorySafety.mode)) {
+        errors.push('runtimePolicy.memorySafety.mode must be enforce or yolo');
+      }
+      for (const key of ['minAvailableMemoryGb', 'maxMemoryUtilization', 'pollIntervalMs']) {
+        const value = memorySafety[key];
+        if (value == null) continue;
+        if (
+          typeof value !== 'number' ||
+          !Number.isFinite(value) ||
+          value <= 0 ||
+          (key === 'maxMemoryUtilization' && value >= 1) ||
+          (key === 'pollIntervalMs' && (value < 50 || value > 1000))
+        ) {
+          errors.push(`runtimePolicy.memorySafety.${key} is outside its safe range`);
+        }
+      }
+    }
+  }
+
   const distributedMemberGroups = new Map();
   for (const [runtimeId, runtime] of Object.entries(config.runtimes ?? {})) {
     if (runtime?.placement?.mode !== 'distributed') continue;

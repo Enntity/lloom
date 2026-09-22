@@ -2735,7 +2735,7 @@ export function renderDashboardPage() {
     .replace('<body>', () => '<body>' + presenceNav)
     .replace(
       '<main>',
-      '<main><div class="presence-heading" data-presence-panel="live"><div><h2>Your AI, in motion.</h2><p>Your hardware. Your models. One gateway.</p></div><button type="button" class="primary" data-add-model>Add model</button></div>'
+      '<main><aside id="presence-memory-safety" role="alert" hidden><strong>YOLO mode</strong> · Memory safety is disabled. Loading a model can exhaust this machine’s memory.</aside><div class="presence-heading" data-presence-panel="live"><div><h2>Your AI, in motion.</h2><p>Your hardware. Your models. One gateway.</p></div><button type="button" class="primary" data-add-model>Add model</button></div>'
     )
     .replace('<section class="topology"', '<section data-presence-panel="live" class="topology"')
     .replace(

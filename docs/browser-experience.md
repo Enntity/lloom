@@ -25,6 +25,16 @@ After installation, LLooM starts the gateway and checks a chat request through i
 
 Readiness policies express intent: **Auto** loads on demand, **Prefer ready** uses the existing idle residency reconciler, and **Always ready** prevents automatic eviction. All loading still passes through memory admission. Changing readiness does not restart a model or interrupt active work. The API returns a pending job while the current admission completes; the page reports completion or failure. Queued residency starts recheck the saved policy, and pending hard pins protect eviction victims. Use Load when you want to start a cold model immediately.
 
+### Memory protection
+
+Admission counts live host memory use, including other applications, even when the policy specifies only a reserve or an absolute budget. Model estimates are planning inputs, not allocation limits.
+
+Memory protection is enabled by default. A newly started backend is checked before launch and monitored during loading and warmup. If available memory reaches the hard reserve or host utilization reaches the ceiling, LLooM aborts that load, cleans up its processes, and reports the failed threshold. Ordinary Load, forced starts, and disabling automatic eviction do not disable this protection. Automatic retries are blocked until a manual retry or gateway restart. Suspend a model to keep it blocked across restarts.
+
+The installed config accepts `runtimePolicy.memorySafety` with `mode`, `minAvailableMemoryGb`, `maxMemoryUtilization` (a fraction), and `pollIntervalMs`. The normal mode is `"enforce"`. The default ceiling is 90%; the host reserve can impose a stricter limit. Sampling is a userspace safeguard, not a kernel-enforced allocation quota: a backend can allocate between samples.
+
+For deliberate manual experiments, `"mode": "yolo"` disables memory admission and the hard load guard. It leaves authentication, runtime ownership, and maintenance gates in place. The dashboard displays a persistent YOLO warning. Restore `"enforce"` before normal operation; YOLO can exhaust the host's memory.
+
 ## Local security
 
 First-run setup binds only to loopback and uses a random session token passed through the URL fragment. It removes the fragment immediately and keeps the token in that tab's session storage. Setup rejects foreign origins, alternate authorities, oversized bodies, and unreviewed apply inputs. Configuration publication cannot overwrite a file created concurrently.

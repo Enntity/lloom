@@ -1,5 +1,14 @@
 import assert from 'node:assert/strict';
-import { applyRuntimePolicyPlan, createRuntimePolicyPlan, runtimeAdmissionBlockers } from '../src/runtime-policy.mjs';
+import {
+  applyRuntimePolicyPlan as applyPolicy,
+  createRuntimePolicyPlan as createPolicy,
+  runtimeAdmissionBlockers
+} from '../src/runtime-policy.mjs';
+
+// Keep synthetic capacity tests independent of the developer machine's load.
+const profile = { totalMemoryGb: 128, availableMemoryGb: 128 };
+const createRuntimePolicyPlan = (config, options) => createPolicy(config, { profile, ...options });
+const applyRuntimePolicyPlan = (config, manager, options) => applyPolicy(config, manager, { profile, ...options });
 
 const runtimePolicyConfig = {
   runtimePolicy: {
@@ -248,6 +257,64 @@ const predictiveConfig = {
     requested: { enabled: true, memoryGb: 64 }
   }
 };
+
+const macReserveConfig = {
+  runtimePolicy: { enabled: true, autoEvict: false, reserveMemoryGb: 12 },
+  runtimes: { bonsai: { enabled: true, memoryGb: 16 } }
+};
+const macIdleStatus = { runtimes: { bonsai: { healthy: false, status: 'idle' } } };
+for (const runtimePolicy of [macReserveConfig.runtimePolicy, { enabled: true, memoryBudgetGb: 84 }]) {
+  const pressured = await createRuntimePolicyPlan(
+    { ...macReserveConfig, runtimePolicy },
+    {
+      requestedRuntimeId: 'bonsai',
+      status: macIdleStatus,
+      profile: { totalMemoryGb: 96, availableMemoryGb: 16 }
+    }
+  );
+  assert.equal(pressured.admission.predictive, true);
+  assert.equal(pressured.admission.projectedMemoryGb, 96);
+  assert.equal(pressured.admission.allowed, false, 'other applications count without a percentage policy');
+}
+const macEstimateFits = await createRuntimePolicyPlan(macReserveConfig, {
+  requestedRuntimeId: 'bonsai',
+  status: macIdleStatus,
+  profile: { totalMemoryGb: 96, availableMemoryGb: 35 }
+});
+assert.equal(macEstimateFits.admission.projectedMemoryGb, 77);
+assert.equal(macEstimateFits.admission.allowed, true, 'live startup guard must catch an underestimated load later');
+
+const clusteredReserve = await createRuntimePolicyPlan(
+  {
+    ...macReserveConfig,
+    cluster: { nodeId: 'mac', leaderNode: 'mac', nodes: { mac: { resources: { memoryGb: 96 } } } },
+    runtimes: { bonsai: { enabled: true, node: 'mac', memoryGb: 16 } }
+  },
+  {
+    requestedRuntimeId: 'bonsai',
+    requesterNode: 'mac',
+    status: {
+      ...macIdleStatus,
+      cluster: {
+        nodes: {
+          mac: {
+            local: true,
+            reachable: true,
+            telemetry: { memory: { totalBytes: 96 * 1024 ** 3, availableBytes: 16 * 1024 ** 3 } }
+          }
+        }
+      }
+    },
+    profile: { totalMemoryGb: 96, availableMemoryGb: 16 }
+  }
+);
+assert.equal(
+  clusteredReserve.admission.allowed,
+  false,
+  'local cluster node also counts host pressure without a percentage'
+);
+assert.equal(clusteredReserve.admission.nodes.mac.predictive, true);
+
 const predictiveStatus = {
   runtimes: {
     loaded: { healthy: true, status: 'running', activeRequests: 0 },

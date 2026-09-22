@@ -44,6 +44,7 @@ export async function readHostMemory({
   platform = process.platform,
   totalBytes = os.totalmem(),
   freeBytes = os.freemem(),
+  strict = false,
   readFile = fs.readFile,
   execFileImpl = execFileAsync
 } = {}) {
@@ -51,18 +52,22 @@ export async function readHostMemory({
     try {
       const snapshot = parseLinuxMeminfo(await readFile('/proc/meminfo', 'utf8'));
       if (snapshot) return snapshot;
-    } catch {
+    } catch (error) {
+      if (strict) throw error;
       // Fall through to the portable free-memory estimate.
     }
+    if (strict) throw new Error('Linux available-memory telemetry is unavailable');
   }
   if (platform === 'darwin') {
     try {
-      const { stdout } = await execFileImpl('/usr/bin/memory_pressure', ['-Q'], { timeout: 1500 });
+      const { stdout } = await execFileImpl('/usr/bin/memory_pressure', ['-Q'], { timeout: strict ? 750 : 1500 });
       const snapshot = parseMacMemoryPressure(stdout, totalBytes);
       if (snapshot) return snapshot;
-    } catch {
+    } catch (error) {
+      if (strict) throw error;
       // Fall through when memory_pressure is unavailable.
     }
+    if (strict) throw new Error('macOS memory-pressure telemetry is unavailable');
   }
   return memorySnapshot(totalBytes, freeBytes, 'os-freemem');
 }
