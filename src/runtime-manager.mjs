@@ -90,6 +90,7 @@ function compactRuntime(runtimeId, runtime, config) {
   return {
     enabled: runtime.enabled === true,
     keepWarm: runtime.keepWarm === true,
+    memoryGb: runtime.memoryGb ?? runtime.memory?.requiredGb ?? null,
     maxConcurrency: runtimeMaxConcurrency(runtime),
     maxQueuedRequests: runtimeMaxQueuedRequests(runtime),
     interactiveReservedSlots: interactiveReservedSlots(runtime),
@@ -155,6 +156,7 @@ const LIVE_ADMISSION_FIELDS = new Set([
   'requestStartupWaitMs',
   'startupRetryAfterSeconds',
   'healthTimeoutMs',
+  'keepWarm',
   'preferredWarm'
 ]);
 
@@ -677,6 +679,7 @@ export class RuntimeManager {
     this.watchdogOperations = new Map();
     this.admissionQueue = Promise.resolve();
     this.activeAdmission = null;
+    this.desiredResidency = new Map();
     // Set when the owning server begins shutting down. Queued background
     // admissions must not start a runtime after shutdown has been requested;
     // the guard is re-evaluated inside the admission mutex.
@@ -690,6 +693,24 @@ export class RuntimeManager {
   // before any side effects. It sees the freshest runtimeManager.config, so a
   // queued admission whose runtime was disabled, suspended, unowned, or whose
   // supervision was torn down is skipped safely rather than started.
+  noteDesiredResidency(runtimeId, policy, generation) {
+    this.desiredResidency.set(runtimeId, { policy, generation });
+  }
+  settleDesiredResidency(runtimeId, policy, generation) {
+    if (
+      this.desiredResidency.get(runtimeId)?.generation === generation &&
+      (policy === 'always'
+        ? this.config.runtimes?.[runtimeId]?.keepWarm === true
+        : policy === 'preferred'
+          ? this.config.runtimes?.[runtimeId]?.preferredWarm === true
+          : !this.config.runtimes?.[runtimeId]?.keepWarm && !this.config.runtimes?.[runtimeId]?.preferredWarm)
+    )
+      this.desiredResidency.delete(runtimeId);
+  }
+  desiredResidencyPolicy(runtimeId) {
+    return this.desiredResidency.get(runtimeId)?.policy;
+  }
+
   resolveAdmissionGuard({ runtimeId, reason } = {}) {
     if (!runtimeId) return { ok: true };
     if (this.shuttingDown === true) {
@@ -699,7 +720,20 @@ export class RuntimeManager {
         message: `runtime manager is shutting down; ${runtimeId} admission skipped`
       };
     }
+    if (reason === 'keep-warm') {
+      const desired = this.desiredResidencyPolicy(runtimeId);
+      const runtime = this.config.runtimes?.[runtimeId];
+      if ((desired && desired !== 'always') || !runtime?.enabled || !runtime.keepWarm)
+        return { ok: false, code: 'keep_warm_revoked', message: 'Always ready was removed or disabled while queued.' };
+    }
     if (reason === 'preferred-warm-reconcile' || reason === 'preferred-warm') {
+      const desired = this.desiredResidencyPolicy(runtimeId);
+      if (desired && desired !== 'preferred')
+        return {
+          ok: false,
+          code: 'preferred_warm_revoked',
+          message: 'The saved readiness policy no longer requests a preferred restore.'
+        };
       const runtime = this.config.runtimes?.[runtimeId];
       if (!runtime || runtime.enabled !== true || runtime.preferredWarm !== true || runtime.keepWarm === true) {
         return {
@@ -916,9 +950,12 @@ export class RuntimeManager {
     return this.queues.get(runtimeId);
   }
 
-  withAdmissionLock(fn, { runtimeId = null, reason = 'runtime-admission', preemptible = false } = {}) {
+  withAdmissionLock(
+    fn,
+    { runtimeId = null, reason = 'runtime-admission', preemptible = false, allowPreemption = true } = {}
+  ) {
     const active = this.activeAdmission;
-    if (active?.runtimeId && active.runtimeId !== runtimeId) {
+    if (allowPreemption && active?.runtimeId && active.runtimeId !== runtimeId) {
       if (active.preemptible && !active.preemptionRequested) {
         active.preemptionRequested = true;
         const error = new Error(
@@ -1469,6 +1506,19 @@ export class RuntimeManager {
     const leaderNode = nextConfig.cluster?.leaderNode ?? previousConfig.cluster?.leaderNode ?? nodeId;
     const changed = reconfigureRuntimeIds(previousConfig, nextConfig, { nodeId, leaderNode });
     const liveAdmissionChanged = liveAdmissionRuntimeIds(previousConfig, nextConfig);
+    if (!changed.length && liveAdmissionChanged.length) {
+      // Wait for a running admission decision to finish before changing its
+      // residency inputs. A readiness click must never interrupt a cold start
+      // or resume a runtime paused for another reason.
+      return this.withAdmissionLock(
+        () => {
+          this.config = nextConfig;
+          for (const runtimeId of liveAdmissionChanged) this.admitQueuedRequests(runtimeId);
+          return { changed, liveAdmissionChanged, results: [] };
+        },
+        { reason: 'readiness-change', allowPreemption: false }
+      );
+    }
     const distributed = new Set(
       changed.filter((runtimeId) => {
         const runtime = nextConfig.runtimes?.[runtimeId] ?? previousConfig.runtimes?.[runtimeId];
@@ -1530,7 +1580,7 @@ export class RuntimeManager {
         }
       }
       this.config = nextConfig;
-      for (const runtimeId of liveAdmissionChanged) this.resumeRuntime(runtimeId);
+      for (const runtimeId of liveAdmissionChanged) this.admitQueuedRequests(runtimeId);
       const startOrder = [...changed].sort(
         (left, right) => Number(distributed.has(right)) - Number(distributed.has(left))
       );

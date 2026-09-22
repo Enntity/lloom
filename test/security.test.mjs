@@ -18,6 +18,9 @@ import {
 } from '../src/security.mjs';
 
 assert.equal(isLoopbackAddress('127.0.0.1'), true);
+assert.equal(isLoopbackAddress('127.2.3.4'), true);
+assert.equal(isLoopbackAddress('127.attacker.example'), false);
+assert.equal(isLoopbackAddress('127.1.example:8100'), false);
 assert.equal(isLoopbackAddress('::1'), true);
 assert.equal(isLoopbackAddress('localhost'), true);
 assert.equal(isLoopbackAddress('0.0.0.0'), false);
@@ -176,10 +179,10 @@ assert.equal(
 
 const remoteAdminAllowed = {
   ...remoteConfig,
-  security: { ...remoteConfig.security, allowRemoteAdmin: true }
+  security: { ...remoteConfig.security, allowRemoteAdmin: true, adminApiKeys: ['sk-admin-only'] }
 };
 assert.equal(
-  authorizeRequest({ headers: { authorization: 'Bearer sk-lloom-local' } }, remoteAdminAllowed, {
+  authorizeRequest({ headers: { authorization: 'Bearer sk-admin-only' } }, remoteAdminAllowed, {
     method: 'POST',
     pathname: '/gateway/setup/apply'
   }).ok,
@@ -191,6 +194,22 @@ assert.equal(
     pathname: '/gateway/setup/apply'
   }).ok,
   false
+);
+
+assert.equal(
+  authorizeRequest({ headers: { authorization: 'Bearer sk-lloom-local' } }, remoteAdminAllowed, {
+    method: 'POST',
+    pathname: '/gateway/setup/apply'
+  }).ok,
+  false
+);
+assert.equal(
+  authorizeRequest(
+    { headers: { authorization: 'Bearer sk-lloom-local' } },
+    { ...remoteAdminAllowed, security: { ...remoteAdminAllowed.security, adminApiKeys: [] } },
+    { method: 'POST', pathname: '/gateway/setup/apply' }
+  ).code,
+  'admin_key_required'
 );
 
 assert.equal(hasValidApiKey({ headers: { authorization: 'Bearer sk-lloom-local' } }, loopbackConfig), true);

@@ -59,6 +59,8 @@ import { createModelMaintenanceController } from './model-maintenance-control.mj
 import { acquireRateLimitSlot, consumeRateBudget, createRateLimitRegistry } from './rate-limit.mjs';
 import { RuntimeManager, runtimeWatchdogConfig, normalizeRequestClass } from './runtime-manager.mjs';
 import { createPreferredResidencyReconciler } from './runtime-residency.mjs';
+import { createRuntimePreferenceController } from './runtime-preferences.mjs';
+import { createDashboardInstallation } from './dashboard-installation.mjs';
 import {
   applyRuntimePolicyPlan,
   createRuntimePolicyPlan,
@@ -1682,6 +1684,7 @@ async function createLibraryPlan(config, searchParams) {
 
 function setupPlanOptionsFromQuery(searchParams) {
   return {
+    additive: queryBool(searchParams, ['additive'], false),
     recipeId: firstQueryParam(searchParams, ['recipe', 'recipe_id', 'recipe-id']),
     configPath: firstQueryParam(searchParams, ['config_out', 'config-out', 'config_path', 'config-path']),
     modelRoot: firstQueryParam(searchParams, ['model_root', 'model-root']),
@@ -1740,7 +1743,7 @@ function setupOptionsFromBody(config, body = {}) {
   return {
     recipeId: body.recipeId ?? body.recipe_id ?? body.recipe,
     ...communityOptionsFromBody(config, body),
-    configPath: body.configPath ?? body.config_path ?? body.configOut ?? body.config_out,
+    configPath: body.configPath ?? body.config_path ?? body.configOut ?? body.config_out ?? config.sourcePath,
     modelRoot: body.modelRoot ?? body.model_root,
     gatewayPort: body.gatewayPort ?? body.gateway_port ?? body.port,
     backendPortRange: body.backendPortRange ?? body.backend_port_range,
@@ -2110,6 +2113,16 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
   function runRuntimeAdminAction(action) {
     return retryRuntimeActionAfterConfigReload(action, () => reloadInFlight);
   }
+
+  const runtimePreferences = createRuntimePreferenceController({
+    getConfig: () => config,
+    mutateSource: (mutate) => mutateConfigSource(config, mutate),
+    reload: reloadConfig,
+    assertControl: (id, requester) => runtimeManager.assertRuntimeControl(id, requester),
+    onPersisted: (id, policy, generation) => runtimeManager.noteDesiredResidency(id, policy, generation),
+    onApplied: (id, policy, generation) => runtimeManager.settleDesiredResidency(id, policy, generation)
+  });
+  const dashboardInstallation = createDashboardInstallation({ getConfig: () => config, reload: reloadConfig });
 
   async function routingStatus() {
     const cacheMs = Math.max(0, Number(config.cluster?.routingStatusCacheMs ?? 250));
@@ -3711,7 +3724,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       }
 
       if (req.method === 'GET' && url.pathname === '/health') {
-        sendJson(res, 200, { ok: true, name: config.name ?? 'LLooM' }, {}, config);
+        sendJson(res, 200, { ok: true, name: config.name ?? 'LLooM', pid: process.pid }, {}, config);
         return;
       }
 
@@ -3721,7 +3734,17 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       }
 
       if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/gateway/dashboard')) {
-        sendHtml(res, 200, renderDashboardPage(), {}, config);
+        sendHtml(
+          res,
+          200,
+          renderDashboardPage(),
+          {
+            'x-frame-options': 'DENY',
+            'content-security-policy': "frame-ancestors 'none'; base-uri 'self'",
+            'referrer-policy': 'same-origin'
+          },
+          config
+        );
         return;
       }
 
@@ -4127,7 +4150,33 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       }
 
       if (req.method === 'GET' && url.pathname === '/gateway/setup/plan') {
-        sendJson(res, 200, await createSetupPlan(config, setupPlanOptionsFromQuery(url.searchParams)));
+        const options = setupPlanOptionsFromQuery(url.searchParams);
+        sendJson(
+          res,
+          200,
+          await createSetupPlan(config, { ...options, configPath: options.configPath ?? config.sourcePath })
+        );
+        return;
+      }
+
+      if (url.pathname === '/gateway/installations' && req.method === 'GET') {
+        sendJson(res, 200, { job: dashboardInstallation.snapshot() });
+        return;
+      }
+      if (url.pathname === '/gateway/installations/plan' && req.method === 'POST') {
+        try {
+          sendJson(res, 200, await dashboardInstallation.review(await readJson(req)));
+        } catch (error) {
+          sendJson(res, error.statusCode || 400, errorBody(error.message, { code: 'installation_plan_failed' }));
+        }
+        return;
+      }
+      if (url.pathname === '/gateway/installations' && req.method === 'POST') {
+        try {
+          sendJson(res, 202, { job: dashboardInstallation.start(await readJson(req)) });
+        } catch (error) {
+          sendJson(res, error.statusCode || 400, errorBody(error.message, { code: 'installation_start_failed' }));
+        }
         return;
       }
 
@@ -4303,6 +4352,22 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
           preferredWarm: runtimeManager.preferredWarmRuntimeIds?.() ?? [],
           results: await runRuntimeAdminAction(() => runtimeManager.startKeepWarm())
         });
+        return;
+      }
+
+      const residencyMatch = url.pathname.match(/^\/gateway\/runtimes\/([^/]+)\/residency$/);
+      if (req.method === 'GET' && residencyMatch) {
+        sendJson(res, 200, { ok: true, job: runtimePreferences.snapshot(decodeURIComponent(residencyMatch[1])) });
+        return;
+      }
+      if (req.method === 'POST' && residencyMatch) {
+        const body = await readJson(req);
+        const result = await runtimePreferences.request(decodeURIComponent(residencyMatch[1]), {
+          policy: body.policy,
+          yes: body.yes,
+          requestedBy: runtimeRequesterNode(req, config)
+        });
+        sendJson(res, 202, result);
         return;
       }
 

@@ -38,6 +38,8 @@ import {
 import { loadConfig } from '../src/config.mjs';
 import { runtimeControlTimeoutMs } from '../src/control-timeout.mjs';
 import { createDoctorReport } from '../src/doctor.mjs';
+import { createBrowserSetup } from '../src/browser-setup.mjs';
+import { shouldOpenSetup, openLocalBrowser } from '../src/first-run.mjs';
 import {
   ClusterCoordinator,
   currentNodeId,
@@ -78,6 +80,7 @@ const __filename = fileURLToPath(import.meta.url);
 /** Command tiers used for help + installed-config policy. Aliases resolve before dispatch. */
 const COMMAND_REGISTRY = [
   { name: 'up', aliases: [], tier: 'primary', needsInstalledConfig: false },
+  { name: 'ui', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'onboard', aliases: [], tier: 'advanced', needsInstalledConfig: false },
   { name: 'down', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'doctor', aliases: [], tier: 'primary', needsInstalledConfig: true },
@@ -147,8 +150,11 @@ function usage() {
   return `LLooM — local-first LLM gateway
 
 Primary commands:
-  lloom / lloom up                 Start installed LLooM; preview setup on first run
+  lloom / lloom up                 Start installed LLooM; guided setup on first run
   lloom up --go                    First run: install, integrate, and start the model
+  lloom up --browser               Open guided local setup on first run
+  lloom up --no-browser            Keep setup in the terminal
+  lloom ui                         Open the installed gateway dashboard
   lloom down                       Stop the gateway and all managed model backends
   lloom doctor                     Readiness report (blockers, warnings, next actions)
   lloom serve                      Run the gateway (reads ~/.lloom/config.json)
@@ -1118,15 +1124,22 @@ function gatewayProcessPaths(configPath) {
   };
 }
 
-async function startGatewayBackground(configPath) {
+async function startGatewayBackground(configPath, { requireOwned = false } = {}) {
   const gatewayConfig = await loadConfig(configPath);
   const url = gatewayUrlFor(gatewayConfig);
   const alreadyHealthy = await gatewayHealth(gatewayConfig);
   const paths = gatewayProcessPaths(configPath);
   if (alreadyHealthy?.ok) {
+    const ownedPid =
+      requireOwned && existsSync(paths.pidPath) ? Number(readFileSync(paths.pidPath, 'utf8').trim()) : null;
+    if (requireOwned && (!ownedPid || alreadyHealthy.pid !== ownedPid))
+      throw new Error(
+        'The gateway port is already used by another server. Choose another port or stop that server before retrying setup.'
+      );
     return {
       status: 'already-running',
       url,
+      pid: alreadyHealthy.pid,
       health: alreadyHealthy,
       ...paths
     };
@@ -1158,6 +1171,8 @@ async function startGatewayBackground(configPath) {
       ...paths
     };
   }
+  if (requireOwned && health.pid !== child.pid)
+    throw new Error('Another server answered on the gateway port. The installed gateway has not been verified.');
   return {
     status: 'started',
     url,
@@ -1448,6 +1463,24 @@ async function main() {
     },
     up: async (context) => {
       const { args, configPath } = context;
+      if (
+        shouldOpenSetup(args, {
+          installed: Boolean(configPath),
+          interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY)
+        }) &&
+        (!wantsOnboardingPlan(args) || hasFlag(args, '--browser'))
+      ) {
+        const options = await firstRunCliOptions([...args, '--offline']);
+        const setup = createBrowserSetup(context.config, options, {
+          gatewayStarter: (configPath) => startGatewayBackground(configPath, { requireOwned: true })
+        });
+        await setup.listen();
+        const url = setup.bootstrapUrl();
+        console.log('LLooM setup: ' + url + '\nKeep this terminal open while setup runs. Press Ctrl+C to stop.');
+        const opened = await openLocalBrowser(url);
+        if (!opened) console.log('Open the local setup URL above in your browser.');
+        return;
+      }
       if (!configPath || wantsOnboardingPlan(args)) return handlers.onboard(context);
       const gateway = await startGatewayBackground(configPath);
       const report = {
@@ -1472,6 +1505,16 @@ async function main() {
         console.log(lines.join('\n'));
       }
       if (!report.ok) process.exitCode = 1;
+    },
+    ui: async ({ args, config }) => {
+      const url = gatewayUrlFor(config);
+      if (wantsJson(args)) {
+        console.log(JSON.stringify({ url }));
+        return;
+      }
+      console.log('LLooM: ' + url);
+      if (!hasFlag(args, '--no-browser') && !(await openLocalBrowser(url)))
+        console.log('Open the gateway URL above in your browser.');
     },
     onboard: async ({ args, config, command: _command }) => {
       const go = wantsGo(args);

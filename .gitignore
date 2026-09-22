@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 .lloom/
 .DS_Store
 .env

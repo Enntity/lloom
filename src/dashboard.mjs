@@ -1,3 +1,7 @@
+import { presenceStyles, presenceNav, presenceViews } from './dashboard-presence.mjs';
+import { sceneStyles, sceneScript } from './dashboard-scene.mjs';
+import { presenceScript } from './dashboard-presence-client.mjs';
+
 const DASHBOARD_HTML = String.raw`<!doctype html>
 <html lang="en">
 <head>
@@ -996,7 +1000,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           state.topologyCamera.frameKey = "";
         } else fitTopologyCameraToModels();
       }
-      if (state.selectedModelId && !state.topologyModels.some(model => model.id === state.selectedModelId)) closeModelInspector();
+      if (state.selectedModelId && !state.physicalModels.some(model => model.id === state.selectedModelId)) closeModelInspector();
       renderTopologyModelFilter();
       renderModelInspector();
     }
@@ -1700,8 +1704,10 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const canvas = $("#topology-canvas");
       if (!canvas || !canvas.isConnected) return;
       const viewportWidth = Math.max(1, canvas.clientWidth), viewportHeight = Math.max(1, canvas.clientHeight);
-      if (canvas.width !== Math.round(viewportWidth) || canvas.height !== Math.round(viewportHeight)) { canvas.width = Math.round(viewportWidth); canvas.height = Math.round(viewportHeight); }
+      const pixelRatio = Math.max(1, Math.min(3, Number(window.devicePixelRatio) || 1));
+      if (canvas.width !== Math.round(viewportWidth * pixelRatio) || canvas.height !== Math.round(viewportHeight * pixelRatio)) { canvas.width = Math.round(viewportWidth * pixelRatio); canvas.height = Math.round(viewportHeight * pixelRatio); }
       const ctx = canvas.getContext("2d");
+      ctx.setTransform(pixelRatio,0,0,pixelRatio,0,0);
       ctx.clearRect(0, 0, viewportWidth, viewportHeight);
       const models = state.topologyModels || [];
       const clusterNodes = state.status?.cluster?.enabled ? Object.values(state.status?.cluster?.nodes || {}) : [];
@@ -1761,7 +1767,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         return hashUnit(aSeed * 29) - hashUnit(bSeed * 29);
       });
       const threadField = { left: 24, right: gate.left - 24, top: 112, bottom: height - 45 };
-      ctx.font = '11px "SFMono-Regular",monospace';
+      ctx.font = '12px system-ui,sans-serif';
       ctx.textAlign = "left";
       const connectionLabels = new Map(orderedConnections.map(connection => {
         const outputRate = smoothRate("connection:" + connection.id + ":out", connection.outputRate, now);
@@ -1921,7 +1927,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         if (active) { ctx.shadowColor = "rgba(47,230,200,.55)"; ctx.shadowBlur = 12; }
         ctx.beginPath(); ctx.roundRect(cardLeft, cardTop, nodeCardWidth, point.cardHeight, 6); ctx.fill(); ctx.stroke();
         ctx.shadowBlur = 0;
-        ctx.textAlign = "left"; ctx.font = '700 10px "SFMono-Regular",monospace';
+        ctx.textAlign = "left"; ctx.font = '600 11px system-ui,sans-serif';
         ctx.fillStyle = node.reachable === false ? "#ff6f7d" : "#e9fffb";
         ctx.fillText(fitCanvasText(ctx, node.name || node.id, clusterEnabled ? 116 : 94), cardLeft + 10, cardTop + 19);
         ctx.textAlign = "right"; ctx.fillStyle = node.local ? "#8fb4ff" : "rgba(153,163,176,.9)";
@@ -1930,10 +1936,10 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         if (clusterEnabled) {
           const platform = node.profile?.platformId || [node.system?.platform, node.system?.arch].filter(Boolean).join("-") || "unknown architecture";
           const accelerator = node.profile?.accelerators?.[0] || node.labels?.hardware || "cpu";
-          ctx.textAlign = "left"; ctx.font = '8px "SFMono-Regular",monospace'; ctx.fillStyle = "rgba(143,180,255,.72)";
+          ctx.textAlign = "left"; ctx.font = '8px system-ui,sans-serif'; ctx.fillStyle = "rgba(143,180,255,.72)";
           ctx.fillText(fitCanvasText(ctx, platform + " · " + accelerator, nodeCardWidth - 20), cardLeft + 10, cardTop + 35);
         }
-        ctx.font = '9px "SFMono-Regular",monospace';
+        ctx.font = '9px system-ui,sans-serif';
         point.resources.forEach((row, rowIndex) => {
           const y = cardTop + 58 + rowIndex * 18;
           const barLeft = cardLeft + 39;
@@ -1992,16 +1998,16 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
           ctx.beginPath(); ctx.roundRect(cardLeft - 5, cardTop - 5, cardWidth + 10, 78, 8); ctx.stroke();
           ctx.restore();
         }
-        ctx.beginPath(); ctx.roundRect(cardLeft, cardTop, cardWidth, 68, 5); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.roundRect(cardLeft, cardTop, cardWidth, 68, 12); ctx.fill(); ctx.stroke();
         if (processing) {
           const scanX = cardLeft + ((now * .08) % (cardWidth + 36)) - 18;
           const scan = ctx.createLinearGradient(scanX - 16, 0, scanX + 16, 0);
           const scanRgb = externalProcessing ? "192,153,255" : "243,189,79";
           scan.addColorStop(0, "rgba(" + scanRgb + ",0)"); scan.addColorStop(.5, "rgba(" + scanRgb + ",.13)"); scan.addColorStop(1, "rgba(" + scanRgb + ",0)");
-          ctx.save(); ctx.beginPath(); ctx.roundRect(cardLeft, cardTop, cardWidth, 68, 5); ctx.clip(); ctx.fillStyle = scan; ctx.fillRect(scanX - 16, cardTop, 32, 68); ctx.restore();
+          ctx.save(); ctx.beginPath(); ctx.roundRect(cardLeft, cardTop, cardWidth, 68, 12); ctx.clip(); ctx.fillStyle = scan; ctx.fillRect(scanX - 16, cardTop, 32, 68); ctx.restore();
         }
         ctx.fillStyle = serving ? "#42d77d" : externalProcessing ? "#f3bd4f" : external ? "#c099ff" : hot ? "#2fe6c8" : warming ? "#f3bd4f" : evicting ? "#ff7e66" : unavailable ? "#ff6f7d" : "#8fb4ff"; ctx.fillRect(cardLeft, cardTop, 4, 68);
-        ctx.textAlign = "left"; ctx.font = '11px "SFMono-Regular",monospace';
+        ctx.textAlign = "left"; ctx.font = '12px system-ui,sans-serif';
         const vendor = modelFamily(point.model.id).toUpperCase();
         const vendorText = fitCanvasText(ctx, vendor, 54);
         const titleWidth = Math.max(24, cardWidth - 12 - 10 - ctx.measureText(vendorText).width - 12);
@@ -2059,8 +2065,16 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const instantaneousOutputRate = Math.max(0, Number(summary.outputRate || 0));
       ctx.textAlign = "center";
       if (clusterEnabled) {
-        ctx.fillStyle = "#e9fffb"; ctx.font = '700 17px "SFMono-Regular",monospace'; ctx.fillText("LLooM", center.x, gate.top + 20);
-        ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.font = '9px "SFMono-Regular",monospace';
+        ctx.save();
+        ctx.shadowColor = "rgba(56,223,245,.45)";
+        ctx.shadowBlur = summary.active ? 26 : 12;
+        ctx.fillStyle = "rgba(18,43,54,.92)";
+        ctx.strokeStyle = "rgba(56,223,245,.45)";
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.roundRect(center.x - nodeCardWidth / 2, gate.top - 6, nodeCardWidth, 80, 20); ctx.fill(); ctx.stroke();
+        ctx.restore();
+        ctx.fillStyle = "#e9fffb"; ctx.font = '700 17px system-ui,sans-serif'; ctx.fillText("LLooM", center.x, gate.top + 20);
+        ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.font = '9px system-ui,sans-serif';
         ctx.fillText(fitCanvasText(ctx, (state.status?.cluster?.id || "CLUSTER") + " · ROUTING", nodeCardWidth), center.x, gate.top + 35);
         const clusterTraffic = [
           (summary.active || 0) + " ACTIVE",
@@ -2077,13 +2091,13 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         ctx.beginPath(); ctx.roundRect(gate.left, gate.top, gate.right - gate.left, gate.bottom - gate.top, 9); ctx.fill(); ctx.stroke();
         ctx.strokeStyle = "rgba(143,180,255,.35)"; ctx.lineWidth = 1;
         for (let i = 0; i < 9; i++) { const y = gate.top + 30 + i * 25; ctx.beginPath(); ctx.moveTo(gate.left + 13, y); ctx.lineTo(gate.right - 13, y); ctx.stroke(); }
-        ctx.fillStyle = "#e9fffb"; ctx.font = '700 18px "SFMono-Regular",monospace'; ctx.fillText("LLooM", center.x, gate.top + 39);
-        ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.font = '10px "SFMono-Regular",monospace'; ctx.fillText("ROUTING LOOM", center.x, gate.top + 57);
+        ctx.fillStyle = "#e9fffb"; ctx.font = '700 18px system-ui,sans-serif'; ctx.fillText("LLooM", center.x, gate.top + 39);
+        ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.font = '10px system-ui,sans-serif'; ctx.fillText("ROUTING LOOM", center.x, gate.top + 57);
         const statRows = [["ACTIVE", summary.active || 0], ["PROMPT", promptTokens > 0 ? (summary.promptEstimated ? "~" : "") + formatCompact(Math.round(promptTokens)) + " tok" : "—"], ["OUTPUT", formatRate(instantaneousOutputRate) + " ~t/s"], ["ERRORS/1M", summary.recentErrors || 0]];
-        ctx.font = '11px "SFMono-Regular",monospace';
+        ctx.font = '12px system-ui,sans-serif';
         statRows.forEach((row, index) => { const y = gate.top + 94 + index * 27; ctx.textAlign = "left"; ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.fillText(row[0], gate.left + 18, y); ctx.textAlign = "right"; ctx.fillStyle = "rgba(242,245,247,.95)"; ctx.fillText(String(row[1]), gate.right - 18, y); });
         const resourceRows = hostResourceRows(summary.host);
-        ctx.font = '9px "SFMono-Regular",monospace';
+        ctx.font = '9px system-ui,sans-serif';
         resourceRows.forEach((row, index) => {
           const y = gate.top + 218 + index * 24, value = row[1];
           ctx.textAlign = "left"; ctx.fillStyle = "rgba(153,163,176,.9)"; ctx.fillText(row[0], gate.left + 17, y);
@@ -2097,7 +2111,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     }
 
     function animateTopology() {
-      if (!document.hidden) {
+      if (!document.hidden && !$(".topology").hidden) {
         const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         // Reduced motion still resolves the layout, it just settles it and
         // snaps the camera instead of easing both across frames.
@@ -2287,6 +2301,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     }
 
     async function refreshActivity() {
+      if (document.hidden) return;
       try {
         state.metrics = await getJson("/gateway/metrics?period=" + encodeURIComponent(state.metricsPeriod));
         renderActivity();
@@ -2306,6 +2321,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     }
 
     async function refresh() {
+      if (document.hidden) return;
       const healthPill = $("#health");
       healthPill?.classList.add("refreshing");
       try {
@@ -2715,5 +2731,19 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
 </html>`;
 
 export function renderDashboardPage() {
-  return DASHBOARD_HTML;
+  return DASHBOARD_HTML.replace('</style>', () => presenceStyles + sceneStyles + '\n  </style>')
+    .replace('<body>', () => '<body>' + presenceNav)
+    .replace(
+      '<main>',
+      '<main><div class="presence-heading" data-presence-panel="live"><div><h2>Your AI, in motion.</h2><p>Your hardware. Your models. One gateway.</p></div><button type="button" class="primary" data-add-model>Add model</button></div>'
+    )
+    .replace('<section class="topology"', '<section data-presence-panel="live" class="topology"')
+    .replace(
+      '<details class="operations-dock">',
+      () => presenceViews + '<details class="operations-dock" data-presence-panel="settings" hidden>'
+    )
+    .replace(
+      '    refresh();\n    refreshActivity();',
+      () => presenceScript + sceneScript + '\n    refresh();\n    refreshActivity();'
+    );
 }

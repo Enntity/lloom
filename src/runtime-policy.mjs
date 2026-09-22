@@ -631,7 +631,7 @@ export async function applyRuntimePolicyPlan(
     // that config toggles/reloads queued behind an earlier admission cannot
     // start a runtime the operator already disabled or suspended.
     const isPreferred = preferredRestore || reason === 'preferred-warm';
-    const readLiveConfig = () => (isPreferred ? (runtimeManager.config ?? config) : config);
+    const readLiveConfig = () => runtimeManager.config ?? config;
     let planSource = null;
     const assertFreshGuard = () => {
       admissionSignal?.throwIfAborted?.();
@@ -661,9 +661,20 @@ export async function applyRuntimePolicyPlan(
     liveConfig = readLiveConfig();
     assertFreshGuard();
     planSource = liveConfig;
+    // Overlay only pending hard pins for planning. Other policy changes adopt
+    // the live configuration under the admission mutex.
+    const desiredPins = Object.fromEntries(
+      Object.entries(liveConfig.runtimes ?? {}).map(([id, runtime]) => [
+        id,
+        runtimeManager.desiredResidencyPolicy?.(id) === 'always' ? { ...runtime, keepWarm: true } : runtime
+      ])
+    );
+    liveConfig = { ...liveConfig, runtimes: desiredPins };
     const planConfig = isPreferred
       ? { ...liveConfig, runtimePolicy: { ...liveConfig.runtimePolicy, enabled: true, protectActiveRequests: true } }
-      : liveConfig;
+      : reason === 'keep-warm'
+        ? { ...liveConfig, runtimePolicy: { ...liveConfig.runtimePolicy, enabled: true } }
+        : liveConfig;
     const idleGrace = preferredRestore
       ? Number(liveConfig.runtimePolicy?.preferredWarmIdleMs ?? preferredWarmIdleMs)
       : preferredWarmIdleMs;
@@ -676,7 +687,7 @@ export async function applyRuntimePolicyPlan(
       profile
     });
     assertFreshGuard();
-    if (isPreferred && readLiveConfig() !== liveConfig)
+    if (isPreferred && readLiveConfig() !== planSource)
       throw new RuntimeAdmissionError('Residency configuration changed; retry reconciliation', {
         code: 'runtime_residency_changed'
       });
@@ -775,6 +786,10 @@ export async function applyRuntimePolicyPlan(
         const statusBeforeDrain = (runtimeManager.stateFor?.(action.runtimeId) ?? status.runtimes?.[action.runtimeId])
           ?.statusSince;
         const assertIdleVictim = (afterDrain = false) => {
+          if (runtimeManager.desiredResidencyPolicy?.(action.runtimeId) === 'always')
+            throw new RuntimeAdmissionError('A saved Always ready preference protects this runtime.', {
+              code: 'runtime_keep_warm_conflict'
+            });
           if (!preferredRestore) return;
           const current =
             runtimeManager.config?.runtimes?.[action.runtimeId] ?? liveConfig.runtimes?.[action.runtimeId];

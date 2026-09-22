@@ -4,7 +4,7 @@ import {
   selectIntegrationArtifacts,
   writeGeneratedIntegrationArtifacts
 } from './client-integrations.mjs';
-import { applyBackend, applyRecipe, defaultInstallStatePathFor } from './installer.mjs';
+import { applyBackend, applyRecipe, pinDownloadCommands, defaultInstallStatePathFor } from './installer.mjs';
 import {
   backendIds,
   defaultBackendVariables,
@@ -175,17 +175,25 @@ export async function createBootstrapPlan(
       name: recipe.name,
       backendId: recipe.backend?.id
     },
+    // Frozen executable evidence: the exact backend/recipe step plans plus the
+    // selected recipe and modelRoot. Retries and reviewed-plan execution must
+    // replay these untouched rather than re-profiling or re-selecting.
+    reviewedRecipe: recipe,
+    reviewedBackend: backend,
+    modelRoot: selectedModelRoot,
     backend: await planBackend(backend, {
       variables: backendVariables,
       checkCommands: true
     }),
-    recipe: planRecipe(recipe, config, {
-      modelRoot: selectedModelRoot,
-      backendIds: backendIds(catalog),
-      benchmarkEvidence,
-      benchmarksRoot: selectedBenchmarksRoot,
-      benchmarkValidationErrors: benchmarkErrors
-    }),
+    recipe: await pinDownloadCommands(
+      planRecipe(recipe, config, {
+        modelRoot: selectedModelRoot,
+        backendIds: backendIds(catalog),
+        benchmarkEvidence,
+        benchmarksRoot: selectedBenchmarksRoot,
+        benchmarkValidationErrors: benchmarkErrors
+      })
+    ),
     benchmarks: {
       root: selectedBenchmarksRoot,
       validationErrors: benchmarkErrors,
@@ -212,6 +220,7 @@ export async function applyBootstrap(
     generatedRoot,
     backendVariables = defaultBackendVariables(process.env),
     _benchmarkDocuments = [],
+    reviewedPlan,
     recipesRoot,
     recipeDocuments = [],
     backendCatalogPath,
@@ -223,11 +232,27 @@ export async function applyBootstrap(
     throw new Error('Refusing to bootstrap without yes=true. Re-run with --yes after reviewing the dry-run plan.');
   }
 
-  const profile = await profileMachine();
-  const recipes = [...recipeDocuments, ...(await loadRecipes(recipesRoot))];
-  const recipe = await selectRecipe({ recipeId, recipes, profile, recipesRoot });
-  const catalog = await loadBackendCatalog(backendCatalogPath);
-  const backend = getBackend(catalog, recipe.backend?.id);
+  // A reviewed plan carries the exact backend/recipe plans that were shown to
+  // and approved by the user. When supplied, reuse the frozen evidence so a
+  // later hardware/catalog change cannot silently swap in different commands.
+  const reviewed = reviewedPlan ?? null;
+  let recipe;
+  let backend;
+  let backendPlan = null;
+  if (reviewed) {
+    if (!reviewed.reviewedRecipe || !reviewed.reviewedBackend || !reviewed.backend?.steps || !reviewed.recipe?.steps)
+      throw new Error('Reviewed bootstrap plan is incomplete. Review a fresh plan.');
+    recipe = reviewed.reviewedRecipe;
+    backend = reviewed.reviewedBackend;
+    backendPlan = reviewed.backend;
+  } else {
+    const profile = await profileMachine();
+    const recipes = [...recipeDocuments, ...(await loadRecipes(recipesRoot))];
+    recipe = await selectRecipe({ recipeId, recipes, profile, recipesRoot });
+    const catalog = await loadBackendCatalog(backendCatalogPath);
+    backend = getBackend(catalog, recipe.backend?.id);
+  }
+  if (!recipe) throw new Error('Bootstrap requires a reviewed recipe or recipeId.');
   if (!backend) throw new Error(`Recipe ${recipe.id} references unknown backend ${recipe.backend?.id}`);
 
   const registry = createRegistry(config);
@@ -237,7 +262,8 @@ export async function applyBootstrap(
     yes,
     statePath,
     variables: backendVariables,
-    env: commandEnv
+    env: commandEnv,
+    ...(backendPlan ? { reviewedPlan: backendPlan } : {})
   });
   backendResult.summary = phaseSummary('backend', backendResult);
 
@@ -249,7 +275,10 @@ export async function applyBootstrap(
         env: commandEnv,
         onProgress,
         stdio,
-        ...(modelRoot ? { modelRoot } : {})
+        ...((reviewed?.modelRoot ?? modelRoot) ? { modelRoot: reviewed?.modelRoot ?? modelRoot } : {}),
+        ...((reviewed?.recipePlan ?? (reviewed?.recipe?.steps ? reviewed.recipe : null))
+          ? { reviewedPlan: reviewed.recipePlan ?? reviewed.recipe }
+          : {})
       })
     : blockedPhase('recipe', 'backend phase failed', { dryRun });
   recipeResult.summary ??= phaseSummary('recipe', recipeResult);

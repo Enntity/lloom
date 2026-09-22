@@ -1548,7 +1548,7 @@ export async function createInitPlan(
   };
 }
 
-async function writeJson(filePath, value) {
+async function writeJson(filePath, value, { exclusive = false } = {}) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   const temporaryPath = path.join(
     path.dirname(filePath),
@@ -1556,22 +1556,37 @@ async function writeJson(filePath, value) {
   );
   try {
     await fs.writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-    await fs.rename(temporaryPath, filePath);
+    if (exclusive) await fs.link(temporaryPath, filePath);
+    else await fs.rename(temporaryPath, filePath);
   } finally {
     await fs.unlink(temporaryPath).catch(() => {});
   }
 }
 
-export async function applyInit(config, { dryRun = true, yes = false, integrate = false, ...options } = {}) {
+export async function applyInit(
+  config,
+  {
+    dryRun = true,
+    yes = false,
+    integrate = false,
+    reviewedPlan,
+    exclusiveConfig = false,
+    onConfigWritten,
+    writeConfig,
+    ...options
+  } = {}
+) {
   if (!dryRun && !yes) {
     throw new Error(
       'Refusing to initialize LLooM without yes=true. Re-run with --yes after reviewing the dry-run plan.'
     );
   }
-  const plan = await createInitPlan(config, options);
+  const plan = reviewedPlan ?? (await createInitPlan(config, options));
   if (dryRun) return plan;
 
-  await writeJson(plan.configPath, plan.config);
+  if (writeConfig) await writeConfig(plan.configPath, plan.config);
+  else await writeJson(plan.configPath, plan.config, { exclusive: exclusiveConfig });
+  await onConfigWritten?.(plan.configPath, plan.config);
   const registry = createRegistry(plan.config);
   const generatedClients = await writeGeneratedIntegrationArtifacts(plan.config, registry, {
     clientId: options.clientId ?? 'all',

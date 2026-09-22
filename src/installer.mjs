@@ -73,8 +73,8 @@ function backendState(state, backendId) {
   return state.backends[backendId];
 }
 
-function huggingFaceCommandCandidates(step, destination = step.destination) {
-  const configured = process.env.LLOOM_HF_BIN || process.env.HF_HUB_CLI;
+function huggingFaceCommandCandidates(step, destination = step.destination, env = process.env) {
+  const configured = env.LLOOM_HF_BIN || env.HF_HUB_CLI;
   const recipeOwned = destination ? path.join(path.dirname(destination), '.hf-cli', 'bin', 'hf') : null;
   return [configured, recipeOwned, 'hf', 'huggingface-cli'].filter(Boolean).map((command) => [
     command,
@@ -105,10 +105,28 @@ function pythonExecutableForVenv(venvPath) {
 }
 
 async function resolveHuggingFaceDownloadCommand(step, { env = process.env } = {}) {
-  for (const candidate of huggingFaceCommandCandidates(step)) {
+  for (const candidate of huggingFaceCommandCandidates(step, step.destination, env)) {
     if (await commandAvailable(candidate[0], { env })) return candidate;
   }
   return null;
+}
+
+// Bind browser-reviewed downloads to the executable selected at review. If a
+// recipe installs its own CLI later, its deterministic path remains reviewed.
+export async function pinDownloadCommands(plan, { env = process.env } = {}) {
+  for (const step of plan.steps ?? []) {
+    if (step.action !== 'download-model') continue;
+    const resolved = await resolveHuggingFaceDownloadCommand(step, { env });
+    let executable = resolved?.[0];
+    if (executable && !path.isAbsolute(executable)) {
+      const which = await runCommand('/usr/bin/which', [executable], { env, allowFailure: true });
+      executable = which.stdout.trim();
+    }
+    step.downloadExecutable = executable || path.join(path.dirname(step.destination), '.hf-cli', 'bin', 'hf');
+    step.commands = (step.commands ?? [step.command]).map((command) => [step.downloadExecutable, ...command.slice(1)]);
+    step.command = step.commands[0];
+  }
+  return plan;
 }
 
 function stepCommand(step, { preferConfigured = true } = {}) {
@@ -167,7 +185,7 @@ async function executeDownloadModel(step, { env = process.env, stdio } = {}) {
     };
   }
 
-  const command = await resolveHuggingFaceDownloadCommand(step, { env });
+  const command = step.downloadExecutable ? step.command : await resolveHuggingFaceDownloadCommand(step, { env });
   if (!command) {
     return {
       ok: false,
@@ -187,9 +205,12 @@ async function executeDownloadModel(step, { env = process.env, stdio } = {}) {
   const commands = [];
   let execution;
   for (const include of selections) {
-    const workCommand = huggingFaceCommandCandidates({ ...step, include }, prepared.workPath).find(
-      (candidate) => candidate[0] === command[0]
-    );
+    const template = step.downloadExecutable
+      ? (step.commands ?? [step.command])[commands.length]
+      : huggingFaceCommandCandidates({ ...step, include }, prepared.workPath, env).find(
+          (candidate) => candidate[0] === command[0]
+        );
+    const workCommand = template.map((arg, index) => (template[index - 1] === '--local-dir' ? prepared.workPath : arg));
     commands.push(workCommand);
     execution = await executeCommand(workCommand, { env, stdio });
     if (!execution.ok) return { ...execution, commands, status: 'failed', partialDestination: prepared.workPath };
@@ -345,14 +366,18 @@ export async function applyRecipe(
     onlyStep,
     env = process.env,
     onProgress,
-    stdio
+    stdio,
+    reviewedPlan
   } = {}
 ) {
   if (!dryRun && !yes) {
     throw new Error('Refusing to execute recipe without yes=true. Re-run with --yes after reviewing the dry-run plan.');
   }
 
-  const plan = planRecipe(recipe, config, { modelRoot, checkLocalReferences: false });
+  // A reviewed plan pins the exact executable steps approved by the user. When
+  // present, execute those steps verbatim without replanning, so a later
+  // profile/catalog change cannot alter the commands.
+  const plan = reviewedPlan ?? planRecipe(recipe, config, { modelRoot, checkLocalReferences: false });
   if (plan.validationErrors.length) {
     throw new Error(
       `Recipe ${recipe.id} is invalid:\n${plan.validationErrors.map((error) => `- ${error}`).join('\n')}`
@@ -447,7 +472,15 @@ export async function applyRecipe(
 
 export async function applyBackend(
   backend,
-  { dryRun = true, yes = false, statePath = defaultInstallStatePath, onlyStep, variables, env = process.env } = {}
+  {
+    dryRun = true,
+    yes = false,
+    statePath = defaultInstallStatePath,
+    onlyStep,
+    variables,
+    env = process.env,
+    reviewedPlan
+  } = {}
 ) {
   if (!dryRun && !yes) {
     throw new Error(
@@ -455,10 +488,13 @@ export async function applyBackend(
     );
   }
 
-  const plan = await planBackend(backend, {
-    variables,
-    checkCommands: true
-  });
+  // Reviewed backend plan from the approved dry run; execute its steps exactly.
+  const plan =
+    reviewedPlan ??
+    (await planBackend(backend, {
+      variables,
+      checkCommands: true
+    }));
   if (!plan.platformSupported) {
     throw new Error(`Backend ${backend.id} is not supported on ${plan.platform}`);
   }

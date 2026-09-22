@@ -1,3 +1,5 @@
+import { isIP } from 'node:net';
+
 /**
  * Local gateway auth and admin perimeter.
  *
@@ -20,10 +22,10 @@ export function isLoopbackAddress(host) {
   value = value.split('%')[0];
   if (value.includes(':') && !value.includes('::') && value.split(':').length === 2) {
     const [maybeHost] = value.split(':');
-    if (LOOPBACK_HOSTS.has(maybeHost) || maybeHost === '127.0.0.1') return true;
+    if (LOOPBACK_HOSTS.has(maybeHost) || (isIP(maybeHost) === 4 && maybeHost.startsWith('127.'))) return true;
   }
   if (LOOPBACK_HOSTS.has(value)) return true;
-  if (value.startsWith('127.')) return true;
+  if (isIP(value) === 4 && value.startsWith('127.')) return true;
   return false;
 }
 
@@ -73,7 +75,7 @@ export function classifyRoute(method, pathname) {
   ) {
     return 'public';
   }
-  if (path.startsWith('/gateway/')) {
+  if (path.startsWith('/gateway/') || path === '/v1/integrations') {
     return verb === 'POST' ? 'admin-write' : 'admin-read';
   }
   return 'inference';
@@ -87,6 +89,11 @@ export function authorizeRequest(req, config, { method, pathname } = {}) {
     effectiveMethod === 'GET' &&
     ['/gateway/status', '/gateway/metrics', '/gateway/models'].includes(effectivePath);
   const routeKind = publicTelemetry ? 'public' : classifyRoute(effectiveMethod, effectivePath);
+  const browserBoundary = authorizeAdminBrowserRequest(req, config, {
+    method: effectiveMethod,
+    pathname: effectivePath
+  });
+  if (!browserBoundary.ok) return { ...browserBoundary, routeKind };
   const bindHost = config.server?.host ?? '127.0.0.1';
   const loopbackBind = isLoopbackAddress(bindHost);
   const allowMissing = config.security?.allowMissingAuth === true;
@@ -110,6 +117,15 @@ export function authorizeRequest(req, config, { method, pathname } = {}) {
         routeKind,
         message:
           'Admin write endpoints are disabled on non-loopback binds. Bind to 127.0.0.1 or set security.allowRemoteAdmin=true with API keys.'
+      };
+    }
+    if (routeKind === 'admin-write' && (!adminRequired || !validAdminKey)) {
+      return {
+        ok: false,
+        status: 403,
+        code: 'admin_key_required',
+        routeKind,
+        message: 'Remote admin writes require a separate security.adminApiKeys credential.'
       };
     }
     if (isAdminRoute) {
@@ -161,6 +177,50 @@ export function authorizeRequest(req, config, { method, pathname } = {}) {
     routeKind,
     message: 'missing or invalid authorization token'
   };
+}
+
+// Local command-line clients may omit Origin. Browsers may not use another
+// website's origin (or a rebound DNS hostname) to reach the local control plane.
+// This gate is independent of bearer auth: a stolen browser origin must never
+// gain admin access merely because loopback allows missing inference auth.
+export function authorizeAdminBrowserRequest(req, config, { method = req.method, pathname = '/' } = {}) {
+  if (!pathname.startsWith('/gateway/') && pathname !== '/v1/integrations') return { ok: true };
+  if (pathname === '/gateway/dashboard' || pathname === '/gateway/security') return { ok: true };
+  const denied = {
+    ok: false,
+    status: 403,
+    code: 'admin_origin_denied',
+    message: 'Open the dashboard on this gateway to use its management API.'
+  };
+  const host = req.headers?.host;
+  const origin = req.headers?.origin;
+  const site = req.headers?.['sec-fetch-site'];
+  const loopback = isLoopbackAddress(config.server?.host ?? '127.0.0.1');
+  let target;
+  try {
+    if (host) target = new URL('http://' + host);
+    if (target && (target.username || target.password || target.pathname !== '/' || target.search || target.hash))
+      return denied;
+    if (loopback && target) {
+      const hostname = target.hostname.replace(/^\[|\]$/g, '');
+      if (hostname !== 'localhost' && (!isIP(hostname) || !isLoopbackAddress(hostname))) return denied;
+    }
+    if (site === 'cross-site') return denied;
+    if (origin !== undefined) {
+      if (!target || origin === 'null') return denied;
+      const source = new URL(origin);
+      if (!['http:', 'https:'].includes(source.protocol) || source.origin !== origin) return denied;
+      // An HTTPS reverse proxy may supply the browser-facing host. Do not trust
+      // forwarded headers or broaden this to arbitrary sibling origins.
+      if (source.host !== target.host) return denied;
+      if (req.socket?.encrypted && source.protocol !== 'https:') return denied;
+      if (loopback && source.protocol !== 'http:') return denied;
+    }
+    if (method === 'POST' && site && !['same-origin', 'none'].includes(site)) return denied;
+  } catch {
+    return denied;
+  }
+  return { ok: true };
 }
 
 /** @deprecated Prefer authorizeRequest — kept for simple key checks. */

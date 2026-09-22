@@ -3,7 +3,7 @@
 [![CI](https://github.com/enntity/lloom/actions/workflows/ci.yml/badge.svg)](https://github.com/enntity/lloom/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-LLooM is a local-first LLM gateway for people who run serious open models on their own hardware. It treats NVIDIA systems—including DGX Spark / GB10—and Apple Silicon Macs as first-class platforms. LLooM sits in front of vLLM, SGLang, MLX, MTPLX, llama.cpp, Ollama, image generators, and other local runtimes, then exposes stable OpenAI-compatible and Anthropic-compatible APIs to agent tools.
+LLooM installs, manages, and serves AI models on your hardware. It treats NVIDIA systems—including DGX Spark / GB10—and Apple Silicon Macs as first-class platforms. LLooM sits in front of vLLM, SGLang, MLX, MTPLX, llama.cpp, Ollama, image generators, and other local runtimes, then exposes stable OpenAI-compatible and Anthropic-compatible APIs to agent tools.
 
 The goal is simple: install one bridge, let it inspect the machine, choose the best agentic model recipe from the LLooM community library, install the backend needed for that recipe, download and configure the model, keep it warm, and point Codex, Claude Code, OMP, OpenCode, Hermes, Zero, or any OpenAI-compatible client at one base URL.
 
@@ -15,11 +15,11 @@ The planned public community host is `https://lloom.enntity.com`; source checkou
 
 ## First-Class Platforms
 
-| NVIDIA / DGX Spark                                                                     | Apple Silicon                                                                     |
-| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| CUDA, Blackwell, DGX Spark / GB10, and Linux NVIDIA hosts                              | M-series Macs with unified memory                                                 |
-| vLLM and SGLang are the primary high-throughput backends                               | MLX, MTPLX, OptiQ, and llama.cpp are the primary native backends                  |
-| Managed Docker runtimes, GPU-memory admission, warm/on-demand lanes, and Spark recipes | Native processes, unified-memory-aware recipes, model-root reuse, and Mac recipes |
+| NVIDIA / DGX Spark                                                                      | Apple Silicon                                                                     |
+| --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| CUDA, Blackwell, DGX Spark / GB10, and Linux NVIDIA hosts                               | M-series Macs with unified memory                                                 |
+| vLLM and SGLang are the primary high-throughput backends                                | MLX, MTPLX, OptiQ, and llama.cpp are the primary native backends                  |
+| Managed Docker runtimes, GPU-memory admission, warm/on-demand lanes, and Spark recipes  | Native processes, unified-memory-aware recipes, model-root reuse, and Mac recipes |
 | See [`docs/dgx-spark.md`](docs/dgx-spark.md) and [`docs/clusters.md`](docs/clusters.md) | See the bundled `apple-silicon-*` recipes                                         |
 
 Both platforms get the same gateway APIs, runtime policy, per-connection telemetry, live dashboard, client integrations, external-provider passthrough, and community recipe/benchmark workflow. Independent LLooM gateways can also form a heterogeneous lab behind one central endpoint; node profiles and optional GPU telemetry degrade cleanly across CUDA, Metal, ROCm, and CPU-only hosts.
@@ -34,7 +34,6 @@ cd lloom
 npm ci
 npm link
 lloom
-lloom up --go
 ```
 
 `npm link` installs the same `lloom` and `lloom-host` commands from your checkout. After the first npm release, `npm install -g lloom` will be the supported package install path.
@@ -48,7 +47,9 @@ curl -sS http://127.0.0.1:8100/v1/models
 
 Dashboard: [http://127.0.0.1:8100/](http://127.0.0.1:8100/)
 
-That is the 1.0 path. A bare `lloom` is a dry run first: it inspects the machine, asks the LLooM community host for the best known recipe pack and backend catalog, shows what will be installed, and refuses writes until you rerun it with `--go`. `up` is the named alias for the same first-run flow. `--go` applies the plan, confirms noninteractive writes, and starts the selected keep-warm runtime after setup. Use `--offline` when you want to ignore the host and select from only the local recipe library.
+On a new installation in an interactive terminal, `lloom` opens a local browser setup. It detects your hardware, asks what you want to use AI for, and recommends a compatible vendor recipe from the bundled library. Review the plan and choose **Set up my AI** to install it. The terminal stays open during setup. Chat setup checks a real response through the gateway before showing **Ready**; media installations show when output still needs verification.
+
+Use `lloom up --browser` to request browser setup explicitly, or `lloom ui` to open an installed gateway. The CLI remains available: `lloom --no-browser` previews the community-based plan; `lloom up --go` installs, integrates, and starts it. Scripted, JSON, offline, and explicit recipe commands keep their CLI behavior. See [the browser experience](docs/browser-experience.md) for the flow and current boundaries.
 
 The default gateway endpoint is `127.0.0.1:8100`; managed backend runtimes default to `8201-8299`. This source checkout defaults community lookup to the local development host at `127.0.0.1:8110`, starts it automatically if it is not already running, serves signed seed host data from `community/`, and requires signed recipe packs by default. Local imports still land in `recipes/` and `benchmarks/community/`. A production package should point at the signed public LLooM host. Most users should not need to care.
 
@@ -60,12 +61,12 @@ Use this path when validating the repository before a package release:
 
 ```bash
 npm install -g .
-lloom up
+lloom up --no-browser
 lloom up --go
 lloom doctor --no-runtimes
 ```
 
-`lloom up` should show the detected machine profile, the trusted community recommendation, the selected recipe, benchmark evidence, and the exact apply command.
+`lloom up --no-browser` should show the detected machine profile, the trusted community recommendation, the selected recipe, benchmark evidence, and the exact apply command.
 
 - On NVIDIA Linux, LLooM detects CUDA devices, compute capability, Blackwell, and DGX Spark / GB10 markers. Spark recipes use vLLM or SGLang, managed Docker containers, and explicit GPU-memory/runtime policy. The checked-in Spark deployment demonstrates a warm primary chat model, warm embedding model, and an on-demand alternate chat lane.
 - On a 96 GB Apple Silicon machine, the bundled development host should recommend `apple-silicon-qwen36-35b-a3b-mtplx` and select `Youssofal/Qwen3.6-35B-A3B-MTPLX-Optimized-Speed-FP16`. Lower-memory Macs should fall back to the 27B MTPLX recipe.
@@ -99,14 +100,16 @@ Then open OMP normally. The generated OMP config points at `http://127.0.0.1:810
 - Backend recipes for vLLM, SGLang, MTPLX, MLX LM, llama.cpp, Ollama, OptiQ, and stable-diffusion.cpp, with dedicated DGX Spark / GB10 and Apple Silicon recipes.
 - Community recipe packs and hardware-matched benchmark evidence so machines can select the best known model/backend recipe automatically instead of blindly chasing global tok/s.
 - Generated client profiles for OMP, OpenCode, Codex-compatible, Claude-compatible, Hermes, Zero, and any OpenAI-compatible client.
-- A small dashboard at `/` for local status and guarded setup actions, with a live topology that can switch between the default columnar racks and an action view whose camera and cards follow live models.
+- A browser dashboard with Live, Models, Machines, Clients, and Settings. Inspect real topology, install models, choose their readiness, load or unload managed runtimes, and try chat through the gateway. The action camera follows serving models while preserving manual zoom.
 
 ## Daily Commands
 
 Primary ladder (see `lloom help`; full catalog under `lloom help advanced`):
 
 ```bash
-lloom                         # preview plan
+lloom                         # browser setup on first interactive run
+lloom ui                      # open the installed gateway
+lloom --no-browser            # preview the CLI plan
 lloom up --go                 # install + integrate + start
 lloom down                    # stop the gateway and all managed model backends
 lloom doctor --no-runtimes
@@ -123,7 +126,7 @@ lloom add-model 'openai:http://127.0.0.1:8000/v1#my-model' --default --apply --y
 lloom serve --config ~/.lloom/config.json
 ```
 
-Bare `lloom`, `up`, and `onboard` all route to the same first-run flow. By default, the community request asks for the best known `agentic-coding` recipe with `tools`, `reasoning`, and `long-context`; use repeated `--workload`, `--capability`, or `--tag` flags to target a different kind of local model. `doctor` is the readiness view for humans and automation. `integrate` repairs or writes client configs from the registry. `add-model` imports an ad hoc Hugging Face, local, or Ollama model outside the community recipe library.
+The CLI `onboard` flow remains available independently of browser setup. By default, the community request asks for the best known `agentic-coding` recipe with `tools`, `reasoning`, and `long-context`; use repeated `--workload`, `--capability`, or `--tag` flags to target a different kind of local model. `doctor` is the readiness view for humans and automation. `integrate` repairs or writes client configs from the registry. `add-model` imports an ad hoc Hugging Face, local, or Ollama model outside the community recipe library.
 
 After `~/.lloom/config.json` exists, operational commands such as `doctor`, `models`, `serve`, `integrate`, `add-model`, and runtime controls automatically read that installed config when `--config` is not supplied. Before that file exists, those commands return a `not-installed` report with the exact `lloom up` command to run, instead of silently operating on bundled model defaults. Read-only planning commands such as `lloom`, `lloom up`, `onboard`, and `integrations` can still preview from the packaged gateway shell plus community data. Use `--config` whenever you want to inspect or operate a different config file.
 

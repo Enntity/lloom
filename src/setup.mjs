@@ -179,6 +179,7 @@ export async function applySetup(
     statePath,
     onProgress,
     stdio,
+    reviewedPlan,
     ...options
   } = {}
 ) {
@@ -186,11 +187,12 @@ export async function applySetup(
     throw new Error('Refusing to run setup without yes=true. Re-run with --yes after reviewing the dry-run plan.');
   }
 
-  const plan = await createSetupPlan(config, options);
+  const plan = reviewedPlan ?? (await createSetupPlan(config, options));
   if (dryRun) return plan;
 
   const init = await applyInit(config, {
     ...options,
+    reviewedPlan: reviewedPlan?.phases?.init,
     recipeId: plan.selectedRecipe.id,
     configPath: plan.configPath,
     modelRoot: plan.modelRoot,
@@ -211,6 +213,9 @@ export async function applySetup(
     recipesRoot: options.recipesRoot,
     recipeDocuments: options.recipeDocuments,
     backendCatalogPath: options.backendCatalogPath,
+    // Execute the exact reviewed bootstrap evidence that the user approved
+    // rather than re-profiling, re-selecting, or replanning.
+    reviewedPlan: plan.phases?.bootstrap,
     onProgress,
     stdio,
     ...(statePath ? { statePath } : {}),
