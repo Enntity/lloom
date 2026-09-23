@@ -21,7 +21,9 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { Agent as UndiciAgent } from 'undici';
+// Dispatcher and fetch must come from the same undici copy: the package's
+// v8 Agent speaks a dispatcher contract Node 22's internal undici v6 rejects.
+import { Agent as UndiciAgent, fetch as undiciFetch } from 'undici';
 import {
   backendIds,
   defaultBackendVariables,
@@ -105,7 +107,9 @@ import { ClusterCoordinator, currentNodeId, isFederatedGatewayBackend } from './
 const JSON_TYPE = 'application/json; charset=utf-8';
 const SSE_TYPE = 'text/event-stream; charset=utf-8';
 const execFileAsync = promisify(execFile);
-const longRunningMediaDispatcher = new UndiciAgent({
+// Tests may swap this per server instance via createLloomServer's
+// upstreamDispatcher option; production always uses the long-running Agent.
+let longRunningMediaDispatcher = new UndiciAgent({
   headersTimeout: 1800000,
   bodyTimeout: 1800000
 });
@@ -1389,7 +1393,7 @@ async function fetchUpstream({ backend, path, body, headers = {}, signal, dispat
         : 0;
     return await fetchWithStreamProgress(
       (progressSignal) =>
-        fetch(upstreamUrl(backend, path), {
+        undiciFetch(upstreamUrl(backend, path), {
           method: 'POST',
           headers: backendHeaders(backend, headers),
           body: JSON.stringify(path === '/v1/chat/completions' ? applyOpenRouterProviderPolicy(body, backend) : body),
@@ -1407,7 +1411,7 @@ async function fetchRawUpstream({ backend, path, body, headers = {}, signal, dis
   const timeoutMs = backend.timeoutMs ?? 1800000;
   const fetchSignal = upstreamSignal(signal, timeoutMs);
   try {
-    return await fetch(upstreamUrl(backend, path), {
+    return await undiciFetch(upstreamUrl(backend, path), {
       method: 'POST',
       headers: backendHeaders(backend, headers),
       body,
@@ -1938,7 +1942,12 @@ export async function retryRuntimeActionAfterConfigReload(action, getReloadInFli
   }
 }
 
-export function createLloomServer(config, { logger = console, runtimeManager = null, clusterCoordinator = null } = {}) {
+export function createLloomServer(
+  config,
+  { logger = console, runtimeManager = null, clusterCoordinator = null, upstreamDispatcher = null } = {}
+) {
+  // Tests install a composed mock here; production keeps the long-running Agent.
+  if (upstreamDispatcher) longRunningMediaDispatcher = upstreamDispatcher;
   const hostTelemetry = createHostTelemetry();
   const machineProfile = profileMachine().catch((error) => {
     logger.error?.(`Machine profile collection failed: ${error?.message ?? error}`);

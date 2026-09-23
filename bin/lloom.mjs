@@ -3,7 +3,8 @@ import { spawn } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Agent as UndiciAgent } from 'undici';
+// Dispatcher and fetch must come from the same undici copy (see server.mjs).
+import { Agent as UndiciAgent, fetch as undiciFetch } from 'undici';
 import {
   backendIds,
   defaultBackendVariables,
@@ -1083,7 +1084,7 @@ async function gatewayRequest(config, pathname, { method = 'GET', body, timeoutM
     bodyTimeout: timeoutMs
   });
   try {
-    const response = await fetch(`${gatewayUrlFor(config)}${pathname}`, {
+    const response = await undiciFetch(`${gatewayUrlFor(config)}${pathname}`, {
       method,
       headers: {
         ...gatewayAdminHeaders(config),

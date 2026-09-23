@@ -8682,7 +8682,11 @@ if (mockListened) {
       assert(metricsJson.host?.memory?.freeBytes >= 0);
       assert(metricsJson.host?.memory?.availableBytes >= 0);
       assert.equal(typeof metricsJson.host?.memory?.pressureUtilization, 'number');
-      assert(['linux-memavailable', 'macos-memory-pressure', 'os-freemem'].includes(metricsJson.host?.memory?.source));
+      assert(
+        ['linux-memavailable', 'macos-memory-pages', 'macos-memory-pressure', 'os-freemem'].includes(
+          metricsJson.host?.memory?.source
+        )
+      );
       assert.equal(typeof metricsJson.host?.cpu?.logicalCpus, 'number');
       const modelMetrics = metricsJson.models.find(
         (model) => model.id === 'Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed'

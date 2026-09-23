@@ -508,8 +508,24 @@ export async function createRuntimePolicyPlan(
     policy.totalMemoryGb - (numberOrNull(memoryProfile.availableMemoryGb) ?? policy.totalMemoryGb)
   );
   const predictive = memoryProfile.availableMemoryGb != null;
-  const projectedMemoryGb = Math.max(actualUsedMemoryGb, loadedMemoryGb) + requestedAddsMemory;
+
+  // Two separate limits:
+  //  - The modeled budget governs LLooM-attributable runtimes only. Host-wide
+  //    usage (OS, browser, other apps) is not evictable by admission, so it
+  //    must never count against this budget — folding it in makes the plan
+  //    impossible on any busy machine regardless of evictions.
+  //  - The live host signal feeds the hard reserve check: after this admission
+  //    (and any planned evictions), the host must keep reserve headroom.
+  const hostProjectedMemoryGb = Math.max(actualUsedMemoryGb, loadedMemoryGb) + requestedAddsMemory;
+  const projectedMemoryGb = loadedMemoryGb + requestedAddsMemory;
   let overBudgetGb = requested?.loaded ? 0 : Math.max(0, projectedMemoryGb - policy.memoryBudgetGb);
+  const evictionFreesGb = rows
+    .filter((row) => row.loaded && protectedReasons(row, policy).length === 0)
+    .reduce((sum, row) => sum + row.memoryGb, 0);
+  const hostShortfallGb = predictive
+    ? Math.max(0, policy.reserveMemoryGb - memoryProfile.availableMemoryGb + requestedAddsMemory - evictionFreesGb)
+    : 0;
+  overBudgetGb = Math.max(overBudgetGb, hostShortfallGb);
 
   const actions = [];
   const evictions = [];
@@ -557,7 +573,7 @@ export async function createRuntimePolicyPlan(
     overBudgetGb = Math.max(0, overBudgetGb - row.memoryGb);
   }
 
-  if (projectedMemoryGb > policy.memoryBudgetGb) {
+  if (projectedMemoryGb > policy.memoryBudgetGb || hostShortfallGb > 0) {
     actions.unshift(...evictions);
   }
 
@@ -596,7 +612,10 @@ export async function createRuntimePolicyPlan(
       availableMemoryGb: numberOrNull(memoryProfile.availableMemoryGb),
       predictive,
       requestedAddsMemoryGb: requestedAddsMemory,
-      projectedMemoryGb,
+      // Host-wide projection (loaded vs actual usage, plus the add): kept for
+      // observability; the allow decision uses the modeled budget + reserve.
+      projectedMemoryGb: Math.max(hostProjectedMemoryGb, projectedMemoryGb),
+      hostShortfallGb,
       memoryBudgetGb: policy.memoryBudgetGb
     },
     runtimes: rows,

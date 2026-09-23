@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
-import { MockAgent } from 'undici';
+import { Agent, MockAgent, getGlobalDispatcher, setGlobalDispatcher } from 'undici';
 import { createLloomServer } from '../src/server.mjs';
 import {
   applyOpenRouterProviderPolicy,
   isOpenRouterBackend,
   normalizeOpenRouterProviderPolicy
 } from '../src/protocol/openrouter-provider.mjs';
+
+// The gateway consults this for its long-running upstream dispatcher while a
+// mock session is active.
+let gatewayDispatcher = null;
 
 // ---------------------------------------------------------------------------
 // Pure policy unit coverage
@@ -164,20 +168,27 @@ function gatewayConfig(backend) {
   };
 }
 
-async function withMockedDispatcher(fn) {
-  const { Agent } = await import('undici');
-  const originalDispatch = Agent.prototype.dispatch;
-  const agent = new Agent();
-  agent.dispatch = originalDispatch.bind(agent);
-  const mockAgent = new MockAgent({ agent });
+async function withMockedDispatcher(startGatewayFn, fn) {
+  // The gateway's upstream calls go through its long-running undici Agent.
+  // Undici 8 composes mocks by wrapping that agent instead of patching
+  // prototypes, so the composed dispatcher is installed as the package global
+  // (the package fetch consults it) and handed to the gateway explicitly.
+  // Loopback stays open so client requests to the local gateway pass through.
+  const previous = getGlobalDispatcher();
+  const longRunningAgent = new Agent({ headersTimeout: 1800000, bodyTimeout: 1800000 });
+  const mockAgent = new MockAgent({ agent: longRunningAgent });
   mockAgent.disableNetConnect();
-  Agent.prototype.dispatch = function patchedDispatch(opts, handler) {
-    return mockAgent.dispatch(opts, handler);
-  };
+  mockAgent.enableNetConnect(
+    (host) => typeof host === 'string' && (host.startsWith('127.0.0.1') || host.startsWith('localhost'))
+  );
+  setGlobalDispatcher(mockAgent);
+  gatewayDispatcher = mockAgent;
   try {
+    await startGatewayFn();
     return await fn(mockAgent);
   } finally {
-    Agent.prototype.dispatch = originalDispatch;
+    gatewayDispatcher = null;
+    setGlobalDispatcher(previous);
     await mockAgent.close();
   }
 }
@@ -222,7 +233,10 @@ let gatewayServer;
 let gatewayPort;
 
 async function startGateway(backend) {
-  const app = createLloomServer(gatewayConfig(backend), { logger: { error() {}, warn() {}, info() {}, log() {} } });
+  const app = createLloomServer(gatewayConfig(backend), {
+    logger: { error() {}, warn() {}, info() {}, log() {} },
+    upstreamDispatcher: gatewayDispatcher ?? undefined
+  });
   await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
   gatewayServer = app.server;
   gatewayPort = app.server.address().port;
@@ -238,9 +252,10 @@ async function stopGateway() {
 
 async function testGatewayChatBuffered() {
   const seen = [];
-  await startGateway(openRouterBackend({ openrouterProvider: { only: ['z-ai'], allow_fallbacks: false } }));
   try {
-    await withMockedDispatcher(async (mockAgent) => {
+    await withMockedDispatcher(
+      async () => startGateway(openRouterBackend({ openrouterProvider: { only: ['z-ai'], allow_fallbacks: false } })),
+      async (mockAgent) => {
       intercept(mockAgent, { payload: openAiChatPayload, onBody: (body) => seen.push(body) });
       const res = await fetch(`http://127.0.0.1:${gatewayPort}/v1/chat/completions`, {
         method: 'POST',
@@ -268,9 +283,10 @@ async function testGatewayChatBuffered() {
 
 async function testGatewayChatStream() {
   const seen = [];
-  await startGateway(openRouterBackend({ openrouterProvider: { only: ['z-ai'] } }));
   try {
-    await withMockedDispatcher(async (mockAgent) => {
+    await withMockedDispatcher(
+      async () => startGateway(openRouterBackend({ openrouterProvider: { only: ['z-ai'] } })),
+      async (mockAgent) => {
       intercept(mockAgent, {
         contentType: 'text/event-stream',
         payload: openAiStreamPayload,
@@ -300,9 +316,10 @@ async function testGatewayChatStream() {
 
 async function testGatewayResponsesBridge(stream = false) {
   const seen = [];
-  await startGateway(openRouterBackend({ openrouterProvider: { only: ['z-ai'] } }));
   try {
-    await withMockedDispatcher(async (mockAgent) => {
+    await withMockedDispatcher(
+      async () => startGateway(openRouterBackend({ openrouterProvider: { only: ['z-ai'] } })),
+      async (mockAgent) => {
       intercept(mockAgent, {
         payload: stream ? openAiStreamPayload : openAiChatPayload,
         contentType: stream ? 'text/event-stream' : 'application/json',
@@ -327,9 +344,10 @@ async function testGatewayResponsesBridge(stream = false) {
 
 async function testGatewayAnthropicBridge(stream = false) {
   const seen = [];
-  await startGateway(openRouterBackend({ openrouterProvider: { only: ['z-ai'], allow_fallbacks: true } }));
   try {
-    await withMockedDispatcher(async (mockAgent) => {
+    await withMockedDispatcher(
+      async () => startGateway(openRouterBackend({ openrouterProvider: { only: ['z-ai'], allow_fallbacks: true } })),
+      async (mockAgent) => {
       intercept(mockAgent, {
         payload: stream ? openAiStreamPayload : openAiChatPayload,
         contentType: stream ? 'text/event-stream' : 'application/json',
@@ -359,9 +377,10 @@ async function testGatewayAnthropicBridge(stream = false) {
 
 async function testGatewayMalformedPolicyFailsClosed() {
   // The gateway must not silently send an unconstrained request to OpenRouter.
-  await startGateway(openRouterBackend({ openrouterProvider: { only: [] } }));
   try {
-    await withMockedDispatcher(async () => {
+    await withMockedDispatcher(
+      async () => startGateway(openRouterBackend({ openrouterProvider: { only: [] } })),
+      async () => {
       const res = await fetch(`http://127.0.0.1:${gatewayPort}/v1/chat/completions`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -377,9 +396,10 @@ async function testGatewayMalformedPolicyFailsClosed() {
 
 async function testGatewayNoPolicyUntouched() {
   const seen = [];
-  await startGateway({ id: 'openrouter-lane', type: 'openai', baseUrl: 'https://openrouter.ai/api/v1' });
   try {
-    await withMockedDispatcher(async (mockAgent) => {
+    await withMockedDispatcher(
+      async () => startGateway({ id: 'openrouter-lane', type: 'openai', baseUrl: 'https://openrouter.ai/api/v1' }),
+      async (mockAgent) => {
       intercept(mockAgent, { payload: openAiChatPayload, onBody: (body) => seen.push(body) });
       const res = await fetch(`http://127.0.0.1:${gatewayPort}/v1/chat/completions`, {
         method: 'POST',
@@ -402,21 +422,15 @@ async function testGatewayNoPolicyUntouched() {
 
 async function testGatewayLookalikeHostUntouched() {
   const seen = [];
-  await startGateway({
-    id: 'openrouter-lane',
-    type: 'openai',
-    baseUrl: 'https://notopenrouter.ai/api/v1',
-    openrouterProvider: { only: ['z-ai'] }
-  });
-  const { Agent } = await import('undici');
-  const originalDispatch = Agent.prototype.dispatch;
-  const agent = new Agent();
-  agent.dispatch = originalDispatch.bind(agent);
-  const mockAgent = new MockAgent({ agent });
+  const previous = getGlobalDispatcher();
+  const longRunningAgent = new Agent({ headersTimeout: 1800000, bodyTimeout: 1800000 });
+  const mockAgent = new MockAgent({ agent: longRunningAgent });
   mockAgent.disableNetConnect();
-  Agent.prototype.dispatch = function patchedDispatch(opts, handler) {
-    return mockAgent.dispatch(opts, handler);
-  };
+  mockAgent.enableNetConnect(
+    (host) => typeof host === 'string' && (host.startsWith('127.0.0.1') || host.startsWith('localhost'))
+  );
+  setGlobalDispatcher(mockAgent);
+  gatewayDispatcher = mockAgent;
   try {
     mockAgent
       .get('https://notopenrouter.ai')
@@ -429,6 +443,12 @@ async function testGatewayLookalikeHostUntouched() {
         },
         { headers: { 'content-type': 'application/json' } }
       );
+    await startGateway({
+      id: 'openrouter-lane',
+      type: 'openai',
+      baseUrl: 'https://notopenrouter.ai/api/v1',
+      openrouterProvider: { only: ['z-ai'] }
+    });
     const res = await fetch(`http://127.0.0.1:${gatewayPort}/v1/chat/completions`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -437,7 +457,8 @@ async function testGatewayLookalikeHostUntouched() {
     assert.equal(res.status, 200);
     await res.text();
   } finally {
-    Agent.prototype.dispatch = originalDispatch;
+    gatewayDispatcher = null;
+    setGlobalDispatcher(previous);
     await mockAgent.close();
     await stopGateway();
   }

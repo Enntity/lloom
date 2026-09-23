@@ -1,7 +1,9 @@
 import os from 'node:os';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { Agent as UndiciAgent } from 'undici';
+// Dispatcher and fetch must come from the same undici copy: the package's
+// v8 Agent speaks a dispatcher contract Node 22's internal undici v6 rejects.
+import { Agent as UndiciAgent, fetch as undiciFetch } from 'undici';
 import { runCommand } from './process-control.mjs';
 
 // Node's built-in fetch aborts a request that has not produced response headers
@@ -886,7 +888,7 @@ export function validateClusterConfig(config, env = process.env) {
 export class ClusterCoordinator {
   constructor(
     config,
-    { env = process.env, fetchImpl = fetch, logger = console, telemetry = null, profile = null, models = null } = {}
+    { env = process.env, fetchImpl = undiciFetch, logger = console, telemetry = null, profile = null, models = null } = {}
   ) {
     this.config = config;
     this.env = env;
