@@ -226,20 +226,36 @@ export function parseNvidiaSyncSshConfig(source = '') {
   let entry = null;
   for (const rawLine of String(source).split(/\r?\n/)) {
     const line = rawLine.trim();
-    const host = line.match(/^Host\s+([^*?!\s]+)$/i);
-    if (host) {
-      if (entry?.createdBySync && entry.hostname) entries.push(entry);
-      entry = { alias: host[1], createdBySync: false };
+    // A Host/Match keyword always closes the current block. Wildcard, negated,
+    // and multi-host patterns are not usable aliases, and Match introduces a
+    // conditional scope whose body is not part of the previous Host block, so
+    // the current entry must be finalized and cleared rather than merged forward.
+    const blockStart = line.match(/^(Host|Match)\s+(.*)$/i);
+    if (blockStart) {
+      if (entry) entries.push(entry);
+      entry = null;
+      const alias = blockStart[1].toLowerCase() === 'host' ? blockStart[2].trim() : '';
+      if (alias && /^[^\s*?!]+$/.test(alias)) entry = { alias, createdBySync: false };
       continue;
     }
     if (!entry) continue;
-    if (/^###\s*CreatedBy:\s*NVIDIA Sync$/i.test(line)) entry.createdBySync = true;
+    // Comments carry NVIDIA Sync provenance. The marker is checked before the
+    // generic comment guard, and every other comment line is ignored.
+    const marker = line.match(/^#+\s*NVSyncClusterAlias\s*:\s*(\S+)\s*$/i);
+    if (marker) {
+      entry.clusterAlias = marker[1];
+      continue;
+    }
+    if (/^#/.test(line)) {
+      if (/^#+\s*CreatedBy:\s*NVIDIA Sync\s*$/i.test(line)) entry.createdBySync = true;
+      continue;
+    }
     const hostname = line.match(/^Hostname\s+(\S+)$/i);
     if (hostname) entry.hostname = hostname[1];
     const user = line.match(/^User\s+(\S+)$/i);
     if (user) entry.user = user[1];
   }
-  if (entry?.createdBySync && entry.hostname) entries.push(entry);
+  if (entry) entries.push(entry);
   return entries;
 }
 
@@ -276,52 +292,348 @@ function friendlyNodeId(alias) {
   return String(alias).replace(/-lan$/i, '');
 }
 
+function compareIpv4(left, right) {
+  const leftParts = String(left).split('.').map(Number);
+  const rightParts = String(right).split('.').map(Number);
+  const valid = (parts) =>
+    parts.length === 4 && parts.every((value) => Number.isInteger(value) && value >= 0 && value <= 255);
+  const leftValid = valid(leftParts);
+  const rightValid = valid(rightParts);
+  if (leftValid && rightValid) {
+    for (let index = 0; index < 4; index += 1) {
+      if (leftParts[index] !== rightParts[index]) return leftParts[index] - rightParts[index];
+    }
+    return 0;
+  }
+  if (leftValid !== rightValid) return leftValid ? -1 : 1;
+  return String(left).localeCompare(String(right));
+}
+
+function isAddressAlias(value) {
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(String(value ?? ''));
+}
+
+function syncPeerMatches(peers, localAddresses, localAddressSet = new Set()) {
+  const matches = [];
+  const ambiguous = [];
+  for (const original of peers) {
+    if (!original?.createdBySync || !original.hostname) continue;
+    const clusterAlias = original.clusterAlias ?? (!isAddressAlias(original.alias) ? original.alias : null);
+    if (!clusterAlias || !/^[a-z0-9][a-z0-9._-]*$/i.test(clusterAlias)) continue;
+    const peer = { ...original, clusterAlias };
+    const privateAddress = /^10\.100\./.test(peer.hostname) ? peer.hostname : null;
+    if (!privateAddress) continue;
+    if (localAddressSet.has(privateAddress)) {
+      ambiguous.push({
+        peerAddress: privateAddress,
+        sshAlias: peer.alias ?? null,
+        clusterAlias: peer.clusterAlias,
+        reason: 'local-address',
+        message: `ignored Sync alias ${peer.clusterAlias}: ${privateAddress} is one of this node's own addresses`
+      });
+      continue;
+    }
+    const candidates = [
+      ...new Map(
+        localAddresses
+          .filter(
+            (address) =>
+              address.address?.startsWith('10.100.') && sameSubnet(address.address, privateAddress, address.prefixlen)
+          )
+          .map((address) => [address.interface ?? address.address, address])
+      ).values()
+    ];
+    const candidateAddresses = candidates.map((address) => address.address);
+    if (candidates.length > 1) {
+      ambiguous.push({
+        peerAddress: privateAddress,
+        sshAlias: peer.alias ?? null,
+        clusterAlias: peer.clusterAlias,
+        localAddresses: candidateAddresses.sort(compareIpv4),
+        reason: 'ambiguous-local-interface',
+        message:
+          `ignored Sync alias ${peer.clusterAlias}: peer address ${privateAddress} matches multiple local ` +
+          `interfaces (${candidates
+            .map((address) => address.interface ?? address.address)
+            .sort()
+            .join(', ')}); ` +
+          `refusing to guess a rail`
+      });
+      continue;
+    }
+    const local = candidates[0];
+    if (!local) continue;
+    matches.push({ peer, local, privateAddress });
+  }
+  return { matches, ambiguous };
+}
+
+function nodeRailsForPeers(matches) {
+  const nodes = new Map();
+  for (const match of matches) {
+    const id = friendlyNodeId(match.peer.clusterAlias);
+    let existing = nodes.get(id);
+    if (!existing) {
+      existing = { id, alias: match.peer.alias, sshAlias: null, sshUser: null, rails: [] };
+      nodes.set(id, existing);
+    }
+    if (!existing.rails.some((candidate) => candidate.peerAddress === match.privateAddress)) {
+      existing.rails.push({
+        interface: match.local.interface,
+        localInterface: match.local.interface,
+        localAddress: match.local.address,
+        peerAddress: match.privateAddress,
+        prefixlen: match.local.prefixlen,
+        sshAlias: match.peer.clusterAlias,
+        sshUser: match.peer.user ?? null
+      });
+    }
+    if (!isAddressAlias(match.peer.alias)) {
+      existing.sshAlias ??= match.peer.alias;
+      existing.sshUser ??= match.peer.user ?? null;
+    } else {
+      existing.sshUser ??= match.peer.user ?? null;
+    }
+  }
+  return nodes;
+}
+
 export function buildNvidiaSyncDiscovery({ peers = [], localAddresses = [], localNodeId, hostname } = {}) {
-  const matches = peers
-    .map((peer) => {
-      const local = localAddresses.find(
-        (address) =>
-          address.address?.startsWith('10.100.') && sameSubnet(address.address, peer.hostname, address.prefixlen)
-      );
-      return local ? { peer, local } : null;
-    })
-    .filter(Boolean);
+  const localAddressSet = new Set(localAddresses.map((address) => address.address).filter(Boolean));
+  const { matches, ambiguous } = syncPeerMatches(peers, localAddresses, localAddressSet);
   if (!matches.length) return null;
-  const preferred = [...matches].sort(
-    (left, right) => Number(right.local.address.split('.')[2]) - Number(left.local.address.split('.')[2])
-  )[0];
   const id = localNodeId || hostname || os.hostname();
-  const peerId = friendlyNodeId(preferred.peer.alias);
-  const nodeIds = [id, peerId].sort();
+  if (matches.some((match) => friendlyNodeId(match.peer.clusterAlias) === id)) {
+    throw new Error(`Sync peer alias conflicts with local node id ${id}`);
+  }
+  const discovered = [...nodeRailsForPeers(matches).values()].sort(
+    (left, right) =>
+      compareIpv4(left.rails[0].peerAddress, right.rails[0].peerAddress) || left.id.localeCompare(right.id)
+  );
+
+  const localPrimary = [...matches].sort((left, right) => compareIpv4(left.local.address, right.local.address))[0]
+    .local;
+  const links = [
+    ...new Map(
+      matches.map((match) => [
+        `${friendlyNodeId(match.peer.clusterAlias)}|${match.privateAddress}`,
+        {
+          nodeId: id,
+          peerNodeId: friendlyNodeId(match.peer.clusterAlias),
+          localInterface: match.local.interface,
+          localAddress: match.local.address,
+          peerAddress: match.privateAddress,
+          prefixlen: match.local.prefixlen
+        }
+      ])
+    ).values()
+  ].sort(
+    (left, right) =>
+      compareIpv4(left.peerAddress, right.peerAddress) ||
+      compareIpv4(left.localAddress, right.localAddress) ||
+      left.peerNodeId.localeCompare(right.peerNodeId)
+  );
+
+  const nodes = {
+    [id]: {
+      id,
+      local: true,
+      backendHost: localPrimary.address,
+      fabricInterface: localPrimary.interface
+    }
+  };
+  for (const node of discovered) {
+    const rails = [...node.rails].sort((left, right) => compareIpv4(left.peerAddress, right.peerAddress));
+    const primary = rails[0];
+    nodes[node.id] = {
+      id: node.id,
+      local: false,
+      backendHost: primary.peerAddress,
+      ...(node.sshAlias ? { sshAlias: node.sshAlias } : {}),
+      sshUser: node.sshUser,
+      rails
+    };
+  }
+
+  const familyIds = Object.keys(nodes).sort();
+  const topology = Object.keys(nodes).length === 2 ? 'direct' : 'local-adjacency';
   return {
     detected: true,
     provider: 'nvidia-sync',
-    topology: 'direct',
-    nodeCount: nodeIds.length,
+    topology,
+    nodeCount: familyIds.length,
     nodeId: id,
-    leaderNode: nodeIds[0],
+    localNode: id,
     fabric: {
-      interface: preferred.local.interface,
-      localAddress: preferred.local.address,
-      peerAddress: preferred.peer.hostname,
-      prefixlen: preferred.local.prefixlen
+      interface: localPrimary.interface,
+      localAddress: localPrimary.address,
+      peerAddress: matches.find((match) => match.local.address === localPrimary.address).privateAddress,
+      prefixlen: localPrimary.prefixlen
     },
-    nodes: {
-      [id]: {
-        id,
-        local: true,
-        backendHost: preferred.local.address,
-        fabricInterface: preferred.local.interface
-      },
-      [peerId]: {
-        id: peerId,
-        local: false,
-        backendHost: preferred.peer.hostname,
-        fabricInterface: preferred.local.interface,
-        sshAlias: preferred.peer.alias,
-        sshUser: preferred.peer.user ?? null
-      }
+    verified: false,
+    evidence: 'local-interface-and-ssh-config',
+    links,
+    nodes,
+    ...(ambiguous.length ? { ambiguousPeers: ambiguous } : {})
+  };
+}
+
+export function nvidiaSyncDiscoverySummary(discovery, { currentConfig = null } = {}) {
+  if (!discovery?.detected) return null;
+  const localId = discovery.nodeId;
+  const configuredNodes = asObject(currentConfig?.cluster?.nodes);
+  const configuredNodeIds = Object.keys(configuredNodes);
+  const discoveredIds = Object.keys(discovery.nodes).sort();
+  const unresolvedPeers = Object.values(discovery.nodes)
+    .filter((node) => !node.local && !configuredNodes[node.id])
+    .map((node) => node.id);
+  const customEndpoints = Object.entries(configuredNodes)
+    .filter(([nodeId, node]) => nodeId !== localId && node?.endpoint)
+    .filter(([nodeId, node]) => {
+      const discovered = discovery.nodes[nodeId];
+      if (!discovered?.backendHost) return false;
+      return !endpointHostMatches(node.endpoint, discovered.backendHost);
+    })
+    .map(([nodeId, node]) => ({ nodeId, endpoint: node.endpoint, backendHost: node.backendHost ?? null }));
+  const diagnostics = [];
+  if (configuredNodeIds.length && !configuredNodes[localId]) {
+    diagnostics.push(
+      `discovered local node id ${localId} is not the configured cluster.nodeId (${configuredNodeIds.join(', ')}); ` +
+        `confirm cluster.nodeId before applying so the local node is not duplicated`
+    );
+  }
+  for (const nodeId of unresolvedPeers) {
+    diagnostics.push(`discovered peer ${nodeId} is not configured yet`);
+  }
+  for (const entry of customEndpoints) {
+    diagnostics.push(
+      `Verify the listener for ${entry.nodeId} before moving its configured endpoint onto the observed fabric`
+    );
+  }
+  for (const ambiguous of discovery.ambiguousPeers ?? []) {
+    diagnostics.push(ambiguous.message);
+  }
+  return {
+    provider: discovery.provider,
+    topology: discovery.topology,
+    nodeId: discovery.nodeId,
+    localNode: discovery.localNode ?? discovery.nodeId,
+    leaderNode: currentConfig?.cluster?.leaderNode ?? null,
+    nodeCount: discovery.nodeCount,
+    discoveredNodes: discoveredIds,
+    discoveredPeers: discoveredIds.filter((nodeId) => nodeId !== localId),
+    observedLinks: discovery.links.length,
+    configuredNodes: configuredNodeIds.sort(),
+    newNodes: discoveredIds.filter((nodeId) => !configuredNodes[nodeId] && nodeId !== localId),
+    unresolvedPeers,
+    customEndpoints,
+    mergeRequired: configuredNodeIds.length > 0,
+    diagnostics,
+    ...(diagnostics.length ? { diagnostic: diagnostics[0] } : {})
+  };
+}
+
+function endpointHostname(endpoint) {
+  const value = String(endpoint ?? '').trim();
+  if (!value) return null;
+  try {
+    return new URL(value).hostname || null;
+  } catch {
+    return null;
+  }
+}
+
+function endpointHostMatches(endpoint, host) {
+  if (!host) return false;
+  const hostname = endpointHostname(endpoint);
+  return Boolean(hostname) && hostname === String(host);
+}
+
+export function mergeNvidiaSyncClusterDiscovery({ discovery, cluster = {}, id, apiKeyEnv, localNodeId } = {}) {
+  if (!discovery?.detected || discovery.provider !== 'nvidia-sync') {
+    throw new Error('NVIDIA Sync cluster was not detected');
+  }
+  const current = asObject(cluster);
+  const nodeId = localNodeId ?? current.nodeId ?? discovery.nodeId;
+  if (current.nodeId && !String(current.nodeId).includes('${') && current.nodeId !== nodeId) {
+    throw new Error('Configured local node identity conflicts with discovery');
+  }
+  if (Object.keys(asObject(current.nodes)).length && !current.nodes[nodeId]) {
+    throw new Error(
+      `Configured node map does not contain local node ${nodeId}; set cluster.nodeId before applying discovery`
+    );
+  }
+  const leaderNode = current.leaderNode;
+  const nodes = { ...asObject(current.nodes) };
+  const diagnostics = [];
+  for (const [observedId, observed] of Object.entries(discovery.nodes)) {
+    const targetId = observedId === discovery.nodeId ? nodeId : observedId;
+    if (targetId !== nodeId && !Object.hasOwn(nodes, targetId)) {
+      diagnostics.push({
+        level: 'unconfigured-peer',
+        nodeId: targetId,
+        message: `Observed ${targetId}; use cluster add-node with its authenticated gateway URL to join it.`
+      });
+      continue;
     }
+    const existing = asObject(nodes[targetId]);
+    let endpoint = existing.endpoint;
+    let backendHost = existing.backendHost ?? observed.backendHost;
+    if (
+      existing.endpoint &&
+      /^10\.100\./.test(existing.backendHost ?? '') &&
+      endpointHostMatches(existing.endpoint, existing.backendHost)
+    ) {
+      backendHost = observed.backendHost;
+      const url = new URL(existing.endpoint);
+      url.hostname = observed.backendHost;
+      endpoint = url.toString().replace(/\/$/, existing.endpoint.endsWith('/') ? '/' : '');
+    } else if (existing.endpoint && !endpointHostMatches(existing.endpoint, observed.backendHost)) {
+      diagnostics.push({
+        level: 'migration-required',
+        nodeId: targetId,
+        message: `Preserved endpoint for ${targetId}; observed fabric address ${observed.backendHost}. Verify its gateway listener before changing the endpoint.`
+      });
+    }
+    nodes[targetId] = {
+      ...existing,
+      name: existing.name ?? targetId,
+      ...(endpoint ? { endpoint } : {}),
+      backendHost,
+      fabricAddress: observed.backendHost,
+      ...(observed.fabricInterface ? { fabricInterface: observed.fabricInterface } : {}),
+      ...(observed.sshAlias ? { sshAlias: observed.sshAlias } : {}),
+      ...(observed.rails ? { rails: observed.rails } : {}),
+      labels: {
+        provider: 'nvidia-sync',
+        role: leaderNode ? (targetId === leaderNode ? 'leader' : 'worker') : 'node',
+        hardware: 'dgx-spark',
+        ...asObject(existing.labels)
+      },
+      resources: {
+        memoryGb: 128,
+        accelerators: ['cuda', 'nvidia-gpu', 'blackwell', 'gb10'],
+        ...asObject(existing.resources)
+      }
+    };
+  }
+  return {
+    ...current,
+    id: id ?? current.id ?? `${nodeId}-cluster`,
+    provider: discovery.provider,
+    topology: current.topology ?? discovery.topology,
+    nodeId: current.nodeId ?? nodeId,
+    ...(leaderNode ? { leaderNode } : {}),
+    ...(apiKeyEnv ? { apiKeyEnv } : Object.keys(current).length ? {} : { apiKeyEnv: 'LLOOM_CLUSTER_KEY' }),
+    discovery: {
+      provider: discovery.provider,
+      evidence: discovery.evidence,
+      verified: false,
+      nodes: discovery.nodes,
+      links: (discovery.links ?? []).map((link) => ({ ...link, nodeId }))
+    },
+    nodes,
+    diagnostics
   };
 }
 
@@ -336,7 +648,7 @@ async function tailscaleSelfName() {
   }
 }
 
-export async function detectNvidiaSyncCluster({ home = process.env.HOME, hostname = os.hostname() } = {}) {
+export async function detectNvidiaSyncCluster({ home = process.env.HOME, hostname = os.hostname(), localNodeId } = {}) {
   if (process.platform !== 'linux' || !home) return null;
   let sshConfig;
   try {
@@ -357,42 +669,14 @@ export async function detectNvidiaSyncCluster({ home = process.env.HOME, hostnam
   return buildNvidiaSyncDiscovery({
     peers,
     localAddresses,
-    localNodeId: (await tailscaleSelfName()) ?? hostname,
+    localNodeId: localNodeId ?? (await tailscaleSelfName()) ?? hostname,
     hostname
   });
 }
 
-export function nvidiaSyncClusterConfig(discovery, { id, port = 8100, apiKeyEnv = 'LLOOM_CLUSTER_KEY' } = {}) {
-  if (!discovery?.detected || discovery.provider !== 'nvidia-sync') {
-    throw new Error('NVIDIA Sync cluster was not detected');
-  }
-  const clusterId = id || `${discovery.leaderNode}-cluster`;
-  return {
-    id: clusterId,
-    provider: discovery.provider,
-    topology: discovery.topology,
-    nodeId: discovery.nodeId,
-    leaderNode: discovery.leaderNode,
-    apiKeyEnv,
-    nodes: Object.fromEntries(
-      Object.entries(discovery.nodes).map(([nodeId, node]) => [
-        nodeId,
-        {
-          name: nodeId,
-          endpoint: `http://${node.backendHost}:${port}`,
-          backendHost: node.backendHost,
-          fabricInterface: node.fabricInterface,
-          ...(node.sshAlias ? { sshAlias: node.sshAlias } : {}),
-          labels: {
-            provider: 'nvidia-sync',
-            role: nodeId === discovery.leaderNode ? 'leader' : 'worker',
-            hardware: 'dgx-spark'
-          },
-          resources: { memoryGb: 128, accelerators: ['cuda', 'nvidia-gpu', 'blackwell', 'gb10'] }
-        }
-      ])
-    )
-  };
+// Pure discovery planning; remote gateways join through authenticated add-node.
+export function nvidiaSyncClusterConfig(discovery, options = {}) {
+  return mergeNvidiaSyncClusterDiscovery({ discovery, ...options });
 }
 
 export function runtimePlacement(runtime, config, env = process.env) {
