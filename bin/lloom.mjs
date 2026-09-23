@@ -36,6 +36,7 @@ import {
   selectedRecipeIdFromCommunityPlan
 } from '../src/community-client.mjs';
 import { loadConfig } from '../src/config.mjs';
+import { mutateConfigSource } from '../src/config-mutation.mjs';
 import { runtimeControlTimeoutMs } from '../src/control-timeout.mjs';
 import { createDoctorReport } from '../src/doctor.mjs';
 import { createBrowserSetup } from '../src/browser-setup.mjs';
@@ -45,7 +46,8 @@ import {
   currentNodeId,
   detectNvidiaSyncCluster,
   federatedNodeConfigFromSnapshot,
-  nvidiaSyncClusterConfig,
+  mergeNvidiaSyncClusterDiscovery,
+  nvidiaSyncDiscoverySummary,
   validateClusterConfig
 } from '../src/cluster.mjs';
 import { applyInit, defaultUserConfigPath } from '../src/init.mjs';
@@ -2476,18 +2478,50 @@ async function main() {
     cluster: async ({ args, config, command: _command }) => {
       const action = positional(args)[1] ?? 'status';
       if (action === 'discover') {
-        const discovery = await detectNvidiaSyncCluster();
+        const explicitLocalId =
+          process.env.LLOOM_NODE_ID ??
+          config.cluster?.nodeId ??
+          (Object.keys(config.cluster?.nodes ?? {}).length === 1 ? Object.keys(config.cluster.nodes)[0] : undefined);
+        if (process.env.LLOOM_NODE_ID && config.cluster?.nodeId && process.env.LLOOM_NODE_ID !== config.cluster.nodeId)
+          throw new Error('LLOOM_NODE_ID conflicts with configured cluster.nodeId');
+        const discovery = await detectNvidiaSyncCluster({ localNodeId: explicitLocalId });
         if (!discovery) throw new Error('No NVIDIA Sync cluster was detected from this node');
-        const cluster = nvidiaSyncClusterConfig(discovery, {
+        const options = {
+          discovery,
+          localNodeId: discovery.nodeId,
           id: argValue(args, '--id'),
-          apiKeyEnv: argValue(args, '--api-key-env') ?? 'LLOOM_CLUSTER_KEY'
-        });
+          apiKeyEnv: argValue(args, '--api-key-env')
+        };
+        // Keep authoring forms such as environment references out of expansion.
+        const source = JSON.parse(readFileSync(config.sourcePath, 'utf8'));
+        const plan = (raw) => mergeNvidiaSyncClusterDiscovery({ ...options, cluster: raw.cluster });
+        let cluster = plan(source);
+        const validationErrors = validateClusterConfig({ ...config, cluster });
+        let changed = false;
         if (hasFlag(args, '--apply')) {
-          const source = JSON.parse(readFileSync(config.sourcePath, 'utf8'));
-          source.cluster = cluster;
-          writeFileSync(config.sourcePath, `${JSON.stringify(source, null, 2)}\n`, { mode: 0o600 });
+          if (validationErrors.length) throw new Error(`Invalid discovered cluster: ${validationErrors.join('; ')}`);
+          ({ changed } = await mutateConfigSource(config, (latest) => {
+            // Replan from the current raw source inside the serialized mutation.
+            cluster = plan(latest);
+            latest.cluster = cluster;
+          }));
         }
-        console.log(JSON.stringify({ ok: true, applied: hasFlag(args, '--apply'), discovery, cluster }, null, 2));
+        console.log(
+          JSON.stringify(
+            {
+              ok: validationErrors.length === 0,
+              applied: hasFlag(args, '--apply'),
+              changed,
+              discovery,
+              summary: nvidiaSyncDiscoverySummary(discovery, { currentConfig: config }),
+              validationErrors,
+              cluster,
+              next: 'Discovery does not change model placement or gateway listeners. Verify endpoints before serving.'
+            },
+            null,
+            2
+          )
+        );
         return;
       }
       if (action === 'add-node') {
