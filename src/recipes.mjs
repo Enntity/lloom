@@ -155,6 +155,11 @@ export function planRecipe(
       title: step.title ?? step.id,
       action: step.action
     };
+    // alwaysRun gates describe external state that can change without the
+    // step id or command changing (pins, images, converted overlays). Preserve
+    // the flag through planning so apply and setup-status re-run them instead
+    // of trusting a stale completed record.
+    if (step.alwaysRun === true) planned.alwaysRun = true;
     if (step.action === 'download-model') {
       planned.provider = step.provider ?? 'huggingface';
       planned.model = step.model;

@@ -14,7 +14,7 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "Source-built Atlas SparkGLM candidate reconstructed from the measured 2026-09-24 launch profile and product revision 6fe8a6153ef582ae3eaafe6151707cf293196739. Engine source is Enntity/sparkglm at the revision recorded in backends/atlas-sparkglm/pins.json; each host's lloom/atlas-sparkglm:<SOURCE_REVISION> must match that host's build receipt, OCI revision label and arm64 image inspection. Model nvidia/GLM-5.3-Flash-NVFP4 revision 423acf37583782c51c142d145aef733d72943d93 requires a once-per-node overlay conversion gated on conversion.complete.json plus verification. The engine argument vector ships inside the image as /opt/atlas/profile.json, not in this recipe. The profile carries a 36864-token total context, four active text sequences, BF16 KV, FP32 SSM state and MTP2 with native fallback above 32K; disable-tool-grammar is deliberately not set so structured output and tools stay functional. Image/video support is implemented in the candidate; live hardware and full serving qualification remain pending."
+    "source": "Source-built Atlas SparkGLM candidate reconstructed from the measured 2026-09-24 launch profile and product revision 85fea48c22e6771345b13571c2e58ecfe9fa707d. Engine source is Enntity/sparkglm at the revision recorded in backends/atlas-sparkglm/pins.json; each host's lloom/atlas-sparkglm:<SOURCE_REVISION> must match that host's build receipt, OCI revision label and arm64 image inspection. Model nvidia/GLM-5.3-Flash-NVFP4 revision 423acf37583782c51c142d145aef733d72943d93 requires a once-per-node overlay conversion gated on conversion.complete.json plus verification. The engine argument vector ships inside the image as /opt/atlas/profile.json, not in this recipe. The profile carries a 36864-token total context, four active text sequences, BF16 KV, FP32 SSM state and MTP2 with native fallback above 32K; disable-tool-grammar is deliberately not set so structured output and tools stay functional. Image/video support is implemented in the candidate; live hardware and full serving qualification remain pending."
   },
   "links": [
     {
@@ -95,6 +95,7 @@
         "id": "verify-atlas-pins",
         "title": "Verify the Atlas SparkGLM pin manifest is final",
         "action": "command",
+        "alwaysRun": true,
         "command": "node",
         "args": ["${repoRoot}/backends/atlas-sparkglm/verify-pins.mjs"]
       },
@@ -110,6 +111,7 @@
         "id": "build-atlas-image",
         "title": "Build or verify the pinned Atlas SparkGLM image on this node",
         "action": "command",
+        "alwaysRun": true,
         "command": "bash",
         "args": [
           "${repoRoot}/backends/atlas-sparkglm/install.sh",
@@ -123,6 +125,7 @@
         "id": "convert-atlas-overlay",
         "title": "Convert the GLM-5.3 Flash NVFP4 overlay for this node (once)",
         "action": "command",
+        "alwaysRun": true,
         "command": "bash",
         "args": [
           "${repoRoot}/backends/atlas-sparkglm/convert-overlay.sh",
@@ -222,7 +225,7 @@
                 "warmup": false,
                 "bootstrap": {
                   "adapter": "docker",
-                  "image": "lloom/atlas-sparkglm:6fe8a6153ef582ae3eaafe6151707cf293196739",
+                  "image": "lloom/atlas-sparkglm:85fea48c22e6771345b13571c2e58ecfe9fa707d",
                   "pull": false,
                   "pullTimeoutMs": 3600000,
                   "createArgs": [
@@ -359,7 +362,7 @@
                 },
                 "bootstrap": {
                   "adapter": "docker",
-                  "image": "lloom/atlas-sparkglm:6fe8a6153ef582ae3eaafe6151707cf293196739",
+                  "image": "lloom/atlas-sparkglm:85fea48c22e6771345b13571c2e58ecfe9fa707d",
                   "pull": false,
                   "pullTimeoutMs": 3600000,
                   "createArgs": [

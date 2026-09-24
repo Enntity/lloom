@@ -3,7 +3,7 @@
 LLooM-managed two-node Atlas SparkGLM candidate for a directly connected pair
 of NVIDIA DGX Spark systems. This directory is **MIT orchestration only**: no
 Atlas engine source is committed here. The engine is compiled from immutable
-revision `6fe8a6153ef582ae3eaafe6151707cf293196739` of `Enntity/sparkglm` by
+revision `85fea48c22e6771345b13571c2e58ecfe9fa707d` of `Enntity/sparkglm` by
 that repository's `research/atlas/install/build.sh`. Live hardware and full
 serving qualification remain pending.
 
@@ -40,11 +40,18 @@ No step infers completion from a directory existing. The overlay requires a
 `conversion.complete.json` marker containing `converted_matrices` equal to 864,
 nonempty `shards`, absolute `source` and `output` paths, and a numeric
 `finished` value. The converter's CPU `--verify-overlay` pass is mandatory.
+LLooM stores a sibling `conversion.complete.json.identity.json` sidecar with the
+model revision and SHA-256 identities of the image's converter script and
+library. Re-entry verifies the current acquisition before checking that sidecar;
+an unchanged model and converter can reuse an overlay after a source/image pin
+moves, while an incompatible completed overlay is preserved and requires
+`--force` for a dated backup and reconversion.
 
 ## Installation
 
 ```sh
-lloom setup --recipe linux-nvidia-dgx-spark-2x-glm53-atlas --additive --apply --yes --start
+lloom setup --recipe linux-nvidia-dgx-spark-2x-glm53-atlas --additive --apply --yes
+lloom runtime-start glm53-flash-atlas-cluster
 ```
 
 The recipe is additive only. It does not set a default model and does not

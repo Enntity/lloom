@@ -93,6 +93,10 @@ MODEL_DIR_NAME="${MODEL_REPO//\//--}"
 [[ -n "${MODEL_ROOT}" ]] || MODEL_ROOT="${LLOOM_MODEL_ROOT:-${HOME}/.lloom/models}"
 SOURCE_MODEL_PATH="${MODEL_ROOT}/${MODEL_DIR_NAME}"
 MARKER="${OVERLAY_ROOT}/${MARKER_NAME}"
+# Keep converter/model compatibility beside the required completion marker. The
+# product converter owns the marker schema, so this LLooM sidecar must not add
+# orchestration-only fields to conversion.complete.json.
+IDENTITY_MARKER="${MARKER}.identity.json"
 # Source, install root and overlay must remain separate even with --force.
 node -e '
   const path = require("path");
@@ -134,6 +138,29 @@ CURRENT_MANIFEST_SHA256="$(node -e 'const fs=require("fs"),c=require("crypto");p
 docker run --rm --entrypoint bash "${IMAGE_TAG}" -lc "test -f '${CONVERTER_PATH}' && test -f '${CONVERTER_LIBRARY}'" \
   || fail "image ${IMAGE_TAG} does not ship the converter contract (${CONVERTER_PATH}, ${CONVERTER_LIBRARY})"
 
+# ---- current model acquisition --------------------------------------------
+# An existing overlay is reusable across source/image revisions when the model
+# and converter identity are unchanged, but it is never reusable against an
+# unverified model acquisition. Keep this check before the marker fast path so
+# a stale or partially replaced model cannot be hidden by an old overlay.
+[[ -d "${SOURCE_MODEL_PATH}" ]] \
+  || fail "source model ${MODEL_REPO}@${MODEL_REVISION} is not at ${SOURCE_MODEL_PATH}. Install the recipe model acquisition step first (--model-root overrides ${MODEL_ROOT})."
+[[ -f "${SOURCE_MODEL_PATH}/config.json" ]] \
+  || fail "source model ${SOURCE_MODEL_PATH} does not look like a Hugging Face checkpoint (config.json missing)"
+
+if [[ -f "${SOURCE_MODEL_PATH}/.lloom-acquisition.json" ]]; then
+  node -e '
+    const fs = require("fs");
+    const [file, expected] = process.argv.slice(1);
+    const manifest = JSON.parse(fs.readFileSync(file, "utf8"));
+    const revision = manifest.revision ?? manifest.resolvedRevision ?? manifest.commit ?? null;
+    if (revision !== expected) { process.stderr.write(`acquisition revision ${revision} != pinned ${expected}\n`); process.exit(1); }
+  ' "${SOURCE_MODEL_PATH}/.lloom-acquisition.json" "${MODEL_REVISION}" \
+    || fail "source model ${SOURCE_MODEL_PATH} is not pinned to revision ${MODEL_REVISION}"
+else
+  fail "no acquisition manifest at ${SOURCE_MODEL_PATH}; the recipe acquisition step must record revision ${MODEL_REVISION} before conversion"
+fi
+
 # ---- marker + real verification -------------------------------------------
 verify_marker() {
   [[ -f "${MARKER}" ]] || return 1
@@ -152,6 +179,78 @@ verify_marker() {
   ' "${MARKER}" "${SOURCE_MODEL_PATH}" "${OVERLAY_ROOT}" "${EXPECTED_MATRICES}" 2>/dev/null
 }
 
+# Hash the converter files from the prepared image. This deliberately excludes
+# SOURCE_REVISION: an unchanged converter can safely reuse a completed overlay
+# after a source/image pin moves, while a changed converter cannot.
+CONVERTER_IDENTITY_JSON=""
+load_converter_identity() {
+  local hashes
+  hashes="$(docker run --rm --entrypoint bash "${IMAGE_TAG}" -lc \
+    "sha256sum -- '${CONVERTER_PATH}' '${CONVERTER_LIBRARY}'" 2>/dev/null)" \
+    || return 1
+  CONVERTER_IDENTITY_JSON="$(node -e '
+    const [scriptPath, libraryPath, raw] = process.argv.slice(1);
+    const rows = raw.trim().split(/\r?\n/).map((line) => {
+      const match = line.match(/^([a-f0-9]{64})\s+\*?(.*)$/i);
+      return match ? [match[1].toLowerCase(), match[2]] : null;
+    }).filter(Boolean);
+    const find = (expected) => rows.find(([, path]) => path === expected)?.[0] ?? null;
+    const scriptSha256 = find(scriptPath);
+    const librarySha256 = find(libraryPath);
+    if (!scriptSha256 || !librarySha256) {
+      process.stderr.write(`sha256sum did not return both converter paths (${scriptPath}, ${libraryPath})\n`);
+      process.exit(1);
+    }
+    process.stdout.write(JSON.stringify({ scriptSha256, librarySha256 }));
+  ' "${CONVERTER_PATH}" "${CONVERTER_LIBRARY}" "${hashes}")" \
+    || return 1
+  return 0
+}
+
+write_conversion_identity() {
+  node -e '
+    const fs = require("fs");
+    const [file, modelRepo, modelRevision, converterPath, converterSha256, libraryPath, librarySha256] = process.argv.slice(1);
+    const identity = {
+      version: 1,
+      model: { repo: modelRepo, revision: modelRevision },
+      converter: {
+        path: converterPath,
+        sha256: converterSha256,
+        library: libraryPath,
+        librarySha256
+      }
+    };
+    fs.writeFileSync(file, `${JSON.stringify(identity, null, 2)}\n`);
+  ' "${IDENTITY_MARKER}" "${MODEL_REPO}" "${MODEL_REVISION}" "${CONVERTER_PATH}" \
+    "$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).scriptSha256)' "${CONVERTER_IDENTITY_JSON}")" \
+    "${CONVERTER_LIBRARY}" \
+    "$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).librarySha256)' "${CONVERTER_IDENTITY_JSON}")"
+}
+
+verify_conversion_identity() {
+  [[ -f "${IDENTITY_MARKER}" ]] || return 1
+  node -e '
+    const fs = require("fs");
+    const [file, modelRepo, modelRevision, converterPath, converterSha256, libraryPath, librarySha256] = process.argv.slice(1);
+    let actual;
+    try { actual = JSON.parse(fs.readFileSync(file, "utf8")); }
+    catch (error) { process.stderr.write(`cannot read conversion identity: ${error.message}\n`); process.exit(1); }
+    const expected = {
+      version: 1,
+      model: { repo: modelRepo, revision: modelRevision },
+      converter: { path: converterPath, sha256: converterSha256, library: libraryPath, librarySha256 }
+    };
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      process.stderr.write(`conversion identity does not match current model/converter (${file})\n`);
+      process.exit(1);
+    }
+  ' "${IDENTITY_MARKER}" "${MODEL_REPO}" "${MODEL_REVISION}" "${CONVERTER_PATH}" \
+    "$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).scriptSha256)' "${CONVERTER_IDENTITY_JSON}")" \
+    "${CONVERTER_LIBRARY}" \
+    "$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).librarySha256)' "${CONVERTER_IDENTITY_JSON}")"
+}
+
 verify_overlay() {
   local source_model_path="${1:-${SOURCE_MODEL_PATH}}"
   docker run --rm --runtime=runc \
@@ -164,16 +263,25 @@ verify_overlay() {
     "${CONVERTER_PATH}" --source "${source_model_path}" --output "${OVERLAY_ROOT}" --verify-overlay
 }
 
+load_converter_identity \
+  || fail "could not fingerprint the converter files in ${IMAGE_TAG}; refusing to reuse or create an overlay"
+
 if [[ "${VERIFY_ONLY}" == "1" ]]; then
   if ! verify_marker; then
     fail "no complete conversion marker at ${MARKER} (converted_matrices/shards/source/output/finished); the overlay is not prepared on this node"
   fi
+  verify_conversion_identity \
+    || fail "existing conversion at ${OVERLAY_ROOT} is missing or incompatible with model ${MODEL_REPO}@${MODEL_REVISION} or the converter image; rerun with --force to preserve it and reconvert"
   verify_overlay || fail "converter --verify-overlay failed for ${OVERLAY_ROOT}; the overlay is not usable"
   note "existing conversion re-verified by ${CONVERTER_PATH} at ${MARKER}"
   exit 0
 fi
 
-if [[ "${FORCE}" != "1" ]] && verify_marker && verify_overlay; then
+if [[ "${FORCE}" != "1" ]] && verify_marker; then
+  verify_conversion_identity \
+    || fail "existing conversion at ${OVERLAY_ROOT} is missing or incompatible with model ${MODEL_REPO}@${MODEL_REVISION} or the converter image; rerun with --force to preserve it and reconvert"
+  verify_overlay \
+    || fail "converter --verify-overlay failed for ${OVERLAY_ROOT}; rerun with --force to preserve it and reconvert"
   note "${OVERLAY_ROOT} already carries a converter-verified conversion; skipping (use --force to reconvert)"
   exit 0
 fi
@@ -181,26 +289,6 @@ fi
 # A directory that exists without a complete marker is NOT treated as converted.
 if [[ -e "${OVERLAY_ROOT}" && ! -f "${MARKER}" ]]; then
   note "${OVERLAY_ROOT} exists without ${MARKER_NAME}; not inferring completion from directory existence"
-fi
-
-[[ -d "${SOURCE_MODEL_PATH}" ]] \
-  || fail "source model ${MODEL_REPO}@${MODEL_REVISION} is not at ${SOURCE_MODEL_PATH}. Install the recipe model acquisition step first (--model-root overrides ${MODEL_ROOT})."
-[[ -f "${SOURCE_MODEL_PATH}/config.json" ]] \
-  || fail "source model ${SOURCE_MODEL_PATH} does not look like a Hugging Face checkpoint (config.json missing)"
-
-# Exact-revision check against the acquisition contract. Missing metadata is
-# reported instead of silently passing.
-if [[ -f "${SOURCE_MODEL_PATH}/.lloom-acquisition.json" ]]; then
-  node -e '
-    const fs = require("fs");
-    const [file, expected] = process.argv.slice(1);
-    const manifest = JSON.parse(fs.readFileSync(file, "utf8"));
-    const revision = manifest.revision ?? manifest.resolvedRevision ?? manifest.commit ?? null;
-    if (revision !== expected) { process.stderr.write(`acquisition revision ${revision} != pinned ${expected}\n`); process.exit(1); }
-  ' "${SOURCE_MODEL_PATH}/.lloom-acquisition.json" "${MODEL_REVISION}" \
-    || fail "source model ${SOURCE_MODEL_PATH} is not pinned to revision ${MODEL_REVISION}"
-else
-  fail "no acquisition manifest at ${SOURCE_MODEL_PATH}; the recipe acquisition step must record revision ${MODEL_REVISION} before conversion"
 fi
 
 # ---- GPU headroom: at least 8 GiB free before conversion -------------------
@@ -237,4 +325,8 @@ docker run --rm --gpus=all \
 
 verify_marker || fail "converter finished but ${MARKER} is absent or incomplete; refusing to report the overlay as prepared"
 verify_overlay || fail "converter --verify-overlay failed for ${OVERLAY_ROOT} after conversion"
+write_conversion_identity \
+  || fail "conversion completed but writing ${IDENTITY_MARKER} failed; refusing to report the overlay as prepared"
+verify_conversion_identity \
+  || fail "conversion identity ${IDENTITY_MARKER} failed self-verification; refusing to report the overlay as prepared"
 note "conversion verified by ${CONVERTER_PATH} at ${MARKER}"

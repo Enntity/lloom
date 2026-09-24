@@ -167,6 +167,10 @@
                 "type": "string",
                 "enum": ["check-command", "command", "download-model", "manual"]
               },
+              "alwaysRun": {
+                "type": "boolean",
+                "description": "Re-run this idempotent gate on every apply and never treat a recorded completion as ready. Use for gates that verify external state (pins, images, converted overlays) which can change while the step id and command stay the same."
+              },
               "command": {
                 "type": "string"
               },

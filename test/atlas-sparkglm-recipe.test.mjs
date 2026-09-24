@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { getBackend, loadBackendCatalog, planBackend } from '../src/backend-catalog.mjs';
 import { deriveUserConfig } from '../src/init.mjs';
 import { loadRecipeById, planRecipe } from '../src/recipes.mjs';
+import { createSetupStatus } from '../src/setup-status.mjs';
 import { imageTagFor, loadPins, verifyPins } from '../backends/atlas-sparkglm/verify-pins.mjs';
 import { conversionHeadroomMiB } from '../backends/atlas-sparkglm/conversion-headroom.mjs';
 
@@ -49,6 +50,20 @@ assert.deepEqual(
   recipe.setup.steps.map((step) => step.id),
   ['check-docker', 'verify-atlas-pins', 'download-atlas-model', 'build-atlas-image', 'convert-atlas-overlay']
 );
+assert.deepEqual(
+  recipe.setup.steps
+    .filter((step) => step.id !== 'check-docker' && step.id !== 'download-atlas-model')
+    .map((step) => step.id),
+  ['verify-atlas-pins', 'build-atlas-image', 'convert-atlas-overlay']
+);
+for (const stepId of ['verify-atlas-pins', 'build-atlas-image', 'convert-atlas-overlay']) {
+  assert.equal(
+    recipe.setup.steps.find((step) => step.id === stepId).alwaysRun,
+    true,
+    `${stepId} must revalidate on every apply`
+  );
+}
+assert.equal(backend.setup.find((step) => step.id === 'check-atlas-pins').alwaysRun, true);
 
 const model = recipe.models[0];
 assert.equal(model.role, 'default');
@@ -212,6 +227,80 @@ assert.deepEqual(plan.steps.find((step) => step.id === 'convert-atlas-overlay').
   '/models'
 ]);
 
+// Recorded completion cannot make an always-run revalidation gate ready. This
+// guards the setup-status view against advertising a stale image or overlay
+// after the recipe pins or host artifacts change.
+const statusRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-status-'));
+const statusStatePath = path.join(statusRoot, 'install-state.json');
+await fs.promises.writeFile(
+  statusStatePath,
+  `${JSON.stringify(
+    {
+      backends: {
+        [backend.id]: {
+          steps: {
+            'check-atlas-pins': { status: 'completed', completedAt: new Date().toISOString() }
+          }
+        }
+      },
+      recipes: {
+        [recipe.id]: {
+          steps: Object.fromEntries(
+            ['verify-atlas-pins', 'build-atlas-image', 'convert-atlas-overlay'].map((id) => [
+              id,
+              { status: 'completed' }
+            ])
+          )
+        }
+      }
+    },
+    null,
+    2
+  )}\n`,
+  'utf8'
+);
+const status = await createSetupStatus(
+  {
+    sourcePath: path.join(statusRoot, 'config.json'),
+    server: { host: '127.0.0.1', port: 8100 },
+    defaults: {},
+    models: [],
+    aliases: {},
+    backends: {},
+    runtimes: {},
+    paths: { modelRoot: path.join(statusRoot, 'models') }
+  },
+  {
+    recipeId: recipe.id,
+    modelRoot: path.join(statusRoot, 'models'),
+    home: statusRoot,
+    generatedRoot: path.join(statusRoot, 'generated'),
+    clientId: 'codex',
+    includeRuntimes: false,
+    recipeDocuments: [recipe],
+    recipesRoot: path.join(statusRoot, 'no-recipes'),
+    statePath: statusStatePath,
+    backendVariables: {
+      repoRoot: root,
+      backendRoot: path.join(root, 'backends'),
+      installRoot: path.join(statusRoot, 'backends'),
+      modelRoot: path.join(statusRoot, 'models')
+    }
+  }
+);
+for (const stepId of ['verify-atlas-pins', 'build-atlas-image', 'convert-atlas-overlay']) {
+  const step = status.recipe.steps.find((candidate) => candidate.id === stepId);
+  assert.equal(step.status, 'revalidation-required', `${stepId} status must require a fresh run`);
+  assert.equal(step.ready, true, 'recorded completion remains ready for status display');
+  assert.equal(step.requiresRevalidation, true);
+  assert.equal(step.reason, 'always-run-next-apply');
+}
+const backendPinStatus = status.backend.steps.find((step) => step.id === 'check-atlas-pins');
+assert.equal(backendPinStatus.status, 'revalidation-required');
+assert.equal(backendPinStatus.ready, true);
+assert.equal(backendPinStatus.reason, 'always-run-next-apply');
+fs.rmSync(statusRoot, { recursive: true, force: true });
+
 // Runtime materialization must resolve the same managed paths used by setup.
 // Absolute source/output mounts are required because the converter can emit
 // absolute symlinks into the overlay.
@@ -299,7 +388,7 @@ assert.equal(pins.model.revision, '423acf37583782c51c142d145aef733d72943d93');
 assert.equal(pins.model.repo, 'nvidia/GLM-5.3-Flash-NVFP4');
 assert.equal(pins.source.repo, 'Enntity/sparkglm');
 assert.equal(pins.status, 'final');
-assert.equal(pins.source.revision, '6fe8a6153ef582ae3eaafe6151707cf293196739');
+assert.equal(pins.source.revision, '85fea48c22e6771345b13571c2e58ecfe9fa707d');
 assert.equal(pins.image.entrypoint, '/opt/atlas/serve.py');
 assert(pins.overlay.marker.includes('conversion.complete.json'));
 assert.deepEqual(verifyPins(pins), []);
@@ -416,6 +505,206 @@ for (const script of ['install.sh', 'convert-overlay.sh']) {
   const check = spawnSync('bash', ['-n', path.join(backendDir, script)], { encoding: 'utf8' });
   assert.equal(check.status, 0, `${script}: ${check.stderr}`);
 }
+
+// ---- converter re-entry and compatibility binding ------------------------
+// A completed overlay is reused only after the current model acquisition and
+// converter content are verified. The fake Docker CLI keeps this test CPU-only
+// while exercising the real shell control flow and pin checks.
+const converterRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-converter-'));
+const fakeBin = path.join(converterRoot, 'bin');
+const fakeDocker = path.join(fakeBin, 'docker');
+fs.mkdirSync(fakeBin, { recursive: true });
+fs.writeFileSync(
+  fakeDocker,
+  `#!/usr/bin/env bash
+set -euo pipefail
+IMAGE_ID="sha256:${'a'.repeat(64)}"
+if [[ "\${1:-}" == "image" && "\${2:-}" == "inspect" ]]; then
+  format="\${4:-}"
+  case "\${format}" in
+    *'.Id'*) echo "\${IMAGE_ID}" ;;
+    *'.Architecture'*) echo arm64 ;;
+    *'org.opencontainers.image.revision'*) echo "${pins.source.revision}" ;;
+    *) echo ;;
+  esac
+  exit 0
+fi
+if [[ "\${1:-}" == "ps" ]]; then exit 0; fi
+if [[ "\${1:-}" == "run" ]]; then
+  joined="$*"
+  if [[ "\${joined}" == *sha256sum* ]]; then
+    echo "${'c'.repeat(64)}  ${pins.converter.inImagePath}"
+    echo "${'d'.repeat(64)}  ${pins.converter.library}"
+  fi
+  exit 0
+fi
+echo "unexpected fake docker invocation: $*" >&2
+exit 2
+`,
+  { mode: 0o755 }
+);
+
+const converterInstallRoot = path.join(converterRoot, 'install');
+const converterModelRoot = path.join(converterRoot, 'models');
+const converterBackendRoot = path.join(converterRoot, 'backend');
+const converterOverlayRoot = path.join(converterRoot, 'overlay');
+const modelPath = path.join(converterModelRoot, 'nvidia--GLM-5.3-Flash-NVFP4');
+fs.mkdirSync(modelPath, { recursive: true });
+fs.writeFileSync(path.join(modelPath, 'config.json'), '{}\n');
+fs.writeFileSync(
+  path.join(modelPath, '.lloom-acquisition.json'),
+  `${JSON.stringify({ revision: pins.model.revision })}\n`
+);
+
+const imageId = `sha256:${'a'.repeat(64)}`;
+const converterScriptSha = 'c'.repeat(64);
+const converterLibrarySha = 'd'.repeat(64);
+const writeConversionFixture = (manifest, overlayPath = converterOverlayRoot) => {
+  const sourceRoot = path.join(converterInstallRoot, `sources/atlas-sparkglm-${manifest.source.revision}`);
+  const sourceManifestPath = path.join(sourceRoot, manifest.installer.sourceManifest);
+  fs.mkdirSync(path.dirname(sourceManifestPath), { recursive: true });
+  fs.writeFileSync(sourceManifestPath, '{"fixture":true}\n');
+  const sourceManifestSha = awaitableHash(sourceManifestPath);
+  const receiptPath = path.join(converterInstallRoot, `image-${manifest.source.revision}.json`);
+  fs.mkdirSync(converterInstallRoot, { recursive: true });
+  fs.writeFileSync(
+    receiptPath,
+    `${JSON.stringify({
+      image: manifest.image.tag,
+      image_id: imageId,
+      source_revision: manifest.source.revision,
+      manifest_sha256: sourceManifestSha
+    })}\n`
+  );
+  fs.mkdirSync(overlayPath, { recursive: true });
+  fs.writeFileSync(
+    path.join(overlayPath, manifest.overlay.marker),
+    `${JSON.stringify({
+      converted_matrices: manifest.converter.expectedMatrices,
+      shards: { fixture: {} },
+      source: modelPath,
+      output: overlayPath,
+      finished: 1
+    })}\n`
+  );
+  fs.writeFileSync(
+    path.join(overlayPath, `${manifest.overlay.marker}.identity.json`),
+    `${JSON.stringify({
+      version: 1,
+      model: { repo: manifest.model.repo, revision: manifest.model.revision },
+      converter: {
+        path: manifest.converter.inImagePath,
+        sha256: converterScriptSha,
+        library: manifest.converter.library,
+        librarySha256: converterLibrarySha
+      }
+    })}\n`
+  );
+  return { sourceRoot, sourceManifestSha };
+};
+
+// Kept local so the fixture setup stays synchronous and the test has no
+// dependency on a test-only hashing helper.
+function awaitableHash(file) {
+  return spawnSync(
+    'node',
+    [
+      '-e',
+      'const fs=require("fs"),c=require("crypto");process.stdout.write(c.createHash("sha256").update(fs.readFileSync(process.argv[1])).digest("hex"))',
+      file
+    ],
+    {
+      encoding: 'utf8'
+    }
+  ).stdout.trim();
+}
+
+writeConversionFixture(pins);
+const fakeEnv = { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` };
+const runConverter = (manifestPath = path.join(backendDir, 'pins.json'), extra = []) =>
+  spawnSync(
+    'bash',
+    [
+      path.join(backendDir, 'convert-overlay.sh'),
+      '--backend-root',
+      converterBackendRoot,
+      '--install-root',
+      converterInstallRoot,
+      '--model-root',
+      converterModelRoot,
+      '--overlay-root',
+      converterOverlayRoot,
+      '--manifest',
+      manifestPath,
+      ...extra
+    ],
+    { encoding: 'utf8', env: fakeEnv }
+  );
+
+const reused = runConverter();
+assert.equal(reused.status, 0, `${reused.stdout}\n${reused.stderr}`);
+assert.match(reused.stdout, /already carries.*skipping/);
+assert(fs.existsSync(path.join(converterOverlayRoot, pins.overlay.marker)));
+
+fs.writeFileSync(
+  path.join(modelPath, '.lloom-acquisition.json'),
+  `${JSON.stringify({ revision: 'wrong-acquisition' })}\n`
+);
+const staleModel = runConverter();
+assert.notEqual(staleModel.status, 0);
+assert.match(`${staleModel.stdout}${staleModel.stderr}`, /not pinned|acquisition revision/);
+assert(
+  fs.existsSync(path.join(converterOverlayRoot, pins.overlay.marker)),
+  'stale acquisition must not remove the overlay'
+);
+fs.writeFileSync(
+  path.join(modelPath, '.lloom-acquisition.json'),
+  `${JSON.stringify({ revision: pins.model.revision })}\n`
+);
+
+const identityPath = path.join(converterOverlayRoot, `${pins.overlay.marker}.identity.json`);
+const incompatibleIdentity = JSON.parse(fs.readFileSync(identityPath, 'utf8'));
+incompatibleIdentity.converter.sha256 = 'e'.repeat(64);
+fs.writeFileSync(identityPath, `${JSON.stringify(incompatibleIdentity)}\n`);
+const staleConverter = runConverter();
+assert.notEqual(staleConverter.status, 0);
+assert.match(`${staleConverter.stdout}${staleConverter.stderr}`, /incompatible|--force/);
+assert(fs.existsSync(identityPath), 'incompatible conversion must be preserved for explicit recovery');
+
+// Change only the source/image revision. The same model revision and converter
+// content still make the completed overlay reusable.
+const movedPins = JSON.parse(JSON.stringify(pins));
+movedPins.source.revision = 'a'.repeat(40);
+movedPins.image.tag = imageTagFor(movedPins);
+const movedManifestPath = path.join(converterRoot, 'moved-pins.json');
+fs.writeFileSync(movedManifestPath, `${JSON.stringify(movedPins, null, 2)}\n`);
+const movedFixtureRoot = path.join(converterInstallRoot, `sources/atlas-sparkglm-${movedPins.source.revision}`);
+const movedManifestFile = path.join(movedFixtureRoot, movedPins.installer.sourceManifest);
+fs.mkdirSync(path.dirname(movedManifestFile), { recursive: true });
+fs.writeFileSync(movedManifestFile, '{"fixture":true}\n');
+const movedSha = awaitableHash(movedManifestFile);
+fs.writeFileSync(
+  path.join(converterInstallRoot, `image-${movedPins.source.revision}.json`),
+  `${JSON.stringify({ image: movedPins.image.tag, image_id: imageId, source_revision: movedPins.source.revision, manifest_sha256: movedSha })}\n`
+);
+// Restore a compatible identity for this independent source revision case.
+fs.writeFileSync(
+  identityPath,
+  `${JSON.stringify({
+    version: 1,
+    model: { repo: pins.model.repo, revision: pins.model.revision },
+    converter: {
+      path: pins.converter.inImagePath,
+      sha256: converterScriptSha,
+      library: pins.converter.library,
+      librarySha256: converterLibrarySha
+    }
+  })}\n`
+);
+const reusedAfterSourceMove = runConverter(movedManifestPath);
+assert.equal(reusedAfterSourceMove.status, 0, `${reusedAfterSourceMove.stdout}\n${reusedAfterSourceMove.stderr}`);
+assert.match(reusedAfterSourceMove.stdout, /already carries.*skipping/);
+fs.rmSync(converterRoot, { recursive: true, force: true });
 
 // ---- the recipe must be indexed -------------------------------------------
 const index = JSON.parse(await fs.promises.readFile(path.join(root, 'recipes', 'index.json'), 'utf8'));

@@ -63,6 +63,8 @@ PROFILE_PATH="$(pin image.profilePath)"
 EXPECTED_MATRICES="$(pin converter.expectedMatrices)"
 MODEL_REPO="$(pin model.repo)"
 MODEL_REVISION="$(pin model.revision)"
+CONVERTER_PATH="$(pin converter.inImagePath)"
+CONVERTER_LIBRARY="$(pin converter.library)"
 
 fail() { echo "atlas-sparkglm install: $*" >&2; exit 1; }
 note() { echo "atlas-sparkglm install: $*"; }
@@ -115,6 +117,40 @@ verify_installed_image() {
   return 0
 }
 
+run_in_image() { docker run --rm --entrypoint bash "${IMAGE_TAG}" -lc "$1"; }
+
+verify_image_contract() {
+  # Keep this check on the re-entry path as well as after a fresh build. A
+  # valid receipt alone is insufficient if the image lost a serving or
+  # conversion artifact.
+  run_in_image "test -f '${ENTRYPOINT_PATH}' && test -f '${PROFILE_PATH}'" \
+    || fail "image ${IMAGE_TAG} is missing the Atlas entrypoint/profile contract (${ENTRYPOINT_PATH}, ${PROFILE_PATH})"
+  run_in_image "test -f '${CONVERTER_PATH}'" \
+    || fail "image ${IMAGE_TAG} is missing the converter ${CONVERTER_PATH}; the parent engine build must ship it at that exact path"
+  run_in_image "test -f '${CONVERTER_LIBRARY}'" \
+    || fail "image ${IMAGE_TAG} is missing the converter library ${CONVERTER_LIBRARY}"
+  if ! run_in_image "python3 '${CONVERTER_PATH}' --help" >/dev/null 2>&1; then
+    fail "converter ${CONVERTER_PATH} in ${IMAGE_TAG} does not accept the documented --help surface"
+  fi
+  if ! run_in_image "python3 '${CONVERTER_PATH}' --help 2>&1 | grep -q -- '--verify-overlay'"; then
+    fail "converter ${CONVERTER_PATH} in ${IMAGE_TAG} does not implement --verify-overlay; full verification is required for this lane"
+  fi
+  note "image ${IMAGE_TAG} ships ${CONVERTER_PATH} with --verify-overlay and ${CONVERTER_LIBRARY}"
+}
+
+verify_existing_source_checkout() {
+  local origin_url head_revision dirty
+  origin_url="$(git -C "${SOURCE_ROOT}" remote get-url origin 2>/dev/null || true)"
+  [[ "${origin_url}" == "${CLONE_URL}" ]] \
+    || fail "source checkout ${SOURCE_ROOT} has origin ${origin_url:-<none>}; expected ${CLONE_URL}. Refusing to reuse it and never rewriting remotes."
+  head_revision="$(git -C "${SOURCE_ROOT}" rev-parse HEAD 2>/dev/null || true)"
+  [[ "${head_revision}" == "${SOURCE_REVISION}" ]] \
+    || fail "source checkout ${SOURCE_ROOT} is at ${head_revision:-<unknown>}; expected the pinned revision ${SOURCE_REVISION}. Move it aside or use a fresh --install-root; this installer will not reset or clean an existing checkout."
+  dirty="$(git -C "${SOURCE_ROOT}" status --porcelain --untracked-files=all)"
+  [[ -z "${dirty}" ]] \
+    || fail "source checkout ${SOURCE_ROOT} has local changes; this installer will not clean or discard them. Move it aside or use a fresh --install-root."
+}
+
 if [[ "${CHECK_ONLY}" == "1" ]]; then
   command -v docker >/dev/null 2>&1 || fail "docker is required to verify the installed Atlas SparkGLM image"
   set +e
@@ -144,6 +180,24 @@ note "backend-root ${BACKEND_ROOT} install-root ${INSTALL_ROOT}"
 command -v docker >/dev/null 2>&1 || fail "docker is required to build and verify the Atlas SparkGLM image"
 command -v git >/dev/null 2>&1 || fail "git is required to check out the pinned Atlas source"
 
+if [[ -e "${SOURCE_ROOT}" ]]; then
+  [[ -d "${SOURCE_ROOT}/.git" ]] \
+    || fail "${SOURCE_ROOT} exists but is not a git checkout; refusing to overwrite it"
+  verify_existing_source_checkout
+fi
+
+# Re-entry is a verification operation when the exact local receipt/image
+# already exists. This keeps an always-run recipe step idempotent without
+# rebuilding a large image on every setup invocation. Any mismatch falls
+# through to the normal immutable source checkout and build path.
+if [[ -f "${RECEIPT}" ]] && docker image inspect --format '{{.Id}}' "${IMAGE_TAG}" >/dev/null 2>&1; then
+  if verify_installed_image >/dev/null 2>&1; then
+    verify_image_contract
+    note "existing image ${IMAGE_TAG} and receipt verified; skipping rebuild"
+    exit 0
+  fi
+fi
+
 # ---- source checkout -------------------------------------------------------
 #
 # Existing checkouts are reused only when they are already on the exact pinned
@@ -153,14 +207,8 @@ command -v git >/dev/null 2>&1 || fail "git is required to check out the pinned 
 mkdir -p "$(dirname "${SOURCE_ROOT}")"
 
 if [[ -d "${SOURCE_ROOT}/.git" ]]; then
-  origin_url="$(git -C "${SOURCE_ROOT}" remote get-url origin 2>/dev/null || true)"
-  [[ "${origin_url}" == "${CLONE_URL}" ]] \
-    || fail "source checkout ${SOURCE_ROOT} has origin ${origin_url:-<none>}; expected ${CLONE_URL}. Refusing to reuse it and never rewriting remotes."
-  head_revision="$(git -C "${SOURCE_ROOT}" rev-parse HEAD 2>/dev/null || true)"
-  [[ "${head_revision}" == "${SOURCE_REVISION}" ]] \
-    || fail "source checkout ${SOURCE_ROOT} is at ${head_revision:-<unknown>}; expected the pinned revision ${SOURCE_REVISION}. Move it aside or use a fresh --install-root; this installer will not reset or clean an existing checkout."
-  [[ -z "$(git -C "${SOURCE_ROOT}" status --porcelain --untracked-files=all)" ]] \
-    || fail "source checkout ${SOURCE_ROOT} has local changes; this installer will not clean or discard them. Move it aside or use a fresh --install-root."
+  verify_existing_source_checkout
+  head_revision="$(git -C "${SOURCE_ROOT}" rev-parse HEAD)"
   note "reusing source checkout ${SOURCE_ROOT} at ${head_revision}"
 else
   if [[ -e "${SOURCE_ROOT}" ]]; then
@@ -200,24 +248,7 @@ verify_installed_image \
   || fail "installed image ${IMAGE_TAG} did not match this host's build receipt; refusing to report the lane as prepared"
 
 # ---- image contract: entrypoint, profile and converter ship inside the image
-CONVERTER_PATH="$(pin converter.inImagePath)"
-CONVERTER_LIBRARY="$(pin converter.library)"
-run_in_image() { docker run --rm --entrypoint bash "${IMAGE_TAG}" -lc "$1"; }
-
-run_in_image "test -f '${ENTRYPOINT_PATH}' && test -f '${PROFILE_PATH}'" \
-  || fail "image ${IMAGE_TAG} is missing the Atlas entrypoint/profile contract (${ENTRYPOINT_PATH}, ${PROFILE_PATH})"
-
-run_in_image "test -f '${CONVERTER_PATH}'" \
-  || fail "image ${IMAGE_TAG} is missing the converter ${CONVERTER_PATH}; the parent engine build must ship it at that exact path"
-run_in_image "test -f '${CONVERTER_LIBRARY}'" \
-  || fail "image ${IMAGE_TAG} is missing the converter library ${CONVERTER_LIBRARY}"
-if ! run_in_image "python3 '${CONVERTER_PATH}' --help" >/dev/null 2>&1; then
-  fail "converter ${CONVERTER_PATH} in ${IMAGE_TAG} does not accept the documented --help surface"
-fi
-if ! run_in_image "python3 '${CONVERTER_PATH}' --help 2>&1 | grep -q -- '--verify-overlay'"; then
-  fail "converter ${CONVERTER_PATH} in ${IMAGE_TAG} does not implement --verify-overlay; full verification is required for this lane"
-fi
-note "image ${IMAGE_TAG} ships ${CONVERTER_PATH} with --verify-overlay and ${CONVERTER_LIBRARY}"
+verify_image_contract
 [[ -n "${EXPECTED_MATRICES}" ]] \
   || note "warning: pins.json does not declare converter.expectedMatrices; conversion will not assert the matrix count"
 

@@ -1161,6 +1161,7 @@
           "id": "check-atlas-pins",
           "title": "Verify Atlas SparkGLM pins are final",
           "action": "command",
+          "alwaysRun": true,
           "command": "node",
           "args": [
             "${repoRoot}/backends/atlas-sparkglm/verify-pins.mjs"

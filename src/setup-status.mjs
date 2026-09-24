@@ -158,6 +158,35 @@ async function backendStepStatus(step, backendPlan, state) {
   const artifact = await backendStepArtifactStatus(step);
   if (artifact.link) link = artifact.link;
 
+  // A revalidation gate is never "ready" from a recorded completion alone:
+  // the external artifact it verifies (pins, image, overlay) can change while
+  // the step id stays the same. Report it as needing revalidation so
+  // setup-status never advertises stale readiness.
+  const requiresRevalidation = step.alwaysRun === true;
+  if (requiresRevalidation) {
+    const recordedReady = readyStatus(previous?.status);
+    return {
+      id: step.id,
+      title: step.title,
+      action: step.action,
+      status: 'revalidation-required',
+      // alwaysRun controls apply's cache decision. Keep a previously completed
+      // gate visible as ready while explicitly flagging that the next apply
+      // must re-run it; otherwise a successful installation is permanently
+      // reported incomplete even though the recorded gate completed.
+      ready: recordedReady,
+      requiresRevalidation: true,
+      command: step.command ?? previous?.command ?? null,
+      link,
+      artifact,
+      startedAt: previous?.startedAt,
+      completedAt: previous?.completedAt,
+      reason: recordedReady ? 'always-run-next-apply' : 'always-run-revalidation',
+      message:
+        'This gate re-verifies external state and must run on every apply; a recorded completion is not sufficient.'
+    };
+  }
+
   if (previous?.status === 'completed' && artifact.satisfied === false) {
     status = 'pending';
     ready = false;
@@ -195,6 +224,32 @@ async function recipeStepStatus(step, state) {
   let destination = null;
   let skipPath = null;
   let currentArtifactSatisfied = null;
+
+  // See backendStepStatus: an always-run recipe gate re-verifies external
+  // state (pins, image build, overlay conversion) and cannot be reported ready
+  // from a cached completion, even when the recorded command is unchanged.
+  const requiresRevalidation = step.alwaysRun === true;
+  if (requiresRevalidation) {
+    const recordedReady = readyStatus(previous?.status);
+    return {
+      id: step.id,
+      title: step.title,
+      action: step.action,
+      status: 'revalidation-required',
+      // See backendStepStatus: completion remains useful status information,
+      // but apply never treats it as permission to skip this gate.
+      ready: recordedReady,
+      requiresRevalidation: true,
+      command: step.command ?? previous?.command ?? null,
+      destination,
+      skipPath,
+      startedAt: previous?.startedAt,
+      completedAt: previous?.completedAt,
+      reason: recordedReady ? 'always-run-next-apply' : 'always-run-revalidation',
+      message:
+        'This gate re-verifies external state and must run on every apply; a recorded completion is not sufficient.'
+    };
+  }
 
   if (step.action === 'download-model' && step.destination) {
     destination = await modelDirectoryStatus(step.destination);

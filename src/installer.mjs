@@ -319,6 +319,11 @@ async function firstExecutable(candidates) {
 }
 
 async function previousRecipeStepStillApplies(step) {
+  // A verification gate opts out of completion caching entirely: its result
+  // describes external state (pins, image, overlay) that can change without
+  // any change to this step's recorded id or command. Re-running is required
+  // so a changed pin cannot be silently masked by an old "completed" record.
+  if (step.alwaysRun === true) return false;
   if (step.action === 'download-model' && step.destination) {
     return (await modelAcquisitionStatus(step)).complete;
   }

@@ -350,7 +350,8 @@ Its portable source and model pins are final for the current candidate, while
 live hardware and full serving qualification remain pending.
 
 ```sh
-lloom setup --recipe linux-nvidia-dgx-spark-2x-glm53-atlas --additive --apply --yes --start
+lloom setup --recipe linux-nvidia-dgx-spark-2x-glm53-atlas --additive --apply --yes
+lloom runtime-start glm53-flash-atlas-cluster
 ```
 
 The recipe is additive. It does not set a default model and does not overwrite
@@ -363,7 +364,7 @@ All portable identities for the lane live in exactly one place,
 image tag, the `nvidia/GLM-5.3-Flash-NVFP4` revision, and the conversion marker
 contract. Image IDs are host-local and are checked from each build receipt plus
 the local OCI image metadata. The current source pin is product revision
-`6fe8a6153ef582ae3eaafe6151707cf293196739`; a later product revision can be
+`85fea48c22e6771345b13571c2e58ecfe9fa707d`; a later product revision can be
 adopted by changing this one portable pin and its derived local image tag.
 
 While any required value is missing, malformed, or a placeholder, the gate
