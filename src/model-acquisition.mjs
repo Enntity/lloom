@@ -5,12 +5,67 @@ import { matchIncludedFiles, modelDirectoryComplete, validModelFilePattern } fro
 
 export const MODEL_ACQUISITION_MANIFEST = '.lloom-acquisition.json';
 
-async function pathExists(filePath) {
+async function pathState(filePath) {
   try {
-    await fs.access(filePath);
+    const stat = await fs.lstat(filePath);
+    return { exists: true, stat };
+  } catch (error) {
+    if (error?.code === 'ENOENT') return { exists: false };
+    return { exists: null, error };
+  }
+}
+
+function samePathIdentity(left, right) {
+  return Boolean(
+    left?.exists && right?.exists && left.stat?.dev === right.stat?.dev && left.stat?.ino === right.stat?.ino
+  );
+}
+
+async function directoryWritableByWrite(directory) {
+  let stat;
+  try {
+    stat = await fs.stat(directory);
+  } catch {
+    return false;
+  }
+  if (!stat.isDirectory()) return false;
+  let scratch;
+  try {
+    // mkdtemp owns the generated name. Never unlink a fixed probe path that
+    // could have belonged to the model or a concurrent downloader.
+    scratch = await fs.mkdtemp(path.join(directory, '.lloom-write-probe-'));
     return true;
   } catch {
     return false;
+  } finally {
+    if (scratch) await fs.rm(scratch, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+// Downloaders write below `<destination>/.cache`. The checkpoint directory may
+// already exist with a nested cache the current user cannot write; moving the
+// destination aside would then hide the only copy of the checkpoint and the
+// download would fail into an unusable work path. Probe the cache directories we
+// know about before any rename and fail with a remediation message instead.
+async function assertCacheWritable(destination, model) {
+  const candidates = [
+    destination,
+    path.join(destination, '.cache'),
+    path.join(destination, '.cache', 'huggingface'),
+    path.join(destination, '.cache', 'huggingface', 'download')
+  ];
+  for (const candidate of candidates) {
+    const state = await pathState(candidate);
+    if (state.error) {
+      throw new Error(
+        `cannot inspect ${candidate} for ${model}: ${state.error.message}; the existing model directory or its download cache may not be accessible to the current user. Fix ownership or permissions for that directory (no automatic chmod/chown is performed), or move it aside manually, then retry.`
+      );
+    }
+    if (!state.exists) continue;
+    if (await directoryWritableByWrite(candidate)) continue;
+    throw new Error(
+      `cannot write to ${candidate} for ${model}; the existing model directory or its download cache is not writable by the current user. Fix ownership or permissions for that directory (no automatic chmod/chown is performed), or move it aside manually, then retry.`
+    );
   }
 }
 
@@ -108,7 +163,66 @@ async function readManifest(destination) {
   }
 }
 
-export async function modelAcquisitionStatus(step = {}) {
+async function stagePreviousManifest(destination) {
+  const manifestPath = path.join(destination, MODEL_ACQUISITION_MANIFEST);
+  let raw;
+  try {
+    raw = await fs.readFile(manifestPath);
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
+
+  const backupDirectory = await fs.mkdtemp(
+    path.join(path.dirname(destination), `.lloom-acquisition-previous-${path.basename(destination)}-`)
+  );
+  const backupPath = path.join(backupDirectory, MODEL_ACQUISITION_MANIFEST);
+  try {
+    // Move the marker out while the canonical directory is still in place. If
+    // this fails, no rename has happened and the completed destination stays
+    // visible with its original provenance.
+    await fs.rename(manifestPath, backupPath);
+  } catch (error) {
+    await fs.rm(backupDirectory, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
+
+  let manifest = null;
+  try {
+    manifest = JSON.parse(raw.toString('utf8'));
+  } catch {
+    // Preserve malformed bytes for inspection, but do not reuse them as
+    // acquisition metadata during this attempt.
+  }
+  return { backupDirectory, backupPath, manifest };
+}
+
+async function restorePreviousManifest(previous, destination, { expectedIdentity } = {}) {
+  if (!previous?.backupPath) return { restored: true };
+  const manifestPath = path.join(destination, MODEL_ACQUISITION_MANIFEST);
+  const destinationState = await pathState(destination);
+  if (destinationState.error) return { restored: false, error: destinationState.error };
+  if (expectedIdentity && !samePathIdentity(destinationState, expectedIdentity)) {
+    return { restored: false, error: new Error(`${destination} changed while acquisition was being prepared`) };
+  }
+  const state = await pathState(manifestPath);
+  if (state.error) return { restored: false, error: state.error };
+  if (state.exists) return { restored: false, error: new Error(`${manifestPath} already exists`) };
+  try {
+    await fs.rename(previous.backupPath, manifestPath);
+    return { restored: true };
+  } catch (error) {
+    return { restored: false, error };
+  }
+}
+
+async function cleanupPreviousManifest(previous) {
+  if (previous?.backupDirectory) {
+    await fs.rm(previous.backupDirectory, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+export async function modelAcquisitionStatus(step = {}, { manifestOverride } = {}) {
   const destination = step.destination;
   const spec = acquisitionSpec(step);
   const payloadComplete = Boolean(
@@ -120,7 +234,7 @@ export async function modelAcquisitionStatus(step = {}) {
   if (!payloadComplete) return { complete: false, payloadComplete: false, verified: false, reason: 'payload-missing' };
   const constrained = Boolean(spec.revision || spec.files.length || spec.include.length);
   if (!constrained) return { complete: true, payloadComplete: true, verified: false, reason: 'payload-present' };
-  const manifest = await readManifest(destination);
+  const manifest = manifestOverride ?? (await readManifest(destination));
   if (spec.revision && manifest?.revision !== spec.revision) {
     return { complete: false, payloadComplete: true, verified: false, reason: 'revision-unverified', manifest };
   }
@@ -200,11 +314,25 @@ export async function prepareModelAcquisition(step = {}) {
   const destination = step.destination;
   const incomplete = `${destination}.incomplete`;
   await fs.mkdir(path.dirname(destination), { recursive: true });
-  const destinationExists = await pathExists(destination);
-  const incompleteExists = await pathExists(incomplete);
+  const destinationState = await pathState(destination);
+  const incompleteState = await pathState(incomplete);
+  if (destinationState.error) {
+    throw new Error(`cannot inspect existing model destination ${destination}: ${destinationState.error.message}`);
+  }
+  if (incompleteState.error) {
+    throw new Error(`cannot inspect partial model destination ${incomplete}: ${incompleteState.error.message}`);
+  }
+  const destinationExists = destinationState.exists;
+  const incompleteExists = incompleteState.exists;
   if (destinationExists && incompleteExists) {
     throw new Error(`both partial model paths exist; reconcile ${destination} and ${incomplete} before retrying`);
   }
+  // Probe the destinations' download caches before touching anything. If the
+  // existing checkpoint (or a cache under it) is not writable, fail here while
+  // the canonical destination is still visible instead of renaming a checkpoint
+  // we cannot actually reuse.
+  if (destinationExists) await assertCacheWritable(destination, step.model);
+  if (incompleteExists) await assertCacheWritable(incomplete, step.model);
   const spec = acquisitionSpec(step);
   if (spec.downloadSizeBytes != null) {
     const stats = await fs.statfs(path.dirname(destination));
@@ -216,14 +344,54 @@ export async function prepareModelAcquisition(step = {}) {
       );
     }
   }
-  if (destinationExists) await fs.rename(destination, incomplete);
-  await fs.mkdir(incomplete, { recursive: true });
-  return { destination, workPath: incomplete, spec };
+  const previousManifest = destinationExists ? await stagePreviousManifest(destination) : null;
+  const originalDestinationIdentity = destinationState;
+  let priorDestinationMoved = false;
+  try {
+    if (destinationExists) {
+      await fs.rename(destination, incomplete);
+      priorDestinationMoved = true;
+    }
+    await fs.mkdir(incomplete, { recursive: true });
+  } catch (error) {
+    if (priorDestinationMoved) {
+      const destinationStateAfterFailure = await pathState(destination);
+      const incompleteStateAfterFailure = await pathState(incomplete);
+      if (
+        !destinationStateAfterFailure.error &&
+        !destinationStateAfterFailure.exists &&
+        samePathIdentity(incompleteStateAfterFailure, originalDestinationIdentity)
+      ) {
+        try {
+          await fs.rename(incomplete, destination);
+        } catch {
+          // Keep the staged directory and previous marker backup visible for
+          // manual recovery when a concurrent writer won the destination.
+        }
+      }
+    }
+    if (previousManifest) {
+      const restored = await restorePreviousManifest(previousManifest, destination, {
+        expectedIdentity: originalDestinationIdentity
+      });
+      if (!restored.restored) {
+        throw new Error(
+          `${error?.message ?? String(error)}; could not restore previous acquisition manifest: ${
+            restored.error?.message ?? String(restored.error)
+          }; preserved bytes remain at ${previousManifest.backupPath}`,
+          { cause: error }
+        );
+      }
+      await cleanupPreviousManifest(previousManifest);
+    }
+    throw error;
+  }
+  return { destination, workPath: incomplete, spec, priorDestinationMoved, previousManifest };
 }
 
 export async function finalizeModelAcquisition(step, prepared) {
   const workStep = { ...step, destination: prepared.workPath };
-  const previous = await readManifest(prepared.workPath);
+  const previous = prepared.previousManifest?.manifest ?? (await readManifest(prepared.workPath));
   const reusable =
     previous?.provider === prepared.spec.provider &&
     previous?.model === prepared.spec.model &&
@@ -238,12 +406,74 @@ export async function finalizeModelAcquisition(step, prepared) {
     files: prepared.spec.files,
     completedAt: new Date().toISOString()
   };
+  const status = await modelAcquisitionStatus(workStep, { manifestOverride: manifest });
+  if (!status.complete) throw new Error(`download verification failed for ${step.model}: ${status.reason}`);
+  // Do not publish acquisition provenance until the payload has passed every
+  // requested check. A failed verification must never leave a completion
+  // manifest behind when the staged directory is restored.
   await fs.writeFile(
     path.join(prepared.workPath, MODEL_ACQUISITION_MANIFEST),
     `${JSON.stringify(manifest, null, 2)}\n`
   );
-  const status = await modelAcquisitionStatus(workStep);
-  if (!status.complete) throw new Error(`download verification failed for ${step.model}: ${status.reason}`);
+  // A concurrent installer may have published a destination between our rename
+  // aside and now. Refuse to clobber it; keep the staged copy for manual review.
+  const destinationState = await pathState(prepared.destination);
+  if (destinationState.error) {
+    throw new Error(
+      `could not inspect ${prepared.destination}: ${destinationState.error.message}; refusing to publish while the destination state is unknown`
+    );
+  }
+  if (destinationState.exists) {
+    throw new Error(
+      `refusing to overwrite ${prepared.destination}: another destination appeared while ${step.model} was downloading; reconcile the staged copy at ${prepared.workPath} before retrying`
+    );
+  }
   await fs.rename(prepared.workPath, prepared.destination);
+  await cleanupPreviousManifest(prepared.previousManifest);
   return { ...status, manifest, destination: prepared.destination };
+}
+
+// Restores the checkpoint that prepareModelAcquisition moved aside when a later
+// download/verify/finalize step fails. Only restores when the canonical
+// destination is absent, so a concurrent writer is never overwritten. A fresh
+// failed download (no prior destination) stays staged under `<destination>.incomplete`
+// so its partial payload can be resumed.
+export async function recoverModelAcquisitionDestination(prepared = {}) {
+  if (!prepared?.priorDestinationMoved) return { restored: false };
+  const destination = prepared.destination;
+  const workPath = prepared.workPath;
+  const destinationState = destination ? await pathState(destination) : { exists: false };
+  if (destinationState.error) {
+    return {
+      restored: false,
+      recoveryError: `could not inspect ${destination}: ${destinationState.error.message}; the staged checkpoint remains at ${workPath}`
+    };
+  }
+  if (!destinationState.exists) {
+    const workState = workPath ? await pathState(workPath) : { exists: false };
+    if (workState.error) {
+      return {
+        restored: false,
+        recoveryError: `could not inspect staged checkpoint ${workPath}: ${workState.error.message}; it was left untouched`
+      };
+    }
+    const stagedPresent = workState.exists;
+    if (stagedPresent) {
+      try {
+        await fs.rename(workPath, destination);
+        return { restored: true };
+      } catch (error) {
+        return {
+          restored: false,
+          recoveryError: `could not restore ${destination}: ${error?.message ?? String(error)}; the staged checkpoint remains at ${workPath}`
+        };
+      }
+    }
+  }
+  return {
+    restored: false,
+    recoveryError: destinationState.exists
+      ? `could not restore ${destination}: another model directory appeared during download; the previous checkpoint remains staged at ${workPath}`
+      : `could not restore ${destination}: the staged checkpoint at ${workPath} is missing`
+  };
 }

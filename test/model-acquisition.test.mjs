@@ -297,6 +297,248 @@ const unionSubset = await applyRecipe(
 );
 assert.equal(unionSubset.results[0].status, 'skipped', JSON.stringify(unionSubset.results));
 
+// Re-entry and recovery safety. Existing checkpoints are moved aside only
+// after every known downloader cache directory is writable. A failed update
+// must restore the old checkpoint, while a concurrent publisher must retain
+// both copies for manual reconciliation.
+const recoveryRoot = path.join(root, 'recovery-models');
+const recoveryHf = path.join(root, 'recovery-hf');
+await fs.writeFile(
+  recoveryHf,
+  `#!/bin/sh
+for last do :; done
+case "${'${RECOVERY_MODE:-}'}" in
+  fail)
+    mkdir -p "$last"
+    printf 'staged partial\\n' > "$last/partial.gguf"
+    exit 9
+    ;;
+  verify)
+    mkdir -p "$last"
+    printf 'wrong download\\n' > "$last/wrong.gguf"
+    exit 0
+    ;;
+  mutate)
+    mkdir -p "$last"
+    printf 'mutated payload\\n' > "$last/model.gguf"
+    exit 9
+    ;;
+  concurrent)
+    mkdir -p "$last" "$CONCURRENT_DEST"
+    printf 'staged concurrent\\n' > "$last/staged.gguf"
+    printf 'published concurrently\\n' > "$CONCURRENT_DEST/concurrent.gguf"
+    exit 9
+    ;;
+esac
+mkdir -p "$last"
+printf 'unexpected downloader invocation\\n' > "$last/unexpected.gguf"
+`,
+  { mode: 0o755 }
+);
+await fs.chmod(recoveryHf, 0o755);
+
+const recoveryRevision = 'fedcba9876543210fedcba9876543210fedcba98';
+const recoveryStep = (id, model, files) => ({
+  id,
+  action: 'download-model',
+  provider: 'huggingface',
+  model,
+  revision: recoveryRevision,
+  integrity: { files }
+});
+const recoveryRecipe = (id, stepEntry, model) => ({
+  schemaVersion: 1,
+  id,
+  name: id,
+  backend: { id: 'test-backend' },
+  models: [{ role: 'default', model }],
+  setup: { steps: [stepEntry] }
+});
+const recoveryOptions = (id, extraEnv = {}) => ({
+  dryRun: false,
+  yes: true,
+  modelRoot: recoveryRoot,
+  statePath: path.join(root, `${id}-state.json`),
+  env: {
+    ...process.env,
+    PATH: '/usr/bin:/bin',
+    LLOOM_HF_BIN: recoveryHf,
+    HF_HUB_CLI: '',
+    ...extraEnv
+  }
+});
+const oldPayload = 'old checkpoint\n';
+const oldPayloadSize = Buffer.byteLength(oldPayload);
+
+// A nested Hugging Face download cache that is not a directory is rejected
+// before rename. Fixed names resembling the old probe are user data and must
+// survive the failed preflight unchanged.
+const preflightModel = 'owner/preflight-model';
+const preflightDestination = path.join(recoveryRoot, 'owner--preflight-model');
+await fs.mkdir(path.join(preflightDestination, '.cache', 'huggingface'), { recursive: true });
+await fs.writeFile(path.join(preflightDestination, 'model.gguf'), oldPayload);
+await fs.writeFile(path.join(preflightDestination, '.lloom-write-probe'), 'keep this file\n');
+await fs.writeFile(path.join(preflightDestination, '.lloom-write-probe-tmp'), 'keep this temp\n');
+await fs.writeFile(path.join(preflightDestination, '.cache', 'huggingface', 'download'), 'not a directory\n');
+const preflightResult = await applyRecipe(
+  recoveryRecipe(
+    'recovery-preflight',
+    recoveryStep('download', preflightModel, [{ path: 'model.gguf', sizeBytes: oldPayloadSize }]),
+    preflightModel
+  ),
+  { models: [], runtimes: {} },
+  recoveryOptions('recovery-preflight')
+);
+assert.equal(preflightResult.results[0].status, 'failed', JSON.stringify(preflightResult.results));
+assert.equal(await fs.readFile(path.join(preflightDestination, 'model.gguf'), 'utf8'), oldPayload);
+assert.equal(await fs.readFile(path.join(preflightDestination, '.lloom-write-probe'), 'utf8'), 'keep this file\n');
+assert.equal(await fs.readFile(path.join(preflightDestination, '.lloom-write-probe-tmp'), 'utf8'), 'keep this temp\n');
+assert.equal(
+  await fs.stat(`${preflightDestination}.incomplete`).then(
+    () => true,
+    () => false
+  ),
+  false
+);
+assert.match(preflightResult.results[0].stderr, /cannot write .*download/);
+
+// A downloader that exits non-zero after writing a partial payload restores an
+// existing checkpoint. The new partial file is retained inside that restored
+// directory for inspection/resume; the old model data never disappears.
+const failedModel = 'owner/failed-model';
+const failedDestination = path.join(recoveryRoot, 'owner--failed-model');
+await fs.mkdir(failedDestination, { recursive: true });
+await fs.writeFile(path.join(failedDestination, 'model.gguf'), oldPayload);
+const failedResult = await applyRecipe(
+  recoveryRecipe(
+    'recovery-downloader-failure',
+    recoveryStep('download', failedModel, [{ path: 'model.gguf', sizeBytes: oldPayloadSize }]),
+    failedModel
+  ),
+  { models: [], runtimes: {} },
+  recoveryOptions('recovery-downloader-failure', { RECOVERY_MODE: 'fail' })
+);
+assert.equal(failedResult.results[0].status, 'failed', JSON.stringify(failedResult.results));
+assert.equal(await fs.readFile(path.join(failedDestination, 'model.gguf'), 'utf8'), oldPayload);
+assert.equal(await fs.readFile(path.join(failedDestination, 'partial.gguf'), 'utf8'), 'staged partial\n');
+assert.equal(
+  await fs.stat(`${failedDestination}.incomplete`).then(
+    () => true,
+    () => false
+  ),
+  false
+);
+
+// Verification failures also restore the old directory and never publish a
+// completion manifest for a payload that did not pass its declared digest.
+const verifyModel = 'owner/verify-model';
+const verifyDestination = path.join(recoveryRoot, 'owner--verify-model');
+await fs.mkdir(verifyDestination, { recursive: true });
+await fs.writeFile(path.join(verifyDestination, 'model.gguf'), oldPayload);
+const verifyExpected = 'new verified checkpoint\n';
+const verifyResult = await applyRecipe(
+  recoveryRecipe(
+    'recovery-verification-failure',
+    recoveryStep('download', verifyModel, [
+      {
+        path: 'model.gguf',
+        sizeBytes: Buffer.byteLength(verifyExpected),
+        sha256: crypto.createHash('sha256').update(verifyExpected).digest('hex')
+      }
+    ]),
+    verifyModel
+  ),
+  { models: [], runtimes: {} },
+  recoveryOptions('recovery-verification-failure', { RECOVERY_MODE: 'verify' })
+);
+assert.equal(verifyResult.results[0].status, 'failed', JSON.stringify(verifyResult.results));
+assert.equal(await fs.readFile(path.join(verifyDestination, 'model.gguf'), 'utf8'), oldPayload);
+assert.equal(
+  await fs.stat(path.join(verifyDestination, MODEL_ACQUISITION_MANIFEST)).then(
+    () => true,
+    () => false
+  ),
+  false
+);
+assert.equal(
+  await fs.stat(`${verifyDestination}.incomplete`).then(
+    () => true,
+    () => false
+  ),
+  false
+);
+assert.match(verifyResult.results[0].stderr, /download verification failed/);
+
+// A failed new-revision update may have modified the old payload in place.
+// Recovery must leave those bytes staged back at the canonical path without
+// reviving the old completion marker; the exact old marker bytes stay in the
+// unique acquisition-owned backup for manual reconciliation.
+const staleModel = 'owner/stale-model';
+const staleDestination = path.join(recoveryRoot, 'owner--stale-model');
+const oldRevision = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const oldManifestRaw = `${JSON.stringify({
+  version: 1,
+  provider: 'huggingface',
+  model: staleModel,
+  revision: oldRevision
+})}\n`;
+await fs.mkdir(staleDestination, { recursive: true });
+await fs.writeFile(path.join(staleDestination, 'model.gguf'), oldPayload);
+await fs.writeFile(path.join(staleDestination, MODEL_ACQUISITION_MANIFEST), oldManifestRaw);
+const staleResult = await applyRecipe(
+  recoveryRecipe(
+    'recovery-stale-provenance',
+    recoveryStep('download', staleModel, [{ path: 'model.gguf', sizeBytes: oldPayloadSize }]),
+    staleModel
+  ),
+  { models: [], runtimes: {} },
+  recoveryOptions('recovery-stale-provenance', { RECOVERY_MODE: 'mutate' })
+);
+assert.equal(staleResult.results[0].status, 'failed', JSON.stringify(staleResult.results));
+assert.equal(await fs.readFile(path.join(staleDestination, 'model.gguf'), 'utf8'), 'mutated payload\n');
+assert.equal(
+  await fs.stat(path.join(staleDestination, MODEL_ACQUISITION_MANIFEST)).then(
+    () => true,
+    () => false
+  ),
+  false
+);
+assert.equal((await modelAcquisitionStatus({ destination: staleDestination, revision: oldRevision })).complete, false);
+const staleBackups = (await fs.readdir(recoveryRoot, { withFileTypes: true }))
+  .filter((entry) => entry.isDirectory() && entry.name.startsWith('.lloom-acquisition-previous-owner--stale-model-'))
+  .map((entry) => path.join(recoveryRoot, entry.name));
+assert.equal(staleBackups.length, 1);
+assert.equal(await fs.readFile(path.join(staleBackups[0], MODEL_ACQUISITION_MANIFEST), 'utf8'), oldManifestRaw);
+
+// A destination published while the old checkpoint is staged wins admission,
+// but the staged copy is preserved instead of being recursively deleted.
+const concurrentModel = 'owner/concurrent-model';
+const concurrentDestination = path.join(recoveryRoot, 'owner--concurrent-model');
+await fs.mkdir(concurrentDestination, { recursive: true });
+await fs.writeFile(path.join(concurrentDestination, 'model.gguf'), oldPayload);
+const concurrentResult = await applyRecipe(
+  recoveryRecipe(
+    'recovery-concurrent-destination',
+    recoveryStep('download', concurrentModel, [{ path: 'model.gguf', sizeBytes: oldPayloadSize }]),
+    concurrentModel
+  ),
+  { models: [], runtimes: {} },
+  recoveryOptions('recovery-concurrent-destination', {
+    RECOVERY_MODE: 'concurrent',
+    CONCURRENT_DEST: concurrentDestination
+  })
+);
+assert.equal(concurrentResult.results[0].status, 'failed', JSON.stringify(concurrentResult.results));
+assert.equal(
+  await fs.readFile(path.join(concurrentDestination, 'concurrent.gguf'), 'utf8'),
+  'published concurrently\n'
+);
+assert.equal(await fs.readFile(path.join(`${concurrentDestination}.incomplete`, 'model.gguf'), 'utf8'), oldPayload);
+assert.equal(
+  await fs.readFile(path.join(`${concurrentDestination}.incomplete`, 'staged.gguf'), 'utf8'),
+  'staged concurrent\n'
+);
+
 assert.equal((await modelAcquisitionStatus({ destination, include: ['missing.gguf'] })).complete, false);
 assert.ok(validateAcquisitionStep({ include: 'file' }).length);
 assert.ok(validateAcquisitionStep({ include: [123] }).length);

@@ -3,7 +3,12 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { defaultBackendVariables, planBackend } from './backend-catalog.mjs';
 import { defaultLloomHome, defaultUserModelRoot } from './config.mjs';
-import { finalizeModelAcquisition, modelAcquisitionStatus, prepareModelAcquisition } from './model-acquisition.mjs';
+import {
+  finalizeModelAcquisition,
+  modelAcquisitionStatus,
+  prepareModelAcquisition,
+  recoverModelAcquisitionDestination
+} from './model-acquisition.mjs';
 import { runCommand } from './process-control.mjs';
 import { planRecipe } from './recipes.mjs';
 
@@ -225,20 +230,45 @@ async function executeDownloadModel(step, { env = process.env, stdio } = {}) {
         );
     const workCommand = template.map((arg, index) => (template[index - 1] === '--local-dir' ? prepared.workPath : arg));
     commands.push(workCommand);
-    execution = await executeCommand(workCommand, { env, stdio });
-    if (!execution.ok) return { ...execution, commands, status: 'failed', partialDestination: prepared.workPath };
+    try {
+      execution = await executeCommand(workCommand, { env, stdio });
+    } catch (error) {
+      execution = {
+        ok: false,
+        status: 'failed',
+        command: workCommand,
+        code: null,
+        stdout: '',
+        stderr: error?.message ?? String(error)
+      };
+    }
+    if (!execution.ok) {
+      const recovery = await recoverModelAcquisitionDestination(prepared);
+      return {
+        ...execution,
+        commands,
+        status: 'failed',
+        ...(!recovery.restored ? { partialDestination: prepared.workPath } : {}),
+        ...(recovery.restored ? { destinationRestored: true } : {}),
+        ...(recovery.recoveryError
+          ? { stderr: [execution.stderr, recovery.recoveryError].filter(Boolean).join('\n') }
+          : {})
+      };
+    }
   }
   execution.commands = commands;
   try {
     const acquisition = await finalizeModelAcquisition(step, prepared);
     return { ...execution, status: 'completed', acquisition };
   } catch (error) {
+    const recovery = await recoverModelAcquisitionDestination(prepared);
     return {
       ...execution,
       ok: false,
       status: 'failed',
-      stderr: [execution.stderr, error?.message ?? String(error)].filter(Boolean).join('\n'),
-      partialDestination: prepared.workPath
+      stderr: [execution.stderr, error?.message ?? String(error), recovery.recoveryError].filter(Boolean).join('\n'),
+      ...(!recovery.restored ? { partialDestination: prepared.workPath } : {}),
+      ...(recovery.restored ? { destinationRestored: true } : {})
     };
   }
 }

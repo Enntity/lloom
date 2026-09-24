@@ -1,7 +1,12 @@
 import { defaultBackendVariables, getBackend, loadBackendCatalog } from './backend-catalog.mjs';
 import { applyBackend } from './installer.mjs';
 import { runCommand } from './process-control.mjs';
-import { modelAcquisitionStatus, prepareModelAcquisition, finalizeModelAcquisition } from './model-acquisition.mjs';
+import {
+  modelAcquisitionStatus,
+  prepareModelAcquisition,
+  finalizeModelAcquisition,
+  recoverModelAcquisitionDestination
+} from './model-acquisition.mjs';
 
 export async function installImportedModelAssets(plan, { onProgress, backendCatalog, env = process.env } = {}) {
   const variables = defaultBackendVariables(env);
@@ -34,8 +39,39 @@ export async function installImportedModelAssets(plan, { onProgress, backendCata
   const [command, ...args] = prepared
     ? planned.map((arg, index) => (planned[index - 1] === '--local-dir' ? prepared.workPath : arg))
     : planned;
-  const result = await runCommand(command, args, { allowFailure: true, env: installEnv, stdio: 'inherit' });
-  if (result.code !== 0)
+  let result;
+  try {
+    result = await runCommand(command, args, { allowFailure: true, env: installEnv, stdio: 'inherit' });
+  } catch (error) {
+    const recovery = prepared ? await recoverModelAcquisitionDestination(prepared) : { restored: false };
+    throw new Error([error?.message ?? String(error), recovery.recoveryError].filter(Boolean).join('\n'), {
+      cause: error
+    });
+  }
+  if (result.code !== 0) {
+    if (prepared) {
+      const recovery = await recoverModelAcquisitionDestination(prepared);
+      if (recovery.recoveryError) {
+        throw new Error(
+          [
+            result.stderr || 'Model download failed. Check the vendor requirements and credentials.',
+            recovery.recoveryError
+          ]
+            .filter(Boolean)
+            .join('\n')
+        );
+      }
+    }
     throw new Error(result.stderr || 'Model download failed. Check the vendor requirements and credentials.');
-  if (prepared) await finalizeModelAcquisition(acquisition, prepared);
+  }
+  if (prepared) {
+    try {
+      await finalizeModelAcquisition(acquisition, prepared);
+    } catch (error) {
+      const recovery = await recoverModelAcquisitionDestination(prepared);
+      throw new Error([error?.message ?? String(error), recovery.recoveryError].filter(Boolean).join('\n'), {
+        cause: error
+      });
+    }
+  }
 }
