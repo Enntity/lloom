@@ -59,7 +59,9 @@ Setup steps, in order:
    managed backend and install roots.
 5. `convert-atlas-overlay` — runs the GPU conversion once with at least 8 GiB
    free and then runs the full CPU verification pass. It never stops a serving
-   container implicitly.
+   container implicitly. On GB10, unavailable GPU-memory readings fall back to
+   Linux `MemAvailable`. Forced reconversion moves the prior overlay to a dated
+   backup so it remains recoverable.
 
 ## Container contract
 

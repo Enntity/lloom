@@ -8,6 +8,7 @@ import { getBackend, loadBackendCatalog, planBackend } from '../src/backend-cata
 import { deriveUserConfig } from '../src/init.mjs';
 import { loadRecipeById, planRecipe } from '../src/recipes.mjs';
 import { imageTagFor, loadPins, verifyPins } from '../backends/atlas-sparkglm/verify-pins.mjs';
+import { conversionHeadroomMiB } from '../backends/atlas-sparkglm/conversion-headroom.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const backendDir = path.join(root, 'backends', 'atlas-sparkglm');
@@ -361,6 +362,24 @@ const verifyOverlay = spawnSync(
   { encoding: 'utf8' }
 );
 assert.notEqual(verifyOverlay.status, 0, 'an empty overlay directory must not verify');
+for (const unsafeOverlay of ['/', tmpRoot]) {
+  const rejected = spawnSync(
+    'bash',
+    [
+      path.join(backendDir, 'convert-overlay.sh'),
+      '--backend-root',
+      tmpRoot,
+      '--model-root',
+      path.join(tmpRoot, 'models'),
+      '--overlay-root',
+      unsafeOverlay,
+      '--force'
+    ],
+    { encoding: 'utf8' }
+  );
+  assert.notEqual(rejected.status, 0);
+  assert.match(rejected.stderr, /overlay must be separate/);
+}
 fs.rmSync(tmpRoot, { recursive: true, force: true });
 
 // ---- shell scripts and installers must parse -------------------------------
@@ -379,3 +398,8 @@ assert.equal(entry.versions.filter((version) => version.status === 'current').le
 assert.equal(entry.versions.find((version) => version.status === 'current').path, entry.path);
 
 console.log('Atlas SparkGLM recipe/backend integration checks passed');
+
+assert.equal(conversionHeadroomMiB('9000\n8500\n', 'NVIDIA A100\nNVIDIA A100', ''), 8500);
+assert.equal(conversionHeadroomMiB('[N/A]\n', 'NVIDIA GB10\n', 'MemAvailable: 9437184 kB\n'), 9216);
+assert.throws(() => conversionHeadroomMiB('[N/A]', 'NVIDIA A100', 'MemAvailable: 9437184 kB'), /not GB10/);
+assert.throws(() => conversionHeadroomMiB('[N/A]', 'NVIDIA GB10', ''), /MemAvailable/);

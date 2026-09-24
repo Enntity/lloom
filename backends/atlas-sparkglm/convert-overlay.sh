@@ -93,6 +93,22 @@ MODEL_DIR_NAME="${MODEL_REPO//\//--}"
 [[ -n "${MODEL_ROOT}" ]] || MODEL_ROOT="${LLOOM_MODEL_ROOT:-${HOME}/.lloom/models}"
 SOURCE_MODEL_PATH="${MODEL_ROOT}/${MODEL_DIR_NAME}"
 MARKER="${OVERLAY_ROOT}/${MARKER_NAME}"
+# Source, install root and overlay must remain separate even with --force.
+node -e '
+  const path = require("path");
+  const fs = require("fs");
+  const canonical = (value) => {
+    let cursor = path.resolve(value), tail = [];
+    while (!fs.existsSync(cursor)) { tail.unshift(path.basename(cursor)); cursor = path.dirname(cursor); }
+    return path.join(fs.realpathSync(cursor), ...tail);
+  };
+  const [source, overlay, install] = process.argv.slice(1).map(canonical);
+  const contains = (a, b) => a === b || b.startsWith(a + path.sep);
+  if (overlay === path.parse(overlay).root || contains(overlay, source) || contains(source, overlay) || contains(overlay, install)) {
+    throw new Error("overlay must be separate from source and cannot contain the install root");
+  }
+' "${SOURCE_MODEL_PATH}" "${OVERLAY_ROOT}" "${INSTALL_ROOT}"
+
 
 node "${VERIFY_PINS}" "${MANIFEST}" \
   || fail "pin manifest ${MANIFEST} is still DRAFT; the parent owner must replace the DRAFT identifiers before overlay conversion runs"
@@ -188,11 +204,10 @@ else
 fi
 
 # ---- GPU headroom: at least 8 GiB free before conversion -------------------
-GPU_FREE_MIB="$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2>/dev/null | sort -n | head -1 || true)"
-[[ -n "${GPU_FREE_MIB}" ]] \
-  || fail "nvidia-smi could not report free GPU memory; conversion needs at least 8192 MiB free"
+GPU_FREE_MIB="$(node "${SCRIPT_DIR}/conversion-headroom.mjs")" \
+  || fail "GPU headroom could not be established; conversion needs at least 8192 MiB free"
 [[ "${GPU_FREE_MIB}" -ge 8192 ]] \
-  || fail "only ${GPU_FREE_MIB} MiB GPU memory is free; conversion needs at least 8192 MiB. Stop the serving runtime through the normal recipe lifecycle first - this installer never stops anything for you."
+  || fail "only ${GPU_FREE_MIB} MiB is available; conversion needs at least 8192 MiB. Stop the serving runtime through the normal recipe lifecycle first."
 
 ACTIVE_SERVER="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E 'atlas-sparkglm|glm53-flash-atlas' || true)"
 [[ -z "${ACTIVE_SERVER}" ]] \
@@ -202,8 +217,11 @@ ACTIVE_SERVER="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E 'atlas-sp
 OUTPUT_PARENT="$(dirname "${OVERLAY_ROOT}")"
 mkdir -p "${OUTPUT_PARENT}"
 if [[ "${FORCE}" == "1" && -e "${OVERLAY_ROOT}" ]]; then
-  note "--force requested; removing the existing incomplete overlay ${OVERLAY_ROOT} so the converter can create a fresh output"
-  rm -rf "${OVERLAY_ROOT}"
+  # Keep the prior overlay recoverable, including completed conversions.
+  BACKUP="${OVERLAY_ROOT}.before-reconvert-$(date -u +%Y%m%dT%H%M%SZ)"
+  [[ ! -e "${BACKUP}" ]] || fail "backup path already exists: ${BACKUP}"
+  note "--force requested; preserving ${OVERLAY_ROOT} at ${BACKUP}"
+  mv -- "${OVERLAY_ROOT}" "${BACKUP}"
 fi
 [[ ! -e "${OVERLAY_ROOT}" ]] \
   || fail "conversion output ${OVERLAY_ROOT} already exists; the converter requires a nonexistent output. Remove it explicitly or run with --force."
