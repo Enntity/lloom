@@ -111,7 +111,7 @@ node -e '
 
 
 node "${VERIFY_PINS}" "${MANIFEST}" \
-  || fail "pin manifest ${MANIFEST} is still DRAFT; the parent owner must replace the DRAFT identifiers before overlay conversion runs"
+  || fail "pin manifest ${MANIFEST} is not a final immutable install manifest; verify the source, image and model identities before overlay conversion runs"
 
 command -v docker >/dev/null 2>&1 || fail "docker is required to run the in-image converter"
 

@@ -1158,11 +1158,11 @@
           "version": 1,
           "path": "linux-nvidia-dgx-spark-2x-glm53-atlas.json",
           "status": "current",
-          "notes": "DRAFT first version. Source-built Atlas SparkGLM two-node lane over the private fabric, additive only, setDefault false, no aliases. Pins live in backends/atlas-sparkglm/pins.json and fail closed until the parent owner replaces the DRAFT source revision. Image identity is verified per host from the build receipt plus OCI metadata."
+          "notes": "Source-built Atlas SparkGLM two-node candidate over the private fabric, additive only, setDefault false, no aliases. Portable pins live in backends/atlas-sparkglm/pins.json and are final for the current product revision; invalid or placeholder manifests fail closed. Image identity is verified per host from the build receipt plus OCI metadata. Live hardware and full serving qualification remain pending."
         }
       ],
       "name": "2x DGX Spark GLM-5.3 Flash NVFP4 Atlas",
-      "summary": "DRAFT two-node Atlas SparkGLM lane serving GLM-5.3-Flash-NVFP4 from a source-built image and a once-per-node overlay conversion.",
+      "summary": "Two-node Atlas SparkGLM candidate serving GLM-5.3-Flash-NVFP4 from a source-built image and a once-per-node overlay conversion.",
       "tags": [
         "linux",
         "nvidia",
@@ -1175,7 +1175,7 @@
         "sparkglm",
         "source-build",
         "mtp",
-        "draft"
+        "candidate"
       ],
       "recommendedFor": [
         "Evaluating the source-built Atlas SparkGLM engine on two directly connected DGX Sparks through LLooM"
@@ -1186,6 +1186,7 @@
         "anthropic-messages",
         "streaming",
         "tools",
+        "structured-output",
         "reasoning",
         "vision",
         "speculative-decoding"

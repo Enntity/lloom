@@ -342,11 +342,12 @@ LLooM intentionally does not use stale model fallback aliases to make an index p
 
 Standalone image, video and music recipes with a shared ComfyUI backend are documented in [ComfyUI media](comfyui-media.md).
 
-## Atlas SparkGLM (DRAFT)
+## Atlas SparkGLM candidate
 
-`linux-nvidia-dgx-spark-2x-glm53-atlas` is the LLooM-managed lane for the
-source-built Atlas SparkGLM engine on two directly connected DGX Sparks. It is
-**DRAFT** and is not installable until its pins are final.
+`linux-nvidia-dgx-spark-2x-glm53-atlas` is the LLooM-managed candidate lane for
+the source-built Atlas SparkGLM engine on two directly connected DGX Sparks.
+Its portable source and model pins are final for the current candidate, while
+live hardware and full serving qualification remain pending.
 
 ```sh
 lloom setup --recipe linux-nvidia-dgx-spark-2x-glm53-atlas --additive --apply --yes --start
@@ -355,26 +356,30 @@ lloom setup --recipe linux-nvidia-dgx-spark-2x-glm53-atlas --additive --apply --
 The recipe is additive. It does not set a default model and does not overwrite
 aliases, so an existing GLM-5.3 Flash route keeps working.
 
-### Single pin manifest and fail-closed DRAFT gate
+### Single pin manifest and fail-closed pin gate
 
 All portable identities for the lane live in exactly one place,
 `backends/atlas-sparkglm/pins.json`: the `Enntity/sparkglm` source revision, the
 image tag, the `nvidia/GLM-5.3-Flash-NVFP4` revision, and the conversion marker
 contract. Image IDs are host-local and are checked from each build receipt plus
-the local OCI image metadata. The parent owner replaces the DRAFT source
-revision with its final value after the engine integration lands.
+the local OCI image metadata. The current source pin is product revision
+`6fe8a6153ef582ae3eaafe6151707cf293196739`; a later product revision can be
+adopted by changing this one portable pin and its derived local image tag.
 
-While any required value is still a placeholder, the gate fails closed:
+While any required value is missing, malformed, or a placeholder, the gate
+fails closed:
 
 ```sh
-node backends/atlas-sparkglm/verify-pins.mjs   # exit 1 while DRAFT
+node backends/atlas-sparkglm/verify-pins.mjs
 ```
 
 The same check runs as backend setup step `check-atlas-pins`, and again inside
-`install.sh` and `convert-overlay.sh`, so a DRAFT manifest cannot build, convert,
-or start anything. The checker also rejects a revision that is not a 40-character
-commit. Host-local image identity is checked by the installer against its
-receipt, image architecture, and OCI revision label.
+`install.sh` and `convert-overlay.sh`, so an invalid manifest cannot build,
+convert, or start anything. The recipe test uses an explicit temporary
+placeholder manifest to cover that refusal path. The checker also rejects a
+revision that is not a 40-character commit. Host-local image identity is
+checked by the installer against its receipt, image architecture, and OCI
+revision label.
 
 ### Source-built image, no registry publish
 
@@ -424,11 +429,12 @@ health-checks `/health`, runs a POST warmup, and then owns routing.
 
 ### Baseline envelope
 
-The initial lane is deliberately conservative: 32768 context, concurrency 4,
-BF16 KV cache, FP32 SSM state, MTP2 speculation, `--memory=114g` with a
-4096 MiB OOM guard. `disable-tool-grammar` is **not** set, so structured tool
-calling stays functional. The parent owner raises maximum context only after the
-qualification gates pass.
+The candidate profile uses a 36864-token total context, concurrency 4, BF16 KV
+cache, FP32 SSM state, MTP2 speculation with native fallback above 32K, and
+`--memory=114g` with a 4096 MiB OOM guard. `disable-tool-grammar` is **not** set,
+so structured output and tool calling stay functional. The source build
+includes image and video input support; gateway and two-node serving canaries
+remain required for qualification.
 
 Both nodes must carry the same source revision, the same prepared image
 identity, and an identical `backends/atlas-sparkglm` directory.

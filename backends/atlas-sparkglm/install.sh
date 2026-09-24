@@ -127,13 +127,13 @@ if [[ "${CHECK_ONLY}" == "1" ]]; then
   }
   [[ "${verify_status}" -eq 0 ]] || fail "installed Atlas SparkGLM image failed verification"
   node "${VERIFY_PINS}" "${MANIFEST}" \
-    || fail "pin manifest ${MANIFEST} is still DRAFT; the parent owner must replace the DRAFT identifiers with final immutable values before an install can verify"
+    || fail "pin manifest ${MANIFEST} is not a final immutable install manifest; verify the source, image and model identities before an install can verify"
   exit 0
 fi
 
 # ---- pin gate: fail closed on portable pins --------------------------------
 node "${VERIFY_PINS}" "${MANIFEST}" \
-  || fail "pin manifest ${MANIFEST} is still DRAFT; the parent owner must replace the DRAFT identifiers with final immutable values before an install can verify"
+  || fail "pin manifest ${MANIFEST} is not a final immutable install manifest; verify the source, image and model identities before an install can verify"
 
 PINS_DIGEST="$(node -e 'const fs=require("fs"),c=require("crypto");process.stdout.write(c.createHash("sha256").update(fs.readFileSync(process.argv[1])).digest("hex"))' "${MANIFEST}")"
 note "pins ${MANIFEST} status=${STATUS} digest=sha256:${PINS_DIGEST}"

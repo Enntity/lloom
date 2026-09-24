@@ -1118,7 +1118,7 @@
       "id": "docker-atlas-sparkglm",
       "name": "Docker Atlas SparkGLM",
       "kind": "openai-compatible-server",
-      "description": "LLooM-managed Atlas SparkGLM containers. The local image is built from an immutable Enntity/sparkglm revision by the bundled MIT installer, and only the prepared image is started: no build runs on the serving path.",
+      "description": "LLooM-managed Atlas SparkGLM candidate containers. The local image is built from an immutable Enntity/sparkglm revision by the bundled MIT installer, and only the prepared image is started: no build runs on the serving path. The candidate includes structured output and image/video input; live qualification remains pending.",
       "platforms": [
         "linux-arm64"
       ],
@@ -1128,6 +1128,7 @@
         "streaming",
         "usage",
         "tools",
+        "structured-output",
         "reasoning",
         "vision",
         "speculative-decoding",

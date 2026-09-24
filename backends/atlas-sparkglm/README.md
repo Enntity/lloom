@@ -1,36 +1,40 @@
 # Atlas SparkGLM under LLooM
 
-LLooM-managed two-node Atlas SparkGLM lane for a directly connected pair of
-NVIDIA DGX Spark systems. This directory is **MIT orchestration only**: no
-Atlas engine source is committed here. The engine is compiled from an immutable
-revision of `Enntity/sparkglm` by that repository's
-`research/atlas/install/build.sh`.
+LLooM-managed two-node Atlas SparkGLM candidate for a directly connected pair
+of NVIDIA DGX Spark systems. This directory is **MIT orchestration only**: no
+Atlas engine source is committed here. The engine is compiled from immutable
+revision `6fe8a6153ef582ae3eaafe6151707cf293196739` of `Enntity/sparkglm` by
+that repository's `research/atlas/install/build.sh`. Live hardware and full
+serving qualification remain pending.
 
 ## Layout
 
-- `pins.json` — the single portable pin manifest for the lane. It carries the
-  immutable source and model revisions plus the image tag and conversion
+- `pins.json` — the single portable pin manifest for the candidate. It carries
+  the immutable source and model revisions plus the image tag and conversion
   marker contract. Image identity is host-local and lives in each build
-  receipt; values that are still placeholders are marked `DRAFT`.
+  receipt.
 - `verify-pins.mjs` — fail-closed pin gate. Exits non-zero while the manifest
   is not final, the source revision is not a 40-character commit, or any
-  portable identity is a DRAFT placeholder. It deliberately rejects a global
-  image ID because source builds produce host-local image IDs.
+  portable identity is a placeholder. It deliberately rejects a global image
+  ID because source builds produce host-local image IDs.
 - `install.sh` — clones `Enntity/sparkglm` at the exact pinned revision,
   verifies `HEAD`, delegates compilation to `research/atlas/install/build.sh`,
   then verifies that `lloom/atlas-sparkglm:<SOURCE_REVISION>` resolves to this
   host's build receipt, arm64 inspection and OCI revision label.
 - `convert-overlay.sh` — explicit, once-per-node NVFP4 overlay conversion gate.
 
-## Fail-closed DRAFT policy
+## Fail-closed pin policy
 
-The parent owner supplies the final immutable source revision after the engine
-integration lands. Until then `pins.json` carries `DRAFT…` identifiers and
-**every** entry point refuses to proceed:
+The checked-in manifest carries final portable identities for this source-built
+candidate. The gate still rejects temporary or malformed manifests before any
+model acquisition, image build, conversion, or serving step:
 
 ```sh
-node backends/atlas-sparkglm/verify-pins.mjs   # exit 1 while DRAFT
+node backends/atlas-sparkglm/verify-pins.mjs
 ```
+
+The recipe test exercises that failure path with an explicit temporary
+placeholder manifest; the installed candidate manifest verifies successfully.
 
 No step infers completion from a directory existing. The overlay requires a
 `conversion.complete.json` marker containing `converted_matrices` equal to 864,
@@ -51,7 +55,7 @@ built while a runtime is starting.
 Setup steps, in order:
 
 1. `check-docker` — Docker must be present.
-2. `check-atlas-pins` — the DRAFT gate above.
+2. `check-atlas-pins` — the final immutable pin gate above.
 3. `download-atlas-model` — acquires `nvidia/GLM-5.3-Flash-NVFP4` at its exact
    40-character revision into the managed model root and records the LLooM
    acquisition manifest.
@@ -73,12 +77,15 @@ Inside the image:
 - `/opt/atlas/serve.py` — entrypoint. Reads the environment below, then starts
   the engine with the profile's argument vector.
 - `/opt/atlas/profile.json` — the exact reconstructed engine environment
-  profile (`--max-seq-len=32768`, `--max-prefill-tokens=4096`,
+  profile (`--max-seq-len=36864`, `--max-prefill-tokens=4096`,
   `--max-num-seqs=4`, `--max-batch-size=4`, `--gpu-memory-utilization=0.914`,
   `--oom-guard-mb=4096`, `--kv-cache-dtype=bf16`, `--ssm-h-dtype=f32`,
   `--speculative --num-drafts=2`, `--block-size=16`, and the rest of the
-  measured baseline). `disable-tool-grammar` is deliberately **not** set, so
-  tool grammar stays functional.
+  measured baseline). The profile keeps native MTP through 32768 and uses its
+  fallback above that boundary. `disable-tool-grammar` is deliberately **not**
+  set, so structured output and tool grammar stay functional. The source build
+  includes image and video input support; live gateway qualification remains
+  pending.
 
 Environment contract consumed by `/opt/atlas/serve.py`:
 

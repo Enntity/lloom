@@ -56,14 +56,15 @@ assert.equal(model.model, 'nvidia/GLM-5.3-Flash-NVFP4');
 assert.equal(model.settings.port, 8893);
 assert.equal(model.settings.baseUrl, 'http://127.0.0.1:8893/v1');
 assert.equal(model.settings.healthUrl, 'http://127.0.0.1:8893/health');
-assert.equal(model.settings.contextWindow, 32768);
+assert.equal(model.settings.contextWindow, 36864);
 assert.equal(model.settings.maxActiveRequests, 4);
 assert.equal(model.settings.memoryGb, 114);
 assert.equal(model.settings.priority, 150);
 assert.equal(model.settings.startupTimeoutMs, 7200000);
 assert.equal(model.settings.watchdog.oomGuardMb ?? 4096, 4096);
-assert.deepEqual(model.input, ['text', 'image']);
+assert.deepEqual(model.input, ['text', 'image', 'video']);
 assert(model.capabilities.includes('vision'));
+assert(model.capabilities.includes('structured-output'));
 const downloadStep = recipe.setup.steps.find((step) => step.id === 'download-atlas-model');
 assert.equal(downloadStep.model, 'nvidia/GLM-5.3-Flash-NVFP4');
 assert.equal(downloadStep.revision, '423acf37583782c51c142d145aef733d72943d93');
@@ -129,7 +130,7 @@ for (const member of members) {
     'ATLAS_WORLD_SIZE=2',
     'ATLAS_TP_SIZE=2',
     'ATLAS_EP_SIZE=2',
-    'ATLAS_CONTEXT_WINDOW=32768',
+    'ATLAS_CONTEXT_WINDOW=36864',
     'SERVED_MODEL_NAME=glm-5.3-flash-atlas',
     'NCCL_IB_HCA=rocep1s0f0',
     'NCCL_IB_ADDR_FAMILY=AF_INET',
@@ -293,18 +294,19 @@ for (const runtimeId of ['glm53-flash-atlas-worker', 'glm53-flash-atlas-head']) 
   assert(args.includes('MODEL_PATH=/install/atlas-overlay'));
 }
 
-// ---- fail-closed DRAFT pins ------------------------------------------------
+// ---- final portable pins and explicit invalid-manifest fixture -------------
 assert.equal(pins.model.revision, '423acf37583782c51c142d145aef733d72943d93');
 assert.equal(pins.model.repo, 'nvidia/GLM-5.3-Flash-NVFP4');
 assert.equal(pins.source.repo, 'Enntity/sparkglm');
+assert.equal(pins.status, 'final');
+assert.equal(pins.source.revision, '6fe8a6153ef582ae3eaafe6151707cf293196739');
 assert.equal(pins.image.entrypoint, '/opt/atlas/serve.py');
 assert(pins.overlay.marker.includes('conversion.complete.json'));
-const draftFailures = verifyPins(pins);
-assert(draftFailures.length > 0, 'a DRAFT manifest must not verify');
+assert.deepEqual(verifyPins(pins), []);
 
 const verifyRun = spawnSync('node', [path.join(backendDir, 'verify-pins.mjs')], { encoding: 'utf8' });
-assert.equal(verifyRun.status, 1, 'the CLI pin gate must fail closed while DRAFT');
-assert.match(verifyRun.stderr, /not installable|DRAFT|draft/i);
+assert.equal(verifyRun.status, 0, 'the checked-in candidate manifest must verify');
+assert.match(verifyRun.stdout, /pins verified/);
 
 // A final manifest with a mismatched image identity must still be rejected.
 const finalManifest = {
@@ -330,17 +332,44 @@ assert(
   'the model revision must stay pinned'
 );
 
-// ---- the installers must refuse to run while DRAFT --------------------------
+// The installers must refuse a temporary invalid manifest before touching
+// Docker, source checkouts, or model/overlay state.
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-pins-'));
-const installRun = spawnSync('bash', [path.join(backendDir, 'install.sh'), '--backend-root', tmpRoot], {
+const invalidManifestPath = path.join(tmpRoot, 'invalid-pins.json');
+const invalidManifest = JSON.parse(JSON.stringify(pins));
+invalidManifest.status = 'draft';
+invalidManifest.source.revision = 'DRAFT_SOURCE_REVISION';
+invalidManifest.image.tag = 'lloom/atlas-sparkglm:DRAFT_SOURCE_REVISION';
+fs.writeFileSync(invalidManifestPath, `${JSON.stringify(invalidManifest, null, 2)}\n`);
+const invalidVerifyRun = spawnSync('node', [path.join(backendDir, 'verify-pins.mjs'), invalidManifestPath], {
   encoding: 'utf8'
 });
+assert.equal(invalidVerifyRun.status, 1, 'an invalid manifest must fail closed');
+assert.match(`${invalidVerifyRun.stdout}${invalidVerifyRun.stderr}`, /not final|DRAFT|draft/i);
+
+const installRun = spawnSync(
+  'bash',
+  [path.join(backendDir, 'install.sh'), '--backend-root', tmpRoot, '--manifest', invalidManifestPath],
+  { encoding: 'utf8' }
+);
 assert.notEqual(installRun.status, 0, 'install.sh must fail closed while DRAFT');
 assert.match(`${installRun.stdout}${installRun.stderr}`, /DRAFT|draft/i);
 
-const convertRun = spawnSync('bash', [path.join(backendDir, 'convert-overlay.sh'), '--backend-root', tmpRoot], {
-  encoding: 'utf8'
-});
+const convertRun = spawnSync(
+  'bash',
+  [
+    path.join(backendDir, 'convert-overlay.sh'),
+    '--backend-root',
+    tmpRoot,
+    '--install-root',
+    tmpRoot,
+    '--model-root',
+    path.join(tmpRoot, 'models'),
+    '--manifest',
+    invalidManifestPath
+  ],
+  { encoding: 'utf8' }
+);
 assert.notEqual(convertRun.status, 0, 'convert-overlay.sh must fail closed while DRAFT');
 assert.match(`${convertRun.stdout}${convertRun.stderr}`, /DRAFT|draft/i);
 
