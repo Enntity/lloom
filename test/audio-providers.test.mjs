@@ -15,7 +15,8 @@ WAV.writeUInt16LE(2, 32);
 WAV.writeUInt16LE(16, 34);
 WAV.write('data', 36);
 WAV.writeUInt32LE(2, 40);
-const MP3 = Buffer.from([73, 68, 51, 9, 8, 7, 6, 5, 4, 0]);
+const MP3 = Buffer.alloc(417);
+MP3.set([0xff, 0xfb, 0x90, 0x00]);
 
 /** Build SSE text where each part is delivered as its own bytes chunk. */
 function sse(...events) {
@@ -172,7 +173,7 @@ test('applies the configured OpenRouter provider policy', async () => {
     backend: {
       audioProvider: 'openrouter',
       apiKey: 'k',
-      baseUrl: 'https://openrouter.ai/api/v1',
+      baseUrl: 'https://stale.example/api/v1',
       openrouterProvider: { only: ['google-vertex'], allow_fallbacks: false }
     },
     body: { model: 'google/lyria-3-pro-preview', prompt: 'p' },
@@ -407,6 +408,8 @@ test('never returns audio before the stream completes', async () => {
 const base = { backend: { audioProvider: 'openrouter', apiKey: 'test-only' }, body: { model: 'm', prompt: 'p' } };
 test('handles headerless Lyria streams, large events, combined stop and DONE, and every CRLF split', async () => {
   const large = Buffer.concat([WAV, Buffer.alloc(1600000)]);
+  large.writeUInt32LE(large.length - 8, 4);
+  large.writeUInt32LE(large.length - 44, 40);
   const response = await generateProviderAudio({
     ...base,
     fetchFn: async () =>
@@ -431,7 +434,10 @@ test('does not accept truncated, failed, foreign-choice or non-audio completions
       'data: [DONE]\n\n',
     sse(audioEvent(Buffer.from('not audio').toString('base64'), 'stop')),
     sse(audioEvent(WAV.toString('base64'), 'stop')) + 'data: {',
-    sse(audioEvent('YR==', 'stop'))
+    sse(audioEvent('YR==', 'stop')),
+    sse(audioEvent(Buffer.from('ID3abcdefghi').toString('base64'), 'stop')),
+    sse(audioEvent(WAV.subarray(0, 44).toString('base64'), 'stop')),
+    sse(audioEvent(MP3.subarray(0, 100).toString('base64'), 'stop'))
   ])
     await assert.rejects(generateProviderAudio({ ...base, fetchFn: async () => responseFor([stream]) }));
 });
@@ -458,11 +464,18 @@ test('validates callers before network IO and sanitizes network exceptions', asy
 
 test('cancellation interrupts a stalled stream read', async () => {
   const controller = new AbortController();
-  const body = new ReadableStream({ start() {} });
+  let cancelled = false;
+  const body = new ReadableStream({
+    start() {},
+    cancel() {
+      cancelled = true;
+    }
+  });
   const response = new Response(body, { headers: { 'content-type': 'text/event-stream' } });
   const promise = generateProviderAudio({ ...base, signal: controller.signal, fetchFn: async () => response });
   setTimeout(() => controller.abort(), 15);
   await assert.rejects(promise, /cancelled/);
+  assert.equal(cancelled, true);
 });
 
 test('ffmpeg normalizes provider format and final WAV length', async (t) => {
@@ -537,7 +550,7 @@ test('gateway resolves the music alias and default through the adapter', async (
       },
       models: [{ id: 'lyria', backend: 'cloud', kind: 'audio_generation', upstreamModel: 'google/lyria-3-pro-preview' }]
     },
-    { logger: { error() {}, warn() {} } }
+    { logger: { error() {}, warn() {} }, upstreamDispatcher: mock }
   );
   t.after(async () => {
     app.server.closeAllConnections();

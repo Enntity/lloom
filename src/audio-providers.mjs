@@ -61,7 +61,7 @@ function boundedText(value, label) {
 /** Drain the provider body without echoing it into the error message. */
 async function closeBody(body) {
   try {
-    await body?.cancel();
+    await boundedCleanup(() => body?.cancel());
   } catch {
     // The stream may already be errored or released; nothing to cancel.
   }
@@ -72,6 +72,7 @@ export async function generateProviderAudio({
   body,
   signal,
   fetchFn = fetch,
+  dispatcher,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   maxBytes = DEFAULT_MAX_BYTES,
   maxEventBytes = DEFAULT_MAX_EVENT_BYTES
@@ -138,7 +139,7 @@ export async function generateProviderAudio({
       audio: { format },
       stream: true
     },
-    backend
+    { ...backend, baseUrl: OPENROUTER_ORIGIN }
   );
 
   const boundedSignal = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(timeoutMs)]);
@@ -148,6 +149,7 @@ export async function generateProviderAudio({
       method: 'POST',
       signal: boundedSignal,
       redirect: 'error',
+      ...(dispatcher ? { dispatcher } : {}),
       headers: {
         Authorization: `Bearer ${key}`,
         'Content-Type': 'application/json',
@@ -185,6 +187,7 @@ export async function generateProviderAudio({
     throw error;
   }
   const actualFormat = identifyAudio(audio);
+  validateAudio(audio, actualFormat);
   if (!actualFormat) throw new Error('Audio provider returned unrecognized audio');
   if (actualFormat !== format) audio = await convertAudio(audio, format, boundedSignal, maxBytes);
   return new Response(audio, {
@@ -252,7 +255,8 @@ async function collectAudio(body, signal, maxBytes, maxEventBytes) {
     chunks.push(chunk);
   };
   // Race reads against cancellation even if an upstream stream stalls forever.
-  const iterator = body[Symbol.asyncIterator]();
+  const reader = body.getReader?.();
+  const iterator = reader ? null : body[Symbol.asyncIterator]();
   let abort;
   const aborted = new Promise((_, reject) => {
     abort = () => reject(new Error('Audio generation timed out or was cancelled'));
@@ -263,7 +267,7 @@ async function collectAudio(body, signal, maxBytes, maxEventBytes) {
       if (signal.aborted) throw new Error('Audio generation timed out or was cancelled');
       let next;
       try {
-        next = await Promise.race([iterator.next(), aborted]);
+        next = await Promise.race([reader ? reader.read() : iterator.next(), aborted]);
       } catch {
         throw new Error(
           signal.aborted ? 'Audio generation timed out or was cancelled' : 'Audio provider stream failed'
@@ -304,8 +308,8 @@ async function collectAudio(body, signal, maxBytes, maxEventBytes) {
     return Buffer.concat(chunks, decodedBytes);
   } finally {
     signal.removeEventListener('abort', abort);
-    // Do not wait for a stuck reader's return; fetch cancellation closes its source.
-    void iterator.return?.().catch(() => {});
+    await boundedCleanup(() => (reader ? reader.cancel() : (body.cancel?.() ?? iterator.return?.())));
+    reader?.releaseLock();
   }
 }
 
@@ -319,6 +323,9 @@ async function convertAudio(input, format, signal, maxBytes) {
         '-hide_banner',
         '-loglevel',
         'error',
+        '-xerror',
+        '-err_detect',
+        'explode',
         '-protocol_whitelist',
         'pipe',
         '-i',
@@ -370,4 +377,79 @@ async function convertAudio(input, format, signal, maxBytes) {
     }
   }
   return output;
+}
+
+// Resource cleanup is bounded even for injected or broken upstream bodies.
+async function boundedCleanup(cleanup) {
+  let timer;
+  try {
+    await Promise.race([
+      Promise.resolve()
+        .then(cleanup)
+        .catch(() => {}),
+      new Promise((resolve) => {
+        timer = setTimeout(resolve, 250);
+      })
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function validateAudio(audio, format) {
+  const malformed = () => {
+    throw new Error('Audio provider returned truncated or malformed audio');
+  };
+  if (format === 'wav') {
+    if (audio.readUInt32LE(4) + 8 !== audio.length) malformed();
+    let at = 12,
+      data = false,
+      fmt = false;
+    while (at + 8 <= audio.length) {
+      const size = audio.readUInt32LE(at + 4),
+        end = at + 8 + size;
+      if (end > audio.length) malformed();
+      const id = audio.toString('ascii', at, at + 4);
+      if (id === 'fmt ') {
+        if (size < 16) malformed();
+        fmt = true;
+      }
+      if (id === 'data') {
+        if (size === 0) malformed();
+        data = true;
+      }
+      at = end + (size % 2);
+    }
+    if (at !== audio.length || !fmt || !data) malformed();
+  } else if (format === 'mp3') {
+    let at = 0,
+      frames = 0;
+    if (audio.toString('ascii', 0, 3) === 'ID3') {
+      if ([6, 7, 8, 9].some((i) => audio[i] & 0x80)) malformed();
+      at = 10 + ((audio[6] << 21) | (audio[7] << 14) | (audio[8] << 7) | audio[9]) + (audio[5] & 0x10 ? 10 : 0);
+    }
+    while (at < audio.length) {
+      if (audio.length - at === 128 && audio.toString('ascii', at, at + 3) === 'TAG') {
+        at += 128;
+        break;
+      }
+      if (at + 4 > audio.length || audio[at] !== 255 || (audio[at + 1] & 0xe0) !== 0xe0) malformed();
+      const version = (audio[at + 1] >> 3) & 3,
+        layer = (audio[at + 1] >> 1) & 3;
+      const rateIndex = (audio[at + 2] >> 2) & 3,
+        bitrateIndex = audio[at + 2] >> 4;
+      if (version === 1 || layer !== 1 || rateIndex === 3 || bitrateIndex === 0 || bitrateIndex === 15) malformed();
+      const bitrate = (
+        version === 3
+          ? [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320]
+          : [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160]
+      )[bitrateIndex];
+      const sampleRate = [44100, 48000, 32000][rateIndex] / (version === 3 ? 1 : version === 2 ? 2 : 4);
+      const size = Math.floor(((version === 3 ? 144 : 72) * bitrate * 1000) / sampleRate) + ((audio[at + 2] >> 1) & 1);
+      if (at + size > audio.length) malformed();
+      at += size;
+      frames++;
+    }
+    if (!frames || at !== audio.length) malformed();
+  }
 }

@@ -3134,6 +3134,8 @@ export function createLloomServer(
         if (resolved.backend.audioProvider) {
           const upstream = await generateProviderAudio({
             backend: resolved.backend,
+            fetchFn: undiciFetch,
+            dispatcher: longRunningMediaDispatcher,
             body: { ...body, model: resolved.model.upstreamModel },
             signal,
             timeoutMs: resolved.backend.timeoutMs ?? 600000
