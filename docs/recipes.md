@@ -364,7 +364,7 @@ All portable identities for the lane live in exactly one place,
 image tag, the `nvidia/GLM-5.3-Flash-NVFP4` revision, and the conversion marker
 contract. Image IDs are host-local and are checked from each build receipt plus
 the local OCI image metadata. The current source pin is product revision
-`fe52f3888d31fd6595c418d4ac8bed91781fd7b5`; a later product revision can be
+`e31900c3ba01809dc39e63ba55f43194f040f933`; a later product revision can be
 adopted by changing this one portable pin and its derived local image tag.
 
 While any required value is missing, malformed, or a placeholder, the gate
