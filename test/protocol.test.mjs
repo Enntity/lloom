@@ -4,6 +4,7 @@ import {
   openAIToAnthropic,
   openAIToResponses,
   normalizeStructuredOutputChatCompletion,
+  normalizeOpenAIChatCompletionChunk,
   prepareStructuredOutputForBackend,
   responsesToOpenAIChat,
   responseStatusFromFinishReason,
@@ -161,6 +162,59 @@ const resolved = { model: { upstreamModel: 'upstream-qwen' } };
       ),
     (error) => error instanceof StructuredOutputError && error.code === 'structured_output_streaming'
   );
+
+  const nativeResponseFormat = {
+    type: 'json_schema',
+    json_schema: {
+      name: 'answer',
+      strict: true,
+      schema
+    }
+  };
+  const nativeChatRequest = {
+    model: 'gateway-model',
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Describe this.' },
+          { type: 'image_url', image_url: { url: 'data:image/png;base64,AA', detail: 'high' } },
+          { type: 'video_url', video_url: { url: 'data:video/mp4;base64,AA' } }
+        ]
+      }
+    ],
+    tools: [{ type: 'function', function: { name: 'lookup', parameters: schema } }],
+    response_format: nativeResponseFormat,
+    stream: true
+  };
+  const nativePrepared = prepareStructuredOutputForBackend(nativeChatRequest, {
+    model: { capabilities: ['tools'] },
+    backend: { type: 'openai' }
+  }).body;
+  assert.deepEqual(nativePrepared.messages, nativeChatRequest.messages);
+  assert.deepEqual(nativePrepared.tools, nativeChatRequest.tools);
+  assert.deepEqual(nativePrepared.response_format, nativeResponseFormat);
+
+  const streamedToolChunk = {
+    id: 'chatcmpl_stream',
+    choices: [
+      {
+        index: 0,
+        delta: {
+          tool_calls: [
+            {
+              index: 0,
+              id: 'call_lookup',
+              type: 'function',
+              function: { name: 'lookup', arguments: '{"q":"atlas"}' }
+            }
+          ]
+        },
+        finish_reason: 'tool_calls'
+      }
+    ]
+  };
+  assert.deepEqual(normalizeOpenAIChatCompletionChunk(streamedToolChunk), streamedToolChunk);
 }
 
 // Responses → chat

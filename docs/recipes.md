@@ -410,16 +410,16 @@ The engine profile ships inside the image, not in the recipe. LLooM passes
 environment and mounts; the image's `/opt/atlas/serve.py` selects the argument
 vector from `/opt/atlas/profile.json`.
 
-| Variable | Meaning |
-| --- | --- |
-| `NODE_RANK` | `0` on the leader, `1` on the worker |
-| `MASTER_ADDR` | discovered direct-fabric address of the leader |
-| `MASTER_PORT` | `29510` |
-| `FABRIC_INTERFACE` | discovered direct-fabric NIC, also `NCCL_SOCKET_IFNAME` |
-| `MODEL_PATH` | mounted converted overlay root, `${installRoot}/atlas-overlay` |
-| `SERVED_MODEL_NAME` | `glm-5.3-flash-atlas` |
-| `ATLAS_WORLD_SIZE` / `ATLAS_TP_SIZE` / `ATLAS_EP_SIZE` | `2` |
-| `NCCL_*` | IB transport with `NCCL_IB_HCA=rocep1s0f0`, `AF_INET`, `NCCL_CROSS_NIC=0` |
+| Variable                                               | Meaning                                                                   |
+| ------------------------------------------------------ | ------------------------------------------------------------------------- |
+| `NODE_RANK`                                            | `0` on the leader, `1` on the worker                                      |
+| `MASTER_ADDR`                                          | discovered direct-fabric address of the leader                            |
+| `MASTER_PORT`                                          | `29510`                                                                   |
+| `FABRIC_INTERFACE`                                     | discovered direct-fabric NIC, also `NCCL_SOCKET_IFNAME`                   |
+| `MODEL_PATH`                                           | mounted converted overlay root, `${installRoot}/atlas-overlay`            |
+| `SERVED_MODEL_NAME`                                    | `glm-5.3-flash-atlas`                                                     |
+| `ATLAS_WORLD_SIZE` / `ATLAS_TP_SIZE` / `ATLAS_EP_SIZE` | `2`                                                                       |
+| `NCCL_*`                                               | IB transport with `NCCL_IB_HCA=rocep1s0f0`, `AF_INET`, `NCCL_CROSS_NIC=0` |
 
 Listeners are private and loopback-bound per node: leader `127.0.0.1:8893`,
 worker `127.0.0.1:8894`. The worker starts first (`order` 10, rank 1) with
@@ -436,5 +436,56 @@ so structured output and tool calling stay functional. The source build
 includes image and video input support; gateway and two-node serving canaries
 remain required for qualification.
 
-Both nodes must carry the same source revision, the same prepared image
-identity, and an identical `backends/atlas-sparkglm` directory.
+Both nodes must carry the same portable source, model and converter pins and an
+identical `backends/atlas-sparkglm` directory. Each host verifies its own
+node-local image against its build receipt and OCI revision label; image IDs may
+differ across hosts.
+
+### OpenAI multimodal request
+
+The Atlas model accepts OpenAI-compatible `image_url` and `video_url` content in
+`/v1/chat/completions`. Use a real base64 payload in place of the placeholders
+below. The gateway keeps these media parts intact, passes native JSON Schema and
+tools through to Atlas, and still applies its normal request body byte limit.
+
+```sh
+curl http://127.0.0.1:8100/v1/chat/completions \
+  -H 'content-type: application/json' \
+  -d '{
+    "model": "glm-5.3-flash-atlas",
+    "stream": true,
+    "messages": [{
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "Describe the clip and image."},
+        {"type": "video_url", "video_url": {"url": "data:video/mp4;base64,<base64-mp4>"}},
+        {"type": "video_url", "video_url": {"url": "data:image/gif;base64,<base64-gif>"}},
+        {"type": "image_url", "image_url": {"url": "https://example.test/frame.png", "detail": "low"}}
+      ]
+    }],
+    "response_format": {
+      "type": "json_schema",
+      "json_schema": {
+        "name": "caption",
+        "strict": true,
+        "schema": {
+          "type": "object",
+          "properties": {"caption": {"type": "string"}},
+          "required": ["caption"],
+          "additionalProperties": false
+        }
+      }
+    },
+    "tools": [{
+      "type": "function",
+      "function": {
+        "name": "save_caption",
+        "parameters": {"type": "object", "properties": {"caption": {"type": "string"}}}
+      }
+    }]
+  }'
+```
+
+Responses clients can send the same media URLs as `input_image` and
+`input_video` content parts; LLooM converts those parts to the matching Chat
+Completions form before forwarding the request.

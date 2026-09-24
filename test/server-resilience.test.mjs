@@ -223,6 +223,46 @@ function close(server) {
     ]
   });
   assert.equal(anthropicEstimate, 4096);
+
+  const encodedGif = 'A'.repeat(2_000_000);
+  const videoEstimates = [
+    estimateRequestPromptTokens({
+      messages: [
+        {
+          role: 'user',
+          content: [{ type: 'video_url', video_url: { url: `data:image/gif;base64,${encodedGif}` } }]
+        }
+      ]
+    }),
+    estimateRequestPromptTokens({
+      input: [
+        {
+          role: 'user',
+          content: [{ type: 'input_video', video_url: `data:video/mp4;base64,${encodedGif}` }]
+        }
+      ]
+    })
+  ];
+  assert.deepEqual(videoEstimates, [4096, 4096]);
+  assert.equal(
+    estimateRequestPromptTokens({
+      messages: [
+        { role: 'user', content: [{ type: 'video_url', video_url: { url: 'https://example.test/movie.mp4' } }] }
+      ]
+    }),
+    4096
+  );
+  assert.equal(
+    estimateRequestPromptTokens({
+      messages: [
+        {
+          role: 'user',
+          content: [{ type: 'video_url', video_url: { url: 'https://example.test/movie.mp4', detail: 'low' } }]
+        }
+      ]
+    }),
+    1024
+  );
 }
 
 // Upstream dies after opening an SSE stream: gateway must not crash, must end response.
@@ -776,8 +816,8 @@ function close(server) {
         kind: 'chat',
         supportsTools: true,
         capabilities: ['chat', 'tools'],
-        contextWindow: 8192,
-        maxPromptTokens: 1000
+        contextWindow: 16384,
+        maxPromptTokens: 16384
       }
     ],
     runtimes: {}
@@ -815,8 +855,34 @@ function close(server) {
   assert.equal(responses.status, 200);
   assert.equal((await responses.json()).output_text, '{"answer":"ok"}');
 
-  assert.equal(requests.length, 2);
-  for (const request of requests) {
+  const multimodal = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: 'test-model',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Describe these.' },
+            { type: 'video_url', video_url: { url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP' } },
+            { type: 'video_url', video_url: 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAA' },
+            { type: 'image_url', image_url: { url: 'https://example.test/frame.png', detail: 'low' } }
+          ]
+        }
+      ],
+      response_format: {
+        type: 'json_schema',
+        json_schema: { name: 'caption', strict: true, schema }
+      },
+      tools: [{ type: 'function', function: { name: 'save_caption', parameters: schema } }]
+    })
+  });
+  assert.equal(multimodal.status, 200);
+  await multimodal.json();
+
+  assert.equal(requests.length, 3);
+  for (const request of requests.slice(0, 2)) {
     assert.equal(request.lloom, undefined);
     assert.equal(request.response_format, undefined);
     assert.equal(request.tools[0].function.name, 'answer');
@@ -828,6 +894,54 @@ function close(server) {
     assert.deepEqual(request.provider, { require_parameters: true });
     assert.deepEqual(request.thinking, { type: 'disabled' });
   }
+  assert.deepEqual(requests[2].messages, [
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'Describe these.' },
+        { type: 'video_url', video_url: { url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP' } },
+        { type: 'video_url', video_url: 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAA' },
+        { type: 'image_url', image_url: { url: 'https://example.test/frame.png', detail: 'low' } }
+      ]
+    }
+  ]);
+  assert.deepEqual(requests[2].response_format, {
+    type: 'json_schema',
+    json_schema: { name: 'caption', strict: true, schema }
+  });
+  assert.deepEqual(requests[2].tools, [{ type: 'function', function: { name: 'save_caption', parameters: schema } }]);
+
+  const responsesMedia = await fetch(`http://127.0.0.1:${port}/v1/responses`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: 'test-model',
+      input: [
+        {
+          role: 'user',
+          content: [
+            { type: 'input_image', image_url: { url: 'https://example.test/response-image.png', detail: 'high' } },
+            { type: 'input_video', video_url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP' },
+            { type: 'input_video', video_url: { url: 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAA' } }
+          ]
+        }
+      ]
+    })
+  });
+  assert.equal(responsesMedia.status, 200);
+  await responsesMedia.json();
+
+  assert.equal(requests.length, 4);
+  assert.deepEqual(requests[3].messages, [
+    {
+      role: 'user',
+      content: [
+        { type: 'image_url', image_url: { url: 'https://example.test/response-image.png', detail: 'high' } },
+        { type: 'video_url', video_url: { url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP' } },
+        { type: 'video_url', video_url: { url: 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAA' } }
+      ]
+    }
+  ]);
 
   const invalid = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
     method: 'POST',
@@ -840,7 +954,7 @@ function close(server) {
   });
   assert.equal(invalid.status, 400);
   assert.equal((await invalid.json()).error.code, 'invalid_structured_output');
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 4);
 
   for (const tool_choice of ['required', { type: 'function', function: { name: 'answer' } }]) {
     const streamed = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {

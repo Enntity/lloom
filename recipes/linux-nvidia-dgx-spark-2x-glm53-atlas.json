@@ -61,7 +61,7 @@
       "TP2 with expert parallelism 2 across the private ConnectX RoCE fabric. The direct-fabric address and NIC are discovered per node and passed as MASTER_ADDR and FABRIC_INTERFACE; no host-specific addresses are pinned.",
       "The worker is admitted first (rank 1) and readiness-checked through its container state, because the Atlas engine has no separate worker HTTP surface. The leader starts second (rank 0) and owns routing.",
       "The NVFP4 checkpoint requires a per-node overlay conversion before it can be served. LLooM treats the conversion as incomplete unless conversion.complete.json plus its recorded verification are present.",
-      "Both nodes must carry the same source revision, the same prepared image identity and the same backend directory. A node-local image cannot be shared over the fabric.",
+      "Both nodes must carry the same portable source, model and converter pins plus the same backend directory. Each host verifies its own node-local image against its build receipt and OCI revision label; image IDs may differ across hosts.",
       "Peak container memory is capped at 114 GiB with a 4096 MiB OOM guard, matching the measured baseline. The profile uses a 36864-token total context with native MTP through 32768 and fallback above that boundary; the parent owner will update qualification wording after the live gates pass."
     ]
   },

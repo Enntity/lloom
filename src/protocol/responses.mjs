@@ -11,6 +11,21 @@ import {
 import { normalizeOpenAIChatCompletionBody, normalizeOpenAIChatRequestBody } from './reasoning-normalize.mjs';
 import { translateReasoningEffortForBackend } from './reasoning-effort.mjs';
 
+function openAIUrlDescriptor(value) {
+  if (typeof value === 'string' && value) return { url: value };
+  if (value && typeof value === 'object' && typeof value.url === 'string' && value.url) {
+    return { ...value };
+  }
+  return null;
+}
+
+function contentMediaPart(type, value, fallback = null, detail) {
+  const descriptor = openAIUrlDescriptor(value) ?? openAIUrlDescriptor(fallback);
+  if (!descriptor) return null;
+  if (detail !== undefined && descriptor.detail === undefined) descriptor.detail = detail;
+  return { type, [type]: descriptor };
+}
+
 export function responsesContentPartToOpenAI(part) {
   if (typeof part === 'string') return { type: 'text', text: part };
   if (!part || typeof part !== 'object') return { type: 'text', text: String(part ?? '') };
@@ -18,17 +33,14 @@ export function responsesContentPartToOpenAI(part) {
     return { type: 'text', text: part.text ?? '' };
   }
   if (part.type === 'input_image') {
-    const imageUrl = part.image_url ?? part.url;
-    if (imageUrl) {
-      return {
-        type: 'image_url',
-        image_url: {
-          url: imageUrl
-        }
-      };
-    }
+    const image = contentMediaPart('image_url', part.image_url, part.url, part.detail);
+    if (image) return image;
   }
   if (part.type === 'image_url') return part;
+  if (part.type === 'input_video' || part.type === 'video_url' || part.type === 'video') {
+    const video = contentMediaPart('video_url', part.video_url, part.url ?? part.video, part.detail);
+    if (video) return video;
+  }
   return { type: 'text', text: part.text ?? JSON.stringify(part) };
 }
 
