@@ -1113,6 +1113,75 @@
         ],
         "notes": "DSP executor work cannot be preempted mid-analysis. Client disconnection does not guarantee immediate compute reclamation; duration and I/O deadlines bound processing."
       }
+    },
+    {
+      "id": "docker-atlas-sparkglm",
+      "name": "Docker Atlas SparkGLM",
+      "kind": "openai-compatible-server",
+      "description": "LLooM-managed Atlas SparkGLM containers. The local image is built from an immutable Enntity/sparkglm revision by the bundled MIT installer, and only the prepared image is started: no build runs on the serving path.",
+      "platforms": [
+        "linux-arm64"
+      ],
+      "features": [
+        "chat",
+        "responses",
+        "streaming",
+        "usage",
+        "tools",
+        "reasoning",
+        "vision",
+        "speculative-decoding",
+        "moe",
+        "long-context",
+        "cuda",
+        "blackwell",
+        "dgx-spark",
+        "docker",
+        "nccl",
+        "distributed"
+      ],
+      "commands": [
+        "docker",
+        "bash",
+        "git",
+        "node"
+      ],
+      "setup": [
+        {
+          "id": "check-docker",
+          "title": "Check Docker",
+          "action": "check-command",
+          "command": "docker",
+          "args": [
+            "version"
+          ]
+        },
+        {
+          "id": "check-atlas-pins",
+          "title": "Verify Atlas SparkGLM pins are final",
+          "action": "command",
+          "command": "node",
+          "args": [
+            "${repoRoot}/backends/atlas-sparkglm/verify-pins.mjs"
+          ]
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health",
+        "chatPath": "/v1/chat/completions"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "unverified",
+        "modes": [
+          "streaming",
+          "buffered",
+          "queued",
+          "generation"
+        ],
+        "notes": "Reclamation is unverified for the Atlas engine; confirm abort behaviour on the prepared image before advertising it. The LLooM watchdog drains and evicts on repeated 5xx/timeout regardless."
+      }
     }
   ]
 }

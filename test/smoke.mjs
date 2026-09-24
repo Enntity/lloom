@@ -872,6 +872,7 @@ assert.deepEqual(
     'linux-nvidia-comfyui-yue2-3b',
     'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-mia-vllm',
     'linux-nvidia-dgx-spark-2x-deepseek-v4-flash-vision-mia-vllm',
+    'linux-nvidia-dgx-spark-2x-glm53-atlas',
     'linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm',
     'linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm',
     'linux-nvidia-dgx-spark-cluster-flux2-klein-4b',
@@ -1045,7 +1046,7 @@ const recipeIndexReport = await buildRecipeIndexReport(config, {
 });
 assert.equal(recipeIndexReport.ok, true);
 assert.equal(recipeIndexReport.index.id, 'lloom-community-recipes');
-assert.equal(recipeIndexReport.recipes.length, 36);
+assert.equal(recipeIndexReport.recipes.length, 37);
 const indexedSparkRecipe = recipeIndexReport.recipes.find(
   (candidate) => candidate.id === 'linux-nvidia-gb10-qwen36-unsloth-vllm'
 );

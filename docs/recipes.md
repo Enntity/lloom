@@ -341,3 +341,94 @@ Only the stable active file participates in planning and automatic recommendatio
 LLooM intentionally does not use stale model fallback aliases to make an index pass. Recipe `model` and `gatewayModel` values must be exact advertised IDs.
 
 Standalone image, video and music recipes with a shared ComfyUI backend are documented in [ComfyUI media](comfyui-media.md).
+
+## Atlas SparkGLM (DRAFT)
+
+`linux-nvidia-dgx-spark-2x-glm53-atlas` is the LLooM-managed lane for the
+source-built Atlas SparkGLM engine on two directly connected DGX Sparks. It is
+**DRAFT** and is not installable until its pins are final.
+
+```sh
+lloom setup --recipe linux-nvidia-dgx-spark-2x-glm53-atlas --additive --apply --yes --start
+```
+
+The recipe is additive. It does not set a default model and does not overwrite
+aliases, so an existing GLM-5.3 Flash route keeps working.
+
+### Single pin manifest and fail-closed DRAFT gate
+
+All portable identities for the lane live in exactly one place,
+`backends/atlas-sparkglm/pins.json`: the `Enntity/sparkglm` source revision, the
+image tag, the `nvidia/GLM-5.3-Flash-NVFP4` revision, and the conversion marker
+contract. Image IDs are host-local and are checked from each build receipt plus
+the local OCI image metadata. The parent owner replaces the DRAFT source
+revision with its final value after the engine integration lands.
+
+While any required value is still a placeholder, the gate fails closed:
+
+```sh
+node backends/atlas-sparkglm/verify-pins.mjs   # exit 1 while DRAFT
+```
+
+The same check runs as backend setup step `check-atlas-pins`, and again inside
+`install.sh` and `convert-overlay.sh`, so a DRAFT manifest cannot build, convert,
+or start anything. The checker also rejects a revision that is not a 40-character
+commit. Host-local image identity is checked by the installer against its
+receipt, image architecture, and OCI revision label.
+
+### Source-built image, no registry publish
+
+There is no published registry image. Setup step `build-atlas-image` runs
+`bash backends/atlas-sparkglm/install.sh` with the managed backend and install
+roots. It clones `Enntity/sparkglm` at the exact `SOURCE_REVISION`, verifies
+`HEAD`, delegates compilation to that repository's
+`research/atlas/install/build.sh`, and then confirms that the local tag
+`lloom/atlas-sparkglm:SOURCE_REVISION` matches this host's build receipt, arm64
+image inspection, and OCI revision label. A mismatch is a hard failure.
+
+**No build runs on the serving path.** Only a prepared image is started.
+
+### Overlay conversion gate
+
+The NVFP4 checkpoint needs a once-per-node overlay conversion before it can be
+served. Setup step `convert-atlas-overlay` runs
+`backends/atlas-sparkglm/convert-overlay.sh`, which is idempotent per node and
+never infers completion from directory existence: it requires
+`conversion.complete.json` with `converted_matrices` equal to 864, nonempty
+`shards`, absolute `source` and `output` paths, and a numeric `finished` value.
+The converter's full CPU `--verify-overlay` pass must succeed. A directory
+without that marker or without successful CPU verification remains incomplete.
+
+### Container contract
+
+The engine profile ships inside the image, not in the recipe. LLooM passes
+environment and mounts; the image's `/opt/atlas/serve.py` selects the argument
+vector from `/opt/atlas/profile.json`.
+
+| Variable | Meaning |
+| --- | --- |
+| `NODE_RANK` | `0` on the leader, `1` on the worker |
+| `MASTER_ADDR` | discovered direct-fabric address of the leader |
+| `MASTER_PORT` | `29510` |
+| `FABRIC_INTERFACE` | discovered direct-fabric NIC, also `NCCL_SOCKET_IFNAME` |
+| `MODEL_PATH` | mounted converted overlay root, `${installRoot}/atlas-overlay` |
+| `SERVED_MODEL_NAME` | `glm-5.3-flash-atlas` |
+| `ATLAS_WORLD_SIZE` / `ATLAS_TP_SIZE` / `ATLAS_EP_SIZE` | `2` |
+| `NCCL_*` | IB transport with `NCCL_IB_HCA=rocep1s0f0`, `AF_INET`, `NCCL_CROSS_NIC=0` |
+
+Listeners are private and loopback-bound per node: leader `127.0.0.1:8893`,
+worker `127.0.0.1:8894`. The worker starts first (`order` 10, rank 1) with
+`healthStrategy: "container"` and no warmup, because the engine exposes no
+separate worker HTTP surface. The leader starts second (`order` 20, rank 0),
+health-checks `/health`, runs a POST warmup, and then owns routing.
+
+### Baseline envelope
+
+The initial lane is deliberately conservative: 32768 context, concurrency 4,
+BF16 KV cache, FP32 SSM state, MTP2 speculation, `--memory=114g` with a
+4096 MiB OOM guard. `disable-tool-grammar` is **not** set, so structured tool
+calling stays functional. The parent owner raises maximum context only after the
+qualification gates pass.
+
+Both nodes must carry the same source revision, the same prepared image
+identity, and an identical `backends/atlas-sparkglm` directory.

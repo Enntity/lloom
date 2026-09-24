@@ -1148,6 +1148,52 @@
         "any host with ffmpeg; no accelerator required",
         "callers that need measured audio facts separated from generated description"
       ]
+    },
+    {
+      "id": "linux-nvidia-dgx-spark-2x-glm53-atlas",
+      "path": "linux-nvidia-dgx-spark-2x-glm53-atlas.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-dgx-spark-2x-glm53-atlas.json",
+          "status": "current",
+          "notes": "DRAFT first version. Source-built Atlas SparkGLM two-node lane over the private fabric, additive only, setDefault false, no aliases. Pins live in backends/atlas-sparkglm/pins.json and fail closed until the parent owner replaces the DRAFT source revision. Image identity is verified per host from the build receipt plus OCI metadata."
+        }
+      ],
+      "name": "2x DGX Spark GLM-5.3 Flash NVFP4 Atlas",
+      "summary": "DRAFT two-node Atlas SparkGLM lane serving GLM-5.3-Flash-NVFP4 from a source-built image and a once-per-node overlay conversion.",
+      "tags": [
+        "linux",
+        "nvidia",
+        "dgx-spark",
+        "cluster",
+        "glm-5.3",
+        "flash",
+        "nvfp4",
+        "atlas",
+        "sparkglm",
+        "source-build",
+        "mtp",
+        "draft"
+      ],
+      "recommendedFor": [
+        "Evaluating the source-built Atlas SparkGLM engine on two directly connected DGX Sparks through LLooM"
+      ],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "tools",
+        "reasoning",
+        "vision",
+        "speculative-decoding"
+      ],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-dgx-spark-2x-glm53-atlas.json"
+      }
     }
   ]
 }

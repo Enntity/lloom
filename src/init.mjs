@@ -250,12 +250,14 @@ function runtimeTemplateVariables({
   sessionCacheRoot,
   contextWindow,
   maxOutputTokens,
-  maxActiveRequests
+  maxActiveRequests,
+  backendVariables = {}
 }) {
   const settings = asObject(recipeModel.settings);
   const selectedSessionCacheRoot = sessionCacheRoot ?? '${LLOOM_SESSION_CACHE_ROOT}';
   return {
     ...primitiveSettings(settings),
+    ...backendVariables,
     recipeId: recipe.id,
     lloomRoot: repoRoot,
     home: process.env.HOME ?? '',
@@ -316,6 +318,7 @@ function buildExplicitRecipeRuntime({
   contextWindow,
   maxOutputTokens,
   maxActiveRequests,
+  backendVariables,
   base
 }) {
   const settings = asObject(recipeModel.settings);
@@ -333,7 +336,8 @@ function buildExplicitRecipeRuntime({
     sessionCacheRoot,
     contextWindow,
     maxOutputTokens,
-    maxActiveRequests
+    maxActiveRequests,
+    backendVariables
   });
   const sessionCacheSettings =
     runtimeSettings.sessionCache == null ? settings : { ...settings, sessionCache: runtimeSettings.sessionCache };
@@ -395,7 +399,8 @@ function buildRecipeRuntime({
   modelRoot,
   modelId,
   port,
-  sessionCacheRoot
+  sessionCacheRoot,
+  backendVariables
 }) {
   const settings = asObject(recipeModel.settings);
   const contextWindow = positiveInteger(settings.contextWindow, 32768);
@@ -455,6 +460,7 @@ function buildRecipeRuntime({
     contextWindow,
     maxOutputTokens,
     maxActiveRequests,
+    backendVariables,
     base
   });
   if (explicitRuntime) return explicitRuntime;
@@ -581,7 +587,7 @@ function buildRecipeRuntime({
   return null;
 }
 
-function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot } = {}) {
+function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot, backendVariables } = {}) {
   const backendId = recipe.backend?.id;
   if (!backendId) return;
   config.backends ??= {};
@@ -691,7 +697,8 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
             modelRoot,
             modelId,
             port: positiveInteger(member.port, positiveInteger(settings.port, 8888)),
-            sessionCacheRoot
+            sessionCacheRoot,
+            backendVariables
           });
           if (!runtime)
             throw new Error(`recipe model ${modelId} could not materialize distributed member ${memberRuntimeId}`);
@@ -755,7 +762,9 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
         ...(Number.isFinite(Number(settings.healthTimeoutMs))
           ? { healthTimeoutMs: positiveInteger(settings.healthTimeoutMs, 1500) }
           : {}),
-        healthUrl: `${clusterNodeBackendOrigin(leader)}:${port}${settings.healthPath ?? '/health'}`,
+        healthUrl:
+          settings.healthUrl ?? `${clusterNodeBackendOrigin(leader)}:${port}${settings.healthPath ?? '/health'}`,
+        ...(settings.warmup ? { warmup: structuredClone(asObject(settings.warmup)) } : {}),
         ...(settings.healthModel ? { healthModel: String(settings.healthModel) } : {}),
         recipe: { id: recipe.id, version: recipe.version ?? 1, source: recipe.filePath ?? null },
         authority: {
@@ -1300,7 +1309,8 @@ export function deriveUserConfig(
     benchmarksRoot,
     backendCatalogPath,
     additive = false,
-    restoreCatalog = false
+    restoreCatalog = false,
+    backendVariables
   } = {}
 ) {
   const sourceTemplate = config.sourceTemplate;
@@ -1318,7 +1328,8 @@ export function deriveUserConfig(
   }
   ensureRecipeConfigEntries(derived, recipe, {
     modelRoot,
-    sessionCacheRoot
+    sessionCacheRoot,
+    backendVariables
   });
   const materializedRuntimeIds = Object.entries(derived.runtimes ?? {})
     .filter(([, runtime]) => runtime.recipe?.id === recipe.id)
@@ -1479,6 +1490,7 @@ export async function createInitPlan(
     recipesRoot,
     benchmarksRoot,
     backendCatalogPath,
+    backendVariables,
     additive,
     restoreCatalog
   });

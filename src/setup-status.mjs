@@ -373,6 +373,7 @@ export async function createSetupStatus(
   });
   const recipePlan = planRecipe(recipe, config, {
     modelRoot: selectedModelRoot,
+    variables: backendVariables,
     backendIds: backendIds(catalog)
   });
   const backendState = asObject(installState.backends)[backend.id] ?? {};

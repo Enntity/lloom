@@ -1,0 +1,35 @@
+{
+  "manifestVersion": 1,
+  "status": "draft",
+  "note": "Single pin manifest for the Atlas SparkGLM lane. The parent owner must replace the DRAFT source revision with the final immutable identity after the engine integration lands. backends/atlas-sparkglm/install.sh and verify-pins.mjs fail closed while the manifest is not final. Image IDs are host-local: source builds do not guarantee identical image IDs across machines, so each host receipt ID must match its own docker image inspect result.",
+  "source": {
+    "repo": "Enntity/sparkglm",
+    "revision": "DRAFT_SOURCE_REVISION",
+    "cloneUrl": "https://github.com/Enntity/sparkglm.git",
+    "buildScript": "research/atlas/install/build.sh"
+  },
+  "image": {
+    "tagPrefix": "lloom/atlas-sparkglm:",
+    "tag": "lloom/atlas-sparkglm:DRAFT_SOURCE_REVISION",
+    "entrypoint": "/opt/atlas/serve.py",
+    "profilePath": "/opt/atlas/profile.json",
+    "architecture": "arm64"
+  },
+  "installer": {
+    "dockerfile": "research/atlas/install/Dockerfile",
+    "sourceManifest": "research/atlas/nvidia-installable-source.json",
+    "receipt": "image-<SOURCE_REVISION>.json"
+  },
+  "converter": {
+    "inImagePath": "/opt/atlas/converter/convert.py",
+    "library": "/opt/atlas/converter/libatlas_mtp_quantize.so",
+    "expectedMatrices": 864
+  },
+  "model": {
+    "repo": "nvidia/GLM-5.3-Flash-NVFP4",
+    "revision": "423acf37583782c51c142d145aef733d72943d93"
+  },
+  "overlay": {
+    "marker": "conversion.complete.json"
+  }
+}
