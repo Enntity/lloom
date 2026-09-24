@@ -3,7 +3,7 @@
 LLooM-managed two-node Atlas SparkGLM candidate for a directly connected pair
 of NVIDIA DGX Spark systems. This directory is **MIT orchestration only**: no
 Atlas engine source is committed here. The engine is compiled from immutable
-revision `e31900c3ba01809dc39e63ba55f43194f040f933` of `Enntity/sparkglm` by
+revision `3c4adff311bad9cb1da7abacca6c054fad542827` of `Enntity/sparkglm` by
 that repository's `research/atlas/install/build.sh`. Live hardware and full
 serving qualification remain pending.
 
@@ -85,7 +85,7 @@ Inside the image:
   the engine with the profile's argument vector.
 - `/opt/atlas/profile.json` — the exact reconstructed engine environment
   profile (`--max-seq-len=36864`, `--max-prefill-tokens=4096`,
-  `--max-num-seqs=4`, `--max-batch-size=4`, `--gpu-memory-utilization=0.914`,
+  `--max-num-seqs=4`, `--max-batch-size=4`, `--gpu-memory-utilization=0.925`,
   `--oom-guard-mb=4096`, `--kv-cache-dtype=bf16`, `--ssm-h-dtype=f32`,
   `--speculative --num-drafts=2`, `--block-size=16`, and the rest of the
   measured baseline). The profile keeps native MTP through 32768 and uses its
