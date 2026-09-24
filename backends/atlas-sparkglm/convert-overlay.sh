@@ -315,7 +315,9 @@ fi
   || fail "conversion output ${OVERLAY_ROOT} already exists; the converter requires a nonexistent output. Remove it explicitly or run with --force."
 
 note "converting ${MODEL_REPO}@${MODEL_REVISION} from ${SOURCE_MODEL_PATH} into ${OVERLAY_ROOT} (once per node, GPU)"
+# Keep the overlay and its host-written identity sidecar owned by the installer.
 docker run --rm --gpus=all \
+  --user "$(id -u):$(id -g)" \
   -e NVIDIA_VISIBLE_DEVICES=all \
   -v "${SOURCE_MODEL_PATH}:${SOURCE_MODEL_PATH}:ro" \
   -v "${OUTPUT_PARENT}:${OUTPUT_PARENT}" \
