@@ -3,6 +3,7 @@ import runtimeCapabilities from './runtime-capabilities.json' with { type: 'json
 import { executeWebFunction, webFunctionStatus } from './web-functions.mjs';
 import { createPerformanceSampler } from './performance-sampler.mjs';
 import { generateProviderVideo } from './video-providers.mjs';
+import { generateProviderAudio } from './audio-providers.mjs';
 import http from 'node:http';
 import { readErrorDiagnostic, streamProviderError } from './protocol/upstream-error.mjs';
 import { fetchWithStreamProgress } from './protocol/stream-progress.mjs';
@@ -669,6 +670,8 @@ function copyResponseHeaders(upstream) {
     'retry-after',
     'x-lloom-provider',
     'x-lloom-provider-job-id',
+    'x-lloom-provider-origin',
+    'x-lloom-audio-format',
     'x-lloom-upstream-model'
   ]) {
     const value = upstream.headers.get(name);
@@ -3128,6 +3131,17 @@ export function createLloomServer(
         res
       },
       async ({ signal, timing, progress, watchdog }) => {
+        if (resolved.backend.audioProvider) {
+          const upstream = await generateProviderAudio({
+            backend: resolved.backend,
+            body: { ...body, model: resolved.model.upstreamModel },
+            signal,
+            timeoutMs: resolved.backend.timeoutMs ?? 600000
+          });
+          // The provider stream is fully validated before this point, so the
+          // assembled artifact is written as a buffered binary response.
+          return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
+        }
         const upstream = await fetchUpstream({
           headers: inferenceGatewayHeaders(req, resolved),
           backend: resolved.backend,
