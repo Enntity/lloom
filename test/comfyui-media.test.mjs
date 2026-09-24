@@ -45,10 +45,31 @@ try {
       /ennspark|spark03|enntitysparkadmin|\/Users\/|\/home\/|192\.168\.|100\.78\./
     );
     const standalone = await apply(empty, recipe);
+    const runtimeId = recipe.models[0].runtime;
     assert.equal(standalone.models.length, 1);
     assert.equal(Object.keys(standalone.runtimes).length, 1);
-    assert.equal(standalone.runtimes['comfyui-media'].bootstrap.image, image);
-    assert.match(standalone.runtimes['comfyui-media'].bootstrap.createArgs.join(' '), /127\.0\.0\.1:\d+:8000/);
+    assert.equal(standalone.runtimes[runtimeId].bootstrap.image, image);
+    assert.match(standalone.runtimes[runtimeId].bootstrap.createArgs.join(' '), /127\.0\.0\.1:\d+:8000/);
+    const args = standalone.runtimes[runtimeId].bootstrap.createArgs;
+    assert.ok(args.includes(`LLOOM_MEDIA_MODEL=${recipe.models[0].model}`));
+    assert.ok(args.includes('LLOOM_MODELS_ROOT=/opt/ComfyUI/models'));
+    assert.ok(!args.some((arg) => arg.includes(':/opt/lloom-models')));
+    const fileMounts = args.filter((arg) => arg.startsWith('type=bind,'));
+    const downloads = recipe.setup.steps.filter((step) => step.action === 'download-model');
+    assert.equal(
+      fileMounts.length,
+      downloads.reduce((n, step) => n + step.include.length, 0)
+    );
+    for (const step of downloads)
+      for (const file of step.include) {
+        assert.ok(
+          fileMounts.some(
+            (mount) =>
+              mount.includes(`/${step.model.replaceAll('/', '--')}/${file},dst=/opt/ComfyUI/models/`) &&
+              mount.endsWith(',readonly')
+          )
+        );
+      }
     const model = standalone.models[0];
     assert.equal(
       model.kind,
@@ -71,17 +92,20 @@ try {
     assert.deepEqual(plan.validationErrors, []);
   }
   for (const order of [recipes, recipes.toReversed()]) {
-    let config = await apply(empty, order[0]);
-    const runtime = structuredClone(config.runtimes['comfyui-media']);
-    const backend = structuredClone(config.backends['comfyui-media']);
-    for (const recipe of order.slice(1)) {
+    let config = structuredClone(empty);
+    for (const recipe of order) {
+      const previousRuntimes = structuredClone(config.runtimes);
+      const previousBackends = structuredClone(config.backends);
       config = await apply(config, recipe);
-      assert.deepEqual(config.runtimes['comfyui-media'], runtime);
-      assert.deepEqual(config.backends['comfyui-media'], backend);
+      for (const [id, value] of Object.entries(previousRuntimes)) assert.deepEqual(config.runtimes[id], value);
+      for (const [id, value] of Object.entries(previousBackends)) assert.deepEqual(config.backends[id], value);
     }
     assert.equal(config.models.length, 14);
     assert.equal(config.models.filter((m) => m.kind === 'audio_generation').length, 4);
-    assert.deepEqual(Object.keys(config.runtimes), ['comfyui-media']);
+    assert.equal(Object.keys(config.runtimes).length, 14);
+    assert.equal(Object.keys(config.backends).length, 14);
+    assert.equal(new Set(Object.values(config.runtimes).map((r) => r.port)).size, 14);
+    assert.equal(new Set(config.models.map((m) => m.runtime)).size, 14);
   }
   assert.throws(
     () => createModelImportPlan(empty, { modelRef: 'mlx-community/ACE-Step', backend: 'mlx-audio' }),
@@ -89,21 +113,22 @@ try {
   );
 
   // Explicit recipe selection refreshes legacy music classification while
-  // preserving a shared engine's established route and container settings.
+  // preserving the model's established route and container settings.
   const musicRecipe = recipes.find((recipe) => recipe.id.endsWith('ace-step-1-5-xl-turbo'));
   const legacy = await apply(empty, musicRecipe);
   const legacyModel = legacy.models[0];
+  const musicRuntime = musicRecipe.models[0].runtime;
   legacyModel.kind = 'audio_speech';
   legacyModel.capabilities = ['audio-speech', 'music-generation'];
   legacyModel.tts = { family: 'generic' };
   legacyModel.upstreamModel = 'existing-upstream-name';
   legacy.defaults.speechModel = legacyModel.id;
-  legacy.runtimes['comfyui-media'].recipe.id = 'existing-media-install';
-  const preservedRuntime = structuredClone(legacy.runtimes['comfyui-media']);
-  const preservedBackend = structuredClone(legacy.backends['comfyui-media']);
+  legacy.runtimes[musicRuntime].recipe.id = 'existing-media-install';
+  const preservedRuntime = structuredClone(legacy.runtimes[musicRuntime]);
+  const preservedBackend = structuredClone(legacy.backends[musicRuntime]);
   const migrated = await apply(legacy, musicRecipe);
-  assert.deepEqual(migrated.runtimes['comfyui-media'], preservedRuntime);
-  assert.deepEqual(migrated.backends['comfyui-media'], preservedBackend);
+  assert.deepEqual(migrated.runtimes[musicRuntime], preservedRuntime);
+  assert.deepEqual(migrated.backends[musicRuntime], preservedBackend);
   assert.equal(migrated.models[0].kind, 'audio_generation');
   assert.equal(migrated.models[0].upstreamModel, 'existing-upstream-name');
   assert.equal(migrated.models[0].tts, undefined);
@@ -174,7 +199,7 @@ try {
   );
   assert.ok(composedDestination.dependencies.every((dependency) => dependency.complete));
 
-  console.log('ComfyUI recipes: all 14 standalone; shared runtime and backend unchanged in both application orders');
+  console.log('ComfyUI recipes: all 14 have independent runtimes and file mounts in both application orders');
 } finally {
   await fs.rm(dir, { recursive: true, force: true });
 }

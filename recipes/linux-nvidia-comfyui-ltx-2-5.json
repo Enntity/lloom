@@ -5,7 +5,7 @@
   "id": "linux-nvidia-comfyui-ltx-2-5",
   "name": "Lightricks/LTX-2.5 (ComfyUI, NVIDIA)",
   "version": 1,
-  "summary": "Install Lightricks/LTX-2.5 with a shared, locally built ComfyUI media backend.",
+  "summary": "Install Lightricks/LTX-2.5 in an independent, single-model ComfyUI runtime.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata only; model weights retain their upstream licenses"
@@ -25,54 +25,28 @@
       "href": "https://huggingface.co/Lightricks/LTX-2.5/tree/5e6e71018ee1756ed329b697a7b4aedc934dfce9"
     }
   ],
-  "keywords": [
-    "cuda",
-    "fp8",
-    "ltx-2.5",
-    "nvfp4",
-    "nvidia",
-    "single-model"
-  ],
-  "capabilities": [
-    "video-generation",
-    "text-to-video",
-    "image-to-video"
-  ],
+  "keywords": ["cuda", "fp8", "ltx-2.5", "nvfp4", "nvidia", "single-model"],
+  "capabilities": ["video-generation", "text-to-video", "image-to-video"],
   "hardware": {
     "family": "Linux NVIDIA CUDA",
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
     "notes": [
-      "Standalone single-GPU serving; subsequent recipes share one managed ComfyUI runtime.",
+      "Independent single-model serving with per-model admission and unloading.",
       "NVIDIA Container Toolkit with CUDA 13-compatible host driver required."
     ]
   },
   "requirements": {
-    "platforms": [
-      "linux-x64",
-      "linux-arm64"
-    ],
-    "memoryGb": 95,
+    "platforms": ["linux-x64", "linux-arm64"],
+    "memoryGb": 70,
     "diskGb": 57,
-    "commands": [
-      "docker",
-      "python3"
-    ],
-    "accelerators": [
-      "cuda",
-      "nvidia-gpu"
-    ]
+    "commands": ["docker", "python3"],
+    "accelerators": ["cuda", "nvidia-gpu"]
   },
   "backend": {
     "id": "comfyui-media",
     "name": "ComfyUI media",
     "type": "openai-compatible-server",
-    "features": [
-      "cuda",
-      "audio-generation",
-      "video-generation",
-      "image-generation",
-      "image-editing"
-    ]
+    "features": ["cuda", "audio-generation", "video-generation", "image-generation", "image-editing"]
   },
   "setup": {
     "steps": [
@@ -81,9 +55,7 @@
         "title": "Check Docker CLI",
         "action": "check-command",
         "command": "docker",
-        "args": [
-          "--version"
-        ]
+        "args": ["--version"]
       },
       {
         "id": "download-1-ltx-2.5",
@@ -137,24 +109,14 @@
       "role": "ltx-2.5",
       "model": "Lightricks/LTX-2.5",
       "gatewayModel": "Lightricks/LTX-2.5",
-      "runtime": "comfyui-media",
-      "backendConfig": "comfyui-media",
+      "runtime": "comfyui-ltx-2-5",
+      "backendConfig": "comfyui-ltx-2-5",
       "kind": "video",
-      "input": [
-        "text",
-        "image"
-      ],
-      "output": [
-        "video",
-        "audio"
-      ],
-      "capabilities": [
-        "video-generation",
-        "text-to-video",
-        "image-to-video"
-      ],
+      "input": ["text", "image"],
+      "output": ["video", "audio"],
+      "capabilities": ["video-generation", "text-to-video", "image-to-video"],
       "settings": {
-        "memoryGb": 95,
+        "memoryGb": 70,
         "priority": 20,
         "keepWarm": false,
         "maxActiveRequests": 1,
@@ -162,11 +124,11 @@
         "runtime": {
           "adapter": "docker",
           "management": "managed",
-          "containerName": "lloom-comfyui-media",
+          "containerName": "lloom-comfyui-ltx-2-5",
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/comfyui-media:source-b812f8cb1852f0360dd98b439f2e2ffc3039ae7d3d98482c07508a40319d9f34",
+            "image": "lloom/comfyui-media:source-984ce2880b6d0515c655263219441e0da79d320a3caa231f8fbfbb78c705cfe3",
             "pull": false,
             "createArgs": [
               "--restart",
@@ -177,12 +139,26 @@
               "host",
               "-p",
               "127.0.0.1:${port}:8000",
+              "--mount",
+              "type=bind,src=${modelRoot}/Lightricks--LTX-2.5/diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors,dst=/opt/ComfyUI/models/diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Lightricks--LTX-2.5/latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors,dst=/opt/ComfyUI/models/latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Lightricks--LTX-2.5/text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors,dst=/opt/ComfyUI/models/text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Lightricks--LTX-2.5/vae/ltx-2.5-audio-vae-bf16.safetensors,dst=/opt/ComfyUI/models/vae/ltx-2.5-audio-vae-bf16.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Lightricks--LTX-2.5/vae/ltx-2.5-video-vae-bf16.safetensors,dst=/opt/ComfyUI/models/vae/ltx-2.5-video-vae-bf16.safetensors,readonly",
               "-v",
-              "${modelRoot}:/opt/lloom-models:ro",
-              "-v",
-              "lloom-comfyui-media-data:/data",
+              "lloom-comfyui-ltx-2-5-data:/data",
               "-e",
-              "LLOOM_MEDIA_DATA_ROOT=/data"
+              "LLOOM_MEDIA_DATA_ROOT=/data",
+              "-e",
+              "LLOOM_MODELS_ROOT=/opt/ComfyUI/models",
+              "-e",
+              "LLOOM_COMFY_CACHE_MODE=classic",
+              "-e",
+              "LLOOM_MEDIA_MODEL=Lightricks/LTX-2.5"
             ]
           }
         },

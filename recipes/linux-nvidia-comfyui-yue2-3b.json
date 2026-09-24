@@ -5,7 +5,7 @@
   "id": "linux-nvidia-comfyui-yue2-3b",
   "name": "Comfy-Org/YuE2-3B (ComfyUI, NVIDIA)",
   "version": 1,
-  "summary": "Install Comfy-Org/YuE2-3B with a shared, locally built ComfyUI media backend.",
+  "summary": "Install Comfy-Org/YuE2-3B in an independent, single-model ComfyUI runtime.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata only; model weights retain their upstream licenses"
@@ -21,54 +21,28 @@
       "href": "https://huggingface.co/Comfy-Org/YuE2/tree/8e6fcf0f23252ed188b634bd50d44f4b01fba890"
     }
   ],
-  "keywords": [
-    "cuda",
-    "fp8",
-    "nvfp4",
-    "nvidia",
-    "single-model",
-    "yue2-3b"
-  ],
-  "capabilities": [
-    "audio-generation",
-    "music-generation",
-    "symbolic-score"
-  ],
+  "keywords": ["cuda", "fp8", "nvfp4", "nvidia", "single-model", "yue2-3b"],
+  "capabilities": ["audio-generation", "music-generation", "symbolic-score"],
   "hardware": {
     "family": "Linux NVIDIA CUDA",
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
     "notes": [
-      "Standalone single-GPU serving; subsequent recipes share one managed ComfyUI runtime.",
+      "Independent single-model serving with per-model admission and unloading.",
       "NVIDIA Container Toolkit with CUDA 13-compatible host driver required."
     ]
   },
   "requirements": {
-    "platforms": [
-      "linux-x64",
-      "linux-arm64"
-    ],
-    "memoryGb": 95,
+    "platforms": ["linux-x64", "linux-arm64"],
+    "memoryGb": 16,
     "diskGb": 24,
-    "commands": [
-      "docker",
-      "python3"
-    ],
-    "accelerators": [
-      "cuda",
-      "nvidia-gpu"
-    ]
+    "commands": ["docker", "python3"],
+    "accelerators": ["cuda", "nvidia-gpu"]
   },
   "backend": {
     "id": "comfyui-media",
     "name": "ComfyUI media",
     "type": "openai-compatible-server",
-    "features": [
-      "cuda",
-      "audio-generation",
-      "video-generation",
-      "image-generation",
-      "image-editing"
-    ]
+    "features": ["cuda", "audio-generation", "video-generation", "image-generation", "image-editing"]
   },
   "setup": {
     "steps": [
@@ -77,9 +51,7 @@
         "title": "Check Docker CLI",
         "action": "check-command",
         "command": "docker",
-        "args": [
-          "--version"
-        ]
+        "args": ["--version"]
       },
       {
         "id": "download-1-yue2",
@@ -88,9 +60,7 @@
         "provider": "huggingface",
         "model": "Comfy-Org/YuE2",
         "revision": "8e6fcf0f23252ed188b634bd50d44f4b01fba890",
-        "include": [
-          "checkpoints/yue2_3b_int8_convrot.safetensors"
-        ],
+        "include": ["checkpoints/yue2_3b_int8_convrot.safetensors"],
         "downloadSizeBytes": 3960938800,
         "integrity": {
           "files": [
@@ -109,21 +79,14 @@
       "role": "yue2-3b",
       "model": "Comfy-Org/YuE2-3B",
       "gatewayModel": "Comfy-Org/YuE2-3B",
-      "runtime": "comfyui-media",
-      "backendConfig": "comfyui-media",
+      "runtime": "comfyui-yue2-3b",
+      "backendConfig": "comfyui-yue2-3b",
       "kind": "audio_generation",
-      "input": [
-        "text"
-      ],
-      "output": [
-        "audio"
-      ],
-      "capabilities": [
-        "audio-generation",
-        "music-generation"
-      ],
+      "input": ["text"],
+      "output": ["audio"],
+      "capabilities": ["audio-generation", "music-generation"],
       "settings": {
-        "memoryGb": 95,
+        "memoryGb": 16,
         "priority": 20,
         "keepWarm": false,
         "maxActiveRequests": 1,
@@ -131,11 +94,11 @@
         "runtime": {
           "adapter": "docker",
           "management": "managed",
-          "containerName": "lloom-comfyui-media",
+          "containerName": "lloom-comfyui-yue2-3b",
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/comfyui-media:source-b812f8cb1852f0360dd98b439f2e2ffc3039ae7d3d98482c07508a40319d9f34",
+            "image": "lloom/comfyui-media:source-984ce2880b6d0515c655263219441e0da79d320a3caa231f8fbfbb78c705cfe3",
             "pull": false,
             "createArgs": [
               "--restart",
@@ -146,12 +109,18 @@
               "host",
               "-p",
               "127.0.0.1:${port}:8000",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--YuE2/checkpoints/yue2_3b_int8_convrot.safetensors,dst=/opt/ComfyUI/models/checkpoints/yue2_3b_int8_convrot.safetensors,readonly",
               "-v",
-              "${modelRoot}:/opt/lloom-models:ro",
-              "-v",
-              "lloom-comfyui-media-data:/data",
+              "lloom-comfyui-yue2-3b-data:/data",
               "-e",
-              "LLOOM_MEDIA_DATA_ROOT=/data"
+              "LLOOM_MEDIA_DATA_ROOT=/data",
+              "-e",
+              "LLOOM_MODELS_ROOT=/opt/ComfyUI/models",
+              "-e",
+              "LLOOM_COMFY_CACHE_MODE=classic",
+              "-e",
+              "LLOOM_MEDIA_MODEL=Comfy-Org/YuE2-3B"
             ]
           }
         },

@@ -5,7 +5,7 @@
   "id": "linux-nvidia-comfyui-krea-2-turbo",
   "name": "Comfy-Org/Krea-2-Turbo (ComfyUI, NVIDIA)",
   "version": 1,
-  "summary": "Install Comfy-Org/Krea-2-Turbo with a shared, locally built ComfyUI media backend.",
+  "summary": "Install Comfy-Org/Krea-2-Turbo in an independent, single-model ComfyUI runtime.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata only; model weights retain their upstream licenses"
@@ -25,53 +25,28 @@
       "href": "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/tree/7beb7b647f04469fbe64ba8adc2bb0d7e5e9f73f"
     }
   ],
-  "keywords": [
-    "cuda",
-    "fp8",
-    "krea-2-turbo",
-    "nvfp4",
-    "nvidia",
-    "single-model"
-  ],
-  "capabilities": [
-    "image-generation",
-    "fast-generation"
-  ],
+  "keywords": ["cuda", "fp8", "krea-2-turbo", "nvfp4", "nvidia", "single-model"],
+  "capabilities": ["image-generation", "fast-generation"],
   "hardware": {
     "family": "Linux NVIDIA CUDA",
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
     "notes": [
-      "Standalone single-GPU serving; subsequent recipes share one managed ComfyUI runtime.",
+      "Independent single-model serving with per-model admission and unloading.",
       "NVIDIA Container Toolkit with CUDA 13-compatible host driver required."
     ]
   },
   "requirements": {
-    "platforms": [
-      "linux-x64",
-      "linux-arm64"
-    ],
-    "memoryGb": 95,
+    "platforms": ["linux-x64", "linux-arm64"],
+    "memoryGb": 40,
     "diskGb": 38,
-    "commands": [
-      "docker",
-      "python3"
-    ],
-    "accelerators": [
-      "cuda",
-      "nvidia-gpu"
-    ]
+    "commands": ["docker", "python3"],
+    "accelerators": ["cuda", "nvidia-gpu"]
   },
   "backend": {
     "id": "comfyui-media",
     "name": "ComfyUI media",
     "type": "openai-compatible-server",
-    "features": [
-      "cuda",
-      "audio-generation",
-      "video-generation",
-      "image-generation",
-      "image-editing"
-    ]
+    "features": ["cuda", "audio-generation", "video-generation", "image-generation", "image-editing"]
   },
   "setup": {
     "steps": [
@@ -80,9 +55,7 @@
         "title": "Check Docker CLI",
         "action": "check-command",
         "command": "docker",
-        "args": [
-          "--version"
-        ]
+        "args": ["--version"]
       },
       {
         "id": "download-1-krea-2",
@@ -118,9 +91,7 @@
         "provider": "huggingface",
         "model": "Comfy-Org/Qwen-Image_ComfyUI",
         "revision": "7beb7b647f04469fbe64ba8adc2bb0d7e5e9f73f",
-        "include": [
-          "split_files/vae/qwen_image_vae.safetensors"
-        ],
+        "include": ["split_files/vae/qwen_image_vae.safetensors"],
         "downloadSizeBytes": 253806246,
         "integrity": {
           "files": [
@@ -139,21 +110,14 @@
       "role": "krea-2-turbo",
       "model": "Comfy-Org/Krea-2-Turbo",
       "gatewayModel": "Comfy-Org/Krea-2-Turbo",
-      "runtime": "comfyui-media",
-      "backendConfig": "comfyui-media",
+      "runtime": "comfyui-krea-2-turbo",
+      "backendConfig": "comfyui-krea-2-turbo",
       "kind": "image",
-      "input": [
-        "text"
-      ],
-      "output": [
-        "image"
-      ],
-      "capabilities": [
-        "image-generation",
-        "fast-generation"
-      ],
+      "input": ["text"],
+      "output": ["image"],
+      "capabilities": ["image-generation", "fast-generation"],
       "settings": {
-        "memoryGb": 95,
+        "memoryGb": 40,
         "priority": 30,
         "keepWarm": false,
         "maxActiveRequests": 1,
@@ -161,11 +125,11 @@
         "runtime": {
           "adapter": "docker",
           "management": "managed",
-          "containerName": "lloom-comfyui-media",
+          "containerName": "lloom-comfyui-krea-2-turbo",
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/comfyui-media:source-b812f8cb1852f0360dd98b439f2e2ffc3039ae7d3d98482c07508a40319d9f34",
+            "image": "lloom/comfyui-media:source-984ce2880b6d0515c655263219441e0da79d320a3caa231f8fbfbb78c705cfe3",
             "pull": false,
             "createArgs": [
               "--restart",
@@ -176,12 +140,22 @@
               "host",
               "-p",
               "127.0.0.1:${port}:8000",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--Krea-2/diffusion_models/krea2_turbo_int8_convrot.safetensors,dst=/opt/ComfyUI/models/diffusion_models/krea2_turbo_int8_convrot.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--Krea-2/text_encoders/qwen3vl_4b_fp8_scaled.safetensors,dst=/opt/ComfyUI/models/text_encoders/qwen3vl_4b_fp8_scaled.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--Qwen-Image_ComfyUI/split_files/vae/qwen_image_vae.safetensors,dst=/opt/ComfyUI/models/vae/qwen_image_vae.safetensors,readonly",
               "-v",
-              "${modelRoot}:/opt/lloom-models:ro",
-              "-v",
-              "lloom-comfyui-media-data:/data",
+              "lloom-comfyui-krea-2-turbo-data:/data",
               "-e",
-              "LLOOM_MEDIA_DATA_ROOT=/data"
+              "LLOOM_MEDIA_DATA_ROOT=/data",
+              "-e",
+              "LLOOM_MODELS_ROOT=/opt/ComfyUI/models",
+              "-e",
+              "LLOOM_COMFY_CACHE_MODE=classic",
+              "-e",
+              "LLOOM_MEDIA_MODEL=Comfy-Org/Krea-2-Turbo"
             ]
           }
         },

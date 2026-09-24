@@ -5,7 +5,7 @@
   "id": "linux-nvidia-comfyui-ace-step-1-5-xl-sft",
   "name": "ACE-Step/ACE-Step-1.5-XL-SFT (ComfyUI, NVIDIA)",
   "version": 1,
-  "summary": "Install ACE-Step/ACE-Step-1.5-XL-SFT with a shared, locally built ComfyUI media backend.",
+  "summary": "Install ACE-Step/ACE-Step-1.5-XL-SFT in an independent, single-model ComfyUI runtime.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata only; model weights retain their upstream licenses"
@@ -21,53 +21,28 @@
       "href": "https://huggingface.co/Comfy-Org/ace_step_1.5_ComfyUI_files/tree/694a9723ff772285c73f0700caacf944d3f02f8d"
     }
   ],
-  "keywords": [
-    "ace-step-1.5-xl-sft",
-    "cuda",
-    "fp8",
-    "nvfp4",
-    "nvidia",
-    "single-model"
-  ],
-  "capabilities": [
-    "audio-generation",
-    "music-generation"
-  ],
+  "keywords": ["ace-step-1.5-xl-sft", "cuda", "fp8", "nvfp4", "nvidia", "single-model"],
+  "capabilities": ["audio-generation", "music-generation"],
   "hardware": {
     "family": "Linux NVIDIA CUDA",
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
     "notes": [
-      "Standalone single-GPU serving; subsequent recipes share one managed ComfyUI runtime.",
+      "Independent single-model serving with per-model admission and unloading.",
       "NVIDIA Container Toolkit with CUDA 13-compatible host driver required."
     ]
   },
   "requirements": {
-    "platforms": [
-      "linux-x64",
-      "linux-arm64"
-    ],
-    "memoryGb": 95,
+    "platforms": ["linux-x64", "linux-arm64"],
+    "memoryGb": 35,
     "diskGb": 39,
-    "commands": [
-      "docker",
-      "python3"
-    ],
-    "accelerators": [
-      "cuda",
-      "nvidia-gpu"
-    ]
+    "commands": ["docker", "python3"],
+    "accelerators": ["cuda", "nvidia-gpu"]
   },
   "backend": {
     "id": "comfyui-media",
     "name": "ComfyUI media",
     "type": "openai-compatible-server",
-    "features": [
-      "cuda",
-      "audio-generation",
-      "video-generation",
-      "image-generation",
-      "image-editing"
-    ]
+    "features": ["cuda", "audio-generation", "video-generation", "image-generation", "image-editing"]
   },
   "setup": {
     "steps": [
@@ -76,9 +51,7 @@
         "title": "Check Docker CLI",
         "action": "check-command",
         "command": "docker",
-        "args": [
-          "--version"
-        ]
+        "args": ["--version"]
       },
       {
         "id": "download-1-ace_step_1.5_comfyui_files",
@@ -126,21 +99,14 @@
       "role": "ace-step-1.5-xl-sft",
       "model": "ACE-Step/ACE-Step-1.5-XL-SFT",
       "gatewayModel": "ACE-Step/ACE-Step-1.5-XL-SFT",
-      "runtime": "comfyui-media",
-      "backendConfig": "comfyui-media",
+      "runtime": "comfyui-ace-step-1-5-xl-sft",
+      "backendConfig": "comfyui-ace-step-1-5-xl-sft",
       "kind": "audio_generation",
-      "input": [
-        "text"
-      ],
-      "output": [
-        "audio"
-      ],
-      "capabilities": [
-        "audio-generation",
-        "music-generation"
-      ],
+      "input": ["text"],
+      "output": ["audio"],
+      "capabilities": ["audio-generation", "music-generation"],
       "settings": {
-        "memoryGb": 95,
+        "memoryGb": 35,
         "priority": 20,
         "keepWarm": false,
         "maxActiveRequests": 1,
@@ -148,11 +114,11 @@
         "runtime": {
           "adapter": "docker",
           "management": "managed",
-          "containerName": "lloom-comfyui-media",
+          "containerName": "lloom-comfyui-ace-step-1-5-xl-sft",
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/comfyui-media:source-b812f8cb1852f0360dd98b439f2e2ffc3039ae7d3d98482c07508a40319d9f34",
+            "image": "lloom/comfyui-media:source-984ce2880b6d0515c655263219441e0da79d320a3caa231f8fbfbb78c705cfe3",
             "pull": false,
             "createArgs": [
               "--restart",
@@ -163,12 +129,24 @@
               "host",
               "-p",
               "127.0.0.1:${port}:8000",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--ace_step_1.5_ComfyUI_files/split_files/diffusion_models/acestep_v1.5_xl_sft_bf16.safetensors,dst=/opt/ComfyUI/models/diffusion_models/acestep_v1.5_xl_sft_bf16.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--ace_step_1.5_ComfyUI_files/split_files/text_encoders/qwen_0.6b_ace15.safetensors,dst=/opt/ComfyUI/models/text_encoders/qwen_0.6b_ace15.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--ace_step_1.5_ComfyUI_files/split_files/text_encoders/qwen_4b_ace15.safetensors,dst=/opt/ComfyUI/models/text_encoders/qwen_4b_ace15.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--ace_step_1.5_ComfyUI_files/split_files/vae/ace_1.5_vae.safetensors,dst=/opt/ComfyUI/models/vae/ace_1.5_vae.safetensors,readonly",
               "-v",
-              "${modelRoot}:/opt/lloom-models:ro",
-              "-v",
-              "lloom-comfyui-media-data:/data",
+              "lloom-comfyui-ace-step-1-5-xl-sft-data:/data",
               "-e",
-              "LLOOM_MEDIA_DATA_ROOT=/data"
+              "LLOOM_MEDIA_DATA_ROOT=/data",
+              "-e",
+              "LLOOM_MODELS_ROOT=/opt/ComfyUI/models",
+              "-e",
+              "LLOOM_COMFY_CACHE_MODE=classic",
+              "-e",
+              "LLOOM_MEDIA_MODEL=ACE-Step/ACE-Step-1.5-XL-SFT"
             ]
           }
         },

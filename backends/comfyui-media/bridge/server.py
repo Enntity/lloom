@@ -37,6 +37,10 @@ from requests_in import (
 log = logging.getLogger("bridge")
 
 DEFAULT_COMFY_URL = "http://127.0.0.1:8188"
+# Optional single-model selector. When set, the bridge serves exactly that one
+# registry entry. An empty or unknown value refuses startup rather than falling
+# back to advertising every bundled model.
+MEDIA_MODEL_ENV = "LLOOM_MEDIA_MODEL"
 MAX_SEED = 2**31 - 1
 MAX_DURATION_SECONDS = 600
 # Text bounds, enforced here regardless of what the graph library does.
@@ -70,6 +74,41 @@ def _default_data_roots() -> DataRoots:
     return DataRoots.from_env()
 
 
+def _resolve_media_model(select: str | None = None) -> str | None:
+    """The exact registry model a single-model runtime serves, if configured.
+
+    ``select`` defaults to ``LLOOM_MEDIA_MODEL``. An absent variable selects
+    nothing (the runtime keeps its previous multi-model behaviour). A present
+    but empty or whitespace-only value is a configuration error and refuses
+    startup. Validation against the registry happens in ``create_app`` so the
+    rejection also covers explicitly injected ``models``.
+    """
+    value = os.environ.get(MEDIA_MODEL_ENV) if select is None else select
+    if value is None:
+        return None
+    stripped = value.strip()
+    if not stripped:
+        raise ValueError(f"{MEDIA_MODEL_ENV} is set but empty; set an exact model ID or unset it.")
+    if stripped != value:
+        # Surrounding whitespace is almost certainly a deployment mistake; an
+        # exact model ID never carries it. Resolve to the trimmed ID, which is
+        # then validated against the registry like any other selection.
+        log.warning("%s has surrounding whitespace; using %r", MEDIA_MODEL_ENV, stripped)
+    return stripped
+
+
+def _select_models(models: dict, select: str | None) -> dict:
+    """Filter ``models`` to ``select``; fail closed on an unknown selection."""
+    if select is None:
+        return models
+    if not isinstance(models, dict) or select not in models:
+        supported = ", ".join(sorted(models)) if isinstance(models, dict) and models else "(none)"
+        raise ValueError(
+            f"{MEDIA_MODEL_ENV}={select!r} is not in this bridge's model registry. Supported models: {supported}."
+        )
+    return {select: models[select]}
+
+
 def create_app(
     comfy: ComfyClient | None = None,
     *,
@@ -77,6 +116,7 @@ def create_app(
     build_graph=None,
     start_backend: bool = True,
     comfy_url: str | None = None,
+    media_model: str | None = None,
 ) -> FastAPI:
     app = FastAPI(title="LLooM media bridge", docs_url=None, redoc_url=None, openapi_url=None)
     if models is None or build_graph is None:
@@ -85,11 +125,18 @@ def create_app(
             models = default_models
         if build_graph is None:
             build_graph = default_builder
+    # A single-model runtime must never advertise a model it cannot serve, so
+    # the selector is applied here -- after any injected registry is known and
+    # before the app can accept a request. An unknown or empty value raises out
+    # of the app factory: startup (including uvicorn import of module-level
+    # ``app``) fails closed instead of degrading to the full registry.
+    models = _select_models(models, _resolve_media_model(media_model))
     state = {
         "comfy": comfy,
         "models": models,
         "build_graph": build_graph,
         "comfy_url": validate_comfy_base_url(comfy_url or _default_comfy_url()),
+        "media_model": next(iter(models)) if len(models) == 1 else None,
     }
     runner = SingleFlightRunner(comfy, _default_data_roots()) if comfy is not None else None
     state["runner"] = runner
