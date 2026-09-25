@@ -390,7 +390,7 @@ assert.equal(pins.model.revision, '423acf37583782c51c142d145aef733d72943d93');
 assert.equal(pins.model.repo, 'nvidia/GLM-5.3-Flash-NVFP4');
 assert.equal(pins.source.repo, 'Enntity/sparkglm');
 assert.equal(pins.status, 'final');
-assert.equal(pins.source.revision, '04bc9a348caa5f37a8d35b52e141490eaf8677d1');
+assert.equal(pins.source.revision, '19062cea90dfc417e017c6a98511e269d578e768');
 assert.equal(pins.image.entrypoint, '/opt/atlas/serve.py');
 assert(pins.overlay.marker.includes('conversion.complete.json'));
 assert.deepEqual(verifyPins(pins), []);
@@ -624,12 +624,19 @@ function awaitableHash(file) {
 
 writeConversionFixture(pins);
 const fakeEnv = { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` };
-const checkInstalledImage = (env = fakeEnv) => spawnSync(
-  'bash',
-  [path.join(backendDir, 'install.sh'), '--backend-root', converterBackendRoot,
-    '--install-root', converterInstallRoot, '--check-only'],
-  { encoding: 'utf8', env }
-);
+const checkInstalledImage = (env = fakeEnv) =>
+  spawnSync(
+    'bash',
+    [
+      path.join(backendDir, 'install.sh'),
+      '--backend-root',
+      converterBackendRoot,
+      '--install-root',
+      converterInstallRoot,
+      '--check-only'
+    ],
+    { encoding: 'utf8', env }
+  );
 const checkedImage = checkInstalledImage();
 assert.equal(checkedImage.status, 0, `${checkedImage.stdout}\n${checkedImage.stderr}`);
 const missingImageContract = checkInstalledImage({ ...fakeEnv, ATLAS_TEST_MISSING_CONTRACT: '1' });
