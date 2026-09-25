@@ -532,6 +532,7 @@ fi
 if [[ "\${1:-}" == "ps" ]]; then exit 0; fi
 if [[ "\${1:-}" == "run" ]]; then
   joined="$*"
+  if [[ "\${ATLAS_TEST_MISSING_CONTRACT:-0}" == "1" ]]; then exit 1; fi
   if [[ "\${joined}" == *sha256sum* ]]; then
     echo "${'c'.repeat(64)}  ${pins.converter.inImagePath}"
     echo "${'d'.repeat(64)}  ${pins.converter.library}"
@@ -621,6 +622,18 @@ function awaitableHash(file) {
 
 writeConversionFixture(pins);
 const fakeEnv = { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` };
+const checkInstalledImage = (env = fakeEnv) => spawnSync(
+  'bash',
+  [path.join(backendDir, 'install.sh'), '--backend-root', converterBackendRoot,
+    '--install-root', converterInstallRoot, '--check-only'],
+  { encoding: 'utf8', env }
+);
+const checkedImage = checkInstalledImage();
+assert.equal(checkedImage.status, 0, `${checkedImage.stdout}\n${checkedImage.stderr}`);
+const missingImageContract = checkInstalledImage({ ...fakeEnv, ATLAS_TEST_MISSING_CONTRACT: '1' });
+assert.notEqual(missingImageContract.status, 0, 'valid receipt must not hide missing image artifacts');
+assert.match(missingImageContract.stderr, /missing the Atlas entrypoint\/profile contract/);
+
 const runConverter = (manifestPath = path.join(backendDir, 'pins.json'), extra = []) =>
   spawnSync(
     'bash',

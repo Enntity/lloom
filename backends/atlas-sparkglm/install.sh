@@ -17,8 +17,8 @@
 #
 # --check-only VERIFIES the installed image: receipt identity, the local image
 # inspect ID, the source revision baked into the image OCI label, and that the
-# image is arm64. It only falls back to reporting unbuilt pins when nothing has
-# been installed yet.
+# image is arm64, then checks serving/conversion artifacts inside the image.
+# A missing image or incomplete contract fails verification.
 #
 # Usage: install.sh --backend-root <path> [--manifest <pins.json>] [--install-root <path>] [--check-only]
 set -euo pipefail
@@ -164,6 +164,7 @@ if [[ "${CHECK_ONLY}" == "1" ]]; then
   [[ "${verify_status}" -eq 0 ]] || fail "installed Atlas SparkGLM image failed verification"
   node "${VERIFY_PINS}" "${MANIFEST}" \
     || fail "pin manifest ${MANIFEST} is not a final immutable install manifest; verify the source, image and model identities before an install can verify"
+  verify_image_contract
   exit 0
 fi
 
