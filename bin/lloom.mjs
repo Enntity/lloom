@@ -67,6 +67,12 @@ import { loadRecipeById, loadRecipes, planRecipe } from '../src/recipes.mjs';
 import { RuntimeManager } from '../src/runtime-manager.mjs';
 import { runCommand } from '../src/process-control.mjs';
 import { applyRuntimePolicyPlan, createRuntimePolicyPlan } from '../src/runtime-policy.mjs';
+import {
+  applyRuntimePolicyConfig,
+  createRuntimePolicyConfigReport,
+  parseNumericMemoryFlags,
+  NUMERIC_MEMORY_FLAGS
+} from '../src/runtime-policy-config.mjs';
 import { createLloomServer } from '../src/server.mjs';
 import { applySetup, createSetupPlan, syncClusterSetupMembers } from '../src/setup.mjs';
 import { createSetupStatus } from '../src/setup-status.mjs';
@@ -110,7 +116,8 @@ const COMMAND_REGISTRY = [
   { name: 'backend-install', aliases: [], tier: 'advanced', needsInstalledConfig: false },
   { name: 'runtimes', aliases: ['runtime-status'], tier: 'advanced', needsInstalledConfig: true },
   { name: 'cluster', aliases: ['cluster-status'], tier: 'advanced', needsInstalledConfig: true },
-  { name: 'runtime-plan', aliases: ['runtime-policy'], tier: 'advanced', needsInstalledConfig: true },
+  { name: 'runtime-plan', aliases: [], tier: 'advanced', needsInstalledConfig: true },
+  { name: 'runtime-policy', aliases: [], tier: 'advanced', needsInstalledConfig: true },
   { name: 'runtime-admit', aliases: [], tier: 'advanced', needsInstalledConfig: true },
   { name: 'runtime-start', aliases: [], tier: 'advanced', needsInstalledConfig: true },
   { name: 'runtime-warmup', aliases: [], tier: 'advanced', needsInstalledConfig: true },
@@ -205,6 +212,7 @@ Backends and runtimes:
   lloom backend-install <backend-id> [--apply --yes] [--step step-id]
   lloom runtimes [runtime-id|all]
   lloom runtime-plan <runtime-id>
+  lloom runtime-policy [--max-memory-utilization f] [--reserve-memory-gb n] [--apply --yes]
   lloom suspend <model-or-alias> [--apply --yes] [--drain-timeout-ms 300000]
   lloom resume <model-or-alias> [--apply --yes]
   lloom runtime-admit <runtime-id> [--apply --yes]
@@ -2634,6 +2642,16 @@ async function main() {
       console.log(JSON.stringify(response, null, 2));
     },
     'runtime-plan': async ({ args, config, command: _command }) => {
+      if (args.some((arg) => NUMERIC_MEMORY_FLAGS.some((flag) => arg === flag || arg.startsWith(`${flag}=`)))) {
+        throw new Error(
+          'runtime-plan is read-only and does not accept numeric memory flags; use `lloom runtime-policy --max-memory-utilization <f> --reserve-memory-gb <n> --apply --yes`'
+        );
+      }
+      if (hasFlag(args, '--apply') || hasFlag(args, '--yes')) {
+        throw new Error(
+          'runtime-plan is read-only and does not accept --apply/--yes; use `lloom runtime-policy --apply --yes` to write memory-policy changes'
+        );
+      }
       const requestedRuntimeId = positional(args)[1];
       const livePlan = clusterConfigured(config)
         ? await gatewayRequest(
@@ -2852,7 +2870,30 @@ async function main() {
   handlers['routing'] = handlers['route'];
   handlers['runtime-status'] = handlers['runtimes'];
   handlers['cluster-status'] = handlers['cluster'];
-  handlers['runtime-policy'] = handlers['runtime-plan'];
+  handlers['runtime-policy'] = async ({ args, config, command: _command }) => {
+    const flags = parseNumericMemoryFlags(args);
+    const apply = hasFlag(args, '--apply');
+    const yes = hasFlag(args, '--yes');
+    if (!flags) {
+      if (apply || yes) {
+        throw new Error('runtime-policy --apply/--yes requires --max-memory-utilization and/or --reserve-memory-gb');
+      }
+      // Compatibility: a bare `runtime-policy` with no numeric flags keeps the
+      // historical read-only alias behavior and delegates to the runtime plan.
+      return handlers['runtime-plan']({ args, config, command: 'runtime-plan' });
+    }
+    if (yes && !apply) {
+      throw new Error('runtime-policy --yes requires --apply');
+    }
+    if (!apply) {
+      console.log(JSON.stringify(createRuntimePolicyConfigReport(config, flags), null, 2));
+      return;
+    }
+    if (!yes) {
+      throw new Error('applying a memory-policy change requires both --apply and --yes');
+    }
+    console.log(JSON.stringify(await applyRuntimePolicyConfig(config, flags, { apply, yes }), null, 2));
+  };
   handlers['voice-list'] = handlers['voices'];
   handlers['install-voice'] = handlers['voice-install'];
   handlers['voice-rm'] = handlers['voice-remove'];
