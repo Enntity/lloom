@@ -14,7 +14,7 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "Source-built Atlas SparkGLM candidate reconstructed from the measured 2026-09-24 launch profile and product revision 29446d85fd5791d2b0bb1b4a833f873882c67691. Engine source is Enntity/sparkglm at the revision recorded in backends/atlas-sparkglm/pins.json; each host's lloom/atlas-sparkglm:<SOURCE_REVISION> must match that host's build receipt, OCI revision label and arm64 image inspection. Model nvidia/GLM-5.3-Flash-NVFP4 revision 423acf37583782c51c142d145aef733d72943d93 requires a once-per-node overlay conversion gated on conversion.complete.json plus verification. The engine argument vector ships inside the image as /opt/atlas/profile.json, not in this recipe. The profile carries a 262144-token total context, four ordinary text sequences sharing a 270336-token physical pool, BF16 KV, FP32 SSM state and MTP2 with native fallback above 32K; disable-tool-grammar is deliberately not set so structured output and tools stay functional. Image/video support is implemented in the candidate; live hardware and full serving qualification remain pending."
+    "source": "Source-built Atlas SparkGLM candidate reconstructed from the measured 2026-09-24 launch profile and product revision e03d4e8ef31318a92748a8cf36bb988f8946559e. Engine source is Enntity/sparkglm at the revision recorded in backends/atlas-sparkglm/pins.json; each host's lloom/atlas-sparkglm:<SOURCE_REVISION> must match that host's build receipt, OCI revision label and arm64 image inspection. Model nvidia/GLM-5.3-Flash-NVFP4 revision 423acf37583782c51c142d145aef733d72943d93 requires a once-per-node overlay conversion gated on conversion.complete.json plus verification. The engine argument vector ships inside the image as /opt/atlas/profile.json, not in this recipe. The profile carries a 262144-token total context, four ordinary text sequences sharing a 270336-token physical pool, BF16 KV, FP32 SSM state and MTP2 with native fallback above 32K; disable-tool-grammar is deliberately not set so structured output and tools stay functional. Image/video support is implemented in the candidate; live hardware and full serving qualification remain pending."
   },
   "links": [
     {
@@ -225,7 +225,7 @@
                 "warmup": false,
                 "bootstrap": {
                   "adapter": "docker",
-                  "image": "lloom/atlas-sparkglm:29446d85fd5791d2b0bb1b4a833f873882c67691",
+                  "image": "lloom/atlas-sparkglm:e03d4e8ef31318a92748a8cf36bb988f8946559e",
                   "pull": false,
                   "pullTimeoutMs": 3600000,
                   "createArgs": [
@@ -362,7 +362,7 @@
                 },
                 "bootstrap": {
                   "adapter": "docker",
-                  "image": "lloom/atlas-sparkglm:29446d85fd5791d2b0bb1b4a833f873882c67691",
+                  "image": "lloom/atlas-sparkglm:e03d4e8ef31318a92748a8cf36bb988f8946559e",
                   "pull": false,
                   "pullTimeoutMs": 3600000,
                   "createArgs": [
