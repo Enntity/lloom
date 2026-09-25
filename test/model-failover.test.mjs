@@ -129,6 +129,15 @@ async function createFixture({
         maxOutputTokens: 1024
       },
       {
+        id: 'primary-direct',
+        kind: 'chat',
+        backend: 'primary',
+        runtime: 'primary-runtime',
+        upstreamModel: 'local-upstream',
+        contextWindow: 8192,
+        maxOutputTokens: 1024
+      },
+      {
         id: 'cloud-chat',
         kind: 'chat',
         backend: 'cloud',
@@ -640,6 +649,29 @@ for (const code of ['RUNTIME_QUEUE_TIMEOUT', 'RUNTIME_QUEUE_FULL']) {
     const routing = await fetch(`${fixture.url}/gateway/routing`).then((response) => response.json());
     assert.equal(
       routing.targetBackoffs.find((entry) => entry.model === 'stable-chat'),
+      undefined
+    );
+  } finally {
+    await fixture.close();
+  }
+}
+
+// A relaying gateway keeps the queue code, so backpressure survives any number
+// of federated hops instead of degrading to a generic upstream error.
+{
+  const fixture = await createFixture({
+    primaryStatus: 429,
+    primaryHeaders: { 'retry-after': '3' },
+    primaryError: { message: 'runtime primary request queue wait timed out', code: 'RUNTIME_QUEUE_TIMEOUT' }
+  });
+  try {
+    const response = await chat(fixture.url, { model: 'primary-direct' });
+    assert.equal(response.status, 429);
+    assert.equal(response.headers.get('retry-after'), '3');
+    assert.equal((await response.json()).error.code, 'RUNTIME_QUEUE_TIMEOUT');
+    const routing = await fetch(`${fixture.url}/gateway/routing`).then((value) => value.json());
+    assert.equal(
+      routing.targetBackoffs.find((entry) => entry.model === 'primary-direct'),
       undefined
     );
   } finally {

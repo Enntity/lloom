@@ -578,7 +578,8 @@ async function upstreamStatusError(upstream) {
     if (Number.isFinite(retryAt)) retryAfterSeconds = Math.max(1, Math.ceil((retryAt - Date.now()) / 1000));
   }
   return Object.assign(new Error(message || `upstream status ${upstream.status}`), {
-    code: 'upstream_error',
+    // Relay queue saturation by its own code so every federated hop sees backpressure.
+    code: QUEUE_BACKPRESSURE_CODES.has(upstreamCode) ? upstreamCode : 'upstream_error',
     statusCode: upstream.status,
     upstreamGenerationId: upstream.headers.get('x-generation-id'),
     upstreamHeadersReceived: true,
