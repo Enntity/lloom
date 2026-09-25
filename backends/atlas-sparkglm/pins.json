@@ -4,13 +4,13 @@
   "note": "Single pin manifest for the source-built Atlas SparkGLM candidate. Portable source, model and converter identities are final for this candidate; live hardware and serving qualification remains pending. Image IDs are host-local: source builds do not guarantee identical image IDs across machines, so each host receipt ID must match its own docker image inspect result.",
   "source": {
     "repo": "Enntity/sparkglm",
-    "revision": "3c4adff311bad9cb1da7abacca6c054fad542827",
+    "revision": "f8a3603aebf22ff2cff91383fbdf99b930afe2bf",
     "cloneUrl": "https://github.com/Enntity/sparkglm.git",
     "buildScript": "research/atlas/install/build.sh"
   },
   "image": {
     "tagPrefix": "lloom/atlas-sparkglm:",
-    "tag": "lloom/atlas-sparkglm:3c4adff311bad9cb1da7abacca6c054fad542827",
+    "tag": "lloom/atlas-sparkglm:f8a3603aebf22ff2cff91383fbdf99b930afe2bf",
     "entrypoint": "/opt/atlas/serve.py",
     "profilePath": "/opt/atlas/profile.json",
     "architecture": "arm64"
