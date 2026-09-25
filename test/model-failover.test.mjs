@@ -40,6 +40,8 @@ function embedding(model, value) {
 async function createFixture({
   primaryStatus = 503,
   primaryHeaders = {},
+  primaryError = null,
+  slotError = null,
   cloudStatus = 200,
   runtimeStatus = 'running',
   preserveResident = false,
@@ -54,7 +56,7 @@ async function createFixture({
     const body =
       primaryStatus === 200
         ? completion('local-upstream', 'local')
-        : JSON.stringify({ error: { message: `primary status ${primaryStatus}` } });
+        : JSON.stringify({ error: primaryError ?? { message: `primary status ${primaryStatus}` } });
     res.writeHead(primaryStatus, { 'content-type': 'application/json', ...primaryHeaders });
     res.end(body);
   });
@@ -148,6 +150,7 @@ async function createFixture({
     },
     withSlot: async (runtimeId, fn) => {
       if (runtimeId) operations.push(`slot:${runtimeId}`);
+      if (slotError && runtimeId === 'primary-runtime') throw slotError();
       return fn();
     },
     noteRequestOutcome() {},
@@ -619,6 +622,56 @@ async function embed(url, body = {}) {
   assert.equal(backoff.state, 'open');
   assert(backoff.retryAfterSeconds >= 29);
   await fixture.close();
+}
+
+// Queue saturation is backpressure, not target failure. A federated node's
+// queue-timeout 429 may fail over, but must not open the target circuit and
+// fast-fail every other caller as "temporarily unavailable".
+for (const code of ['RUNTIME_QUEUE_TIMEOUT', 'RUNTIME_QUEUE_FULL']) {
+  const fixture = await createFixture({
+    primaryStatus: 429,
+    primaryHeaders: { 'retry-after': '30' },
+    primaryError: { message: 'runtime primary request queue wait timed out', type: 'runtime_queue_error', code }
+  });
+  try {
+    assert.equal((await chat(fixture.url)).status, 200);
+    assert.equal((await chat(fixture.url)).status, 200);
+    assert.deepEqual(fixture.hits, { primary: 2, cloud: 2, ensures: 2 });
+    const routing = await fetch(`${fixture.url}/gateway/routing`).then((response) => response.json());
+    assert.equal(
+      routing.targetBackoffs.find((entry) => entry.model === 'stable-chat'),
+      undefined
+    );
+  } finally {
+    await fixture.close();
+  }
+}
+
+// The same holds for this gateway's own runtime queue.
+{
+  const fixture = await createFixture({
+    primaryStatus: 200,
+    slotError: () =>
+      Object.assign(new Error('runtime primary-runtime request queue is full; retry after 2 seconds'), {
+        name: 'RuntimeQueueError',
+        code: 'RUNTIME_QUEUE_FULL',
+        type: 'runtime_queue_error',
+        statusCode: 429,
+        retryAfterSeconds: 2
+      })
+  });
+  try {
+    assert.equal((await chat(fixture.url)).status, 200);
+    assert.equal((await chat(fixture.url)).status, 200);
+    assert.deepEqual(fixture.hits, { primary: 0, cloud: 2, ensures: 2 });
+    const routing = await fetch(`${fixture.url}/gateway/routing`).then((response) => response.json());
+    assert.equal(
+      routing.targetBackoffs.find((entry) => entry.model === 'stable-chat'),
+      undefined
+    );
+  } finally {
+    await fixture.close();
+  }
 }
 
 // A worker/control-plane LLooM remains healthy and administrable but refuses

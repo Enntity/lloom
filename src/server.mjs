@@ -521,6 +521,13 @@ function isClientClosedError(error) {
   return error instanceof ClientClosedError || error?.name === 'ClientClosedError' || error?.code === 'client_closed';
 }
 
+const QUEUE_BACKPRESSURE_CODES = new Set(['RUNTIME_QUEUE_TIMEOUT', 'RUNTIME_QUEUE_FULL']);
+
+/** Queue saturation (local, or relayed by a federated node) is load, not target failure. */
+function isQueueBackpressureError(error) {
+  return QUEUE_BACKPRESSURE_CODES.has(error?.code) || QUEUE_BACKPRESSURE_CODES.has(error?.upstreamCode);
+}
+
 function clientClosedStatus(error) {
   return isClientClosedError(error) ? 499 : 0;
 }
@@ -554,8 +561,11 @@ export function shouldFailoverModelRequest(error, res = null) {
 async function upstreamStatusError(upstream) {
   const text = await readErrorDiagnostic(upstream);
   let message = text;
+  let upstreamCode = null;
   try {
-    message = JSON.parse(text)?.error?.message ?? text;
+    const parsed = JSON.parse(text)?.error;
+    message = parsed?.message ?? text;
+    upstreamCode = typeof parsed?.code === 'string' ? parsed.code : null;
   } catch {
     // Keep the raw upstream response as the diagnostic message.
   }
@@ -572,6 +582,7 @@ async function upstreamStatusError(upstream) {
     statusCode: upstream.status,
     upstreamGenerationId: upstream.headers.get('x-generation-id'),
     upstreamHeadersReceived: true,
+    ...(upstreamCode == null ? {} : { upstreamCode }),
     ...(retryAfterSeconds == null ? {} : { retryAfterSeconds })
   });
 }
@@ -2860,7 +2871,8 @@ export function createLloomServer(
           releaseTargetProbe(resolved);
           throw error;
         }
-        if (shouldFailoverModelRequest(error, res)) noteTargetFailure(resolved, error);
+        if (isQueueBackpressureError(error)) releaseTargetProbe(resolved);
+        else if (shouldFailoverModelRequest(error, res)) noteTargetFailure(resolved, error);
         else if (!isClientClosedError(error)) noteTargetSuccess(resolved);
         else releaseTargetProbe(resolved);
         if (!hasNext || !shouldFailoverModelRequest(error, res)) throw error;
