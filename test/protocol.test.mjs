@@ -385,4 +385,67 @@ const resolved = { model: { upstreamModel: 'upstream-qwen' } };
   assert.equal(raw.rewritten, false);
 }
 
+// A caller-supplied JSON Schema that no implementation could compile must be
+// refused before it reaches a backend. Accepting it silently turns a
+// schema-constrained request into an unconstrained one and still answers 200.
+{
+  const invalid = {
+    model: 'm',
+    messages: [{ role: 'user', content: 'hi' }],
+    response_format: { type: 'json_schema', json_schema: { name: 'x', strict: true, schema: { type: 'invalid' } } }
+  };
+  assert.throws(
+    () => prepareStructuredOutputForBackend(invalid, resolved),
+    (error) =>
+      error instanceof StructuredOutputError && error.statusCode === 400 && error.code === 'invalid_json_schema'
+  );
+
+  // Nested subschemas are checked too, and the failing path is named.
+  const nested = {
+    model: 'm',
+    messages: [],
+    response_format: {
+      type: 'json_schema',
+      json_schema: { name: 'x', schema: { type: 'object', properties: { a: { type: 'nope' } } } }
+    }
+  };
+  assert.throws(
+    () => prepareStructuredOutputForBackend(nested, resolved),
+    (error) => error.code === 'invalid_json_schema' && /properties\.a/.test(error.message)
+  );
+
+  // A schema that is merely unusual is left alone: $ref, enum, const, unknown
+  // keywords and a type union are all legitimate.
+  const legal = {
+    model: 'm',
+    messages: [],
+    response_format: {
+      type: 'json_schema',
+      json_schema: {
+        name: 'x',
+        schema: {
+          type: ['object', 'null'],
+          properties: { a: { $ref: '#/$defs/a' }, b: { enum: ['x'] }, c: { const: 1 } },
+          $defs: { a: { type: 'string', format: 'date-time' } },
+          'x-vendor': { anything: true }
+        }
+      }
+    }
+  };
+  const passed = prepareStructuredOutputForBackend(legal, resolved);
+  assert.equal(passed.output, null);
+  assert.equal(passed.body.response_format.json_schema.schema.$defs.a.type, 'string');
+
+  // Other response_format shapes are not this validator's business.
+  for (const value of [undefined, { type: 'text' }, { type: 'json_object' }]) {
+    const body = { model: 'm', messages: [] };
+    if (value !== undefined) body.response_format = value;
+    assert.doesNotThrow(() => prepareStructuredOutputForBackend(body, resolved));
+  }
+  assert.throws(
+    () => prepareStructuredOutputForBackend({ model: 'm', messages: [], response_format: 'json' }, resolved),
+    (error) => error.code === 'invalid_response_format'
+  );
+}
+
 console.log('protocol tests passed');
