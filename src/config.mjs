@@ -370,6 +370,41 @@ function validateConfig(config, sourcePath, env) {
     }
   }
 
+  // Top-level numeric memory-policy fields. These mirror the ranges used by the
+  // runtime admission and memory-safety layers so a hand-edited or CLI-written
+  // config fails loudly instead of silently falling through to defaults.
+  const topLevelMaxMemoryUtilization = config.runtimePolicy?.maxMemoryUtilization;
+  if (topLevelMaxMemoryUtilization != null) {
+    if (
+      typeof topLevelMaxMemoryUtilization !== 'number' ||
+      !Number.isFinite(topLevelMaxMemoryUtilization) ||
+      topLevelMaxMemoryUtilization <= 0 ||
+      topLevelMaxMemoryUtilization >= 1
+    ) {
+      errors.push('runtimePolicy.maxMemoryUtilization must be a finite number greater than 0 and less than 1');
+    }
+  }
+  const topLevelReserveMemoryGb = config.runtimePolicy?.reserveMemoryGb;
+  if (topLevelReserveMemoryGb != null) {
+    if (
+      typeof topLevelReserveMemoryGb !== 'number' ||
+      !Number.isFinite(topLevelReserveMemoryGb) ||
+      topLevelReserveMemoryGb <= 0
+    ) {
+      errors.push('runtimePolicy.reserveMemoryGb must be a positive finite number');
+    }
+  }
+  const topLevelMemoryBudgetGb = config.runtimePolicy?.memoryBudgetGb;
+  if (topLevelMemoryBudgetGb != null) {
+    if (
+      typeof topLevelMemoryBudgetGb !== 'number' ||
+      !Number.isFinite(topLevelMemoryBudgetGb) ||
+      topLevelMemoryBudgetGb <= 0
+    ) {
+      errors.push('runtimePolicy.memoryBudgetGb must be a positive finite number');
+    }
+  }
+
   const memorySafety = config.runtimePolicy?.memorySafety;
   if (memorySafety != null) {
     if (typeof memorySafety !== 'object' || Array.isArray(memorySafety)) {

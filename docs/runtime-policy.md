@@ -21,6 +21,35 @@ an alias, or the config root.
 The legacy `evictable` field (top-level or `policy.evictable`) still normalizes
 to `keepWarm: true` when set to `false`, unchanged from earlier releases.
 
+## Explicit memory limits
+
+Preview a numeric memory-policy change before applying it:
+
+```bash
+lloom runtime-policy --max-memory-utilization 0.90 --reserve-memory-gb 8
+lloom runtime-policy --max-memory-utilization 0.90 --reserve-memory-gb 8 --apply --yes
+```
+
+These example values are not a model-specific capacity recommendation. The
+utilization must be greater than zero and less than one; the reserve must be
+positive. Either option can be supplied alone. The command reports the selected
+before/after fields and any per-node overrides, without printing the config.
+
+Utilization updates both predictive admission and the memory guard's utilization
+limit. Reserve updates both admission's reserve and the guard's minimum available
+memory. The existing guard mode is preserved, including an explicitly selected
+`yolo` mode; this command does not turn enforcement on or off. Percentage and
+absolute-reserve limits both apply, so the stricter limit can determine admission.
+
+Changes affect the resolved local config file. Configure each managed member's
+local policy as needed. Cluster node resource overrides are preserved and shown
+in the preview; they can take precedence over global values. A global absolute
+`runtimePolicy.memoryBudgetGb` must be resolved explicitly before using these
+numeric options. Unrelated settings, routes and credentials are preserved.
+
+`runtime-plan` remains read-only. Without numeric options, `runtime-policy`
+retains its historical read-only runtime-plan behavior.
+
 ## Idle restoration
 
 The preferred-restore pass starts after all owned, enabled keep-warm pins are
