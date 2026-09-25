@@ -71,7 +71,9 @@ assert.equal(model.model, 'nvidia/GLM-5.3-Flash-NVFP4');
 assert.equal(model.settings.port, 8893);
 assert.equal(model.settings.baseUrl, 'http://127.0.0.1:8893/v1');
 assert.equal(model.settings.healthUrl, 'http://127.0.0.1:8893/health');
-assert.equal(model.settings.contextWindow, 36864);
+assert.equal(model.settings.contextWindow, 262144);
+assert.equal(model.settings.maxOutputTokens, 131072);
+assert.equal(model.settings.timeoutMs, 14400000);
 assert.equal(model.settings.maxActiveRequests, 4);
 assert.equal(model.settings.memoryGb, 114);
 assert.equal(model.settings.priority, 150);
@@ -145,7 +147,7 @@ for (const member of members) {
     'ATLAS_WORLD_SIZE=2',
     'ATLAS_TP_SIZE=2',
     'ATLAS_EP_SIZE=2',
-    'ATLAS_CONTEXT_WINDOW=36864',
+    'ATLAS_CONTEXT_WINDOW=262144',
     'SERVED_MODEL_NAME=glm-5.3-flash-atlas',
     'NCCL_IB_HCA=rocep1s0f0',
     'NCCL_IB_ADDR_FAMILY=AF_INET',
@@ -388,7 +390,7 @@ assert.equal(pins.model.revision, '423acf37583782c51c142d145aef733d72943d93');
 assert.equal(pins.model.repo, 'nvidia/GLM-5.3-Flash-NVFP4');
 assert.equal(pins.source.repo, 'Enntity/sparkglm');
 assert.equal(pins.status, 'final');
-assert.equal(pins.source.revision, 'f8a3603aebf22ff2cff91383fbdf99b930afe2bf');
+assert.equal(pins.source.revision, '04bc9a348caa5f37a8d35b52e141490eaf8677d1');
 assert.equal(pins.image.entrypoint, '/opt/atlas/serve.py');
 assert(pins.overlay.marker.includes('conversion.complete.json'));
 assert.deepEqual(verifyPins(pins), []);

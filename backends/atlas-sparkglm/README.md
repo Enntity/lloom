@@ -3,7 +3,7 @@
 LLooM-managed two-node Atlas SparkGLM candidate for a directly connected pair
 of NVIDIA DGX Spark systems. This directory is **MIT orchestration only**: no
 Atlas engine source is committed here. The engine is compiled from immutable
-revision `f8a3603aebf22ff2cff91383fbdf99b930afe2bf` of `Enntity/sparkglm` by
+revision `04bc9a348caa5f37a8d35b52e141490eaf8677d1` of `Enntity/sparkglm` by
 that repository's `research/atlas/install/build.sh`. Live hardware and full
 serving qualification remain pending.
 
@@ -84,11 +84,13 @@ Inside the image:
 - `/opt/atlas/serve.py` — entrypoint. Reads the environment below, then starts
   the engine with the profile's argument vector.
 - `/opt/atlas/profile.json` — the exact reconstructed engine environment
-  profile (`--max-seq-len=36864`, `--max-prefill-tokens=4096`,
-  `--max-num-seqs=4`, `--max-batch-size=4`, `--gpu-memory-utilization=0.921`,
+  profile (`--max-seq-len=262144`, `--max-prefill-tokens=4096`,
+  `--max-num-seqs=4`, `--max-batch-size=4`, `--gpu-memory-utilization=0.95`,
   `--oom-guard-mb=4096`, `--kv-cache-dtype=bf16`, `--ssm-h-dtype=f32`,
   `--speculative --num-drafts=2`, `--block-size=16`, and the rest of the
-  measured baseline). The profile keeps native MTP through 32768 and uses its
+  candidate settings). Its physical BF16 pool is shared across requests
+  (`ATLAS_GLM_SHARED_KV_TOKENS=270336`); it does not reserve four full windows.
+  The profile keeps native MTP through 32768 and uses its serial native
   fallback above that boundary. `disable-tool-grammar` is deliberately **not**
   set, so structured output and tool grammar stay functional. The source build
   includes image and video input support; live gateway qualification remains
@@ -120,3 +122,12 @@ valid at runtime.
 The worker starts first (`order` 10, rank 1) and the leader second (`order` 20,
 rank 0). The worker uses `healthStrategy: "container"` and no warmup; the leader
 uses `/health` plus a POST warmup, then owns routing.
+
+## Memory policy for the long-context candidate
+
+On each Spark, preview `lloom runtime-policy --max-memory-utilization 0.97
+--reserve-memory-gb 4`, then repeat with `--apply --yes` to apply those explicit
+candidate limits. Keep normal memory enforcement enabled. The command preserves
+mode and node overrides; review its output before starting the model. These
+values and the 262K context require live qualification. They do not qualify
+512K, four concurrent maximum windows, or 128K generated-output endurance.

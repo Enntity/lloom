@@ -5,7 +5,7 @@
   "id": "linux-nvidia-dgx-spark-2x-glm53-atlas",
   "name": "2x DGX Spark GLM-5.3 Flash NVFP4 Atlas",
   "version": 1,
-  "summary": "Source-built candidate lane for two directly connected Sparks running Atlas SparkGLM over the private fabric, serving GLM-5.3-Flash-NVFP4 from a once-per-node overlay conversion with a 36864-token total context. Additive only: no default model, no aliases overwritten.",
+  "summary": "Source-built candidate lane for two directly connected Sparks running Atlas SparkGLM over the private fabric, serving GLM-5.3-Flash-NVFP4 from a once-per-node overlay conversion with a 262144-token total context. Additive only: no default model, no aliases overwritten.",
   "description": "This recipe installs the source-built Atlas SparkGLM candidate at the immutable product revision recorded in backends/atlas-sparkglm/pins.json. LLooM owns orchestration, admission, worker-first startup, readiness, routing and telemetry. The Atlas engine is compiled from Enntity/sparkglm by that repository's research/atlas/install/build.sh; LLooM commits no engine source. Setup acquires the pinned model, builds the host-local image, performs the overlay conversion, and the serving path only ever starts the prepared image. Image IDs remain host-local and are verified from each node's build receipt plus OCI metadata. The candidate includes structured output and tool calls plus image/video input; live hardware and full serving qualification remain pending.",
   "license": {
     "id": "MIT",
@@ -14,7 +14,7 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "Source-built Atlas SparkGLM candidate reconstructed from the measured 2026-09-24 launch profile and product revision f8a3603aebf22ff2cff91383fbdf99b930afe2bf. Engine source is Enntity/sparkglm at the revision recorded in backends/atlas-sparkglm/pins.json; each host's lloom/atlas-sparkglm:<SOURCE_REVISION> must match that host's build receipt, OCI revision label and arm64 image inspection. Model nvidia/GLM-5.3-Flash-NVFP4 revision 423acf37583782c51c142d145aef733d72943d93 requires a once-per-node overlay conversion gated on conversion.complete.json plus verification. The engine argument vector ships inside the image as /opt/atlas/profile.json, not in this recipe. The profile carries a 36864-token total context, four active text sequences, BF16 KV, FP32 SSM state and MTP2 with native fallback above 32K; disable-tool-grammar is deliberately not set so structured output and tools stay functional. Image/video support is implemented in the candidate; live hardware and full serving qualification remain pending."
+    "source": "Source-built Atlas SparkGLM candidate reconstructed from the measured 2026-09-24 launch profile and product revision 04bc9a348caa5f37a8d35b52e141490eaf8677d1. Engine source is Enntity/sparkglm at the revision recorded in backends/atlas-sparkglm/pins.json; each host's lloom/atlas-sparkglm:<SOURCE_REVISION> must match that host's build receipt, OCI revision label and arm64 image inspection. Model nvidia/GLM-5.3-Flash-NVFP4 revision 423acf37583782c51c142d145aef733d72943d93 requires a once-per-node overlay conversion gated on conversion.complete.json plus verification. The engine argument vector ships inside the image as /opt/atlas/profile.json, not in this recipe. The profile carries a 262144-token total context, four ordinary text sequences sharing a 270336-token physical pool, BF16 KV, FP32 SSM state and MTP2 with native fallback above 32K; disable-tool-grammar is deliberately not set so structured output and tools stay functional. Image/video support is implemented in the candidate; live hardware and full serving qualification remain pending."
   },
   "links": [
     {
@@ -62,7 +62,7 @@
       "The worker is admitted first (rank 1) and readiness-checked through its container state, because the Atlas engine has no separate worker HTTP surface. The leader starts second (rank 0) and owns routing.",
       "The NVFP4 checkpoint requires a per-node overlay conversion before it can be served. LLooM treats the conversion as incomplete unless conversion.complete.json plus its recorded verification are present.",
       "Both nodes must carry the same portable source, model and converter pins plus the same backend directory. Each host verifies its own node-local image against its build receipt and OCI revision label; image IDs may differ across hosts.",
-      "Peak container memory is capped at 114 GiB with a 4096 MiB OOM guard. GPU memory utilization is 0.921 to include the enabled vision tower and preallocated workspace. The profile uses a 36864-token total context with native MTP through 32768 and fallback above that boundary; the parent owner will update qualification wording after the live gates pass."
+      "Peak container memory is capped at 114 GiB with a 4096 MiB OOM guard. GPU memory utilization is 0.95 to include the enabled vision tower and preallocated workspace. The profile uses a 262144-token total context and a shared 270336-token physical KV budget, with native MTP through 32768 and serial fallback above that boundary. Configure explicit LLooM utilization 0.97 and reserve 4 GiB on both nodes while keeping enforcement active; the parent owner will update qualification wording after the live gates pass."
     ]
   },
   "requirements": {
@@ -183,8 +183,8 @@
             "stream": false
           }
         },
-        "contextWindow": 36864,
-        "maxOutputTokens": 8192,
+        "contextWindow": 262144,
+        "maxOutputTokens": 131072,
         "maxActiveRequests": 4,
         "maxQueuedRequests": 4,
         "queueTimeoutMs": 300000,
@@ -196,12 +196,12 @@
         "priority": 150,
         "keepWarm": false,
         "startupTimeoutMs": 7200000,
-        "timeoutMs": 600000,
+        "timeoutMs": 14400000,
         "watchdog": {
           "enabled": true,
           "failureThreshold": 2,
           "failureWindowMs": 900000,
-          "minNoProgressMs": 600000,
+          "minNoProgressMs": 1800000,
           "cooldownMs": 600000,
           "drainTimeoutMs": 30000,
           "failureStatuses": [500, 502, 504]
@@ -225,7 +225,7 @@
                 "warmup": false,
                 "bootstrap": {
                   "adapter": "docker",
-                  "image": "lloom/atlas-sparkglm:f8a3603aebf22ff2cff91383fbdf99b930afe2bf",
+                  "image": "lloom/atlas-sparkglm:04bc9a348caa5f37a8d35b52e141490eaf8677d1",
                   "pull": false,
                   "pullTimeoutMs": 3600000,
                   "createArgs": [
@@ -282,7 +282,7 @@
                     "-e",
                     "ATLAS_EP_SIZE=2",
                     "-e",
-                    "ATLAS_CONTEXT_WINDOW=36864",
+                    "ATLAS_CONTEXT_WINDOW=262144",
                     "-e",
                     "NCCL_SOCKET_IFNAME=${fabricInterface}",
                     "-e",
@@ -362,7 +362,7 @@
                 },
                 "bootstrap": {
                   "adapter": "docker",
-                  "image": "lloom/atlas-sparkglm:f8a3603aebf22ff2cff91383fbdf99b930afe2bf",
+                  "image": "lloom/atlas-sparkglm:04bc9a348caa5f37a8d35b52e141490eaf8677d1",
                   "pull": false,
                   "pullTimeoutMs": 3600000,
                   "createArgs": [
@@ -419,7 +419,7 @@
                     "-e",
                     "ATLAS_EP_SIZE=2",
                     "-e",
-                    "ATLAS_CONTEXT_WINDOW=36864",
+                    "ATLAS_CONTEXT_WINDOW=262144",
                     "-e",
                     "NCCL_SOCKET_IFNAME=${fabricInterface}",
                     "-e",

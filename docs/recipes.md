@@ -364,7 +364,7 @@ All portable identities for the lane live in exactly one place,
 image tag, the `nvidia/GLM-5.3-Flash-NVFP4` revision, and the conversion marker
 contract. Image IDs are host-local and are checked from each build receipt plus
 the local OCI image metadata. The current source pin is product revision
-`f8a3603aebf22ff2cff91383fbdf99b930afe2bf`; a later product revision can be
+`04bc9a348caa5f37a8d35b52e141490eaf8677d1`; a later product revision can be
 adopted by changing this one portable pin and its derived local image tag.
 
 While any required value is missing, malformed, or a placeholder, the gate
@@ -430,7 +430,7 @@ health-checks `/health`, runs a POST warmup, and then owns routing.
 
 ### Baseline envelope
 
-The candidate profile uses a 36864-token total context, concurrency 4, BF16 KV
+The candidate profile uses a 262144-token total context, concurrency 4, BF16 KV
 cache, FP32 SSM state, MTP2 speculation with native fallback above 32K, and
 `--memory=114g` with a 4096 MiB OOM guard. `disable-tool-grammar` is **not** set,
 so structured output and tool calling stay functional. The source build
