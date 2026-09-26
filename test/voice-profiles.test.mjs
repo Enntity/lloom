@@ -8,7 +8,8 @@ import {
   listVoiceProfiles,
   listVoicesDiscovery,
   loadVoiceProfileFromDir,
-  removeVoiceProfile
+  removeVoiceProfile,
+  resolveSpeechVoice
 } from '../src/voice-profiles.mjs';
 
 const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'lloom-voices-'));
@@ -62,6 +63,28 @@ assert.equal(retargeted.body.model, 'ResembleAI/chatterbox');
 assert.equal(retargeted.body.ref_audio, loaded.refAudioPath);
 assert.equal(retargeted.body.exaggeration, 0.75);
 assert.equal(retargeted.body.cfg_weight, 0.5);
+
+// HTTP-bound profile resolution uploads reference bytes across process/host boundaries.
+const portable = await resolveSpeechVoice({ voice: 'character-demo', input: 'Portable clone.' }, { voicesRoot: tmp });
+assert.equal(portable.body.ref_audio, 'data:audio/wav;base64,' + Buffer.from('RIFFxxxxWAVEfmt ').toString('base64'));
+assert.equal(portable.body.ref_text, expanded.body.ref_text);
+assert.equal(portable.body.temperature, 1.05);
+assert.equal(portable.body.model, loaded.model);
+const explicit = await resolveSpeechVoice(
+  { voice: 'character-demo', ref_audio: '/caller/path/must-not-be-read' },
+  { voicesRoot: tmp }
+);
+assert.equal(explicit.body.ref_audio, '/caller/path/must-not-be-read');
+const inline = await resolveSpeechVoice(
+  { voice: 'character-demo', refAudio: 'data:audio/wav;base64,AQID' },
+  { voicesRoot: tmp }
+);
+assert.equal(inline.body.ref_audio, 'data:audio/wav;base64,AQID');
+const unknown = await resolveSpeechVoice({ voice: 'not-installed', input: 'Hello.' }, { voicesRoot: tmp });
+assert.equal(unknown.applied, false);
+await fs.writeFile(loaded.refAudioPath, Buffer.alloc(0));
+await assert.rejects(resolveSpeechVoice({ voice: 'character-demo' }, { voicesRoot: tmp }), /nonempty audio file/);
+await fs.writeFile(loaded.refAudioPath, Buffer.from('RIFFxxxxWAVEfmt '));
 
 const discovery = listVoicesDiscovery({
   profiles: listed,

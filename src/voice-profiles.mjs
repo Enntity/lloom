@@ -379,5 +379,25 @@ export async function resolveSpeechVoice(body = {}, { voicesRoot = defaultVoices
   if (!profile) {
     return { body, profile: null, applied: false, unknownVoice: false };
   }
-  return applyVoiceProfileToSpeechBody(body, profile);
+  const expanded = applyVoiceProfileToSpeechBody(body, profile);
+  // Only a trusted installed profile may cause a local file read. Caller-supplied
+  // references remain untouched for the backend's normal input validation.
+  if (body.ref_audio == null && body.refAudio == null) {
+    const handle = await fs.open(profile.refAudioPath, 'r');
+    try {
+      const stat = await handle.stat();
+      if (!stat.isFile() || stat.size <= 0 || stat.size > 16 * 1024 * 1024) {
+        throw new Error('voice reference must be a nonempty audio file at most 16 MiB');
+      }
+      const audio = await handle.readFile();
+      const mime =
+        { '.mp3': 'audio/mpeg', '.flac': 'audio/flac', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4' }[
+          path.extname(profile.refAudioPath).toLowerCase()
+        ] ?? 'audio/wav';
+      expanded.body.ref_audio = `data:${mime};base64,${audio.toString('base64')}`;
+    } finally {
+      await handle.close();
+    }
+  }
+  return expanded;
 }
