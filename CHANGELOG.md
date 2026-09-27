@@ -8,7 +8,8 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 - LLooM Hear CPU audio analysis, with structured estimates, optional dashboard images, and opt-in upstream interpretation. File and URL inputs require operator configuration.
 
-- Thirteen standalone NVIDIA ComfyUI media recipes, a public-source backend build, and shared runtime reuse for image, video and music generation.
+- Fourteen per-model NVIDIA ComfyUI media recipes and a public-source backend build for image, video and music generation. Each model runs in its own container with read-only mounts of only its files, so LLooM admits, evicts and restores each one independently. The media launcher refuses to start without `LLOOM_MEDIA_MODEL`, and re-applying a recipe moves a model off the retired shared `comfyui-media` runtime, dropping it once unused.
+- OpenRouter Lyria audio generation through `/v1/audio/generations`.
 
 - Selective `include` paths or globs on recipe `download-model` steps, so a single-model lane fetches only the files its graph loads instead of every quantization in the model repository. Planned output reports the resolved `--include` command line.
 - First-class `audio_generation` models and the `POST /v1/audio/generations` route, with `GET /v1/audio/generations/models` and a `defaults.audioGenerationModel` fallback. Music and other audio-generation lanes no longer have to be registered as `audio_speech` to be reachable: `/v1/audio/speech` stays speech- and clone-only, and each route refuses the other's kind with `wrong_model_kind`. Recipe capabilities `audio-generation`, `music-generation` and `audio-music-generation` materialize as `audio_generation`.

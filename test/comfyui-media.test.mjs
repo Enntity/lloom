@@ -135,6 +135,32 @@ try {
   assert.equal(migrated.defaults.speechModel, undefined);
   assert.equal(migrated.defaults.audioGenerationModel, legacyModel.id);
 
+  // A catalog from the retired shared runtime moves each re-applied model to
+  // its own runtime; the shared one is dropped once no model references it.
+  const [imageRecipe, videoRecipe] = ['flux-2-klein-4b', 'minimax-h3'].map((suffix) =>
+    recipes.find((recipe) => recipe.id.endsWith(suffix))
+  );
+  const shared = await apply(await apply(empty, imageRecipe), videoRecipe);
+  const sharedRuntime = structuredClone(shared.runtimes[imageRecipe.models[0].runtime]);
+  sharedRuntime.bootstrap.createArgs = sharedRuntime.bootstrap.createArgs.filter(
+    (arg) => !arg.startsWith('LLOOM_MEDIA_MODEL=')
+  );
+  shared.runtimes = { 'comfyui-media': sharedRuntime };
+  shared.backends = { 'comfyui-media': shared.backends[imageRecipe.models[0].backendConfig] };
+  for (const model of shared.models) Object.assign(model, { runtime: 'comfyui-media', backend: 'comfyui-media' });
+  const partlyMoved = await apply(shared, imageRecipe);
+  assert.equal(partlyMoved.models[0].runtime, imageRecipe.models[0].runtime);
+  assert.equal(partlyMoved.models[0].backend, imageRecipe.models[0].backendConfig);
+  assert.equal(partlyMoved.models[1].runtime, 'comfyui-media');
+  assert.ok(partlyMoved.runtimes['comfyui-media']);
+  const fullyMoved = await apply(partlyMoved, videoRecipe);
+  assert.deepEqual(
+    fullyMoved.models.map((model) => model.runtime),
+    [imageRecipe, videoRecipe].map((recipe) => recipe.models[0].runtime)
+  );
+  assert.equal(fullyMoved.runtimes['comfyui-media'], undefined);
+  assert.equal(fullyMoved.backends['comfyui-media'], undefined);
+
   // Setup status must compose the actual download dependencies even when the
   // gateway model ID has no matching directory of its own.
   const dependencyRoot = path.join(dir, 'composed-models');

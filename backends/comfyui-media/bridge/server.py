@@ -78,7 +78,8 @@ def _resolve_media_model(select: str | None = None) -> str | None:
     """The exact registry model a single-model runtime serves, if configured.
 
     ``select`` defaults to ``LLOOM_MEDIA_MODEL``. An absent variable selects
-    nothing (the runtime keeps its previous multi-model behaviour). A present
+    nothing, which only in-process tests rely on: the container launcher
+    refuses to start without a selection. A present
     but empty or whitespace-only value is a configuration error and refuses
     startup. Validation against the registry happens in ``create_app`` so the
     rejection also covers explicitly injected ``models``.
