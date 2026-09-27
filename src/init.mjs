@@ -874,8 +874,13 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
       finishRecipeModelConfig(config, recipeModel, materializedModel, modelId);
       continue;
     }
-    const runtimeId = existingModel?.runtime ?? recipeModel.runtime ?? `${backendId}-${modelSlug}`;
-    const backendConfigId = existingModel?.backend ?? recipeModel.backendConfig ?? `${backendId}-${modelSlug}`;
+    // Media models leave a retired shared runtime for their own; the recipe's
+    // placement replaces the inherited route.
+    const leavingSharedMedia = backendId === 'comfyui-media' && isSharedMediaRuntime(config, existingModel?.runtime);
+    const inherited = leavingSharedMedia ? null : existingModel;
+    const retired = leavingSharedMedia ? { runtime: existingModel.runtime, backend: existingModel.backend } : null;
+    const runtimeId = inherited?.runtime ?? recipeModel.runtime ?? `${backendId}-${modelSlug}`;
+    const backendConfigId = inherited?.backend ?? recipeModel.backendConfig ?? `${backendId}-${modelSlug}`;
     const port = Number(config.runtimes?.[runtimeId]?.port) || nextBackendPort(config);
     const modelPath = modelPathForRecipeModel(recipeModel, backendId, modelRoot);
 
@@ -914,8 +919,8 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
     } else if (config.runtimes[runtimeId]?.recipe?.id === recipe.id) {
       Object.assign(existingModel, materializedModel);
     } else if (backendId === 'comfyui-media') {
-      // Media recipes refresh their API contract when reusing an existing
-      // shared engine. Preserve the operator's upstream route.
+      // Media recipes refresh their API contract when reusing a runtime
+      // another recipe installed. Preserve the operator's upstream route.
       for (const key of ['kind', 'input', 'output', 'capabilities', 'reasoning', 'supportsTools', 'tts', 'stt']) {
         if (Object.hasOwn(materializedModel, key)) existingModel[key] = materializedModel[key];
         else delete existingModel[key];
@@ -925,6 +930,7 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
         config.defaults.audioGenerationModel ??= modelId;
       }
     }
+    if (retired) dropUnreferencedRoute(config, retired);
 
     finishRecipeModelConfig(config, recipeModel, materializedModel, modelId);
   }
@@ -952,6 +958,18 @@ function materializedRecipeModel(recipe, recipeModel, modelId, placement) {
   if (recipeModel.tts && typeof recipeModel.tts === 'object') model.tts = recipeModel.tts;
   if (recipeModel.stt && typeof recipeModel.stt === 'object') model.stt = recipeModel.stt;
   return model;
+}
+
+/** A media runtime without a single-model selector is the retired shared engine. */
+function isSharedMediaRuntime(config, runtimeId) {
+  const createArgs = config.runtimes?.[runtimeId]?.bootstrap?.createArgs;
+  return Array.isArray(createArgs) && !createArgs.some((arg) => String(arg).startsWith('LLOOM_MEDIA_MODEL='));
+}
+
+function dropUnreferencedRoute(config, { runtime, backend }) {
+  const routes = config.models.flatMap((model) => [model, ...asArray(model.targets)]);
+  if (runtime && !routes.some((route) => route.runtime === runtime)) delete config.runtimes[runtime];
+  if (backend && !routes.some((route) => route.backend === backend)) delete config.backends[backend];
 }
 
 function finishRecipeModelConfig(config, recipeModel, materializedModel, modelId) {

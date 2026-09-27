@@ -5,7 +5,7 @@
   "id": "linux-nvidia-comfyui-minimax-h3-turbo",
   "name": "MiniMaxAI/MiniMax-H3-Turbo (ComfyUI, NVIDIA)",
   "version": 1,
-  "summary": "Install MiniMaxAI/MiniMax-H3-Turbo with a shared, locally built ComfyUI media backend.",
+  "summary": "Install MiniMaxAI/MiniMax-H3-Turbo in an independent, single-model ComfyUI runtime.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata only; model weights retain their upstream licenses"
@@ -25,53 +25,28 @@
       "href": "https://huggingface.co/lightx2v/Minimax-h3-Turbo/tree/3ec17a324ced54151364f24f8b5fb6bf7e26414f"
     }
   ],
-  "keywords": [
-    "cuda",
-    "fp8",
-    "minimax-h3-turbo",
-    "nvfp4",
-    "nvidia",
-    "single-model"
-  ],
-  "capabilities": [
-    "video-generation",
-    "text-to-video"
-  ],
+  "keywords": ["cuda", "fp8", "minimax-h3-turbo", "nvfp4", "nvidia", "single-model"],
+  "capabilities": ["video-generation", "text-to-video"],
   "hardware": {
     "family": "Linux NVIDIA CUDA",
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
     "notes": [
-      "Standalone single-GPU serving; subsequent recipes share one managed ComfyUI runtime.",
+      "Independent single-model serving with per-model admission and unloading.",
       "NVIDIA Container Toolkit with CUDA 13-compatible host driver required."
     ]
   },
   "requirements": {
-    "platforms": [
-      "linux-x64",
-      "linux-arm64"
-    ],
+    "platforms": ["linux-x64", "linux-arm64"],
     "memoryGb": 95,
     "diskGb": 61,
-    "commands": [
-      "docker",
-      "python3"
-    ],
-    "accelerators": [
-      "cuda",
-      "nvidia-gpu"
-    ]
+    "commands": ["docker", "python3"],
+    "accelerators": ["cuda", "nvidia-gpu"]
   },
   "backend": {
     "id": "comfyui-media",
     "name": "ComfyUI media",
     "type": "openai-compatible-server",
-    "features": [
-      "cuda",
-      "audio-generation",
-      "video-generation",
-      "image-generation",
-      "image-editing"
-    ]
+    "features": ["cuda", "audio-generation", "video-generation", "image-generation", "image-editing"]
   },
   "setup": {
     "steps": [
@@ -80,9 +55,7 @@
         "title": "Check Docker CLI",
         "action": "check-command",
         "command": "docker",
-        "args": [
-          "--version"
-        ]
+        "args": ["--version"]
       },
       {
         "id": "download-1-minimax-h3",
@@ -130,9 +103,7 @@
         "provider": "huggingface",
         "model": "lightx2v/Minimax-h3-Turbo",
         "revision": "3ec17a324ced54151364f24f8b5fb6bf7e26414f",
-        "include": [
-          "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
-        ],
+        "include": ["minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"],
         "downloadSizeBytes": 1956193000,
         "integrity": {
           "files": [
@@ -151,20 +122,12 @@
       "role": "minimax-h3-turbo",
       "model": "MiniMaxAI/MiniMax-H3-Turbo",
       "gatewayModel": "MiniMaxAI/MiniMax-H3-Turbo",
-      "runtime": "comfyui-media",
-      "backendConfig": "comfyui-media",
+      "runtime": "comfyui-minimax-h3-turbo",
+      "backendConfig": "comfyui-minimax-h3-turbo",
       "kind": "video",
-      "input": [
-        "text"
-      ],
-      "output": [
-        "video",
-        "audio"
-      ],
-      "capabilities": [
-        "video-generation",
-        "text-to-video"
-      ],
+      "input": ["text"],
+      "output": ["video", "audio"],
+      "capabilities": ["video-generation", "text-to-video"],
       "settings": {
         "memoryGb": 95,
         "priority": 20,
@@ -174,11 +137,11 @@
         "runtime": {
           "adapter": "docker",
           "management": "managed",
-          "containerName": "lloom-comfyui-media",
+          "containerName": "lloom-comfyui-minimax-h3-turbo",
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/comfyui-media:source-b812f8cb1852f0360dd98b439f2e2ffc3039ae7d3d98482c07508a40319d9f34",
+            "image": "lloom/comfyui-media:source-381d99b95f2c4afb4e5c07ff12d2fd1c541cde69dc16f00db48506b9e27a7b83",
             "pull": false,
             "createArgs": [
               "--restart",
@@ -189,12 +152,26 @@
               "host",
               "-p",
               "127.0.0.1:${port}:8000",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--MiniMax-H3/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors,dst=/opt/ComfyUI/models/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--MiniMax-H3/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors,dst=/opt/ComfyUI/models/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--MiniMax-H3/vae/minimax_h3_audio_vae_fp32.safetensors,dst=/opt/ComfyUI/models/vae/minimax_h3_audio_vae_fp32.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--MiniMax-H3/vae/minimax_h3_video_vae_fp16.safetensors,dst=/opt/ComfyUI/models/vae/minimax_h3_video_vae_fp16.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/lightx2v--Minimax-h3-Turbo/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors,dst=/opt/ComfyUI/models/loras/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors,readonly",
               "-v",
-              "${modelRoot}:/opt/lloom-models:ro",
-              "-v",
-              "lloom-comfyui-media-data:/data",
+              "lloom-comfyui-minimax-h3-turbo-data:/data",
               "-e",
-              "LLOOM_MEDIA_DATA_ROOT=/data"
+              "LLOOM_MEDIA_DATA_ROOT=/data",
+              "-e",
+              "LLOOM_MODELS_ROOT=/opt/ComfyUI/models",
+              "-e",
+              "LLOOM_COMFY_CACHE_MODE=classic",
+              "-e",
+              "LLOOM_MEDIA_MODEL=MiniMaxAI/MiniMax-H3-Turbo"
             ]
           }
         },
