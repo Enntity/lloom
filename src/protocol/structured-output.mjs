@@ -49,7 +49,85 @@ function prepareToolChoiceForBackend(body, resolved) {
   return { ...body, thinking: { ...(isObject(body.thinking) ? body.thinking : {}), type: 'disabled' } };
 }
 
+// JSON Schema's `type` keyword. A caller that writes `type: "invalid"` is
+// asking for a constraint that cannot be compiled, and a backend that ignores
+// it answers as if the request were unconstrained — the caller gets a 200 and
+// silently loses the guarantee they asked for.
+const JSON_SCHEMA_TYPES = new Set(['null', 'boolean', 'object', 'array', 'number', 'string', 'integer']);
+
+function childSchemas(node) {
+  const children = [];
+  for (const key of ['items', 'additionalProperties', 'not', 'if', 'then', 'else', 'contains', 'propertyNames']) {
+    if (isObject(node[key])) children.push([`${key}`, node[key]]);
+  }
+  for (const key of ['properties', 'patternProperties', 'definitions', '$defs', 'dependentSchemas']) {
+    if (isObject(node[key])) {
+      for (const [name, child] of Object.entries(node[key])) {
+        if (isObject(child)) children.push([`${key}.${name}`, child]);
+      }
+    }
+  }
+  for (const key of ['allOf', 'anyOf', 'oneOf', 'prefixItems']) {
+    if (Array.isArray(node[key])) {
+      node[key].forEach((child, index) => {
+        if (isObject(child)) children.push([`${key}[${index}]`, child]);
+      });
+    }
+  }
+  return children;
+}
+
+/**
+ * Reject a schema no JSON Schema implementation could compile.
+ *
+ * Deliberately conservative: `$ref`, `enum`, `const`, `format`, unknown
+ * keywords and any other construct a valid schema may carry are left alone.
+ * Only a `type` that is not one of the seven JSON Schema types is refused, at
+ * the root or anywhere the specification places a subschema.
+ */
+export function assertCompilableSchema(schema, label = 'response_format.json_schema.schema') {
+  const visit = (node, path, depth) => {
+    if (depth > 32) return;
+    if (Object.hasOwn(node, 'type')) {
+      const value = node.type;
+      const values = Array.isArray(value) ? value : [value];
+      if (!values.length || values.some((item) => typeof item !== 'string' || !JSON_SCHEMA_TYPES.has(item))) {
+        throw new StructuredOutputError(
+          `${label}${path}: "type" must be one of ${[...JSON_SCHEMA_TYPES].join(', ')}`,
+          'invalid_json_schema'
+        );
+      }
+    }
+    for (const [step, child] of childSchemas(node)) visit(child, `${path}.${step}`, depth + 1);
+  };
+  visit(schema, '', 0);
+  return schema;
+}
+
+function validateCallerResponseFormat(body) {
+  const format = body.response_format;
+  if (format == null) return;
+  if (!isObject(format)) {
+    throw new StructuredOutputError('response_format must be an object', 'invalid_response_format');
+  }
+  if (format.type !== 'json_schema') return;
+  if (!isObject(format.json_schema)) {
+    throw new StructuredOutputError('response_format.json_schema must be an object', 'invalid_json_schema');
+  }
+  const { schema } = format.json_schema;
+  if (schema != null) {
+    if (!isObject(schema)) {
+      throw new StructuredOutputError(
+        'response_format.json_schema.schema must be a JSON Schema object',
+        'invalid_json_schema'
+      );
+    }
+    assertCompilableSchema(schema);
+  }
+}
+
 export function prepareStructuredOutputForBackend(body = {}, resolved = {}) {
+  validateCallerResponseFormat(body);
   const contract = isObject(body.lloom) ? body.lloom.outputSchema : null;
   if (contract == null) return { body: prepareToolChoiceForBackend(body, resolved), output: null };
 
@@ -57,6 +135,7 @@ export function prepareStructuredOutputForBackend(body = {}, resolved = {}) {
   if (!isObject(contract) || !isObject(contract.schema)) {
     throw new StructuredOutputError('lloom.outputSchema.schema must be a JSON Schema object');
   }
+  assertCompilableSchema(contract.schema, 'lloom.outputSchema.schema');
 
   const name = typeof contract.name === 'string' && contract.name.trim() ? contract.name.trim() : 'structured_output';
   const settings = isObject(resolved.backend?.structuredOutput) ? resolved.backend.structuredOutput : {};

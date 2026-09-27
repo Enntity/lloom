@@ -5,7 +5,7 @@
   "id": "linux-nvidia-comfyui-flux-2-klein-4b",
   "name": "black-forest-labs/FLUX.2-klein-4B (ComfyUI, NVIDIA)",
   "version": 1,
-  "summary": "Install black-forest-labs/FLUX.2-klein-4B with a shared, locally built ComfyUI media backend.",
+  "summary": "Install black-forest-labs/FLUX.2-klein-4B in an independent, single-model ComfyUI runtime.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata only; model weights retain their upstream licenses"
@@ -33,53 +33,28 @@
       "href": "https://huggingface.co/black-forest-labs/FLUX.2-klein-4b-nvfp4/tree/1db2b2f776c24b76f1122e5f69ab1949fc620068"
     }
   ],
-  "keywords": [
-    "cuda",
-    "flux.2-klein-4b",
-    "fp8",
-    "nvfp4",
-    "nvidia",
-    "single-model"
-  ],
-  "capabilities": [
-    "image-generation",
-    "image-editing"
-  ],
+  "keywords": ["cuda", "flux.2-klein-4b", "fp8", "nvfp4", "nvidia", "single-model"],
+  "capabilities": ["image-generation", "image-editing"],
   "hardware": {
     "family": "Linux NVIDIA CUDA",
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
     "notes": [
-      "Standalone single-GPU serving; subsequent recipes share one managed ComfyUI runtime.",
+      "Independent single-model serving with per-model admission and unloading.",
       "NVIDIA Container Toolkit with CUDA 13-compatible host driver required."
     ]
   },
   "requirements": {
-    "platforms": [
-      "linux-x64",
-      "linux-arm64"
-    ],
-    "memoryGb": 95,
+    "platforms": ["linux-x64", "linux-arm64"],
+    "memoryGb": 20,
     "diskGb": 26,
-    "commands": [
-      "docker",
-      "python3"
-    ],
-    "accelerators": [
-      "cuda",
-      "nvidia-gpu"
-    ]
+    "commands": ["docker", "python3"],
+    "accelerators": ["cuda", "nvidia-gpu"]
   },
   "backend": {
     "id": "comfyui-media",
     "name": "ComfyUI media",
     "type": "openai-compatible-server",
-    "features": [
-      "cuda",
-      "audio-generation",
-      "video-generation",
-      "image-generation",
-      "image-editing"
-    ]
+    "features": ["cuda", "audio-generation", "video-generation", "image-generation", "image-editing"]
   },
   "setup": {
     "steps": [
@@ -88,9 +63,7 @@
         "title": "Check Docker CLI",
         "action": "check-command",
         "command": "docker",
-        "args": [
-          "--version"
-        ]
+        "args": ["--version"]
       },
       {
         "id": "download-1-flux2-dev",
@@ -99,9 +72,7 @@
         "provider": "huggingface",
         "model": "Comfy-Org/flux2-dev",
         "revision": "ab9055628ea245000e610f2aa2c96f4746093546",
-        "include": [
-          "split_files/vae/flux2-vae.safetensors"
-        ],
+        "include": ["split_files/vae/flux2-vae.safetensors"],
         "downloadSizeBytes": 336213556,
         "integrity": {
           "files": [
@@ -120,9 +91,7 @@
         "provider": "huggingface",
         "model": "Comfy-Org/z_image_turbo",
         "revision": "08d04455279082882deaabc8d0d09fc914c071e1",
-        "include": [
-          "split_files/text_encoders/qwen_3_4b_fp4_mixed.safetensors"
-        ],
+        "include": ["split_files/text_encoders/qwen_3_4b_fp4_mixed.safetensors"],
         "downloadSizeBytes": 3479416193,
         "integrity": {
           "files": [
@@ -141,9 +110,7 @@
         "provider": "huggingface",
         "model": "black-forest-labs/FLUX.2-klein-4b-nvfp4",
         "revision": "1db2b2f776c24b76f1122e5f69ab1949fc620068",
-        "include": [
-          "flux-2-klein-4b-nvfp4.safetensors"
-        ],
+        "include": ["flux-2-klein-4b-nvfp4.safetensors"],
         "downloadSizeBytes": 2460413488,
         "integrity": {
           "files": [
@@ -162,22 +129,14 @@
       "role": "flux2-klein-4b-nvfp4",
       "model": "black-forest-labs/FLUX.2-klein-4B",
       "gatewayModel": "black-forest-labs/FLUX.2-klein-4B",
-      "runtime": "comfyui-media",
-      "backendConfig": "comfyui-media",
+      "runtime": "comfyui-flux-2-klein-4b",
+      "backendConfig": "comfyui-flux-2-klein-4b",
       "kind": "image",
-      "input": [
-        "text",
-        "image"
-      ],
-      "output": [
-        "image"
-      ],
-      "capabilities": [
-        "image-generation",
-        "image-editing"
-      ],
+      "input": ["text", "image"],
+      "output": ["image"],
+      "capabilities": ["image-generation", "image-editing"],
       "settings": {
-        "memoryGb": 95,
+        "memoryGb": 20,
         "priority": 30,
         "keepWarm": false,
         "maxActiveRequests": 1,
@@ -185,11 +144,11 @@
         "runtime": {
           "adapter": "docker",
           "management": "managed",
-          "containerName": "lloom-comfyui-media",
+          "containerName": "lloom-comfyui-flux-2-klein-4b",
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/comfyui-media:source-b812f8cb1852f0360dd98b439f2e2ffc3039ae7d3d98482c07508a40319d9f34",
+            "image": "lloom/comfyui-media:source-381d99b95f2c4afb4e5c07ff12d2fd1c541cde69dc16f00db48506b9e27a7b83",
             "pull": false,
             "createArgs": [
               "--restart",
@@ -200,12 +159,22 @@
               "host",
               "-p",
               "127.0.0.1:${port}:8000",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--flux2-dev/split_files/vae/flux2-vae.safetensors,dst=/opt/ComfyUI/models/vae/flux2-vae.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--z_image_turbo/split_files/text_encoders/qwen_3_4b_fp4_mixed.safetensors,dst=/opt/ComfyUI/models/text_encoders/qwen_3_4b_fp4_mixed.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/black-forest-labs--FLUX.2-klein-4b-nvfp4/flux-2-klein-4b-nvfp4.safetensors,dst=/opt/ComfyUI/models/diffusion_models/flux-2-klein-4b-nvfp4.safetensors,readonly",
               "-v",
-              "${modelRoot}:/opt/lloom-models:ro",
-              "-v",
-              "lloom-comfyui-media-data:/data",
+              "lloom-comfyui-flux-2-klein-4b-data:/data",
               "-e",
-              "LLOOM_MEDIA_DATA_ROOT=/data"
+              "LLOOM_MEDIA_DATA_ROOT=/data",
+              "-e",
+              "LLOOM_MODELS_ROOT=/opt/ComfyUI/models",
+              "-e",
+              "LLOOM_COMFY_CACHE_MODE=classic",
+              "-e",
+              "LLOOM_MEDIA_MODEL=black-forest-labs/FLUX.2-klein-4B"
             ]
           }
         },

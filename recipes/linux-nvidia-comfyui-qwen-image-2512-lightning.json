@@ -5,7 +5,7 @@
   "id": "linux-nvidia-comfyui-qwen-image-2512-lightning",
   "name": "Qwen/Qwen-Image-2512-Lightning (ComfyUI, NVIDIA)",
   "version": 1,
-  "summary": "Install Qwen/Qwen-Image-2512-Lightning with a shared, locally built ComfyUI media backend.",
+  "summary": "Install Qwen/Qwen-Image-2512-Lightning in an independent, single-model ComfyUI runtime.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata only; model weights retain their upstream licenses"
@@ -25,52 +25,28 @@
       "href": "https://huggingface.co/lightx2v/Qwen-Image-2512-Lightning/tree/a52649c9d0f6e1a248bff13f0df33bb8a2abdb52"
     }
   ],
-  "keywords": [
-    "cuda",
-    "fp8",
-    "nvfp4",
-    "nvidia",
-    "qwen-image-2512-lightning",
-    "single-model"
-  ],
-  "capabilities": [
-    "image-generation"
-  ],
+  "keywords": ["cuda", "fp8", "nvfp4", "nvidia", "qwen-image-2512-lightning", "single-model"],
+  "capabilities": ["image-generation"],
   "hardware": {
     "family": "Linux NVIDIA CUDA",
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
     "notes": [
-      "Standalone single-GPU serving; subsequent recipes share one managed ComfyUI runtime.",
+      "Independent single-model serving with per-model admission and unloading.",
       "NVIDIA Container Toolkit with CUDA 13-compatible host driver required."
     ]
   },
   "requirements": {
-    "platforms": [
-      "linux-x64",
-      "linux-arm64"
-    ],
-    "memoryGb": 95,
+    "platforms": ["linux-x64", "linux-arm64"],
+    "memoryGb": 48,
     "diskGb": 46,
-    "commands": [
-      "docker",
-      "python3"
-    ],
-    "accelerators": [
-      "cuda",
-      "nvidia-gpu"
-    ]
+    "commands": ["docker", "python3"],
+    "accelerators": ["cuda", "nvidia-gpu"]
   },
   "backend": {
     "id": "comfyui-media",
     "name": "ComfyUI media",
     "type": "openai-compatible-server",
-    "features": [
-      "cuda",
-      "audio-generation",
-      "video-generation",
-      "image-generation",
-      "image-editing"
-    ]
+    "features": ["cuda", "audio-generation", "video-generation", "image-generation", "image-editing"]
   },
   "setup": {
     "steps": [
@@ -79,9 +55,7 @@
         "title": "Check Docker CLI",
         "action": "check-command",
         "command": "docker",
-        "args": [
-          "--version"
-        ]
+        "args": ["--version"]
       },
       {
         "id": "download-1-qwen-image_comfyui",
@@ -123,9 +97,7 @@
         "provider": "huggingface",
         "model": "lightx2v/Qwen-Image-2512-Lightning",
         "revision": "a52649c9d0f6e1a248bff13f0df33bb8a2abdb52",
-        "include": [
-          "Qwen-Image-2512-Lightning-4steps-V1.0-bf16.safetensors"
-        ],
+        "include": ["Qwen-Image-2512-Lightning-4steps-V1.0-bf16.safetensors"],
         "downloadSizeBytes": 849608296,
         "integrity": {
           "files": [
@@ -144,20 +116,14 @@
       "role": "qwen-image-2512-lightning",
       "model": "Qwen/Qwen-Image-2512-Lightning",
       "gatewayModel": "Qwen/Qwen-Image-2512-Lightning",
-      "runtime": "comfyui-media",
-      "backendConfig": "comfyui-media",
+      "runtime": "comfyui-qwen-image-2512-lightning",
+      "backendConfig": "comfyui-qwen-image-2512-lightning",
       "kind": "image",
-      "input": [
-        "text"
-      ],
-      "output": [
-        "image"
-      ],
-      "capabilities": [
-        "image-generation"
-      ],
+      "input": ["text"],
+      "output": ["image"],
+      "capabilities": ["image-generation"],
       "settings": {
-        "memoryGb": 95,
+        "memoryGb": 48,
         "priority": 30,
         "keepWarm": false,
         "maxActiveRequests": 1,
@@ -165,11 +131,11 @@
         "runtime": {
           "adapter": "docker",
           "management": "managed",
-          "containerName": "lloom-comfyui-media",
+          "containerName": "lloom-comfyui-qwen-image-2512-lightning",
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/comfyui-media:source-b812f8cb1852f0360dd98b439f2e2ffc3039ae7d3d98482c07508a40319d9f34",
+            "image": "lloom/comfyui-media:source-381d99b95f2c4afb4e5c07ff12d2fd1c541cde69dc16f00db48506b9e27a7b83",
             "pull": false,
             "createArgs": [
               "--restart",
@@ -180,12 +146,24 @@
               "host",
               "-p",
               "127.0.0.1:${port}:8000",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--Qwen-Image_ComfyUI/split_files/diffusion_models/qwen_image_2512_fp8_e4m3fn.safetensors,dst=/opt/ComfyUI/models/diffusion_models/qwen_image_2512_fp8_e4m3fn.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--Qwen-Image_ComfyUI/split_files/text_encoders/qwen_2.5_vl_7b_nvfp4.safetensors,dst=/opt/ComfyUI/models/text_encoders/qwen_2.5_vl_7b_nvfp4.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--Qwen-Image_ComfyUI/split_files/vae/qwen_image_vae.safetensors,dst=/opt/ComfyUI/models/vae/qwen_image_vae.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/lightx2v--Qwen-Image-2512-Lightning/Qwen-Image-2512-Lightning-4steps-V1.0-bf16.safetensors,dst=/opt/ComfyUI/models/loras/Qwen-Image-2512-Lightning-4steps-V1.0-bf16.safetensors,readonly",
               "-v",
-              "${modelRoot}:/opt/lloom-models:ro",
-              "-v",
-              "lloom-comfyui-media-data:/data",
+              "lloom-comfyui-qwen-image-2512-lightning-data:/data",
               "-e",
-              "LLOOM_MEDIA_DATA_ROOT=/data"
+              "LLOOM_MEDIA_DATA_ROOT=/data",
+              "-e",
+              "LLOOM_MODELS_ROOT=/opt/ComfyUI/models",
+              "-e",
+              "LLOOM_COMFY_CACHE_MODE=classic",
+              "-e",
+              "LLOOM_MEDIA_MODEL=Qwen/Qwen-Image-2512-Lightning"
             ]
           }
         },

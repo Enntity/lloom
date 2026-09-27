@@ -8,7 +8,8 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 - LLooM Hear CPU audio analysis, with structured estimates, optional dashboard images, and opt-in upstream interpretation. File and URL inputs require operator configuration.
 
-- Thirteen standalone NVIDIA ComfyUI media recipes, a public-source backend build, and shared runtime reuse for image, video and music generation.
+- Fourteen per-model NVIDIA ComfyUI media recipes and a public-source backend build for image, video and music generation. Each model runs in its own container with read-only mounts of only its files, so LLooM admits, evicts and restores each one independently. The media launcher refuses to start without `LLOOM_MEDIA_MODEL`, and re-applying a recipe moves a model off the retired shared `comfyui-media` runtime, dropping it once unused.
+- OpenRouter Lyria audio generation through `/v1/audio/generations`.
 
 - Selective `include` paths or globs on recipe `download-model` steps, so a single-model lane fetches only the files its graph loads instead of every quantization in the model repository. Planned output reports the resolved `--include` command line.
 - First-class `audio_generation` models and the `POST /v1/audio/generations` route, with `GET /v1/audio/generations/models` and a `defaults.audioGenerationModel` fallback. Music and other audio-generation lanes no longer have to be registered as `audio_speech` to be reachable: `/v1/audio/speech` stays speech- and clone-only, and each route refuses the other's kind with `wrong_model_kind`. Recipe capabilities `audio-generation`, `music-generation` and `audio-music-generation` materialize as `audio_generation`.
@@ -27,6 +28,8 @@ All notable changes to LLooM will be documented in this file. The format follows
 - An optional action view for the live topology alongside the default columnar racks: the loom holds still, requests stay left and models stay right, but cards use weighted force physics and activity sets how far in a model sits — serving models draw in toward the loom while quiet ones drift back out toward the edge. The camera frames the loom plus every live request and serving model, pulling back as more work arrives, and quiet models are left outside the frame. Manual pan or zoom suspends following until the reset control, and the choice persists per browser.
 
 ### Changed
+
+- LLooM now requires Node.js 22.19 or newer, the minimum for its undici 8 HTTP client. It already failed to start on Node 20 after that upgrade; the engine range and CI matrix now say so.
 
 - The action view frames only models serving traffic and their live requests. Active cards cluster near the loom; idle models and machine racks no longer pull the camera outward. Manual zoom holds independently of the automatic fit until Reset view restores it.
 - Federated nodes now retain sovereign lifecycle control over ordinary local runtimes, while tensor-parallel members explicitly delegate lifecycle authority to their leader and remain non-callable on workers.

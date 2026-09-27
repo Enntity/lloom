@@ -46,6 +46,7 @@ def make_bridge(fake: FakeComfy, build_graph, *, start_backend: bool = False, **
         models=kwargs.pop("models", {"video-model": "video", "audio-model": "audio"}),
         build_graph=build_graph,
         start_backend=start_backend,
+        **kwargs,
     )
     return app, comfy
 

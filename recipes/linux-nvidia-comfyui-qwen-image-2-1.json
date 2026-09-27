@@ -5,7 +5,7 @@
   "id": "linux-nvidia-comfyui-qwen-image-2-1",
   "name": "Qwen/Qwen-Image-2.1 (ComfyUI, NVIDIA)",
   "version": 1,
-  "summary": "Install Qwen/Qwen-Image-2.1, one DiT for generation and reference editing, with the shared ComfyUI media backend.",
+  "summary": "Install Qwen/Qwen-Image-2.1 in an independent, single-model ComfyUI runtime.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata only; model weights are under the Qwen Research license"
@@ -33,55 +33,29 @@
       "href": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/image_qwen_image_2_1_image_edit.json"
     }
   ],
-  "keywords": [
-    "cuda",
-    "int8",
-    "nvidia",
-    "qwen-image-2.1",
-    "image-editing",
-    "transparency",
-    "single-model"
-  ],
-  "capabilities": [
-    "image-generation",
-    "image-editing"
-  ],
+  "keywords": ["cuda", "int8", "nvidia", "qwen-image-2.1", "image-editing", "transparency", "single-model"],
+  "capabilities": ["image-generation", "image-editing"],
   "hardware": {
     "family": "Linux NVIDIA CUDA",
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
     "notes": [
-      "Standalone single-GPU serving; shares the one managed ComfyUI media runtime with the other image, video and music recipes.",
+      "Independent single-model serving with per-model admission and unloading.",
       "NVIDIA Container Toolkit with a CUDA 13-compatible host driver required.",
       "Weight format is int8 convrot for the DiT and text encoder, which the pinned engine runs with its own quantized kernels. No separate LoRA is needed: 2.1 samples at its own shift and cfg 1."
     ]
   },
   "requirements": {
-    "platforms": [
-      "linux-x64",
-      "linux-arm64"
-    ],
-    "memoryGb": 95,
+    "platforms": ["linux-x64", "linux-arm64"],
+    "memoryGb": 48,
     "diskGb": 26,
-    "commands": [
-      "docker",
-      "python3"
-    ],
-    "accelerators": [
-      "cuda",
-      "nvidia-gpu"
-    ]
+    "commands": ["docker", "python3"],
+    "accelerators": ["cuda", "nvidia-gpu"]
   },
   "backend": {
     "id": "comfyui-media",
     "name": "ComfyUI media",
     "type": "openai-compatible-server",
-    "features": [
-      "cuda",
-      "audio-generation",
-      "video-generation",
-      "image-generation",
-      "image-editing"
-    ]
+    "features": ["cuda", "audio-generation", "video-generation", "image-generation", "image-editing"]
   },
   "setup": {
     "steps": [
@@ -90,9 +64,7 @@
         "title": "Check Docker CLI",
         "action": "check-command",
         "command": "docker",
-        "args": [
-          "--version"
-        ]
+        "args": ["--version"]
       },
       {
         "id": "download-1-qwen-image-2.1",
@@ -134,22 +106,14 @@
       "role": "qwen-image-2.1-int8",
       "model": "Qwen/Qwen-Image-2.1",
       "gatewayModel": "Qwen/Qwen-Image-2.1",
-      "runtime": "comfyui-media",
-      "backendConfig": "comfyui-media",
+      "runtime": "comfyui-qwen-image-2-1",
+      "backendConfig": "comfyui-qwen-image-2-1",
       "kind": "image",
-      "input": [
-        "text",
-        "image"
-      ],
-      "output": [
-        "image"
-      ],
-      "capabilities": [
-        "image-generation",
-        "image-editing"
-      ],
+      "input": ["text", "image"],
+      "output": ["image"],
+      "capabilities": ["image-generation", "image-editing"],
       "settings": {
-        "memoryGb": 95,
+        "memoryGb": 48,
         "priority": 30,
         "keepWarm": false,
         "maxActiveRequests": 1,
@@ -157,11 +121,11 @@
         "runtime": {
           "adapter": "docker",
           "management": "managed",
-          "containerName": "lloom-comfyui-media",
+          "containerName": "lloom-comfyui-qwen-image-2-1",
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/comfyui-media:source-b812f8cb1852f0360dd98b439f2e2ffc3039ae7d3d98482c07508a40319d9f34",
+            "image": "lloom/comfyui-media:source-381d99b95f2c4afb4e5c07ff12d2fd1c541cde69dc16f00db48506b9e27a7b83",
             "pull": false,
             "createArgs": [
               "--restart",
@@ -172,12 +136,22 @@
               "host",
               "-p",
               "127.0.0.1:${port}:8000",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--Qwen-Image-2.1/diffusion_models/qwen_image_2.1_int8_convrot.safetensors,dst=/opt/ComfyUI/models/diffusion_models/qwen_image_2.1_int8_convrot.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--Qwen-Image-2.1/text_encoders/qwen3vl_8b_int8_convrot.safetensors,dst=/opt/ComfyUI/models/text_encoders/qwen3vl_8b_int8_convrot.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--Qwen-Image-2.1/vae/qwen_image_2.1_vae_bf16.safetensors,dst=/opt/ComfyUI/models/vae/qwen_image_2.1_vae_bf16.safetensors,readonly",
               "-v",
-              "${modelRoot}:/opt/lloom-models:ro",
-              "-v",
-              "lloom-comfyui-media-data:/data",
+              "lloom-comfyui-qwen-image-2-1-data:/data",
               "-e",
-              "LLOOM_MEDIA_DATA_ROOT=/data"
+              "LLOOM_MEDIA_DATA_ROOT=/data",
+              "-e",
+              "LLOOM_MODELS_ROOT=/opt/ComfyUI/models",
+              "-e",
+              "LLOOM_COMFY_CACHE_MODE=classic",
+              "-e",
+              "LLOOM_MEDIA_MODEL=Qwen/Qwen-Image-2.1"
             ]
           }
         },
