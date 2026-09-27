@@ -5,7 +5,7 @@
   "id": "linux-nvidia-comfyui-minimax-music3",
   "name": "MiniMaxAI/MiniMax-Music3 (ComfyUI, NVIDIA)",
   "version": 1,
-  "summary": "Install MiniMaxAI/MiniMax-Music3 with a shared, locally built ComfyUI media backend.",
+  "summary": "Install MiniMaxAI/MiniMax-Music3 in an independent, single-model ComfyUI runtime.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata only; model weights retain their upstream licenses"
@@ -25,53 +25,28 @@
       "href": "https://huggingface.co/Comfy-Org/MiniMax-Music-3/tree/6baad88896848433857c170ba4f05d2ea9d5f218"
     }
   ],
-  "keywords": [
-    "cuda",
-    "fp8",
-    "minimax-music3",
-    "nvfp4",
-    "nvidia",
-    "single-model"
-  ],
-  "capabilities": [
-    "audio-generation",
-    "music-generation"
-  ],
+  "keywords": ["cuda", "fp8", "minimax-music3", "nvfp4", "nvidia", "single-model"],
+  "capabilities": ["audio-generation", "music-generation"],
   "hardware": {
     "family": "Linux NVIDIA CUDA",
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
     "notes": [
-      "Standalone single-GPU serving; subsequent recipes share one managed ComfyUI runtime.",
+      "Independent single-model serving with per-model admission and unloading.",
       "NVIDIA Container Toolkit with CUDA 13-compatible host driver required."
     ]
   },
   "requirements": {
-    "platforms": [
-      "linux-x64",
-      "linux-arm64"
-    ],
-    "memoryGb": 95,
+    "platforms": ["linux-x64", "linux-arm64"],
+    "memoryGb": 35,
     "diskGb": 33,
-    "commands": [
-      "docker",
-      "python3"
-    ],
-    "accelerators": [
-      "cuda",
-      "nvidia-gpu"
-    ]
+    "commands": ["docker", "python3"],
+    "accelerators": ["cuda", "nvidia-gpu"]
   },
   "backend": {
     "id": "comfyui-media",
     "name": "ComfyUI media",
     "type": "openai-compatible-server",
-    "features": [
-      "cuda",
-      "audio-generation",
-      "video-generation",
-      "image-generation",
-      "image-editing"
-    ]
+    "features": ["cuda", "audio-generation", "video-generation", "image-generation", "image-editing"]
   },
   "setup": {
     "steps": [
@@ -80,9 +55,7 @@
         "title": "Check Docker CLI",
         "action": "check-command",
         "command": "docker",
-        "args": [
-          "--version"
-        ]
+        "args": ["--version"]
       },
       {
         "id": "download-1-minimax-music-3",
@@ -124,21 +97,14 @@
       "role": "minimax-music3",
       "model": "MiniMaxAI/MiniMax-Music3",
       "gatewayModel": "MiniMaxAI/MiniMax-Music3",
-      "runtime": "comfyui-media",
-      "backendConfig": "comfyui-media",
+      "runtime": "comfyui-minimax-music3",
+      "backendConfig": "comfyui-minimax-music3",
       "kind": "audio_generation",
-      "input": [
-        "text"
-      ],
-      "output": [
-        "audio"
-      ],
-      "capabilities": [
-        "audio-generation",
-        "music-generation"
-      ],
+      "input": ["text"],
+      "output": ["audio"],
+      "capabilities": ["audio-generation", "music-generation"],
       "settings": {
-        "memoryGb": 95,
+        "memoryGb": 35,
         "priority": 20,
         "keepWarm": false,
         "maxActiveRequests": 1,
@@ -146,11 +112,11 @@
         "runtime": {
           "adapter": "docker",
           "management": "managed",
-          "containerName": "lloom-comfyui-media",
+          "containerName": "lloom-comfyui-minimax-music3",
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/comfyui-media:source-b812f8cb1852f0360dd98b439f2e2ffc3039ae7d3d98482c07508a40319d9f34",
+            "image": "lloom/comfyui-media:source-381d99b95f2c4afb4e5c07ff12d2fd1c541cde69dc16f00db48506b9e27a7b83",
             "pull": false,
             "createArgs": [
               "--restart",
@@ -161,12 +127,22 @@
               "host",
               "-p",
               "127.0.0.1:${port}:8000",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--MiniMax-Music-3/diffusion_models/minimax_music3_dit_fp16.safetensors,dst=/opt/ComfyUI/models/diffusion_models/minimax_music3_dit_fp16.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--MiniMax-Music-3/text_encoders/minimax_music3_text_encoder_pruned_int8_convrot.safetensors,dst=/opt/ComfyUI/models/text_encoders/minimax_music3_text_encoder_pruned_int8_convrot.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--MiniMax-Music-3/vae/minimax_music3_dav.safetensors,dst=/opt/ComfyUI/models/vae/minimax_music3_dav.safetensors,readonly",
               "-v",
-              "${modelRoot}:/opt/lloom-models:ro",
-              "-v",
-              "lloom-comfyui-media-data:/data",
+              "lloom-comfyui-minimax-music3-data:/data",
               "-e",
-              "LLOOM_MEDIA_DATA_ROOT=/data"
+              "LLOOM_MEDIA_DATA_ROOT=/data",
+              "-e",
+              "LLOOM_MODELS_ROOT=/opt/ComfyUI/models",
+              "-e",
+              "LLOOM_COMFY_CACHE_MODE=classic",
+              "-e",
+              "LLOOM_MEDIA_MODEL=MiniMaxAI/MiniMax-Music3"
             ]
           }
         },

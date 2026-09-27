@@ -1,15 +1,15 @@
 # ComfyUI image, video and music recipes
 
 Each `linux-nvidia-comfyui-*` recipe installs one model and the files its workflow
-uses. The recipes share a single LLooM-managed `comfyui-media` runtime. The first
-installation builds the backend from public source; later installations reuse
-that image, container, backend URL and concurrency limit.
+uses. Each recipe creates its own LLooM-managed runtime, container, backend URL
+and concurrency limit. Installations reuse the immutable backend image on disk.
 
 ## Install
 
 Use Linux on NVIDIA hardware with Docker, NVIDIA Container Toolkit, Python 3
-with venv support, and a CUDA 13-compatible driver. The recipes conservatively
-reserve 95 GiB of host/model memory for the shared runtime. Consult each recipe's
+with venv support, and a CUDA 13-compatible driver. Each recipe carries a
+provisional memory estimate for admission, not a hard allocation. Validate peak
+memory for the intended request size before tightening that estimate. Consult each recipe's
 `diskGb` estimate before downloading. Model repositories can require separately
 accepted access terms and Hugging Face authentication; credentials stay in your
 local Hugging Face environment and are never included in recipes or images.
@@ -33,18 +33,15 @@ resolved Python environment in `/opt/package-lock.txt`. These are source-pinned
 builds, not a claim of bit-for-bit reproducibility across dependency indexes.
 
 Add another model with the same command and its recipe ID. Use `--additive` to
-preserve the rest of your catalog. The backend mounts `${modelRoot}` read-only;
-its extra model paths cover repository roots, `split_files`, and root-level
-LoRAs. Paths for all bundled models are registered when it starts, so subsequent
-model installations become visible without changing its launch configuration.
-Run setup while the media lane is idle: acquisition can temporarily stage a
-shared model directory while verifying newly requested files.
+preserve the rest of your catalog. Each container receives read-only bind mounts
+for only its model's exact checkpoint, encoder, VAE and adapter files. Files can
+be shared on disk between recipes without combining process or memory residency.
+Run setup while the selected lane is idle so acquisition and verification do not
+race a running model's file access.
 
-The shared engine has one generation slot across all modalities. LLooM queues
-requests through that runtime, so adding models does not start duplicate GPU
-engines. This reuse applies to the managed runtime created by these recipes;
-an unrelated ComfyUI installation is not silently adopted. Docker backend ports
-remain bound to loopback. Clients use the authenticated LLooM gateway.
+Each runtime has one generation slot. LLooM admits and unloads it independently
+using that model's estimate and current host headroom. Docker backend ports stay
+on loopback; clients use the authenticated LLooM gateway.
 
 Qwen-Image 2.1 is the one image family here that generates and edits from a
 single checkpoint. It samples at its own shift with classifier-free guidance off,
@@ -61,22 +58,22 @@ existing backend must support `/v1/audio/generations`.
 
 ## Models
 
-| Recipe suffix | Gateway model | Endpoint |
-| --- | --- | --- |
-| `flux-2-klein-4b` | `black-forest-labs/FLUX.2-klein-4B` | `/v1/images/generations` |
-| `qwen-image-2512` | `Qwen/Qwen-Image-2512` | `/v1/images/generations` |
-| `qwen-image-2512-lightning` | `Qwen/Qwen-Image-2512-Lightning` | `/v1/images/generations` |
-| `qwen-image-edit-2511` | `Qwen/Qwen-Image-Edit-2511` | `/v1/images/generations` with inline image |
-| `qwen-image-2-1` | `Qwen/Qwen-Image-2.1` | `/v1/images/generations`, with inline image to edit |
-| `ideogram-4` | `Comfy-Org/Ideogram-4` | `/v1/images/generations` |
-| `krea-2-turbo` | `Comfy-Org/Krea-2-Turbo` | `/v1/images/generations` |
-| `minimax-h3` | `MiniMaxAI/MiniMax-H3` | `/v1/videos/generations` |
-| `minimax-h3-turbo` | `MiniMaxAI/MiniMax-H3-Turbo` | `/v1/videos/generations` |
-| `ltx-2-5` | `Lightricks/LTX-2.5` | `/v1/videos/generations` |
-| `minimax-music3` | `MiniMaxAI/MiniMax-Music3` | `/v1/audio/generations` |
-| `ace-step-1-5-xl-sft` | `ACE-Step/ACE-Step-1.5-XL-SFT` | `/v1/audio/generations` |
-| `ace-step-1-5-xl-turbo` | `ACE-Step/ACE-Step-1.5-XL-Turbo` | `/v1/audio/generations` |
-| `yue2-3b` | `Comfy-Org/YuE2-3B` | `/v1/audio/generations` |
+| Recipe suffix               | Gateway model                       | Endpoint                                            |
+| --------------------------- | ----------------------------------- | --------------------------------------------------- |
+| `flux-2-klein-4b`           | `black-forest-labs/FLUX.2-klein-4B` | `/v1/images/generations`                            |
+| `qwen-image-2512`           | `Qwen/Qwen-Image-2512`              | `/v1/images/generations`                            |
+| `qwen-image-2512-lightning` | `Qwen/Qwen-Image-2512-Lightning`    | `/v1/images/generations`                            |
+| `qwen-image-edit-2511`      | `Qwen/Qwen-Image-Edit-2511`         | `/v1/images/generations` with inline image          |
+| `qwen-image-2-1`            | `Qwen/Qwen-Image-2.1`               | `/v1/images/generations`, with inline image to edit |
+| `ideogram-4`                | `Comfy-Org/Ideogram-4`              | `/v1/images/generations`                            |
+| `krea-2-turbo`              | `Comfy-Org/Krea-2-Turbo`            | `/v1/images/generations`                            |
+| `minimax-h3`                | `MiniMaxAI/MiniMax-H3`              | `/v1/videos/generations`                            |
+| `minimax-h3-turbo`          | `MiniMaxAI/MiniMax-H3-Turbo`        | `/v1/videos/generations`                            |
+| `ltx-2-5`                   | `Lightricks/LTX-2.5`                | `/v1/videos/generations`                            |
+| `minimax-music3`            | `MiniMaxAI/MiniMax-Music3`          | `/v1/audio/generations`                             |
+| `ace-step-1-5-xl-sft`       | `ACE-Step/ACE-Step-1.5-XL-SFT`      | `/v1/audio/generations`                             |
+| `ace-step-1-5-xl-turbo`     | `ACE-Step/ACE-Step-1.5-XL-Turbo`    | `/v1/audio/generations`                             |
+| `yue2-3b`                   | `Comfy-Org/YuE2-3B`                 | `/v1/audio/generations`                             |
 
 Prefix each suffix with `linux-nvidia-comfyui-` for the recipe ID. Recipe metadata
 is MIT licensed; model weights retain their own licenses. Each recipe links its
@@ -142,3 +139,58 @@ allow headroom for retained workflow tensors in its `memoryGb` estimate.
 
 Each request uses a unique output-save prefix so cached graphs cannot reuse an
 artifact already deleted by bridge cleanup. Model-loader inputs remain stable.
+
+## Per-model runtimes
+
+The recipes configure independent runtimes by default. Every model is admitted,
+unloaded and memory-accounted independently. Each runtime needs its own backend URL, container name and memory estimate.
+
+Set the bridge environment variable `LLOOM_MEDIA_MODEL` on a per-model runtime
+and point it at one exact backend model ID (the same string advertised by the bridge in
+`/v1/models`, for example `ACE-Step/ACE-Step-1.5-XL-Turbo`):
+
+```sh
+LLOOM_MEDIA_MODEL=ACE-Step/ACE-Step-1.5-XL-Turbo
+```
+
+The bridge then advertises and serves only that registry entry. A request for
+any other model is rejected with `unsupported_model` before the graph builder
+runs and before anything is submitted to ComfyUI, so a request can never pull an
+unmounted checkpoint into a single-model engine. The selection is applied while
+the app is built, so it also holds for a registry injected by a caller.
+
+Startup fails closed on a bad selector: an explicitly set but empty (or
+whitespace-only) value and an unknown model ID both abort startup rather than
+degrade to exposing every bundled model. Unset the variable entirely to keep the
+previous multi-model behaviour; an absent variable is never treated as a
+selection. Startup stays weight-lazy — the bridge only probes ComfyUI's
+`/system_stats` and the registry wiring, it never loads a checkpoint — and
+`/health` performs no inference.
+
+Mount only the files the one model needs, so the runtime's estimate matches what
+it can actually load:
+
+- the specific checkpoint (or diffusion/UNet file) for that model;
+- its text encoder and VAE;
+- its LoRAs and any tokenizer or dependency files the workflow references;
+- nothing for the other bundled models.
+
+Recipes mount individual files from `${modelRoot}` and set
+`LLOOM_MODELS_ROOT=/opt/ComfyUI/models` to avoid scanning an aggregate model root. A single-model runtime that can see only its own files cannot
+accidentally load a checkpoint it has no memory budget for.
+
+The `LLOOM_COMFY_CACHE_MODE` tradeoff applies per runtime and is the reason to
+consider both modes here:
+
+- `classic` keeps ComfyUI's last-workflow node cache, including the reusable
+  model loaders. On a dedicated single-model runtime the cached graph always
+  targets the same weights, so repeated requests skip re-loading the checkpoint
+  and can be noticeably faster. It retains workflow tensors, so allow headroom
+  in that runtime's `memoryGb` estimate.
+- `none` (the default) preserves the uncached behaviour and holds no workflow
+  tensors between requests, at the cost of re-loading the checkpoint on each
+  request. Choose it when free memory matters more than repeated-request speed.
+
+Sharing the immutable Docker image or read-only weight files on disk does not
+combine runtime residency. Per-model processes remain independently admitted
+and evicted.

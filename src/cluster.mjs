@@ -888,7 +888,14 @@ export function validateClusterConfig(config, env = process.env) {
 export class ClusterCoordinator {
   constructor(
     config,
-    { env = process.env, fetchImpl = undiciFetch, logger = console, telemetry = null, profile = null, models = null } = {}
+    {
+      env = process.env,
+      fetchImpl = undiciFetch,
+      logger = console,
+      telemetry = null,
+      profile = null,
+      models = null
+    } = {}
   ) {
     this.config = config;
     this.env = env;

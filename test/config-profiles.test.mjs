@@ -77,7 +77,11 @@ try {
     'cloud'
   );
   const localPlan = planProfileChanges(config, localProfile);
-  assert.equal(localPlan.unchanged.length, 2, 'omp route + residency are no-ops; simple pins members (members rewrite)');
+  assert.equal(
+    localPlan.unchanged.length,
+    2,
+    'omp route + residency are no-ops; simple pins members (members rewrite)'
+  );
   const cloudPlan = planProfileChanges(config, cloudProfile);
   assert.equal(cloudPlan.routes.length, 1);
   assert.deepEqual(cloudPlan.routes[0], {
@@ -90,7 +94,10 @@ try {
   });
   assert.deepEqual(cloudPlan.residency, [{ id: 'local-model', from: 'always', to: 'auto' }]);
   assert.deepEqual(cloudPlan.defaults, [{ id: 'chatModel', from: 'local-model', to: 'cloud-model' }]);
-  assert.throws(() => planProfileChanges(config, normalizeProfileDocument({ routes: { ghost: 'cloud' } }, 'x')), /no alias ghost/);
+  assert.throws(
+    () => planProfileChanges(config, normalizeProfileDocument({ routes: { ghost: 'cloud' } }, 'x')),
+    /no alias ghost/
+  );
   assert.throws(
     () => planProfileChanges(config, normalizeProfileDocument({ residency: { ghost: 'auto' } }, 'x')),
     /no runtime ghost/
@@ -127,7 +134,11 @@ try {
   const applied = await controller.apply('cloud', { yes: true });
   assert.equal(applied.profile, 'cloud');
   assert.equal(applied.routes.length, 1);
-  assert.equal(applied.unchanged.length, 0, 'second plan sees no changes after apply? no: apply recomputes against raw');
+  assert.equal(
+    applied.unchanged.length,
+    0,
+    'second plan sees no changes after apply? no: apply recomputes against raw'
+  );
   const onDisk = JSON.parse(await fs.readFile(configPath, 'utf8'));
   assert.equal(onDisk.fleet.activeProfile, 'cloud');
   assert.deepEqual(onDisk.aliases.omp.members, ['cloud-model']);

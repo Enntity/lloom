@@ -8,11 +8,11 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import model_paths  # noqa: E402
 
-# Recipe-installed models land in per-repo directories under the LLooM model root.
-# ComfyUI reads one extra_model_paths.yaml naming each of them, so installing a
-# single-model recipe is enough for the engine to serve it -- no source edit, no
-# hand-placed symlink. The aggregate default root stays where it is.
-HOST_MODELS_ROOT = os.environ.get("LLOOM_MODELS_ROOT", "/opt/lloom-models")
+# Each container serves exactly one model, whose files the recipe bind-mounts
+# read-only into ComfyUI's model tree. There is no shared multi-model runtime.
+if not os.environ.get("LLOOM_MEDIA_MODEL", "").strip():
+    raise SystemExit("LLOOM_MEDIA_MODEL is required: each media runtime serves exactly one model")
+HOST_MODELS_ROOT = os.environ.get("LLOOM_MODELS_ROOT", "/opt/ComfyUI/models")
 EXTRA_PATHS_FILE = "/data/extra_model_paths.yaml"
 CACHE_MODE = os.environ.get("LLOOM_COMFY_CACHE_MODE", "none")
 if CACHE_MODE not in ("none", "classic"):

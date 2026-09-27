@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   openAIToResponses,
+  responsesContentPartToOpenAI,
   responsesInputToMessages,
+  responsesToOpenAIChat,
   responsesToolChoiceToOpenAI,
   responsesToolsToOpenAI
 } from '../src/protocol/responses.mjs';
@@ -47,6 +49,56 @@ test('developer instructions remain privileged and ordered ahead of user input',
     { role: 'system', content: [{ type: 'text', text: 'Project policy.' }] },
     { role: 'user', content: 'Task.' }
   ]);
+});
+
+test('Responses image and video parts preserve compatible URL forms', () => {
+  const gif = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP';
+  const mp4 = 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAA';
+  const messages = responsesInputToMessages({
+    input: [
+      {
+        role: 'user',
+        content: [
+          { type: 'input_image', image_url: gif, detail: 'high' },
+          { type: 'input_image', image_url: { url: 'https://example.test/image.png', detail: 'low' } },
+          { type: 'image_url', image_url: { url: 'https://example.test/other.png', detail: 'high' } },
+          { type: 'input_video', video_url: gif },
+          { type: 'video_url', video_url: { url: mp4, detail: 'low' } },
+          { type: 'video', url: 'https://example.test/movie.mp4' }
+        ]
+      }
+    ]
+  });
+  assert.deepEqual(messages[0].content, [
+    { type: 'image_url', image_url: { url: gif, detail: 'high' } },
+    { type: 'image_url', image_url: { url: 'https://example.test/image.png', detail: 'low' } },
+    { type: 'image_url', image_url: { url: 'https://example.test/other.png', detail: 'high' } },
+    { type: 'video_url', video_url: { url: gif } },
+    { type: 'video_url', video_url: { url: mp4, detail: 'low' } },
+    { type: 'video_url', video_url: { url: 'https://example.test/movie.mp4' } }
+  ]);
+  assert.deepEqual(responsesContentPartToOpenAI({ type: 'input_image', url: gif }), {
+    type: 'image_url',
+    image_url: { url: gif }
+  });
+});
+
+test('Responses video content reaches the chat adapter alongside tools', () => {
+  const mp4 = 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAA';
+  const translated = responsesToOpenAIChat(
+    {
+      input: [{ role: 'user', content: [{ type: 'input_video', video_url: mp4 }] }],
+      tools: [{ type: 'function', name: 'inspect', parameters: { type: 'object' } }],
+      tool_choice: { type: 'function', name: 'inspect' },
+      stream: true
+    },
+    { model: { upstreamModel: 'glm-5.3-flash-atlas' } }
+  );
+  assert.deepEqual(translated.messages[0].content, [{ type: 'video_url', video_url: { url: mp4 } }]);
+  assert.deepEqual(translated.tools, [
+    { type: 'function', function: { name: 'inspect', parameters: { type: 'object' } } }
+  ]);
+  assert.deepEqual(translated.tool_choice, { type: 'function', function: { name: 'inspect' } });
 });
 
 test('custom tool declarations and explicit choices become callable Chat functions', () => {
