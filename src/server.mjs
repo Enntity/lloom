@@ -18,8 +18,6 @@ import {
   writeFileSync
 } from 'node:fs';
 import path from 'node:path';
-import { open as openFile, realpath } from 'node:fs/promises';
-import { constants as fsConstants } from 'node:fs';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -3257,29 +3255,6 @@ export function createLloomServer(
     });
     // Keep named profile id in voice for logging; clone backends ignore unknown speakers.
     if (profile?.id) normalized.voice = profile.id;
-    // Only expand the trusted named-profile reference. Caller-supplied paths
-    // are never opened by the gateway. This also works across container mounts.
-    if (profile?.refAudioPath && normalized.ref_audio === profile.refAudioPath) {
-      const root = await realpath(voicesRoot());
-      const reference = await realpath(profile.refAudioPath);
-      if (!reference.startsWith(root + path.sep)) throw new Error('voice reference is outside the voice registry');
-      const file = await openFile(reference, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
-      try {
-        const stat = await file.stat();
-        if (!stat.isFile() || stat.size > 16 * 1024 * 1024) throw new Error('invalid voice reference size');
-        const bytes = Buffer.alloc(stat.size + 1);
-        let bytesRead = 0;
-        while (bytesRead < bytes.length) {
-          const part = await file.read(bytes, bytesRead, bytes.length - bytesRead, bytesRead);
-          if (!part.bytesRead) break;
-          bytesRead += part.bytesRead;
-        }
-        if (bytesRead !== stat.size) throw new Error('voice reference changed while reading');
-        normalized.ref_audio = `data:audio/wav;base64,${bytes.subarray(0, bytesRead).toString('base64')}`;
-      } finally {
-        await file.close();
-      }
-    }
     // Opt-in low-latency streaming: only real PCM payloads can be streamed as
     // bytes (WAV needs a header with the final length). Any other combination
     // falls back to the buffered compatibility path so normal WAV is unchanged.

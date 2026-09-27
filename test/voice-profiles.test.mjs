@@ -85,6 +85,18 @@ assert.equal(unknown.applied, false);
 await fs.writeFile(loaded.refAudioPath, Buffer.alloc(0));
 await assert.rejects(resolveSpeechVoice({ voice: 'character-demo' }, { voicesRoot: tmp }), /nonempty audio file/);
 await fs.writeFile(loaded.refAudioPath, Buffer.from('RIFFxxxxWAVEfmt '));
+// Uploaded bytes may leave the host, so the reference must stay inside the registry.
+const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'lloom-voice-outside-'));
+await fs.writeFile(path.join(outside, 'secret.wav'), Buffer.from('not a voice'));
+await fs.rename(loaded.refAudioPath, `${loaded.refAudioPath}.bak`);
+await fs.symlink(path.join(outside, 'secret.wav'), loaded.refAudioPath);
+await assert.rejects(
+  resolveSpeechVoice({ voice: 'character-demo' }, { voicesRoot: tmp }),
+  /outside the voice registry/
+);
+await fs.rm(loaded.refAudioPath);
+await fs.rename(`${loaded.refAudioPath}.bak`, loaded.refAudioPath);
+await fs.rm(outside, { recursive: true, force: true });
 
 const discovery = listVoicesDiscovery({
   profiles: listed,

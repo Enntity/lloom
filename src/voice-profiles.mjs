@@ -8,7 +8,7 @@
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { createReadStream, existsSync } from 'node:fs';
+import { constants as fsConstants, createReadStream, existsSync } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { createWriteStream } from 'node:fs';
 import { defaultLloomHome } from './config.mjs';
@@ -367,6 +367,28 @@ export async function removeVoiceProfile(voiceId, { voicesRoot = defaultVoicesRo
   return { removed: true, voiceId: id, directory };
 }
 
+const MAX_VOICE_REFERENCE_BYTES = 16 * 1024 * 1024;
+const VOICE_REFERENCE_MIME = { '.mp3': 'audio/mpeg', '.flac': 'audio/flac', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4' };
+
+/** Inline a profile's reference audio. The bytes can leave the host, so it must stay in the registry. */
+async function readVoiceReference(refAudioPath, voicesRoot) {
+  const [root, reference] = await Promise.all([fs.realpath(voicesRoot), fs.realpath(refAudioPath)]);
+  if (!reference.startsWith(root + path.sep)) throw new Error('voice reference is outside the voice registry');
+  const handle = await fs.open(reference, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile() || stat.size <= 0 || stat.size > MAX_VOICE_REFERENCE_BYTES) {
+      throw new Error('voice reference must be a nonempty audio file at most 16 MiB');
+    }
+    const audio = await handle.readFile();
+    if (audio.length !== stat.size) throw new Error('voice reference changed while reading');
+    const mime = VOICE_REFERENCE_MIME[path.extname(reference).toLowerCase()] ?? 'audio/wav';
+    return `data:${mime};base64,${audio.toString('base64')}`;
+  } finally {
+    await handle.close();
+  }
+}
+
 /**
  * Resolve speech request voice field against installed profiles.
  */
@@ -383,21 +405,7 @@ export async function resolveSpeechVoice(body = {}, { voicesRoot = defaultVoices
   // Only a trusted installed profile may cause a local file read. Caller-supplied
   // references remain untouched for the backend's normal input validation.
   if (body.ref_audio == null && body.refAudio == null) {
-    const handle = await fs.open(profile.refAudioPath, 'r');
-    try {
-      const stat = await handle.stat();
-      if (!stat.isFile() || stat.size <= 0 || stat.size > 16 * 1024 * 1024) {
-        throw new Error('voice reference must be a nonempty audio file at most 16 MiB');
-      }
-      const audio = await handle.readFile();
-      const mime =
-        { '.mp3': 'audio/mpeg', '.flac': 'audio/flac', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4' }[
-          path.extname(profile.refAudioPath).toLowerCase()
-        ] ?? 'audio/wav';
-      expanded.body.ref_audio = `data:${mime};base64,${audio.toString('base64')}`;
-    } finally {
-      await handle.close();
-    }
+    expanded.body.ref_audio = await readVoiceReference(profile.refAudioPath, voicesRoot);
   }
   return expanded;
 }
