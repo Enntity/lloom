@@ -1048,6 +1048,61 @@
       }
     },
     {
+      "id": "spark-audio",
+      "name": "Spark audio (NVIDIA Docker)",
+      "kind": "openai-compatible-server",
+      "description": "Source-built CUDA adapter serving one local Qwen3-TTS or Whisper checkpoint per container through the OpenAI speech and transcription APIs.",
+      "platforms": [
+        "linux-arm64",
+        "linux-x64"
+      ],
+      "features": [
+        "audio-speech",
+        "tts",
+        "tts-voice-clone",
+        "audio-transcription",
+        "stt",
+        "cuda",
+        "docker"
+      ],
+      "commands": [
+        "docker",
+        "python3"
+      ],
+      "setup": [
+        {
+          "id": "build-spark-audio",
+          "title": "Build or reuse the source-pinned Spark audio backend",
+          "action": "command",
+          "command": "python3",
+          "args": [
+            "${repoRoot}/backends/spark-audio/install.py",
+            "--install-root",
+            "${installRoot}",
+            "--shim-dir",
+            "${shimDir}"
+          ],
+          "alwaysRun": true
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health",
+        "speechPath": "/v1/audio/speech",
+        "transcriptionPath": "/v1/audio/transcriptions"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "partial",
+        "modes": [
+          "speech",
+          "transcription",
+          "streaming"
+        ],
+        "notes": "Buffered speech and transcription run to completion on the single GPU worker, which keeps the adapter's only slot until it exits. A streamed PCM voice clone on the optional faster engine stops at the next chunk and closes its generator."
+      }
+    },
+    {
       "id": "hear",
       "name": "LLooM Hear",
       "kind": "openai-compatible-server",

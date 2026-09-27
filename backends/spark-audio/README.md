@@ -26,3 +26,5 @@ environment with FastAPI, httpx, numpy, soundfile, python-multipart, and pytest.
 These tests use fake models. Hardware acceptance must additionally prove PCM
 headers, named-profile routing, streaming onset, interruption/recovery, and
 transcription through the selected gateway on the actual host.
+
+Per-model recipes and setup commands are documented in [Spark audio](../../docs/spark-audio.md).

@@ -1122,6 +1122,118 @@
       "name": "Qwen Image 2.1 generation and editing (Diffusers, NVIDIA)"
     },
     {
+      "id": "linux-nvidia-spark-audio-qwen3-tts-1-7b-base",
+      "path": "linux-nvidia-spark-audio-qwen3-tts-1-7b-base.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-spark-audio-qwen3-tts-1-7b-base.json",
+          "status": "current"
+        }
+      ],
+      "name": "Qwen3-TTS 1.7B Base (Spark audio, NVIDIA)",
+      "summary": "Qwen3-TTS 1.7B Base in its own source-built CUDA container: zero-shot voice cloning from a short inline reference clip through the OpenAI speech API.",
+      "tags": ["cuda", "nvidia", "dgx-spark", "gb10", "docker", "tts", "audio-speech", "qwen3-tts", "base", "bf16"],
+      "capabilities": ["audio-speech", "tts", "tts-voice-clone", "qwen3-tts"],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-spark-audio-qwen3-tts-1-7b-base.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-spark-audio-qwen3-tts-1-7b-customvoice",
+      "path": "linux-nvidia-spark-audio-qwen3-tts-1-7b-customvoice.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-spark-audio-qwen3-tts-1-7b-customvoice.json",
+          "status": "current"
+        }
+      ],
+      "name": "Qwen3-TTS 1.7B CustomVoice (Spark audio, NVIDIA)",
+      "summary": "Qwen3-TTS 1.7B CustomVoice in its own source-built CUDA container: nine built-in speakers with optional style instructions through the OpenAI speech API.",
+      "tags": [
+        "cuda",
+        "nvidia",
+        "dgx-spark",
+        "gb10",
+        "docker",
+        "tts",
+        "audio-speech",
+        "qwen3-tts",
+        "customvoice",
+        "bf16"
+      ],
+      "capabilities": ["audio-speech", "tts", "tts-custom-voice", "tts-style-instruct", "qwen3-tts"],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-spark-audio-qwen3-tts-1-7b-customvoice.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-spark-audio-qwen3-tts-1-7b-voicedesign",
+      "path": "linux-nvidia-spark-audio-qwen3-tts-1-7b-voicedesign.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-spark-audio-qwen3-tts-1-7b-voicedesign.json",
+          "status": "current"
+        }
+      ],
+      "name": "Qwen3-TTS 1.7B VoiceDesign (Spark audio, NVIDIA)",
+      "summary": "Qwen3-TTS 1.7B VoiceDesign in its own source-built CUDA container: describe the voice in natural-language instructions through the OpenAI speech API.",
+      "tags": [
+        "cuda",
+        "nvidia",
+        "dgx-spark",
+        "gb10",
+        "docker",
+        "tts",
+        "audio-speech",
+        "qwen3-tts",
+        "voicedesign",
+        "bf16"
+      ],
+      "capabilities": ["audio-speech", "tts", "tts-voice-design", "qwen3-tts"],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-spark-audio-qwen3-tts-1-7b-voicedesign.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-spark-audio-whisper-large-v3-turbo",
+      "path": "linux-nvidia-spark-audio-whisper-large-v3-turbo.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-spark-audio-whisper-large-v3-turbo.json",
+          "status": "current"
+        }
+      ],
+      "name": "Whisper large-v3-turbo transcription (Spark audio, NVIDIA)",
+      "summary": "OpenAI Whisper large-v3-turbo in its own source-built CUDA container for OpenAI-compatible speech-to-text transcription.",
+      "tags": [
+        "cuda",
+        "nvidia",
+        "dgx-spark",
+        "gb10",
+        "docker",
+        "stt",
+        "audio-transcription",
+        "whisper",
+        "whisper-large-v3-turbo"
+      ],
+      "capabilities": ["audio-transcription", "stt"],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-spark-audio-whisper-large-v3-turbo.json"
+      }
+    },
+    {
       "id": "lloom-hear",
       "path": "lloom-hear.json",
       "currentVersion": 1,

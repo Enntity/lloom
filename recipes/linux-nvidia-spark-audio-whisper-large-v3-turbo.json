@@ -1,0 +1,194 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-spark-audio-whisper-large-v3-turbo",
+  "name": "Whisper large-v3-turbo transcription (Spark audio, NVIDIA)",
+  "version": 1,
+  "summary": "OpenAI Whisper large-v3-turbo in its own source-built CUDA container for OpenAI-compatible speech-to-text transcription.",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe metadata only; Whisper weights are under the MIT license"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "OpenAI large-v3-turbo.pt with the SHA-256 published in openai-whisper v20250625 (aff26ae408abcba5fbf8813c21e62b0941638c5f6eebfb145be0c9839262a19a), fetched from the byte-identical Hugging Face copy TheScenery/whisper-models 071f7d44e122e9964924a21c5bf8381d37595055; openai-whisper 20250625 on a digest-pinned NGC PyTorch base."
+  },
+  "links": [
+    {
+      "rel": "source",
+      "href": "https://huggingface.co/TheScenery/whisper-models/tree/071f7d44e122e9964924a21c5bf8381d37595055"
+    },
+    {
+      "rel": "runtime",
+      "href": "https://github.com/openai/whisper/tree/v20250625"
+    },
+    {
+      "rel": "model",
+      "href": "https://huggingface.co/openai/whisper-large-v3-turbo"
+    }
+  ],
+  "keywords": [
+    "cuda",
+    "nvidia",
+    "dgx-spark",
+    "gb10",
+    "docker",
+    "stt",
+    "audio-transcription",
+    "whisper",
+    "whisper-large-v3-turbo"
+  ],
+  "capabilities": [
+    "audio-transcription",
+    "stt"
+  ],
+  "hardware": {
+    "family": "Linux NVIDIA CUDA",
+    "testedMachine": "DGX Spark / GB10 class NVIDIA system",
+    "notes": [
+      "One transcription at a time; a concurrent request to the adapter is refused with 429 while LLooM queues through maxActiveRequests 1.",
+      "Uploads are limited to 16 MiB and 10 minutes of decoded audio; json, text and verbose_json responses.",
+      "openai-whisper loads the original OpenAI checkpoint file; the Transformers-format openai/whisper-large-v3-turbo repository is not loadable by this adapter.",
+      "Separate single-model runtime; each spark-audio recipe adds its own container and port and shares only the locally built image.",
+      "NVIDIA Container Toolkit with a driver compatible with the digest-pinned NGC PyTorch base image required."
+    ]
+  },
+  "requirements": {
+    "platforms": [
+      "linux-x64",
+      "linux-arm64"
+    ],
+    "memoryGb": 6,
+    "diskGb": 22,
+    "commands": [
+      "docker",
+      "python3"
+    ],
+    "accelerators": [
+      "cuda",
+      "nvidia-gpu"
+    ]
+  },
+  "backend": {
+    "id": "spark-audio",
+    "name": "Spark audio",
+    "type": "openai-compatible-server",
+    "features": [
+      "audio-speech",
+      "tts",
+      "tts-voice-clone",
+      "audio-transcription",
+      "stt",
+      "cuda",
+      "docker"
+    ]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-docker",
+        "title": "Check Docker CLI",
+        "action": "check-command",
+        "command": "docker",
+        "args": [
+          "--version"
+        ]
+      },
+      {
+        "id": "download-whisper-large-v3-turbo",
+        "title": "Download TheScenery/whisper-models files for openai/whisper-large-v3-turbo",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "TheScenery/whisper-models",
+        "revision": "071f7d44e122e9964924a21c5bf8381d37595055",
+        "include": [
+          "large-v3-turbo.pt"
+        ],
+        "downloadSizeBytes": 1617941637,
+        "integrity": {
+          "files": [
+            {
+              "path": "large-v3-turbo.pt",
+              "sizeBytes": 1617941637,
+              "sha256": "aff26ae408abcba5fbf8813c21e62b0941638c5f6eebfb145be0c9839262a19a"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "whisper-large-v3-turbo",
+      "model": "TheScenery/whisper-models",
+      "gatewayModel": "openai/whisper-large-v3-turbo",
+      "upstreamModel": "openai/whisper-large-v3-turbo",
+      "runtime": "spark-audio-whisper-large-v3-turbo",
+      "backendConfig": "spark-audio-whisper-large-v3-turbo",
+      "kind": "audio_transcription",
+      "input": [
+        "audio"
+      ],
+      "output": [
+        "text"
+      ],
+      "capabilities": [
+        "audio-transcription",
+        "stt"
+      ],
+      "stt": {
+        "family": "whisper"
+      },
+      "settings": {
+        "memoryGb": 6,
+        "priority": 45,
+        "keepWarm": false,
+        "maxActiveRequests": 1,
+        "startupTimeoutMs": 900000,
+        "runtime": {
+          "warmup": false,
+          "adapter": "docker",
+          "management": "managed",
+          "containerName": "lloom-spark-audio-whisper-large-v3-turbo",
+          "healthUrl": "http://127.0.0.1:${port}/health",
+          "bootstrap": {
+            "adapter": "docker",
+            "image": "lloom/spark-audio:source-34b229132a097ab793a21c708a3b99be02ec3adcebd42d81c0305e87d5971c73",
+            "pull": false,
+            "createArgs": [
+              "--restart",
+              "unless-stopped",
+              "--gpus",
+              "all",
+              "--ipc",
+              "host",
+              "-p",
+              "127.0.0.1:${port}:8000",
+              "-v",
+              "${modelPath}:/models/model:ro",
+              "-e",
+              "HF_HUB_OFFLINE=1",
+              "-e",
+              "TRANSFORMERS_OFFLINE=1"
+            ],
+            "command": [
+              "--kind",
+              "stt",
+              "--model",
+              "openai/whisper-large-v3-turbo",
+              "--model-path",
+              "/models/model/large-v3-turbo.pt",
+              "--host",
+              "0.0.0.0",
+              "--port",
+              "8000"
+            ]
+          }
+        },
+        "timeoutMs": 1800000
+      }
+    }
+  ]
+}

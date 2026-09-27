@@ -8,6 +8,8 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 - LLooM Hear CPU audio analysis, with structured estimates, optional dashboard images, and opt-in upstream interpretation. File and URL inputs require operator configuration.
 
+- Four standalone NVIDIA Spark audio recipes (Qwen3-TTS 1.7B CustomVoice, Base voice cloning and VoiceDesign, and Whisper large-v3-turbo). Each runs one pinned, integrity-checked checkpoint in its own container from a locally built `spark-audio` image that replaces a host-local prebuilt image.
+
 - Thirteen standalone NVIDIA ComfyUI media recipes, a public-source backend build, and shared runtime reuse for image, video and music generation.
 
 - Selective `include` paths or globs on recipe `download-model` steps, so a single-model lane fetches only the files its graph loads instead of every quantization in the model repository. Planned output reports the resolved `--include` command line.

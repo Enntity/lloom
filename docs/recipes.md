@@ -341,3 +341,5 @@ Only the stable active file participates in planning and automatic recommendatio
 LLooM intentionally does not use stale model fallback aliases to make an index pass. Recipe `model` and `gatewayModel` values must be exact advertised IDs.
 
 Standalone image, video and music recipes with a shared ComfyUI backend are documented in [ComfyUI media](comfyui-media.md).
+
+Per-model NVIDIA speech and transcription recipes are documented in [Spark audio](spark-audio.md).
