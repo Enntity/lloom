@@ -49,8 +49,7 @@ export function resolveRouteTarget(alias, target) {
   const id = target.trim();
   const known = (candidate) =>
     candidate === id || (object(alias.members)?.includes ?? (() => false)).call(alias.members, id);
-  if (!known(id) && !Array.isArray(alias.members))
-    throw fail(`Alias has no route profile or member named ${id}.`);
+  if (!known(id) && !Array.isArray(alias.members)) throw fail(`Alias has no route profile or member named ${id}.`);
   return { activeRoute: null, members: [id], optionalMembers: [] };
 }
 
@@ -72,13 +71,15 @@ export function normalizeProfileDocument(raw, name) {
   for (const [runtimeId, policy] of Object.entries(object(doc.residency) ?? {})) {
     if (typeof runtimeId !== 'string' || !runtimeId.trim() || runtimeId.length > 200)
       throw fail(`Profile ${name} has an invalid runtime id.`);
-    if (!RESIDENCY.has(policy)) throw fail(`Profile ${name}: residency for ${runtimeId} must be always, preferred, or auto.`);
+    if (!RESIDENCY.has(policy))
+      throw fail(`Profile ${name}: residency for ${runtimeId} must be always, preferred, or auto.`);
     residency[runtimeId.trim()] = policy;
   }
   const defaults = object(doc.defaults);
   if (defaults) {
     for (const [key, value] of Object.entries(defaults)) {
-      if (typeof value !== 'string' || value.length > 500) throw fail(`Profile ${name}: defaults.${key} must be a short string.`);
+      if (typeof value !== 'string' || value.length > 500)
+        throw fail(`Profile ${name}: defaults.${key} must be a short string.`);
     }
   }
   return {

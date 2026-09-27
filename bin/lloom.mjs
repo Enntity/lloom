@@ -2452,9 +2452,7 @@ async function main() {
         `/gateway/fleet/profiles/${encodeURIComponent(name)}${isApply ? '?apply=1' : ''}`,
         {
           method: 'POST',
-          body: isApply
-            ? { yes: true }
-            : { yes: true, description: plan.description, overwrite: plan.overwrite },
+          body: isApply ? { yes: true } : { yes: true, description: plan.description, overwrite: plan.overwrite },
           timeoutMs: 60000
         }
       );

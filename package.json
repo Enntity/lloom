@@ -89,7 +89,7 @@
     "test:memory-safety": "node --test test/runtime-memory-safety.test.mjs test/runtime-policy-config.test.mjs"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.19.0"
   },
   "license": "MIT",
   "devDependencies": {
