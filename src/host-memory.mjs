@@ -45,7 +45,11 @@ export function parseMacMemoryPressure(text, totalBytes) {
   // the "System-wide memory free percentage" is an opaque kernel estimate that
   // can understate true availability while the file cache holds pages.
   if ([free, inactive, speculative, purgeable].every(Number.isFinite)) {
-    return memorySnapshot(totalBytes, Math.min(totalBytes, (free + inactive + speculative + purgeable) * pageSize), 'macos-memory-pages');
+    return memorySnapshot(
+      totalBytes,
+      Math.min(totalBytes, (free + inactive + speculative + purgeable) * pageSize),
+      'macos-memory-pages'
+    );
   }
   const match = text_.match(/System-wide memory free percentage:\s*([\d.]+)%/i);
   const percentage = Number(match?.[1]);
