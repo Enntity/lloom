@@ -707,7 +707,11 @@ function copyResponseHeaders(upstream) {
     'x-lloom-provider-job-id',
     'x-lloom-provider-origin',
     'x-lloom-audio-format',
-    'x-lloom-upstream-model'
+    'x-lloom-upstream-model',
+    // Raw PCM speech streaming tells clients how to interpret the bytes.
+    'x-audio-sample-rate',
+    'x-audio-channels',
+    'x-audio-format'
   ]) {
     const value = upstream.headers.get(name);
     if (value) headers[name] = value;
@@ -2781,7 +2785,8 @@ export function createLloomServer(
       noteRuntimeRequestOutcome(resolved.model.runtime, outcome);
       clusterCoordinator.noteTargetOutcome(resolved, outcome);
       if (status === 499 || isClientClosedError(error)) {
-        endResponseWithError(res, error, { stream, config, status: 499 });
+        if (binaryResponse && res.headersSent) res.destroy();
+        else endResponseWithError(res, error, { stream: stream && !binaryResponse, config, status: 499 });
         return {
           status: 499,
           stream,
@@ -2805,7 +2810,7 @@ export function createLloomServer(
       }
       // Upstream death mid-stream (Metal abort, connection reset): finish SSE/JSON without
       // rethrowing into the outer handler (which would try writeHead again and crash Node).
-      if (res.headersSent || stream) {
+      if (res.headersSent || (stream && !binaryResponse)) {
         endResponseWithError(res, error, {
           stream: true,
           config,
@@ -3366,16 +3371,22 @@ export function createLloomServer(
     });
     // Keep named profile id in voice for logging; clone backends ignore unknown speakers.
     if (profile?.id) normalized.voice = profile.id;
+    // Opt-in low-latency streaming: only real PCM payloads can be streamed as
+    // bytes (WAV needs a header with the final length). Any other combination
+    // falls back to the buffered compatibility path so normal WAV is unchanged.
+    const wantsStream = normalized.stream === true && String(normalized.response_format ?? '').toLowerCase() === 'pcm';
+    normalized.stream = wantsStream;
     await recordModelRequest(
       {
         route: '/v1/audio/speech',
         resolved,
-        stream: false,
+        stream: wantsStream,
+        binaryResponse: wantsStream,
         req,
         res,
         voiceProfile: profile?.id ?? null
       },
-      async ({ signal, timing, watchdog }) => {
+      async ({ signal, timing, progress, watchdog }) => {
         watchdog.arm();
         const upstream = await fetchUpstream({
           headers: inferenceGatewayHeaders(req, resolved),
@@ -3384,6 +3395,19 @@ export function createLloomServer(
           signal,
           body: normalized
         });
+        if (wantsStream) {
+          if (!upstream.ok) {
+            // Let upstream validation errors (400/404/…) surface as buffered JSON
+            // with their original status instead of a partial byte stream.
+            return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
+          }
+          return proxyRawResponseStreaming(res, upstream, {
+            signal,
+            timing,
+            progress,
+            corsConfig: config
+          });
+        }
         return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
       }
     );
@@ -3412,7 +3436,8 @@ export function createLloomServer(
         min_p: multipartTextField(raw, type, 'min_p'),
         language_id: multipartTextField(raw, type, 'language_id'),
         audio_prompt_path: multipartTextField(raw, type, 'audio_prompt_path'),
-        response_format: multipartTextField(raw, type, 'response_format')
+        response_format: multipartTextField(raw, type, 'response_format'),
+        stream: multipartTextField(raw, type, 'stream') === 'true'
       };
       const expanded = await expandSpeechBody(fields);
       // Named profile: expand to JSON clone request (ref on disk) so clients only send voice+input.
@@ -3446,16 +3471,41 @@ export function createLloomServer(
         );
         return;
       }
+      const multipartWantsStream =
+        String(fields.stream ?? '').toLowerCase() === 'true' &&
+        String(fields.response_format ?? '').toLowerCase() === 'pcm';
       await recordModelRequest(
         {
           route: '/v1/audio/speech',
           resolved,
-          stream: false,
+          stream: multipartWantsStream,
+          binaryResponse: multipartWantsStream,
           req,
           res
         },
-        async ({ signal, timing, watchdog }) => {
+        async ({ signal, timing, progress, watchdog }) => {
           watchdog.arm();
+          if (multipartWantsStream) {
+            const upstream = await fetchRawUpstream({
+              backend: resolved.backend,
+              path: '/v1/audio/speech',
+              body: upstreamBody,
+              signal,
+              headers: {
+                ...inferenceGatewayHeaders(req, resolved),
+                'content-type': type
+              }
+            });
+            if (!upstream.ok) {
+              return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
+            }
+            return proxyRawResponseStreaming(res, upstream, {
+              signal,
+              timing,
+              progress,
+              corsConfig: config
+            });
+          }
           const upstream = await fetchRawUpstream({
             backend: resolved.backend,
             path: '/v1/audio/speech',
