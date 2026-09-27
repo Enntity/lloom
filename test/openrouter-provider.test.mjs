@@ -256,20 +256,21 @@ async function testGatewayChatBuffered() {
     await withMockedDispatcher(
       async () => startGateway(openRouterBackend({ openrouterProvider: { only: ['z-ai'], allow_fallbacks: false } })),
       async (mockAgent) => {
-      intercept(mockAgent, { payload: openAiChatPayload, onBody: (body) => seen.push(body) });
-      const res = await fetch(`http://127.0.0.1:${gatewayPort}/v1/chat/completions`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model: 'z-ai/glm-5.2',
-          messages: [{ role: 'user', content: 'hi' }],
-          provider: { only: ['openai'], allow_fallbacks: true, order: ['x'] }
-        })
-      });
-      assert.equal(res.status, 200);
-      const json = await res.json();
-      assert.equal(json.choices[0].message.content, 'ok');
-    });
+        intercept(mockAgent, { payload: openAiChatPayload, onBody: (body) => seen.push(body) });
+        const res = await fetch(`http://127.0.0.1:${gatewayPort}/v1/chat/completions`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            model: 'z-ai/glm-5.2',
+            messages: [{ role: 'user', content: 'hi' }],
+            provider: { only: ['openai'], allow_fallbacks: true, order: ['x'] }
+          })
+        });
+        assert.equal(res.status, 200);
+        const json = await res.json();
+        assert.equal(json.choices[0].message.content, 'ok');
+      }
+    );
     assert.equal(seen.length, 1, 'expected exactly one upstream chat call');
     const outbound = JSON.parse(seen[0]);
     // Caller override attempt is defeated; other caller provider fields survive.
@@ -287,24 +288,25 @@ async function testGatewayChatStream() {
     await withMockedDispatcher(
       async () => startGateway(openRouterBackend({ openrouterProvider: { only: ['z-ai'] } })),
       async (mockAgent) => {
-      intercept(mockAgent, {
-        contentType: 'text/event-stream',
-        payload: openAiStreamPayload,
-        onBody: (body) => seen.push(body)
-      });
-      const res = await fetch(`http://127.0.0.1:${gatewayPort}/v1/chat/completions`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model: 'z-ai/glm-5.2',
-          messages: [{ role: 'user', content: 'hi' }],
-          stream: true
-        })
-      });
-      assert.equal(res.status, 200);
-      const text = await res.text();
-      assert.match(text, /data: \[DONE\]/);
-    });
+        intercept(mockAgent, {
+          contentType: 'text/event-stream',
+          payload: openAiStreamPayload,
+          onBody: (body) => seen.push(body)
+        });
+        const res = await fetch(`http://127.0.0.1:${gatewayPort}/v1/chat/completions`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            model: 'z-ai/glm-5.2',
+            messages: [{ role: 'user', content: 'hi' }],
+            stream: true
+          })
+        });
+        assert.equal(res.status, 200);
+        const text = await res.text();
+        assert.match(text, /data: \[DONE\]/);
+      }
+    );
     assert.equal(seen.length, 1);
     const outbound = JSON.parse(seen[0]);
     assert.deepEqual(outbound.provider, { only: ['z-ai'], allow_fallbacks: false });
@@ -320,20 +322,21 @@ async function testGatewayResponsesBridge(stream = false) {
     await withMockedDispatcher(
       async () => startGateway(openRouterBackend({ openrouterProvider: { only: ['z-ai'] } })),
       async (mockAgent) => {
-      intercept(mockAgent, {
-        payload: stream ? openAiStreamPayload : openAiChatPayload,
-        contentType: stream ? 'text/event-stream' : 'application/json',
-        onBody: (body) => seen.push(body)
-      });
-      const res = await fetch(`http://127.0.0.1:${gatewayPort}/v1/responses`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ stream, model: 'z-ai/glm-5.2', input: 'hi', provider: { only: ['openai'] } })
-      });
-      assert.equal(res.status, 200);
-      if (stream) assert.match(await res.text(), /response.completed/);
-      else assert.equal((await res.json()).object, 'response');
-    });
+        intercept(mockAgent, {
+          payload: stream ? openAiStreamPayload : openAiChatPayload,
+          contentType: stream ? 'text/event-stream' : 'application/json',
+          onBody: (body) => seen.push(body)
+        });
+        const res = await fetch(`http://127.0.0.1:${gatewayPort}/v1/responses`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ stream, model: 'z-ai/glm-5.2', input: 'hi', provider: { only: ['openai'] } })
+        });
+        assert.equal(res.status, 200);
+        if (stream) assert.match(await res.text(), /response.completed/);
+        else assert.equal((await res.json()).object, 'response');
+      }
+    );
     assert.equal(seen.length, 1);
     const outbound = JSON.parse(seen[0]);
     assert.deepEqual(outbound.provider, { only: ['z-ai'], allow_fallbacks: false });
@@ -348,25 +351,26 @@ async function testGatewayAnthropicBridge(stream = false) {
     await withMockedDispatcher(
       async () => startGateway(openRouterBackend({ openrouterProvider: { only: ['z-ai'], allow_fallbacks: true } })),
       async (mockAgent) => {
-      intercept(mockAgent, {
-        payload: stream ? openAiStreamPayload : openAiChatPayload,
-        contentType: stream ? 'text/event-stream' : 'application/json',
-        onBody: (body) => seen.push(body)
-      });
-      const res = await fetch(`http://127.0.0.1:${gatewayPort}/v1/messages`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({
-          stream,
-          model: 'z-ai/glm-5.2',
-          max_tokens: 32,
-          messages: [{ role: 'user', content: 'hi' }]
-        })
-      });
-      assert.equal(res.status, 200);
-      if (stream) assert.match(await res.text(), /message_stop/);
-      else assert.equal((await res.json()).type, 'message');
-    });
+        intercept(mockAgent, {
+          payload: stream ? openAiStreamPayload : openAiChatPayload,
+          contentType: stream ? 'text/event-stream' : 'application/json',
+          onBody: (body) => seen.push(body)
+        });
+        const res = await fetch(`http://127.0.0.1:${gatewayPort}/v1/messages`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'anthropic-version': '2023-06-01' },
+          body: JSON.stringify({
+            stream,
+            model: 'z-ai/glm-5.2',
+            max_tokens: 32,
+            messages: [{ role: 'user', content: 'hi' }]
+          })
+        });
+        assert.equal(res.status, 200);
+        if (stream) assert.match(await res.text(), /message_stop/);
+        else assert.equal((await res.json()).type, 'message');
+      }
+    );
     assert.equal(seen.length, 1);
     const outbound = JSON.parse(seen[0]);
     assert.deepEqual(outbound.provider, { only: ['z-ai'], allow_fallbacks: true });
@@ -381,14 +385,15 @@ async function testGatewayMalformedPolicyFailsClosed() {
     await withMockedDispatcher(
       async () => startGateway(openRouterBackend({ openrouterProvider: { only: [] } })),
       async () => {
-      const res = await fetch(`http://127.0.0.1:${gatewayPort}/v1/chat/completions`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ model: 'z-ai/glm-5.2', messages: [{ role: 'user', content: 'hi' }] })
-      });
-      assert.notEqual(res.status, 200);
-      await res.text();
-    });
+        const res = await fetch(`http://127.0.0.1:${gatewayPort}/v1/chat/completions`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ model: 'z-ai/glm-5.2', messages: [{ role: 'user', content: 'hi' }] })
+        });
+        assert.notEqual(res.status, 200);
+        await res.text();
+      }
+    );
   } finally {
     await stopGateway();
   }
@@ -400,19 +405,20 @@ async function testGatewayNoPolicyUntouched() {
     await withMockedDispatcher(
       async () => startGateway({ id: 'openrouter-lane', type: 'openai', baseUrl: 'https://openrouter.ai/api/v1' }),
       async (mockAgent) => {
-      intercept(mockAgent, { payload: openAiChatPayload, onBody: (body) => seen.push(body) });
-      const res = await fetch(`http://127.0.0.1:${gatewayPort}/v1/chat/completions`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model: 'z-ai/glm-5.2',
-          messages: [{ role: 'user', content: 'hi' }],
-          provider: { only: ['openai'], allow_fallbacks: true }
-        })
-      });
-      assert.equal(res.status, 200);
-      await res.text();
-    });
+        intercept(mockAgent, { payload: openAiChatPayload, onBody: (body) => seen.push(body) });
+        const res = await fetch(`http://127.0.0.1:${gatewayPort}/v1/chat/completions`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            model: 'z-ai/glm-5.2',
+            messages: [{ role: 'user', content: 'hi' }],
+            provider: { only: ['openai'], allow_fallbacks: true }
+          })
+        });
+        assert.equal(res.status, 200);
+        await res.text();
+      }
+    );
     const outbound = JSON.parse(seen[0]);
     assert.deepEqual(outbound.provider, { only: ['openai'], allow_fallbacks: true });
   } finally {

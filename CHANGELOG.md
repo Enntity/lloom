@@ -28,6 +28,8 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Changed
 
+- LLooM now requires Node.js 22.19 or newer, the minimum for its undici 8 HTTP client. It already failed to start on Node 20 after that upgrade; the engine range and CI matrix now say so.
+
 - The action view frames only models serving traffic and their live requests. Active cards cluster near the loom; idle models and machine racks no longer pull the camera outward. Manual zoom holds independently of the automatic fit until Reset view restores it.
 - Federated nodes now retain sovereign lifecycle control over ordinary local runtimes, while tensor-parallel members explicitly delegate lifecycle authority to their leader and remain non-callable on workers.
 - Runtime residency now uses `keepWarm` as the single hard pin, keeps distributed-model pins on the logical runtime, and routes ready alias alternatives without eviction or capacity queuing; embeddings remain non-evicting even when requested by exact model ID.
