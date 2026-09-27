@@ -528,6 +528,13 @@ function isClientClosedError(error) {
   return error instanceof ClientClosedError || error?.name === 'ClientClosedError' || error?.code === 'client_closed';
 }
 
+const QUEUE_BACKPRESSURE_CODES = new Set(['RUNTIME_QUEUE_TIMEOUT', 'RUNTIME_QUEUE_FULL']);
+
+/** Queue saturation (local, or relayed by a federated node) is load, not target failure. */
+function isQueueBackpressureError(error) {
+  return QUEUE_BACKPRESSURE_CODES.has(error?.code) || QUEUE_BACKPRESSURE_CODES.has(error?.upstreamCode);
+}
+
 function clientClosedStatus(error) {
   return isClientClosedError(error) ? 499 : 0;
 }
@@ -561,8 +568,11 @@ export function shouldFailoverModelRequest(error, res = null) {
 async function upstreamStatusError(upstream) {
   const text = await readErrorDiagnostic(upstream);
   let message = text;
+  let upstreamCode = null;
   try {
-    message = JSON.parse(text)?.error?.message ?? text;
+    const parsed = JSON.parse(text)?.error;
+    message = parsed?.message ?? text;
+    upstreamCode = typeof parsed?.code === 'string' ? parsed.code : null;
   } catch {
     // Keep the raw upstream response as the diagnostic message.
   }
@@ -575,10 +585,12 @@ async function upstreamStatusError(upstream) {
     if (Number.isFinite(retryAt)) retryAfterSeconds = Math.max(1, Math.ceil((retryAt - Date.now()) / 1000));
   }
   return Object.assign(new Error(message || `upstream status ${upstream.status}`), {
-    code: 'upstream_error',
+    // Relay queue saturation by its own code so every federated hop sees backpressure.
+    code: QUEUE_BACKPRESSURE_CODES.has(upstreamCode) ? upstreamCode : 'upstream_error',
     statusCode: upstream.status,
     upstreamGenerationId: upstream.headers.get('x-generation-id'),
     upstreamHeadersReceived: true,
+    ...(upstreamCode == null ? {} : { upstreamCode }),
     ...(retryAfterSeconds == null ? {} : { retryAfterSeconds })
   });
 }
@@ -2883,7 +2895,8 @@ export function createLloomServer(
           releaseTargetProbe(resolved);
           throw error;
         }
-        if (shouldFailoverModelRequest(error, res)) noteTargetFailure(resolved, error);
+        if (isQueueBackpressureError(error)) releaseTargetProbe(resolved);
+        else if (shouldFailoverModelRequest(error, res)) noteTargetFailure(resolved, error);
         else if (!isClientClosedError(error)) noteTargetSuccess(resolved);
         else releaseTargetProbe(resolved);
         if (!hasNext || !shouldFailoverModelRequest(error, res)) throw error;
