@@ -39,8 +39,10 @@ authenticated LLooM gateway.
 
 openai-whisper cannot load the Transformers-format `openai/whisper-large-v3-turbo`
 repository. The Whisper recipe therefore downloads OpenAI's original
-`large-v3-turbo.pt` checkpoint from a byte-identical Hugging Face copy. Its SHA-256
-matches the value published in openai-whisper v20250625.
+`large-v3-turbo.pt` checkpoint from an unmodified mirror,
+[`dataangel/whisper-large-v3-turbo-openai`](https://huggingface.co/dataangel/whisper-large-v3-turbo-openai),
+copied from OpenAI's download URL. Its SHA-256 matches the value published in
+openai-whisper v20250625.
 
 Voice cloning uses the stock Qwen engine by default. Streamed PCM voice clones
 and cancellation between chunks require `LLOOM_TTS_ENGINE=faster` in the

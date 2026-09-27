@@ -13,12 +13,12 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "OpenAI large-v3-turbo.pt with the SHA-256 published in openai-whisper v20250625 (aff26ae408abcba5fbf8813c21e62b0941638c5f6eebfb145be0c9839262a19a), fetched from the byte-identical Hugging Face copy TheScenery/whisper-models 071f7d44e122e9964924a21c5bf8381d37595055; openai-whisper 20250625 on a digest-pinned NGC PyTorch base."
+    "source": "OpenAI large-v3-turbo.pt with the SHA-256 published in openai-whisper v20250625 (aff26ae408abcba5fbf8813c21e62b0941638c5f6eebfb145be0c9839262a19a), mirrored unmodified from OpenAI's download URL to dataangel/whisper-large-v3-turbo-openai b51fd912a062b3c3fdb993189a21ec2d93f790fe; openai-whisper 20250625 on a digest-pinned NGC PyTorch base."
   },
   "links": [
     {
       "rel": "source",
-      "href": "https://huggingface.co/TheScenery/whisper-models/tree/071f7d44e122e9964924a21c5bf8381d37595055"
+      "href": "https://huggingface.co/dataangel/whisper-large-v3-turbo-openai/tree/b51fd912a062b3c3fdb993189a21ec2d93f790fe"
     },
     {
       "rel": "runtime",
@@ -98,11 +98,11 @@
       },
       {
         "id": "download-whisper-large-v3-turbo",
-        "title": "Download TheScenery/whisper-models files for openai/whisper-large-v3-turbo",
+        "title": "Download dataangel/whisper-large-v3-turbo-openai files for openai/whisper-large-v3-turbo",
         "action": "download-model",
         "provider": "huggingface",
-        "model": "TheScenery/whisper-models",
-        "revision": "071f7d44e122e9964924a21c5bf8381d37595055",
+        "model": "dataangel/whisper-large-v3-turbo-openai",
+        "revision": "b51fd912a062b3c3fdb993189a21ec2d93f790fe",
         "include": [
           "large-v3-turbo.pt"
         ],
@@ -122,7 +122,7 @@
   "models": [
     {
       "role": "whisper-large-v3-turbo",
-      "model": "TheScenery/whisper-models",
+      "model": "dataangel/whisper-large-v3-turbo-openai",
       "gatewayModel": "openai/whisper-large-v3-turbo",
       "upstreamModel": "openai/whisper-large-v3-turbo",
       "runtime": "spark-audio-whisper-large-v3-turbo",
