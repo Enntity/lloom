@@ -1,0 +1,305 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe metadata only; model weights retain their upstream licenses"
+  },
+  "id": "linux-nvidia-ltx-2-5-native",
+  "name": "LTX-2.5 native workflows (NVIDIA)",
+  "version": 2,
+  "summary": "Full and Distilled native BF16 LTX-2.5 models with explicit generation, audio-driven, keyframe, retake and refinement workflows.",
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "Lightricks LTX-2 v1.3.0 commit 598ab41247a77dbfe29b5186e915bcf4f9040ec7; dependency lock and weight revisions/SHA-256 pinned."
+  },
+  "links": [
+    {
+      "rel": "source",
+      "href": "https://github.com/Lightricks/LTX-2/tree/598ab41247a77dbfe29b5186e915bcf4f9040ec7"
+    },
+    {
+      "rel": "source",
+      "href": "https://huggingface.co/Lightricks/LTX-2.5/tree/5e6e71018ee1756ed329b697a7b4aedc934dfce9"
+    },
+    {
+      "rel": "source",
+      "href": "https://huggingface.co/Lightricks/LTX-2.5-22b-IC-LoRA-Pixel-Spatial-Upscaler/tree/380e63e764cad353c47a8e7c9c7ad6095d25e814"
+    }
+  ],
+  "keywords": [
+    "ltx-2.5",
+    "bf16",
+    "cuda",
+    "nvidia",
+    "audio-to-video",
+    "keyframes",
+    "retake",
+    "refine"
+  ],
+  "capabilities": [
+    "video-generation",
+    "text-to-video",
+    "image-to-video",
+    "audio-to-video",
+    "keyframe-interpolation",
+    "video-to-video",
+    "video-editing"
+  ],
+  "hardware": {
+    "family": "Linux NVIDIA CUDA",
+    "notes": [
+      "Single GPU with 95 GiB admission reservation. Run one request at a time; all variants share one runtime. Pipeline stages load sequentially.",
+      "BF16 native checkpoint paths; full pipeline loads in a supervised subprocess per request."
+    ]
+  },
+  "requirements": {
+    "platforms": [
+      "linux-x64",
+      "linux-arm64"
+    ],
+    "memoryGb": 96,
+    "diskGb": 155,
+    "commands": [
+      "docker",
+      "python3"
+    ],
+    "accelerators": [
+      "cuda",
+      "nvidia-gpu"
+    ]
+  },
+  "backend": {
+    "id": "ltx-pipelines",
+    "name": "Native LTX pipelines",
+    "type": "openai-compatible-server",
+    "features": [
+      "cuda",
+      "video-generation",
+      "audio-to-video"
+    ]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-docker",
+        "title": "Check Docker CLI",
+        "action": "check-command",
+        "command": "docker",
+        "args": [
+          "--version"
+        ]
+      },
+      {
+        "id": "download-1",
+        "title": "Download Lightricks/LTX-2.5 weights",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "Lightricks/LTX-2.5",
+        "revision": "5e6e71018ee1756ed329b697a7b4aedc934dfce9",
+        "include": [
+          "diffusion_models/ltx-2.5-22b-dev-transformer-bf16.safetensors",
+          "text_encoders/gemma4-12b-with-proj-ltx-2.5-bf16.safetensors",
+          "loras/ltx-2.5-22b-distilled-lora-450-bf16.safetensors",
+          "diffusion_models/ltx-2.5-22b-distilled-transformer-bf16.safetensors",
+          "latent_upscale_models/ltx-2.5-latent-temporal-upscaler-x2-bf16-1.0.safetensors",
+          "latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors",
+          "vae/ltx-2.5-audio-vae-bf16.safetensors",
+          "vae/ltx-2.5-video-vae-bf16.safetensors"
+        ],
+        "downloadSizeBytes": 122294941556,
+        "integrity": {
+          "files": [
+            {
+              "path": "diffusion_models/ltx-2.5-22b-dev-transformer-bf16.safetensors",
+              "sizeBytes": 42018190584,
+              "sha256": "792a2bad501ca03262c0bc2ce7a2949e85b142ce18e30894aad5bc849c8e7584"
+            },
+            {
+              "path": "text_encoders/gemma4-12b-with-proj-ltx-2.5-bf16.safetensors",
+              "sizeBytes": 26263858182,
+              "sha256": "ef7243612fdae7a75cb4d5cee9433e81380675fb6c213bd98ae74a9cd16561d1"
+            },
+            {
+              "path": "loras/ltx-2.5-22b-distilled-lora-450-bf16.safetensors",
+              "sizeBytes": 8899889568,
+              "sha256": "86370bbf79a9eb4edaa158907e2b48a5188fe4c5dc8ce30c7eb8f2f131a9bbf5"
+            },
+            {
+              "path": "diffusion_models/ltx-2.5-22b-distilled-transformer-bf16.safetensors",
+              "sizeBytes": 42018190584,
+              "sha256": "31eb3cad89b9e54e99dd3baf286f70825ac4f6c660a70d9184d895be76d7bff4"
+            },
+            {
+              "path": "latent_upscale_models/ltx-2.5-latent-temporal-upscaler-x2-bf16-1.0.safetensors",
+              "sizeBytes": 261944000,
+              "sha256": "2bc3300f2b3c3c1834d72164fbf13a3b9fd73e5a741e8a2c3f4035f89a75c3fe"
+            },
+            {
+              "path": "latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors",
+              "sizeBytes": 995778752,
+              "sha256": "eb5a71fe4068ee87ccdb1c3aa635e547ca76bd2d30ae20ae889f2c325c0677e8"
+            },
+            {
+              "path": "vae/ltx-2.5-audio-vae-bf16.safetensors",
+              "sizeBytes": 364866540,
+              "sha256": "c52733d37f6a7fb7949c3dc0fb468c6cb2169e4d836983a73babb9f0d54837a5"
+            },
+            {
+              "path": "vae/ltx-2.5-video-vae-bf16.safetensors",
+              "sizeBytes": 1472223346,
+              "sha256": "847e14ca7f3355debca0cea4eaa24ac0fbcdf0061da054ac89ca638a869ddba3"
+            }
+          ]
+        }
+      },
+      {
+        "id": "download-2",
+        "title": "Download Lightricks/LTX-2.5-22b-IC-LoRA-Pixel-Spatial-Upscaler",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "Lightricks/LTX-2.5-22b-IC-LoRA-Pixel-Spatial-Upscaler",
+        "revision": "380e63e764cad353c47a8e7c9c7ad6095d25e814",
+        "include": [
+          "ltx-2.5-22b-ic-lora-pixel-spatial-upscaler-x2-1.0.safetensors"
+        ],
+        "downloadSizeBytes": 327322640,
+        "integrity": {
+          "files": [
+            {
+              "path": "ltx-2.5-22b-ic-lora-pixel-spatial-upscaler-x2-1.0.safetensors",
+              "sizeBytes": 327322640,
+              "sha256": "984851b769ea2bcb4c9e0a239a7676239e42c6a6001ddc69943b41ff0b283c1d"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "ltx-full",
+      "model": "Lightricks/LTX-2.5-Full",
+      "gatewayModel": "Lightricks/LTX-2.5-Full",
+      "upstreamModel": "Lightricks/LTX-2.5-Full",
+      "runtime": "ltx-pipelines",
+      "backendConfig": "ltx-pipelines",
+      "kind": "video",
+      "input": [
+        "text",
+        "image",
+        "audio"
+      ],
+      "output": [
+        "video",
+        "audio"
+      ],
+      "capabilities": [
+        "video-generation",
+        "text-to-video",
+        "image-to-video",
+        "audio-to-video",
+        "keyframe-interpolation"
+      ],
+      "settings": {
+        "memoryGb": 95,
+        "priority": 20,
+        "keepWarm": false,
+        "maxActiveRequests": 1,
+        "startupTimeoutMs": 900000,
+        "timeoutMs": 3600000,
+        "runtime": {
+          "adapter": "docker",
+          "management": "managed",
+          "containerName": "lloom-ltx-pipelines",
+          "healthUrl": "http://127.0.0.1:${port}/health",
+          "bootstrap": {
+            "adapter": "docker",
+            "image": "lloom/ltx-pipelines:source-2d192754657af91101e5b96021bb8a9c17eb978938dcbd5232b2b11a7dd9dac8",
+            "pull": false,
+            "createArgs": [
+              "--restart",
+              "unless-stopped",
+              "--gpus",
+              "all",
+              "--ipc",
+              "host",
+              "-p",
+              "127.0.0.1:${port}:8000",
+              "-v",
+              "${modelRoot}:/models:ro",
+              "-e",
+              "LLOOM_LTX_MODEL_ROOT=/models",
+              "-e",
+              "LLOOM_LTX_TIMEOUT_SECONDS=3300"
+            ]
+          },
+          "warmup": false
+        }
+      }
+    },
+    {
+      "role": "ltx-distilled",
+      "model": "Lightricks/LTX-2.5-Distilled",
+      "gatewayModel": "Lightricks/LTX-2.5-Distilled",
+      "upstreamModel": "Lightricks/LTX-2.5-Distilled",
+      "runtime": "ltx-pipelines",
+      "backendConfig": "ltx-pipelines",
+      "kind": "video",
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "video",
+        "audio"
+      ],
+      "capabilities": [
+        "video-generation",
+        "text-to-video",
+        "image-to-video",
+        "video-to-video",
+        "video-editing"
+      ],
+      "settings": {
+        "memoryGb": 95,
+        "priority": 20,
+        "keepWarm": false,
+        "maxActiveRequests": 1,
+        "startupTimeoutMs": 900000,
+        "timeoutMs": 3600000,
+        "runtime": {
+          "adapter": "docker",
+          "management": "managed",
+          "containerName": "lloom-ltx-pipelines",
+          "healthUrl": "http://127.0.0.1:${port}/health",
+          "bootstrap": {
+            "adapter": "docker",
+            "image": "lloom/ltx-pipelines:source-2d192754657af91101e5b96021bb8a9c17eb978938dcbd5232b2b11a7dd9dac8",
+            "pull": false,
+            "createArgs": [
+              "--restart",
+              "unless-stopped",
+              "--gpus",
+              "all",
+              "--ipc",
+              "host",
+              "-p",
+              "127.0.0.1:${port}:8000",
+              "-v",
+              "${modelRoot}:/models:ro",
+              "-e",
+              "LLOOM_LTX_MODEL_ROOT=/models",
+              "-e",
+              "LLOOM_LTX_TIMEOUT_SECONDS=3300"
+            ]
+          },
+          "warmup": false
+        }
+      }
+    }
+  ]
+}

@@ -9,7 +9,7 @@
     "id": "MIT",
     "name": "Backend metadata license"
   },
-  "updatedAt": "2026-08-14T00:00:00Z",
+  "updatedAt": "2026-09-22T00:00:00Z",
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated"
@@ -377,7 +377,20 @@
       "kind": "openai-compatible-server",
       "description": "LLooM-managed Docker image of PrismML llama.cpp with CUDA ternary kernels and DSpark support for DGX Spark / GB10.",
       "platforms": ["linux-arm64", "linux-x64"],
-      "features": ["chat", "streaming", "usage", "tools", "gguf", "long-context", "ternary", "speculative-decoding", "vision", "cuda", "docker", "dgx-spark"],
+      "features": [
+        "chat",
+        "streaming",
+        "usage",
+        "tools",
+        "gguf",
+        "long-context",
+        "ternary",
+        "speculative-decoding",
+        "vision",
+        "cuda",
+        "docker",
+        "dgx-spark"
+      ],
       "commands": ["docker"],
       "setup": [
         {
@@ -802,7 +815,10 @@
         "computeReclamation": "version-dependent",
         "modes": ["streaming", "buffered", "queued", "generation"],
         "notes": "SGLang releases affected by issue #36333 require the scheduler-safe lifecycle fix; the Qwen3.8 Flash Next recipe applies an exact-source-guarded backport.",
-        "evidence": ["https://github.com/sgl-project/sglang/issues/36333", "https://github.com/sgl-project/sglang/pull/36418"]
+        "evidence": [
+          "https://github.com/sgl-project/sglang/issues/36333",
+          "https://github.com/sgl-project/sglang/pull/36418"
+        ]
       }
     },
     {
@@ -848,7 +864,7 @@
           "id": "install-vllm-package",
           "title": "Install vLLM package",
           "action": "pip-install",
-          "description": "Install the published vLLM package into the LLooM-managed Python environment. Generic PyPI may lack GB10/sm_121 wheels — use a Spark-specific index or set LLOOM_VLLM_BIN.",
+          "description": "Install the published vLLM package into the LLooM-managed Python environment. Generic PyPI may lack GB10/sm_121 wheels \u2014 use a Spark-specific index or set LLOOM_VLLM_BIN.",
           "skipIfExecutableExists": ["${LLOOM_VLLM_BIN}", "${installRoot}/vllm/venv/bin/vllm"],
           "venv": "${installRoot}/vllm/venv",
           "args": ["--upgrade"],
@@ -953,7 +969,10 @@
         "computeReclamation": "version-dependent",
         "modes": ["streaming", "buffered", "queued", "generation"],
         "notes": "SGLang releases affected by issue #36333 need PR #36418 or an equivalent exact-source fix before disconnect reliably reaches the scheduler.",
-        "evidence": ["https://github.com/sgl-project/sglang/issues/36333", "https://github.com/sgl-project/sglang/pull/36418"]
+        "evidence": [
+          "https://github.com/sgl-project/sglang/issues/36333",
+          "https://github.com/sgl-project/sglang/pull/36418"
+        ]
       }
     },
     {
@@ -1004,20 +1023,9 @@
       "name": "Qwen Image Diffusers (NVIDIA Docker)",
       "kind": "openai-compatible-server",
       "description": "Official Qwen Image 2.1 text-to-image generation and reference editing with BF16 transformer/encoder and FP32 VAE.",
-      "platforms": [
-        "linux-arm64",
-        "linux-x64"
-      ],
-      "features": [
-        "image-generation",
-        "image-editing",
-        "cuda",
-        "docker"
-      ],
-      "commands": [
-        "docker",
-        "python3"
-      ],
+      "platforms": ["linux-arm64", "linux-x64"],
+      "features": ["image-generation", "image-editing", "cuda", "docker"],
+      "commands": ["docker", "python3"],
       "setup": [
         {
           "id": "build-qwen-image-diffusers",
@@ -1041,10 +1049,43 @@
       "cancellation": {
         "trigger": "client-disconnect",
         "computeReclamation": "version-dependent",
-        "modes": [
-          "buffered"
-        ],
+        "modes": ["buffered"],
         "notes": "Per-request cancellation is checked between denoising steps. The backend retains its sole generation slot until the worker thread exits; encoding and decoding are not immediately interruptible."
+      }
+    },
+    {
+      "id": "ace-step-diffusers",
+      "name": "ACE-Step 1.5 Diffusers (NVIDIA Docker)",
+      "kind": "openai-compatible-server",
+      "description": "ACE-Step 1.5 music generation through the official Diffusers pipeline, with the APG guidance these base/SFT checkpoints require and bpm, keyscale, timesignature, language, guidance_scale, steps and shift exposed as request parameters.",
+      "platforms": ["linux-arm64", "linux-x64"],
+      "features": ["audio-generation", "music-generation", "cuda", "docker"],
+      "commands": ["docker", "python3"],
+      "setup": [
+        {
+          "id": "build-ace-step-diffusers",
+          "title": "Build or reuse the source-pinned ACE-Step Diffusers backend",
+          "action": "command",
+          "command": "python3",
+          "args": [
+            "${repoRoot}/backends/ace-step-diffusers/install.py",
+            "--install-root",
+            "${installRoot}",
+            "--shim-dir",
+            "${shimDir}"
+          ],
+          "alwaysRun": true
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "version-dependent",
+        "modes": ["buffered"],
+        "notes": "Per-request cancellation is checked between denoising steps. The backend retains its sole generation slot until the worker thread exits; VAE decode is not immediately interruptible."
       }
     },
     {
@@ -1052,12 +1093,7 @@
       "name": "LLooM Hear",
       "kind": "openai-compatible-server",
       "description": "CPU audio analysis with loudness, tempo, key, timbre, signal-change estimates and an optional dashboard image. Generated interpretation is opt-in and uses a separately configured upstream model.",
-      "platforms": [
-        "darwin-arm64",
-        "darwin-x64",
-        "linux-x64",
-        "linux-arm64"
-      ],
+      "platforms": ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"],
       "features": [
         "audio-analysis",
         "audio-understanding",
@@ -1067,36 +1103,28 @@
         "audio-captioning",
         "vision-output"
       ],
-      "commands": [
-        "lloom-hear-server"
-      ],
+      "commands": ["lloom-hear-server"],
       "setup": [
         {
           "id": "check-ffmpeg",
           "title": "Check ffmpeg",
           "action": "check-command",
           "command": "ffmpeg",
-          "args": [
-            "-version"
-          ]
+          "args": ["-version"]
         },
         {
           "id": "check-ffprobe",
           "title": "Check ffprobe",
           "action": "check-command",
           "command": "ffprobe",
-          "args": [
-            "-version"
-          ]
+          "args": ["-version"]
         },
         {
           "id": "install-hear",
           "title": "Install LLooM Hear backend",
           "action": "command",
           "command": "bash",
-          "args": [
-            "${repoRoot}/backends/hear/install.sh"
-          ]
+          "args": ["${repoRoot}/backends/hear/install.sh"]
         }
       ],
       "server": {
@@ -1107,11 +1135,37 @@
       "cancellation": {
         "trigger": "client-disconnect",
         "computeReclamation": "partial",
-        "modes": [
-          "dsp",
-          "upstream-model"
-        ],
+        "modes": ["dsp", "upstream-model"],
         "notes": "DSP executor work cannot be preempted mid-analysis. Client disconnection does not guarantee immediate compute reclamation; duration and I/O deadlines bound processing."
+      }
+    },
+    {
+      "id": "ltx-pipelines",
+      "name": "Native LTX pipelines (NVIDIA Docker)",
+      "kind": "openai-compatible-server",
+      "description": "Native BF16 distilled, guided Dev/HQ, audio-driven, DFR detailing and keyframe interpolation workflows through one managed runtime.",
+      "platforms": ["linux-arm64", "linux-x64"],
+      "features": ["cuda", "docker", "video-generation", "audio-to-video"],
+      "commands": ["docker", "python3"],
+      "setup": [
+        {
+          "id": "build-ltx-pipelines",
+          "title": "Build or reuse pinned native LTX pipeline backend",
+          "action": "command",
+          "command": "python3",
+          "args": ["${repoRoot}/backends/ltx-pipelines/install.py", "--install-root", "${installRoot}"],
+          "alwaysRun": true
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "verified",
+        "modes": ["buffered"],
+        "notes": "Each inference subprocess group is terminated and reaped before its single-flight slot is released."
       }
     }
   ]

@@ -124,3 +124,14 @@ Each media recipe identifies its model and download sources. Their model-weight
 licenses are separate from LLooM's MIT license; no blanket commercial-use grant
 is made. See [ComfyUI media recipes](docs/comfyui-media.md) for installation and
 source details.
+
+## Lightricks native LTX A2V pipeline
+
+`backends/ltx-pipelines/a2v.py` is adapted from Lightricks LTX-2
+`packages/ltx-pipelines/src/ltx_pipelines/a2vid_two_stage.py` at revision
+`598ab41247a77dbfe29b5186e915bcf4f9040ec7`. LLooM adds selection of the
+native Euler ancestral sampler in both stages. This adapted source retains
+the upstream LTX Community License; see the adjacent `UPSTREAM-LICENSE`
+and `LICENSE-2_x`. It is not relicensed under LLooM's MIT license.
+
+Source: <https://github.com/Lightricks/LTX-2/tree/598ab41247a77dbfe29b5186e915bcf4f9040ec7>

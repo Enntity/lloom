@@ -118,7 +118,7 @@ async def test_audio_url_is_refused():
     assert fake.uploaded == []
 
 
-def test_audio_conditioning_is_ltx_only():
+def test_audio_conditioning_supports_full_h3_and_ltx():
     import os
     import sys
 
@@ -131,7 +131,7 @@ def test_audio_conditioning_is_ltx_only():
     from graphs import build_graph
 
     with pytest.raises(ValueError, match="not supported"):
-        build_graph("MiniMaxAI/MiniMax-H3", {"prompt": "x", "duration": 5, "steps": 20},
+        build_graph("MiniMaxAI/MiniMax-H3-Turbo", {"prompt": "x", "duration": 5, "steps": 8},
                     audio_filename="lloom-a.wav")
     graph, _out, _kind = build_graph("Lightricks/LTX-2.5",
                                      {"prompt": "x", "size": "640x384", "duration": 5, "steps": 8},
@@ -141,3 +141,19 @@ def test_audio_conditioning_is_ltx_only():
     assert "LTXVAudioVAEEncode" in classes
     assert "LTXVReferenceAudio" in classes
     assert "LTXVEmptyLatentAudio" not in classes, "real audio must replace the empty latent"
+
+
+def test_ltx_driving_audio_is_stereo_trimmed_and_padded_to_frame_grid():
+    import io
+    import numpy as np
+    import soundfile as sf
+    from requests_in import fit_ltx_audio
+    data = io.BytesIO()
+    source = np.zeros((24000, 1), dtype=np.float32)
+    source[0, 0] = 0.5
+    sf.write(data, source, 24000, format="WAV", subtype="FLOAT")
+    result = fit_ltx_audio((data.getvalue(), "audio/wav", "wav"), {"num_frames":25})
+    samples, rate = sf.read(io.BytesIO(result[0]), always_2d=True)
+    assert rate == 24000 and samples.shape == (25000, 2)
+    assert np.array_equal(samples[:,0], samples[:,1])
+    assert samples[0,0] == 0.5 and np.all(samples[24000:]==0)

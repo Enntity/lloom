@@ -52,7 +52,7 @@
       "linux-arm64"
     ],
     "memoryGb": 95,
-    "diskGb": 60,
+    "diskGb": 80,
     "commands": [
       "docker",
       "python3"
@@ -96,9 +96,10 @@
           "diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
           "text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
           "vae/minimax_h3_audio_vae_fp32.safetensors",
-          "vae/minimax_h3_video_vae_fp16.safetensors"
+          "vae/minimax_h3_video_vae_fp16.safetensors",
+          "diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors"
         ],
-        "downloadSizeBytes": 42470585471,
+        "downloadSizeBytes": 63440965087,
         "integrity": {
           "files": [
             {
@@ -120,6 +121,11 @@
               "path": "vae/minimax_h3_video_vae_fp16.safetensors",
               "sizeBytes": 5207808496,
               "sha256": "7c1f131492e7eddacaac9069a61b81bdd39de5cc96561e677c5eab1cdce5e522"
+            },
+            {
+              "path": "diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+              "sizeBytes": 20970379616,
+              "sha256": "9255f52b6677845ad238f20dfaafa94727053694127ab7f255c048f0f9365779"
             }
           ]
         }
@@ -136,7 +142,9 @@
       "kind": "video",
       "input": [
         "text",
-        "image"
+        "image",
+        "audio",
+        "video"
       ],
       "output": [
         "video",
@@ -145,7 +153,10 @@
       "capabilities": [
         "video-generation",
         "text-to-video",
-        "image-to-video"
+        "image-to-video",
+        "audio-reference",
+        "video-reference",
+        "first-last-frame"
       ],
       "settings": {
         "memoryGb": 95,
@@ -160,7 +171,7 @@
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/comfyui-media:source-b812f8cb1852f0360dd98b439f2e2ffc3039ae7d3d98482c07508a40319d9f34",
+            "image": "lloom/comfyui-media:source-a1b3b33293187476ee218c5d394bddf06e756eed3e13138448c629dd36977759",
             "pull": false,
             "createArgs": [
               "--restart",
@@ -178,7 +189,8 @@
               "-e",
               "LLOOM_MEDIA_DATA_ROOT=/data"
             ]
-          }
+          },
+          "warmup": false
         },
         "timeoutMs": 1800000
       }

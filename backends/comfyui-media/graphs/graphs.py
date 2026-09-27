@@ -14,6 +14,7 @@ MODELS = {
     "MiniMaxAI/MiniMax-H3": {"kind": "video"},
     "MiniMaxAI/MiniMax-H3-Turbo": {"kind": "video"},
     "Lightricks/LTX-2.5": {"kind": "video"},
+    "Lightricks/LTX-2.5-Comfy-Full": {"kind": "video"},
     "MiniMaxAI/MiniMax-Music3": {"kind": "audio"},
     "ACE-Step/ACE-Step-1.5-XL-SFT": {"kind": "audio"},
     "ACE-Step/ACE-Step-1.5-XL-Turbo": {"kind": "audio"},
@@ -65,12 +66,13 @@ class Graph:
                         latent_image=latent, seed=seed, steps=steps, cfg=cfg,
                         sampler_name="euler", scheduler="simple", denoise=1.0)
 
-    def advanced(self, model, positive, negative, latent, seed, sigmas):
+    def advanced(self, model, positive, negative, latent, seed, sigmas,
+                 video_cfg=1.0, audio_cfg=1.0, schedule=None):
         guider = self.add("LTXVDualCFGGuider", model=model, positive=positive,
-                          negative=negative, video_cfg=1.0, audio_cfg=1.0)
+                          negative=negative, video_cfg=video_cfg, audio_cfg=audio_cfg)
         noise = self.add("RandomNoise", noise_seed=seed)
         sampler = self.add("KSamplerSelect", sampler_name="euler_ancestral")
-        schedule = self.add("ManualSigmas", sigmas=sigmas)
+        schedule = schedule if schedule is not None else self.add("ManualSigmas", sigmas=sigmas)
         return self.add("SamplerCustomAdvanced", noise=noise, guider=guider,
                         sampler=sampler, sigmas=schedule, latent_image=latent)
 
@@ -111,8 +113,57 @@ def frame_count(p, default, low, high, block, offset):
     return n
 
 
+def normalize_video_payload(model_id, payload):
+    p = dict(payload)
+    common = {"model", "prompt", "image", "first_frame", "last_frame", "audio", "video", "width", "height", "size", "duration", "num_frames", "frames", "fps", "frame_rate", "seed", "steps", "n", "response_format"}
+    if model_id.startswith("MiniMaxAI/MiniMax-H3"):
+        allowed = common | {"transcript", "workflow", "ref_image_size", "video_audio"}
+        if p.get("workflow", "auto") not in ("auto", "frames", "reference"):
+            raise ValueError("workflow must be auto, frames or reference")
+        if p.get("workflow") == "frames" and (p.get("audio") or p.get("video")):
+            raise ValueError("audio/video references require the reference workflow")
+        if "video_audio" in p and (not isinstance(p["video_audio"], bool) or not p.get("video")):
+            raise ValueError("video_audio requires a video and a boolean")
+        if p.get("ref_image_size") is not None and not (p.get("audio") or p.get("video") or p.get("workflow") == "reference"):
+            raise ValueError("ref_image_size applies only to the reference workflow")
+        prompt = p.get("prompt")
+        if isinstance(prompt, dict):
+            prompt = json.dumps(prompt, ensure_ascii=False, separators=(",", ":"))
+        if not isinstance(prompt, str) or not prompt.strip():
+            raise ValueError("prompt must be non-empty text or a structured object")
+        if "transcript" in p:
+            transcript = p["transcript"]
+            if not isinstance(transcript, str) or not transcript.strip() or len(transcript) > 4000:
+                raise ValueError("transcript must be non-empty text of at most 4000 characters")
+            audio_index = 2 if p.get("video") and p.get("video_audio") else 1
+            voice = f" Use <Audio {audio_index}> as the voice reference." if p.get("audio") else ""
+            prompt += "\nSpoken dialogue, exactly: " + json.dumps(transcript, ensure_ascii=False) + voice
+            p.pop("transcript")
+        p["prompt"] = prompt
+    elif model_id in ("Lightricks/LTX-2.5", "Lightricks/LTX-2.5-Comfy-Full"):
+        allowed = common | {"negative_prompt", "image_strength", "voice_reference", "voice_identity", "voice_start", "voice_end"}
+        if model_id.endswith("Comfy-Full"):
+            allowed.add("guidance_scale")
+    else:
+        return p
+    unknown = set(p) - allowed
+    if unknown:
+        raise ValueError("Unsupported video fields: " + ", ".join(sorted(unknown)))
+    if "size" in p and ("width" in p or "height" in p):
+        raise ValueError("Use size or width/height, not both")
+    if "frame_rate" in p:
+        if "fps" in p:
+            raise ValueError("Use fps or frame_rate, not both")
+        p["fps"] = p.pop("frame_rate")
+    if "first_frame" in p:
+        if "image" in p:
+            raise ValueError("Use image or first_frame, not both")
+        p["image"] = p.pop("first_frame")
+    return p
+
+
 def build_graph(model_id, payload, image_filename=None, last_image_filename=None,
-                audio_filename=None, prefix="lloom"):
+                audio_filename=None, video_filename=None, prefix="lloom"):
     if model_id not in MODELS or not isinstance(payload, dict):
         raise ValueError("Unsupported model or request")
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", prefix):
@@ -123,17 +174,22 @@ def build_graph(model_id, payload, image_filename=None, last_image_filename=None
     if audio_filename is not None:
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}\.(wav|flac|mp3)", audio_filename):
             raise ValueError("Invalid generated audio name")
-        if not model_id.startswith("Lightricks/"):
+        if not model_id.startswith("Lightricks/") and model_id != "MiniMaxAI/MiniMax-H3":
             # H3's conditioning node takes frames only. Only the LTX graph carries
             # an audio latent that a real clip can replace and a reference-audio
             # conditioner to hold its timbre.
             raise ValueError(f"Audio conditioning is not supported by {model_id}")
-    if last_image_filename is not None and image_filename is None:
-        # The conditioning node needs a start: a lone last frame has no anchor.
-        raise ValueError("last_frame requires a first_frame or image to anchor the clip")
-    for forbidden in ("graph", "workflow", "checkpoint", "model_path", "output_path", "image_url"):
+    if video_filename is not None:
+        if model_id != "MiniMaxAI/MiniMax-H3":
+            raise ValueError(f"{model_id} does not support reference video")
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}\.mp4", video_filename):
+            raise ValueError("Invalid generated video name")
+    for forbidden in ("graph", "checkpoint", "model_path", "output_path", "image_url"):
+        # H3 exposes a bounded named workflow, never an arbitrary graph.
         if forbidden in payload:
             raise ValueError("Arbitrary graphs, paths and URLs are not supported")
+    if "workflow" in payload and model_id != "MiniMaxAI/MiniMax-H3":
+        raise ValueError("workflow selection is supported only for MiniMax-H3")
     seed = number(payload, "seed", 42, 0, 2**63 - 1, True)
     if number(payload, "n", 1, 1, 1, True) != 1:
         raise ValueError("Only one output per request is supported")
@@ -167,15 +223,16 @@ def build_graph(model_id, payload, image_filename=None, last_image_filename=None
         output = g.add("SaveImage", images=result, filename_prefix=prefix)
         return g.nodes, output[0], "image"
     if MODELS[model_id]["kind"] == "video":
+        payload = normalize_video_payload(model_id, payload)
         prompt = text(payload, "prompt")
         if not prompt.strip():
             raise ValueError("prompt is required")
         if model_id.startswith("MiniMaxAI/MiniMax-H3"):
             result = h3(g, payload, prompt, seed, image_filename,
-                        last_image_filename, model_id.endswith("Turbo"))
+                        last_image_filename, model_id.endswith("Turbo"), audio_filename, video_filename)
         else:
             result = ltx(g, payload, prompt, seed, image_filename, last_image_filename,
-                        audio_filename)
+                        audio_filename, full=model_id.endswith("Comfy-Full"))
         output = g.add("SaveVideo", video=result, filename_prefix=prefix, format="mp4", codec="h264")
         return g.nodes, output[0], "video"
     if image_filename is not None or last_image_filename is not None or payload.get("image") is not None:
@@ -208,18 +265,21 @@ def build_graph(model_id, payload, image_filename=None, last_image_filename=None
     return g.nodes, output[0], "audio"
 
 
-def h3(g, p, prompt, seed, image_filename, last_image_filename, turbo):
+def h3(g, p, prompt, seed, image_filename, last_image_filename, turbo, audio_filename=None, video_filename=None):
     label = "MiniMax-H3-Turbo" if turbo else "MiniMax-H3"
     width, height = geometry(p)
     duration = number(p, "duration", 5, 5, 15, describe=label)
     length = frame_count(p, math.ceil((duration * 24 - 5) / 17) * 17 + 5, 124, 362, 17, 5)
     steps = number(p, "steps", 8 if turbo else 20, 8 if turbo else 10, 8 if turbo else 50,
                    True, describe=label)
-    if turbo and (image_filename or last_image_filename):
-        # Frame pinning is a full-model workload; the Turbo LoRA path is the
-        # fast tier and does not carry the frame-conditioning weights.
-        raise ValueError("MiniMax-H3-Turbo does not accept first_frame or last_frame; "
-                         "use MiniMax-H3 for frame-pinned generation")
+    if audio_filename is not None or video_filename is not None or p.get("workflow") == "reference":
+        if turbo:
+            raise ValueError("MiniMax-H3-Turbo does not accept reference audio")
+        if not any((image_filename, audio_filename, video_filename)):
+            raise ValueError("H3 reference workflow requires image, audio or video")
+        return h3_ref2va(g, p, prompt, seed, image_filename, audio_filename,
+                         last_image_filename,
+                         width, height, length, steps, video_filename)
     model = g.add("UNETLoader", unet_name="minimax_h3_fl2va_pruned_int8_convrot.safetensors", weight_dtype="default")
     if turbo:
         model = g.add("LoraLoaderModelOnly", model=model, lora_name="minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors", strength_model=1.0)
@@ -245,19 +305,77 @@ def h3(g, p, prompt, seed, image_filename, last_image_filename, turbo):
     return g.add("CreateVideo", images=images, audio=audio, fps=24.0)
 
 
-def ltx(g, p, prompt, seed, image_filename, last_image_filename=None, audio_filename=None):
-    if last_image_filename is not None:
-        raise ValueError("Lightricks/LTX-2.5 does not support last_frame in this workflow; use MiniMax-H3 for end-frame conditioning")
+def h3_ref2va(g, p, prompt, seed, image_filename, audio_filename, last_image_filename,
+              width, height, length, steps, video_filename=None):
+    """Generate H3 video from a portrait and voice reference (Ref2VA)."""
+    model = g.add("UNETLoader", unet_name="minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+                  weight_dtype="default")
+    clip = g.add("CLIPLoader", clip_name="qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+                 type="minimax", device="default")
+    vae = g.add("VAELoader", vae_name="minimax_h3_video_vae_fp16.safetensors")
+    audio_vae = g.add("VAELoader", vae_name="minimax_h3_audio_vae_fp32.safetensors")
+    refs = {}
+    if image_filename:
+        refs["ref_images.ref_image_1"] = g.add("LoadImage", image=image_filename)
+    if audio_filename:
+        refs["ref_audios.ref_audio_1"] = g.add("LoadAudio", audio=audio_filename)
+    if video_filename:
+        loaded = g.add("LoadVideo", file=video_filename)
+        components = g.add("GetVideoComponents", video=loaded)
+        refs["ref_videos.ref_video_1"] = components
+        # A standalone audio reference is explicit; source-video sound is only
+        # included when requested and verified present during preflight.
+        if p.get("video_audio", False):
+            refs["ref_video_audios.ref_video_audio_1"] = [components[0], 1]
+    ref_size = p.get("ref_image_size", "match")
+    if ref_size not in ("match", "max"):
+        raise ValueError("ref_image_size must be match or max")
+    condition = g.add(
+        "MiniMaxH3ReferenceToVideo", clip=clip, vae=vae, audio_vae=audio_vae,
+        prompt=prompt, width=width, height=height, length=length,
+        ref_image_size=ref_size, **refs,
+    )
+    positive = condition
+    if last_image_filename:
+        # Ref2VA has no last_frame input. The native guide node adds a pinned
+        # endpoint to the same conditioning while retaining image/audio refs.
+        endpoint = g.add("LoadImage", image=last_image_filename)
+        positive = g.add("MiniMaxH3AddGuide", positive=condition,
+                         latent=[condition[0], 1], vae=vae,
+                         image=endpoint, frame_idx=-1)
+    guider = g.add("BasicGuider", model=model, conditioning=positive)
+    noise = g.add("RandomNoise", noise_seed=seed)
+    sampler = g.add("KSamplerSelect", sampler_name="res_multistep")
+    sigmas = g.add("BasicScheduler", model=model, scheduler="simple", steps=steps, denoise=1.0)
+    sample = g.add("SamplerCustomAdvanced", noise=noise, guider=guider,
+                   sampler=sampler, sigmas=sigmas, latent_image=[condition[0], 1])
+    images = g.add("VAEDecode", samples=sample, vae=vae)
+    audio_out = g.add("VAEDecodeAudio", samples=sample, vae=audio_vae)
+    return g.add("CreateVideo", images=images, audio=audio_out, fps=24.0)
+
+
+def ltx(g, p, prompt, seed, image_filename, last_image_filename=None, audio_filename=None, full=False):
+    if "image_strength" in p and image_filename is None:
+        raise ValueError("image_strength requires image or first_frame")
+    voice_controls = {"voice_reference", "voice_identity", "voice_start", "voice_end"} & set(p)
+    if voice_controls and audio_filename is None:
+        raise ValueError("voice controls require audio")
+    if p.get("voice_reference") == 0 and voice_controls - {"voice_reference"}:
+        raise ValueError("voice guidance controls require voice_reference=1")
+    if number(p, "voice_start", 0, 0, 1) > number(p, "voice_end", 1, 0, 1):
+        raise ValueError("voice_start must not exceed voice_end")
     # The first pass uses half the requested dimensions; the latent spatial
     # upscaler restores the requested output geometry for the second pass.
     width, height = geometry(p, ltx=True)
     duration = number(p, "duration", 5, 1, 10, describe="Lightricks/LTX-2.5")
-    number(p, "steps", 8, 8, 8, True, describe="Lightricks/LTX-2.5")
+    steps = number(p, "steps", 30 if full else 8, 10 if full else 8, 60 if full else 8, True, describe="Lightricks/LTX-2.5")
+    cfg = number(p, "guidance_scale", 3.0, 1.0, 20.0) if full else 1.0
     # How hard the first frame is held. Higher keeps the opening closer to the
     # conditioning image; lower lets the shot move further from it.
     strength = number(p, "image_strength", 0.7, 0.0, 1.0, describe="Lightricks/LTX-2.5")
     length = frame_count(p, math.ceil(duration * 24 / 8) * 8 + 1, 25, 241, 8, 1)
-    model = g.add("UNETLoader", unet_name="ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors", weight_dtype="default")
+    model = g.add("UNETLoader", unet_name=("ltx-2.5-22b-dev-transformer-bf16.safetensors" if full else
+                  "ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors"), weight_dtype="default")
     clip = g.add("CLIPLoader", clip_name="gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors", type="ltxv", device="default")
     vae = g.add("VAELoader", vae_name="ltx-2.5-video-vae-bf16.safetensors")
     audio_vae = g.add("VAELoader", vae_name="ltx-2.5-audio-vae-bf16.safetensors")
@@ -271,12 +389,23 @@ def ltx(g, p, prompt, seed, image_filename, last_image_filename=None, audio_file
         image = g.add("LoadImage", image=image_filename)
         image = g.add("LTXVPreprocess", image=image, img_compression=18)
         latent = g.add("LTXVImgToVideoInplace", vae=vae, image=image, latent=latent, strength=strength, bypass=False)
-    # Audio. Given a real clip, the model denoises against its latent instead of
-    # inventing speech, and LTXVReferenceAudio additionally conditions on its
-    # timbre. Given none, behaviour is unchanged: the model generates both.
+    endpoint = g.add("LoadImage", image=last_image_filename) if last_image_filename else None
+    if endpoint is not None:
+        # Guides require a video-only latent. Pin the endpoint before AV concat
+        # in both stages so the spatial upscaler does not soften the last frame.
+        guide = g.add("LTXVAddGuide", positive=pos, negative=neg, vae=vae,
+                      latent=latent, image=endpoint, frame_idx=-1, strength=1.0)
+        pos, neg, latent = guide, [guide[0], 1], [guide[0], 2]
+    # Audio. Keep a supplied clip fixed in the joint latent; visual synchronization
+    # remains model-dependent. Optional reference conditioning can reinforce
+    # timbre. Without a clip, the model generates both streams as before.
     if audio_filename:
         loaded = g.add("LoadAudio", audio=audio_filename)
         audio = g.add("LTXVAudioVAEEncode", audio=loaded, audio_vae=audio_vae)
+        # Condition video on supplied speech without asking the sampler to
+        # rewrite its words. The output also uses this original waveform.
+        quiet_mask = g.add("SolidMask", value=0.0, width=1, height=1)
+        audio = g.add("SetLatentNoiseMask", samples=audio, mask=quiet_mask)
         if number(p, "voice_reference", 1, 0, 1, True):
             # identity_guidance_scale sets how hard the reference timbre is held;
             # start/end_percent bound the window it applies over.
@@ -294,18 +423,45 @@ def ltx(g, p, prompt, seed, image_filename, last_image_filename=None, audio_file
     else:
         audio = g.add("LTXVEmptyLatentAudio", frames_number=length, frame_rate=24.0, batch_size=1, audio_vae=audio_vae)
     av = g.add("LTXVConcatAVLatent", video_latent=latent, audio_latent=audio)
-    sampled = g.advanced(model, pos, neg, av, seed, "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0")
+    if full:
+        # The full checkpoint needs a guided schedule, not distilled's eight steps.
+        # Compute token-dependent shifting from the video latent before AV concat.
+        schedule = g.add("LTXVScheduler", steps=steps, max_shift=2.05,
+                         base_shift=0.95, stretch=True, terminal=0.1, latent=latent)
+        sampled = g.advanced(model, pos, neg, av, seed, None, video_cfg=cfg,
+                             audio_cfg=1.0 if audio_filename else 7.0, schedule=schedule)
+    else:
+        sampled = g.advanced(model, pos, neg, av, seed, "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0")
     separate = g.add("LTXVSeparateAVLatent", av_latent=sampled)
+    video_latent = separate
+    if endpoint is not None:
+        # Native guides append reference tokens beyond the requested frames.
+        # Crop them before upscaling, then reapply the endpoint at full size.
+        cropped = g.add("LTXVCropGuides", positive=pos, negative=neg, latent=video_latent)
+        pos, neg, video_latent = cropped, [cropped[0], 1], [cropped[0], 2]
     upscaler = g.add("LatentUpscaleModelLoader", model_name="ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors")
-    upscaled = g.add("LTXVLatentUpsampler", samples=separate, upscale_model=upscaler, vae=vae)
+    upscaled = g.add("LTXVLatentUpsampler", samples=video_latent, upscale_model=upscaler, vae=vae)
     if image is not None:
         upscaled = g.add("LTXVImgToVideoInplace", vae=vae, image=image, latent=upscaled, strength=1.0, bypass=False)
+    if endpoint is not None:
+        guide = g.add("LTXVAddGuide", positive=pos, negative=neg, vae=vae,
+                      latent=upscaled, image=endpoint, frame_idx=-1, strength=1.0)
+        pos, neg, upscaled = guide, [guide[0], 1], [guide[0], 2]
     av = g.add("LTXVConcatAVLatent", video_latent=upscaled, audio_latent=[separate[0], 1])
+    if full:
+        # Match native full's distilled refinement adapter, only on stage two.
+        model = g.add("LoraLoaderModelOnly", model=model,
+                      lora_name="ltx-2.5-22b-distilled-lora-450-bf16.safetensors", strength_model=1.0)
     sampled = g.advanced(model, pos, neg, av, seed+1, "0.85, 0.7250, 0.4219, 0.0")
     separate = g.add("LTXVSeparateAVLatent", av_latent=sampled)
-    frames = g.add("VAEDecodeTiled", samples=separate, vae=vae, tile_size=512, overlap=64, temporal_size=64, temporal_overlap=16)
-    audio = g.add("LTXVAudioVAEDecode", samples=[separate[0], 1], audio_vae=audio_vae)
-    return g.add("CreateVideo", images=frames, audio=audio, fps=24.0)
+    video_latent = separate
+    if endpoint is not None:
+        video_latent = g.add("LTXVCropGuides", positive=pos, negative=neg, latent=video_latent)
+        video_latent = [video_latent[0], 2]
+    frames = g.add("VAEDecodeTiled", samples=video_latent, vae=vae, tile_size=512, overlap=64, temporal_size=64, temporal_overlap=16)
+    output_audio = loaded if audio_filename else g.add(
+        "LTXVAudioVAEDecode", samples=[separate[0], 1], audio_vae=audio_vae)
+    return g.add("CreateVideo", images=frames, audio=output_audio, fps=24.0)
 
 
 def music3(g, p, caption, lyrics, duration, seed):

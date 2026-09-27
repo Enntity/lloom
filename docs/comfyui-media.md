@@ -61,22 +61,22 @@ existing backend must support `/v1/audio/generations`.
 
 ## Models
 
-| Recipe suffix | Gateway model | Endpoint |
-| --- | --- | --- |
-| `flux-2-klein-4b` | `black-forest-labs/FLUX.2-klein-4B` | `/v1/images/generations` |
-| `qwen-image-2512` | `Qwen/Qwen-Image-2512` | `/v1/images/generations` |
-| `qwen-image-2512-lightning` | `Qwen/Qwen-Image-2512-Lightning` | `/v1/images/generations` |
-| `qwen-image-edit-2511` | `Qwen/Qwen-Image-Edit-2511` | `/v1/images/generations` with inline image |
-| `qwen-image-2-1` | `Qwen/Qwen-Image-2.1` | `/v1/images/generations`, with inline image to edit |
-| `ideogram-4` | `Comfy-Org/Ideogram-4` | `/v1/images/generations` |
-| `krea-2-turbo` | `Comfy-Org/Krea-2-Turbo` | `/v1/images/generations` |
-| `minimax-h3` | `MiniMaxAI/MiniMax-H3` | `/v1/videos/generations` |
-| `minimax-h3-turbo` | `MiniMaxAI/MiniMax-H3-Turbo` | `/v1/videos/generations` |
-| `ltx-2-5` | `Lightricks/LTX-2.5` | `/v1/videos/generations` |
-| `minimax-music3` | `MiniMaxAI/MiniMax-Music3` | `/v1/audio/generations` |
-| `ace-step-1-5-xl-sft` | `ACE-Step/ACE-Step-1.5-XL-SFT` | `/v1/audio/generations` |
-| `ace-step-1-5-xl-turbo` | `ACE-Step/ACE-Step-1.5-XL-Turbo` | `/v1/audio/generations` |
-| `yue2-3b` | `Comfy-Org/YuE2-3B` | `/v1/audio/generations` |
+| Recipe suffix               | Gateway model                       | Endpoint                                            |
+| --------------------------- | ----------------------------------- | --------------------------------------------------- |
+| `flux-2-klein-4b`           | `black-forest-labs/FLUX.2-klein-4B` | `/v1/images/generations`                            |
+| `qwen-image-2512`           | `Qwen/Qwen-Image-2512`              | `/v1/images/generations`                            |
+| `qwen-image-2512-lightning` | `Qwen/Qwen-Image-2512-Lightning`    | `/v1/images/generations`                            |
+| `qwen-image-edit-2511`      | `Qwen/Qwen-Image-Edit-2511`         | `/v1/images/generations` with inline image          |
+| `qwen-image-2-1`            | `Qwen/Qwen-Image-2.1`               | `/v1/images/generations`, with inline image to edit |
+| `ideogram-4`                | `Comfy-Org/Ideogram-4`              | `/v1/images/generations`                            |
+| `krea-2-turbo`              | `Comfy-Org/Krea-2-Turbo`            | `/v1/images/generations`                            |
+| `minimax-h3`                | `MiniMaxAI/MiniMax-H3`              | `/v1/videos/generations`                            |
+| `minimax-h3-turbo`          | `MiniMaxAI/MiniMax-H3-Turbo`        | `/v1/videos/generations`                            |
+| `ltx-2-5`                   | `Lightricks/LTX-2.5`                | `/v1/videos/generations`                            |
+| `minimax-music3`            | `MiniMaxAI/MiniMax-Music3`          | `/v1/audio/generations`                             |
+| `ace-step-1-5-xl-sft`       | `ACE-Step/ACE-Step-1.5-XL-SFT`      | `/v1/audio/generations`                             |
+| `ace-step-1-5-xl-turbo`     | `ACE-Step/ACE-Step-1.5-XL-Turbo`    | `/v1/audio/generations`                             |
+| `yue2-3b`                   | `Comfy-Org/YuE2-3B`                 | `/v1/audio/generations`                             |
 
 Prefix each suffix with `linux-nvidia-comfyui-` for the recipe ID. Recipe metadata
 is MIT licensed; model weights retain their own licenses. Each recipe links its
@@ -112,8 +112,17 @@ abandoned job from overlapping the next request.
 The image and video routes return JSON containing `data[].b64_json`. Fixed
 workflows accept bounded generation parameters and inline conditioning images;
 they do not accept arbitrary ComfyUI graphs, filesystem paths or remote URLs.
-MiniMax-H3 supports first/last frame conditioning; its Turbo variant accepts text
-only. LTX supports a first frame and audio conditioning, and rejects `last_frame`.
+MiniMax-H3 and its FL2VA Turbo variant support first/last-frame conditioning.
+Full H3 also accepts image, audio and video references. See
+[video workflows](video-workflows.md) for structured prompts, transcripts,
+controls and limits.
+
+LTX supports a first frame, a final-frame guide and supplied audio. Its graph
+pins and crops the final-frame guide in both sampling stages. Supplied audio
+is trimmed or padded with silence to the video frame grid, and mono is duplicated
+into stereo. The graph holds that encoded audio latent fixed and muxes the
+prepared waveform into the result. At 24 fps, 193 frames produce about 8.04
+seconds. Audio conditioning does not guarantee precise lip synchronization.
 Unsupported parameters receive field-specific errors.
 
 ## Offline tests

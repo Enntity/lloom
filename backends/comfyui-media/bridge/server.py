@@ -10,6 +10,7 @@ influenced by any request field.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import base64
 import logging
 import os
@@ -23,6 +24,7 @@ from comfy_client import ComfyClient, validate_comfy_base_url
 from errors import BridgeError, backend_error, backend_unavailable, bad_request, rejected
 from jobs import SingleFlightRunner
 from media import DataRoots
+from video_codec import decode_reference_video
 from requests_in import (
     decode_audio,
     decode_inline_image,
@@ -85,6 +87,7 @@ def create_app(
             models = default_models
         if build_graph is None:
             build_graph = default_builder
+    video_preflight_lock = asyncio.Lock()
     state = {
         "comfy": comfy,
         "models": models,
@@ -181,10 +184,33 @@ def create_app(
         payload = await read_json_body(request)
         model = validate_model(payload, state["models"])
         validate_response_format(payload, ("b64_json", "json"))
+        if model.startswith("MiniMaxAI/MiniMax-H3") or model in ("Lightricks/LTX-2.5", "Lightricks/LTX-2.5-Comfy-Full"):
+            from graphs import normalize_video_payload
+            try:
+                payload = normalize_video_payload(model, payload)
+            except ValueError as exc:
+                raise bad_request(str(exc), "invalid_field") from None
         _validate_prompt(payload)
         image = decode_inline_image(payload)
         last_frame = decode_last_frame(payload)
         audio = decode_audio(payload)
+        if audio is not None and model in ("Lightricks/LTX-2.5", "Lightricks/LTX-2.5-Comfy-Full"):
+            from requests_in import fit_ltx_audio
+            audio = fit_ltx_audio(audio, payload)
+        video = None
+        if payload.get("video") is not None:
+            if video_preflight_lock.locked():
+                raise bad_request("A video reference is already being validated.", "busy")
+            async with video_preflight_lock:
+                task = asyncio.create_task(asyncio.to_thread(decode_reference_video, payload))
+                try:
+                    video = await asyncio.shield(task)
+                except asyncio.CancelledError:
+                    try:
+                        await task
+                    except Exception:
+                        pass
+                    raise
         data, mime = await _run_generation(
             "video",
             model,
@@ -192,6 +218,7 @@ def create_app(
             image=image,
             last_frame=last_frame,
             audio=audio,
+            video=video,
         )
         if mime != "video/mp4":
             raise backend_error("The media backend produced an unexpected output type.")
@@ -249,7 +276,7 @@ def create_app(
         return image_filename()[:-4] + "." + frame[2]
 
     async def _run_generation(
-        kind: str, model: str, payload: dict, *, image, last_frame=None, audio=None
+        kind: str, model: str, payload: dict, *, image, last_frame=None, audio=None, video=None
     ) -> tuple[bytes, str]:
         expected_kind = "audio" if kind in ("audio", "speech") else kind
         for field, limit in (("prompt", 8000), ("instructions", 8000), ("input", 20000), ("lyrics", 20000)):
@@ -285,6 +312,9 @@ def create_app(
             # Audio rides the same upload path; Comfy stores it beside the images
             # and the graph's LoadAudio reads it by name.
             frames.append((audio, _media_name(audio), "audio_filename"))
+
+        if video is not None:
+            frames.append((video, _media_name(video), "video_filename"))
 
         async def build(comfy: ComfyClient):
             # Build the graph *first* (cheap, no GPU) so its declared kind can be

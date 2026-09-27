@@ -12,7 +12,7 @@ import uuid
 from errors import bad_request, rejected
 
 # Server-side ceilings. No request field can raise these.
-MAX_BODY_BYTES = 16 * 1024 * 1024  # 16 MiB streaming body cap
+MAX_BODY_BYTES = 48 * 1024 * 1024  # 48 MiB streaming body cap
 MAX_IMAGE_BYTES = 8 * 1024 * 1024  # 8 MiB decoded inline image
 MAX_IMAGE_AXIS = 4096
 MAX_IMAGE_AREA = 16 * 1024 * 1024  # 16 MPixel
@@ -239,3 +239,30 @@ def validate_bounded_text(payload: dict, field: str, maximum: int, *, required: 
     if len(value) > maximum:
         raise bad_request(f"Field '{field}' is too long.", "invalid_field")
     return value
+
+
+def fit_ltx_audio(audio, payload):
+    """Keep driving samples, trim/pad to the requested video grid, duplicate mono."""
+    import math
+    import numpy as np
+    import soundfile as sf
+    from graphs import frame_count, number
+    try:
+        duration = number(payload, "duration", 5, 1, 10)
+        frames = frame_count(payload, math.ceil(duration * 24 / 8) * 8 + 1, 25, 241, 8, 1)
+        with sf.SoundFile(io.BytesIO(audio[0])) as source:
+            if not (8000 <= source.samplerate <= 192000 and source.channels in (1, 2)):
+                raise ValueError("audio must be mono/stereo at 8-192 kHz")
+            count = math.ceil(frames / 24 * source.samplerate)
+            samples = source.read(frames=count, dtype="float32", always_2d=True)
+            rate = source.samplerate
+        if not len(samples) or not np.isfinite(samples).all():
+            raise ValueError("audio must contain finite samples")
+        if samples.shape[1] == 1:
+            samples = np.repeat(samples, 2, axis=1)
+        samples = np.pad(samples, ((0, max(0, count - len(samples))), (0, 0)))
+        output = io.BytesIO()
+        sf.write(output, samples, rate, format="WAV", subtype="FLOAT")
+        return output.getvalue(), "audio/wav", "wav"
+    except (ValueError, RuntimeError, sf.LibsndfileError) as exc:
+        raise bad_request("Invalid LTX driving audio: " + str(exc), "invalid_audio") from None

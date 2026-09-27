@@ -1,0 +1,77 @@
+{
+  "date": "2026-09-27",
+  "model": "Lightricks/LTX-2.5-A2V",
+  "nativeUpstreamCommit": "598ab41247a77dbfe29b5186e915bcf4f9040ec7",
+  "image": "lloom/ltx-pipelines:source-dbf8ecccf896c1052cfd0dca708bc64e57c6d7e886814907d1b0ac61b03baf7a",
+  "gateway": "gateway-node",
+  "executionHost": "inference-node",
+  "requestUsedDefaults": true,
+  "defaults": {
+    "sampler": "euler_ancestral",
+    "image_strength": 0.7,
+    "guidance_scale": 3,
+    "stg_scale": 0,
+    "rescale_scale": 0,
+    "a2v_guidance_scale": 1
+  },
+  "elapsedSeconds": 274.481,
+  "geometry": {
+    "width": 512,
+    "height": 512,
+    "frames": 193,
+    "fps": 24
+  },
+  "videoSha256": "e4c7d3941d8030754553e3d6be5de57cb2034e301041130f790d54a572fd16c5",
+  "comparison": {
+    "deterministicEulerSeconds": 264.28,
+    "ancestralCandidateSeconds": 265.116,
+    "heldFixed": [
+      "image",
+      "audio",
+      "prompt",
+      "seed",
+      "guidance",
+      "sampling schedule",
+      "endpoint"
+    ],
+    "changed": "native sampler in both stages",
+    "observed": "Euler had closed mouth despite blink and head motion; ancestral produced articulation during speech and closed mouth afterward."
+  },
+  "finalVisualCheck": "Default-only final render also shows articulation during speech and a closed-mouth tail. Phoneme-level alignment was not scored.",
+  "audioCheck": {
+    "sampleRate": 16000,
+    "comparedSeconds": 4.96,
+    "waveformCorrelation": 0.9999363981013654
+  },
+  "checks": {
+    "adapterAndGatewayTests": 36,
+    "nativeFrozenAudioTensorTest": "passed",
+    "recipeIdentity": "passed",
+    "packageInstallSmokeFiles": 828,
+    "federatedInvalidSamplerRejection": 400,
+    "installedFileHashesVerified": 12
+  },
+  "restored": {
+    "time": "2026-09-27T19:29:52.104Z",
+    "embeddingDimensions": 2560,
+    "runtimes": {
+      "qwen3-embedding-4b": {
+        "status": "running",
+        "healthy": true,
+        "activeRequests": 0
+      },
+      "inference-tts-clone": {
+        "status": "running",
+        "healthy": true,
+        "activeRequests": 0
+      },
+      "ltx-pipelines": {
+        "status": "exited",
+        "healthy": false,
+        "activeRequests": 0
+      }
+    }
+  },
+  "supervisedTask": "ltx-native-final-defaults-20260927",
+  "limitations": "One controlled reference and seed; not a broad quality or throughput benchmark. No Comfy runtime is used by native A2V."
+}

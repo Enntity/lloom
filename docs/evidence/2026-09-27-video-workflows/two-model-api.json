@@ -1,0 +1,276 @@
+{
+  "date": "2026-09-27",
+  "supervisedTask": "ltx-two-model-workflow-acceptance-retry-20260927",
+  "status": "passed",
+  "change": "Two native LTX model IDs with explicit workflow selection; retired native IDs removed without aliases.",
+  "catalogs": [
+    {
+      "host": "03",
+      "models": [
+        "Lightricks/LTX-2.5-Full",
+        "Lightricks/LTX-2.5-Distilled"
+      ],
+      "retiredAbsent": true,
+      "validation": [
+        {
+          "model": "Lightricks/LTX-2.5-Full",
+          "workflow": null,
+          "status": 400,
+          "code": "invalid_video_parameter"
+        },
+        {
+          "model": "Lightricks/LTX-2.5-Full",
+          "workflow": [],
+          "status": 400,
+          "code": "invalid_video_parameter"
+        },
+        {
+          "model": "Lightricks/LTX-2.5-Full",
+          "workflow": "retake",
+          "status": 400,
+          "code": "invalid_video_parameter"
+        },
+        {
+          "model": "Lightricks/LTX-2.5-Distilled",
+          "workflow": "audio-to-video",
+          "status": 400,
+          "code": "invalid_video_parameter"
+        },
+        {
+          "model": "Lightricks/LTX-2.5-Full",
+          "workflow": "audio-to-video",
+          "status": 400,
+          "code": "invalid_video_parameter"
+        },
+        {
+          "model": "Lightricks/LTX-2.5-Distilled",
+          "workflow": "refine",
+          "status": 400,
+          "code": "invalid_video_parameter"
+        },
+        {
+          "model": "Lightricks/LTX-2.5-Full",
+          "workflow": "keyframes",
+          "status": 400,
+          "code": "invalid_video_parameter"
+        }
+      ]
+    },
+    {
+      "host": "01",
+      "models": [
+        "inference-node/Lightricks/LTX-2.5-Full",
+        "inference-node/Lightricks/LTX-2.5-Distilled"
+      ],
+      "retiredAbsent": true,
+      "validation": [
+        {
+          "model": "inference-node/Lightricks/LTX-2.5-Full",
+          "workflow": null,
+          "status": 400,
+          "code": "invalid_video_parameter"
+        },
+        {
+          "model": "inference-node/Lightricks/LTX-2.5-Full",
+          "workflow": [],
+          "status": 400,
+          "code": "invalid_video_parameter"
+        },
+        {
+          "model": "inference-node/Lightricks/LTX-2.5-Full",
+          "workflow": "retake",
+          "status": 400,
+          "code": "invalid_video_parameter"
+        },
+        {
+          "model": "inference-node/Lightricks/LTX-2.5-Distilled",
+          "workflow": "audio-to-video",
+          "status": 400,
+          "code": "invalid_video_parameter"
+        },
+        {
+          "model": "inference-node/Lightricks/LTX-2.5-Full",
+          "workflow": "audio-to-video",
+          "status": 400,
+          "code": "invalid_video_parameter"
+        },
+        {
+          "model": "inference-node/Lightricks/LTX-2.5-Distilled",
+          "workflow": "refine",
+          "status": 400,
+          "code": "invalid_video_parameter"
+        },
+        {
+          "model": "inference-node/Lightricks/LTX-2.5-Full",
+          "workflow": "keyframes",
+          "status": 400,
+          "code": "invalid_video_parameter"
+        }
+      ]
+    }
+  ],
+  "renders": [
+    {
+      "model": "Lightricks/LTX-2.5-Full",
+      "label": "full-audio-to-video",
+      "image": "lloom/ltx-pipelines:source-2d192754657af91101e5b96021bb8a9c17eb978938dcbd5232b2b11a7dd9dac8",
+      "runtimeImage": "lloom/ltx-pipelines:source-2d192754657af91101e5b96021bb8a9c17eb978938dcbd5232b2b11a7dd9dac8",
+      "defaultRequest": true,
+      "workflow": "audio-to-video",
+      "elapsed": 256.268,
+      "width": 512,
+      "height": 512,
+      "num_frames": 193,
+      "fps": 24,
+      "seed": 9272026,
+      "steps": "upstream-default",
+      "responseModel": "Lightricks/LTX-2.5-Full",
+      "requestModel": "inference-node/Lightricks/LTX-2.5-Full",
+      "gateway": "gateway-node",
+      "executionHost": "inference-node",
+      "streams": [
+        {
+          "type": "video",
+          "codec": "h264",
+          "width": 512,
+          "height": 512,
+          "frames": "193",
+          "rate": "24/1",
+          "duration": "8.041667"
+        },
+        {
+          "type": "audio",
+          "codec": "aac",
+          "frames": "190",
+          "rate": "0/0",
+          "duration": "8.042000"
+        }
+      ],
+      "time": "2026-09-27T20:52:54.101Z",
+      "videoSha256": "e4c7d3941d8030754553e3d6be5de57cb2034e301041130f790d54a572fd16c5"
+    },
+    {
+      "model": "Lightricks/LTX-2.5-Distilled",
+      "label": "distilled-generate",
+      "image": "lloom/ltx-pipelines:source-2d192754657af91101e5b96021bb8a9c17eb978938dcbd5232b2b11a7dd9dac8",
+      "runtimeImage": "lloom/ltx-pipelines:source-2d192754657af91101e5b96021bb8a9c17eb978938dcbd5232b2b11a7dd9dac8",
+      "defaultRequest": true,
+      "workflow": "generate",
+      "elapsed": 76.655,
+      "width": 256,
+      "height": 256,
+      "num_frames": 25,
+      "fps": 24,
+      "seed": 9272026,
+      "steps": "upstream-default",
+      "responseModel": "Lightricks/LTX-2.5-Distilled",
+      "requestModel": "inference-node/Lightricks/LTX-2.5-Distilled",
+      "gateway": "gateway-node",
+      "executionHost": "inference-node",
+      "streams": [
+        {
+          "type": "video",
+          "codec": "h264",
+          "width": 256,
+          "height": 256,
+          "frames": "25",
+          "rate": "24/1",
+          "duration": "1.041667"
+        },
+        {
+          "type": "audio",
+          "codec": "aac",
+          "frames": "49",
+          "rate": "0/0",
+          "duration": "1.010000"
+        }
+      ],
+      "time": "2026-09-27T20:54:15.308Z",
+      "videoSha256": "9635802fdb2177e9d36ab37b8beb6ddc8d8ef7eef4fecfe4f6437b0fb48eebfb"
+    }
+  ],
+  "installedFileHashesVerified": 13,
+  "focusedTestsPassed": 50,
+  "pipelinePreservation": "All seven original pipeline specs match excluding display names; a2v.py unchanged.",
+  "nativeFrozenAudioTensorCheck": "passed",
+  "visualCheck": "Full contact sheet shows articulation during speech and a closed-mouth tail. Distilled short default workflow clip decoded and inspected. No phoneme-level alignment scoring.",
+  "audioCheck": {
+    "comparison": "Prior accepted native-final.mp4 render, decoded mono 16kHz",
+    "correlation": 1.0,
+    "samples": 129024
+  },
+  "workflowReadiness": {
+    "Lightricks/LTX-2.5-Full": {
+      "generate": true,
+      "generate-hq": true,
+      "audio-to-video": true,
+      "keyframes": true
+    },
+    "Lightricks/LTX-2.5-Distilled": {
+      "generate": true,
+      "retake": true,
+      "refine": false
+    }
+  },
+  "limitation": "Refine still needs its separate detailing adapter; six other workflow assets are ready. Only Full audio-to-video and Distilled generate were rendered in this API acceptance pass.",
+  "restoration": [
+    {
+      "time": "2026-09-27T20:56:00.147Z",
+      "embeddingDimensions": 2560,
+      "runtimes": {
+        "qwen3-embedding-4b": {
+          "status": "running",
+          "healthy": true,
+          "activeRequests": 0
+        },
+        "inference-tts-clone": {
+          "status": "running",
+          "healthy": true,
+          "activeRequests": 0
+        },
+        "ltx-pipelines": {
+          "status": "exited",
+          "healthy": false,
+          "activeRequests": 0
+        }
+      },
+      "videoRuntimes": [
+        {
+          "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+          "runtime": "inference-video",
+          "image": "sha256:a20cd73abad2bd1a358eca7b944f6730ecbbe63c22ef522a3a0856895d968989"
+        },
+        {
+          "model": "MiniMaxAI/MiniMax-H3",
+          "runtime": "inference-minimax-h3",
+          "image": "lloom/comfyui-media:source-c83f01af946f0dda60abba211a6050f628f3c999cda09010e0630505add90275"
+        },
+        {
+          "model": "MiniMaxAI/MiniMax-H3-Turbo",
+          "runtime": "inference-minimax-h3-turbo",
+          "image": "lloom/comfyui-media:source-c83f01af946f0dda60abba211a6050f628f3c999cda09010e0630505add90275"
+        },
+        {
+          "model": "Lightricks/LTX-2.5",
+          "runtime": "inference-ltx25",
+          "image": "lloom/comfyui-media:source-c83f01af946f0dda60abba211a6050f628f3c999cda09010e0630505add90275"
+        },
+        {
+          "model": "Lightricks/LTX-2.5-Comfy-Full",
+          "runtime": "inference-ltx25-full",
+          "image": "lloom/comfyui-media:source-a1b3b33293187476ee218c5d394bddf06e756eed3e13138448c629dd36977759"
+        },
+        {
+          "model": "Lightricks/LTX-2.5-Full",
+          "runtime": "ltx-pipelines",
+          "image": "lloom/ltx-pipelines:source-2d192754657af91101e5b96021bb8a9c17eb978938dcbd5232b2b11a7dd9dac8"
+        },
+        {
+          "model": "Lightricks/LTX-2.5-Distilled",
+          "runtime": "ltx-pipelines",
+          "image": "lloom/ltx-pipelines:source-2d192754657af91101e5b96021bb8a9c17eb978938dcbd5232b2b11a7dd9dac8"
+        }
+      ]
+    }
+  ]
+}

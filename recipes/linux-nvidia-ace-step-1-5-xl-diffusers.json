@@ -1,0 +1,272 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-ace-step-1-5-xl-diffusers",
+  "name": "ACE-Step 1.5 XL music generation (Diffusers, NVIDIA)",
+  "version": 1,
+  "summary": "ACE-Step 1.5 XL SFT and Turbo music generation served through the official Diffusers pipeline in separate managed runtimes. Uses the APG guidance these checkpoints require and exposes bpm, keyscale, timesignature, language, guidance_scale, steps and shift as request parameters.",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe metadata only; model weights retain their upstream licenses"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "ACE-Step/acestep-v15-xl-sft-diffusers 4bf7b60a63b27144f539f980927eeb89f5f912b0; ACE-Step/acestep-v15-xl-turbo-diffusers 200ba991ae448051e14b0183157e35c2d27c9fb0; Diffusers 80c7ed262aeffbeb43ef13ae04baeb9b84515a69 (contains AceStepPipeline with adaptive projected guidance); PyTorch 2.11.0/CUDA 13.0."
+  },
+  "links": [
+    {
+      "rel": "source",
+      "href": "https://huggingface.co/ACE-Step/acestep-v15-xl-sft-diffusers/tree/4bf7b60a63b27144f539f980927eeb89f5f912b0"
+    },
+    {
+      "rel": "source",
+      "href": "https://huggingface.co/ACE-Step/acestep-v15-xl-turbo-diffusers/tree/200ba991ae448051e14b0183157e35c2d27c9fb0"
+    },
+    {
+      "rel": "source",
+      "href": "https://github.com/huggingface/diffusers/tree/80c7ed262aeffbeb43ef13ae04baeb9b84515a69"
+    }
+  ],
+  "keywords": [
+    "cuda",
+    "nvidia",
+    "ace-step-1.5",
+    "music-generation",
+    "diffusers",
+    "apg",
+    "bf16"
+  ],
+  "capabilities": [
+    "audio-generation",
+    "music-generation"
+  ],
+  "hardware": {
+    "family": "Linux NVIDIA CUDA",
+    "testedMachine": "DGX Spark / GB10 class NVIDIA system",
+    "notes": [
+      "One generation at a time per runtime. SFT runs 50 steps at guidance 7.0; Turbo is guidance-distilled, so the pipeline detects it and coerces guidance to 1.0 over 8 steps.",
+      "Diffusers implements the adaptive projected guidance ACE-Step base/SFT expect. ComfyUI's KSampler applies vanilla CFG instead, which garbles these checkpoints above roughly 2.5 guidance (Comfy-Org/ComfyUI#12322), so this backend is the supported path for SFT.",
+      "bpm, keyscale and timesignature default to unset, letting the checkpoint infer them from the prompt rather than pinning 100 BPM in C major.",
+      "Cold model loading is separate from inference and can take a minute or more."
+    ]
+  },
+  "requirements": {
+    "platforms": [
+      "linux-x64",
+      "linux-arm64"
+    ],
+    "memoryGb": 45,
+    "diskGb": 30,
+    "commands": [
+      "docker",
+      "python3"
+    ],
+    "accelerators": [
+      "cuda",
+      "nvidia-gpu"
+    ]
+  },
+  "backend": {
+    "id": "ace-step-diffusers",
+    "name": "ACE-Step Diffusers",
+    "type": "openai-compatible-server",
+    "features": [
+      "cuda",
+      "audio-generation",
+      "music-generation"
+    ]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-docker",
+        "title": "Check Docker CLI",
+        "action": "check-command",
+        "command": "docker",
+        "args": [
+          "--version"
+        ]
+      },
+      {
+        "id": "download-ace-step-xl-sft-diffusers",
+        "title": "Download ACE-Step 1.5 XL SFT (Diffusers)",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "ACE-Step/acestep-v15-xl-sft-diffusers",
+        "revision": "4bf7b60a63b27144f539f980927eeb89f5f912b0",
+        "include": [
+          "README.md",
+          "model_index.json",
+          "silence_latent.pt",
+          "audio_token_detokenizer/config.json",
+          "audio_token_detokenizer/diffusion_pytorch_model.safetensors",
+          "audio_tokenizer/config.json",
+          "audio_tokenizer/diffusion_pytorch_model.safetensors",
+          "condition_encoder/config.json",
+          "condition_encoder/diffusion_pytorch_model.safetensors",
+          "scheduler/scheduler_config.json",
+          "text_encoder/config.json",
+          "text_encoder/model.safetensors",
+          "tokenizer/added_tokens.json",
+          "tokenizer/chat_template.jinja",
+          "tokenizer/merges.txt",
+          "tokenizer/special_tokens_map.json",
+          "tokenizer/tokenizer.json",
+          "tokenizer/tokenizer_config.json",
+          "tokenizer/vocab.json",
+          "transformer/config.json",
+          "transformer/diffusion_pytorch_model-00001-of-00002.safetensors",
+          "transformer/diffusion_pytorch_model-00002-of-00002.safetensors",
+          "transformer/diffusion_pytorch_model.safetensors.index.json",
+          "vae/config.json",
+          "vae/diffusion_pytorch_model.safetensors"
+        ],
+        "downloadSizeBytes": 12380000000
+      },
+      {
+        "id": "download-ace-step-xl-turbo-diffusers",
+        "title": "Download ACE-Step 1.5 XL Turbo (Diffusers)",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "ACE-Step/acestep-v15-xl-turbo-diffusers",
+        "revision": "200ba991ae448051e14b0183157e35c2d27c9fb0",
+        "include": [
+          "README.md",
+          "model_index.json",
+          "silence_latent.pt",
+          "condition_encoder/config.json",
+          "condition_encoder/diffusion_pytorch_model.safetensors",
+          "scheduler/scheduler_config.json",
+          "text_encoder/config.json",
+          "text_encoder/model.safetensors",
+          "tokenizer/added_tokens.json",
+          "tokenizer/chat_template.jinja",
+          "tokenizer/merges.txt",
+          "tokenizer/special_tokens_map.json",
+          "tokenizer/tokenizer.json",
+          "tokenizer/tokenizer_config.json",
+          "tokenizer/vocab.json",
+          "transformer/config.json",
+          "transformer/diffusion_pytorch_model-00001-of-00002.safetensors",
+          "transformer/diffusion_pytorch_model-00002-of-00002.safetensors",
+          "transformer/diffusion_pytorch_model.safetensors.index.json",
+          "vae/config.json",
+          "vae/diffusion_pytorch_model.safetensors"
+        ],
+        "downloadSizeBytes": 11920000000
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "quality-music-generate",
+      "model": "ACE-Step/acestep-v15-xl-sft-diffusers",
+      "gatewayModel": "ACE-Step/ACE-Step-1.5-XL-SFT-Diffusers",
+      "runtime": "ace-step-sft",
+      "backendConfig": "ace-step-diffusers",
+      "kind": "audio_generation",
+      "input": [
+        "text"
+      ],
+      "output": [
+        "audio"
+      ],
+      "capabilities": [
+        "audio-generation",
+        "music-generation"
+      ],
+      "settings": {
+        "memoryGb": 45,
+        "priority": 30,
+        "keepWarm": false,
+        "maxActiveRequests": 1,
+        "startupTimeoutMs": 900000,
+        "runtime": {
+          "warmup": false,
+          "adapter": "docker",
+          "management": "managed",
+          "containerName": "lloom-ace-step-sft",
+          "healthUrl": "http://127.0.0.1:${port}/health",
+          "bootstrap": {
+            "adapter": "docker",
+            "image": "lloom/ace-step-diffusers:source-4f438fb19b098e76d34e1bf522ddf950f4908d3295ea42e98d1e05441e4fffe6",
+            "pull": false,
+            "createArgs": [
+              "--restart",
+              "unless-stopped",
+              "--gpus",
+              "all",
+              "--shm-size",
+              "8g",
+              "-e",
+              "LLOOM_ACE_MODEL_PATH=/models/ACE-Step--acestep-v15-xl-sft-diffusers",
+              "-e",
+              "LLOOM_ACE_MODEL_ID=ACE-Step/ACE-Step-1.5-XL-SFT-Diffusers",
+              "-p",
+              "127.0.0.1:${port}:8000",
+              "-v",
+              "${modelRoot}:/models:ro"
+            ]
+          }
+        },
+        "timeoutMs": 1800000
+      }
+    },
+    {
+      "role": "fast-music-generate",
+      "model": "ACE-Step/acestep-v15-xl-turbo-diffusers",
+      "gatewayModel": "ACE-Step/ACE-Step-1.5-XL-Turbo-Diffusers",
+      "runtime": "ace-step-turbo",
+      "backendConfig": "ace-step-diffusers",
+      "kind": "audio_generation",
+      "input": [
+        "text"
+      ],
+      "output": [
+        "audio"
+      ],
+      "capabilities": [
+        "audio-generation",
+        "music-generation"
+      ],
+      "settings": {
+        "memoryGb": 45,
+        "priority": 30,
+        "keepWarm": false,
+        "maxActiveRequests": 1,
+        "startupTimeoutMs": 900000,
+        "runtime": {
+          "warmup": false,
+          "adapter": "docker",
+          "management": "managed",
+          "containerName": "lloom-ace-step-turbo",
+          "healthUrl": "http://127.0.0.1:${port}/health",
+          "bootstrap": {
+            "adapter": "docker",
+            "image": "lloom/ace-step-diffusers:source-4f438fb19b098e76d34e1bf522ddf950f4908d3295ea42e98d1e05441e4fffe6",
+            "pull": false,
+            "createArgs": [
+              "--restart",
+              "unless-stopped",
+              "--gpus",
+              "all",
+              "--shm-size",
+              "8g",
+              "-e",
+              "LLOOM_ACE_MODEL_PATH=/models/ACE-Step--acestep-v15-xl-turbo-diffusers",
+              "-e",
+              "LLOOM_ACE_MODEL_ID=ACE-Step/ACE-Step-1.5-XL-Turbo-Diffusers",
+              "-p",
+              "127.0.0.1:${port}:8000",
+              "-v",
+              "${modelRoot}:/models:ro"
+            ]
+          }
+        },
+        "timeoutMs": 1800000
+      }
+    }
+  ]
+}

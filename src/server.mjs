@@ -2,6 +2,7 @@ import { runtimeCapabilityModels } from './runtime-capabilities.mjs';
 import runtimeCapabilities from './runtime-capabilities.json' with { type: 'json' };
 import { executeWebFunction, webFunctionStatus } from './web-functions.mjs';
 import { createPerformanceSampler } from './performance-sampler.mjs';
+import { prepareVideoRequest, videoCatalog } from './video-contracts.mjs';
 import { generateProviderVideo } from './video-providers.mjs';
 import http from 'node:http';
 import { readErrorDiagnostic, streamProviderError } from './protocol/upstream-error.mjs';
@@ -3034,7 +3035,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
   }
 
   async function handleOpenAIVideos(req, res) {
-    const body = await readJson(req);
+    let body = await readJson(req);
     const modelId = body.model ?? config.defaults?.videoModel;
     if (!modelId) {
       sendJson(res, 400, errorBody('video request requires model', { code: 'missing_model' }));
@@ -3052,6 +3053,7 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
       );
       return;
     }
+    if (!resolved.backend.videoProvider) body = prepareVideoRequest(resolved.model.upstreamModel, body);
     await recordModelRequest(
       {
         route: '/v1/videos/generations',
@@ -4464,6 +4466,11 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
 
       if (req.method === 'POST' && url.pathname === '/v1/images/edits') {
         await handleOpenAIImageEdits(req, res);
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/v1/videos/generations/models') {
+        sendJson(res, 200, videoCatalog(registry.catalogModels({ kinds: ['video'] })));
         return;
       }
 

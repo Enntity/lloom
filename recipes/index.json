@@ -506,7 +506,7 @@
           "version": 4,
           "path": "archive/linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm/v4.json",
           "status": "archived",
-          "notes": "Pins a measured 9.5 GiB FP8 hybrid KV pool for 262K context and uses a 0.79 fallback utilization so the Spark02 embedding lane can coexist without startup threshold jitter."
+          "notes": "Pins a measured 9.5 GiB FP8 hybrid KV pool for 262K context and uses a 0.79 fallback utilization so the embedding sidecar can coexist without startup threshold jitter."
         },
         {
           "version": 5,
@@ -1134,20 +1134,94 @@
       ],
       "name": "LLooM Hear - local sound and music perception",
       "summary": "CPU audio analysis with loudness, tempo, key, timbre, signal-change estimates and an optional dashboard image. Generated interpretation is opt-in and uses a separately configured upstream model.",
-      "tags": [
-        "cpu",
-        "audio-analysis",
-        "audio-understanding",
-        "music",
-        "dsp",
-        "measurement",
-        "perception"
-      ],
+      "tags": ["cpu", "audio-analysis", "audio-understanding", "music", "dsp", "measurement", "perception"],
       "recommendedFor": [
         "agents that natively understand only text and images but must reason about sound or music",
         "any host with ffmpeg; no accelerator required",
         "callers that need measured audio facts separated from generated description"
       ]
+    },
+    {
+      "id": "linux-nvidia-ltx-2-5-native",
+      "path": "linux-nvidia-ltx-2-5-native.json",
+      "currentVersion": 2,
+      "versions": [
+        {
+          "version": 2,
+          "path": "linux-nvidia-ltx-2-5-native.json",
+          "status": "current"
+        }
+      ],
+      "name": "LTX-2.5 native workflows (NVIDIA)",
+      "summary": "Full and Distilled native BF16 LTX-2.5 models with explicit generation, audio-driven, keyframe, retake and refinement workflows.",
+      "source": {
+        "type": "bundled"
+      }
+    },
+    {
+      "id": "linux-nvidia-gb10-qwen38-27b-nvfp4-vllm",
+      "path": "linux-nvidia-gb10-qwen38-27b-nvfp4-vllm.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-gb10-qwen38-27b-nvfp4-vllm.json",
+          "status": "current"
+        }
+      ],
+      "name": "DGX Spark Qwen3.8 27B NVFP4 vLLM",
+      "summary": "Standalone Qwen3.8 27B NVFP4 cognition for a single GB10 Spark, sized to coexist with the Qwen3-Embedding-4B sidecar.",
+      "tags": ["linux", "nvidia", "dgx-spark", "gb10", "qwen3.8", "27b", "nvfp4", "vllm", "mtp", "standalone"],
+      "recommendedFor": ["Standalone cognition on a single GB10 while other nodes run cluster experiments"],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "tools",
+        "reasoning",
+        "vision",
+        "mtp",
+        "batching",
+        "long-context"
+      ],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-gb10-qwen38-27b-nvfp4-vllm.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-ace-step-1-5-xl-diffusers",
+      "path": "linux-nvidia-ace-step-1-5-xl-diffusers.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-ace-step-1-5-xl-diffusers.json",
+          "status": "current"
+        }
+      ],
+      "name": "ACE-Step 1.5 XL music generation (Diffusers, NVIDIA)"
+    },
+    {
+      "id": "linux-nvidia-comfyui-ltx-2-5-full",
+      "path": "linux-nvidia-comfyui-ltx-2-5-full.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-comfyui-ltx-2-5-full.json",
+          "status": "current"
+        }
+      ],
+      "name": "LTX-2.5 Full (ComfyUI, BF16)",
+      "summary": "Full BF16 LTX-2.5 with a guided main pass and distilled LoRA refinement through ComfyUI.",
+      "tags": ["cuda", "bf16", "ltx-2.5", "nvidia", "single-model"],
+      "capabilities": ["video-generation", "text-to-video", "image-to-video", "audio-to-video", "first-last-frame"],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-comfyui-ltx-2-5-full.json"
+      }
     }
   ]
 }

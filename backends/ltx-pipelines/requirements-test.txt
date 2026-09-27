@@ -1,0 +1,4 @@
+# CPU-only test dependencies. The contract tests import neither torch nor the
+# LTX runtime: they exercise request validation and the fake-shim subprocess.
+-r requirements.txt
+pytest==8.3.4
