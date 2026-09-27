@@ -8,6 +8,8 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 - LLooM Hear CPU audio analysis, with structured estimates, optional dashboard images, and opt-in upstream interpretation. File and URL inputs require operator configuration.
 
+- Four standalone NVIDIA Spark audio recipes (Qwen3-TTS 1.7B CustomVoice, Base voice cloning and VoiceDesign, and Whisper large-v3-turbo). Each runs one pinned, integrity-checked checkpoint in its own container from a locally built `spark-audio` image that replaces a host-local prebuilt image.
+
 - Fourteen per-model NVIDIA ComfyUI media recipes and a public-source backend build for image, video and music generation. Each model runs in its own container with read-only mounts of only its files, so LLooM admits, evicts and restores each one independently. The media launcher refuses to start without `LLOOM_MEDIA_MODEL`, and re-applying a recipe moves a model off the retired shared `comfyui-media` runtime, dropping it once unused.
 - OpenRouter Lyria audio generation through `/v1/audio/generations`.
 

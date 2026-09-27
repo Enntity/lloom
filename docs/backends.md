@@ -139,3 +139,5 @@ Authenticated hosted OpenAI-compatible providers use the same config-only unmana
 `lloom-host` publishes a lightweight backend index at `GET /v1/backends` and the full portable backend setup document at `GET /v1/backends/catalog`. Recipe authors and independent installers should use the catalog endpoint when they need setup actions, platform filters, server contracts, and idempotency guards rather than just the stable backend IDs.
 
 The `comfyui-media` backend builds a source-pinned NVIDIA Docker image for the [per-model media recipes](comfyui-media.md). Its idempotent build step uses `alwaysRun: true` so setup verifies the external image even when a previous installation was recorded as complete.
+
+The `spark-audio` backend builds the same kind of source-identified image for the [per-model speech and transcription recipes](spark-audio.md). Each recipe runs one checkpoint in its own container.
