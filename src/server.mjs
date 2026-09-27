@@ -343,18 +343,25 @@ function endResponseWithError(res, error, { stream = false, config = {}, status 
 const DEFAULT_IMAGE_TOKEN_ESTIMATE = 4096;
 const LOW_DETAIL_IMAGE_TOKEN_ESTIMATE = 1024;
 
-function estimateImageTokens(value) {
+function estimateMediaTokens(value) {
   if (!value || typeof value !== 'object') return null;
   const type = String(value.type ?? '').toLowerCase();
   const source = value.source && typeof value.source === 'object' ? value.source : null;
-  const hasImagePayload =
+  const hasMediaPayload =
     type === 'image' ||
     type === 'image_url' ||
     type === 'input_image' ||
+    type === 'video' ||
+    type === 'video_url' ||
+    type === 'input_video' ||
     value.image_url != null ||
-    (source && (source.type === 'base64' || String(source.media_type ?? '').startsWith('image/')));
-  if (!hasImagePayload) return null;
-  const detail = String(value.detail ?? value.image_url?.detail ?? '').toLowerCase();
+    value.video_url != null ||
+    (source &&
+      (source.type === 'base64' ||
+        String(source.media_type ?? '').startsWith('image/') ||
+        String(source.media_type ?? '').startsWith('video/')));
+  if (!hasMediaPayload) return null;
+  const detail = String(value.detail ?? value.image_url?.detail ?? value.video_url?.detail ?? '').toLowerCase();
   return detail === 'low' ? LOW_DETAIL_IMAGE_TOKEN_ESTIMATE : DEFAULT_IMAGE_TOKEN_ESTIMATE;
 }
 
@@ -364,13 +371,13 @@ function estimateMessageTokens(value) {
     // Base64 is opaque media, not prompt text. Counting every encoded byte as
     // language tokens rejects normal multimodal requests before the backend's
     // vision processor can turn pixels into its much smaller token sequence.
-    if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(value)) return DEFAULT_IMAGE_TOKEN_ESTIMATE;
+    if (/^data:(?:image|video)\/[a-z0-9.+-]+;base64,/i.test(value)) return DEFAULT_IMAGE_TOKEN_ESTIMATE;
     return Math.ceil(value.length / 3.5);
   }
   if (Array.isArray(value)) return value.reduce((sum, item) => sum + estimateMessageTokens(item), 0);
   if (typeof value === 'object') {
-    const imageTokens = estimateImageTokens(value);
-    if (imageTokens != null) return imageTokens;
+    const mediaTokens = estimateMediaTokens(value);
+    if (mediaTokens != null) return mediaTokens;
     if (typeof value.text === 'string') return estimateMessageTokens(value.text);
     if (typeof value.content === 'string' || Array.isArray(value.content)) {
       return estimateMessageTokens(value.content);
@@ -659,8 +666,24 @@ async function readJson(req) {
 }
 
 function upstreamUrl(backend, path) {
+  // An absolute URL is already resolved against the backend; joining it to the
+  // baseUrl would corrupt it. Callers use this for routes a backend serves
+  // outside its advertised API prefix.
+  if (/^https?:\/\//i.test(path)) return path;
   const suffix = path.startsWith('/v1/') ? path.slice(3) : path;
   return `${stripTrailingSlash(backend.baseUrl)}${suffix}`;
+}
+
+// The Atlas engine mounts its OpenAI surface under `/v1` but token counting at
+// the bare `/tokenize` (`serve_router.rs`: `.route("/v1/chat/completions")` next
+// to `.route("/tokenize")`). An OpenAI-typed backend's baseUrl already ends in
+// `/v1`, so building this URL the ordinary way would request `…/v1/tokenize` and
+// get a 404 — the engine does not serve a `/v1` form of it. Resolve against the
+// backend origin instead, so the request lands on `/tokenize` whatever the
+// configured baseUrl path is.
+function tokenizeUpstreamUrl(backend) {
+  const origin = new URL(backend.baseUrl).origin;
+  return `${origin}/tokenize`;
 }
 
 function backendHeaders(backend, extra = {}) {
@@ -3202,6 +3225,70 @@ export function createLloomServer(
     );
   }
 
+  // Token counting for backends that render a chat template. SparkGLM's Atlas
+  // engine answers `POST /tokenize` with `{tokens, count}` and applies the same
+  // template serving uses, so the count matches what a chat request of the same
+  // messages will really render. The gateway passes the body through untouched
+  // (including `chat_template_kwargs`) because altering it would change the count
+  // this endpoint exists to report.
+  //
+  // The upstream path is the backend's own route, not the gateway path: an
+  // OpenAI-typed backend already carries `/v1` in its baseUrl, and `upstreamUrl`
+  // only strips a `/v1/` prefix when the baseUrl lacks one. Passing `/v1/tokenize`
+  // here would therefore request `…/v1/v1/tokenize` and 404.
+  async function handleOpenAITokenize(req, res) {
+    const body = await readJson(req);
+    const modelId = body.model ?? config.defaults?.chatModel;
+    if (body.prompt == null && body.messages == null) {
+      sendJson(
+        res,
+        400,
+        errorBody("tokenize request requires 'prompt' or 'messages'", {
+          code: 'missing_input'
+        })
+      );
+      return;
+    }
+    if (!modelId) {
+      sendJson(
+        res,
+        400,
+        errorBody('tokenize request requires model', {
+          code: 'missing_model'
+        })
+      );
+      return;
+    }
+    await recordModelRequestWithFailover(
+      {
+        route: '/v1/tokenize',
+        modelId,
+        stream: false,
+        req,
+        res
+      },
+      async (resolved, { signal, timing, watchdog, hasNext }) => {
+        watchdog.arm();
+        const upstream = await fetchUpstream({
+          headers: inferenceGatewayHeaders(req, resolved),
+          backend: resolved.backend,
+          // Absolute URL: `fetchUpstream` passes it through untouched, which is
+          // what keeps the request off the backend's `/v1` base path.
+          path: tokenizeUpstreamUrl(resolved.backend),
+          signal,
+          body: {
+            ...body,
+            model: resolved.model.upstreamModel
+          }
+        });
+        if (!upstream.ok && hasNext && MODEL_FAILOVER_STATUS_CODES.has(upstream.status)) {
+          throw await upstreamStatusError(upstream);
+        }
+        return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
+      }
+    );
+  }
+
   async function resolveSpeechModelOrError(modelId) {
     try {
       const resolved = await resolveRequestModel(modelId);
@@ -4534,6 +4621,11 @@ export function createLloomServer(
 
       if (req.method === 'POST' && url.pathname === '/v1/embeddings') {
         await handleOpenAIEmbeddings(req, res);
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/v1/tokenize') {
+        await handleOpenAITokenize(req, res);
         return;
       }
 
