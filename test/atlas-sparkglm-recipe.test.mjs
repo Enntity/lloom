@@ -48,11 +48,18 @@ assert.deepEqual(recipe.requirements.cluster, {
 assert(recipe.requirements.accelerators.includes('gb10'));
 assert.deepEqual(
   recipe.setup.steps.map((step) => step.id),
-  ['check-docker', 'verify-atlas-pins', 'download-atlas-model', 'build-atlas-image', 'convert-atlas-overlay']
+  [
+    'check-docker',
+    'verify-atlas-pins',
+    'download-atlas-model',
+    'download-atlas-drafter',
+    'build-atlas-image',
+    'convert-atlas-overlay'
+  ]
 );
 assert.deepEqual(
   recipe.setup.steps
-    .filter((step) => step.id !== 'check-docker' && step.id !== 'download-atlas-model')
+    .filter((step) => step.action !== 'check-command' && step.action !== 'download-model')
     .map((step) => step.id),
   ['verify-atlas-pins', 'build-atlas-image', 'convert-atlas-overlay']
 );
@@ -71,7 +78,7 @@ assert.equal(model.model, 'nvidia/GLM-5.3-Flash-NVFP4');
 assert.equal(model.settings.port, 8893);
 assert.equal(model.settings.baseUrl, 'http://127.0.0.1:8893/v1');
 assert.equal(model.settings.healthUrl, 'http://127.0.0.1:8893/health');
-assert.equal(model.settings.contextWindow, 262144);
+assert.equal(model.settings.contextWindow, 524288);
 assert.equal(model.settings.maxOutputTokens, 131072);
 assert.equal(model.settings.timeoutMs, 14400000);
 assert.equal(model.settings.maxActiveRequests, 4);
@@ -85,6 +92,10 @@ assert(model.capabilities.includes('structured-output'));
 const downloadStep = recipe.setup.steps.find((step) => step.id === 'download-atlas-model');
 assert.equal(downloadStep.model, 'nvidia/GLM-5.3-Flash-NVFP4');
 assert.equal(downloadStep.revision, '423acf37583782c51c142d145aef733d72943d93');
+const drafterStep = recipe.setup.steps.find((step) => step.id === 'download-atlas-drafter');
+assert.equal(drafterStep.action, 'download-model');
+assert.equal(drafterStep.model, pins.drafter.repo);
+assert.equal(drafterStep.revision, pins.drafter.revision);
 
 // Additive lane: never take over the default route, never overwrite aliases.
 assert.equal(model.setDefault, false);
@@ -147,7 +158,9 @@ for (const member of members) {
     'ATLAS_WORLD_SIZE=2',
     'ATLAS_TP_SIZE=2',
     'ATLAS_EP_SIZE=2',
-    'ATLAS_CONTEXT_WINDOW=262144',
+    'ATLAS_CONTEXT_WINDOW=524288',
+    'type=bind,src=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2,dst=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2,readonly',
+    'DRAFTER_PATH=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2',
     'SERVED_MODEL_NAME=glm-5.3-flash-atlas',
     'NCCL_IB_HCA=rocep1s0f0',
     'NCCL_IB_ADDR_FAMILY=AF_INET',
@@ -201,7 +214,19 @@ const plan = planRecipe(
 assert.deepEqual(plan.validationErrors, []);
 assert.deepEqual(
   plan.steps.map((step) => step.id),
-  ['check-docker', 'verify-atlas-pins', 'download-atlas-model', 'build-atlas-image', 'convert-atlas-overlay']
+  [
+    'check-docker',
+    'verify-atlas-pins',
+    'download-atlas-model',
+    'download-atlas-drafter',
+    'build-atlas-image',
+    'convert-atlas-overlay'
+  ]
+);
+// The drafter lands exactly where both members mount it as DRAFTER_PATH.
+assert.equal(
+  plan.steps.find((step) => step.id === 'download-atlas-drafter').destination,
+  '/models/incoai--GLM-5.3-Flash-DFlash2'
 );
 for (const step of plan.steps.filter((entry) => entry.action === 'command')) {
   assert(!step.command.join(' ').includes('${'), `unresolved recipe template in ${step.id}`);
@@ -390,7 +415,7 @@ assert.equal(pins.model.revision, '423acf37583782c51c142d145aef733d72943d93');
 assert.equal(pins.model.repo, 'nvidia/GLM-5.3-Flash-NVFP4');
 assert.equal(pins.source.repo, 'Enntity/sparkglm');
 assert.equal(pins.status, 'final');
-assert.equal(pins.source.revision, 'bb655a9f8617b79782ad1202fde36a882667aeda');
+assert.equal(pins.source.revision, '0ef387a53fa39380bbca7ca5b4ff7ece6bf753de');
 assert.equal(pins.image.entrypoint, '/opt/atlas/serve.py');
 assert(pins.overlay.marker.includes('conversion.complete.json'));
 assert.deepEqual(verifyPins(pins), []);
