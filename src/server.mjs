@@ -4,6 +4,7 @@ import { executeWebFunction, webFunctionStatus } from './web-functions.mjs';
 import { createPerformanceSampler } from './performance-sampler.mjs';
 import { prepareVideoRequest, videoCatalog } from './video-contracts.mjs';
 import { generateProviderVideo } from './video-providers.mjs';
+import { generateProviderAudio } from './audio-providers.mjs';
 import http from 'node:http';
 import { readErrorDiagnostic, streamProviderError } from './protocol/upstream-error.mjs';
 import { fetchWithStreamProgress } from './protocol/stream-progress.mjs';
@@ -21,7 +22,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { Agent as UndiciAgent } from 'undici';
+import { Agent as UndiciAgent, fetch as undiciFetch } from 'undici';
 import {
   backendIds,
   defaultBackendVariables,
@@ -664,6 +665,8 @@ function copyResponseHeaders(upstream) {
     'retry-after',
     'x-lloom-provider',
     'x-lloom-provider-job-id',
+    'x-lloom-provider-origin',
+    'x-lloom-audio-format',
     'x-lloom-upstream-model'
   ]) {
     const value = upstream.headers.get(name);
@@ -1937,7 +1940,10 @@ export async function retryRuntimeActionAfterConfigReload(action, getReloadInFli
   }
 }
 
-export function createLloomServer(config, { logger = console, runtimeManager = null, clusterCoordinator = null } = {}) {
+export function createLloomServer(
+  config,
+  { logger = console, runtimeManager = null, clusterCoordinator = null, upstreamDispatcher = null } = {}
+) {
   const hostTelemetry = createHostTelemetry();
   const machineProfile = profileMachine().catch((error) => {
     logger.error?.(`Machine profile collection failed: ${error?.message ?? error}`);
@@ -3118,6 +3124,19 @@ export function createLloomServer(config, { logger = console, runtimeManager = n
         res
       },
       async ({ signal, timing, progress, watchdog }) => {
+        if (resolved.backend.audioProvider) {
+          const upstream = await generateProviderAudio({
+            backend: resolved.backend,
+            fetchFn: undiciFetch,
+            dispatcher: upstreamDispatcher ?? longRunningMediaDispatcher,
+            body: { ...body, model: resolved.model.upstreamModel },
+            signal,
+            timeoutMs: resolved.backend.timeoutMs ?? 600000
+          });
+          // The provider stream is fully validated before this point, so the
+          // assembled artifact is written as a buffered binary response.
+          return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
+        }
         const upstream = await fetchUpstream({
           headers: inferenceGatewayHeaders(req, resolved),
           backend: resolved.backend,

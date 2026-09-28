@@ -34,9 +34,12 @@ curl http://127.0.0.1:8100/v1/chat/completions \
 ```
 
 The optional `hear` object accepts `start` and `end`, or `start` and `duration`,
-in seconds. A window can also be parsed from text such as
+in seconds. `start` is optional: an omitted `start` defaults to `0.0`, so an
+`end`-only or `duration`-only directive selects a window from the beginning of
+the clip. A window can also be parsed from text such as
 `"what happens from 0:12 to 0:22?"`. Analysis is capped at the configured maximum
-duration. Invalid windows and oversized inputs are rejected.
+duration. Invalid windows (negative, non-finite, reversed, or empty) and
+oversized inputs are rejected.
 
 `image_delivery` accepts `inline`, `url`, or `none`. Inline PNG data is returned in
 `hear.images`; it is referenced rather than embedded in the Markdown report.
@@ -44,10 +47,12 @@ URL delivery is intended for local callers that can reach the backend. The backe
 returns Markdown in JSON completions. It does not support streaming or
 schema-constrained output.
 
-Inline base64 contributes to the gateway's prompt-size estimate. The recipe uses
-a large context allowance to accommodate audio payloads; this does not describe an
-upstream language model's context capacity. Keep clips short and observe the
-backend's input limits.
+Inline base64 contributes to the gateway's prompt-size estimate. Hear is CPU DSP,
+so the recipe's `contextWindow` is an admission allowance sized to admit audio
+payloads, not an upstream language model's context capacity. It is set to cover
+the backend's default 64 MiB request envelope at the gateway's ~3.5 bytes/token
+estimate under a 98% gate; the backend's own byte and duration limits are
+unchanged. Keep clips short and observe the backend's input limits.
 
 ## File and URL inputs
 
