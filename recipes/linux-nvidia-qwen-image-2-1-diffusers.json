@@ -42,7 +42,7 @@
     "family": "Linux NVIDIA CUDA",
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
     "notes": [
-      "One generation or edit at a time on a single pipeline. Text-to-image accepts an optional 32-pixel-aligned size from 256 to 2048 per axis at no more than 2 megapixels (default 1024x1024); editing follows the reference aspect ratio at about one megapixel.",
+      "One generation or edit at a time. Fresh seeds by default; explicit seeds reproduce requests. Up to ten references, 2K output, RGBA transparency, and high (40 steps), medium (25), or low (12) quality presets.",
       "BF16 transformer and encoder; original FP32 VAE. Tested on NVIDIA GB10 with PyTorch 2.11/CUDA 13.",
       "Cold model loading is separate from inference and can take several minutes."
     ]
@@ -199,7 +199,7 @@
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/qwen-image-diffusers:source-709d9a713b1a7340fd1cba799e45fc51690ef9a040c11e6c4457ac603c4a2d6d",
+            "image": "lloom/qwen-image-diffusers:source-8bc87bfee0e1993ab240fcb0720456d76a274643adc48fdbecfe22dce083e76a",
             "pull": false,
             "createArgs": [
               "--restart",

@@ -10,7 +10,7 @@ import { createModelImportPlan } from '../src/model-intake.mjs';
 import { createSetupStatus } from '../src/setup-status.mjs';
 
 const recipes = (await loadRecipes()).filter((r) => r.id.startsWith('linux-nvidia-comfyui-'));
-assert.equal(recipes.length, 15);
+assert.equal(recipes.length, 16);
 const image = execFileSync('python3', ['backends/comfyui-media/install.py', '--print-image'], {
   encoding: 'utf8'
 }).trim();
@@ -47,8 +47,9 @@ try {
     const standalone = await apply(empty, recipe);
     assert.equal(standalone.models.length, 1);
     assert.equal(Object.keys(standalone.runtimes).length, 1);
-    assert.equal(standalone.runtimes['comfyui-media'].bootstrap.image, image);
-    assert.match(standalone.runtimes['comfyui-media'].bootstrap.createArgs.join(' '), /127\.0\.0\.1:\d+:8000/);
+    const runtimeId = recipe.models[0].runtime;
+    assert.equal(standalone.runtimes[runtimeId].bootstrap.image, image);
+    assert.match(standalone.runtimes[runtimeId].bootstrap.createArgs.join(' '), /127\.0\.0\.1:\d+:8000/);
     const model = standalone.models[0];
     assert.equal(
       model.kind,
@@ -72,16 +73,28 @@ try {
   }
   for (const order of [recipes, recipes.toReversed()]) {
     let config = await apply(empty, order[0]);
-    const runtime = structuredClone(config.runtimes['comfyui-media']);
-    const backend = structuredClone(config.backends['comfyui-media']);
     for (const recipe of order.slice(1)) {
+      const previousRuntimes = structuredClone(config.runtimes);
+      const previousBackends = structuredClone(config.backends);
       config = await apply(config, recipe);
-      assert.deepEqual(config.runtimes['comfyui-media'], runtime);
-      assert.deepEqual(config.backends['comfyui-media'], backend);
+      for (const [id, runtime] of Object.entries(previousRuntimes)) assert.deepEqual(config.runtimes[id], runtime);
+      for (const [id, backend] of Object.entries(previousBackends)) assert.deepEqual(config.backends[id], backend);
     }
     assert.equal(config.models.length, recipes.length);
     assert.equal(config.models.filter((m) => m.kind === 'audio_generation').length, 4);
-    assert.deepEqual(Object.keys(config.runtimes), ['comfyui-media']);
+    assert.deepEqual(Object.keys(config.runtimes).sort(), ['comfyui-media', 'qwen-image-21-nvfp4']);
+    assert.equal(config.runtimes['comfyui-media'].memoryGb, 95);
+    assert.equal(config.runtimes['qwen-image-21-nvfp4'].memoryGb, 32);
+    assert.notEqual(config.runtimes['comfyui-media'].port, config.runtimes['qwen-image-21-nvfp4'].port);
+    assert.notEqual(
+      config.runtimes['comfyui-media'].containerName,
+      config.runtimes['qwen-image-21-nvfp4'].containerName
+    );
+    assert.ok(
+      config.runtimes['qwen-image-21-nvfp4'].bootstrap.createArgs.includes(
+        'LLOOM_MEDIA_MODEL=BennyDaBall/Qwen-Image-2.1-NVFP4'
+      )
+    );
   }
   assert.throws(
     () => createModelImportPlan(empty, { modelRef: 'mlx-community/ACE-Step', backend: 'mlx-audio' }),
@@ -174,7 +187,9 @@ try {
   );
   assert.ok(composedDestination.dependencies.every((dependency) => dependency.complete));
 
-  console.log('ComfyUI recipes: all 15 standalone; shared runtime and backend unchanged in both application orders');
+  console.log(
+    'ComfyUI recipes: all 16 standalone; shared media and dedicated NVFP4 runtimes preserved in both application orders'
+  );
 } finally {
   await fs.rm(dir, { recursive: true, force: true });
 }

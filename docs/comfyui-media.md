@@ -1,15 +1,17 @@
 # ComfyUI image, video and music recipes
 
 Each `linux-nvidia-comfyui-*` recipe installs one model and the files its workflow
-uses. The recipes share a single LLooM-managed `comfyui-media` runtime. The first
+uses. Most recipes share a single LLooM-managed `comfyui-media` runtime. The NVFP4
+Qwen recipe uses a dedicated runtime with a smaller memory reservation. The first
 installation builds the backend from public source; later installations reuse
-that image, container, backend URL and concurrency limit.
+the image. Shared-media installations also reuse their container, backend URL
+and concurrency limit.
 
 ## Install
 
 Use Linux on NVIDIA hardware with Docker, NVIDIA Container Toolkit, Python 3
-with venv support, and a CUDA 13-compatible driver. The recipes conservatively
-reserve 95 GiB of host/model memory for the shared runtime. Consult each recipe's
+with venv support, and a CUDA 13-compatible driver. Shared media recipes reserve
+95 GiB; the dedicated NVFP4 Qwen recipe reserves 32 GiB. Consult each recipe's
 `diskGb` estimate before downloading. Model repositories can require separately
 accepted access terms and Hugging Face authentication; credentials stay in your
 local Hugging Face environment and are never included in recipes or images.
@@ -52,7 +54,47 @@ so unlike `qwen-image-2512` it is not patched with an aura-flow shift and it nee
 no Lightning LoRA. Its own VAE decodes RGBA, so a prompt asking for a transparent
 background returns a PNG with a real alpha channel. Edits accept one reference
 image and follow that image's geometry; `resolution` sets the reference pixel
-budget instead of an explicit width and height.
+budget instead of an explicit width and height. Both multipart
+`POST /v1/images/edits` (one `image` or `image[]` file) and JSON
+`POST /v1/images/generations` with an inline `image` data URI support editing.
+Use the Diffusers recipe for up to ten reference images.
+
+Qwen 2.1 uses a fresh seed when omitted and returns the actual seed in the
+response. Reusing the generation seed for an edit can produce severe texture
+artifacts. Explicit seeds remain reproducible; use a different seed for each
+successive edit. Seeds are integers from zero through `2^53-1`, so JSON clients
+can replay them exactly. Other model families retain their existing defaults.
+
+The default is `quality: "high"` (40 steps). `medium` uses 25 and `low` uses
+12; explicit `steps` overrides a valid preset. `cfg` must be 1 and nonempty
+negative prompts are rejected because this workflow does not use them.
+Generation supports 32-pixel-aligned sizes up to 3072 per axis and 4.5 MiPixels,
+including 2048x2048 and 2752x1536. Without `size`, `resolution` supplies the square
+output size (default 1024; range 256–2048). Edits use `resolution` to resize their
+reference while preserving its aspect ratio. The graph preserves reference
+alpha through `JoinImageWithAlpha` before Qwen encoding.
+
+The separate `linux-nvidia-comfyui-qwen-image-2-1-nvfp4` recipe creates
+`qwen-image-21-nvfp4`, with its own container, port, data volume and model filter.
+This keeps its smaller admission budget separate from the shared 95 GiB media
+runtime, regardless of installation order. Both use the same backend image. It uses
+[BennyDaBall's NVFP4 checkpoints](https://huggingface.co/BennyDaBall/Qwen-Image-2.1-NVFP4)
+for the transformer and Qwen3-VL encoder. The VAE, vision tower, embeddings and
+selected sensitive weights retain higher precision. The download is 12.42 GB
+(decimal), including the shared 0.68 GB VAE. The recipe pins every file's
+revision, size and SHA-256. It uses the same generation/edit API and quality
+presets as INT8; clients select the exact advertised NVFP4 model ID.
+
+See the [GB10 endpoint and quantization qualification](evidence/2026-09-27-qwen-image-21/README.md)
+for measured timings, test scope and kernel evidence.
+
+Native FP4 computation requires supported Blackwell hardware. The bundled,
+attributed upstream patch enables quantized encoder matrix multiplication and
+BF16 multimodal conditioning on supported devices; INT8/BF16 retain their
+existing paths. Without that patch, loading NVFP4 weights alone does not prove
+native encoder acceleration. The Docker build checks the patch against the
+pinned engine before applying it. NVFP4 is lossy and is a separate quality
+choice, not a numerically equivalent replacement for BF16 or INT8.
 
 If the selected model already has a configured route, setup preserves its backend,
 runtime and upstream model ID while refreshing its media capabilities. This also
@@ -67,7 +109,8 @@ existing backend must support `/v1/audio/generations`.
 | `qwen-image-2512`           | `Qwen/Qwen-Image-2512`              | `/v1/images/generations`                            |
 | `qwen-image-2512-lightning` | `Qwen/Qwen-Image-2512-Lightning`    | `/v1/images/generations`                            |
 | `qwen-image-edit-2511`      | `Qwen/Qwen-Image-Edit-2511`         | `/v1/images/generations` with inline image          |
-| `qwen-image-2-1`            | `Qwen/Qwen-Image-2.1`               | `/v1/images/generations`, with inline image to edit |
+| `qwen-image-2-1`            | `Qwen/Qwen-Image-2.1`               | `/v1/images/generations` and `/v1/images/edits` |
+| `qwen-image-2-1-nvfp4` | `BennyDaBall/Qwen-Image-2.1-NVFP4` | `/v1/images/generations` and `/v1/images/edits` |
 | `ideogram-4`                | `Comfy-Org/Ideogram-4`              | `/v1/images/generations`                            |
 | `krea-2-turbo`              | `Comfy-Org/Krea-2-Turbo`            | `/v1/images/generations`                            |
 | `minimax-h3`                | `MiniMaxAI/MiniMax-H3`              | `/v1/videos/generations`                            |

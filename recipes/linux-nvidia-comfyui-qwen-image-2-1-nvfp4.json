@@ -2,10 +2,10 @@
   "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
   "schemaVersion": 1,
   "profile": "https://lloom.dev/profiles/interchange/v1",
-  "id": "linux-nvidia-comfyui-qwen-image-2-1",
-  "name": "Qwen/Qwen-Image-2.1 (ComfyUI, NVIDIA)",
+  "id": "linux-nvidia-comfyui-qwen-image-2-1-nvfp4",
+  "name": "BennyDaBall/Qwen-Image-2.1-NVFP4 (ComfyUI, NVIDIA)",
   "version": 1,
-  "summary": "Install Qwen/Qwen-Image-2.1, one DiT for generation and reference editing, with the shared ComfyUI media backend.",
+  "summary": "Install BennyDaBall/Qwen-Image-2.1-NVFP4, one NVFP4 DiT for generation and reference editing, with the shared ComfyUI media backend.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata only; model weights are under the Qwen Research license"
@@ -13,16 +13,16 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "ComfyUI 5ba116a40f1944f64e2e4a8ace826656e6293bf4 (Qwen-Image 2.1 support); immutable provider revisions and per-file SHA-256 below."
+    "source": "ComfyUI 5ba116a40f1944f64e2e4a8ace826656e6293bf4 (Qwen-Image 2.1 support) plus the bundled runtime_qwen21-nvfp4-conditioning.patch (GPL-3.0, see build/runtime_qwen21-nvfp4-conditioning.NOTICE); immutable provider revisions and per-file SHA-256 below."
   },
   "links": [
     {
       "rel": "source",
-      "href": "https://huggingface.co/Qwen/Qwen-Image-2.1"
+      "href": "https://huggingface.co/BennyDaBall/Qwen-Image-2.1-NVFP4"
     },
     {
       "rel": "source",
-      "href": "https://huggingface.co/Comfy-Org/Qwen-Image-2.1/tree/7562a343278731b94b18803d7de6d660cb56f841"
+      "href": "https://huggingface.co/BennyDaBall/Qwen-Image-2.1-NVFP4/tree/1a38d44a3a2f35cb0b543a25b04da0a963e7b5e6"
     },
     {
       "rel": "source",
@@ -35,7 +35,7 @@
   ],
   "keywords": [
     "cuda",
-    "int8",
+    "nvfp4",
     "nvidia",
     "qwen-image-2.1",
     "image-editing",
@@ -47,12 +47,13 @@
     "image-editing"
   ],
   "hardware": {
-    "family": "Linux NVIDIA CUDA",
+    "family": "NVIDIA Blackwell / DGX Spark",
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
     "notes": [
-      "Standalone single-GPU serving; shares the one managed ComfyUI media runtime with the other image, video and music recipes.",
+      "Dedicated single-model runtime using the shared ComfyUI backend image. Its smaller admission budget is independent of the larger shared media runtime.",
       "NVIDIA Container Toolkit with a CUDA 13-compatible host driver required.",
-      "Weight format is int8 convrot for the DiT and text encoder, which the pinned engine runs with its own quantized kernels. No separate LoRA is needed: 2.1 samples at its own shift and cfg 1."
+      "Weight format is NVFP4 for the DiT and text encoder with the shared bf16 VAE; the pinned engine runs it through the bundled runtime conditioning patch. No separate LoRA is needed: 2.1 samples at its own shift and cfg 1.",
+      "Native NVFP4 acceleration requires supported NVIDIA Blackwell hardware; other GPUs can dequantize or fall back and are not qualified for this recipe."
     ]
   },
   "requirements": {
@@ -60,15 +61,16 @@
       "linux-x64",
       "linux-arm64"
     ],
-    "memoryGb": 95,
-    "diskGb": 26,
+    "memoryGb": 32,
+    "diskGb": 16,
     "commands": [
       "docker",
       "python3"
     ],
     "accelerators": [
       "cuda",
-      "nvidia-gpu"
+      "nvidia-gpu",
+      "blackwell"
     ]
   },
   "backend": {
@@ -95,29 +97,29 @@
         ]
       },
       {
-        "id": "download-1-qwen-image-2.1",
-        "title": "Download Comfy-Org/Qwen-Image-2.1 files for qwen-image-2.1-int8",
+        "id": "download-1-qwen-image-2.1-nvfp4",
+        "title": "Download BennyDaBall/Qwen-Image-2.1-NVFP4 files for qwen-image-2.1-nvfp4",
         "action": "download-model",
         "provider": "huggingface",
-        "model": "Comfy-Org/Qwen-Image-2.1",
-        "revision": "7562a343278731b94b18803d7de6d660cb56f841",
+        "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+        "revision": "1a38d44a3a2f35cb0b543a25b04da0a963e7b5e6",
         "include": [
-          "diffusion_models/qwen_image_2.1_int8_convrot.safetensors",
-          "text_encoders/qwen3vl_8b_int8_convrot.safetensors",
+          "diffusion_models/qwen_image_2.1_nvfp4.safetensors",
+          "text_encoders/qwen3vl_8b_nvfp4.safetensors",
           "vae/qwen_image_2.1_vae_bf16.safetensors"
         ],
-        "downloadSizeBytes": 17284083112,
+        "downloadSizeBytes": 12422967120,
         "integrity": {
           "files": [
             {
-              "path": "diffusion_models/qwen_image_2.1_int8_convrot.safetensors",
-              "sizeBytes": 7256783064,
-              "sha256": "cb74113cb03faecd79611b01fd7fd642f0aa60d6f0b95086abee214d75eaa57d"
+              "path": "diffusion_models/qwen_image_2.1_nvfp4.safetensors",
+              "sizeBytes": 4197574664,
+              "sha256": "4fdbaec94c19f7b8888f1e1ddbae05354c014492f9b2547b1cd8dca0ce923526"
             },
             {
-              "path": "text_encoders/qwen3vl_8b_int8_convrot.safetensors",
-              "sizeBytes": 9350798360,
-              "sha256": "8bfd0f6e12abf2d2d697ecc888e5e90b0d6741d6708f05799f53afa560452e8f"
+              "path": "text_encoders/qwen3vl_8b_nvfp4.safetensors",
+              "sizeBytes": 7549882768,
+              "sha256": "cdd9b85bcb60d5cb358ddecfd45a48fa15cb728b70d88bd2028840eaef095d16"
             },
             {
               "path": "vae/qwen_image_2.1_vae_bf16.safetensors",
@@ -131,11 +133,11 @@
   },
   "models": [
     {
-      "role": "qwen-image-2.1-int8",
-      "model": "Qwen/Qwen-Image-2.1",
-      "gatewayModel": "Qwen/Qwen-Image-2.1",
-      "runtime": "comfyui-media",
-      "backendConfig": "comfyui-media",
+      "role": "qwen-image-2.1-nvfp4",
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "gatewayModel": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "runtime": "qwen-image-21-nvfp4",
+      "backendConfig": "qwen-image-21-nvfp4",
       "kind": "image",
       "input": [
         "text",
@@ -149,7 +151,7 @@
         "image-editing"
       ],
       "settings": {
-        "memoryGb": 95,
+        "memoryGb": 32,
         "priority": 30,
         "keepWarm": false,
         "maxActiveRequests": 1,
@@ -157,7 +159,7 @@
         "runtime": {
           "adapter": "docker",
           "management": "managed",
-          "containerName": "lloom-comfyui-media",
+          "containerName": "lloom-qwen-image-21-nvfp4",
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
@@ -175,9 +177,13 @@
               "-v",
               "${modelRoot}:/opt/lloom-models:ro",
               "-v",
-              "lloom-comfyui-media-data:/data",
+              "lloom-qwen-image-21-nvfp4-data:/data",
               "-e",
-              "LLOOM_MEDIA_DATA_ROOT=/data"
+              "LLOOM_MEDIA_DATA_ROOT=/data",
+              "-e",
+              "LLOOM_MEDIA_MODEL=BennyDaBall/Qwen-Image-2.1-NVFP4",
+              "-e",
+              "LLOOM_COMFY_CACHE_MODE=classic"
             ]
           }
         },

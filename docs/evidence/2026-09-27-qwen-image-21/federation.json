@@ -1,0 +1,28 @@
+[
+  {
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "generationStatus": 200,
+    "editStatus": 200,
+    "generationSeed": "20260927",
+    "editSeed": "3681699697512348",
+    "size": "512x512",
+    "steps": "25",
+    "viaFederation": true
+  },
+  {
+    "model": "Qwen/Qwen-Image-2.1",
+    "generationStatus": 200,
+    "editStatus": 200,
+    "generationSeed": 20260927,
+    "editSeed": 8147254101884529,
+    "viaFederation": true
+  },
+  {
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "generationStatus": 200,
+    "editStatus": 200,
+    "generationSeed": 20260927,
+    "editSeed": 5906386664205335,
+    "viaFederation": true
+  }
+]

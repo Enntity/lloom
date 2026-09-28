@@ -1,0 +1,35 @@
+build/runtime_qwen21-nvfp4-conditioning.patch
+=============================================
+
+Attribution
+-----------
+Source: BennyDaBall/Qwen-Image-2.1-NVFP4 (Hugging Face model repository)
+        runtime/qwen21-nvfp4-conditioning.patch
+        https://huggingface.co/BennyDaBall/Qwen-Image-2.1-NVFP4
+Upstream revision: 1a38d44a3a2f35cb0b543a25b04da0a963e7b5e6
+Upstream documentation: runtime/README.md in the same repository.
+Bundled copy SHA-256 (as vendored here):
+  2c13ec9046ffa720484c569acce153f4759da47e9bc008af56d68d583854e2fa
+
+What the patch changes
+----------------------
+Qwen Image 2.1 NVFP4 conditioning: it detects NVFP4 checkpoint metadata in the
+text-encoder state dict, converts the completed multimodal embeddings to BF16 on
+GPUs with NVFP4 compute support, and runs the encoder forward pass inside
+ComfyUI's existing quantized-matmul context. BF16 and INT8 checkpoints keep the
+original code path unchanged; vision preprocessing and the unnormalized final
+hidden state contract are preserved.
+
+Tested base: 99073836d45f66053c45ba8564984e6def9cebba (an independent patch, not
+an upstream ComfyUI release). The Dockerfile applies it against the pinned
+ComfyUI checkout with ``git apply --check`` followed by ``git apply``, so a
+mismatch fails the build instead of silently degrading.
+
+License
+-------
+The patch is a modification of ComfyUI source and is therefore distributed
+under ComfyUI's GPL-3.0 license (GNU General Public License, version 3). See
+https://www.gnu.org/licenses/gpl-3.0.txt and the ComfyUI repository's LICENSE
+file at the pinned revision for the full text. This backend applies the patch
+to its own pinned ComfyUI checkout at container build time; the patched
+ComfyUI remains under GPL-3.0.

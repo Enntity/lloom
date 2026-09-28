@@ -2,6 +2,7 @@
 import json
 import math
 import re
+import secrets
 
 MODELS = {
     "black-forest-labs/FLUX.2-klein-4B": {"kind": "image", "family": "flux2"},
@@ -9,6 +10,7 @@ MODELS = {
     "Qwen/Qwen-Image-2512-Lightning": {"kind": "image", "family": "qwen-image-lightning"},
     "Qwen/Qwen-Image-Edit-2511": {"kind": "image", "family": "qwen-image-edit"},
     "Qwen/Qwen-Image-2.1": {"kind": "image", "family": "qwen-image-21"},
+    "BennyDaBall/Qwen-Image-2.1-NVFP4": {"kind": "image", "family": "qwen-image-21"},
     "Comfy-Org/Ideogram-4": {"kind": "image", "family": "ideogram4"},
     "Comfy-Org/Krea-2-Turbo": {"kind": "image", "family": "krea2"},
     "MiniMaxAI/MiniMax-H3": {"kind": "video"},
@@ -20,6 +22,56 @@ MODELS = {
     "ACE-Step/ACE-Step-1.5-XL-Turbo": {"kind": "audio"},
     "Comfy-Org/YuE2-3B": {"kind": "audio", "family": "yue2"},
 }
+
+
+# LLooM presets: upstream recommends 40 steps; 25 and 12 are lower-cost options.
+# Explicit steps override the preset. Live quality varies by prompt and reference.
+QWEN_IMAGE_21_QUALITY_STEPS = {"auto": 40, "high": 40, "medium": 25, "low": 12}
+
+# Server-owned checkpoint names for the qwen-image-21 lane. Both IDs share one
+# graph contract, but each loads a fixed, pinned set of files. A request can
+# never name a checkpoint: the model ID selects one of these entries and the
+# filenames below are the only values that reach the loaders.
+QWEN_IMAGE_21_CHECKPOINTS = {
+    "Qwen/Qwen-Image-2.1": {
+        "diffusion": "qwen_image_2.1_int8_convrot.safetensors",
+        "encoder": "qwen3vl_8b_int8_convrot.safetensors",
+        "vae": "qwen_image_2.1_vae_bf16.safetensors",
+    },
+    "BennyDaBall/Qwen-Image-2.1-NVFP4": {
+        "diffusion": "qwen_image_2.1_nvfp4.safetensors",
+        "encoder": "qwen3vl_8b_nvfp4.safetensors",
+        "vae": "qwen_image_2.1_vae_bf16.safetensors",
+    },
+}
+
+# Model lanes whose bridge contract includes a reference-image edit. Both have a
+# text-encode node that splices a LoadImage latent, so the endpoint may serve
+# them while every other image lane stays generation-only.
+IMAGE_EDIT_FAMILIES = frozenset({"qwen-image-21", "qwen-image-edit"})
+
+
+def supports_image_edit(model_id: str) -> bool:
+    """True when the family's pinned graph consumes a reference image."""
+    metadata = MODELS.get(model_id)
+    return isinstance(metadata, dict) and metadata.get("kind") == "image" and metadata.get("family") in IMAGE_EDIT_FAMILIES
+
+
+def qwen_image_21_steps(p):
+    """Resolve the 2.1 step count from ``quality`` unless steps are explicit.
+
+    An explicitly supplied, valid ``steps`` always wins over ``quality``. An
+    invalid ``quality`` is rejected outright: silently dropping it would render
+    at the default and hide the typo that mattered.
+    """
+    if "quality" in p:
+        quality = p["quality"]
+        if not isinstance(quality, str) or quality not in QWEN_IMAGE_21_QUALITY_STEPS:
+            allowed = ", ".join(sorted(QWEN_IMAGE_21_QUALITY_STEPS))
+            raise ValueError(f"quality must be one of {allowed}")
+    if "steps" in p:
+        return number(p, "steps", QWEN_IMAGE_21_QUALITY_STEPS["auto"], 1, 60, True)
+    return QWEN_IMAGE_21_QUALITY_STEPS[p["quality"]] if "quality" in p else QWEN_IMAGE_21_QUALITY_STEPS["auto"]
 
 
 def number(p, name, default, low, high, integer=False, describe=None):
@@ -190,7 +242,14 @@ def build_graph(model_id, payload, image_filename=None, last_image_filename=None
             raise ValueError("Arbitrary graphs, paths and URLs are not supported")
     if "workflow" in payload and model_id != "MiniMaxAI/MiniMax-H3":
         raise ValueError("workflow selection is supported only for MiniMax-H3")
-    seed = number(payload, "seed", 42, 0, 2**63 - 1, True)
+    # The 2.1 lane derives a fresh cryptographic seed when none is supplied.
+    # Reusing one seed across a generate-then-edit pair is the confirmed cause of
+    # severe artifacts (native repro + upstream issue 14824); every other lane
+    # keeps the fixed default it has always built with.
+    if "seed" not in payload and MODELS[model_id].get("family") == "qwen-image-21":
+        seed = secrets.randbits(53)
+    else:
+        seed = number(payload, "seed", 42, 0, (2**53 if MODELS[model_id].get("family") == "qwen-image-21" else 2**63) - 1, True)
     if number(payload, "n", 1, 1, 1, True) != 1:
         raise ValueError("Only one output per request is supported")
     g = Graph()
@@ -200,7 +259,7 @@ def build_graph(model_id, payload, image_filename=None, last_image_filename=None
             raise ValueError("prompt is required")
         family = MODELS[model_id]["family"]
         if family == "qwen-image-21":
-            result = qwen_image_21(g, payload, prompt, seed, image_filename)
+            result = qwen_image_21(g, payload, prompt, seed, image_filename, model_id)
         elif family == "qwen-image-edit":
             if image_filename is None:
                 raise ValueError("Qwen image editing requires an image")
@@ -695,7 +754,21 @@ def qwen_image_edit(g, p, prompt, seed, image_filename):
     return g.add("VAEDecode", samples=sampled, vae=vae)
 
 
-def qwen_image_21(g, p, prompt, seed, image_filename):
+def qwen_image_21_geometry(p, resolution):
+    width = height = resolution
+    if "size" in p:
+        match = re.fullmatch(r"([0-9]{3,4})x([0-9]{3,4})", str(p["size"]))
+        if not match:
+            raise ValueError("size must be WIDTHxHEIGHT")
+        width, height = map(int, match.groups())
+    width = number(p, "width", width, 256, 3072, True)
+    height = number(p, "height", height, 256, 3072, True)
+    if width % 32 or height % 32 or width * height > 4.5 * 1024 * 1024:
+        raise ValueError("Dimensions must be multiples of 32 and at most 4.5 megapixels")
+    return width, height
+
+
+def qwen_image_21(g, p, prompt, seed, image_filename, model_id="Qwen/Qwen-Image-2.1"):
     """Qwen-Image 2.1: one DiT for generation, reference editing and RGBA output.
 
     The graph mirrors the pinned official template. Its text-encode node splices
@@ -706,17 +779,31 @@ def qwen_image_21(g, p, prompt, seed, image_filename):
     There is deliberately no ``ModelSamplingAuraFlow``: 2.1 carries its own
     sampling shift in the checkpoint, and the aura-flow patch (what the 2512
     lane needs at 3.1) would override it. The template also runs cfg 1, where
-    the negative prompt is unused; it is still honoured if a caller raises cfg.
+    the negative prompt is unused.
+
+    ``model_id`` picks a fixed checkpoint set from
+    ``QWEN_IMAGE_21_CHECKPOINTS``; the INT8 and NVFP4 lanes share this contract
+    and differ only in which pinned files the loaders open.
     """
-    model = g.add("UNETLoader", unet_name="qwen_image_2.1_int8_convrot.safetensors", weight_dtype="default")
-    clip = g.add("CLIPLoader", clip_name="qwen3vl_8b_int8_convrot.safetensors", type="qwen_image", device="default")
-    vae = g.add("VAELoader", vae_name="qwen_image_2.1_vae_bf16.safetensors")
+    allowed = {"model", "prompt", "negative_prompt", "image", "size", "width", "height", "resolution", "quality", "steps", "seed", "cfg", "n", "response_format"}
+    if set(p) - allowed:
+        raise ValueError("Unsupported Qwen Image 2.1 fields: " + ", ".join(sorted(set(p) - allowed)))
+    if p.get("negative_prompt", "") != "":
+        raise ValueError("negative_prompt is unsupported because Qwen Image 2.1 uses cfg=1")
+    if "size" in p and ("width" in p or "height" in p):
+        raise ValueError("Use size or width/height, not both")
+    resolution = number(p, "resolution", 1024, 256, 2048, True, describe="the reference-image pixel budget")
+    if resolution % 32:
+        raise ValueError("resolution must be a multiple of 32")
+    checkpoints = QWEN_IMAGE_21_CHECKPOINTS[model_id]
+    model = g.add("UNETLoader", unet_name=checkpoints["diffusion"], weight_dtype="default")
+    clip = g.add("CLIPLoader", clip_name=checkpoints["encoder"], type="qwen_image", device="default")
+    vae = g.add("VAELoader", vae_name=checkpoints["vae"])
     if image_filename is not None:
         if any(field in p for field in ("size", "width", "height")):
             raise ValueError("Qwen 2.1 edits follow the reference image; use resolution instead")
         # The node resizes every reference to about resolution x resolution
         # pixels at multiples of 32, preserving aspect ratio.
-        resolution = number(p, "resolution", 1024, 0, 2048, True, describe="the reference-image pixel budget")
         encode = g.add("TextEncodeQwenImage21", clip=clip, vae=vae, prompt=prompt,
                        negative_prompt=text(p, "negative_prompt", ""), resolution=resolution)
         positive, negative, latent = encode, [encode[0], 1], [encode[0], 2]
@@ -724,17 +811,25 @@ def qwen_image_21(g, p, prompt, seed, image_filename):
         # API graphs use flattened dynamic-input paths. ComfyUI resolves the
         # link first, then builds the images dict passed to execute(). A nested
         # dict here is not a graph edge and silently loses the reference.
-        g.nodes[encode[0]]["inputs"]["images.image_1"] = image
+        # LoadImage hands back RGB plus MASK = 1 - alpha. JoinImageWithAlpha
+        # rebuilds 4 channels from image + (1 - mask), so an RGBA reference
+        # survives the edit instead of being flattened against the VAE's white
+        # composite. The mask link is required: without it the node would take a
+        # default alpha.
+        rgba = g.add("JoinImageWithAlpha", image=[image[0], 0], alpha=[image[0], 1])
+        g.nodes[encode[0]]["inputs"]["images.image_1"] = rgba
     else:
-        width, height = image_geometry(p)
+        width, height = qwen_image_21_geometry(p, resolution)
         # Without reference images the node resizes nothing, so its resolution
         # is inert; generation geometry comes from the empty latent below.
         encode = g.add("TextEncodeQwenImage21", clip=clip, vae=vae, prompt=prompt,
                        negative_prompt=text(p, "negative_prompt", ""), resolution=1024)
         positive, negative = encode, [encode[0], 1]
         latent = g.add("EmptyLatentImage", width=width, height=height, batch_size=1)
-    steps = number(p, "steps", 25, 1, 60, True)
-    cfg = number(p, "cfg", 1.0, 1.0, 8.0)
+    # Both generation and editing share this one step resolver, so the quality
+    # dial and the explicit-steps override behave identically in either mode.
+    steps = qwen_image_21_steps(p)
+    cfg = number(p, "cfg", 1.0, 1.0, 1.0)
     sampled = g.sample(model, positive, negative, latent, seed, steps, cfg)
     return g.add("VAEDecode", samples=sampled, vae=vae)
 

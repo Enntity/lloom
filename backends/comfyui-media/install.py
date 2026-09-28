@@ -16,6 +16,12 @@ def source_digest(root=ROOT):
     for directory in ('bridge', 'graphs', 'build'):
         files.extend(p for p in (root / directory).rglob('*.py')
                      if 'tests' not in p.relative_to(root).parts and not p.name.startswith('test_'))
+    # Bundled patches are applied at image build time, so a change to one must
+    # move the digest just like a source edit does; only Python files were
+    # hashed before.
+    files.extend(p for p in (root / 'build').rglob('*')
+                 if p.is_file() and p.suffix in ('.patch', '.NOTICE')
+                 and 'tests' not in p.relative_to(root).parts)
     digest = hashlib.sha256()
     for file in sorted(files):
         digest.update(file.relative_to(root).as_posix().encode() + b'\0')

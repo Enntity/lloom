@@ -6,6 +6,12 @@ ENV PATH=/opt/venv/bin:$PATH
 RUN pip install pip==26.0.1 wheel==0.46.3 setuptools==82.0.0
 RUN pip install --index-url https://download.pytorch.org/whl/cu130 torch==2.11.0 torchvision==0.26.0 torchaudio==2.11.0
 RUN git init /opt/ComfyUI && git -C /opt/ComfyUI remote add origin https://github.com/Comfy-Org/ComfyUI.git && git -C /opt/ComfyUI fetch --depth 1 origin 5ba116a40f1944f64e2e4a8ace826656e6293bf4 && git -C /opt/ComfyUI checkout --detach FETCH_HEAD
+# NVFP4 text conditioning for the Qwen Image 2.1 lane. Bundled and attributed
+# under build/; checked before applying so a pin/context mismatch fails the
+# build rather than silently skipping the patch.
+COPY build/runtime_qwen21-nvfp4-conditioning.patch /opt/lloom-media/build/runtime_qwen21-nvfp4-conditioning.patch
+COPY build/runtime_qwen21-nvfp4-conditioning.NOTICE /opt/lloom-media/build/runtime_qwen21-nvfp4-conditioning.NOTICE
+RUN git -C /opt/ComfyUI apply --check /opt/lloom-media/build/runtime_qwen21-nvfp4-conditioning.patch && git -C /opt/ComfyUI apply /opt/lloom-media/build/runtime_qwen21-nvfp4-conditioning.patch
 COPY requirements.txt /opt/lloom-media/requirements.txt
 COPY build/verify_dependencies.py /opt/lloom-media/build/verify_dependencies.py
 RUN pip install -r /opt/ComfyUI/requirements.txt -r /opt/lloom-media/requirements.txt && python /opt/lloom-media/build/verify_dependencies.py && pip freeze > /opt/package-lock.txt

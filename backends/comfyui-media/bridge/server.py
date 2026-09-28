@@ -30,6 +30,9 @@ from requests_in import (
     decode_inline_image,
     decode_last_frame,
     image_filename,
+    multipart_numeric,
+    multipart_reference_images,
+    read_multipart_form,
     validate_bounded_text,
     read_json_body,
     validate_model,
@@ -46,6 +49,19 @@ MAX_INSTRUCTIONS_CHARS = 8000
 MAX_PROMPT_CHARS = 8000
 MAX_INPUT_CHARS = 20000
 MAX_LYRICS_CHARS = 20000
+# Qwen 2.1 edit surface: the native multipart scalars a caller may set. Anything
+# else in the form is either generation-only geometry or an unknown field.
+# The INT8 and NVFP4 lanes are the same contract with different pinned weights,
+# so every 2.1-only rule keys off this set rather than one ID.
+MEDIA_MODEL_ENV = "LLOOM_MEDIA_MODEL"
+QWEN_21_MODEL = "Qwen/Qwen-Image-2.1"
+QWEN_21_MODELS = frozenset({"Qwen/Qwen-Image-2.1", "BennyDaBall/Qwen-Image-2.1-NVFP4"})
+QWEN_EDIT_SCALARS = ("model", "prompt", "negative_prompt", "seed", "steps", "cfg", "quality", "resolution", "n", "response_format")
+QWEN_EDIT_NUMERIC_INTS = ("seed", "steps", "resolution", "n")
+QWEN_EDIT_NUMERIC_FLOATS = ("cfg",)
+# Resolution is measured in the graph itself; this only bounds the transport so a
+# 40-digit integer cannot become an unbounded string comparison.
+MAX_EDIT_SCALAR_CHARS = 64
 # Startup readiness probe against the fixed ComfyUI endpoint.
 READY_ATTEMPTS = 30
 READY_DELAY = 1.0
@@ -72,6 +88,41 @@ def _default_data_roots() -> DataRoots:
     return DataRoots.from_env()
 
 
+def _resolve_media_model(select: str | None = None) -> str | None:
+    """The exact registry model a single-model runtime serves, if configured.
+
+    ``select`` defaults to ``LLOOM_MEDIA_MODEL``. An absent variable selects
+    nothing, preserving the shared media runtime. A present
+    but empty or whitespace-only value is a configuration error and refuses
+    startup. Validation against the registry happens in ``create_app`` so the
+    rejection also covers explicitly injected ``models``.
+    """
+    value = os.environ.get(MEDIA_MODEL_ENV) if select is None else select
+    if value is None:
+        return None
+    stripped = value.strip()
+    if not stripped:
+        raise ValueError(f"{MEDIA_MODEL_ENV} is set but empty; set an exact model ID or unset it.")
+    if stripped != value:
+        # Surrounding whitespace is almost certainly a deployment mistake; an
+        # exact model ID never carries it. Resolve to the trimmed ID, which is
+        # then validated against the registry like any other selection.
+        log.warning("%s has surrounding whitespace; using %r", MEDIA_MODEL_ENV, stripped)
+    return stripped
+
+
+def _select_models(models: dict, select: str | None) -> dict:
+    """Filter ``models`` to ``select``; fail closed on an unknown selection."""
+    if select is None:
+        return models
+    if not isinstance(models, dict) or select not in models:
+        supported = ", ".join(sorted(models)) if isinstance(models, dict) and models else "(none)"
+        raise ValueError(
+            f"{MEDIA_MODEL_ENV}={select!r} is not in this bridge's model registry. Supported models: {supported}."
+        )
+    return {select: models[select]}
+
+
 def create_app(
     comfy: ComfyClient | None = None,
     *,
@@ -79,6 +130,7 @@ def create_app(
     build_graph=None,
     start_backend: bool = True,
     comfy_url: str | None = None,
+    media_model: str | None = None,
 ) -> FastAPI:
     app = FastAPI(title="LLooM media bridge", docs_url=None, redoc_url=None, openapi_url=None)
     if models is None or build_graph is None:
@@ -87,10 +139,12 @@ def create_app(
             models = default_models
         if build_graph is None:
             build_graph = default_builder
+    models = _select_models(models, _resolve_media_model(media_model))
     video_preflight_lock = asyncio.Lock()
     state = {
         "comfy": comfy,
         "models": models,
+        "media_model": next(iter(models)) if len(models) == 1 else None,
         "build_graph": build_graph,
         "comfy_url": validate_comfy_base_url(comfy_url or _default_comfy_url()),
     }
@@ -237,16 +291,57 @@ def create_app(
         model = validate_model(payload, state["models"])
         validate_response_format(payload, ("b64_json", "json"))
         _validate_prompt(payload)
+        payload, seed_meta = _prepare_image_seed(model, payload)
         image = decode_inline_image(payload)
         data, mime = await _run_generation("image", model, payload, image=image)
         if mime != "image/png":
             raise backend_error("The media backend produced an unexpected output type.")
-        return JSONResponse(
-            content={
-                "created": int(time.time()),
-                "data": [{"b64_json": base64.b64encode(data).decode("ascii"), "mime_type": "image/png"}],
-            }
-        )
+        body = {
+            "created": int(time.time()),
+            "data": [{"b64_json": base64.b64encode(data).decode("ascii"), "mime_type": "image/png"}],
+        }
+        if seed_meta is not None:
+            body["seed"] = seed_meta["seed"]
+            body["seed_source"] = seed_meta["seed_source"]
+        return JSONResponse(content=body)
+
+    @app.post("/v1/images/edits")
+    async def image_edits(request: Request) -> Response:
+        """Multipart reference-image edit, a native-compatible shape.
+
+        Clients post multipart text scalars and an image file. This backend's edit lanes
+        consume exactly one reference, so the form is validated here first and
+        then handed to the same validation and generation path the JSON
+        generation endpoint uses.
+        """
+        fields, uploads, counts = await read_multipart_form(request)
+        payload = _multipart_edit_payload(fields, counts, uploads)
+        model = validate_model(payload, state["models"])
+        if not _supports_image_edit(model):
+            # A generation-only lane has no reference-image input in its graph:
+            # refusing here is a 400 that never reaches the GPU.
+            raise bad_request(
+                "This model does not support reference-image editing. Use /v1/images/generations.",
+                "model_kind_mismatch",
+            )
+        validate_response_format(payload, ("b64_json", "json"))
+        if model not in QWEN_21_MODELS and ("quality" in payload or "resolution" in payload):
+            raise bad_request("quality and resolution apply only to Qwen Image 2.1.", "invalid_field")
+        _validate_prompt(payload)
+        payload, seed_meta = _prepare_image_seed(model, payload)
+        image = multipart_reference_images(uploads, counts)
+        data, mime = await _run_generation("image", model, payload, image=image)
+        if mime != "image/png":
+            raise backend_error("The media backend produced an unexpected output type.")
+        body = {
+            "created": int(time.time()),
+            "data": [{"b64_json": base64.b64encode(data).decode("ascii"), "mime_type": "image/png"}],
+            "image_validation": {"images": 1, "mime_type": image[1]},
+        }
+        if seed_meta is not None:
+            body["seed"] = seed_meta["seed"]
+            body["seed_source"] = seed_meta["seed_source"]
+        return JSONResponse(content=body)
 
     # -- audio -------------------------------------------------------------
 
@@ -364,6 +459,89 @@ def _validate_prompt(payload: dict) -> None:
         raise bad_request("Field 'prompt' must be a string.", "invalid_field")
     if isinstance(prompt, str) and len(prompt) > MAX_INSTRUCTIONS_CHARS:
         raise bad_request("Field 'prompt' is too long.", "invalid_field")
+
+
+def _supports_image_edit(model: str) -> bool:
+    """Whether the model's pinned graph consumes a reference image.
+
+    The graph module owns the contract: a family is edit-capable only when its
+    builder wires the reference into the text encoder. Registry metadata alone
+    cannot decide this, so an import that fails or a builder that predates the
+    edit lane is treated as generation-only.
+    """
+    try:
+        from graphs import supports_image_edit
+    except Exception:  # pragma: no cover - configuration failure
+        return False
+    try:
+        return bool(supports_image_edit(model))
+    except Exception:  # pragma: no cover - defensive
+        return False
+
+
+def _multipart_edit_payload(fields: dict, counts: dict, uploads: dict) -> dict:
+    """Convert validated multipart text scalars into the graph's JSON payload.
+
+    Native multipart sends numbers as text; the graph takes real numbers. Every
+    scalar is bounds-checked here, duplicates and unknown fields are refused, and
+    private parameters (a caller-supplied graph, checkpoint or path) cannot be
+    smuggled in under a new name because only the listed scalars are copied.
+    """
+    from requests_in import multipart_scalar
+
+    widths = {
+        "model": MAX_EDIT_SCALAR_CHARS,
+        "quality": MAX_EDIT_SCALAR_CHARS,
+        "prompt": MAX_PROMPT_CHARS,
+        "negative_prompt": MAX_PROMPT_CHARS,
+        "response_format": MAX_EDIT_SCALAR_CHARS,
+    }
+    for name in counts:
+        if name in ("image", "image[]"):
+            continue
+        if name not in QWEN_EDIT_SCALARS:
+            raise bad_request(f"Unsupported form field '{name}'.", "invalid_field")
+    payload: dict = {}
+    for name in ("model", "prompt", "negative_prompt", "quality", "response_format"):
+        # A text scalar is capped before it is ever copied into the payload, so a
+        # 40 MiB "prompt" part is refused as a field error rather than carried
+        # into the graph and rejected later for the wrong reason.
+        raw = multipart_scalar(fields, counts, name, maximum=widths[name])
+        if raw is None:
+            continue
+        if name == "quality":
+            raw = raw.strip()
+        payload[name] = raw
+    for name in QWEN_EDIT_NUMERIC_INTS:
+        value = multipart_numeric(fields, counts, name, integer=True)
+        if value is not None:
+            payload[name] = value
+    for name in QWEN_EDIT_NUMERIC_FLOATS:
+        value = multipart_numeric(fields, counts, name, integer=False)
+        if value is not None:
+            payload[name] = value
+    return payload
+
+
+def _prepare_image_seed(model: str, payload: dict) -> tuple[dict, dict | None]:
+    """Return a copied payload carrying the seed the graph will actually use.
+
+    Qwen 2.1 derives a fresh cryptographic seed when the caller omits one, so the
+    seed in the graph is unknowable to the caller unless it is echoed. Injecting
+    it here — once, before the graph is built — keeps both facts true: the graph
+    still sees a fresh seed per request, and the caller can reproduce the render.
+    Every other lane, and any explicit seed, is passed through untouched.
+    """
+    if model not in QWEN_21_MODELS:
+        return payload, None
+    import secrets
+
+    copied = dict(payload)
+    seed = copied["seed"] if "seed" in copied else secrets.randbits(53)
+    if type(seed) is not int or not 0 <= seed < 2**53:
+        raise bad_request("seed must be an integer between 0 and 2^53-1", "invalid_seed")
+    copied["seed"] = seed
+    return copied, {"seed": seed, "seed_source": "explicit" if "seed" in payload else "random"}
 
 
 def main(argv: list[str] | None = None) -> int:

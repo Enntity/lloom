@@ -1222,6 +1222,37 @@
         "type": "local",
         "url": "recipes/linux-nvidia-comfyui-ltx-2-5-full.json"
       }
+    },
+    {
+      "id": "linux-nvidia-comfyui-qwen-image-2-1-nvfp4",
+      "path": "linux-nvidia-comfyui-qwen-image-2-1-nvfp4.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-comfyui-qwen-image-2-1-nvfp4.json",
+          "status": "current"
+        }
+      ],
+      "name": "BennyDaBall/Qwen-Image-2.1-NVFP4 (ComfyUI, NVIDIA)",
+      "summary": "Install BennyDaBall/Qwen-Image-2.1-NVFP4, one NVFP4 DiT for generation and reference editing, with the shared ComfyUI media backend.",
+      "tags": [
+        "cuda",
+        "nvfp4",
+        "nvidia",
+        "qwen-image-2.1",
+        "image-editing",
+        "transparency",
+        "single-model"
+      ],
+      "capabilities": [
+        "image-generation",
+        "image-editing"
+      ],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-comfyui-qwen-image-2-1-nvfp4.json"
+      }
     }
   ]
 }

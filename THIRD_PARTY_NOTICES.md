@@ -120,6 +120,13 @@ and notices in the built image. ComfyUI source, third-party Python dependencies,
 and model weights are not included in the LLooM npm package. The fixed workflow
 builders use ComfyUI's native node contracts and public workflow examples.
 
+The bundled `backends/comfyui-media/build/runtime_qwen21-nvfp4-conditioning.patch`
+is from [BennyDaBall/Qwen-Image-2.1-NVFP4](https://huggingface.co/BennyDaBall/Qwen-Image-2.1-NVFP4)
+at revision `1a38d44a3a2f35cb0b543a25b04da0a963e7b5e6`. This modification of
+ComfyUI remains under GPL-3.0; see [LICENSES/GPL-3.0.txt](LICENSES/GPL-3.0.txt)
+and the adjacent `.NOTICE` for its exact hash and conditioning behavior. It is
+applied to the separately built ComfyUI source and is not an upstream release.
+
 Each media recipe identifies its model and download sources. Their model-weight
 licenses are separate from LLooM's MIT license; no blanket commercial-use grant
 is made. See [ComfyUI media recipes](docs/comfyui-media.md) for installation and

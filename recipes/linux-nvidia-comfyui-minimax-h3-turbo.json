@@ -183,7 +183,7 @@
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/comfyui-media:source-a1b3b33293187476ee218c5d394bddf06e756eed3e13138448c629dd36977759",
+            "image": "lloom/comfyui-media:source-dbfd165113ba5bf3062f953f97bfe41bff7dcb6996d0f7cdcbd6ee391f54a6cb",
             "pull": false,
             "createArgs": [
               "--restart",
