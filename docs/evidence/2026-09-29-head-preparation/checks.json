@@ -1,0 +1,43 @@
+{
+  "scope": "Prepare an existing standalone media gateway with external provider maps; no fleet endpoint or distributed ownership cutover",
+  "preservedOriginalConfiguration": true,
+  "originalModels": 27,
+  "resultingModels": 40,
+  "preservedRuntimes": 28,
+  "addedModels": 13,
+  "addedBackends": 12,
+  "addedAliases": 17,
+  "repeatImportChanged": false,
+  "checks": [
+    {
+      "name": "direct-deepseek",
+      "status": 200,
+      "elapsedMs": 741,
+      "bytes": 651
+    },
+    {
+      "name": "openrouter-chat",
+      "status": 200,
+      "elapsedMs": 770,
+      "bytes": 804
+    },
+    {
+      "name": "cloud-embedding",
+      "status": 200,
+      "elapsedMs": 2999,
+      "bytes": 55206
+    },
+    {
+      "name": "standalone-default-embedding",
+      "status": 200,
+      "elapsedMs": 169,
+      "bytes": 54801
+    },
+    {
+      "name": "cloud-music",
+      "status": 200,
+      "elapsedMs": 22808,
+      "bytes": 10893390
+    }
+  ]
+}
