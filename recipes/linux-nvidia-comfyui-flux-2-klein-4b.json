@@ -33,8 +33,18 @@
       "href": "https://huggingface.co/black-forest-labs/FLUX.2-klein-4b-nvfp4/tree/1db2b2f776c24b76f1122e5f69ab1949fc620068"
     }
   ],
-  "keywords": ["cuda", "flux.2-klein-4b", "fp8", "nvfp4", "nvidia", "single-model"],
-  "capabilities": ["image-generation", "image-editing"],
+  "keywords": [
+    "cuda",
+    "flux.2-klein-4b",
+    "fp8",
+    "nvfp4",
+    "nvidia",
+    "single-model"
+  ],
+  "capabilities": [
+    "image-generation",
+    "image-editing"
+  ],
   "hardware": {
     "family": "Linux NVIDIA CUDA",
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
@@ -44,17 +54,32 @@
     ]
   },
   "requirements": {
-    "platforms": ["linux-x64", "linux-arm64"],
+    "platforms": [
+      "linux-x64",
+      "linux-arm64"
+    ],
     "memoryGb": 20,
     "diskGb": 26,
-    "commands": ["docker", "python3"],
-    "accelerators": ["cuda", "nvidia-gpu"]
+    "commands": [
+      "docker",
+      "python3"
+    ],
+    "accelerators": [
+      "cuda",
+      "nvidia-gpu"
+    ]
   },
   "backend": {
     "id": "comfyui-media",
     "name": "ComfyUI media",
     "type": "openai-compatible-server",
-    "features": ["cuda", "audio-generation", "video-generation", "image-generation", "image-editing"]
+    "features": [
+      "cuda",
+      "audio-generation",
+      "video-generation",
+      "image-generation",
+      "image-editing"
+    ]
   },
   "setup": {
     "steps": [
@@ -63,7 +88,9 @@
         "title": "Check Docker CLI",
         "action": "check-command",
         "command": "docker",
-        "args": ["--version"]
+        "args": [
+          "--version"
+        ]
       },
       {
         "id": "download-1-flux2-dev",
@@ -72,7 +99,9 @@
         "provider": "huggingface",
         "model": "Comfy-Org/flux2-dev",
         "revision": "ab9055628ea245000e610f2aa2c96f4746093546",
-        "include": ["split_files/vae/flux2-vae.safetensors"],
+        "include": [
+          "split_files/vae/flux2-vae.safetensors"
+        ],
         "downloadSizeBytes": 336213556,
         "integrity": {
           "files": [
@@ -91,7 +120,9 @@
         "provider": "huggingface",
         "model": "Comfy-Org/z_image_turbo",
         "revision": "08d04455279082882deaabc8d0d09fc914c071e1",
-        "include": ["split_files/text_encoders/qwen_3_4b_fp4_mixed.safetensors"],
+        "include": [
+          "split_files/text_encoders/qwen_3_4b_fp4_mixed.safetensors"
+        ],
         "downloadSizeBytes": 3479416193,
         "integrity": {
           "files": [
@@ -110,7 +141,9 @@
         "provider": "huggingface",
         "model": "black-forest-labs/FLUX.2-klein-4b-nvfp4",
         "revision": "1db2b2f776c24b76f1122e5f69ab1949fc620068",
-        "include": ["flux-2-klein-4b-nvfp4.safetensors"],
+        "include": [
+          "flux-2-klein-4b-nvfp4.safetensors"
+        ],
         "downloadSizeBytes": 2460413488,
         "integrity": {
           "files": [
@@ -132,9 +165,17 @@
       "runtime": "comfyui-flux-2-klein-4b",
       "backendConfig": "comfyui-flux-2-klein-4b",
       "kind": "image",
-      "input": ["text", "image"],
-      "output": ["image"],
-      "capabilities": ["image-generation", "image-editing"],
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "image"
+      ],
+      "capabilities": [
+        "image-generation",
+        "image-editing"
+      ],
       "settings": {
         "memoryGb": 20,
         "priority": 30,
@@ -148,7 +189,7 @@
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/comfyui-media:source-381d99b95f2c4afb4e5c07ff12d2fd1c541cde69dc16f00db48506b9e27a7b83",
+            "image": "lloom/comfyui-media:source-6d8fbbc3e58bef36bb8723cdcb01f53a7f8f5d9bd6f74ab015a3dbf06ca19147",
             "pull": false,
             "createArgs": [
               "--restart",

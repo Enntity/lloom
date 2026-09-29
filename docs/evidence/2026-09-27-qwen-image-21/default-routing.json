@@ -1,0 +1,38 @@
+{
+  "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+  "generationAndEditDefaultsVerified": true,
+  "checkpointAndEncoderVerifiedFromAllFiveOutputGraphs": true,
+  "unrelatedConfigurationUnchanged": true,
+  "requests": [
+    {
+      "gateway": "fleet",
+      "test": "generation with omitted model",
+      "status": 200,
+      "seed": 20260928
+    },
+    {
+      "gateway": "fleet",
+      "test": "edit omitted",
+      "status": 200,
+      "seed": 976697618217073
+    },
+    {
+      "gateway": "fleet",
+      "test": "edit image-edit",
+      "status": 200,
+      "seed": 1154884299456354
+    },
+    {
+      "gateway": "owner",
+      "test": "generation with omitted model",
+      "status": 200,
+      "seed": 20260928
+    },
+    {
+      "gateway": "owner",
+      "test": "edit omitted",
+      "status": 200,
+      "seed": 2163327290387923
+    }
+  ]
+}

@@ -33,8 +33,19 @@
       "href": "https://github.com/Comfy-Org/workflow_templates/blob/main/templates/image_qwen_image_2_1_image_edit.json"
     }
   ],
-  "keywords": ["cuda", "int8", "nvidia", "qwen-image-2.1", "image-editing", "transparency", "single-model"],
-  "capabilities": ["image-generation", "image-editing"],
+  "keywords": [
+    "cuda",
+    "int8",
+    "nvidia",
+    "qwen-image-2.1",
+    "image-editing",
+    "transparency",
+    "single-model"
+  ],
+  "capabilities": [
+    "image-generation",
+    "image-editing"
+  ],
   "hardware": {
     "family": "Linux NVIDIA CUDA",
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
@@ -45,17 +56,32 @@
     ]
   },
   "requirements": {
-    "platforms": ["linux-x64", "linux-arm64"],
+    "platforms": [
+      "linux-x64",
+      "linux-arm64"
+    ],
     "memoryGb": 48,
     "diskGb": 26,
-    "commands": ["docker", "python3"],
-    "accelerators": ["cuda", "nvidia-gpu"]
+    "commands": [
+      "docker",
+      "python3"
+    ],
+    "accelerators": [
+      "cuda",
+      "nvidia-gpu"
+    ]
   },
   "backend": {
     "id": "comfyui-media",
     "name": "ComfyUI media",
     "type": "openai-compatible-server",
-    "features": ["cuda", "audio-generation", "video-generation", "image-generation", "image-editing"]
+    "features": [
+      "cuda",
+      "audio-generation",
+      "video-generation",
+      "image-generation",
+      "image-editing"
+    ]
   },
   "setup": {
     "steps": [
@@ -64,7 +90,9 @@
         "title": "Check Docker CLI",
         "action": "check-command",
         "command": "docker",
-        "args": ["--version"]
+        "args": [
+          "--version"
+        ]
       },
       {
         "id": "download-1-qwen-image-2.1",
@@ -109,9 +137,17 @@
       "runtime": "comfyui-qwen-image-2-1",
       "backendConfig": "comfyui-qwen-image-2-1",
       "kind": "image",
-      "input": ["text", "image"],
-      "output": ["image"],
-      "capabilities": ["image-generation", "image-editing"],
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "image"
+      ],
+      "capabilities": [
+        "image-generation",
+        "image-editing"
+      ],
       "settings": {
         "memoryGb": 48,
         "priority": 30,
@@ -125,7 +161,7 @@
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/comfyui-media:source-381d99b95f2c4afb4e5c07ff12d2fd1c541cde69dc16f00db48506b9e27a7b83",
+            "image": "lloom/comfyui-media:source-6d8fbbc3e58bef36bb8723cdcb01f53a7f8f5d9bd6f74ab015a3dbf06ca19147",
             "pull": false,
             "createArgs": [
               "--restart",

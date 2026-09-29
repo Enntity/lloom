@@ -29,8 +29,18 @@
       "href": "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/tree/7beb7b647f04469fbe64ba8adc2bb0d7e5e9f73f"
     }
   ],
-  "keywords": ["cuda", "fp8", "nvfp4", "nvidia", "qwen-image-edit-2511", "single-model"],
-  "capabilities": ["image-generation", "image-editing"],
+  "keywords": [
+    "cuda",
+    "fp8",
+    "nvfp4",
+    "nvidia",
+    "qwen-image-edit-2511",
+    "single-model"
+  ],
+  "capabilities": [
+    "image-generation",
+    "image-editing"
+  ],
   "hardware": {
     "family": "Linux NVIDIA CUDA",
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
@@ -40,17 +50,32 @@
     ]
   },
   "requirements": {
-    "platforms": ["linux-x64", "linux-arm64"],
+    "platforms": [
+      "linux-x64",
+      "linux-arm64"
+    ],
     "memoryGb": 48,
     "diskGb": 45,
-    "commands": ["docker", "python3"],
-    "accelerators": ["cuda", "nvidia-gpu"]
+    "commands": [
+      "docker",
+      "python3"
+    ],
+    "accelerators": [
+      "cuda",
+      "nvidia-gpu"
+    ]
   },
   "backend": {
     "id": "comfyui-media",
     "name": "ComfyUI media",
     "type": "openai-compatible-server",
-    "features": ["cuda", "audio-generation", "video-generation", "image-generation", "image-editing"]
+    "features": [
+      "cuda",
+      "audio-generation",
+      "video-generation",
+      "image-generation",
+      "image-editing"
+    ]
   },
   "setup": {
     "steps": [
@@ -59,7 +84,9 @@
         "title": "Check Docker CLI",
         "action": "check-command",
         "command": "docker",
-        "args": ["--version"]
+        "args": [
+          "--version"
+        ]
       },
       {
         "id": "download-1-qwen-image-edit_comfyui",
@@ -68,7 +95,9 @@
         "provider": "huggingface",
         "model": "Comfy-Org/Qwen-Image-Edit_ComfyUI",
         "revision": "7d41107b653d3039be20972fb82398b01b3213eb",
-        "include": ["split_files/diffusion_models/qwen_image_edit_2511_fp8mixed.safetensors"],
+        "include": [
+          "split_files/diffusion_models/qwen_image_edit_2511_fp8mixed.safetensors"
+        ],
         "downloadSizeBytes": 20533762817,
         "integrity": {
           "files": [
@@ -117,9 +146,17 @@
       "runtime": "comfyui-qwen-image-edit-2511",
       "backendConfig": "comfyui-qwen-image-edit-2511",
       "kind": "image",
-      "input": ["text", "image"],
-      "output": ["image"],
-      "capabilities": ["image-generation", "image-editing"],
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "image"
+      ],
+      "capabilities": [
+        "image-generation",
+        "image-editing"
+      ],
       "settings": {
         "memoryGb": 48,
         "priority": 30,
@@ -133,7 +170,7 @@
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/comfyui-media:source-381d99b95f2c4afb4e5c07ff12d2fd1c541cde69dc16f00db48506b9e27a7b83",
+            "image": "lloom/comfyui-media:source-6d8fbbc3e58bef36bb8723cdcb01f53a7f8f5d9bd6f74ab015a3dbf06ca19147",
             "pull": false,
             "createArgs": [
               "--restart",

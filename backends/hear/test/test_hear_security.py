@@ -471,8 +471,10 @@ class TestWindows(_Harness):
             {"start": float("inf")},
             {"start": "0.5"},
             {"start": True},
-            {"end": 5.0},
-            {"duration": 5.0},
+            {"end": -1.0},
+            {"duration": -1.0},
+            {"end": 0.0},
+            {"duration": 0.0},
             {"start": 5.0, "end": 2.0},
             {"start": 5.0, "end": 5.0},
         ]:
@@ -482,6 +484,18 @@ class TestWindows(_Harness):
                 r = self.post_raw(_chat([_b64_part(_tone_wav_bytes(2.0))],
                                         directive=directive))
                 self.assertEqual(r.status_code, 400, r.text)
+
+    def test_end_only_defaults_start_to_zero(self):
+        r = self.post(_chat([_b64_part(_tone_wav_bytes(4.0))],
+                            directive={"end": 2.0}))
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["hear"]["source"]["window"], [0.0, 2.0])
+
+    def test_duration_only_defaults_start_to_zero(self):
+        r = self.post(_chat([_b64_part(_tone_wav_bytes(4.0))],
+                            directive={"duration": 2.0}))
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["hear"]["source"]["window"], [0.0, 2.0])
 
     def test_window_is_clamped_to_max_analysis_seconds(self):
         with mock.patch.dict(hear.DEF, {"max_analysis_seconds": 1.0}):

@@ -49,7 +49,47 @@ so unlike `qwen-image-2512` it is not patched with an aura-flow shift and it nee
 no Lightning LoRA. Its own VAE decodes RGBA, so a prompt asking for a transparent
 background returns a PNG with a real alpha channel. Edits accept one reference
 image and follow that image's geometry; `resolution` sets the reference pixel
-budget instead of an explicit width and height.
+budget instead of an explicit width and height. Both multipart
+`POST /v1/images/edits` (one `image` or `image[]` file) and JSON
+`POST /v1/images/generations` with an inline `image` data URI support editing.
+Use the Diffusers recipe for up to ten reference images.
+
+Qwen 2.1 uses a fresh seed when omitted and returns the actual seed in the
+response. Reusing the generation seed for an edit can produce severe texture
+artifacts. Explicit seeds remain reproducible; use a different seed for each
+successive edit. Seeds are integers from zero through `2^53-1`, so JSON clients
+can replay them exactly. Other model families retain their existing defaults.
+
+The default is `quality: "high"` (40 steps). `medium` uses 25 and `low` uses
+12; explicit `steps` overrides a valid preset. `cfg` must be 1 and nonempty
+negative prompts are rejected because this workflow does not use them.
+Generation supports 32-pixel-aligned sizes up to 3072 per axis and 4.5 MiPixels,
+including 2048x2048 and 2752x1536. Without `size`, `resolution` supplies the square
+output size (default 1024; range 256–2048). Edits use `resolution` to resize their
+reference while preserving its aspect ratio. The graph preserves reference
+alpha through `JoinImageWithAlpha` before Qwen encoding.
+
+The separate `linux-nvidia-comfyui-qwen-image-2-1-nvfp4` recipe creates
+`qwen-image-21-nvfp4`, with its own container, port, data volume and model filter.
+It is independent of the INT8 2.1 runtime and all other media lanes, regardless of
+installation order. Both use the same backend image. It uses
+[BennyDaBall's NVFP4 checkpoints](https://huggingface.co/BennyDaBall/Qwen-Image-2.1-NVFP4)
+for the transformer and Qwen3-VL encoder. The VAE, vision tower, embeddings and
+selected sensitive weights retain higher precision. The download is 12.42 GB
+(decimal), including the shared 0.68 GB VAE. The recipe pins every file's
+revision, size and SHA-256. It uses the same generation/edit API and quality
+presets as INT8; clients select the exact advertised NVFP4 model ID.
+
+See the [GB10 endpoint and quantization qualification](evidence/2026-09-27-qwen-image-21/README.md)
+for measured timings, test scope and kernel evidence.
+
+Native FP4 computation requires supported Blackwell hardware. The bundled,
+attributed upstream patch enables quantized encoder matrix multiplication and
+BF16 multimodal conditioning on supported devices; INT8/BF16 retain their
+existing paths. Without that patch, loading NVFP4 weights alone does not prove
+native encoder acceleration. The Docker build checks the patch against the
+pinned engine before applying it. NVFP4 is lossy and is a separate quality
+choice, not a numerically equivalent replacement for BF16 or INT8.
 
 If the selected model already has a configured route, setup preserves its backend,
 runtime and upstream model ID while refreshing its media capabilities. This also
@@ -64,7 +104,8 @@ existing backend must support `/v1/audio/generations`.
 | `qwen-image-2512`           | `Qwen/Qwen-Image-2512`              | `/v1/images/generations`                            |
 | `qwen-image-2512-lightning` | `Qwen/Qwen-Image-2512-Lightning`    | `/v1/images/generations`                            |
 | `qwen-image-edit-2511`      | `Qwen/Qwen-Image-Edit-2511`         | `/v1/images/generations` with inline image          |
-| `qwen-image-2-1`            | `Qwen/Qwen-Image-2.1`               | `/v1/images/generations`, with inline image to edit |
+| `qwen-image-2-1`            | `Qwen/Qwen-Image-2.1`               | `/v1/images/generations` and `/v1/images/edits` |
+| `qwen-image-2-1-nvfp4` | `BennyDaBall/Qwen-Image-2.1-NVFP4` | `/v1/images/generations` and `/v1/images/edits` |
 | `ideogram-4`                | `Comfy-Org/Ideogram-4`              | `/v1/images/generations`                            |
 | `krea-2-turbo`              | `Comfy-Org/Krea-2-Turbo`            | `/v1/images/generations`                            |
 | `minimax-h3`                | `MiniMaxAI/MiniMax-H3`              | `/v1/videos/generations`                            |
@@ -109,8 +150,17 @@ abandoned job from overlapping the next request.
 The image and video routes return JSON containing `data[].b64_json`. Fixed
 workflows accept bounded generation parameters and inline conditioning images;
 they do not accept arbitrary ComfyUI graphs, filesystem paths or remote URLs.
-MiniMax-H3 supports first/last frame conditioning; its Turbo variant accepts text
-only. LTX supports a first frame and audio conditioning, and rejects `last_frame`.
+MiniMax-H3 and its FL2VA Turbo variant support first/last-frame conditioning.
+Full H3 also accepts image, audio and video references. See
+[video workflows](video-workflows.md) for structured prompts, transcripts,
+controls and limits.
+
+LTX supports a first frame, a final-frame guide and supplied audio. Its graph
+pins and crops the final-frame guide in both sampling stages. Supplied audio
+is trimmed or padded with silence to the video frame grid, and mono is duplicated
+into stereo. The graph holds that encoded audio latent fixed and muxes the
+prepared waveform into the result. At 24 fps, 193 frames produce about 8.04
+seconds. Audio conditioning does not guarantee precise lip synchronization.
 Unsupported parameters receive field-specific errors.
 
 ## Offline tests

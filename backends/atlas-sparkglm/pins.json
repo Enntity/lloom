@@ -1,0 +1,35 @@
+{
+  "manifestVersion": 1,
+  "status": "final",
+  "note": "Single pin manifest for the Atlas SparkGLM candidate. Portable source, image, model and converter identities are final for this candidate; live hardware and serving qualification remains pending. The image tag and its install-tree label derive from the git tree of install/ at the pinned revision, so a GHCR pull and a local build of that source carry the same identity.",
+  "source": {
+    "repo": "Enntity/sparkglm",
+    "revision": "9acb642b55ccfbc63fc979d747cb69eff30c9a24",
+    "installTree": "2ba73a2d8aee7234474ae3cb107a1d61d0c33891",
+    "cloneUrl": "https://github.com/Enntity/sparkglm.git",
+    "buildScript": "install/build.sh"
+  },
+  "image": {
+    "tag": "ghcr.io/enntity/atlas-sparkglm:2ba73a2d8aee",
+    "label": "io.enntity.sparkglm.install-tree",
+    "entrypoint": "/opt/atlas/serve.py",
+    "profilePath": "/opt/atlas/profiles/4x512k.json",
+    "architecture": "arm64"
+  },
+  "converter": {
+    "inImagePath": "/opt/atlas/converter/convert.py",
+    "library": "/opt/atlas/converter/libatlas_mtp_quantize.so",
+    "expectedMatrices": 864
+  },
+  "model": {
+    "repo": "nvidia/GLM-5.3-Flash-NVFP4",
+    "revision": "423acf37583782c51c142d145aef733d72943d93"
+  },
+  "overlay": {
+    "marker": "conversion.complete.json"
+  },
+  "drafter": {
+    "repo": "incoai/GLM-5.3-Flash-DFlash2",
+    "revision": "7d74cdd881ed7e32c31175984a67823127b66cfe"
+  }
+}

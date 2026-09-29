@@ -20,6 +20,11 @@
     "text_encoders": "text_encoders",
     "vae": "vae"
   },
+  "BennyDaBall--Qwen-Image-2.1-NVFP4": {
+    "diffusion_models": "diffusion_models",
+    "text_encoders": "text_encoders",
+    "vae": "vae"
+  },
   "lightx2v--Qwen-Image-2512-Lightning": {
     "loras": "."
   },

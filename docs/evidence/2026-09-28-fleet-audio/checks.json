@@ -1,0 +1,286 @@
+{
+  "toolChecks": [
+    {
+      "tool": "ComposeMusic",
+      "ok": true,
+      "model": "music",
+      "ms": 25746,
+      "artifact": {
+        "filename": "music.wav",
+        "bytes": 10409550,
+        "sha256": "1d9bb108f4bd7902771d5b601b2553b4faac4f27599d74b54c1b8d11fc8bdd6f"
+      },
+      "probe": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "pcm_s16le",
+            "sample_rate": "44100",
+            "channels": 2
+          }
+        ],
+        "format": {
+          "duration": "59.010612"
+        }
+      },
+      "requests": [
+        {
+          "route": "/v1/audio/generations",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "tool": "HearAudio",
+      "ok": true,
+      "model": "hear",
+      "ms": 118,
+      "requests": [
+        {
+          "route": "/v1/chat/completions",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "tool": "SynthesizeSpeech",
+      "mode": "custom",
+      "ok": true,
+      "model": "tts",
+      "ms": 51432,
+      "artifact": {
+        "filename": "speech.wav",
+        "bytes": 138284,
+        "sha256": "1b6e56e46f68ded54a755a89621d69e1da1070b8f08d0571044e0f20d1045b20"
+      },
+      "probe": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "pcm_s16le",
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "2.880000"
+        }
+      },
+      "requests": [
+        {
+          "route": "/v1/audio/speech",
+          "status": 429
+        },
+        {
+          "route": "/v1/audio/speech",
+          "status": 429
+        },
+        {
+          "route": "/v1/audio/speech",
+          "status": 429
+        },
+        {
+          "route": "/v1/audio/speech",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "tool": "TranscribeAudio",
+      "ok": true,
+      "model": "stt",
+      "ms": 1157,
+      "text": "The blue lantern is beside the open window.",
+      "requests": [
+        {
+          "route": "/v1/audio/transcriptions",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "tool": "SynthesizeSpeech",
+      "mode": "clone",
+      "ok": true,
+      "model": "tts-clone",
+      "ms": 5590,
+      "artifact": {
+        "filename": "clone.wav",
+        "bytes": 107564,
+        "sha256": "308c3091582a7e2f841bda1a74ad4e8e38e1d753d59f24f2f8ed024fc7142770"
+      },
+      "probe": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "pcm_s16le",
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "2.240000"
+        }
+      },
+      "requests": [
+        {
+          "route": "/v1/audio/speech",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "tool": "SynthesizeSpeech",
+      "mode": "design",
+      "ok": true,
+      "model": "tts-design",
+      "ms": 50770,
+      "artifact": {
+        "filename": "design.wav",
+        "bytes": 107564,
+        "sha256": "3c07442ccca9839fa8858c150520cb38a23a7ba3e09f9830980fbdfb342c5262"
+      },
+      "probe": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "pcm_s16le",
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "2.240000"
+        }
+      },
+      "requests": [
+        {
+          "route": "/v1/audio/speech",
+          "status": 429
+        },
+        {
+          "route": "/v1/audio/speech",
+          "status": 429
+        },
+        {
+          "route": "/v1/audio/speech",
+          "status": 429
+        },
+        {
+          "route": "/v1/audio/speech",
+          "status": 200
+        }
+      ]
+    }
+  ],
+  "localMusic": [
+    {
+      "model": "ACE-Step/ACE-Step-1.5-XL-Turbo",
+      "ok": true,
+      "ms": 30450,
+      "bytes": 2880044,
+      "sha256": "3ee72686f77802397395f112c39c1580ce1a47ef090d9f9fa81914c875bccb16",
+      "probe": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "pcm_s16le",
+            "sample_rate": "48000",
+            "channels": 2
+          }
+        ],
+        "format": {
+          "duration": "15.000000"
+        }
+      }
+    },
+    {
+      "model": "ACE-Step/ACE-Step-1.5-XL-SFT",
+      "ok": true,
+      "ms": 36572,
+      "bytes": 2880044,
+      "sha256": "5b5195e59bd1115f0514c316261de8aa512808a43459fb677be6d5c9db2f8cd0",
+      "probe": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "pcm_s16le",
+            "sample_rate": "48000",
+            "channels": 2
+          }
+        ],
+        "format": {
+          "duration": "15.000000"
+        }
+      }
+    },
+    {
+      "model": "MiniMaxAI/MiniMax-Music3",
+      "ok": true,
+      "ms": 62498,
+      "bytes": 2644012,
+      "sha256": "e79a12f06e3b372b79d3123e52589de432ccc17ba9289356c210e92ece4b98c9",
+      "probe": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "pcm_s16le",
+            "sample_rate": "44100",
+            "channels": 2
+          }
+        ],
+        "format": {
+          "duration": "14.988481"
+        }
+      }
+    },
+    {
+      "model": "Comfy-Org/YuE2-3B",
+      "ok": true,
+      "ms": 19334,
+      "bytes": 2880044,
+      "sha256": "6f69d4a8550a58785e1ce86c48f6743a6d3ce7ad21921cecfdd430d49463c3b4",
+      "probe": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "pcm_s16le",
+            "sample_rate": "48000",
+            "channels": 2
+          }
+        ],
+        "format": {
+          "duration": "15.000000"
+        }
+      }
+    }
+  ],
+  "hearing": [
+    {
+      "case": "speech",
+      "ok": true,
+      "elapsedMs": 1832,
+      "sourceBytes": 138284,
+      "analyzedSeconds": 2.88,
+      "interpretationSucceeded": true,
+      "interpretationError": null
+    },
+    {
+      "case": "full-track",
+      "ok": true,
+      "elapsedMs": 2428,
+      "sourceBytes": 10409550,
+      "analyzedSeconds": 10,
+      "interpretationSucceeded": true,
+      "interpretationError": null
+    }
+  ]
+}

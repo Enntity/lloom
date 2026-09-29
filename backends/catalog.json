@@ -9,7 +9,7 @@
     "id": "MIT",
     "name": "Backend metadata license"
   },
-  "updatedAt": "2026-08-14T00:00:00Z",
+  "updatedAt": "2026-09-22T00:00:00Z",
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated"
@@ -20,23 +20,39 @@
       "name": "MTPLX",
       "kind": "openai-compatible-server",
       "description": "MLX-native MTP runtime for fast Qwen/Gemma style models on Apple Silicon.",
-      "platforms": ["darwin-arm64"],
-      "features": ["chat", "streaming", "usage", "tools", "reasoning", "mtp", "mlx"],
-      "commands": ["mtplx"],
+      "platforms": [
+        "darwin-arm64"
+      ],
+      "features": [
+        "chat",
+        "streaming",
+        "usage",
+        "tools",
+        "reasoning",
+        "mtp",
+        "mlx"
+      ],
+      "commands": [
+        "mtplx"
+      ],
       "setup": [
         {
           "id": "check-mtplx",
           "title": "Check MTPLX CLI",
           "action": "check-command",
           "command": "mtplx",
-          "args": ["--version"]
+          "args": [
+            "--version"
+          ]
         },
         {
           "id": "install-python-env",
           "title": "Install MTPLX into a Python environment",
           "action": "python-venv",
           "description": "Create a LLooM-managed Python environment for MTPLX.",
-          "skipIfExecutableExists": ["${LLOOM_MTPLX_BIN}"],
+          "skipIfExecutableExists": [
+            "${LLOOM_MTPLX_BIN}"
+          ],
           "path": "${installRoot}/mtplx/venv"
         },
         {
@@ -44,10 +60,18 @@
           "title": "Install MTPLX package",
           "action": "pip-install",
           "description": "Install the published MTPLX package into the LLooM-managed environment.",
-          "skipIfExecutableExists": ["${LLOOM_MTPLX_BIN}", "${installRoot}/mtplx/venv/bin/mtplx"],
+          "skipIfExecutableExists": [
+            "${LLOOM_MTPLX_BIN}",
+            "${installRoot}/mtplx/venv/bin/mtplx"
+          ],
           "venv": "${installRoot}/mtplx/venv",
-          "args": ["--upgrade"],
-          "packages": ["pip", "mtplx"]
+          "args": [
+            "--upgrade"
+          ],
+          "packages": [
+            "pip",
+            "mtplx"
+          ]
         },
         {
           "id": "link-mtplx",
@@ -70,7 +94,10 @@
       "cancellation": {
         "trigger": "client-disconnect",
         "computeReclamation": "unverified",
-        "modes": ["streaming", "buffered"],
+        "modes": [
+          "streaming",
+          "buffered"
+        ],
         "notes": "LLooM closes the upstream request immediately; MTPLX scheduler reclamation still needs a pinned-version disconnect canary."
       }
     },
@@ -79,23 +106,36 @@
       "name": "MLX LM",
       "kind": "openai-compatible-server",
       "description": "Apple MLX reference runtime for text-generation and multimodal MLX models.",
-      "platforms": ["darwin-arm64"],
-      "features": ["chat", "streaming", "mlx", "vision"],
-      "commands": ["mlx_lm.server"],
+      "platforms": [
+        "darwin-arm64"
+      ],
+      "features": [
+        "chat",
+        "streaming",
+        "mlx",
+        "vision"
+      ],
+      "commands": [
+        "mlx_lm.server"
+      ],
       "setup": [
         {
           "id": "check-mlx-lm",
           "title": "Check MLX LM server",
           "action": "check-command",
           "command": "mlx_lm.server",
-          "args": ["--help"]
+          "args": [
+            "--help"
+          ]
         },
         {
           "id": "install-mlx-lm",
           "title": "Create MLX LM Python environment",
           "action": "python-venv",
           "description": "Create a LLooM-managed Python environment instead of modifying Apple's or Homebrew's externally managed Python.",
-          "skipIfExecutableExists": ["${installRoot}/mlx-lm/venv/bin/mlx_lm.server"],
+          "skipIfExecutableExists": [
+            "${installRoot}/mlx-lm/venv/bin/mlx_lm.server"
+          ],
           "path": "${installRoot}/mlx-lm/venv"
         },
         {
@@ -103,10 +143,17 @@
           "title": "Install MLX LM package",
           "action": "pip-install",
           "description": "Install mlx-lm into LLooM's private environment.",
-          "skipIfExecutableExists": ["${installRoot}/mlx-lm/venv/bin/mlx_lm.server"],
+          "skipIfExecutableExists": [
+            "${installRoot}/mlx-lm/venv/bin/mlx_lm.server"
+          ],
           "venv": "${installRoot}/mlx-lm/venv",
-          "args": ["--upgrade"],
-          "packages": ["pip", "mlx-lm"]
+          "args": [
+            "--upgrade"
+          ],
+          "packages": [
+            "pip",
+            "mlx-lm"
+          ]
         },
         {
           "id": "link-mlx-lm",
@@ -127,7 +174,12 @@
       "cancellation": {
         "trigger": "client-disconnect",
         "computeReclamation": "verified",
-        "modes": ["streaming", "buffered", "queued", "generation"],
+        "modes": [
+          "streaming",
+          "buffered",
+          "queued",
+          "generation"
+        ],
         "notes": "MLX-LM stops the request GenerationContext in the HTTP handler's finally path, and batched generation removes stopped request IDs."
       }
     },
@@ -136,23 +188,37 @@
       "name": "MLX Audio",
       "kind": "openai-compatible-server",
       "description": "Apple MLX OpenAI-compatible TTS and STT server (Qwen3-TTS, Whisper, and related models).",
-      "platforms": ["darwin-arm64"],
-      "features": ["audio-speech", "tts", "audio-transcription", "stt", "mlx"],
-      "commands": ["lloom-audio-server"],
+      "platforms": [
+        "darwin-arm64"
+      ],
+      "features": [
+        "audio-speech",
+        "tts",
+        "audio-transcription",
+        "stt",
+        "mlx"
+      ],
+      "commands": [
+        "lloom-audio-server"
+      ],
       "setup": [
         {
           "id": "check-lloom-audio-server",
           "title": "Check LLooM audio server shim",
           "action": "check-command",
           "command": "lloom-audio-server",
-          "args": ["--help"]
+          "args": [
+            "--help"
+          ]
         },
         {
           "id": "install-mlx-audio",
           "title": "Install mlx-audio backend",
           "action": "command",
           "command": "bash",
-          "args": ["${repoRoot}/backends/mlx-audio/install.sh"]
+          "args": [
+            "${repoRoot}/backends/mlx-audio/install.sh"
+          ]
         }
       ],
       "server": {
@@ -164,7 +230,10 @@
       "cancellation": {
         "trigger": "client-disconnect",
         "computeReclamation": "partial",
-        "modes": ["speech", "transcription"],
+        "modes": [
+          "speech",
+          "transcription"
+        ],
         "notes": "LLooM closes the upstream request immediately, but the backend libraries expose no uniform interrupt for a synchronous speech or transcription kernel already in flight."
       }
     },
@@ -173,9 +242,22 @@
       "name": "Chatterbox TTS",
       "kind": "openai-compatible-server",
       "description": "ResembleAI Chatterbox OpenAI-compatible TTS: zero-shot clone, exaggeration, CFG, multilingual, and turbo lanes for Apple Silicon MPS and NVIDIA CUDA.",
-      "platforms": ["darwin-arm64", "linux-arm64", "linux-x64"],
-      "features": ["audio-speech", "tts", "tts-voice-clone", "chatterbox", "mps", "cuda"],
-      "commands": ["lloom-chatterbox-server"],
+      "platforms": [
+        "darwin-arm64",
+        "linux-arm64",
+        "linux-x64"
+      ],
+      "features": [
+        "audio-speech",
+        "tts",
+        "tts-voice-clone",
+        "chatterbox",
+        "mps",
+        "cuda"
+      ],
+      "commands": [
+        "lloom-chatterbox-server"
+      ],
       "notes": [
         "Installs into ~/.lloom/backends/chatterbox/venv. Prefer Python 3.11; Apple's default python3 (3.14+) often lacks a working torch wheel.",
         "On DGX Spark / GB10, point LLOOM_CHATTERBOX_PYTHON at a CUDA-capable interpreter if the generic PyPI torch wheel lacks sm_121.",
@@ -187,14 +269,18 @@
           "title": "Check LLooM Chatterbox server shim",
           "action": "check-command",
           "command": "lloom-chatterbox-server",
-          "args": ["--help"]
+          "args": [
+            "--help"
+          ]
         },
         {
           "id": "install-chatterbox",
           "title": "Install Chatterbox backend",
           "action": "command",
           "command": "bash",
-          "args": ["${repoRoot}/backends/chatterbox/install.sh"]
+          "args": [
+            "${repoRoot}/backends/chatterbox/install.sh"
+          ]
         }
       ],
       "server": {
@@ -205,7 +291,9 @@
       "cancellation": {
         "trigger": "client-disconnect",
         "computeReclamation": "unsupported",
-        "modes": ["speech"],
+        "modes": [
+          "speech"
+        ],
         "notes": "Chatterbox exposes one synchronous model.generate call and no cooperative request-cancel hook; transport cancellation cannot preempt that call."
       }
     },
@@ -214,16 +302,32 @@
       "name": "llama.cpp",
       "kind": "openai-compatible-server",
       "description": "Portable GGUF runtime with Metal/CUDA/CPU backends and long-context server support.",
-      "platforms": ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"],
-      "features": ["chat", "streaming", "usage", "tools", "gguf", "long-context"],
-      "commands": ["llama-server"],
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-x64",
+        "linux-arm64"
+      ],
+      "features": [
+        "chat",
+        "streaming",
+        "usage",
+        "tools",
+        "gguf",
+        "long-context"
+      ],
+      "commands": [
+        "llama-server"
+      ],
       "setup": [
         {
           "id": "check-llama-server",
           "title": "Check llama-server",
           "action": "check-command",
           "command": "llama-server",
-          "args": ["--version"]
+          "args": [
+            "--version"
+          ]
         },
         {
           "id": "install-llama-cpp",
@@ -241,8 +345,12 @@
           "description": "Generate the llama.cpp CMake build tree.",
           "source": "${installRoot}/llama.cpp",
           "build": "${installRoot}/llama.cpp/build",
-          "skipIfExecutableExists": ["${installRoot}/llama.cpp/build/bin/llama-server"],
-          "args": ["-DCMAKE_BUILD_TYPE=Release"]
+          "skipIfExecutableExists": [
+            "${installRoot}/llama.cpp/build/bin/llama-server"
+          ],
+          "args": [
+            "-DCMAKE_BUILD_TYPE=Release"
+          ]
         },
         {
           "id": "build-llama-cpp",
@@ -250,8 +358,14 @@
           "action": "cmake-build",
           "description": "Build llama-server for the current machine.",
           "build": "${installRoot}/llama.cpp/build",
-          "skipIfExecutableExists": ["${installRoot}/llama.cpp/build/bin/llama-server"],
-          "args": ["--config", "Release", "--parallel"]
+          "skipIfExecutableExists": [
+            "${installRoot}/llama.cpp/build/bin/llama-server"
+          ],
+          "args": [
+            "--config",
+            "Release",
+            "--parallel"
+          ]
         },
         {
           "id": "link-llama-server",
@@ -279,9 +393,14 @@
       "cancellation": {
         "trigger": "client-disconnect",
         "computeReclamation": "unsupported",
-        "modes": ["streaming", "buffered"],
+        "modes": [
+          "streaming",
+          "buffered"
+        ],
         "notes": "Current llama-server captures connection state but does not wire it to task cancellation; track upstream issue #24496 before promoting this status.",
-        "evidence": ["https://github.com/ggml-org/llama.cpp/issues/24496"]
+        "evidence": [
+          "https://github.com/ggml-org/llama.cpp/issues/24496"
+        ]
       }
     },
     {
@@ -289,23 +408,41 @@
       "name": "PrismML llama.cpp (ternary GGUF, native Metal)",
       "kind": "openai-compatible-server",
       "description": "PrismML llama.cpp fork with Q2_0_g128 ternary hybrid-attention kernels for Apple Silicon Metal (native process).",
-      "platforms": ["darwin-arm64"],
-      "features": ["chat", "streaming", "usage", "tools", "gguf", "long-context", "ternary", "vision", "metal"],
-      "commands": ["llama-server-prism"],
+      "platforms": [
+        "darwin-arm64"
+      ],
+      "features": [
+        "chat",
+        "streaming",
+        "usage",
+        "tools",
+        "gguf",
+        "long-context",
+        "ternary",
+        "vision",
+        "metal"
+      ],
+      "commands": [
+        "llama-server-prism"
+      ],
       "setup": [
         {
           "id": "check-llama-server-prism",
           "title": "Check PrismML llama-server",
           "action": "check-command",
           "command": "llama-server-prism",
-          "args": ["--version"]
+          "args": [
+            "--version"
+          ]
         },
         {
           "id": "check-cmake",
           "title": "Check cmake",
           "action": "check-command",
           "command": "cmake",
-          "args": ["--version"]
+          "args": [
+            "--version"
+          ]
         },
         {
           "id": "clone-llama-cpp-prism",
@@ -322,10 +459,14 @@
           "title": "Configure PrismML llama.cpp (Metal)",
           "action": "cmake-configure",
           "description": "Generate a Metal release build for Apple Silicon.",
-          "platforms": ["darwin-arm64"],
+          "platforms": [
+            "darwin-arm64"
+          ],
           "source": "${installRoot}/llama.cpp-prism",
           "build": "${installRoot}/llama.cpp-prism/build",
-          "skipIfExecutableExists": ["${installRoot}/llama.cpp-prism/build/bin/llama-server"],
+          "skipIfExecutableExists": [
+            "${installRoot}/llama.cpp-prism/build/bin/llama-server"
+          ],
           "args": [
             "-DCMAKE_BUILD_TYPE=Release",
             "-DCMAKE_OSX_ARCHITECTURES=arm64",
@@ -343,8 +484,15 @@
           "action": "cmake-build",
           "description": "Build llama-server from the PrismML fork.",
           "build": "${installRoot}/llama.cpp-prism/build",
-          "skipIfExecutableExists": ["${installRoot}/llama.cpp-prism/build/bin/llama-server"],
-          "args": ["--config", "Release", "--parallel", "8"]
+          "skipIfExecutableExists": [
+            "${installRoot}/llama.cpp-prism/build/bin/llama-server"
+          ],
+          "args": [
+            "--config",
+            "Release",
+            "--parallel",
+            "8"
+          ]
         },
         {
           "id": "wrap-llama-server-prism",
@@ -356,7 +504,9 @@
             "-c",
             "mkdir -p \"${shimDir}\" && BIN=\"${installRoot}/llama.cpp-prism/build/bin/llama-server\" && test -x \"$BIN\" && printf '%s\\n' '#!/bin/sh' \"BIN_DIR=\\\"${installRoot}/llama.cpp-prism/build/bin\\\"\" 'export DYLD_LIBRARY_PATH=\"$BIN_DIR${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}\"' 'exec \"$BIN_DIR/llama-server\" \"$@\"' > \"${shimDir}/llama-server-prism\" && chmod +x \"${shimDir}/llama-server-prism\""
           ],
-          "skipIfExecutableExists": ["${shimDir}/llama-server-prism"]
+          "skipIfExecutableExists": [
+            "${shimDir}/llama-server-prism"
+          ]
         }
       ],
       "server": {
@@ -367,7 +517,10 @@
       "cancellation": {
         "trigger": "client-disconnect",
         "computeReclamation": "version-dependent",
-        "modes": ["streaming", "buffered"],
+        "modes": [
+          "streaming",
+          "buffered"
+        ],
         "notes": "PrismML inherits llama.cpp server lifecycle behavior; require a fork revision with connection-close task cancellation before treating reclamation as verified."
       }
     },
@@ -376,16 +529,36 @@
       "name": "PrismML llama.cpp (ternary GGUF, Docker CUDA)",
       "kind": "openai-compatible-server",
       "description": "LLooM-managed Docker image of PrismML llama.cpp with CUDA ternary kernels and DSpark support for DGX Spark / GB10.",
-      "platforms": ["linux-arm64", "linux-x64"],
-      "features": ["chat", "streaming", "usage", "tools", "gguf", "long-context", "ternary", "speculative-decoding", "vision", "cuda", "docker", "dgx-spark"],
-      "commands": ["docker"],
+      "platforms": [
+        "linux-arm64",
+        "linux-x64"
+      ],
+      "features": [
+        "chat",
+        "streaming",
+        "usage",
+        "tools",
+        "gguf",
+        "long-context",
+        "ternary",
+        "speculative-decoding",
+        "vision",
+        "cuda",
+        "docker",
+        "dgx-spark"
+      ],
+      "commands": [
+        "docker"
+      ],
       "setup": [
         {
           "id": "check-docker",
           "title": "Check Docker",
           "action": "check-command",
           "command": "docker",
-          "args": ["--version"]
+          "args": [
+            "--version"
+          ]
         },
         {
           "id": "create-huggingface-cli-environment",
@@ -398,14 +571,18 @@
           "title": "Install the Hugging Face model download CLI",
           "action": "pip-install",
           "venv": "${installRoot}/llama-cpp-prism/huggingface",
-          "packages": ["huggingface-hub"]
+          "packages": [
+            "huggingface-hub"
+          ]
         },
         {
           "id": "link-huggingface-cli",
           "title": "Expose the Hugging Face CLI through LLooM shims",
           "action": "link-command",
           "commandName": "hf",
-          "sourceCandidates": ["${installRoot}/llama-cpp-prism/huggingface/bin/hf"]
+          "sourceCandidates": [
+            "${installRoot}/llama-cpp-prism/huggingface/bin/hf"
+          ]
         },
         {
           "id": "build-llama-cpp-prism-cuda-image",
@@ -431,7 +608,10 @@
       "cancellation": {
         "trigger": "client-disconnect",
         "computeReclamation": "version-dependent",
-        "modes": ["streaming", "buffered"],
+        "modes": [
+          "streaming",
+          "buffered"
+        ],
         "notes": "The Docker variant inherits PrismML llama.cpp server lifecycle behavior and must be canaried at its exact image revision."
       }
     },
@@ -440,23 +620,39 @@
       "name": "Ollama",
       "kind": "openai-compatible-server",
       "description": "Popular local model manager and server with broad model catalog support.",
-      "platforms": ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"],
-      "features": ["chat", "streaming", "model-management"],
-      "commands": ["ollama"],
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-x64",
+        "linux-arm64"
+      ],
+      "features": [
+        "chat",
+        "streaming",
+        "model-management"
+      ],
+      "commands": [
+        "ollama"
+      ],
       "setup": [
         {
           "id": "check-ollama",
           "title": "Check Ollama",
           "action": "check-command",
           "command": "ollama",
-          "args": ["--version"]
+          "args": [
+            "--version"
+          ]
         },
         {
           "id": "install-ollama",
           "title": "Install Ollama",
           "action": "brew-install",
           "description": "Install Ollama through Homebrew on macOS.",
-          "platforms": ["darwin-arm64", "darwin-x64"],
+          "platforms": [
+            "darwin-arm64",
+            "darwin-x64"
+          ],
           "package": "ollama",
           "skipIfCommandAvailable": "ollama"
         },
@@ -465,7 +661,10 @@
           "title": "Install Ollama on Linux",
           "action": "manual",
           "description": "Install Ollama using the official Linux installer, then re-run this plan so LLooM can verify the `ollama` command.",
-          "platforms": ["linux-x64", "linux-arm64"]
+          "platforms": [
+            "linux-x64",
+            "linux-arm64"
+          ]
         }
       ],
       "server": {
@@ -476,9 +675,16 @@
       "cancellation": {
         "trigger": "client-disconnect",
         "computeReclamation": "version-dependent",
-        "modes": ["streaming", "buffered", "queued", "generation"],
+        "modes": [
+          "streaming",
+          "buffered",
+          "queued",
+          "generation"
+        ],
         "notes": "Ollama passes the HTTP request context into scheduling and completion, but current releases have an open streaming disconnect leak; verify the installed version.",
-        "evidence": ["https://github.com/ollama/ollama/issues/17131"]
+        "evidence": [
+          "https://github.com/ollama/ollama/issues/17131"
+        ]
       }
     },
     {
@@ -486,8 +692,20 @@
       "name": "OpenAI-compatible server",
       "kind": "openai-compatible-server",
       "description": "Generic bridge for any local or LAN server that already exposes OpenAI-compatible chat endpoints.",
-      "platforms": ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "win32-x64"],
-      "features": ["chat", "streaming", "usage", "tools", "external-server"],
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-x64",
+        "linux-arm64",
+        "win32-x64"
+      ],
+      "features": [
+        "chat",
+        "streaming",
+        "usage",
+        "tools",
+        "external-server"
+      ],
       "commands": [],
       "setup": [
         {
@@ -505,7 +723,10 @@
       "cancellation": {
         "trigger": "client-disconnect",
         "computeReclamation": "unverified",
-        "modes": ["streaming", "buffered"],
+        "modes": [
+          "streaming",
+          "buffered"
+        ],
         "notes": "LLooM propagates disconnect at the transport boundary; scheduler reclamation belongs to the selected external provider and must be verified there."
       }
     },
@@ -514,8 +735,22 @@
       "name": "LM Studio",
       "kind": "openai-compatible-server",
       "description": "LM Studio local server bridge using its OpenAI-compatible endpoint, usually http://127.0.0.1:1234/v1.",
-      "platforms": ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "win32-x64"],
-      "features": ["chat", "streaming", "usage", "tools", "vision", "external-server", "desktop-app"],
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-x64",
+        "linux-arm64",
+        "win32-x64"
+      ],
+      "features": [
+        "chat",
+        "streaming",
+        "usage",
+        "tools",
+        "vision",
+        "external-server",
+        "desktop-app"
+      ],
       "commands": [],
       "setup": [
         {
@@ -533,7 +768,10 @@
       "cancellation": {
         "trigger": "client-disconnect",
         "computeReclamation": "unverified",
-        "modes": ["streaming", "buffered"],
+        "modes": [
+          "streaming",
+          "buffered"
+        ],
         "notes": "LLooM propagates disconnect immediately, but LM Studio scheduler reclamation is version-dependent and is not asserted by this catalog."
       }
     },
@@ -542,16 +780,29 @@
       "name": "OptiQ MLX",
       "kind": "openai-compatible-server",
       "description": "MLX community OptiQ quant runtime family for high-throughput Apple Silicon inference.",
-      "platforms": ["darwin-arm64"],
-      "features": ["chat", "streaming", "usage", "vision", "mlx", "quantized"],
-      "commands": ["python3"],
+      "platforms": [
+        "darwin-arm64"
+      ],
+      "features": [
+        "chat",
+        "streaming",
+        "usage",
+        "vision",
+        "mlx",
+        "quantized"
+      ],
+      "commands": [
+        "python3"
+      ],
       "setup": [
         {
           "id": "check-python",
           "title": "Check Python",
           "action": "check-command",
           "command": "python3",
-          "args": ["--version"]
+          "args": [
+            "--version"
+          ]
         },
         {
           "id": "install-optiq-runtime",
@@ -568,7 +819,10 @@
       "cancellation": {
         "trigger": "client-disconnect",
         "computeReclamation": "unverified",
-        "modes": ["streaming", "buffered"],
+        "modes": [
+          "streaming",
+          "buffered"
+        ],
         "notes": "LLooM propagates disconnect immediately; the selected OptiQ server implementation must prove that its generator observes the closed transport."
       }
     },
@@ -577,16 +831,30 @@
       "name": "stable-diffusion.cpp",
       "kind": "image-server",
       "description": "Local C/C++ image generation runtime for Flux and Stable Diffusion style models.",
-      "platforms": ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"],
-      "features": ["image-generation", "image-editing", "flux", "stable-diffusion"],
-      "commands": ["sd-server"],
+      "platforms": [
+        "darwin-arm64",
+        "darwin-x64",
+        "linux-x64",
+        "linux-arm64"
+      ],
+      "features": [
+        "image-generation",
+        "image-editing",
+        "flux",
+        "stable-diffusion"
+      ],
+      "commands": [
+        "sd-server"
+      ],
       "setup": [
         {
           "id": "check-sd",
           "title": "Check stable-diffusion.cpp executable",
           "action": "check-command",
           "command": "sd",
-          "args": ["--help"]
+          "args": [
+            "--help"
+          ]
         },
         {
           "id": "install-stable-diffusion-cpp",
@@ -619,23 +887,39 @@
           "id": "configure-stable-diffusion-cpp-metal",
           "title": "Configure stable-diffusion.cpp with Metal",
           "action": "cmake-configure",
-          "platforms": ["darwin-arm64", "darwin-x64"],
+          "platforms": [
+            "darwin-arm64",
+            "darwin-x64"
+          ],
           "description": "Generate the stable-diffusion.cpp CMake build tree with the Apple Metal backend.",
           "source": "${installRoot}/stable-diffusion.cpp",
           "build": "${installRoot}/stable-diffusion.cpp/build",
-          "skipIfExecutableExists": ["${installRoot}/stable-diffusion.cpp/build/bin/sd-cli"],
-          "args": ["-DCMAKE_BUILD_TYPE=Release", "-DSD_METAL=ON"]
+          "skipIfExecutableExists": [
+            "${installRoot}/stable-diffusion.cpp/build/bin/sd-cli"
+          ],
+          "args": [
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DSD_METAL=ON"
+          ]
         },
         {
           "id": "configure-stable-diffusion-cpp-cuda",
           "title": "Configure stable-diffusion.cpp with CUDA",
           "action": "cmake-configure",
-          "platforms": ["linux-x64", "linux-arm64"],
+          "platforms": [
+            "linux-x64",
+            "linux-arm64"
+          ],
           "description": "Generate the stable-diffusion.cpp CMake build tree with the NVIDIA CUDA backend.",
           "source": "${installRoot}/stable-diffusion.cpp",
           "build": "${installRoot}/stable-diffusion.cpp/build",
-          "skipIfExecutableExists": ["${installRoot}/stable-diffusion.cpp/build/bin/sd-cli"],
-          "args": ["-DCMAKE_BUILD_TYPE=Release", "-DSD_CUDA=ON"]
+          "skipIfExecutableExists": [
+            "${installRoot}/stable-diffusion.cpp/build/bin/sd-cli"
+          ],
+          "args": [
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DSD_CUDA=ON"
+          ]
         },
         {
           "id": "build-stable-diffusion-cpp",
@@ -643,8 +927,14 @@
           "action": "cmake-build",
           "description": "Build the stable-diffusion.cpp CLI/server binaries for the current machine.",
           "build": "${installRoot}/stable-diffusion.cpp/build",
-          "skipIfExecutableExists": ["${installRoot}/stable-diffusion.cpp/build/bin/sd-cli"],
-          "args": ["--config", "Release", "--parallel"]
+          "skipIfExecutableExists": [
+            "${installRoot}/stable-diffusion.cpp/build/bin/sd-cli"
+          ],
+          "args": [
+            "--config",
+            "Release",
+            "--parallel"
+          ]
         },
         {
           "id": "link-stable-diffusion-cpp",
@@ -678,9 +968,14 @@
       "cancellation": {
         "trigger": "client-disconnect",
         "computeReclamation": "version-dependent",
-        "modes": ["queued", "image"],
+        "modes": [
+          "queued",
+          "image"
+        ],
         "notes": "The native async sdcpp job API has explicit cancellation, but LLooM's synchronous OpenAI image path cannot cancel an accepted kernel on older servers.",
-        "evidence": ["https://github.com/leejet/stable-diffusion.cpp/blob/master/examples/server/api.md"]
+        "evidence": [
+          "https://github.com/leejet/stable-diffusion.cpp/blob/master/examples/server/api.md"
+        ]
       }
     },
     {
@@ -688,23 +983,41 @@
       "name": "stable-diffusion.cpp CUDA container",
       "kind": "image-server",
       "description": "LLooM-managed stable-diffusion.cpp CUDA container for image generation and reference editing on NVIDIA systems.",
-      "platforms": ["linux-x64", "linux-arm64"],
-      "features": ["image-generation", "image-editing", "flux", "qwen-image", "cuda", "docker"],
-      "commands": ["docker"],
+      "platforms": [
+        "linux-x64",
+        "linux-arm64"
+      ],
+      "features": [
+        "image-generation",
+        "image-editing",
+        "flux",
+        "qwen-image",
+        "cuda",
+        "docker"
+      ],
+      "commands": [
+        "docker"
+      ],
       "setup": [
         {
           "id": "check-docker",
           "title": "Check Docker",
           "action": "check-command",
           "command": "docker",
-          "args": ["--version"]
+          "args": [
+            "--version"
+          ]
         },
         {
           "id": "check-stable-diffusion-cpp-cuda-image",
           "title": "Check the LLooM stable-diffusion.cpp CUDA image",
           "action": "check-command",
           "command": "docker",
-          "args": ["image", "inspect", "lloom/stable-diffusion.cpp:flux2-cuda"]
+          "args": [
+            "image",
+            "inspect",
+            "lloom/stable-diffusion.cpp:flux2-cuda"
+          ]
         }
       ],
       "server": {
@@ -716,7 +1029,10 @@
       "cancellation": {
         "trigger": "client-disconnect",
         "computeReclamation": "version-dependent",
-        "modes": ["queued", "image"],
+        "modes": [
+          "queued",
+          "image"
+        ],
         "notes": "The image must expose stable-diffusion.cpp's native async cancel API before LLooM can promote compute reclamation beyond transport close."
       }
     },
@@ -725,7 +1041,10 @@
       "name": "Docker vLLM",
       "kind": "openai-compatible-server",
       "description": "LLooM-managed vLLM containers for NVIDIA hosts where the tested runtime is delivered as a Docker image.",
-      "platforms": ["linux-x64", "linux-arm64"],
+      "platforms": [
+        "linux-x64",
+        "linux-arm64"
+      ],
       "features": [
         "chat",
         "embeddings",
@@ -739,14 +1058,18 @@
         "dgx-spark",
         "docker"
       ],
-      "commands": ["docker"],
+      "commands": [
+        "docker"
+      ],
       "setup": [
         {
           "id": "check-docker",
           "title": "Check Docker",
           "action": "check-command",
           "command": "docker",
-          "args": ["--version"]
+          "args": [
+            "--version"
+          ]
         }
       ],
       "server": {
@@ -758,7 +1081,13 @@
       "cancellation": {
         "trigger": "client-disconnect",
         "computeReclamation": "verified",
-        "modes": ["streaming", "buffered", "queued", "generation", "embedding"],
+        "modes": [
+          "streaming",
+          "buffered",
+          "queued",
+          "generation",
+          "embedding"
+        ],
         "notes": "vLLM's OpenAI server checks request disconnect and aborts the engine request ID; pin and canary the selected image revision."
       }
     },
@@ -767,7 +1096,10 @@
       "name": "Docker SGLang",
       "kind": "openai-compatible-server",
       "description": "LLooM-managed SGLang containers for NVIDIA hosts where the tested runtime and architecture kernels are delivered as a pinned Docker image plus reviewed recipe assets.",
-      "platforms": ["linux-x64", "linux-arm64"],
+      "platforms": [
+        "linux-x64",
+        "linux-arm64"
+      ],
       "features": [
         "chat",
         "streaming",
@@ -782,14 +1114,18 @@
         "dgx-spark",
         "docker"
       ],
-      "commands": ["docker"],
+      "commands": [
+        "docker"
+      ],
       "setup": [
         {
           "id": "check-docker",
           "title": "Check Docker",
           "action": "check-command",
           "command": "docker",
-          "args": ["--version"]
+          "args": [
+            "--version"
+          ]
         }
       ],
       "server": {
@@ -800,9 +1136,17 @@
       "cancellation": {
         "trigger": "client-disconnect",
         "computeReclamation": "version-dependent",
-        "modes": ["streaming", "buffered", "queued", "generation"],
+        "modes": [
+          "streaming",
+          "buffered",
+          "queued",
+          "generation"
+        ],
         "notes": "SGLang releases affected by issue #36333 require the scheduler-safe lifecycle fix; the Qwen3.8 Flash Next recipe applies an exact-source-guarded backport.",
-        "evidence": ["https://github.com/sgl-project/sglang/issues/36333", "https://github.com/sgl-project/sglang/pull/36418"]
+        "evidence": [
+          "https://github.com/sgl-project/sglang/issues/36333",
+          "https://github.com/sgl-project/sglang/pull/36418"
+        ]
       }
     },
     {
@@ -810,7 +1154,10 @@
       "name": "vLLM",
       "kind": "openai-compatible-server",
       "description": "High-throughput CUDA-first inference server. Default NVIDIA/DGX Spark lane for concurrent serving, long context, and multi-GPU tensor parallel.",
-      "platforms": ["linux-x64", "linux-arm64"],
+      "platforms": [
+        "linux-x64",
+        "linux-arm64"
+      ],
       "features": [
         "chat",
         "streaming",
@@ -822,7 +1169,9 @@
         "blackwell",
         "dgx-spark"
       ],
-      "commands": ["vllm"],
+      "commands": [
+        "vllm"
+      ],
       "notes": [
         "On DGX Spark / GB10 (linux-arm64 + Blackwell), prefer a Spark-tuned wheel or Docker image (NGC / community spark-vllm-docker / vllm-openai:cu130-nightly) rather than a generic PyPI install.",
         "Point LLOOM_VLLM_BIN at a working vllm binary or wrapper so LLooM skips broken global installs.",
@@ -834,14 +1183,19 @@
           "title": "Check vLLM",
           "action": "check-command",
           "command": "vllm",
-          "args": ["--version"]
+          "args": [
+            "--version"
+          ]
         },
         {
           "id": "install-vllm",
           "title": "Create vLLM Python environment",
           "action": "python-venv",
           "description": "Create a LLooM-managed Python environment for vLLM instead of modifying the user's global Python. On DGX Spark prefer a prebuilt Spark/CUDA13 wheel or container binary via LLOOM_VLLM_BIN.",
-          "skipIfExecutableExists": ["${LLOOM_VLLM_BIN}", "${installRoot}/vllm/venv/bin/vllm"],
+          "skipIfExecutableExists": [
+            "${LLOOM_VLLM_BIN}",
+            "${installRoot}/vllm/venv/bin/vllm"
+          ],
           "path": "${installRoot}/vllm/venv"
         },
         {
@@ -849,10 +1203,18 @@
           "title": "Install vLLM package",
           "action": "pip-install",
           "description": "Install the published vLLM package into the LLooM-managed Python environment. Generic PyPI may lack GB10/sm_121 wheels — use a Spark-specific index or set LLOOM_VLLM_BIN.",
-          "skipIfExecutableExists": ["${LLOOM_VLLM_BIN}", "${installRoot}/vllm/venv/bin/vllm"],
+          "skipIfExecutableExists": [
+            "${LLOOM_VLLM_BIN}",
+            "${installRoot}/vllm/venv/bin/vllm"
+          ],
           "venv": "${installRoot}/vllm/venv",
-          "args": ["--upgrade"],
-          "packages": ["pip", "vllm"]
+          "args": [
+            "--upgrade"
+          ],
+          "packages": [
+            "pip",
+            "vllm"
+          ]
         },
         {
           "id": "link-vllm",
@@ -875,7 +1237,12 @@
       "cancellation": {
         "trigger": "client-disconnect",
         "computeReclamation": "verified",
-        "modes": ["streaming", "buffered", "queued", "generation"],
+        "modes": [
+          "streaming",
+          "buffered",
+          "queued",
+          "generation"
+        ],
         "notes": "vLLM's OpenAI server checks request disconnect and aborts the engine request ID; verify the installed package revision."
       }
     },
@@ -884,7 +1251,10 @@
       "name": "SGLang",
       "kind": "openai-compatible-server",
       "description": "High-throughput OpenAI-compatible server with RadixAttention prefix cache. Preferred on NVIDIA/DGX Spark for agent/tool loops and shared long prefixes; also used on AMD ROCm.",
-      "platforms": ["linux-x64", "linux-arm64"],
+      "platforms": [
+        "linux-x64",
+        "linux-arm64"
+      ],
       "features": [
         "chat",
         "streaming",
@@ -899,7 +1269,9 @@
         "blackwell",
         "dgx-spark"
       ],
-      "commands": ["sglang-python"],
+      "commands": [
+        "sglang-python"
+      ],
       "notes": [
         "On DGX Spark, community often runs SGLang via Docker (e.g. scitrera/dgx-spark-sglang) when pip wheels lag Blackwell/ARM64.",
         "Set LLOOM_SGLANG_PYTHON to a working python that can import sglang, or register an external OpenAI-compatible SGLang server with lloom add-model."
@@ -910,14 +1282,21 @@
           "title": "Check SGLang launcher",
           "action": "check-command",
           "command": "sglang-python",
-          "args": ["-m", "sglang.launch_server", "--help"]
+          "args": [
+            "-m",
+            "sglang.launch_server",
+            "--help"
+          ]
         },
         {
           "id": "install-sglang",
           "title": "Create SGLang Python environment",
           "action": "python-venv",
           "description": "Create a LLooM-managed Python environment for SGLang instead of modifying the user's global Python. On DGX Spark prefer a prebuilt container/binary via LLOOM_SGLANG_PYTHON when PyPI lacks GB10 wheels.",
-          "skipIfExecutableExists": ["${LLOOM_SGLANG_PYTHON}", "${installRoot}/sglang/venv/bin/python"],
+          "skipIfExecutableExists": [
+            "${LLOOM_SGLANG_PYTHON}",
+            "${installRoot}/sglang/venv/bin/python"
+          ],
           "path": "${installRoot}/sglang/venv"
         },
         {
@@ -925,10 +1304,18 @@
           "title": "Install SGLang package",
           "action": "pip-install",
           "description": "Install the published SGLang package into the LLooM-managed Python environment.",
-          "skipIfExecutableExists": ["${LLOOM_SGLANG_PYTHON}", "${installRoot}/sglang/venv/bin/python"],
+          "skipIfExecutableExists": [
+            "${LLOOM_SGLANG_PYTHON}",
+            "${installRoot}/sglang/venv/bin/python"
+          ],
           "venv": "${installRoot}/sglang/venv",
-          "args": ["--upgrade"],
-          "packages": ["pip", "sglang"]
+          "args": [
+            "--upgrade"
+          ],
+          "packages": [
+            "pip",
+            "sglang"
+          ]
         },
         {
           "id": "link-sglang-python",
@@ -951,9 +1338,17 @@
       "cancellation": {
         "trigger": "client-disconnect",
         "computeReclamation": "version-dependent",
-        "modes": ["streaming", "buffered", "queued", "generation"],
+        "modes": [
+          "streaming",
+          "buffered",
+          "queued",
+          "generation"
+        ],
         "notes": "SGLang releases affected by issue #36333 need PR #36418 or an equivalent exact-source fix before disconnect reliably reaches the scheduler.",
-        "evidence": ["https://github.com/sgl-project/sglang/issues/36333", "https://github.com/sgl-project/sglang/pull/36418"]
+        "evidence": [
+          "https://github.com/sgl-project/sglang/issues/36333",
+          "https://github.com/sgl-project/sglang/pull/36418"
+        ]
       }
     },
     {
@@ -961,7 +1356,10 @@
       "name": "ComfyUI media (NVIDIA Docker)",
       "kind": "openai-compatible-server",
       "description": "Locally built, source-pinned ComfyUI with fixed image, video and music workflows.",
-      "platforms": ["linux-arm64", "linux-x64"],
+      "platforms": [
+        "linux-arm64",
+        "linux-x64"
+      ],
       "features": [
         "image-generation",
         "image-editing",
@@ -971,7 +1369,10 @@
         "cuda",
         "docker"
       ],
-      "commands": ["docker", "python3"],
+      "commands": [
+        "docker",
+        "python3"
+      ],
       "setup": [
         {
           "id": "build-comfyui-media",
@@ -995,7 +1396,9 @@
       "cancellation": {
         "trigger": "client-disconnect",
         "computeReclamation": "version-dependent",
-        "modes": ["buffered"],
+        "modes": [
+          "buffered"
+        ],
         "notes": "The bridge serializes all modalities and retains its slot until ComfyUI proves the job terminal."
       }
     },
@@ -1045,6 +1448,54 @@
           "buffered"
         ],
         "notes": "Per-request cancellation is checked between denoising steps. The backend retains its sole generation slot until the worker thread exits; encoding and decoding are not immediately interruptible."
+      }
+    },
+    {
+      "id": "ace-step-diffusers",
+      "name": "ACE-Step 1.5 Diffusers (NVIDIA Docker)",
+      "kind": "openai-compatible-server",
+      "description": "ACE-Step 1.5 music generation through the official Diffusers pipeline, with the APG guidance these base/SFT checkpoints require and bpm, keyscale, timesignature, language, guidance_scale, steps and shift exposed as request parameters.",
+      "platforms": [
+        "linux-arm64",
+        "linux-x64"
+      ],
+      "features": [
+        "audio-generation",
+        "music-generation",
+        "cuda",
+        "docker"
+      ],
+      "commands": [
+        "docker",
+        "python3"
+      ],
+      "setup": [
+        {
+          "id": "build-ace-step-diffusers",
+          "title": "Build or reuse the source-pinned ACE-Step Diffusers backend",
+          "action": "command",
+          "command": "python3",
+          "args": [
+            "${repoRoot}/backends/ace-step-diffusers/install.py",
+            "--install-root",
+            "${installRoot}",
+            "--shim-dir",
+            "${shimDir}"
+          ],
+          "alwaysRun": true
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "version-dependent",
+        "modes": [
+          "buffered"
+        ],
+        "notes": "Per-request cancellation is checked between denoising steps. The backend retains its sole generation slot until the worker thread exits; VAE decode is not immediately interruptible."
       }
     },
     {
@@ -1167,6 +1618,123 @@
           "upstream-model"
         ],
         "notes": "DSP executor work cannot be preempted mid-analysis. Client disconnection does not guarantee immediate compute reclamation; duration and I/O deadlines bound processing."
+      }
+    },
+    {
+      "id": "ltx-pipelines",
+      "name": "Native LTX pipelines (NVIDIA Docker)",
+      "kind": "openai-compatible-server",
+      "description": "Native BF16 distilled, guided Dev/HQ, audio-driven, DFR detailing and keyframe interpolation workflows through one managed runtime.",
+      "platforms": [
+        "linux-arm64",
+        "linux-x64"
+      ],
+      "features": [
+        "cuda",
+        "docker",
+        "video-generation",
+        "audio-to-video"
+      ],
+      "commands": [
+        "docker",
+        "python3"
+      ],
+      "setup": [
+        {
+          "id": "build-ltx-pipelines",
+          "title": "Build or reuse pinned native LTX pipeline backend",
+          "action": "command",
+          "command": "python3",
+          "args": [
+            "${repoRoot}/backends/ltx-pipelines/install.py",
+            "--install-root",
+            "${installRoot}"
+          ],
+          "alwaysRun": true
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "verified",
+        "modes": [
+          "buffered"
+        ],
+        "notes": "Each inference subprocess group is terminated and reaped before its single-flight slot is released."
+      }
+    },
+    {
+      "id": "docker-atlas-sparkglm",
+      "name": "Docker Atlas SparkGLM",
+      "kind": "openai-compatible-server",
+      "description": "LLooM-managed Atlas SparkGLM candidate containers. The bundled MIT installer pulls the pinned image from GHCR or builds it from an immutable Enntity/sparkglm revision with the same tag, verifies its install-tree label, and only the prepared image is started: no build runs on the serving path. The candidate includes structured output and image/video input; live qualification remains pending.",
+      "platforms": [
+        "linux-arm64"
+      ],
+      "features": [
+        "chat",
+        "responses",
+        "streaming",
+        "usage",
+        "tools",
+        "structured-output",
+        "reasoning",
+        "vision",
+        "speculative-decoding",
+        "moe",
+        "long-context",
+        "cuda",
+        "blackwell",
+        "dgx-spark",
+        "docker",
+        "nccl",
+        "distributed"
+      ],
+      "commands": [
+        "docker",
+        "bash",
+        "git",
+        "node"
+      ],
+      "setup": [
+        {
+          "id": "check-docker",
+          "title": "Check Docker",
+          "action": "check-command",
+          "command": "docker",
+          "args": [
+            "version"
+          ]
+        },
+        {
+          "id": "check-atlas-pins",
+          "title": "Verify Atlas SparkGLM pins are final",
+          "action": "command",
+          "alwaysRun": true,
+          "command": "node",
+          "args": [
+            "${repoRoot}/backends/atlas-sparkglm/verify-pins.mjs"
+          ]
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health",
+        "chatPath": "/v1/chat/completions"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "unverified",
+        "modes": [
+          "streaming",
+          "buffered",
+          "queued",
+          "generation"
+        ],
+        "notes": "Reclamation is unverified for the Atlas engine; confirm abort behaviour on the prepared image before advertising it. The LLooM watchdog drains and evicts on repeated 5xx/timeout regardless."
       }
     }
   ]

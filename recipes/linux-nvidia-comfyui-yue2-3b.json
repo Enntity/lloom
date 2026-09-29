@@ -21,8 +21,19 @@
       "href": "https://huggingface.co/Comfy-Org/YuE2/tree/8e6fcf0f23252ed188b634bd50d44f4b01fba890"
     }
   ],
-  "keywords": ["cuda", "fp8", "nvfp4", "nvidia", "single-model", "yue2-3b"],
-  "capabilities": ["audio-generation", "music-generation", "symbolic-score"],
+  "keywords": [
+    "cuda",
+    "fp8",
+    "nvfp4",
+    "nvidia",
+    "single-model",
+    "yue2-3b"
+  ],
+  "capabilities": [
+    "audio-generation",
+    "music-generation",
+    "symbolic-score"
+  ],
   "hardware": {
     "family": "Linux NVIDIA CUDA",
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
@@ -32,17 +43,32 @@
     ]
   },
   "requirements": {
-    "platforms": ["linux-x64", "linux-arm64"],
+    "platforms": [
+      "linux-x64",
+      "linux-arm64"
+    ],
     "memoryGb": 16,
     "diskGb": 24,
-    "commands": ["docker", "python3"],
-    "accelerators": ["cuda", "nvidia-gpu"]
+    "commands": [
+      "docker",
+      "python3"
+    ],
+    "accelerators": [
+      "cuda",
+      "nvidia-gpu"
+    ]
   },
   "backend": {
     "id": "comfyui-media",
     "name": "ComfyUI media",
     "type": "openai-compatible-server",
-    "features": ["cuda", "audio-generation", "video-generation", "image-generation", "image-editing"]
+    "features": [
+      "cuda",
+      "audio-generation",
+      "video-generation",
+      "image-generation",
+      "image-editing"
+    ]
   },
   "setup": {
     "steps": [
@@ -51,7 +77,9 @@
         "title": "Check Docker CLI",
         "action": "check-command",
         "command": "docker",
-        "args": ["--version"]
+        "args": [
+          "--version"
+        ]
       },
       {
         "id": "download-1-yue2",
@@ -60,7 +88,9 @@
         "provider": "huggingface",
         "model": "Comfy-Org/YuE2",
         "revision": "8e6fcf0f23252ed188b634bd50d44f4b01fba890",
-        "include": ["checkpoints/yue2_3b_int8_convrot.safetensors"],
+        "include": [
+          "checkpoints/yue2_3b_int8_convrot.safetensors"
+        ],
         "downloadSizeBytes": 3960938800,
         "integrity": {
           "files": [
@@ -82,9 +112,16 @@
       "runtime": "comfyui-yue2-3b",
       "backendConfig": "comfyui-yue2-3b",
       "kind": "audio_generation",
-      "input": ["text"],
-      "output": ["audio"],
-      "capabilities": ["audio-generation", "music-generation"],
+      "input": [
+        "text"
+      ],
+      "output": [
+        "audio"
+      ],
+      "capabilities": [
+        "audio-generation",
+        "music-generation"
+      ],
       "settings": {
         "memoryGb": 16,
         "priority": 20,
@@ -98,7 +135,7 @@
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/comfyui-media:source-381d99b95f2c4afb4e5c07ff12d2fd1c541cde69dc16f00db48506b9e27a7b83",
+            "image": "lloom/comfyui-media:source-6d8fbbc3e58bef36bb8723cdcb01f53a7f8f5d9bd6f74ab015a3dbf06ca19147",
             "pull": false,
             "createArgs": [
               "--restart",

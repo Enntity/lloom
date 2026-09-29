@@ -2,6 +2,7 @@ import { runtimeCapabilityModels } from './runtime-capabilities.mjs';
 import runtimeCapabilities from './runtime-capabilities.json' with { type: 'json' };
 import { executeWebFunction, webFunctionStatus } from './web-functions.mjs';
 import { createPerformanceSampler } from './performance-sampler.mjs';
+import { prepareVideoRequest, videoCatalog } from './video-contracts.mjs';
 import { generateProviderVideo } from './video-providers.mjs';
 import { generateProviderAudio } from './audio-providers.mjs';
 import http from 'node:http';
@@ -3090,7 +3091,7 @@ export function createLloomServer(
   }
 
   async function handleOpenAIVideos(req, res) {
-    const body = await readJson(req);
+    let body = await readJson(req);
     const modelId = body.model ?? config.defaults?.videoModel;
     if (!modelId) {
       sendJson(res, 400, errorBody('video request requires model', { code: 'missing_model' }));
@@ -3108,6 +3109,7 @@ export function createLloomServer(
       );
       return;
     }
+    if (!resolved.backend.videoProvider) body = prepareVideoRequest(resolved.model.upstreamModel, body);
     await recordModelRequest(
       {
         route: '/v1/videos/generations',
@@ -3176,7 +3178,7 @@ export function createLloomServer(
           const upstream = await generateProviderAudio({
             backend: resolved.backend,
             fetchFn: undiciFetch,
-            dispatcher: longRunningMediaDispatcher,
+            dispatcher: upstreamDispatcher ?? longRunningMediaDispatcher,
             body: { ...body, model: resolved.model.upstreamModel },
             signal,
             timeoutMs: resolved.backend.timeoutMs ?? 600000
@@ -4677,6 +4679,11 @@ export function createLloomServer(
 
       if (req.method === 'POST' && url.pathname === '/v1/images/edits') {
         await handleOpenAIImageEdits(req, res);
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/v1/videos/generations/models') {
+        sendJson(res, 200, videoCatalog(registry.catalogModels({ kinds: ['video'] })));
         return;
       }
 

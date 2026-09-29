@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAnthropicStreamTranslator, createResponsesStreamTranslator } from '../src/protocol/index.mjs';
+import { parseSseBlock, readSseEvents } from '../src/protocol/sse.mjs';
 import { translateAnthropicStreamFromOpenAIBody } from '../src/protocol/stream-anthropic.mjs';
 import { translateResponsesStreamFromOpenAIBody } from '../src/protocol/stream-responses.mjs';
 
@@ -18,6 +19,35 @@ for (const translate of [translateAnthropicStreamFromOpenAIBody, translateRespon
   });
   await assert.rejects(translate(body, 'test'), (error) => error.statusCode === 429);
   assert(cancelled, 'bridges cancel the failed upstream stream');
+}
+
+// SSE comments and event-only blocks are keepalives, not JSON payloads. An
+// explicit empty data field is still a real event and must remain distinct
+// from a block with no data field. The frame below also splits CRLF, a UTF-8
+// code point, and the JSON payload across chunks like a real HTTP stream.
+{
+  const encoder = new TextEncoder();
+  const first = encoder.encode(
+    ': keepalive\r\n\r\nevent: progress\r\n\r\ndata:\r\n\r\ndata: {"choices":[{"delta":{"content":"h'
+  );
+  const accent = encoder.encode('é');
+  const last = encoder.encode('"}}]}\r\n\r\ndata: [DONE]\r\n\r\n');
+  const chunks = [first, accent.slice(0, 1), accent.slice(1), last];
+  const body = new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(chunk);
+      controller.close();
+    }
+  });
+  const events = [];
+  for await (const event of readSseEvents(body)) events.push(event);
+  assert.equal(parseSseBlock(': keepalive\r\n').dataPresent, false);
+  assert.equal(parseSseBlock('data:\ndata: second').data, '\nsecond');
+  assert.equal(events.length, 3);
+  assert.equal(events[0].data, '');
+  assert.equal(events[0].dataPresent, true);
+  assert.equal(JSON.parse(events[1].data).choices[0].delta.content, 'hé');
+  assert.equal(events[2].data, '[DONE]');
 }
 
 const fixturesRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures/protocol');

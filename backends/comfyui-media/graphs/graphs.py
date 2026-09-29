@@ -2,6 +2,7 @@
 import json
 import math
 import re
+import secrets
 
 MODELS = {
     "black-forest-labs/FLUX.2-klein-4B": {"kind": "image", "family": "flux2"},
@@ -9,16 +10,68 @@ MODELS = {
     "Qwen/Qwen-Image-2512-Lightning": {"kind": "image", "family": "qwen-image-lightning"},
     "Qwen/Qwen-Image-Edit-2511": {"kind": "image", "family": "qwen-image-edit"},
     "Qwen/Qwen-Image-2.1": {"kind": "image", "family": "qwen-image-21"},
+    "BennyDaBall/Qwen-Image-2.1-NVFP4": {"kind": "image", "family": "qwen-image-21"},
     "Comfy-Org/Ideogram-4": {"kind": "image", "family": "ideogram4"},
     "Comfy-Org/Krea-2-Turbo": {"kind": "image", "family": "krea2"},
     "MiniMaxAI/MiniMax-H3": {"kind": "video"},
     "MiniMaxAI/MiniMax-H3-Turbo": {"kind": "video"},
     "Lightricks/LTX-2.5": {"kind": "video"},
+    "Lightricks/LTX-2.5-Comfy-Full": {"kind": "video"},
     "MiniMaxAI/MiniMax-Music3": {"kind": "audio"},
     "ACE-Step/ACE-Step-1.5-XL-SFT": {"kind": "audio"},
     "ACE-Step/ACE-Step-1.5-XL-Turbo": {"kind": "audio"},
     "Comfy-Org/YuE2-3B": {"kind": "audio", "family": "yue2"},
 }
+
+
+# LLooM presets: upstream recommends 40 steps; 25 and 12 are lower-cost options.
+# Explicit steps override the preset. Live quality varies by prompt and reference.
+QWEN_IMAGE_21_QUALITY_STEPS = {"auto": 40, "high": 40, "medium": 25, "low": 12}
+
+# Server-owned checkpoint names for the qwen-image-21 lane. Both IDs share one
+# graph contract, but each loads a fixed, pinned set of files. A request can
+# never name a checkpoint: the model ID selects one of these entries and the
+# filenames below are the only values that reach the loaders.
+QWEN_IMAGE_21_CHECKPOINTS = {
+    "Qwen/Qwen-Image-2.1": {
+        "diffusion": "qwen_image_2.1_int8_convrot.safetensors",
+        "encoder": "qwen3vl_8b_int8_convrot.safetensors",
+        "vae": "qwen_image_2.1_vae_bf16.safetensors",
+    },
+    "BennyDaBall/Qwen-Image-2.1-NVFP4": {
+        "diffusion": "qwen_image_2.1_nvfp4.safetensors",
+        "encoder": "qwen3vl_8b_nvfp4.safetensors",
+        "vae": "qwen_image_2.1_vae_bf16.safetensors",
+    },
+}
+
+# Model lanes whose bridge contract includes a reference-image edit. Both have a
+# text-encode node that splices a LoadImage latent, so the endpoint may serve
+# them while every other image lane stays generation-only.
+IMAGE_EDIT_FAMILIES = frozenset({"qwen-image-21", "qwen-image-edit"})
+
+
+def supports_image_edit(model_id: str) -> bool:
+    """True when the family's pinned graph consumes a reference image."""
+    metadata = MODELS.get(model_id)
+    return isinstance(metadata, dict) and metadata.get("kind") == "image" and metadata.get("family") in IMAGE_EDIT_FAMILIES
+
+
+def qwen_image_21_steps(p):
+    """Resolve the 2.1 step count from ``quality`` unless steps are explicit.
+
+    An explicitly supplied, valid ``steps`` always wins over ``quality``. An
+    invalid ``quality`` is rejected outright: silently dropping it would render
+    at the default and hide the typo that mattered.
+    """
+    if "quality" in p:
+        quality = p["quality"]
+        if not isinstance(quality, str) or quality not in QWEN_IMAGE_21_QUALITY_STEPS:
+            allowed = ", ".join(sorted(QWEN_IMAGE_21_QUALITY_STEPS))
+            raise ValueError(f"quality must be one of {allowed}")
+    if "steps" in p:
+        return number(p, "steps", QWEN_IMAGE_21_QUALITY_STEPS["auto"], 1, 60, True)
+    return QWEN_IMAGE_21_QUALITY_STEPS[p["quality"]] if "quality" in p else QWEN_IMAGE_21_QUALITY_STEPS["auto"]
 
 
 def number(p, name, default, low, high, integer=False, describe=None):
@@ -65,12 +118,13 @@ class Graph:
                         latent_image=latent, seed=seed, steps=steps, cfg=cfg,
                         sampler_name="euler", scheduler="simple", denoise=1.0)
 
-    def advanced(self, model, positive, negative, latent, seed, sigmas):
+    def advanced(self, model, positive, negative, latent, seed, sigmas,
+                 video_cfg=1.0, audio_cfg=1.0, schedule=None):
         guider = self.add("LTXVDualCFGGuider", model=model, positive=positive,
-                          negative=negative, video_cfg=1.0, audio_cfg=1.0)
+                          negative=negative, video_cfg=video_cfg, audio_cfg=audio_cfg)
         noise = self.add("RandomNoise", noise_seed=seed)
         sampler = self.add("KSamplerSelect", sampler_name="euler_ancestral")
-        schedule = self.add("ManualSigmas", sigmas=sigmas)
+        schedule = schedule if schedule is not None else self.add("ManualSigmas", sigmas=sigmas)
         return self.add("SamplerCustomAdvanced", noise=noise, guider=guider,
                         sampler=sampler, sigmas=schedule, latent_image=latent)
 
@@ -111,8 +165,57 @@ def frame_count(p, default, low, high, block, offset):
     return n
 
 
+def normalize_video_payload(model_id, payload):
+    p = dict(payload)
+    common = {"model", "prompt", "image", "first_frame", "last_frame", "audio", "video", "width", "height", "size", "duration", "num_frames", "frames", "fps", "frame_rate", "seed", "steps", "n", "response_format"}
+    if model_id.startswith("MiniMaxAI/MiniMax-H3"):
+        allowed = common | {"transcript", "workflow", "ref_image_size", "video_audio"}
+        if p.get("workflow", "auto") not in ("auto", "frames", "reference"):
+            raise ValueError("workflow must be auto, frames or reference")
+        if p.get("workflow") == "frames" and (p.get("audio") or p.get("video")):
+            raise ValueError("audio/video references require the reference workflow")
+        if "video_audio" in p and (not isinstance(p["video_audio"], bool) or not p.get("video")):
+            raise ValueError("video_audio requires a video and a boolean")
+        if p.get("ref_image_size") is not None and not (p.get("audio") or p.get("video") or p.get("workflow") == "reference"):
+            raise ValueError("ref_image_size applies only to the reference workflow")
+        prompt = p.get("prompt")
+        if isinstance(prompt, dict):
+            prompt = json.dumps(prompt, ensure_ascii=False, separators=(",", ":"))
+        if not isinstance(prompt, str) or not prompt.strip():
+            raise ValueError("prompt must be non-empty text or a structured object")
+        if "transcript" in p:
+            transcript = p["transcript"]
+            if not isinstance(transcript, str) or not transcript.strip() or len(transcript) > 4000:
+                raise ValueError("transcript must be non-empty text of at most 4000 characters")
+            audio_index = 2 if p.get("video") and p.get("video_audio") else 1
+            voice = f" Use <Audio {audio_index}> as the voice reference." if p.get("audio") else ""
+            prompt += "\nSpoken dialogue, exactly: " + json.dumps(transcript, ensure_ascii=False) + voice
+            p.pop("transcript")
+        p["prompt"] = prompt
+    elif model_id in ("Lightricks/LTX-2.5", "Lightricks/LTX-2.5-Comfy-Full"):
+        allowed = common | {"negative_prompt", "image_strength", "voice_reference", "voice_identity", "voice_start", "voice_end"}
+        if model_id.endswith("Comfy-Full"):
+            allowed.add("guidance_scale")
+    else:
+        return p
+    unknown = set(p) - allowed
+    if unknown:
+        raise ValueError("Unsupported video fields: " + ", ".join(sorted(unknown)))
+    if "size" in p and ("width" in p or "height" in p):
+        raise ValueError("Use size or width/height, not both")
+    if "frame_rate" in p:
+        if "fps" in p:
+            raise ValueError("Use fps or frame_rate, not both")
+        p["fps"] = p.pop("frame_rate")
+    if "first_frame" in p:
+        if "image" in p:
+            raise ValueError("Use image or first_frame, not both")
+        p["image"] = p.pop("first_frame")
+    return p
+
+
 def build_graph(model_id, payload, image_filename=None, last_image_filename=None,
-                audio_filename=None, prefix="lloom"):
+                audio_filename=None, video_filename=None, prefix="lloom"):
     if model_id not in MODELS or not isinstance(payload, dict):
         raise ValueError("Unsupported model or request")
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", prefix):
@@ -123,18 +226,30 @@ def build_graph(model_id, payload, image_filename=None, last_image_filename=None
     if audio_filename is not None:
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}\.(wav|flac|mp3)", audio_filename):
             raise ValueError("Invalid generated audio name")
-        if not model_id.startswith("Lightricks/"):
+        if not model_id.startswith("Lightricks/") and model_id != "MiniMaxAI/MiniMax-H3":
             # H3's conditioning node takes frames only. Only the LTX graph carries
             # an audio latent that a real clip can replace and a reference-audio
             # conditioner to hold its timbre.
             raise ValueError(f"Audio conditioning is not supported by {model_id}")
-    if last_image_filename is not None and image_filename is None:
-        # The conditioning node needs a start: a lone last frame has no anchor.
-        raise ValueError("last_frame requires a first_frame or image to anchor the clip")
-    for forbidden in ("graph", "workflow", "checkpoint", "model_path", "output_path", "image_url"):
+    if video_filename is not None:
+        if model_id != "MiniMaxAI/MiniMax-H3":
+            raise ValueError(f"{model_id} does not support reference video")
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}\.mp4", video_filename):
+            raise ValueError("Invalid generated video name")
+    for forbidden in ("graph", "checkpoint", "model_path", "output_path", "image_url"):
+        # H3 exposes a bounded named workflow, never an arbitrary graph.
         if forbidden in payload:
             raise ValueError("Arbitrary graphs, paths and URLs are not supported")
-    seed = number(payload, "seed", 42, 0, 2**63 - 1, True)
+    if "workflow" in payload and model_id != "MiniMaxAI/MiniMax-H3":
+        raise ValueError("workflow selection is supported only for MiniMax-H3")
+    # The 2.1 lane derives a fresh cryptographic seed when none is supplied.
+    # Reusing one seed across a generate-then-edit pair is the confirmed cause of
+    # severe artifacts (native repro + upstream issue 14824); every other lane
+    # keeps the fixed default it has always built with.
+    if "seed" not in payload and MODELS[model_id].get("family") == "qwen-image-21":
+        seed = secrets.randbits(53)
+    else:
+        seed = number(payload, "seed", 42, 0, (2**53 if MODELS[model_id].get("family") == "qwen-image-21" else 2**63) - 1, True)
     if number(payload, "n", 1, 1, 1, True) != 1:
         raise ValueError("Only one output per request is supported")
     g = Graph()
@@ -144,7 +259,7 @@ def build_graph(model_id, payload, image_filename=None, last_image_filename=None
             raise ValueError("prompt is required")
         family = MODELS[model_id]["family"]
         if family == "qwen-image-21":
-            result = qwen_image_21(g, payload, prompt, seed, image_filename)
+            result = qwen_image_21(g, payload, prompt, seed, image_filename, model_id)
         elif family == "qwen-image-edit":
             if image_filename is None:
                 raise ValueError("Qwen image editing requires an image")
@@ -167,15 +282,16 @@ def build_graph(model_id, payload, image_filename=None, last_image_filename=None
         output = g.add("SaveImage", images=result, filename_prefix=prefix)
         return g.nodes, output[0], "image"
     if MODELS[model_id]["kind"] == "video":
+        payload = normalize_video_payload(model_id, payload)
         prompt = text(payload, "prompt")
         if not prompt.strip():
             raise ValueError("prompt is required")
         if model_id.startswith("MiniMaxAI/MiniMax-H3"):
             result = h3(g, payload, prompt, seed, image_filename,
-                        last_image_filename, model_id.endswith("Turbo"))
+                        last_image_filename, model_id.endswith("Turbo"), audio_filename, video_filename)
         else:
             result = ltx(g, payload, prompt, seed, image_filename, last_image_filename,
-                        audio_filename)
+                        audio_filename, full=model_id.endswith("Comfy-Full"))
         output = g.add("SaveVideo", video=result, filename_prefix=prefix, format="mp4", codec="h264")
         return g.nodes, output[0], "video"
     if image_filename is not None or last_image_filename is not None or payload.get("image") is not None:
@@ -208,18 +324,21 @@ def build_graph(model_id, payload, image_filename=None, last_image_filename=None
     return g.nodes, output[0], "audio"
 
 
-def h3(g, p, prompt, seed, image_filename, last_image_filename, turbo):
+def h3(g, p, prompt, seed, image_filename, last_image_filename, turbo, audio_filename=None, video_filename=None):
     label = "MiniMax-H3-Turbo" if turbo else "MiniMax-H3"
     width, height = geometry(p)
     duration = number(p, "duration", 5, 5, 15, describe=label)
     length = frame_count(p, math.ceil((duration * 24 - 5) / 17) * 17 + 5, 124, 362, 17, 5)
     steps = number(p, "steps", 8 if turbo else 20, 8 if turbo else 10, 8 if turbo else 50,
                    True, describe=label)
-    if turbo and (image_filename or last_image_filename):
-        # Frame pinning is a full-model workload; the Turbo LoRA path is the
-        # fast tier and does not carry the frame-conditioning weights.
-        raise ValueError("MiniMax-H3-Turbo does not accept first_frame or last_frame; "
-                         "use MiniMax-H3 for frame-pinned generation")
+    if audio_filename is not None or video_filename is not None or p.get("workflow") == "reference":
+        if turbo:
+            raise ValueError("MiniMax-H3-Turbo does not accept reference audio")
+        if not any((image_filename, audio_filename, video_filename)):
+            raise ValueError("H3 reference workflow requires image, audio or video")
+        return h3_ref2va(g, p, prompt, seed, image_filename, audio_filename,
+                         last_image_filename,
+                         width, height, length, steps, video_filename)
     model = g.add("UNETLoader", unet_name="minimax_h3_fl2va_pruned_int8_convrot.safetensors", weight_dtype="default")
     if turbo:
         model = g.add("LoraLoaderModelOnly", model=model, lora_name="minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors", strength_model=1.0)
@@ -245,19 +364,77 @@ def h3(g, p, prompt, seed, image_filename, last_image_filename, turbo):
     return g.add("CreateVideo", images=images, audio=audio, fps=24.0)
 
 
-def ltx(g, p, prompt, seed, image_filename, last_image_filename=None, audio_filename=None):
-    if last_image_filename is not None:
-        raise ValueError("Lightricks/LTX-2.5 does not support last_frame in this workflow; use MiniMax-H3 for end-frame conditioning")
+def h3_ref2va(g, p, prompt, seed, image_filename, audio_filename, last_image_filename,
+              width, height, length, steps, video_filename=None):
+    """Generate H3 video from a portrait and voice reference (Ref2VA)."""
+    model = g.add("UNETLoader", unet_name="minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+                  weight_dtype="default")
+    clip = g.add("CLIPLoader", clip_name="qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+                 type="minimax", device="default")
+    vae = g.add("VAELoader", vae_name="minimax_h3_video_vae_fp16.safetensors")
+    audio_vae = g.add("VAELoader", vae_name="minimax_h3_audio_vae_fp32.safetensors")
+    refs = {}
+    if image_filename:
+        refs["ref_images.ref_image_1"] = g.add("LoadImage", image=image_filename)
+    if audio_filename:
+        refs["ref_audios.ref_audio_1"] = g.add("LoadAudio", audio=audio_filename)
+    if video_filename:
+        loaded = g.add("LoadVideo", file=video_filename)
+        components = g.add("GetVideoComponents", video=loaded)
+        refs["ref_videos.ref_video_1"] = components
+        # A standalone audio reference is explicit; source-video sound is only
+        # included when requested and verified present during preflight.
+        if p.get("video_audio", False):
+            refs["ref_video_audios.ref_video_audio_1"] = [components[0], 1]
+    ref_size = p.get("ref_image_size", "match")
+    if ref_size not in ("match", "max"):
+        raise ValueError("ref_image_size must be match or max")
+    condition = g.add(
+        "MiniMaxH3ReferenceToVideo", clip=clip, vae=vae, audio_vae=audio_vae,
+        prompt=prompt, width=width, height=height, length=length,
+        ref_image_size=ref_size, **refs,
+    )
+    positive = condition
+    if last_image_filename:
+        # Ref2VA has no last_frame input. The native guide node adds a pinned
+        # endpoint to the same conditioning while retaining image/audio refs.
+        endpoint = g.add("LoadImage", image=last_image_filename)
+        positive = g.add("MiniMaxH3AddGuide", positive=condition,
+                         latent=[condition[0], 1], vae=vae,
+                         image=endpoint, frame_idx=-1)
+    guider = g.add("BasicGuider", model=model, conditioning=positive)
+    noise = g.add("RandomNoise", noise_seed=seed)
+    sampler = g.add("KSamplerSelect", sampler_name="res_multistep")
+    sigmas = g.add("BasicScheduler", model=model, scheduler="simple", steps=steps, denoise=1.0)
+    sample = g.add("SamplerCustomAdvanced", noise=noise, guider=guider,
+                   sampler=sampler, sigmas=sigmas, latent_image=[condition[0], 1])
+    images = g.add("VAEDecode", samples=sample, vae=vae)
+    audio_out = g.add("VAEDecodeAudio", samples=sample, vae=audio_vae)
+    return g.add("CreateVideo", images=images, audio=audio_out, fps=24.0)
+
+
+def ltx(g, p, prompt, seed, image_filename, last_image_filename=None, audio_filename=None, full=False):
+    if "image_strength" in p and image_filename is None:
+        raise ValueError("image_strength requires image or first_frame")
+    voice_controls = {"voice_reference", "voice_identity", "voice_start", "voice_end"} & set(p)
+    if voice_controls and audio_filename is None:
+        raise ValueError("voice controls require audio")
+    if p.get("voice_reference") == 0 and voice_controls - {"voice_reference"}:
+        raise ValueError("voice guidance controls require voice_reference=1")
+    if number(p, "voice_start", 0, 0, 1) > number(p, "voice_end", 1, 0, 1):
+        raise ValueError("voice_start must not exceed voice_end")
     # The first pass uses half the requested dimensions; the latent spatial
     # upscaler restores the requested output geometry for the second pass.
     width, height = geometry(p, ltx=True)
     duration = number(p, "duration", 5, 1, 10, describe="Lightricks/LTX-2.5")
-    number(p, "steps", 8, 8, 8, True, describe="Lightricks/LTX-2.5")
+    steps = number(p, "steps", 30 if full else 8, 10 if full else 8, 60 if full else 8, True, describe="Lightricks/LTX-2.5")
+    cfg = number(p, "guidance_scale", 3.0, 1.0, 20.0) if full else 1.0
     # How hard the first frame is held. Higher keeps the opening closer to the
     # conditioning image; lower lets the shot move further from it.
     strength = number(p, "image_strength", 0.7, 0.0, 1.0, describe="Lightricks/LTX-2.5")
     length = frame_count(p, math.ceil(duration * 24 / 8) * 8 + 1, 25, 241, 8, 1)
-    model = g.add("UNETLoader", unet_name="ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors", weight_dtype="default")
+    model = g.add("UNETLoader", unet_name=("ltx-2.5-22b-dev-transformer-bf16.safetensors" if full else
+                  "ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors"), weight_dtype="default")
     clip = g.add("CLIPLoader", clip_name="gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors", type="ltxv", device="default")
     vae = g.add("VAELoader", vae_name="ltx-2.5-video-vae-bf16.safetensors")
     audio_vae = g.add("VAELoader", vae_name="ltx-2.5-audio-vae-bf16.safetensors")
@@ -271,12 +448,23 @@ def ltx(g, p, prompt, seed, image_filename, last_image_filename=None, audio_file
         image = g.add("LoadImage", image=image_filename)
         image = g.add("LTXVPreprocess", image=image, img_compression=18)
         latent = g.add("LTXVImgToVideoInplace", vae=vae, image=image, latent=latent, strength=strength, bypass=False)
-    # Audio. Given a real clip, the model denoises against its latent instead of
-    # inventing speech, and LTXVReferenceAudio additionally conditions on its
-    # timbre. Given none, behaviour is unchanged: the model generates both.
+    endpoint = g.add("LoadImage", image=last_image_filename) if last_image_filename else None
+    if endpoint is not None:
+        # Guides require a video-only latent. Pin the endpoint before AV concat
+        # in both stages so the spatial upscaler does not soften the last frame.
+        guide = g.add("LTXVAddGuide", positive=pos, negative=neg, vae=vae,
+                      latent=latent, image=endpoint, frame_idx=-1, strength=1.0)
+        pos, neg, latent = guide, [guide[0], 1], [guide[0], 2]
+    # Audio. Keep a supplied clip fixed in the joint latent; visual synchronization
+    # remains model-dependent. Optional reference conditioning can reinforce
+    # timbre. Without a clip, the model generates both streams as before.
     if audio_filename:
         loaded = g.add("LoadAudio", audio=audio_filename)
         audio = g.add("LTXVAudioVAEEncode", audio=loaded, audio_vae=audio_vae)
+        # Condition video on supplied speech without asking the sampler to
+        # rewrite its words. The output also uses this original waveform.
+        quiet_mask = g.add("SolidMask", value=0.0, width=1, height=1)
+        audio = g.add("SetLatentNoiseMask", samples=audio, mask=quiet_mask)
         if number(p, "voice_reference", 1, 0, 1, True):
             # identity_guidance_scale sets how hard the reference timbre is held;
             # start/end_percent bound the window it applies over.
@@ -294,18 +482,45 @@ def ltx(g, p, prompt, seed, image_filename, last_image_filename=None, audio_file
     else:
         audio = g.add("LTXVEmptyLatentAudio", frames_number=length, frame_rate=24.0, batch_size=1, audio_vae=audio_vae)
     av = g.add("LTXVConcatAVLatent", video_latent=latent, audio_latent=audio)
-    sampled = g.advanced(model, pos, neg, av, seed, "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0")
+    if full:
+        # The full checkpoint needs a guided schedule, not distilled's eight steps.
+        # Compute token-dependent shifting from the video latent before AV concat.
+        schedule = g.add("LTXVScheduler", steps=steps, max_shift=2.05,
+                         base_shift=0.95, stretch=True, terminal=0.1, latent=latent)
+        sampled = g.advanced(model, pos, neg, av, seed, None, video_cfg=cfg,
+                             audio_cfg=1.0 if audio_filename else 7.0, schedule=schedule)
+    else:
+        sampled = g.advanced(model, pos, neg, av, seed, "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0")
     separate = g.add("LTXVSeparateAVLatent", av_latent=sampled)
+    video_latent = separate
+    if endpoint is not None:
+        # Native guides append reference tokens beyond the requested frames.
+        # Crop them before upscaling, then reapply the endpoint at full size.
+        cropped = g.add("LTXVCropGuides", positive=pos, negative=neg, latent=video_latent)
+        pos, neg, video_latent = cropped, [cropped[0], 1], [cropped[0], 2]
     upscaler = g.add("LatentUpscaleModelLoader", model_name="ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors")
-    upscaled = g.add("LTXVLatentUpsampler", samples=separate, upscale_model=upscaler, vae=vae)
+    upscaled = g.add("LTXVLatentUpsampler", samples=video_latent, upscale_model=upscaler, vae=vae)
     if image is not None:
         upscaled = g.add("LTXVImgToVideoInplace", vae=vae, image=image, latent=upscaled, strength=1.0, bypass=False)
+    if endpoint is not None:
+        guide = g.add("LTXVAddGuide", positive=pos, negative=neg, vae=vae,
+                      latent=upscaled, image=endpoint, frame_idx=-1, strength=1.0)
+        pos, neg, upscaled = guide, [guide[0], 1], [guide[0], 2]
     av = g.add("LTXVConcatAVLatent", video_latent=upscaled, audio_latent=[separate[0], 1])
+    if full:
+        # Match native full's distilled refinement adapter, only on stage two.
+        model = g.add("LoraLoaderModelOnly", model=model,
+                      lora_name="ltx-2.5-22b-distilled-lora-450-bf16.safetensors", strength_model=1.0)
     sampled = g.advanced(model, pos, neg, av, seed+1, "0.85, 0.7250, 0.4219, 0.0")
     separate = g.add("LTXVSeparateAVLatent", av_latent=sampled)
-    frames = g.add("VAEDecodeTiled", samples=separate, vae=vae, tile_size=512, overlap=64, temporal_size=64, temporal_overlap=16)
-    audio = g.add("LTXVAudioVAEDecode", samples=[separate[0], 1], audio_vae=audio_vae)
-    return g.add("CreateVideo", images=frames, audio=audio, fps=24.0)
+    video_latent = separate
+    if endpoint is not None:
+        video_latent = g.add("LTXVCropGuides", positive=pos, negative=neg, latent=video_latent)
+        video_latent = [video_latent[0], 2]
+    frames = g.add("VAEDecodeTiled", samples=video_latent, vae=vae, tile_size=512, overlap=64, temporal_size=64, temporal_overlap=16)
+    output_audio = loaded if audio_filename else g.add(
+        "LTXVAudioVAEDecode", samples=[separate[0], 1], audio_vae=audio_vae)
+    return g.add("CreateVideo", images=frames, audio=output_audio, fps=24.0)
 
 
 def music3(g, p, caption, lyrics, duration, seed):
@@ -539,7 +754,21 @@ def qwen_image_edit(g, p, prompt, seed, image_filename):
     return g.add("VAEDecode", samples=sampled, vae=vae)
 
 
-def qwen_image_21(g, p, prompt, seed, image_filename):
+def qwen_image_21_geometry(p, resolution):
+    width = height = resolution
+    if "size" in p:
+        match = re.fullmatch(r"([0-9]{3,4})x([0-9]{3,4})", str(p["size"]))
+        if not match:
+            raise ValueError("size must be WIDTHxHEIGHT")
+        width, height = map(int, match.groups())
+    width = number(p, "width", width, 256, 3072, True)
+    height = number(p, "height", height, 256, 3072, True)
+    if width % 32 or height % 32 or width * height > 4.5 * 1024 * 1024:
+        raise ValueError("Dimensions must be multiples of 32 and at most 4.5 megapixels")
+    return width, height
+
+
+def qwen_image_21(g, p, prompt, seed, image_filename, model_id="Qwen/Qwen-Image-2.1"):
     """Qwen-Image 2.1: one DiT for generation, reference editing and RGBA output.
 
     The graph mirrors the pinned official template. Its text-encode node splices
@@ -550,17 +779,31 @@ def qwen_image_21(g, p, prompt, seed, image_filename):
     There is deliberately no ``ModelSamplingAuraFlow``: 2.1 carries its own
     sampling shift in the checkpoint, and the aura-flow patch (what the 2512
     lane needs at 3.1) would override it. The template also runs cfg 1, where
-    the negative prompt is unused; it is still honoured if a caller raises cfg.
+    the negative prompt is unused.
+
+    ``model_id`` picks a fixed checkpoint set from
+    ``QWEN_IMAGE_21_CHECKPOINTS``; the INT8 and NVFP4 lanes share this contract
+    and differ only in which pinned files the loaders open.
     """
-    model = g.add("UNETLoader", unet_name="qwen_image_2.1_int8_convrot.safetensors", weight_dtype="default")
-    clip = g.add("CLIPLoader", clip_name="qwen3vl_8b_int8_convrot.safetensors", type="qwen_image", device="default")
-    vae = g.add("VAELoader", vae_name="qwen_image_2.1_vae_bf16.safetensors")
+    allowed = {"model", "prompt", "negative_prompt", "image", "size", "width", "height", "resolution", "quality", "steps", "seed", "cfg", "n", "response_format"}
+    if set(p) - allowed:
+        raise ValueError("Unsupported Qwen Image 2.1 fields: " + ", ".join(sorted(set(p) - allowed)))
+    if p.get("negative_prompt", "") != "":
+        raise ValueError("negative_prompt is unsupported because Qwen Image 2.1 uses cfg=1")
+    if "size" in p and ("width" in p or "height" in p):
+        raise ValueError("Use size or width/height, not both")
+    resolution = number(p, "resolution", 1024, 256, 2048, True, describe="the reference-image pixel budget")
+    if resolution % 32:
+        raise ValueError("resolution must be a multiple of 32")
+    checkpoints = QWEN_IMAGE_21_CHECKPOINTS[model_id]
+    model = g.add("UNETLoader", unet_name=checkpoints["diffusion"], weight_dtype="default")
+    clip = g.add("CLIPLoader", clip_name=checkpoints["encoder"], type="qwen_image", device="default")
+    vae = g.add("VAELoader", vae_name=checkpoints["vae"])
     if image_filename is not None:
         if any(field in p for field in ("size", "width", "height")):
             raise ValueError("Qwen 2.1 edits follow the reference image; use resolution instead")
         # The node resizes every reference to about resolution x resolution
         # pixels at multiples of 32, preserving aspect ratio.
-        resolution = number(p, "resolution", 1024, 0, 2048, True, describe="the reference-image pixel budget")
         encode = g.add("TextEncodeQwenImage21", clip=clip, vae=vae, prompt=prompt,
                        negative_prompt=text(p, "negative_prompt", ""), resolution=resolution)
         positive, negative, latent = encode, [encode[0], 1], [encode[0], 2]
@@ -568,17 +811,25 @@ def qwen_image_21(g, p, prompt, seed, image_filename):
         # API graphs use flattened dynamic-input paths. ComfyUI resolves the
         # link first, then builds the images dict passed to execute(). A nested
         # dict here is not a graph edge and silently loses the reference.
-        g.nodes[encode[0]]["inputs"]["images.image_1"] = image
+        # LoadImage hands back RGB plus MASK = 1 - alpha. JoinImageWithAlpha
+        # rebuilds 4 channels from image + (1 - mask), so an RGBA reference
+        # survives the edit instead of being flattened against the VAE's white
+        # composite. The mask link is required: without it the node would take a
+        # default alpha.
+        rgba = g.add("JoinImageWithAlpha", image=[image[0], 0], alpha=[image[0], 1])
+        g.nodes[encode[0]]["inputs"]["images.image_1"] = rgba
     else:
-        width, height = image_geometry(p)
+        width, height = qwen_image_21_geometry(p, resolution)
         # Without reference images the node resizes nothing, so its resolution
         # is inert; generation geometry comes from the empty latent below.
         encode = g.add("TextEncodeQwenImage21", clip=clip, vae=vae, prompt=prompt,
                        negative_prompt=text(p, "negative_prompt", ""), resolution=1024)
         positive, negative = encode, [encode[0], 1]
         latent = g.add("EmptyLatentImage", width=width, height=height, batch_size=1)
-    steps = number(p, "steps", 25, 1, 60, True)
-    cfg = number(p, "cfg", 1.0, 1.0, 8.0)
+    # Both generation and editing share this one step resolver, so the quality
+    # dial and the explicit-steps override behave identically in either mode.
+    steps = qwen_image_21_steps(p)
+    cfg = number(p, "cfg", 1.0, 1.0, 1.0)
     sampled = g.sample(model, positive, negative, latent, seed, steps, cfg)
     return g.add("VAEDecode", samples=sampled, vae=vae)
 

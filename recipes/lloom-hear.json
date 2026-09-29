@@ -52,32 +52,17 @@
     ]
   },
   "requirements": {
-    "platforms": [
-      "darwin-arm64",
-      "darwin-x64",
-      "linux-x64",
-      "linux-arm64"
-    ],
+    "platforms": ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"],
     "memoryGb": 2,
     "diskGb": 2,
-    "commands": [
-      "lloom-hear-server",
-      "ffmpeg",
-      "ffprobe"
-    ],
+    "commands": ["lloom-hear-server", "ffmpeg", "ffprobe"],
     "accelerators": []
   },
   "backend": {
     "id": "hear",
     "name": "LLooM Hear",
     "type": "openai-compatible-server",
-    "features": [
-      "audio-analysis",
-      "music",
-      "dsp",
-      "measurement",
-      "vision-output"
-    ]
+    "features": ["audio-analysis", "music", "dsp", "measurement", "vision-output"]
   },
   "setup": {
     "steps": [
@@ -86,36 +71,28 @@
         "title": "Check LLooM Hear server shim",
         "action": "check-command",
         "command": "lloom-hear-server",
-        "args": [
-          "--help"
-        ]
+        "args": ["--help"]
       },
       {
         "id": "install-hear",
         "title": "Install LLooM Hear backend",
         "action": "command",
         "command": "bash",
-        "args": [
-          "${repoRoot}/backends/hear/install.sh"
-        ]
+        "args": ["${repoRoot}/backends/hear/install.sh"]
       },
       {
         "id": "check-ffmpeg",
         "title": "Check ffmpeg",
         "action": "check-command",
         "command": "ffmpeg",
-        "args": [
-          "-version"
-        ]
+        "args": ["-version"]
       },
       {
         "id": "check-ffprobe",
         "title": "Check ffprobe",
         "action": "check-command",
         "command": "ffprobe",
-        "args": [
-          "-version"
-        ]
+        "args": ["-version"]
       }
     ]
   },
@@ -127,14 +104,8 @@
       "gatewayModel": "hear",
       "runtime": "hear",
       "backendConfig": "hear",
-      "input": [
-        "text",
-        "audio"
-      ],
-      "output": [
-        "text",
-        "image"
-      ],
+      "input": ["text", "audio"],
+      "output": ["text", "image"],
       "capabilities": [
         "audio-analysis",
         "audio-understanding",
@@ -144,12 +115,9 @@
         "audio-captioning",
         "vision-output"
       ],
-      "aliases": [
-        "hear",
-        "listen"
-      ],
+      "aliases": ["hear", "listen"],
       "settings": {
-        "contextWindow": 1048576,
+        "contextWindow": 33554432,
         "maxOutputTokens": 8192,
         "maxActiveRequests": 2,
         "memoryGb": 2,
@@ -159,12 +127,7 @@
         "timeoutMs": 600000,
         "runtime": {
           "command": "lloom-hear-server",
-          "args": [
-            "--host",
-            "127.0.0.1",
-            "--port",
-            "${port}"
-          ],
+          "args": ["--host", "127.0.0.1", "--port", "${port}"],
           "env": {
             "LLOOM_HEAR_UPSTREAM_URL": "http://127.0.0.1:8100/v1/chat/completions",
             "LLOOM_HEAR_UPSTREAM_MODEL": "google/gemini-3.1-flash-lite"

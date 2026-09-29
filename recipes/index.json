@@ -506,7 +506,7 @@
           "version": 4,
           "path": "archive/linux-nvidia-dgx-spark-2x-glm53-flash-exl3-vllm/v4.json",
           "status": "archived",
-          "notes": "Pins a measured 9.5 GiB FP8 hybrid KV pool for 262K context and uses a 0.79 fallback utilization so the Spark02 embedding lane can coexist without startup threshold jitter."
+          "notes": "Pins a measured 9.5 GiB FP8 hybrid KV pool for 262K context and uses a 0.79 fallback utilization so the embedding sidecar can coexist without startup threshold jitter."
         },
         {
           "version": 5,
@@ -1252,6 +1252,166 @@
         "any host with ffmpeg; no accelerator required",
         "callers that need measured audio facts separated from generated description"
       ]
+    },
+    {
+      "id": "linux-nvidia-ltx-2-5-native",
+      "path": "linux-nvidia-ltx-2-5-native.json",
+      "currentVersion": 2,
+      "versions": [
+        {
+          "version": 2,
+          "path": "linux-nvidia-ltx-2-5-native.json",
+          "status": "current"
+        }
+      ],
+      "name": "LTX-2.5 native workflows (NVIDIA)",
+      "summary": "Full and Distilled native BF16 LTX-2.5 models with explicit generation, audio-driven, keyframe, retake and refinement workflows.",
+      "source": {
+        "type": "bundled"
+      }
+    },
+    {
+      "id": "linux-nvidia-gb10-qwen38-27b-nvfp4-vllm",
+      "path": "linux-nvidia-gb10-qwen38-27b-nvfp4-vllm.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-gb10-qwen38-27b-nvfp4-vllm.json",
+          "status": "current"
+        }
+      ],
+      "name": "DGX Spark Qwen3.8 27B NVFP4 vLLM",
+      "summary": "Standalone Qwen3.8 27B NVFP4 cognition for a single GB10 Spark, sized to coexist with the Qwen3-Embedding-4B sidecar.",
+      "tags": ["linux", "nvidia", "dgx-spark", "gb10", "qwen3.8", "27b", "nvfp4", "vllm", "mtp", "standalone"],
+      "recommendedFor": ["Standalone cognition on a single GB10 while other nodes run cluster experiments"],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "tools",
+        "reasoning",
+        "vision",
+        "mtp",
+        "batching",
+        "long-context"
+      ],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-gb10-qwen38-27b-nvfp4-vllm.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-ace-step-1-5-xl-diffusers",
+      "path": "linux-nvidia-ace-step-1-5-xl-diffusers.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-ace-step-1-5-xl-diffusers.json",
+          "status": "current"
+        }
+      ],
+      "name": "ACE-Step 1.5 XL music generation (Diffusers, NVIDIA)"
+    },
+    {
+      "id": "linux-nvidia-comfyui-ltx-2-5-full",
+      "path": "linux-nvidia-comfyui-ltx-2-5-full.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-comfyui-ltx-2-5-full.json",
+          "status": "current"
+        }
+      ],
+      "name": "LTX-2.5 Full (ComfyUI, BF16)",
+      "summary": "Full BF16 LTX-2.5 with a guided main pass and distilled LoRA refinement through ComfyUI.",
+      "tags": ["cuda", "bf16", "ltx-2.5", "nvidia", "single-model"],
+      "capabilities": ["video-generation", "text-to-video", "image-to-video", "audio-to-video", "first-last-frame"],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-comfyui-ltx-2-5-full.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-comfyui-qwen-image-2-1-nvfp4",
+      "path": "linux-nvidia-comfyui-qwen-image-2-1-nvfp4.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-comfyui-qwen-image-2-1-nvfp4.json",
+          "status": "current"
+        }
+      ],
+      "name": "BennyDaBall/Qwen-Image-2.1-NVFP4 (ComfyUI, NVIDIA)",
+      "summary": "Install BennyDaBall/Qwen-Image-2.1-NVFP4, one NVFP4 DiT for generation and reference editing, with the shared ComfyUI media backend.",
+      "tags": [
+        "cuda",
+        "nvfp4",
+        "nvidia",
+        "qwen-image-2.1",
+        "image-editing",
+        "transparency",
+        "single-model"
+      ],
+      "capabilities": [
+        "image-generation",
+        "image-editing"
+      ],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-comfyui-qwen-image-2-1-nvfp4.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-dgx-spark-2x-glm53-atlas",
+      "path": "linux-nvidia-dgx-spark-2x-glm53-atlas.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-dgx-spark-2x-glm53-atlas.json",
+          "status": "current",
+          "notes": "Atlas SparkGLM two-node candidate over the private fabric, additive only, setDefault false, no aliases. Portable pins live in backends/atlas-sparkglm/pins.json and are final for the current product revision; invalid or placeholder manifests fail closed. Image identity is verified per host by the pinned install-tree label, whether the image was pulled from GHCR or built from source. Live hardware and full serving qualification remain pending."
+        }
+      ],
+      "name": "2x DGX Spark GLM-5.3 Flash NVFP4 Atlas",
+      "summary": "Two-node Atlas SparkGLM candidate serving GLM-5.3-Flash-NVFP4 from a pinned image (GHCR pull or source build) and a once-per-node overlay conversion.",
+      "tags": [
+        "linux",
+        "nvidia",
+        "dgx-spark",
+        "cluster",
+        "glm-5.3",
+        "flash",
+        "nvfp4",
+        "atlas",
+        "sparkglm",
+        "source-build",
+        "mtp",
+        "candidate"
+      ],
+      "recommendedFor": [
+        "Evaluating the source-built Atlas SparkGLM engine on two directly connected DGX Sparks through LLooM"
+      ],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "tools",
+        "structured-output",
+        "reasoning",
+        "vision",
+        "speculative-decoding"
+      ],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-dgx-spark-2x-glm53-atlas.json"
+      }
     }
   ]
 }

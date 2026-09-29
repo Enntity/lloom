@@ -33,8 +33,20 @@
       "href": "https://huggingface.co/Comfy-Org/flux2-dev/tree/ab9055628ea245000e610f2aa2c96f4746093546"
     }
   ],
-  "keywords": ["cuda", "fp8", "ideogram-4", "nvfp4", "nvidia", "single-model"],
-  "capabilities": ["image-generation", "typography", "layout-control", "2k-output"],
+  "keywords": [
+    "cuda",
+    "fp8",
+    "ideogram-4",
+    "nvfp4",
+    "nvidia",
+    "single-model"
+  ],
+  "capabilities": [
+    "image-generation",
+    "typography",
+    "layout-control",
+    "2k-output"
+  ],
   "hardware": {
     "family": "Linux NVIDIA CUDA",
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
@@ -44,17 +56,32 @@
     ]
   },
   "requirements": {
-    "platforms": ["linux-x64", "linux-arm64"],
+    "platforms": [
+      "linux-x64",
+      "linux-arm64"
+    ],
     "memoryGb": 64,
     "diskGb": 48,
-    "commands": ["docker", "python3"],
-    "accelerators": ["cuda", "nvidia-gpu"]
+    "commands": [
+      "docker",
+      "python3"
+    ],
+    "accelerators": [
+      "cuda",
+      "nvidia-gpu"
+    ]
   },
   "backend": {
     "id": "comfyui-media",
     "name": "ComfyUI media",
     "type": "openai-compatible-server",
-    "features": ["cuda", "audio-generation", "video-generation", "image-generation", "image-editing"]
+    "features": [
+      "cuda",
+      "audio-generation",
+      "video-generation",
+      "image-generation",
+      "image-editing"
+    ]
   },
   "setup": {
     "steps": [
@@ -63,7 +90,9 @@
         "title": "Check Docker CLI",
         "action": "check-command",
         "command": "docker",
-        "args": ["--version"]
+        "args": [
+          "--version"
+        ]
       },
       {
         "id": "download-1-ideogram-4",
@@ -99,7 +128,9 @@
         "provider": "huggingface",
         "model": "Comfy-Org/Qwen3-VL",
         "revision": "5529a3c630b649351fb72d8c251577b5962371d8",
-        "include": ["text_encoders/qwen3vl_8b_fp8_scaled.safetensors"],
+        "include": [
+          "text_encoders/qwen3vl_8b_fp8_scaled.safetensors"
+        ],
         "downloadSizeBytes": 10588637512,
         "integrity": {
           "files": [
@@ -118,7 +149,9 @@
         "provider": "huggingface",
         "model": "Comfy-Org/flux2-dev",
         "revision": "ab9055628ea245000e610f2aa2c96f4746093546",
-        "include": ["split_files/vae/flux2-vae.safetensors"],
+        "include": [
+          "split_files/vae/flux2-vae.safetensors"
+        ],
         "downloadSizeBytes": 336213556,
         "integrity": {
           "files": [
@@ -140,9 +173,18 @@
       "runtime": "comfyui-ideogram-4",
       "backendConfig": "comfyui-ideogram-4",
       "kind": "image",
-      "input": ["text"],
-      "output": ["image"],
-      "capabilities": ["image-generation", "typography", "layout-control", "2k-output"],
+      "input": [
+        "text"
+      ],
+      "output": [
+        "image"
+      ],
+      "capabilities": [
+        "image-generation",
+        "typography",
+        "layout-control",
+        "2k-output"
+      ],
       "settings": {
         "memoryGb": 64,
         "priority": 30,
@@ -156,7 +198,7 @@
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/comfyui-media:source-381d99b95f2c4afb4e5c07ff12d2fd1c541cde69dc16f00db48506b9e27a7b83",
+            "image": "lloom/comfyui-media:source-6d8fbbc3e58bef36bb8723cdcb01f53a7f8f5d9bd6f74ab015a3dbf06ca19147",
             "pull": false,
             "createArgs": [
               "--restart",

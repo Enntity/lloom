@@ -28,6 +28,21 @@ function safeName(name) {
   return typeof name === 'string' && /^[a-z0-9][a-z0-9._-]{0,63}$/i.test(name) ? name : null;
 }
 
+async function assertProfileDir(dir) {
+  try {
+    const stat = await fs.lstat(dir);
+    if (!stat.isDirectory()) throw fail('Fleet profile path must be a directory.');
+  } catch (error) {
+    if (error.statusCode) throw error;
+    if (error.code !== 'ENOENT') throw error;
+  }
+}
+
+async function assertRegularProfileFile(file) {
+  const stat = await fs.lstat(file);
+  if (!stat.isFile()) throw fail('Profile path must be a regular file.');
+}
+
 function profilesDir(config) {
   if (!config.sourcePath) throw fail('Fleet profiles need a file-backed LLooM config.', 409);
   return path.join(path.dirname(path.resolve(config.sourcePath)), 'profiles');
@@ -56,7 +71,7 @@ export function resolveRouteTarget(alias, target) {
 export function normalizeProfileDocument(raw, name) {
   const doc = object(raw);
   if (!doc) throw fail(`Profile ${name} must be a JSON object.`);
-  const allowed = new Set(['name', 'description', 'routes', 'residency', 'defaults']);
+  const allowed = new Set(['name', 'description', 'routes', 'residency', 'defaults', 'defaultsMode']);
   const unknown = Object.keys(doc).filter((key) => !allowed.has(key));
   if (unknown.length) throw fail(`Profile ${name} has unsupported sections: ${unknown.join(', ')}.`);
   const routes = {};
@@ -82,12 +97,16 @@ export function normalizeProfileDocument(raw, name) {
         throw fail(`Profile ${name}: defaults.${key} must be a short string.`);
     }
   }
+  const defaultsMode = doc.defaultsMode ?? 'merge';
+  if (defaultsMode !== 'merge' && defaultsMode !== 'replace')
+    throw fail(`Profile ${name}: defaultsMode must be merge or replace.`);
   return {
     name: typeof doc.name === 'string' ? doc.name : name,
     description: typeof doc.description === 'string' ? doc.description.slice(0, 500) : '',
     routes,
     residency,
-    defaults: defaults ? { ...defaults } : null
+    defaults: defaults ? { ...defaults } : null,
+    ...(doc.defaultsMode === undefined ? {} : { defaultsMode })
   };
 }
 
@@ -121,6 +140,7 @@ export async function readProfile(config, name, activeName = null) {
   const safe = safeName(name);
   if (!safe) throw fail('Invalid profile name.');
   const file = path.join(profilesDir(config), safe + '.json');
+  await assertRegularProfileFile(file);
   const raw = await fs.readFile(file, 'utf8');
   if (raw.length > MAX_PROFILE_BYTES) throw fail('Profile file is too large.', 413);
   const doc = normalizeProfileDocument(JSON.parse(raw), safe);
@@ -131,6 +151,7 @@ async function readRawProfile(config, name) {
   const safe = safeName(name);
   if (!safe) throw fail('Invalid profile name.');
   const file = path.join(profilesDir(config), safe + '.json');
+  await assertRegularProfileFile(file);
   const raw = await fs.readFile(file, 'utf8');
   if (raw.length > MAX_PROFILE_BYTES) throw fail('Profile file is too large.', 413);
   return { safe, doc: JSON.parse(raw), file };
@@ -149,6 +170,11 @@ export function planProfileChanges(config, doc) {
   const aliases = object(config.aliases) ?? {};
   for (const [aliasId, target] of Object.entries(doc.routes)) {
     const alias = aliases[aliasId];
+    if (typeof alias === 'string') {
+      if (alias !== target) throw fail(`Alias ${aliasId} is a direct id and cannot apply route target ${target}.`, 409);
+      changes.unchanged.push({ kind: 'route', id: aliasId, value: target });
+      continue;
+    }
     if (!object(alias)) throw fail(`Config has no alias ${aliasId}.`, 409);
     const resolved = resolveRouteTarget(alias, target);
     const same =
@@ -181,8 +207,12 @@ export function composeProfile(raw, doc, name) {
   raw.fleet = { ...fleet, activeProfile: name };
   const aliases = object(raw.aliases) ?? {};
   for (const [aliasId, target] of Object.entries(doc.routes)) {
-    const alias = object(aliases[aliasId]);
-    if (!alias) throw fail(`Config has no alias ${aliasId}.`, 409);
+    const alias = aliases[aliasId];
+    if (typeof alias === 'string') {
+      if (alias !== target) throw fail(`Alias ${aliasId} is a direct id and cannot apply route target ${target}.`, 409);
+      continue;
+    }
+    if (!object(alias)) throw fail(`Config has no alias ${aliasId}.`, 409);
     const resolved = resolveRouteTarget({ ...alias }, target);
     alias.members = resolved.members;
     if (resolved.optionalMembers.length) alias.optionalMembers = resolved.optionalMembers;
@@ -204,6 +234,7 @@ export function composeProfile(raw, doc, name) {
   }
   raw.runtimes = runtimes;
   if (doc.defaults) raw.defaults = { ...(object(raw.defaults) ?? {}), ...doc.defaults };
+  if (doc.defaultsMode === 'replace') raw.defaults = { ...(doc.defaults ?? {}) };
   return raw;
 }
 
@@ -212,6 +243,7 @@ export function createFleetProfileController({ getConfig, reload, env = process.
     if (yes !== true) throw fail('Review the profile and confirm with yes: true.');
     if (!getConfig().sourcePath) throw fail('This gateway has no writable installed configuration.', 409);
     const { safe, doc } = await readRawProfile(getConfig(), name);
+    await assertProfileDir(profilesDir(getConfig()));
     const profile = normalizeProfileDocument(doc, safe);
     let outcome = null;
     await mutateConfigSource(getConfig(), (raw) => {
@@ -231,6 +263,7 @@ export function createFleetProfileController({ getConfig, reload, env = process.
     if (!config.sourcePath) throw fail('This gateway has no file-backed configuration.', 409);
     const dir = profilesDir(config);
     await fs.mkdir(dir, { recursive: true });
+    await assertProfileDir(dir);
     const file = path.join(dir, safe + '.json');
     if (!overwrite) {
       try {
@@ -239,6 +272,17 @@ export function createFleetProfileController({ getConfig, reload, env = process.
       } catch (error) {
         if (error.statusCode === 409) throw error;
         if (error.code !== 'ENOENT') throw error;
+      }
+    }
+    if (overwrite) {
+      try {
+        await assertRegularProfileFile(file);
+      } catch (error) {
+        if (error.code === 'ENOENT') {
+          // A new profile is safe to create.
+        } else {
+          throw error instanceof Error && error.statusCode ? error : fail('Profile path must be a regular file.');
+        }
       }
     }
     const source = await loadConfig(config.sourcePath);

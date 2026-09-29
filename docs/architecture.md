@@ -115,6 +115,7 @@ LLooM currently fronts these local contracts:
 - `POST /v1/images/generations`
 - `POST /v1/images/edits`
 - `POST /v1/videos/generations`
+- `GET /v1/videos/generations/models` (configured video workflows, inputs and limits; see [video workflow examples](video-workflows.md))
 - `POST /v1/audio/speech`
 - `POST /v1/audio/generations`
 - `POST /v1/audio/transcriptions`
@@ -190,14 +191,14 @@ Qwen3-TTS is modeled as three advertised model IDs (CustomVoice, VoiceDesign, Ba
 Installed under `~/.lloom/voices/<id>/` (`profile.json` + `reference.wav`). These are first-class OpenAI `voice` values for ICL clone recipes:
 
 ```bash
-lloom voice-install jinx --ref ./clip.wav --ref-text "exact transcript" --apply --yes
+lloom voice-install sample-speaker --ref ./clip.wav --ref-text "exact transcript" --apply --yes
 lloom voices
 # Client:
 curl -X POST http://127.0.0.1:8100/v1/audio/speech \
-  -d '{"voice":"jinx","input":"Hello"}'
+  -d '{"voice":"sample-speaker","input":"Hello"}'
 ```
 
-The gateway expands `voice: "jinx"` into the profile model, on-disk `ref_audio`, `ref_text`, and default sampling knobs. `GET /v1/audio/voices` lists model speakers and installed profiles together.
+The gateway expands `voice: "sample-speaker"` into the profile model, on-disk `ref_audio`, `ref_text`, and default sampling knobs. `GET /v1/audio/voices` lists model speakers and installed profiles together.
 
 `/gateway/onboarding/plan` is the first-run product surface. It composes setup planning and doctor verification into one install-from-zero report with stages for machine inspection, config, backend, model artifacts, agent clients, optional keep-warm runtime startup, and verification. `lloom onboard` and `lloom up` return the same contract.
 
@@ -343,7 +344,6 @@ The current repository includes a static `lloom-host` development server that se
 Setup composes initialization, backend setup, recipe setup, generated clients, and client integration writes into one audited plan. It does not bypass the lower-level safety gates: dry-run is the default, and real execution requires explicit `--apply --yes`. Bootstrap remains the lower-level backend/model/client phase for an existing config.
 
 The default generated gateway port is `8100`; selected backend runtimes occupy the default backend range beginning at `8201`. `setup --port` and `setup --backend-port-range` retarget the generated provider URL, backend base URLs, runtime ports, health URLs, and warmup URLs together so custom port layouts remain internally consistent.
-
 
 ### Dashboard memory map
 

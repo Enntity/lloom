@@ -1,0 +1,26 @@
+{
+  "encoder": {
+    "device": "NVIDIA GB10",
+    "computeCapability": [
+      12,
+      1
+    ],
+    "nativeFP4Kernels": {
+      "cutlass3x_sm120_bstensorop_s16864gemm_block_scaled_ue4m3xe2m1_ue4m3xe2m1_f32_bf16_bf16_128x128x256_1x1x1_0_tnn_align32_o_vs16_bias_bf16_relu": 144,
+      "cutlass3x_sm120_bstensorop_s16864gemm_block_scaled_ue4m3xe2m1_ue4m3xe2m1_f32_bf16_bf16_128x128x256_1x1x1_0_tnn_align32_o_vs16_bias_bf16_relu_stream_k": 108
+    },
+    "cudaKernelTypes": 72
+  },
+  "denoising": {
+    "device": "NVIDIA GB10",
+    "computeCapability": [
+      12,
+      1
+    ],
+    "nativeFP4Kernels": {
+      "cutlass3x_sm120_bstensorop_s16864gemm_block_scaled_ue4m3xe2m1_ue4m3xe2m1_f32_bf16_bf16_128x128x256_1x1x1_0_tnn_align32_o_vs16_bias_bf16_relu": 1408,
+      "cutlass3x_sm120_bstensorop_s16864gemm_block_scaled_ue4m3xe2m1_ue4m3xe2m1_f32_bf16_bf16_128x128x256_1x1x1_0_tnn_align32_o_vs16_bias_bf16_relu_stream_k": 6272
+    },
+    "cudaKernelTypes": 79
+  }
+}

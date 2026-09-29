@@ -1124,12 +1124,15 @@ async def _chat_completions(request: Request):
     start = _seconds("start")
     end = _seconds("end")
     duration = _seconds("duration")
+    # An omitted start defaults to zero so an end- or duration-only directive is a
+    # window from the beginning of the clip. Explicit start is preserved; a negative,
+    # non-finite, or non-numeric start is still rejected by _seconds above.
+    if start is None and (end is not None or duration is not None):
+        start = 0.0
     if start is not None and end is not None:
         window = (start, end)
     elif start is not None and duration is not None:
         window = (start, start + duration)
-    elif end is not None or duration is not None:
-        raise _fail(400, "hear.end/hear.duration require hear.start")
     if window is not None and window[1] <= window[0]:
         raise _fail(400, "requested window end must be greater than its start")
     if window is None:

@@ -12,7 +12,8 @@ export function encodeSseBlock(event) {
 export function parseSseBlock(block) {
   const event = {
     event: 'message',
-    data: ''
+    data: '',
+    dataPresent: false
   };
   for (const line of block.split(/\r?\n/)) {
     if (!line || line.startsWith(':')) continue;
@@ -20,7 +21,10 @@ export function parseSseBlock(block) {
     const field = colon === -1 ? line : line.slice(0, colon);
     const value = colon === -1 ? '' : line.slice(colon + 1).replace(/^ /, '');
     if (field === 'event') event.event = value;
-    if (field === 'data') event.data += `${event.data ? '\n' : ''}${value}`;
+    if (field === 'data') {
+      event.data += `${event.dataPresent ? '\n' : ''}${value}`;
+      event.dataPresent = true;
+    }
   }
   return event;
 }
@@ -36,11 +40,22 @@ export async function* readSseEvents(body) {
       const block = buffer.slice(0, splitAt);
       const match = buffer.slice(splitAt).match(/^\r?\n\r?\n/);
       buffer = buffer.slice(splitAt + (match?.[0].length ?? 2));
-      if (block.trim()) yield parseSseBlock(block);
+      if (block.trim()) {
+        const event = parseSseBlock(block);
+        // SSE comments (`: keepalive`) and event-only control blocks have no
+        // payload. Do not turn them into an empty `data:` frame: protocol
+        // bridges would otherwise try to JSON.parse an event that never had
+        // data. An explicit `data:` line remains observable via dataPresent,
+        // even when its value is empty.
+        if (event.dataPresent) yield event;
+      }
     }
   }
   buffer += decoder.decode();
-  if (buffer.trim()) yield parseSseBlock(buffer);
+  if (buffer.trim()) {
+    const event = parseSseBlock(buffer);
+    if (event.dataPresent) yield event;
+  }
 }
 
 /** Convert an array of OpenAI chat SSE data strings into async-iterable SSE events. */

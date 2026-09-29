@@ -1,0 +1,24 @@
+{
+  "comfy": {
+    "baselineAvailableGiB": 99.84280395507812,
+    "runtimeReadyAvailableGiB": 99.02970123291016,
+    "afterSequenceAvailableGiB": 79.16114807128906,
+    "minimumAvailableGiB": 74.31681060791016,
+    "incrementalPeakGiB": 25.52599334716797,
+    "incrementalRetainedGiB": 20.681655883789062,
+    "sampleCount": 963,
+    "sampleIntervalSeconds": 0.25,
+    "durationSeconds": 240.82447298000625
+  },
+  "nvfp4": {
+    "baselineAvailableGiB": 96.89809799194336,
+    "runtimeReadyAvailableGiB": 96.21811294555664,
+    "afterSequenceAvailableGiB": 82.03367614746094,
+    "minimumAvailableGiB": 77.21408081054688,
+    "incrementalPeakGiB": 19.684017181396484,
+    "incrementalRetainedGiB": 14.864421844482422,
+    "sampleCount": 843,
+    "sampleIntervalSeconds": 0.25,
+    "durationSeconds": 210.74428731300577
+  }
+}

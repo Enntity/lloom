@@ -1,4 +1,14 @@
-"""Private, single-flight image generation/editing backend for LLooM."""
+"""Private, single-flight image generation/editing backend for LLooM.
+
+Seed policy: an omitted seed is a *fresh cryptographic* 53-bit seed per request
+(``secrets.randbits``), never a fixed 42. A fixed omitted-seed value silently
+replayed the same sampler noise across sequential edits and corrupted the
+quality of follow-on edits. Callers that need reproducible output must pass an
+explicit seed, which is honored exactly and never perturbed. Callers performing
+sequential edits should send fresh seeds.
+
+This server never logs image payloads.
+"""
 import asyncio
 import base64
 import binascii
@@ -7,6 +17,7 @@ import json
 import math
 import os
 import re
+import secrets
 import threading
 import time
 import warnings
@@ -14,22 +25,28 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 from starlette.datastructures import UploadFile
 from starlette.formparsers import MultiPartException, MultiPartParser
 from pipeline import GATEWAY_ID, MODEL_ID, GenerationCancelled, Runner
 
-MAX_BODY = 16 * 1024 * 1024
+MAX_BODY = 64 * 1024 * 1024
 MAX_IMAGE = 8 * 1024 * 1024
+MAX_IMAGES = 10
 MAX_PIXELS = 16 * 1024 * 1024
-GENERATION_SIZE = (1024, 1024)
 MIN_AXIS = 256
 MAX_AXIS = 2048
+MAX_NATIVE_AXIS = 3072
 AXIS_MULTIPLE = 32
-MAX_OUTPUT_PIXELS = 2 * 1024 * 1024
-EDIT_STEPS = 40
-GENERATION_STEPS = 25
-ALLOWED = {"model", "prompt", "image", "seed", "steps", "cfg", "resolution", "n", "response_format", "size"}
+MAX_OUTPUT_PIXELS = int(4.5 * 1024 * 1024)
+DEFAULT_RESOLUTION = 1024
+QUALITY_STEPS = {"high": 40, "medium": 25, "low": 12}
+DEFAULT_QUALITY = "high"
+SCALAR_FIELDS = ("seed", "steps", "resolution", "n", "cfg")
+ALLOWED = {
+    "model", "prompt", "image", "seed", "steps", "cfg", "resolution", "n",
+    "response_format", "size", "quality",
+}
 DATA_URI = re.compile(r"data:image/(png|jpeg);base64,([A-Za-z0-9+/=]+)", re.IGNORECASE)
 SIZE = re.compile(r"([0-9]{1,4})x([0-9]{1,4})")
 
@@ -37,6 +54,10 @@ SIZE = re.compile(r"([0-9]{1,4})x([0-9]{1,4})")
 class ApiError(Exception):
     def __init__(self, message, code="invalid_request", status=400):
         self.message, self.code, self.status = message, code, status
+
+
+def _fresh_seed():
+    return secrets.randbits(53)
 
 
 def _check_common(payload):
@@ -49,9 +70,11 @@ def _check_common(payload):
     prompt = payload.get("prompt")
     if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 8192:
         raise ApiError("prompt must contain 1 to 8192 characters")
-    seed = payload.get("seed", 42)
-    if type(seed) is not int or not 0 <= seed < 2**63:
-        raise ApiError("seed must be an integer between 0 and 2^63-1")
+    # An omitted seed is fresh random entropy, never a replayed constant. An
+    # explicit seed is honored exactly and never perturbed.
+    seed = payload["seed"] if "seed" in payload else _fresh_seed()
+    if type(seed) is not int or not 0 <= seed < 2**53:
+        raise ApiError("seed must be an integer between 0 and 2^53-1")
     return prompt, seed
 
 
@@ -62,8 +85,22 @@ def _check_steps(payload, default):
     return steps
 
 
+def _resolve_quality_steps(payload):
+    """Return (quality, steps). Explicit ``steps`` overrides the preset."""
+    requested = payload.get("quality")
+    if "quality" in payload:
+        if not isinstance(requested, str) or requested not in ("auto",) + tuple(QUALITY_STEPS):
+            raise ApiError("quality must be one of auto, high, medium, low")
+        quality = DEFAULT_QUALITY if requested == "auto" else requested
+    else:
+        quality = DEFAULT_QUALITY
+    if "steps" in payload:
+        return quality, _check_steps(payload, None)
+    return quality, QUALITY_STEPS[quality]
+
+
 def _check_fixed(payload):
-    for field, expected in (("cfg", 1), ("resolution", 1024), ("n", 1)):
+    for field, expected in (("cfg", 1), ("n", 1)):
         value = payload.get(field, expected)
         if type(value) not in (int, float) or value != expected:
             raise ApiError(f"{field} must be {expected}")
@@ -71,41 +108,70 @@ def _check_fixed(payload):
         raise ApiError("Only response_format=b64_json is supported")
 
 
-def parse_size(payload):
-    size = payload.get("size", f"{GENERATION_SIZE[0]}x{GENERATION_SIZE[1]}")
-    if not isinstance(size, str):
-        raise ApiError("size must be WIDTHxHEIGHT such as 1024x1024")
-    match = SIZE.fullmatch(size)
-    if not match:
-        raise ApiError("size must be WIDTHxHEIGHT such as 1024x1024")
-    width, height = int(match[1]), int(match[2])
+def _validate_geometry(width, height):
     for axis, value in (("width", width), ("height", height)):
-        if not MIN_AXIS <= value <= MAX_AXIS:
-            raise ApiError(f"size {axis} must be between {MIN_AXIS} and {MAX_AXIS}")
+        if type(value) is not int or not MIN_AXIS <= value <= MAX_NATIVE_AXIS:
+            raise ApiError(f"size {axis} must be between {MIN_AXIS} and {MAX_NATIVE_AXIS}")
         if value % AXIS_MULTIPLE:
             raise ApiError(f"size {axis} must be a multiple of {AXIS_MULTIPLE}")
     if width * height > MAX_OUTPUT_PIXELS:
-        raise ApiError("size must be at most 2 megapixels")
+        raise ApiError("size must be at most 4.5 megapixels")
+
+
+def parse_resolution(payload):
+    resolution = payload.get("resolution", DEFAULT_RESOLUTION)
+    if type(resolution) is not int or not MIN_AXIS <= resolution <= MAX_AXIS or resolution % AXIS_MULTIPLE:
+        raise ApiError(
+            f"resolution must be an integer between {MIN_AXIS} and {MAX_AXIS} and a multiple of {AXIS_MULTIPLE}"
+        )
+    return resolution
+
+
+def parse_size(payload, default=None):
+    """Validate an explicit ``size``, or derive a square from ``resolution``.
+
+    ``resolution`` is a square budget (256..2048, multiple of 32). An explicit
+    ``size`` may use native 2K aspect sizes up to 3072 on the long axis. A
+    validated request size is passed to the model unchanged.
+    """
+    resolution = parse_resolution(payload)
+    size = payload.get("size")
+    if size is None:
+        width = height = resolution
+    else:
+        if not isinstance(size, str):
+            raise ApiError("size must be WIDTHxHEIGHT such as 1024x1024")
+        match = SIZE.fullmatch(size)
+        if not match:
+            raise ApiError("size must be WIDTHxHEIGHT such as 1024x1024")
+        width, height = int(match[1]), int(match[2])
+    _validate_geometry(width, height)
+    return width, height, resolution
+
+
+def _derive_edit_size(reference, resolution):
+    """Output size for a reference: follow its aspect ratio at ``resolution``."""
+    w, h = reference.size
+    if min(w, h) < 1:
+        raise ApiError("Reference image has invalid dimensions")
+    width = round(math.sqrt(resolution * resolution * w / h) / AXIS_MULTIPLE) * AXIS_MULTIPLE
+    height = round(math.sqrt(resolution * resolution * h / w) / AXIS_MULTIPLE) * AXIS_MULTIPLE
+    width = max(width, AXIS_MULTIPLE)
+    height = max(height, AXIS_MULTIPLE)
+    if width * height > MAX_OUTPUT_PIXELS:
+        scale = math.sqrt(MAX_OUTPUT_PIXELS / (width * height))
+        width = max(AXIS_MULTIPLE, int(width * scale) // AXIS_MULTIPLE * AXIS_MULTIPLE)
+        height = max(AXIS_MULTIPLE, int(height * scale) // AXIS_MULTIPLE * AXIS_MULTIPLE)
+    _validate_geometry(width, height)
     return width, height
 
 
-def parse_generation(payload):
-    prompt, seed = _check_common(payload)
-    steps = _check_steps(payload, GENERATION_STEPS)
-    _check_fixed(payload)
-    if "image" in payload:
-        raise ApiError("image is not supported here; use /v1/images/edits")
-    width, height = parse_size(payload)
-    return {"prompt": prompt, "seed": seed, "steps": steps, "width": width, "height": height}
-
-
-def decode_image(payload):
-    encoded = payload.get("image")
+def _decode_data_uri(encoded):
     if not isinstance(encoded, str) or len(encoded) > MAX_IMAGE * 4 // 3 + 100:
-        raise ApiError("One inline PNG/JPEG image, at most 8 MiB, is required")
+        raise ApiError("Inline PNG/JPEG images must be at most 8 MiB each")
     match = DATA_URI.fullmatch(encoded)
     if not match:
-        raise ApiError("image must be a base64 PNG/JPEG data URI; URLs and paths are unsupported")
+        raise ApiError("images must be base64 PNG/JPEG data URIs; remote URLs and file paths are unsupported")
     try:
         data = base64.b64decode(match[2], validate=True)
         if len(data) > MAX_IMAGE:
@@ -121,25 +187,94 @@ def decode_image(payload):
                 if getattr(opened, "n_frames", 1) != 1:
                     raise ApiError("Animated images are unsupported")
                 opened.load()
-                image = opened.convert("RGBA" if "A" in opened.getbands() or "transparency" in opened.info else "RGB")
+                # EXIF transpose first so decoded pixels match visual order.
+                opened = ImageOps.exif_transpose(opened)
+                image = opened.convert(
+                    "RGBA" if "A" in opened.getbands() or "transparency" in opened.info else "RGB"
+                )
     except (binascii.Error, ValueError, OSError, UnidentifiedImageError,
             Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
+        if isinstance(exc, ApiError):
+            raise
         raise ApiError("Invalid PNG/JPEG image") from exc
-    width = round(math.sqrt(1024 * 1024 * w / h) / 32) * 32
-    height = round(math.sqrt(1024 * 1024 * h / w) / 32) * 32
-    if min(width, height) < 32 or max(width, height) > 2048:
-        raise ApiError("Image aspect ratio would exceed the 2048-pixel output-axis limit")
-    return width, height, image
+    return image
+
+
+def decode_images(payload):
+    """Decode ordered 1..10 JSON references: a single data URI or a list."""
+    encoded = payload.get("image")
+    if isinstance(encoded, str):
+        raw = [encoded]
+    elif isinstance(encoded, list):
+        raw = encoded
+    else:
+        raise ApiError("image must be a base64 PNG/JPEG data URI or a list of data URIs")
+    if not 1 <= len(raw) <= MAX_IMAGES:
+        raise ApiError(f"a request accepts between 1 and {MAX_IMAGES} reference images")
+    images = []
+    try:
+        for item in raw:
+            images.append(_decode_data_uri(item))
+    except BaseException:
+        for image in images:
+            image.close()
+        raise
+    return images
+
+
+def decode_image(payload):
+    """Single-reference JSON decode, kept for existing callers."""
+    images = decode_images(payload)
+    if len(images) != 1:
+        close_images(images)
+        raise ApiError("decode_image accepts exactly one reference")
+    return images[0]
+
+
+def _check_edits_common(payload):
+    prompt, seed = _check_common(payload)
+    quality, steps = _resolve_quality_steps(payload)
+    _check_fixed(payload)
+    resolution = parse_resolution(payload)
+    return prompt, seed, quality, steps, resolution
+
+
+def _edit_params(payload, images):
+    prompt, seed, quality, steps, resolution = _check_edits_common(payload)
+    if "size" in payload:
+        # An explicit edit size is validated and passed through unchanged. When
+        # size is omitted the output follows the FIRST reference aspect ratio.
+        width, height, _ = parse_size(payload)
+    else:
+        width, height = _derive_edit_size(images[0], resolution)
+    return {
+        "prompt": prompt, "seed": seed, "steps": steps, "width": width, "height": height,
+        "resolution": resolution, "quality": quality,
+    }
 
 
 def parse_edit(payload):
+    images = decode_images(payload)
+    try:
+        params = _edit_params(payload, images)
+    except BaseException:
+        for image in images:
+            image.close()
+        raise
+    return params, images
+
+
+def parse_generation(payload):
     prompt, seed = _check_common(payload)
-    steps = _check_steps(payload, EDIT_STEPS)
+    quality, steps = _resolve_quality_steps(payload)
     _check_fixed(payload)
-    if "size" in payload:
-        raise ApiError("size is not supported for editing; the output follows the reference image")
-    width, height, image = decode_image(payload)
-    return {"prompt": prompt, "seed": seed, "steps": steps, "width": width, "height": height}, image
+    if "image" in payload:
+        raise ApiError("image is not supported here; use /v1/images/edits")
+    width, height, resolution = parse_size(payload)
+    return {
+        "prompt": prompt, "seed": seed, "steps": steps, "width": width, "height": height,
+        "resolution": resolution, "quality": quality,
+    }
 
 
 def parse_request(payload):
@@ -151,7 +286,7 @@ async def read_bytes(request):
     body = bytearray()
     async for chunk in request.stream():
         if len(body) + len(chunk) > MAX_BODY:
-            raise ApiError("Request exceeds 16 MiB", "body_too_large", 413)
+            raise ApiError("Request exceeds 64 MiB", "body_too_large", 413)
         body.extend(chunk)
     return bytes(body)
 
@@ -163,46 +298,81 @@ async def read_body(request):
         raise ApiError("Invalid JSON") from exc
 
 
-async def read_multipart(request):
-    if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "multipart/form-data":
-        raise ApiError("Expected multipart/form-data")
+def _normalize_upload(key):
+    return "image" if key in ("image", "image[]") else key
+
+
+def _upload_mime(data, declared):
+    if declared in (None, "application/octet-stream"):
+        if data.startswith(b"\x89PNG\r\n\x1a\n"):
+            return "image/png"
+        if data.startswith(b"\xff\xd8\xff"):
+            return "image/jpeg"
+        return None
+    return declared
+
+
+async def _read_form(request, max_files, max_fields):
     body = await read_bytes(request)
 
     async def stream():
         yield body
 
     try:
-        form = await MultiPartParser(request.headers, stream(), max_files=1,
-                                     max_fields=12, max_part_size=MAX_IMAGE).parse()
+        return await MultiPartParser(
+            request.headers, stream(), max_files=max_files, max_fields=max_fields,
+            max_part_size=MAX_IMAGE,
+        ).parse()
     except (MultiPartException, ValueError) as exc:
         raise ApiError("Invalid multipart form: " + str(exc)) from exc
+
+
+async def read_multipart(request):
+    if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "multipart/form-data":
+        raise ApiError("Expected multipart/form-data")
+    form = await _read_form(request, MAX_IMAGES + len(SCALAR_FIELDS) + 6, 16)
     try:
         payload = {}
-        for key, value in form.multi_items():
-            key = "image" if key == "image[]" else key
-            if key in payload:
-                raise ApiError("Duplicate field: " + key)
-            if isinstance(value, UploadFile):
-                if key != "image":
-                    raise ApiError("Only one image upload is supported")
-                data = await value.read(MAX_IMAGE + 1)
-                if len(data) > MAX_IMAGE:
-                    raise ApiError("Image exceeds 8 MiB")
-                mime = value.content_type
-                if mime in (None, "application/octet-stream"):
-                    mime = "image/png" if data.startswith(b"\x89PNG\r\n\x1a\n") else "image/jpeg" if data.startswith(b"\xff\xd8\xff") else None
-                if mime not in ("image/png", "image/jpeg"):
-                    raise ApiError("Only PNG/JPEG uploads are supported")
-                value = "data:" + mime + ";base64," + base64.b64encode(data).decode("ascii")
-            elif key == "image":
-                raise ApiError("image must be a file upload")
-            elif key in ("seed", "steps", "resolution", "n", "cfg"):
-                try:
-                    value = float(value) if key == "cfg" else int(value)
-                except ValueError as exc:
-                    raise ApiError("Invalid numeric field: " + key) from exc
-            payload[key] = value
-        return parse_request(payload)
+        images = []
+        try:
+            for key, value in form.multi_items():
+                key = _normalize_upload(key)
+                if isinstance(value, UploadFile):
+                    if key != "image":
+                        raise ApiError("Only image/image[] reference uploads are supported; masks are unsupported")
+                    data = await value.read(MAX_IMAGE + 1)
+                    if len(data) > MAX_IMAGE:
+                        raise ApiError("Image exceeds 8 MiB")
+                    mime = _upload_mime(data, value.content_type)
+                    if mime not in ("image/png", "image/jpeg"):
+                        raise ApiError("Only PNG/JPEG uploads are supported")
+                    if len(images) >= MAX_IMAGES:
+                        raise ApiError(f"at most {MAX_IMAGES} reference images are supported")
+                    images.append(_decode_data_uri(
+                        "data:" + mime + ";base64," + base64.b64encode(data).decode("ascii")))
+                elif key == "image":
+                    raise ApiError("image must be a file upload")
+                elif key in SCALAR_FIELDS or key in ("quality", "size", "model", "prompt", "response_format"):
+                    if key in payload:
+                        raise ApiError("Duplicate field: " + key)
+                    try:
+                        if key == "cfg":
+                            value = float(value)
+                        elif key in SCALAR_FIELDS:
+                            value = int(value)
+                    except ValueError as exc:
+                        raise ApiError("Invalid numeric field: " + key) from exc
+                    payload[key] = value
+                else:
+                    raise ApiError("Unsupported field: " + key)
+            if not images:
+                raise ApiError("One PNG/JPEG reference image is required")
+            params = _edit_params(payload, images)
+        except BaseException:
+            for image in images:
+                image.close()
+            raise
+        return params, images
     finally:
         await form.close()
 
@@ -221,14 +391,34 @@ async def finish_worker(task):
         task.exception()  # Retrieve exceptions even after a disconnected client.
 
 
-async def run_generate(app, request, params, image):
-    if app.state.lock.locked():
-        if image is not None:
+def close_images(images):
+    if not images:
+        return
+    for image in images:
+        try:
             image.close()
+        except Exception:
+            pass
+
+
+async def run_generate(app, request, params, image):
+    """Backwards-compatible single-reference entry point."""
+    images = None if image is None else (image if isinstance(image, list) else [image])
+    return await _run(app, request, params, images)
+
+
+async def run_edit(app, request, params, images):
+    return await _run(app, request, params, images)
+
+
+async def _run(app, request, params, images):
+    if app.state.lock.locked():
+        close_images(images)
         raise ApiError("Image backend is busy", "backend_busy", 429)
     await app.state.lock.acquire()
     cancel = threading.Event()
-    task = asyncio.create_task(asyncio.to_thread(app.state.runner.generate, params, image, cancel))
+    primary = None if images is None else (images if len(images) > 1 else images[0])
+    task = asyncio.create_task(asyncio.to_thread(app.state.runner.generate, params, primary, cancel))
     try:
         while not task.done():
             if await request.is_disconnected():
@@ -246,12 +436,42 @@ async def run_generate(app, request, params, image):
             cancel.set()
         await finish_worker(task)
         app.state.lock.release()
-        # Text-to-image has no reference image; only close a real decoded image.
-        if image is not None:
-            image.close()
+        # Text-to-image has no reference image; only close real decoded images.
+        close_images(images)
 
 
-run_edit = run_generate
+def _provenance(params):
+    return {
+        "seed": params["seed"],
+        "steps": params["steps"],
+        "size": f"{params['width']}x{params['height']}",
+        "resolution": params["resolution"],
+        "quality": params.get("quality"),
+    }
+
+
+def _png_with_provenance(png, params):
+    """Attach seed/steps/size/resolution/quality text chunks to a PNG."""
+    try:
+        from PIL import PngImagePlugin
+        with Image.open(io.BytesIO(png)) as base:
+            base.load()
+            info = PngImagePlugin.PngInfo()
+            for key, value in _provenance(params).items():
+                info.add_text("lloom:" + key, str(value))
+            output = io.BytesIO()
+            base.save(output, format="PNG", pnginfo=info)
+            return output.getvalue()
+    except Exception:
+        return png
+
+
+def _response(png, params):
+    return {
+        "created": int(time.time()),
+        "data": [{"b64_json": base64.b64encode(png).decode("ascii")}],
+        **{key: str(value) for key, value in _provenance(params).items()},
+    }
 
 
 def create_app(runner_factory=None):
@@ -287,19 +507,19 @@ def create_app(runner_factory=None):
             raise ApiError("Model is loading", "model_loading", 503)
         payload = await read_body(request)
         if isinstance(payload, dict) and "image" in payload:
-            params, reference = parse_edit(payload)
+            params, images = parse_edit(payload)
         else:
-            params, reference = parse_generation(payload), None
-        png = await run_generate(app, request, params, reference)
-        return {"created": int(time.time()), "data": [{"b64_json": base64.b64encode(png).decode("ascii")}]}
+            params, images = parse_generation(payload), None
+        png = await _run(app, request, params, images)
+        return _response(_png_with_provenance(png, params), params)
 
     @app.post("/v1/images/edits")
     async def edit(request: Request):
         if not app.state.ready:
             raise ApiError("Model is loading", "model_loading", 503)
-        params, image = await read_multipart(request)
-        png = await run_generate(app, request, params, image)
-        return {"created": int(time.time()), "data": [{"b64_json": base64.b64encode(png).decode("ascii")}]}
+        params, images = await read_multipart(request)
+        png = await _run(app, request, params, images)
+        return _response(_png_with_provenance(png, params), params)
 
     return app
 

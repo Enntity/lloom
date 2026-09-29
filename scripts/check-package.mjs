@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { runCommand } from '../src/process-control.mjs';
+import { loadRecipes } from '../src/recipes.mjs';
 
 const npmCache = path.join(os.tmpdir(), 'lloom-npm-cache');
 
@@ -381,7 +382,12 @@ try {
     LLOOM_HOME: path.join(homeRoot, '.lloom')
   });
   const health = await waitForHostHealth(baseUrl);
-  if (health?.data?.recipeCount !== 45 || health?.data?.benchmarkCount !== 12) {
+  const expectedRecipeCount = new Set(
+    (await Promise.all(['recipes', 'community/recipes'].map((root) => loadRecipes(path.join(process.cwd(), root)))))
+      .flat()
+      .map((recipe) => recipe.id)
+  ).size;
+  if (health?.data?.recipeCount !== expectedRecipeCount || health?.data?.benchmarkCount !== 12) {
     fail('installed lloom-host is not serving packaged seed community data', [JSON.stringify(health?.data ?? null)]);
   }
 

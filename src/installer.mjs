@@ -1,7 +1,7 @@
 import { constants as fsConstants } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { planBackend } from './backend-catalog.mjs';
+import { defaultBackendVariables, planBackend } from './backend-catalog.mjs';
 import { defaultLloomHome, defaultUserModelRoot } from './config.mjs';
 import {
   finalizeModelAcquisition,
@@ -349,6 +349,11 @@ async function firstExecutable(candidates) {
 }
 
 async function previousRecipeStepStillApplies(step) {
+  // A verification gate opts out of completion caching entirely: its result
+  // describes external state (pins, image, overlay) that can change without
+  // any change to this step's recorded id or command. Re-running is required
+  // so a changed pin cannot be silently masked by an old "completed" record.
+  if (step.alwaysRun === true) return false;
   if (step.action === 'download-model' && step.destination) {
     return (await modelAcquisitionStatus(step)).complete;
   }
@@ -410,7 +415,8 @@ export async function applyRecipe(
     env = process.env,
     onProgress,
     stdio,
-    reviewedPlan
+    reviewedPlan,
+    variables
   } = {}
 ) {
   if (!dryRun && !yes) {
@@ -420,7 +426,17 @@ export async function applyRecipe(
   // A reviewed plan pins the exact executable steps approved by the user. When
   // present, execute those steps verbatim without replanning, so a later
   // profile/catalog change cannot alter the commands.
-  const plan = reviewedPlan ?? planRecipe(recipe, config, { modelRoot, checkLocalReferences: false });
+  const plan =
+    reviewedPlan ??
+    planRecipe(recipe, config, {
+      modelRoot,
+      variables: {
+        ...defaultBackendVariables(env),
+        ...(variables ?? {}),
+        modelRoot
+      },
+      checkLocalReferences: false
+    });
   if (plan.validationErrors.length) {
     throw new Error(
       `Recipe ${recipe.id} is invalid:\n${plan.validationErrors.map((error) => `- ${error}`).join('\n')}`

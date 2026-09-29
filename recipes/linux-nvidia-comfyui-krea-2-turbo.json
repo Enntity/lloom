@@ -25,8 +25,18 @@
       "href": "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/tree/7beb7b647f04469fbe64ba8adc2bb0d7e5e9f73f"
     }
   ],
-  "keywords": ["cuda", "fp8", "krea-2-turbo", "nvfp4", "nvidia", "single-model"],
-  "capabilities": ["image-generation", "fast-generation"],
+  "keywords": [
+    "cuda",
+    "fp8",
+    "krea-2-turbo",
+    "nvfp4",
+    "nvidia",
+    "single-model"
+  ],
+  "capabilities": [
+    "image-generation",
+    "fast-generation"
+  ],
   "hardware": {
     "family": "Linux NVIDIA CUDA",
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
@@ -36,17 +46,32 @@
     ]
   },
   "requirements": {
-    "platforms": ["linux-x64", "linux-arm64"],
+    "platforms": [
+      "linux-x64",
+      "linux-arm64"
+    ],
     "memoryGb": 40,
     "diskGb": 38,
-    "commands": ["docker", "python3"],
-    "accelerators": ["cuda", "nvidia-gpu"]
+    "commands": [
+      "docker",
+      "python3"
+    ],
+    "accelerators": [
+      "cuda",
+      "nvidia-gpu"
+    ]
   },
   "backend": {
     "id": "comfyui-media",
     "name": "ComfyUI media",
     "type": "openai-compatible-server",
-    "features": ["cuda", "audio-generation", "video-generation", "image-generation", "image-editing"]
+    "features": [
+      "cuda",
+      "audio-generation",
+      "video-generation",
+      "image-generation",
+      "image-editing"
+    ]
   },
   "setup": {
     "steps": [
@@ -55,7 +80,9 @@
         "title": "Check Docker CLI",
         "action": "check-command",
         "command": "docker",
-        "args": ["--version"]
+        "args": [
+          "--version"
+        ]
       },
       {
         "id": "download-1-krea-2",
@@ -91,7 +118,9 @@
         "provider": "huggingface",
         "model": "Comfy-Org/Qwen-Image_ComfyUI",
         "revision": "7beb7b647f04469fbe64ba8adc2bb0d7e5e9f73f",
-        "include": ["split_files/vae/qwen_image_vae.safetensors"],
+        "include": [
+          "split_files/vae/qwen_image_vae.safetensors"
+        ],
         "downloadSizeBytes": 253806246,
         "integrity": {
           "files": [
@@ -113,9 +142,16 @@
       "runtime": "comfyui-krea-2-turbo",
       "backendConfig": "comfyui-krea-2-turbo",
       "kind": "image",
-      "input": ["text"],
-      "output": ["image"],
-      "capabilities": ["image-generation", "fast-generation"],
+      "input": [
+        "text"
+      ],
+      "output": [
+        "image"
+      ],
+      "capabilities": [
+        "image-generation",
+        "fast-generation"
+      ],
       "settings": {
         "memoryGb": 40,
         "priority": 30,
@@ -129,7 +165,7 @@
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/comfyui-media:source-381d99b95f2c4afb4e5c07ff12d2fd1c541cde69dc16f00db48506b9e27a7b83",
+            "image": "lloom/comfyui-media:source-6d8fbbc3e58bef36bb8723cdcb01f53a7f8f5d9bd6f74ab015a3dbf06ca19147",
             "pull": false,
             "createArgs": [
               "--restart",

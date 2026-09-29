@@ -522,8 +522,8 @@ test('gateway resolves the music alias and default through the adapter', async (
   mock
     .get('https://openrouter.ai')
     .intercept({ path: '/api/v1/chat/completions', method: 'POST' })
-    .reply(async (options) => {
-      const text = typeof options.body === 'string' ? options.body : await new Response(options.body).text();
+    .reply((options) => {
+      const text = typeof options.body === 'string' ? options.body : Buffer.from(options.body).toString('utf8');
       calls.push(JSON.parse(text));
       return {
         statusCode: 200,

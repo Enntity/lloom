@@ -13,14 +13,16 @@ LLooM accepts music requests at `POST /v1/audio/generations`. Set an OpenAI-comp
       "timeoutMs": 600000
     }
   },
-  "models": [{
-    "id": "google/lyria-3-pro-preview",
-    "backend": "openrouter-music",
-    "upstreamModel": "google/lyria-3-pro-preview",
-    "kind": "audio_generation"
-  }],
-  "aliases": {"music": {"members": ["google/lyria-3-pro-preview"]}},
-  "defaults": {"audioGenerationModel": "music"}
+  "models": [
+    {
+      "id": "google/lyria-3-pro-preview",
+      "backend": "openrouter-music",
+      "upstreamModel": "google/lyria-3-pro-preview",
+      "kind": "audio_generation"
+    }
+  ],
+  "aliases": { "music": { "members": ["google/lyria-3-pro-preview"] } },
+  "defaults": { "audioGenerationModel": "music" }
 }
 ```
 

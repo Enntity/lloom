@@ -1,0 +1,470 @@
+{
+  "date": "2026-09-27",
+  "hardware": "DGX Spark GB10, single local inference host",
+  "endpoint": "POST /v1/videos/generations",
+  "purpose": "Functional request and artifact validation at small resolution; these single runs do not measure production quality or throughput.",
+  "nativeUpstream": {
+    "version": "v1.3.0",
+    "commit": "598ab41247a77dbfe29b5186e915bcf4f9040ec7"
+  },
+  "comfyUpstreamCommit": "5ba116a40f1944f64e2e4a8ace826656e6293bf4",
+  "runs": [
+    {
+      "model": "MiniMaxAI/MiniMax-H3",
+      "label": "H3-reviewed",
+      "elapsed": 80.713,
+      "streams": [
+        {
+          "type": "video",
+          "codec": "h264",
+          "width": 256,
+          "height": 256,
+          "frames": "124",
+          "rate": "24/1",
+          "duration": "5.166667"
+        },
+        {
+          "type": "audio",
+          "codec": "aac",
+          "frames": "163",
+          "rate": "0/0",
+          "duration": "5.167000"
+        }
+      ],
+      "time": "2026-09-27T16:49:10.552Z"
+    },
+    {
+      "model": "Lightricks/LTX-2.5-A2V",
+      "label": "LTX-2.5-A2V",
+      "elapsed": 178.332,
+      "streams": [
+        {
+          "type": "video",
+          "codec": "h264",
+          "width": 256,
+          "height": 256,
+          "frames": "25",
+          "rate": "24/1",
+          "duration": "1.041667"
+        },
+        {
+          "type": "audio",
+          "codec": "aac",
+          "frames": "26",
+          "rate": "0/0",
+          "duration": "1.042000"
+        }
+      ],
+      "time": "2026-09-27T16:27:38.074Z"
+    },
+    {
+      "model": "Lightricks/LTX-2.5-Dev-HQ",
+      "label": "LTX-2.5-Dev-HQ",
+      "elapsed": 231.934,
+      "streams": [
+        {
+          "type": "video",
+          "codec": "h264",
+          "width": 256,
+          "height": 256,
+          "frames": "25",
+          "rate": "24/1",
+          "duration": "1.041667"
+        },
+        {
+          "type": "audio",
+          "codec": "aac",
+          "frames": "49",
+          "rate": "0/0",
+          "duration": "1.010000"
+        }
+      ],
+      "time": "2026-09-27T16:16:27.625Z"
+    },
+    {
+      "model": "Lightricks/LTX-2.5-Dev",
+      "label": "LTX-2.5-Dev",
+      "elapsed": 167.281,
+      "streams": [
+        {
+          "type": "video",
+          "codec": "h264",
+          "width": 256,
+          "height": 256,
+          "frames": "25",
+          "rate": "24/1",
+          "duration": "1.041667"
+        },
+        {
+          "type": "audio",
+          "codec": "aac",
+          "frames": "49",
+          "rate": "0/0",
+          "duration": "1.010000"
+        }
+      ],
+      "time": "2026-09-27T16:12:32.175Z"
+    },
+    {
+      "model": "Lightricks/LTX-2.5-Distilled",
+      "label": "LTX-2.5-Distilled",
+      "streams": [
+        {
+          "codec_type": "video",
+          "codec_name": "h264",
+          "width": 256,
+          "height": 256,
+          "nb_frames": "25",
+          "r_frame_rate": "24/1",
+          "duration": "1.041667"
+        },
+        {
+          "codec_type": "audio",
+          "codec_name": "aac",
+          "nb_frames": "49",
+          "r_frame_rate": "0/0",
+          "duration": "1.010000"
+        }
+      ],
+      "artifactSha256": "2dc85e18804dba478d4fc324c2486ef5985a8c9df000754d2c7c29c43971f1be",
+      "note": "Earlier gateway call wrote this MP4; original harness postprocessing lacked host ffprobe. Artifact independently probed using the packaged ffprobe."
+    },
+    {
+      "model": "Lightricks/LTX-2.5-Keyframes",
+      "label": "LTX-2.5-Keyframes",
+      "elapsed": 162.488,
+      "streams": [
+        {
+          "type": "video",
+          "codec": "h264",
+          "width": 256,
+          "height": 256,
+          "frames": "25",
+          "rate": "24/1",
+          "duration": "1.041667"
+        },
+        {
+          "type": "audio",
+          "codec": "aac",
+          "frames": "49",
+          "rate": "0/0",
+          "duration": "1.010000"
+        }
+      ],
+      "time": "2026-09-27T16:30:23.699Z"
+    },
+    {
+      "model": "Lightricks/LTX-2.5-Retake",
+      "label": "LTX-2.5-Retake",
+      "elapsed": 70.238,
+      "streams": [
+        {
+          "type": "video",
+          "codec": "h264",
+          "width": 256,
+          "height": 256,
+          "frames": "25",
+          "rate": "24/1",
+          "duration": "1.041667"
+        },
+        {
+          "type": "audio",
+          "codec": "aac",
+          "frames": "49",
+          "rate": "0/0",
+          "duration": "1.010000"
+        }
+      ],
+      "time": "2026-09-27T16:31:37.384Z"
+    },
+    {
+      "model": "Lightricks/LTX-2.5",
+      "label": "LTX-2.5",
+      "elapsed": 89.688,
+      "streams": [
+        {
+          "type": "video",
+          "codec": "h264",
+          "width": 256,
+          "height": 256,
+          "frames": "25",
+          "rate": "24/1",
+          "duration": "1.041667"
+        },
+        {
+          "type": "audio",
+          "codec": "aac",
+          "frames": "26",
+          "rate": "0/0",
+          "duration": "1.042000"
+        }
+      ],
+      "time": "2026-09-27T16:39:48.101Z"
+    },
+    {
+      "model": "Lightricks/LTX-2.5",
+      "label": "LTX-endpoint-only",
+      "elapsed": 80.422,
+      "streams": [
+        {
+          "type": "video",
+          "codec": "h264",
+          "width": 256,
+          "height": 256,
+          "frames": "25",
+          "rate": "24/1",
+          "duration": "1.041667"
+        },
+        {
+          "type": "audio",
+          "codec": "aac",
+          "frames": "26",
+          "rate": "0/0",
+          "duration": "1.042000"
+        }
+      ],
+      "time": "2026-09-27T16:50:32.412Z"
+    },
+    {
+      "model": "MiniMaxAI/MiniMax-H3-Turbo",
+      "label": "MiniMax-H3-Turbo",
+      "elapsed": 55.323,
+      "streams": [
+        {
+          "type": "video",
+          "codec": "h264",
+          "width": 256,
+          "height": 256,
+          "frames": "124",
+          "rate": "24/1",
+          "duration": "5.166667"
+        },
+        {
+          "type": "audio",
+          "codec": "aac",
+          "frames": "163",
+          "rate": "0/0",
+          "duration": "5.167000"
+        }
+      ],
+      "time": "2026-09-27T16:38:16.756Z"
+    },
+    {
+      "model": "MiniMaxAI/MiniMax-H3",
+      "label": "MiniMax-H3",
+      "elapsed": 65.494,
+      "streams": [
+        {
+          "type": "video",
+          "codec": "h264",
+          "width": 256,
+          "height": 256,
+          "frames": "124",
+          "rate": "24/1",
+          "duration": "5.166667"
+        },
+        {
+          "type": "audio",
+          "codec": "aac",
+          "frames": "163",
+          "rate": "0/0",
+          "duration": "5.167000"
+        }
+      ],
+      "time": "2026-09-27T16:35:03.963Z"
+    },
+    {
+      "model": "Lightricks/LTX-2.5-Retake",
+      "label": "Retake-mono-reviewed",
+      "elapsed": 111.465,
+      "streams": [
+        {
+          "type": "video",
+          "codec": "h264",
+          "width": 256,
+          "height": 256,
+          "frames": "25",
+          "rate": "24/1",
+          "duration": "1.041667"
+        },
+        {
+          "type": "audio",
+          "codec": "aac",
+          "frames": "49",
+          "rate": "0/0",
+          "duration": "1.010000"
+        }
+      ],
+      "time": "2026-09-27T16:52:27.771Z"
+    },
+    {
+      "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+      "label": "Wan2.2-TI2V-5B-Diffusers",
+      "elapsed": 136.271,
+      "streams": [
+        {
+          "type": "video",
+          "codec": "h264",
+          "width": 256,
+          "height": 256,
+          "frames": "9",
+          "rate": "24/1",
+          "duration": "0.375000"
+        }
+      ],
+      "time": "2026-09-27T16:42:06.788Z"
+    }
+  ],
+  "blocked": {
+    "model": "Lightricks/LTX-2.5-DFR",
+    "reason": "Separate detailing adapter repository returns 403 until Hugging Face access is granted."
+  },
+  "checks": {
+    "nativeAndGateway": {
+      "passed": 32,
+      "failed": 0,
+      "skipped": 0
+    },
+    "comfy": {
+      "passed": 209,
+      "failed": 0
+    },
+    "recipes": "native and all 14 Comfy recipe checks passed",
+    "interchange": "passed",
+    "package": "install smoke passed"
+  },
+  "audioWaveformChecks": [
+    {
+      "artifact": "LTX-2.5-A2V.mp4",
+      "source_correlation": 0.9998009199923438,
+      "samples_compared": 25600,
+      "sample_rate": 24000
+    },
+    {
+      "artifact": "LTX-2.5.mp4",
+      "source_correlation": 0.9996112401350086,
+      "samples_compared": 25600,
+      "sample_rate": 24000
+    },
+    {
+      "artifact": "LTX-endpoint-only.mp4",
+      "source_correlation": 0.9996112401350086,
+      "samples_compared": 25600,
+      "sample_rate": 24000
+    }
+  ],
+  "restored": {
+    "time": "2026-09-27T16:55:08.077Z",
+    "embeddingDimensions": 2560,
+    "runtimes": {
+      "qwen3-embedding-4b": {
+        "status": "running",
+        "healthy": true,
+        "activeRequests": 0
+      },
+      "inference-tts-clone": {
+        "status": "running",
+        "healthy": true,
+        "activeRequests": 0
+      },
+      "ltx-pipelines": {
+        "status": "exited",
+        "healthy": false,
+        "activeRequests": 0
+      }
+    },
+    "videoRuntimes": [
+      {
+        "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+        "runtime": "inference-video",
+        "image": "sha256:a20cd73abad2bd1a358eca7b944f6730ecbbe63c22ef522a3a0856895d968989"
+      },
+      {
+        "model": "MiniMaxAI/MiniMax-H3",
+        "runtime": "inference-minimax-h3",
+        "image": "lloom/comfyui-media:source-c83f01af946f0dda60abba211a6050f628f3c999cda09010e0630505add90275"
+      },
+      {
+        "model": "MiniMaxAI/MiniMax-H3-Turbo",
+        "runtime": "inference-minimax-h3-turbo",
+        "image": "lloom/comfyui-media:source-c83f01af946f0dda60abba211a6050f628f3c999cda09010e0630505add90275"
+      },
+      {
+        "model": "Lightricks/LTX-2.5",
+        "runtime": "inference-ltx25",
+        "image": "lloom/comfyui-media:source-c83f01af946f0dda60abba211a6050f628f3c999cda09010e0630505add90275"
+      },
+      {
+        "model": "Lightricks/LTX-2.5-Dev",
+        "runtime": "ltx-pipelines",
+        "image": "lloom/ltx-pipelines:source-678e06c369c360f150106a738147977a7c9368b4e0bf071021f3a2c0df37246a"
+      },
+      {
+        "model": "Lightricks/LTX-2.5-Dev-HQ",
+        "runtime": "ltx-pipelines",
+        "image": "lloom/ltx-pipelines:source-678e06c369c360f150106a738147977a7c9368b4e0bf071021f3a2c0df37246a"
+      },
+      {
+        "model": "Lightricks/LTX-2.5-A2V",
+        "runtime": "ltx-pipelines",
+        "image": "lloom/ltx-pipelines:source-678e06c369c360f150106a738147977a7c9368b4e0bf071021f3a2c0df37246a"
+      },
+      {
+        "model": "Lightricks/LTX-2.5-Distilled",
+        "runtime": "ltx-pipelines",
+        "image": "lloom/ltx-pipelines:source-678e06c369c360f150106a738147977a7c9368b4e0bf071021f3a2c0df37246a"
+      },
+      {
+        "model": "Lightricks/LTX-2.5-DFR",
+        "runtime": "ltx-pipelines",
+        "image": "lloom/ltx-pipelines:source-678e06c369c360f150106a738147977a7c9368b4e0bf071021f3a2c0df37246a"
+      },
+      {
+        "model": "Lightricks/LTX-2.5-Keyframes",
+        "runtime": "ltx-pipelines",
+        "image": "lloom/ltx-pipelines:source-678e06c369c360f150106a738147977a7c9368b4e0bf071021f3a2c0df37246a"
+      },
+      {
+        "model": "Lightricks/LTX-2.5-Retake",
+        "runtime": "ltx-pipelines",
+        "image": "lloom/ltx-pipelines:source-678e06c369c360f150106a738147977a7c9368b4e0bf071021f3a2c0df37246a"
+      }
+    ]
+  },
+  "gatewayValidation": [
+    {
+      "model": "MiniMaxAI/MiniMax-H3",
+      "status": 400,
+      "code": "invalid_video_parameter"
+    },
+    {
+      "model": "MiniMaxAI/MiniMax-H3-Turbo",
+      "status": 400,
+      "code": "invalid_video_parameter"
+    },
+    {
+      "model": "Lightricks/LTX-2.5-A2V",
+      "status": 400,
+      "code": "invalid_video_parameter"
+    },
+    {
+      "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+      "status": 400,
+      "code": "invalid_video_parameter"
+    }
+  ],
+  "distinctModelsWithArtifacts": 10,
+  "supervisedRuns": [
+    "ltx-native-distilled-smoke-20260927-v3",
+    "ltx-native-guided-smokes-20260927",
+    "ltx-native-references-smokes-20260927",
+    "lloom-h3-reference-contract-smoke-20260927",
+    "lloom-video-remaining-smokes-20260927",
+    "lloom-video-reviewed-smokes-20260927",
+    "lloom-video-restore-proof-20260927"
+  ],
+  "harnessNotes": [
+    "Distilled generation succeeded; missing host ffprobe was repaired by independently probing the saved artifact with the packaged ffprobe.",
+    "Final reviewed video and waveform checks succeeded; its admin status check used an inference credential. Correct admin authentication and a fresh real embedding call passed in the restore-proof run."
+  ]
+}

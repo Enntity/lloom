@@ -10,7 +10,7 @@ import { createModelImportPlan } from '../src/model-intake.mjs';
 import { createSetupStatus } from '../src/setup-status.mjs';
 
 const recipes = (await loadRecipes()).filter((r) => r.id.startsWith('linux-nvidia-comfyui-'));
-assert.equal(recipes.length, 14);
+assert.equal(recipes.length, 16);
 const image = execFileSync('python3', ['backends/comfyui-media/install.py', '--print-image'], {
   encoding: 'utf8'
 }).trim();
@@ -100,12 +100,24 @@ try {
       for (const [id, value] of Object.entries(previousRuntimes)) assert.deepEqual(config.runtimes[id], value);
       for (const [id, value] of Object.entries(previousBackends)) assert.deepEqual(config.backends[id], value);
     }
-    assert.equal(config.models.length, 14);
+    assert.equal(config.models.length, recipes.length);
     assert.equal(config.models.filter((m) => m.kind === 'audio_generation').length, 4);
-    assert.equal(Object.keys(config.runtimes).length, 14);
-    assert.equal(Object.keys(config.backends).length, 14);
-    assert.equal(new Set(Object.values(config.runtimes).map((r) => r.port)).size, 14);
-    assert.equal(new Set(config.models.map((m) => m.runtime)).size, 14);
+    assert.equal(Object.keys(config.runtimes).length, recipes.length);
+    assert.equal(Object.keys(config.backends).length, recipes.length);
+    assert.equal(new Set(Object.values(config.runtimes).map((runtime) => runtime.port)).size, recipes.length);
+    assert.equal(new Set(config.models.map((model) => model.runtime)).size, recipes.length);
+    const modelByRuntime = new Map(config.models.map((model) => [model.runtime, model.id]));
+    for (const [runtimeId, runtime] of Object.entries(config.runtimes)) {
+      assert.ok(
+        runtime.bootstrap.createArgs.includes(`LLOOM_MEDIA_MODEL=${modelByRuntime.get(runtimeId)}`),
+        `${runtimeId} serves the wrong model`
+      );
+    }
+    assert.ok(
+      config.runtimes['qwen-image-21-nvfp4'].bootstrap.createArgs.includes(
+        'LLOOM_MEDIA_MODEL=BennyDaBall/Qwen-Image-2.1-NVFP4'
+      )
+    );
   }
   assert.throws(
     () => createModelImportPlan(empty, { modelRef: 'mlx-community/ACE-Step', backend: 'mlx-audio' }),
@@ -225,7 +237,7 @@ try {
   );
   assert.ok(composedDestination.dependencies.every((dependency) => dependency.complete));
 
-  console.log('ComfyUI recipes: all 14 have independent runtimes and file mounts in both application orders');
+  console.log('ComfyUI recipes: all 16 have independent runtimes and file mounts in both application orders');
 } finally {
   await fs.rm(dir, { recursive: true, force: true });
 }

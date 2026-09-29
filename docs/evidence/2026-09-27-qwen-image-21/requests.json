@@ -1,0 +1,2658 @@
+[
+  {
+    "label": "comfy-extended-native-2k",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 183.867750604,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A crisp editorial product poster for a fictional design studio. Large clear headline exactly \"LLooM LAB\". A sculptural translucent glass sphere above a pale blue plinth. Under the headline, small subtitle exactly \"MAKE SOMETHING NEW\". Refined Swiss graphic design, generous whitespace, precise typography.",
+      "size": "2048x2048",
+      "quality": "high",
+      "seed": 55910
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790563375,
+      "seed": 55910,
+      "seed_source": "explicit"
+    },
+    "sha256": "d557fbcf4435c206d00fc381152f12099b0001664fa44a35497c3b2583d5ff66"
+  },
+  {
+    "label": "comfy-extended-jpeg-exif",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "edits",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 6.067153209999989,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "Add a small blue sphere on the table. Preserve the colored blocks and their positions.",
+      "resolution": 512,
+      "quality": "medium"
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790563381,
+      "image_validation": {
+        "images": 1,
+        "mime_type": "image/jpeg"
+      },
+      "seed": 31180760133554,
+      "seed_source": "random"
+    },
+    "sha256": "bf11e9a678b78cf4d8e49e3c4e2561e0b7e3f983f85169d85a46ee02442c4953"
+  },
+  {
+    "label": "comfy-standard-dog-low",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 19.149756064,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A professional photograph of a golden retriever sitting on a wooden dock beside a calm blue lake, soft morning daylight, shallow depth of field, natural fur detail. The dog has no scarf or collar.",
+      "size": "1024x1024",
+      "quality": "low",
+      "seed": 62419
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790563015,
+      "seed": 62419,
+      "seed_source": "explicit"
+    },
+    "sha256": "30927f039a74313a1f0a70d42d22f33e9968b14f056cf1227d3c28a16a59d363"
+  },
+  {
+    "label": "comfy-standard-dog-medium",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 18.123148908000005,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A professional photograph of a golden retriever sitting on a wooden dock beside a calm blue lake, soft morning daylight, shallow depth of field, natural fur detail. The dog has no scarf or collar.",
+      "size": "1024x1024",
+      "quality": "medium",
+      "seed": 62419
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790563033,
+      "seed": 62419,
+      "seed_source": "explicit"
+    },
+    "sha256": "4b3523d99c2ac5f6924de1fdac7ccf079f1b72c6adec84cdc12c592c4e0164f3"
+  },
+  {
+    "label": "comfy-standard-dog-high",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 28.155572251,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A professional photograph of a golden retriever sitting on a wooden dock beside a calm blue lake, soft morning daylight, shallow depth of field, natural fur detail. The dog has no scarf or collar.",
+      "size": "1024x1024",
+      "quality": "high",
+      "seed": 62419
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790563061,
+      "seed": 62419,
+      "seed_source": "explicit"
+    },
+    "sha256": "f46fc7d1b8ab3744ee39417728066bbe9a898671915112f2df1c2632d9744d07"
+  },
+  {
+    "label": "comfy-standard-default-generation",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 7.060797238999999,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A studio product photograph of a cobalt blue ceramic teapot on a pale wooden table, soft daylight, smooth glaze, realistic texture.",
+      "size": "512x512"
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790563068,
+      "seed": 7483420052012572,
+      "seed_source": "random"
+    },
+    "sha256": "9536993b2b10b0efbdb4fa9df74ba5c67b813095590991fd9b5ca3b43a676722"
+  },
+  {
+    "label": "comfy-standard-default-edit",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "edits",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 9.107340429999997,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "Change only the teapot color to warm yellow. Keep the same teapot shape, handle, spout, table and lighting.",
+      "resolution": 512
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790563077,
+      "image_validation": {
+        "images": 1,
+        "mime_type": "image/png"
+      },
+      "seed": 3696167082714955,
+      "seed_source": "random"
+    },
+    "sha256": "ea2c89a9d6cfdf704a016ce1b56f22ef903a50956effbecd9dc1c6c606ea8631"
+  },
+  {
+    "label": "comfy-standard-sequential-edit",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "edits",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 8.077540728000008,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "Add a small white daisy beside the yellow teapot. Keep the yellow teapot, wooden table and lighting unchanged.",
+      "resolution": 512
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790563085,
+      "image_validation": {
+        "images": 1,
+        "mime_type": "image/png"
+      },
+      "seed": 5194169851143581,
+      "seed_source": "random"
+    },
+    "sha256": "7ef6fe77e37ff34c0a6879df89112ebbd36022462a4cdea58da0237699445c05"
+  },
+  {
+    "label": "comfy-standard-replay-edit",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "edits",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 8.064675717999998,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "Change only the teapot color to warm yellow. Keep the same teapot shape, handle, spout, table and lighting.",
+      "resolution": 512,
+      "seed": 3696167082714955
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790563093,
+      "image_validation": {
+        "images": 1,
+        "mime_type": "image/png"
+      },
+      "seed": 3696167082714955,
+      "seed_source": "explicit"
+    },
+    "sha256": "b0d3c3a83474606d42d73dd6067429bde8ef4324a0381b8455d9c0311288bce7"
+  },
+  {
+    "label": "comfy-standard-dog-edit-default",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "edits",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 39.23087363399999,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "Make the dog wear a red scarf. Keep the same dog, pose, dock, lake and lighting.",
+      "resolution": 1024
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790563133,
+      "image_validation": {
+        "images": 1,
+        "mime_type": "image/png"
+      },
+      "seed": 4167314801057043,
+      "seed_source": "random"
+    },
+    "sha256": "c9881e6c005330d7ea549e6cce00628a00c0d131bc15a28e5acf52dd3617da79"
+  },
+  {
+    "label": "comfy-standard-portrait",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 21.11776349899999,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "Natural candid portrait photograph of a fictional adult woman with short auburn hair, freckles, green eyes, navy sweater, seated in a cozy bookshop. Soft window light, realistic skin, relaxed closed-mouth smile, hands visible holding a book.",
+      "size": "768x1024",
+      "quality": "high",
+      "seed": 90817
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790563154,
+      "seed": 90817,
+      "seed_source": "explicit"
+    },
+    "sha256": "14367cdb5ffeb9a8b5c192c531dadaa15b69c4a265c647d9bccb5def404f7bbd"
+  },
+  {
+    "label": "comfy-standard-portrait-edit",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "edits",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 20.14489941699998,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "Add round thin gold eyeglasses to the woman. Preserve her identity, freckles, hair, expression, sweater, hands, book and background.",
+      "resolution": 768,
+      "quality": "high"
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790563174,
+      "image_validation": {
+        "images": 1,
+        "mime_type": "image/png"
+      },
+      "seed": 2741284939701098,
+      "seed_source": "random"
+    },
+    "sha256": "bd69c2a79b5757e1a69a9800da3353cd42658ef8ff147ec70cbbbe6a63d76d05"
+  },
+  {
+    "label": "comfy-standard-rgba",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 7.054294154999981,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "This is an RGBA image with transparency. A clean die-cut sticker of an orange astronaut cat waving, polished 3D illustration. The image has alpha channel and the background is transparent.",
+      "size": "512x512",
+      "quality": "high",
+      "seed": 38904
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790563181,
+      "seed": 38904,
+      "seed_source": "explicit"
+    },
+    "sha256": "415ccb0afe0f66b61d74d523c0d81b3b83cc120e5f8258100d79d94c7f41c88f"
+  },
+  {
+    "label": "comfy-standard-rgba-edit",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "edits",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 9.069062909,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "Change the astronaut suit to vivid purple. Preserve the cat, waving pose and transparent background. This is an RGBA image with transparency. The image has alpha channel and the background is transparent.",
+      "resolution": 512,
+      "quality": "high"
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790563190,
+      "image_validation": {
+        "images": 1,
+        "mime_type": "image/png"
+      },
+      "seed": 2848210141384857,
+      "seed_source": "random"
+    },
+    "sha256": "29d42c9d1aad9aedcbfeee5336f4463586fc0904c85de9c961a67238721bfe32"
+  },
+  {
+    "label": "comfy-validation-bad-seed",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.031010886000000005,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "seed": -1
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "seed must be an integer between 0 and 2^53-1",
+        "type": "invalid_request_error",
+        "code": "invalid_seed"
+      }
+    }
+  },
+  {
+    "label": "comfy-validation-unsafe-seed",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.022307542,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "seed": 9007199254740992
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "seed must be an integer between 0 and 2^53-1",
+        "type": "invalid_request_error",
+        "code": "invalid_seed"
+      }
+    }
+  },
+  {
+    "label": "comfy-validation-null-seed",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.021588103999999986,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "seed": null
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "seed must be an integer between 0 and 2^53-1",
+        "type": "invalid_request_error",
+        "code": "invalid_seed"
+      }
+    }
+  },
+  {
+    "label": "comfy-validation-bad-steps",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.020882104999999995,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "steps": 0
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "steps must be between 1 and 60",
+        "type": "invalid_request_error",
+        "code": "invalid_field"
+      }
+    }
+  },
+  {
+    "label": "comfy-validation-bad-quality",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.0193759,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "ultra"
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "quality must be one of auto, high, low, medium",
+        "type": "invalid_request_error",
+        "code": "invalid_field"
+      }
+    }
+  },
+  {
+    "label": "comfy-validation-null-quality",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.017619486999999993,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": null
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "quality must be one of auto, high, low, medium",
+        "type": "invalid_request_error",
+        "code": "invalid_field"
+      }
+    }
+  },
+  {
+    "label": "comfy-validation-bad-cfg",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.020551274000000005,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "cfg": 7
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "cfg must be exactly 1.0",
+        "type": "invalid_request_error",
+        "code": "invalid_field"
+      }
+    }
+  },
+  {
+    "label": "comfy-validation-bad-n",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.016512225000000002,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "n": 2
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "n must be exactly 1",
+        "type": "invalid_request_error",
+        "code": "invalid_field"
+      }
+    }
+  },
+  {
+    "label": "comfy-validation-bad-size",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.019700954999999992,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A red ceramic mug",
+      "size": "999x999",
+      "quality": "low"
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "Dimensions must be multiples of 32 and at most 4.5 megapixels",
+        "type": "invalid_request_error",
+        "code": "invalid_field"
+      }
+    }
+  },
+  {
+    "label": "comfy-validation-huge-size",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.02210051900000002,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A red ceramic mug",
+      "size": "3072x3072",
+      "quality": "low"
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "Dimensions must be multiples of 32 and at most 4.5 megapixels",
+        "type": "invalid_request_error",
+        "code": "invalid_field"
+      }
+    }
+  },
+  {
+    "label": "comfy-validation-bad-resolution",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.016344929999999976,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "resolution": 123
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "resolution for the reference-image pixel budget must be between 256 and 2048",
+        "type": "invalid_request_error",
+        "code": "invalid_field"
+      }
+    }
+  },
+  {
+    "label": "comfy-validation-remote-image",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.018029486000000018,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low"
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "error": {
+        "message": "Field 'image' must be an inline data URI; URLs and file paths are not accepted.",
+        "type": "invalid_request_error",
+        "code": "invalid_image"
+      }
+    }
+  },
+  {
+    "label": "comfy-validation-invalid-image",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.042730031999999994,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low"
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "error": {
+        "message": "Inline image could not be decoded as PNG or JPEG.",
+        "type": "invalid_request_error",
+        "code": "invalid_image"
+      }
+    }
+  },
+  {
+    "label": "comfy-validation-mask",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.021479223999999988,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "mask": "x"
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "Unsupported Qwen Image 2.1 fields: mask",
+        "type": "invalid_request_error",
+        "code": "invalid_field"
+      }
+    }
+  },
+  {
+    "label": "comfy-validation-duplicate-scalar",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "edits",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.032512579000000014,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A red mug",
+      "seed": 17,
+      "resolution": 512
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "error": {
+        "message": "Field 'seed' was supplied more than once.",
+        "type": "invalid_request_error",
+        "code": "duplicate_field"
+      }
+    }
+  },
+  {
+    "label": "comfy-validation-too-many-references",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.029565368000000036,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A teapot",
+      "resolution": 256
+    },
+    "referenceCount": 2,
+    "metadata": {
+      "error": {
+        "message": "Field 'image' must be an inline PNG or JPEG data URI.",
+        "type": "invalid_request_error",
+        "code": "invalid_image"
+      }
+    }
+  },
+  {
+    "label": "comfy-validation-recovery-after-invalid",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 3.0522167380000003,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "seed": 8877
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790563385,
+      "seed": 8877,
+      "seed_source": "explicit"
+    },
+    "sha256": "420f7f6157dbe2011d72d1ef80e42f453196cfcdfce84014b6c2b2a004ef710c"
+  },
+  {
+    "label": "native-extended-native-2k",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 283.985452897,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "A crisp editorial product poster for a fictional design studio. Large clear headline exactly \"LLooM LAB\". A sculptural translucent glass sphere above a pale blue plinth. Under the headline, small subtitle exactly \"MAKE SOMETHING NEW\". Refined Swiss graphic design, generous whitespace, precise typography.",
+      "size": "2048x2048",
+      "quality": "high",
+      "seed": 55910
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790562841,
+      "seed": "55910",
+      "steps": "40",
+      "size": "2048x2048",
+      "resolution": "1024",
+      "quality": "high"
+    },
+    "sha256": "737b4b75cbc9524194ad8ad9559826e10be0ba8fcb58a64f54c765cf1aa7b611"
+  },
+  {
+    "label": "native-extended-two-reference-json",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 38.150381299,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "Place the astronaut cat from image 2 beside the blue teapot from image 1 on the wooden table. Preserve both recognizable designs.",
+      "resolution": 768,
+      "quality": "high"
+    },
+    "referenceCount": 2,
+    "metadata": {
+      "created": 1790562880,
+      "seed": "2196885696648428",
+      "steps": "40",
+      "size": "768x768",
+      "resolution": "768",
+      "quality": "high"
+    },
+    "sha256": "9b532330f04c63e074ab8090c9b80b226e3771c8e9c61054ba341fbec868eea4"
+  },
+  {
+    "label": "native-extended-two-reference-multipart",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "edits",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 9.146782210999984,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "Place the astronaut cat from image 2 beside the blue teapot from image 1 on the wooden table. Preserve both recognizable designs.",
+      "resolution": 512,
+      "quality": "medium"
+    },
+    "referenceCount": 2,
+    "metadata": {
+      "created": 1790562889,
+      "seed": "5892353901837865",
+      "steps": "25",
+      "size": "512x512",
+      "resolution": "512",
+      "quality": "medium"
+    },
+    "sha256": "ea490dea49dbb557b89ed2a16be69113400ffb5e7f3edea8ca835c8eca9f412f"
+  },
+  {
+    "label": "native-extended-ten-reference-limit",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 3.708426434000023,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "A single clean blue ceramic teapot on a wooden table, matching the references.",
+      "resolution": 256,
+      "quality": "low"
+    },
+    "referenceCount": 10,
+    "metadata": {
+      "created": 1790562893,
+      "seed": "4199083455110626",
+      "steps": "12",
+      "size": "256x256",
+      "resolution": "256",
+      "quality": "low"
+    },
+    "sha256": "425e82042a90a5371bf750ecf1b00ea23c7fa8f80d71431e0a35922ad0206b67"
+  },
+  {
+    "label": "native-extended-jpeg-exif",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "edits",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 8.398402716999989,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "Add a small blue sphere on the table. Preserve the colored blocks and their positions.",
+      "resolution": 512,
+      "quality": "medium"
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790562901,
+      "seed": "1871912251532395",
+      "steps": "25",
+      "size": "448x576",
+      "resolution": "512",
+      "quality": "medium"
+    },
+    "sha256": "02fad0956a3435934ba9415397ef60b3b4405df24fa42c6ff3580611ba6d5bf0"
+  },
+  {
+    "label": "native-standard-dog-low",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 22.615775897,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "A professional photograph of a golden retriever sitting on a wooden dock beside a calm blue lake, soft morning daylight, shallow depth of field, natural fur detail. The dog has no scarf or collar.",
+      "size": "1024x1024",
+      "quality": "low",
+      "seed": 62419
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790562262,
+      "seed": "62419",
+      "steps": "12",
+      "size": "1024x1024",
+      "resolution": "1024",
+      "quality": "low"
+    },
+    "sha256": "defef9063142694185aeaff510d260aad5b083c8cdc4e66431d22616cc264211"
+  },
+  {
+    "label": "native-standard-dog-medium",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 34.114600745000004,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "A professional photograph of a golden retriever sitting on a wooden dock beside a calm blue lake, soft morning daylight, shallow depth of field, natural fur detail. The dog has no scarf or collar.",
+      "size": "1024x1024",
+      "quality": "medium",
+      "seed": 62419
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790562296,
+      "seed": "62419",
+      "steps": "25",
+      "size": "1024x1024",
+      "resolution": "1024",
+      "quality": "medium"
+    },
+    "sha256": "7ab655730f4ec2b7a4c865f17e2a435c59701f2838895ff3934dce4e4658db2a"
+  },
+  {
+    "label": "native-standard-dog-high",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 52.928870368999995,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "A professional photograph of a golden retriever sitting on a wooden dock beside a calm blue lake, soft morning daylight, shallow depth of field, natural fur detail. The dog has no scarf or collar.",
+      "size": "1024x1024",
+      "quality": "high",
+      "seed": 62419
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790562349,
+      "seed": "62419",
+      "steps": "40",
+      "size": "1024x1024",
+      "resolution": "1024",
+      "quality": "high"
+    },
+    "sha256": "82e6ea0b79b021901b33ad9d5adfd01f9cf2c399351effac33168e241fc5211f"
+  },
+  {
+    "label": "native-standard-default-generation",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 11.331227708999998,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "A studio product photograph of a cobalt blue ceramic teapot on a pale wooden table, soft daylight, smooth glaze, realistic texture.",
+      "size": "512x512"
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790562361,
+      "seed": "2602381791927828",
+      "steps": "40",
+      "size": "512x512",
+      "resolution": "1024",
+      "quality": "high"
+    },
+    "sha256": "fd964429f41a87f45faf7810ff3eb1c05fa23b1d2b185042ec633e76c79b4c8e"
+  },
+  {
+    "label": "native-standard-default-edit",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "edits",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 13.013635018999993,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "Change only the teapot color to warm yellow. Keep the same teapot shape, handle, spout, table and lighting.",
+      "resolution": 512
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790562374,
+      "seed": "6490844832464533",
+      "steps": "40",
+      "size": "512x512",
+      "resolution": "512",
+      "quality": "high"
+    },
+    "sha256": "02ae9e6a4850fe4eb5b738cdc5b811c311245f016356e54f79544feef0590b4e"
+  },
+  {
+    "label": "native-standard-sequential-edit",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "edits",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 12.320960319999983,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "Add a small white daisy beside the yellow teapot. Keep the yellow teapot, wooden table and lighting unchanged.",
+      "resolution": 512
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790562386,
+      "seed": "5180494517577021",
+      "steps": "40",
+      "size": "512x512",
+      "resolution": "512",
+      "quality": "high"
+    },
+    "sha256": "5f7252bc8ac5b6a28d3e50a5b33bc2510c3328a64a33a90a6f897ec0d44b4cf1"
+  },
+  {
+    "label": "native-standard-replay-edit",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "edits",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 12.545111635999987,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "Change only the teapot color to warm yellow. Keep the same teapot shape, handle, spout, table and lighting.",
+      "resolution": 512,
+      "seed": 6490844832464533
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790562399,
+      "seed": "6490844832464533",
+      "steps": "40",
+      "size": "512x512",
+      "resolution": "512",
+      "quality": "high"
+    },
+    "sha256": "02ae9e6a4850fe4eb5b738cdc5b811c311245f016356e54f79544feef0590b4e"
+  },
+  {
+    "label": "native-standard-dog-edit-default",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "edits",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 61.292465964,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "Make the dog wear a red scarf. Keep the same dog, pose, dock, lake and lighting.",
+      "resolution": 1024
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790562460,
+      "seed": "463986409869445",
+      "steps": "40",
+      "size": "1024x1024",
+      "resolution": "1024",
+      "quality": "high"
+    },
+    "sha256": "8f0bf687e300aec1ae61f9418b4d741feac83a1f9fa017a633092286302c05be"
+  },
+  {
+    "label": "native-standard-portrait",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 40.334874272000015,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "Natural candid portrait photograph of a fictional adult woman with short auburn hair, freckles, green eyes, navy sweater, seated in a cozy bookshop. Soft window light, realistic skin, relaxed closed-mouth smile, hands visible holding a book.",
+      "size": "768x1024",
+      "quality": "high",
+      "seed": 90817
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790562500,
+      "seed": "90817",
+      "steps": "40",
+      "size": "768x1024",
+      "resolution": "1024",
+      "quality": "high"
+    },
+    "sha256": "6f0dde31ec64d2cacae6eb082b5f7a1f121b71d6e938623eb02233ea4f42dcc7"
+  },
+  {
+    "label": "native-standard-portrait-edit",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "edits",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 33.20338246800002,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "Add round thin gold eyeglasses to the woman. Preserve her identity, freckles, hair, expression, sweater, hands, book and background.",
+      "resolution": 768,
+      "quality": "high"
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790562533,
+      "seed": "6137100957228310",
+      "steps": "40",
+      "size": "672x896",
+      "resolution": "768",
+      "quality": "high"
+    },
+    "sha256": "f787ea752e3e47ae78a99b06d2ad1914994be7e22c93d52edf3036c751dfc98a"
+  },
+  {
+    "label": "native-standard-rgba",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 11.303064497999964,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "This is an RGBA image with transparency. A clean die-cut sticker of an orange astronaut cat waving, polished 3D illustration. The image has alpha channel and the background is transparent.",
+      "size": "512x512",
+      "quality": "high",
+      "seed": 38904
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790562545,
+      "seed": "38904",
+      "steps": "40",
+      "size": "512x512",
+      "resolution": "1024",
+      "quality": "high"
+    },
+    "sha256": "5a036375f8e9f50e32edf89857444db8dd267d4c270638c5cdbca4882d5c7961"
+  },
+  {
+    "label": "native-standard-rgba-edit",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "edits",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 12.274226750999981,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "Change the astronaut suit to vivid purple. Preserve the cat, waving pose and transparent background. This is an RGBA image with transparency. The image has alpha channel and the background is transparent.",
+      "resolution": 512,
+      "quality": "high"
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790562557,
+      "seed": "2571829421659758",
+      "steps": "40",
+      "size": "512x512",
+      "resolution": "512",
+      "quality": "high"
+    },
+    "sha256": "adeb9ab1d167b2d78e4a8c26911ea5f494e3ded7ea83400f7e4b15a7953bb4b7"
+  },
+  {
+    "label": "native-validation-bad-seed",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.04614796900000002,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "seed": -1
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "seed must be an integer between 0 and 2^53-1",
+        "type": "invalid_request_error",
+        "code": "invalid_request"
+      }
+    }
+  },
+  {
+    "label": "native-validation-unsafe-seed",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.020942489000000022,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "seed": 9007199254740992
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "seed must be an integer between 0 and 2^53-1",
+        "type": "invalid_request_error",
+        "code": "invalid_request"
+      }
+    }
+  },
+  {
+    "label": "native-validation-null-seed",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.019698728999999957,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "seed": null
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "seed must be an integer between 0 and 2^53-1",
+        "type": "invalid_request_error",
+        "code": "invalid_request"
+      }
+    }
+  },
+  {
+    "label": "native-validation-bad-steps",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.01642823400000003,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "steps": 0
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "steps must be an integer between 1 and 60",
+        "type": "invalid_request_error",
+        "code": "invalid_request"
+      }
+    }
+  },
+  {
+    "label": "native-validation-bad-quality",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.018535112999999968,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "ultra"
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "quality must be one of auto, high, medium, low",
+        "type": "invalid_request_error",
+        "code": "invalid_request"
+      }
+    }
+  },
+  {
+    "label": "native-validation-null-quality",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.01604373899999996,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": null
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "quality must be one of auto, high, medium, low",
+        "type": "invalid_request_error",
+        "code": "invalid_request"
+      }
+    }
+  },
+  {
+    "label": "native-validation-bad-cfg",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.015961433999999997,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "cfg": 7
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "cfg must be 1",
+        "type": "invalid_request_error",
+        "code": "invalid_request"
+      }
+    }
+  },
+  {
+    "label": "native-validation-bad-n",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.01770232999999996,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "n": 2
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "n must be 1",
+        "type": "invalid_request_error",
+        "code": "invalid_request"
+      }
+    }
+  },
+  {
+    "label": "native-validation-bad-size",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.025165639,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "A red ceramic mug",
+      "size": "999x999",
+      "quality": "low"
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "size width must be a multiple of 32",
+        "type": "invalid_request_error",
+        "code": "invalid_request"
+      }
+    }
+  },
+  {
+    "label": "native-validation-huge-size",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.01579647399999999,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "A red ceramic mug",
+      "size": "3072x3072",
+      "quality": "low"
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "size must be at most 4.5 megapixels",
+        "type": "invalid_request_error",
+        "code": "invalid_request"
+      }
+    }
+  },
+  {
+    "label": "native-validation-bad-resolution",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.019200697000000048,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "resolution": 123
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "resolution must be an integer between 256 and 2048 and a multiple of 32",
+        "type": "invalid_request_error",
+        "code": "invalid_request"
+      }
+    }
+  },
+  {
+    "label": "native-validation-remote-image",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.014780666999999994,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low"
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "error": {
+        "message": "images must be base64 PNG/JPEG data URIs; remote URLs and file paths are unsupported",
+        "type": "invalid_request_error",
+        "code": "invalid_request"
+      }
+    }
+  },
+  {
+    "label": "native-validation-invalid-image",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.465235601,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low"
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "error": {
+        "message": "Invalid PNG/JPEG image",
+        "type": "invalid_request_error",
+        "code": "invalid_request"
+      }
+    }
+  },
+  {
+    "label": "native-validation-mask",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.019326521000000072,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "mask": "x"
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "Unsupported fields: mask",
+        "type": "invalid_request_error",
+        "code": "invalid_request"
+      }
+    }
+  },
+  {
+    "label": "native-validation-duplicate-scalar",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "edits",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.11452732000000014,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "A red mug",
+      "seed": 17,
+      "resolution": 512
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "error": {
+        "message": "Duplicate field: seed",
+        "type": "invalid_request_error",
+        "code": "invalid_request"
+      }
+    }
+  },
+  {
+    "label": "native-validation-too-many-references",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.07518383100000005,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "A teapot",
+      "resolution": 256
+    },
+    "referenceCount": 11,
+    "metadata": {
+      "error": {
+        "message": "a request accepts between 1 and 10 reference images",
+        "type": "invalid_request_error",
+        "code": "invalid_request"
+      }
+    }
+  },
+  {
+    "label": "native-validation-recovery-after-invalid",
+    "model": "Qwen/Qwen-Image-2.1-Diffusers",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 3.9732439219999995,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1-Diffusers",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "seed": 8877
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790562907,
+      "seed": "8877",
+      "steps": "12",
+      "size": "512x512",
+      "resolution": "1024",
+      "quality": "low"
+    },
+    "sha256": "b472665981605838e5b39c2ef34c57fb20ff86aa29d28f43f9954c01ae4f40b9"
+  },
+  {
+    "label": "nvfp4-extended-native-2k",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 154.84108893200002,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A crisp editorial product poster for a fictional design studio. Large clear headline exactly \"LLooM LAB\". A sculptural translucent glass sphere above a pale blue plinth. Under the headline, small subtitle exactly \"MAKE SOMETHING NEW\". Refined Swiss graphic design, generous whitespace, precise typography.",
+      "size": "2048x2048",
+      "quality": "high",
+      "seed": 55910
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790564703,
+      "seed": 55910,
+      "seed_source": "explicit"
+    },
+    "sha256": "ceb33049bc41a5567d95392e3d9018030bbab5e748c9862b821a80732896651e"
+  },
+  {
+    "label": "nvfp4-extended-jpeg-exif",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "edits",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 8.07202156600001,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "Add a small blue sphere on the table. Preserve the colored blocks and their positions.",
+      "resolution": 512,
+      "quality": "medium"
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790564711,
+      "image_validation": {
+        "images": 1,
+        "mime_type": "image/jpeg"
+      },
+      "seed": 3166421934928507,
+      "seed_source": "random"
+    },
+    "sha256": "bbda8b0fb740eeca03fdb5c93c37ff7286ea3742e53e94fdc25a87d3db3a8c05"
+  },
+  {
+    "label": "nvfp4-standard-dog-low",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 15.160323187999998,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A professional photograph of a golden retriever sitting on a wooden dock beside a calm blue lake, soft morning daylight, shallow depth of field, natural fur detail. The dog has no scarf or collar.",
+      "size": "1024x1024",
+      "quality": "low",
+      "seed": 62419
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790564359,
+      "seed": 62419,
+      "seed_source": "explicit"
+    },
+    "sha256": "4ab5a068fac320c8176efd242149f359692c3ef2733b084273c982e28aa6154d"
+  },
+  {
+    "label": "nvfp4-standard-dog-medium",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 20.137786441999996,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A professional photograph of a golden retriever sitting on a wooden dock beside a calm blue lake, soft morning daylight, shallow depth of field, natural fur detail. The dog has no scarf or collar.",
+      "size": "1024x1024",
+      "quality": "medium",
+      "seed": 62419
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790564379,
+      "seed": 62419,
+      "seed_source": "explicit"
+    },
+    "sha256": "c5417f4c44039c0eb409390affe6a7cb00fe7cec622fe3467a9cf33261b31d5c"
+  },
+  {
+    "label": "nvfp4-standard-dog-high",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 30.192561471,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A professional photograph of a golden retriever sitting on a wooden dock beside a calm blue lake, soft morning daylight, shallow depth of field, natural fur detail. The dog has no scarf or collar.",
+      "size": "1024x1024",
+      "quality": "high",
+      "seed": 62419
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790564409,
+      "seed": 62419,
+      "seed_source": "explicit"
+    },
+    "sha256": "22b4a950b5028d9e0d6aa942e55aa4bb07e5ae807702d87def611d011de569c6"
+  },
+  {
+    "label": "nvfp4-standard-default-generation",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 8.056520502999993,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A studio product photograph of a cobalt blue ceramic teapot on a pale wooden table, soft daylight, smooth glaze, realistic texture.",
+      "size": "512x512"
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790564417,
+      "seed": 1295305753875519,
+      "seed_source": "random"
+    },
+    "sha256": "b1b84f6f2a6c756d3891b517fb3980c7e43929c6327f9d1aa70892819f7d6ff6"
+  },
+  {
+    "label": "nvfp4-standard-default-edit",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "edits",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 10.091228260000003,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "Change only the teapot color to warm yellow. Keep the same teapot shape, handle, spout, table and lighting.",
+      "resolution": 512
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790564428,
+      "image_validation": {
+        "images": 1,
+        "mime_type": "image/png"
+      },
+      "seed": 5128664797432295,
+      "seed_source": "random"
+    },
+    "sha256": "cdf9b4209b9b2ed7e09e465e0be851419f076a1db2e5e922f6aa702ae2d0e3b2"
+  },
+  {
+    "label": "nvfp4-standard-sequential-edit",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "edits",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 10.081777786999998,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "Add a small white daisy beside the yellow teapot. Keep the yellow teapot, wooden table and lighting unchanged.",
+      "resolution": 512
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790564438,
+      "image_validation": {
+        "images": 1,
+        "mime_type": "image/png"
+      },
+      "seed": 2496567832922464,
+      "seed_source": "random"
+    },
+    "sha256": "587956235925b4f4011828493f7477352f06a5b707e425b45de449772670b7ef"
+  },
+  {
+    "label": "nvfp4-standard-replay-edit",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "edits",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 10.083952090000006,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "Change only the teapot color to warm yellow. Keep the same teapot shape, handle, spout, table and lighting.",
+      "resolution": 512,
+      "seed": 5128664797432295
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790564448,
+      "image_validation": {
+        "images": 1,
+        "mime_type": "image/png"
+      },
+      "seed": 5128664797432295,
+      "seed_source": "explicit"
+    },
+    "sha256": "a98a9cc56b0c5ec5d0c231c817422b417b71e77c918d96b82689f6f40bc90ed8"
+  },
+  {
+    "label": "nvfp4-standard-dog-edit-default",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "edits",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 38.280207332,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "Make the dog wear a red scarf. Keep the same dog, pose, dock, lake and lighting.",
+      "resolution": 1024
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790564486,
+      "image_validation": {
+        "images": 1,
+        "mime_type": "image/png"
+      },
+      "seed": 1046154389973612,
+      "seed_source": "random"
+    },
+    "sha256": "56fc9bed42865ba33956514c8b174894c5dafa389f4d9bac5a21854a414bafe1"
+  },
+  {
+    "label": "nvfp4-standard-portrait",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 23.15461892399998,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "Natural candid portrait photograph of a fictional adult woman with short auburn hair, freckles, green eyes, navy sweater, seated in a cozy bookshop. Soft window light, realistic skin, relaxed closed-mouth smile, hands visible holding a book.",
+      "size": "768x1024",
+      "quality": "high",
+      "seed": 90817
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790564509,
+      "seed": 90817,
+      "seed_source": "explicit"
+    },
+    "sha256": "627e7d391251228ee5eb2deb996a06231d0e2d5f5dd8c0aaee1cb412d56abe75"
+  },
+  {
+    "label": "nvfp4-standard-portrait-edit",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "edits",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 20.168527002999994,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "Add round thin gold eyeglasses to the woman. Preserve her identity, freckles, hair, expression, sweater, hands, book and background.",
+      "resolution": 768,
+      "quality": "high"
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790564529,
+      "image_validation": {
+        "images": 1,
+        "mime_type": "image/png"
+      },
+      "seed": 4593878485719440,
+      "seed_source": "random"
+    },
+    "sha256": "1e72b216a2db47039058ac3a2da449a598834daddf79c41591da72788be93224"
+  },
+  {
+    "label": "nvfp4-standard-rgba",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 8.069943547000003,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "This is an RGBA image with transparency. A clean die-cut sticker of an orange astronaut cat waving, polished 3D illustration. The image has alpha channel and the background is transparent.",
+      "size": "512x512",
+      "quality": "high",
+      "seed": 38904
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790564537,
+      "seed": 38904,
+      "seed_source": "explicit"
+    },
+    "sha256": "98ad28a95d7ab4293d23726d35dca55fe5dff40ab3af676e34de8afb4d1139af"
+  },
+  {
+    "label": "nvfp4-standard-rgba-edit",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "edits",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 10.082327722999995,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "Change the astronaut suit to vivid purple. Preserve the cat, waving pose and transparent background. This is an RGBA image with transparency. The image has alpha channel and the background is transparent.",
+      "resolution": 512,
+      "quality": "high"
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790564548,
+      "image_validation": {
+        "images": 1,
+        "mime_type": "image/png"
+      },
+      "seed": 5646332422809664,
+      "seed_source": "random"
+    },
+    "sha256": "c2e597a0997932b5e4f56f84d63616aaed4325d62290512cba0b858828923404"
+  },
+  {
+    "label": "nvfp4-validation-bad-seed",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.033159678000000005,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "seed": -1
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "seed must be an integer between 0 and 2^53-1",
+        "type": "invalid_request_error",
+        "code": "invalid_seed"
+      }
+    }
+  },
+  {
+    "label": "nvfp4-validation-unsafe-seed",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.018574016999999998,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "seed": 9007199254740992
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "seed must be an integer between 0 and 2^53-1",
+        "type": "invalid_request_error",
+        "code": "invalid_seed"
+      }
+    }
+  },
+  {
+    "label": "nvfp4-validation-null-seed",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.020688771,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "seed": null
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "seed must be an integer between 0 and 2^53-1",
+        "type": "invalid_request_error",
+        "code": "invalid_seed"
+      }
+    }
+  },
+  {
+    "label": "nvfp4-validation-bad-steps",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.020867714999999974,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "steps": 0
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "steps must be between 1 and 60",
+        "type": "invalid_request_error",
+        "code": "invalid_field"
+      }
+    }
+  },
+  {
+    "label": "nvfp4-validation-bad-quality",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.020839651000000004,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "ultra"
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "quality must be one of auto, high, low, medium",
+        "type": "invalid_request_error",
+        "code": "invalid_field"
+      }
+    }
+  },
+  {
+    "label": "nvfp4-validation-null-quality",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.022857237,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": null
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "quality must be one of auto, high, low, medium",
+        "type": "invalid_request_error",
+        "code": "invalid_field"
+      }
+    }
+  },
+  {
+    "label": "nvfp4-validation-bad-cfg",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.02135259499999998,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "cfg": 7
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "cfg must be exactly 1.0",
+        "type": "invalid_request_error",
+        "code": "invalid_field"
+      }
+    }
+  },
+  {
+    "label": "nvfp4-validation-bad-n",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.018425568999999996,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "n": 2
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "n must be exactly 1",
+        "type": "invalid_request_error",
+        "code": "invalid_field"
+      }
+    }
+  },
+  {
+    "label": "nvfp4-validation-bad-size",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.021365380000000017,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A red ceramic mug",
+      "size": "999x999",
+      "quality": "low"
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "Dimensions must be multiples of 32 and at most 4.5 megapixels",
+        "type": "invalid_request_error",
+        "code": "invalid_field"
+      }
+    }
+  },
+  {
+    "label": "nvfp4-validation-huge-size",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.02012489800000003,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A red ceramic mug",
+      "size": "3072x3072",
+      "quality": "low"
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "Dimensions must be multiples of 32 and at most 4.5 megapixels",
+        "type": "invalid_request_error",
+        "code": "invalid_field"
+      }
+    }
+  },
+  {
+    "label": "nvfp4-validation-bad-resolution",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.02303235699999999,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "resolution": 123
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "resolution for the reference-image pixel budget must be between 256 and 2048",
+        "type": "invalid_request_error",
+        "code": "invalid_field"
+      }
+    }
+  },
+  {
+    "label": "nvfp4-validation-remote-image",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.01785080000000005,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low"
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "error": {
+        "message": "Field 'image' must be an inline data URI; URLs and file paths are not accepted.",
+        "type": "invalid_request_error",
+        "code": "invalid_image"
+      }
+    }
+  },
+  {
+    "label": "nvfp4-validation-invalid-image",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.047334794999999985,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low"
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "error": {
+        "message": "Inline image could not be decoded as PNG or JPEG.",
+        "type": "invalid_request_error",
+        "code": "invalid_image"
+      }
+    }
+  },
+  {
+    "label": "nvfp4-validation-mask",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.022188484999999956,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "mask": "x"
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "error": {
+        "message": "Unsupported Qwen Image 2.1 fields: mask",
+        "type": "invalid_request_error",
+        "code": "invalid_field"
+      }
+    }
+  },
+  {
+    "label": "nvfp4-validation-duplicate-scalar",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "edits",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.034979872,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A red mug",
+      "seed": 17,
+      "resolution": 512
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "error": {
+        "message": "Field 'seed' was supplied more than once.",
+        "type": "invalid_request_error",
+        "code": "duplicate_field"
+      }
+    }
+  },
+  {
+    "label": "nvfp4-validation-too-many-references",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 400,
+    "expected": 400,
+    "durationSeconds": 0.033331215000000046,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A teapot",
+      "resolution": 256
+    },
+    "referenceCount": 2,
+    "metadata": {
+      "error": {
+        "message": "Field 'image' must be an inline PNG or JPEG data URI.",
+        "type": "invalid_request_error",
+        "code": "invalid_image"
+      }
+    }
+  },
+  {
+    "label": "nvfp4-validation-recovery-after-invalid",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 200,
+    "expected": 200,
+    "durationSeconds": 5.0513383240000005,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A red ceramic mug",
+      "size": "512x512",
+      "quality": "low",
+      "seed": 8877
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790564718,
+      "seed": 8877,
+      "seed_source": "explicit"
+    },
+    "sha256": "4662a05894e6c834e915201055a84f0caf6ab555e4ac69d6f3743ecd17b33591"
+  },
+  {
+    "label": "nvfp4-paired-cold-warmup",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 200,
+    "durationSeconds": 6.065620108999999,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A professional photograph of a golden retriever sitting on a wooden dock beside a calm blue lake, soft morning daylight, shallow depth of field, natural fur detail. The dog has no scarf or collar.",
+      "size": "512x512",
+      "quality": "low",
+      "seed": 123456
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790564759,
+      "seed": 123456,
+      "seed_source": "explicit"
+    },
+    "sha256": "058ce7d186f465db20cf96f6e0aa161e6c36f9410ddeb3c963b7270522494d64"
+  },
+  {
+    "label": "nvfp4-paired-paired-generation-62419",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 200,
+    "durationSeconds": 30.209657686000003,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A professional photograph of a golden retriever sitting on a wooden dock beside a calm blue lake, soft morning daylight, shallow depth of field, natural fur detail. The dog has no scarf or collar.",
+      "size": "1024x1024",
+      "quality": "high",
+      "seed": 62419
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790564789,
+      "seed": 62419,
+      "seed_source": "explicit"
+    },
+    "sha256": "e1989fb1d6cd8d9291521b49c1b55309a5c1b6c3b4b5996387e974efa0604d89"
+  },
+  {
+    "label": "nvfp4-paired-paired-generation-90817",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 200,
+    "durationSeconds": 30.199085810999996,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A professional photograph of a golden retriever sitting on a wooden dock beside a calm blue lake, soft morning daylight, shallow depth of field, natural fur detail. The dog has no scarf or collar.",
+      "size": "1024x1024",
+      "quality": "high",
+      "seed": 90817
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790564820,
+      "seed": 90817,
+      "seed_source": "explicit"
+    },
+    "sha256": "590337b510da17d40bb38ccbdacb8b306a3d93c8e422ca06ae77e69e6a98e3ec"
+  },
+  {
+    "label": "nvfp4-paired-paired-generation-38904",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 200,
+    "durationSeconds": 30.191795958000004,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A professional photograph of a golden retriever sitting on a wooden dock beside a calm blue lake, soft morning daylight, shallow depth of field, natural fur detail. The dog has no scarf or collar.",
+      "size": "1024x1024",
+      "quality": "high",
+      "seed": 38904
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790564850,
+      "seed": 38904,
+      "seed_source": "explicit"
+    },
+    "sha256": "61a1e8de987eaea92f65509ff77557b9675300b3a140eab6fae1e3e2d522eab7"
+  },
+  {
+    "label": "nvfp4-paired-paired-edit-112358",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "edits",
+    "status": 200,
+    "durationSeconds": 20.17707653600001,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "Add round thin gold eyeglasses to the woman. Preserve her identity, freckles, hair, expression, sweater, hands, book and background.",
+      "resolution": 768,
+      "quality": "high",
+      "seed": 112358
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790564870,
+      "image_validation": {
+        "images": 1,
+        "mime_type": "image/png"
+      },
+      "seed": 112358,
+      "seed_source": "explicit"
+    },
+    "sha256": "32effd09f3031865cd49a6cc2f7ba630a07dc1060a8baf9c9b8b417c9647b822"
+  },
+  {
+    "label": "nvfp4-paired-paired-edit-271828",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "edits",
+    "status": 200,
+    "durationSeconds": 20.170143448,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "Add round thin gold eyeglasses to the woman. Preserve her identity, freckles, hair, expression, sweater, hands, book and background.",
+      "resolution": 768,
+      "quality": "high",
+      "seed": 271828
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790564891,
+      "image_validation": {
+        "images": 1,
+        "mime_type": "image/png"
+      },
+      "seed": 271828,
+      "seed_source": "explicit"
+    },
+    "sha256": "18add0b8ce1e5ca289e048d817bb055471a72c96003182501d9d81f352970fc5"
+  },
+  {
+    "label": "nvfp4-paired-paired-edit-314159",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "edits",
+    "status": 200,
+    "durationSeconds": 20.165264412999996,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "Add round thin gold eyeglasses to the woman. Preserve her identity, freckles, hair, expression, sweater, hands, book and background.",
+      "resolution": 768,
+      "quality": "high",
+      "seed": 314159
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790564911,
+      "image_validation": {
+        "images": 1,
+        "mime_type": "image/png"
+      },
+      "seed": 314159,
+      "seed_source": "explicit"
+    },
+    "sha256": "074c942c4b264d5b0c4d9c14a2cb8f154c9297939d4cd2d8277df4b38f30f5bd"
+  },
+  {
+    "label": "comfy-paired-cold-warmup",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 200,
+    "durationSeconds": 12.081516190999999,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A professional photograph of a golden retriever sitting on a wooden dock beside a calm blue lake, soft morning daylight, shallow depth of field, natural fur detail. The dog has no scarf or collar.",
+      "size": "512x512",
+      "quality": "low",
+      "seed": 123456
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790564936,
+      "seed": 123456,
+      "seed_source": "explicit"
+    },
+    "sha256": "d2f2c069ec1cd1f6375d63d9a6d9cb73773eeaa9da1769d6d1dd4e0d850bd3bd"
+  },
+  {
+    "label": "comfy-paired-paired-generation-62419",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 200,
+    "durationSeconds": 31.178261861000003,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A professional photograph of a golden retriever sitting on a wooden dock beside a calm blue lake, soft morning daylight, shallow depth of field, natural fur detail. The dog has no scarf or collar.",
+      "size": "1024x1024",
+      "quality": "high",
+      "seed": 62419
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790564968,
+      "seed": 62419,
+      "seed_source": "explicit"
+    },
+    "sha256": "379827c5fb77872834bf8eefe751fcb38aaa8b11d7c2f538d420c5b85dddd8e6"
+  },
+  {
+    "label": "comfy-paired-paired-generation-90817",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 200,
+    "durationSeconds": 31.201759041000006,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A professional photograph of a golden retriever sitting on a wooden dock beside a calm blue lake, soft morning daylight, shallow depth of field, natural fur detail. The dog has no scarf or collar.",
+      "size": "1024x1024",
+      "quality": "high",
+      "seed": 90817
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790564999,
+      "seed": 90817,
+      "seed_source": "explicit"
+    },
+    "sha256": "6bd4ea5104ec8c0c9a980c058995b3686a46ccb61afc1f005295a8db5c04e295"
+  },
+  {
+    "label": "comfy-paired-paired-generation-38904",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 200,
+    "durationSeconds": 30.171512541999995,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A professional photograph of a golden retriever sitting on a wooden dock beside a calm blue lake, soft morning daylight, shallow depth of field, natural fur detail. The dog has no scarf or collar.",
+      "size": "1024x1024",
+      "quality": "high",
+      "seed": 38904
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790565029,
+      "seed": 38904,
+      "seed_source": "explicit"
+    },
+    "sha256": "fe46e8ffd998fae985ef7249dc050b6a7841d0a1aad003fb3b891f3ee8a597b9"
+  },
+  {
+    "label": "comfy-paired-paired-edit-112358",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "edits",
+    "status": 200,
+    "durationSeconds": 23.177959843999997,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "Add round thin gold eyeglasses to the woman. Preserve her identity, freckles, hair, expression, sweater, hands, book and background.",
+      "resolution": 768,
+      "quality": "high",
+      "seed": 112358
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790565053,
+      "image_validation": {
+        "images": 1,
+        "mime_type": "image/png"
+      },
+      "seed": 112358,
+      "seed_source": "explicit"
+    },
+    "sha256": "4ccbf98760d758d7ae68ceaa65033ca988602b91e66afbe4a9f1f4e699f908c2"
+  },
+  {
+    "label": "comfy-paired-paired-edit-271828",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "edits",
+    "status": 200,
+    "durationSeconds": 21.150433810999996,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "Add round thin gold eyeglasses to the woman. Preserve her identity, freckles, hair, expression, sweater, hands, book and background.",
+      "resolution": 768,
+      "quality": "high",
+      "seed": 271828
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790565074,
+      "image_validation": {
+        "images": 1,
+        "mime_type": "image/png"
+      },
+      "seed": 271828,
+      "seed_source": "explicit"
+    },
+    "sha256": "1f1b964d29b41c2a5500768085a1c9cda7f61503f2f347ab9c949f14b086ab94"
+  },
+  {
+    "label": "comfy-paired-paired-edit-314159",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "edits",
+    "status": 200,
+    "durationSeconds": 21.153915062000014,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "Add round thin gold eyeglasses to the woman. Preserve her identity, freckles, hair, expression, sweater, hands, book and background.",
+      "resolution": 768,
+      "quality": "high",
+      "seed": 314159
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790565095,
+      "image_validation": {
+        "images": 1,
+        "mime_type": "image/png"
+      },
+      "seed": 314159,
+      "seed_source": "explicit"
+    },
+    "sha256": "1bc69a0f43074356dad56f555cdc20ff5df25d063bc3e7fa8c72a463a29d69ec"
+  },
+  {
+    "label": "comfy-resident-generation-1024",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 200,
+    "durationSeconds": 38.221194107,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A professional photograph of a golden retriever sitting on a wooden dock beside a calm blue lake, soft morning daylight, shallow depth of field, natural fur detail. The dog has no scarf or collar.",
+      "size": "1024x1024",
+      "quality": "high",
+      "seed": 62419
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790565807,
+      "seed": 62419,
+      "seed_source": "explicit"
+    },
+    "sha256": "c364ed36d5b9b8a05806aea88fe414798b582d1193cd5d6427c867c370a6293d"
+  },
+  {
+    "label": "comfy-resident-edit-768",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "edits",
+    "status": 200,
+    "durationSeconds": 21.163246294999997,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "Add round thin gold eyeglasses to the woman. Preserve her identity, freckles, hair, expression, sweater, hands, book and background.",
+      "resolution": 768,
+      "quality": "high",
+      "seed": 112358
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790565829,
+      "image_validation": {
+        "images": 1,
+        "mime_type": "image/png"
+      },
+      "seed": 112358,
+      "seed_source": "explicit"
+    },
+    "sha256": "3003dfbb82fe376b934fae14ba192e3358672656923a2e67b190d5dc1fcfb505"
+  },
+  {
+    "label": "comfy-resident-generation-2048",
+    "model": "Qwen/Qwen-Image-2.1",
+    "endpoint": "generations",
+    "status": 200,
+    "durationSeconds": 180.823065837,
+    "params": {
+      "model": "Qwen/Qwen-Image-2.1",
+      "prompt": "A crisp editorial product poster. Large clear headline exactly \"LLooM LAB\". A translucent glass sphere above a pale blue plinth. Small subtitle exactly \"MAKE SOMETHING NEW\". Refined Swiss graphic design, generous whitespace, precise typography.",
+      "size": "2048x2048",
+      "quality": "high",
+      "seed": 55910
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790566010,
+      "seed": 55910,
+      "seed_source": "explicit"
+    },
+    "sha256": "12580d84896b26a01856e771792d501f1e1b846470bb8f0269ad0e2785019e91"
+  },
+  {
+    "label": "nvfp4-resident-generation-1024",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 200,
+    "durationSeconds": 35.211368091,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A professional photograph of a golden retriever sitting on a wooden dock beside a calm blue lake, soft morning daylight, shallow depth of field, natural fur detail. The dog has no scarf or collar.",
+      "size": "1024x1024",
+      "quality": "high",
+      "seed": 62419
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790566275,
+      "seed": 62419,
+      "seed_source": "explicit"
+    },
+    "sha256": "c8443964e14b0afe340581b80e11e74e175c6668744cb9fe595b825acacf4345"
+  },
+  {
+    "label": "nvfp4-resident-edit-768",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "edits",
+    "status": 200,
+    "durationSeconds": 24.202027353,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "Add round thin gold eyeglasses to the woman. Preserve her identity, freckles, hair, expression, sweater, hands, book and background.",
+      "resolution": 768,
+      "quality": "high",
+      "seed": 112358
+    },
+    "referenceCount": 1,
+    "metadata": {
+      "created": 1790566299,
+      "image_validation": {
+        "images": 1,
+        "mime_type": "image/png"
+      },
+      "seed": 112358,
+      "seed_source": "explicit"
+    },
+    "sha256": "0885b1623fe235baf406721b2ad5419ea95c482af847363ddce5c6b417e09f0a"
+  },
+  {
+    "label": "nvfp4-resident-generation-2048",
+    "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+    "endpoint": "generations",
+    "status": 200,
+    "durationSeconds": 150.848474715,
+    "params": {
+      "model": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "prompt": "A crisp editorial product poster. Large clear headline exactly \"LLooM LAB\". A translucent glass sphere above a pale blue plinth. Small subtitle exactly \"MAKE SOMETHING NEW\". Refined Swiss graphic design, generous whitespace, precise typography.",
+      "size": "2048x2048",
+      "quality": "high",
+      "seed": 55910
+    },
+    "referenceCount": 0,
+    "metadata": {
+      "created": 1790566450,
+      "seed": 55910,
+      "seed_source": "explicit"
+    },
+    "sha256": "ed0b6daecb7f23a4fe4aa33e6bf23cf43d5914ca59b3d51b03c5f0ca0042c59b"
+  }
+]

@@ -1,0 +1,217 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-comfyui-ltx-2-5-full",
+  "name": "LTX-2.5 Full (ComfyUI, BF16)",
+  "version": 1,
+  "summary": "Full BF16 LTX-2.5 with a guided main pass and distilled LoRA refinement through ComfyUI.",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe metadata only; model weights retain their upstream licenses"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "ComfyUI 5ba116a40f1944f64e2e4a8ace826656e6293bf4; immutable provider revisions and per-file SHA-256 below. Full schedule adapted from official full workflows and native LTX-2 v1.3.0; image/audio wiring shared with the Comfy distilled route."
+  },
+  "links": [
+    {
+      "rel": "source",
+      "href": "https://huggingface.co/Lightricks/LTX-2.5"
+    },
+    {
+      "rel": "source",
+      "href": "https://huggingface.co/Lightricks/LTX-2.5/tree/5e6e71018ee1756ed329b697a7b4aedc934dfce9"
+    }
+  ],
+  "keywords": [
+    "cuda",
+    "bf16",
+    "ltx-2.5",
+    "nvidia",
+    "full"
+  ],
+  "capabilities": [
+    "video-generation",
+    "text-to-video",
+    "image-to-video",
+    "audio-to-video",
+    "first-last-frame"
+  ],
+  "hardware": {
+    "family": "Linux NVIDIA CUDA",
+    "testedMachine": "DGX Spark / GB10 class NVIDIA system",
+    "notes": [
+      "Standalone single-GPU serving; subsequent recipes share one managed ComfyUI runtime.",
+      "NVIDIA Container Toolkit with CUDA 13-compatible host driver required."
+    ]
+  },
+  "requirements": {
+    "platforms": [
+      "linux-x64",
+      "linux-arm64"
+    ],
+    "memoryGb": 95,
+    "diskGb": 80,
+    "commands": [
+      "docker",
+      "python3"
+    ],
+    "accelerators": [
+      "cuda",
+      "nvidia-gpu"
+    ]
+  },
+  "backend": {
+    "id": "comfyui-media",
+    "name": "ComfyUI media",
+    "type": "openai-compatible-server",
+    "features": [
+      "cuda",
+      "audio-generation",
+      "video-generation",
+      "image-generation",
+      "image-editing"
+    ]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-docker",
+        "title": "Check Docker CLI",
+        "action": "check-command",
+        "command": "docker",
+        "args": [
+          "--version"
+        ]
+      },
+      {
+        "id": "download-1-ltx-2.5",
+        "title": "Download Lightricks/LTX-2.5 files for ltx-2.5",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "Lightricks/LTX-2.5",
+        "revision": "5e6e71018ee1756ed329b697a7b4aedc934dfce9",
+        "include": [
+          "latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors",
+          "text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+          "vae/ltx-2.5-audio-vae-bf16.safetensors",
+          "vae/ltx-2.5-video-vae-bf16.safetensors",
+          "diffusion_models/ltx-2.5-22b-dev-transformer-bf16.safetensors",
+          "loras/ltx-2.5-22b-distilled-lora-450-bf16.safetensors"
+        ],
+        "downloadSizeBytes": 69123918164,
+        "integrity": {
+          "files": [
+            {
+              "path": "latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors",
+              "sizeBytes": 995778752,
+              "sha256": "eb5a71fe4068ee87ccdb1c3aa635e547ca76bd2d30ae20ae889f2c325c0677e8"
+            },
+            {
+              "path": "text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+              "sizeBytes": 15372969374,
+              "sha256": "6ce688a0aa98a5fa36a9f1e6c3f42152a498cc2b53ee8c15674c64244f91487f"
+            },
+            {
+              "path": "vae/ltx-2.5-audio-vae-bf16.safetensors",
+              "sizeBytes": 364866540,
+              "sha256": "c52733d37f6a7fb7949c3dc0fb468c6cb2169e4d836983a73babb9f0d54837a5"
+            },
+            {
+              "path": "vae/ltx-2.5-video-vae-bf16.safetensors",
+              "sizeBytes": 1472223346,
+              "sha256": "847e14ca7f3355debca0cea4eaa24ac0fbcdf0061da054ac89ca638a869ddba3"
+            },
+            {
+              "path": "diffusion_models/ltx-2.5-22b-dev-transformer-bf16.safetensors",
+              "sizeBytes": 42018190584,
+              "sha256": "792a2bad501ca03262c0bc2ce7a2949e85b142ce18e30894aad5bc849c8e7584"
+            },
+            {
+              "path": "loras/ltx-2.5-22b-distilled-lora-450-bf16.safetensors",
+              "sizeBytes": 8899889568,
+              "sha256": "86370bbf79a9eb4edaa158907e2b48a5188fe4c5dc8ce30c7eb8f2f131a9bbf5"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "ltx-2.5-full",
+      "model": "Lightricks/LTX-2.5-Comfy-Full",
+      "gatewayModel": "Lightricks/LTX-2.5-Comfy-Full",
+      "runtime": "comfyui-media",
+      "backendConfig": "comfyui-media",
+      "kind": "video",
+      "input": [
+        "text",
+        "image",
+        "audio"
+      ],
+      "output": [
+        "video",
+        "audio"
+      ],
+      "capabilities": [
+        "video-generation",
+        "text-to-video",
+        "image-to-video",
+        "audio-to-video",
+        "first-last-frame"
+      ],
+      "settings": {
+        "memoryGb": 95,
+        "priority": 20,
+        "keepWarm": false,
+        "maxActiveRequests": 1,
+        "startupTimeoutMs": 900000,
+        "runtime": {
+          "adapter": "docker",
+          "management": "managed",
+          "containerName": "lloom-comfyui-media",
+          "healthUrl": "http://127.0.0.1:${port}/health",
+          "bootstrap": {
+            "adapter": "docker",
+            "image": "lloom/comfyui-media:source-6d8fbbc3e58bef36bb8723cdcb01f53a7f8f5d9bd6f74ab015a3dbf06ca19147",
+            "pull": false,
+            "createArgs": [
+              "--restart",
+              "unless-stopped",
+              "--gpus",
+              "all",
+              "--ipc",
+              "host",
+              "-p",
+              "127.0.0.1:${port}:8000",
+              "--mount",
+              "type=bind,src=${modelRoot}/Lightricks--LTX-2.5/latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors,dst=/opt/ComfyUI/models/latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Lightricks--LTX-2.5/text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors,dst=/opt/ComfyUI/models/text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Lightricks--LTX-2.5/vae/ltx-2.5-audio-vae-bf16.safetensors,dst=/opt/ComfyUI/models/vae/ltx-2.5-audio-vae-bf16.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Lightricks--LTX-2.5/vae/ltx-2.5-video-vae-bf16.safetensors,dst=/opt/ComfyUI/models/vae/ltx-2.5-video-vae-bf16.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Lightricks--LTX-2.5/diffusion_models/ltx-2.5-22b-dev-transformer-bf16.safetensors,dst=/opt/ComfyUI/models/diffusion_models/ltx-2.5-22b-dev-transformer-bf16.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Lightricks--LTX-2.5/loras/ltx-2.5-22b-distilled-lora-450-bf16.safetensors,dst=/opt/ComfyUI/models/loras/ltx-2.5-22b-distilled-lora-450-bf16.safetensors,readonly",
+              "-v",
+              "lloom-comfyui-media-data:/data",
+              "-e",
+              "LLOOM_MEDIA_DATA_ROOT=/data",
+              "-e",
+              "LLOOM_MODELS_ROOT=/opt/ComfyUI/models",
+              "-e",
+              "LLOOM_MEDIA_MODEL=Lightricks/LTX-2.5-Comfy-Full"
+            ]
+          }
+        },
+        "timeoutMs": 1800000
+      }
+    }
+  ]
+}

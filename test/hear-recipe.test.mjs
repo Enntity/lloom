@@ -20,8 +20,18 @@ assert.deepEqual(model.output, ['text', 'image']);
 // rejects by design, so warmup must stay off and the server warms itself at boot.
 assert.equal(model.settings.runtime.warmup, false);
 // The gateway sizes prompts from the raw request and counts inline base64 audio as
-// text tokens (a 30 s clip is ~183K), so the gate has to admit that.
-assert.ok(model.settings.contextWindow >= 1048576);
+// text tokens. Hear is CPU DSP, so contextWindow is an admission allowance, not an
+// LLM context limit. A normal 59 s stereo 10.4 MB WAV inlines to ~3,965,572
+// estimated text tokens; the allowance must exceed the backend's default 64 MiB
+// request envelope at the gateway's ~3.5 bytes/token estimate, under a 98% gate.
+const REQUEST_ENVELOPE_BYTES = 64 * 1024 * 1024;
+const BYTES_PER_TOKEN = 3.5;
+const ADMISSION_FRACTION = 0.98;
+const requiredAllowance = REQUEST_ENVELOPE_BYTES / BYTES_PER_TOKEN / ADMISSION_FRACTION;
+assert.ok(
+  model.settings.contextWindow >= requiredAllowance,
+  `contextWindow ${model.settings.contextWindow} must cover the 64 MiB request envelope`
+);
 
 const config = await loadConfig();
 const plan = await createInitPlan(config, {

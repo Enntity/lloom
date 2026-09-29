@@ -188,6 +188,7 @@ export async function createBootstrapPlan(
     recipe: await pinDownloadCommands(
       planRecipe(recipe, config, {
         modelRoot: selectedModelRoot,
+        variables: backendVariables,
         backendIds: backendIds(catalog),
         benchmarkEvidence,
         benchmarksRoot: selectedBenchmarksRoot,
@@ -275,6 +276,7 @@ export async function applyBootstrap(
         env: commandEnv,
         onProgress,
         stdio,
+        variables: backendVariables,
         ...((reviewed?.modelRoot ?? modelRoot) ? { modelRoot: reviewed?.modelRoot ?? modelRoot } : {}),
         ...((reviewed?.recipePlan ?? (reviewed?.recipe?.steps ? reviewed.recipe : null))
           ? { reviewedPlan: reviewed.recipePlan ?? reviewed.recipe }

@@ -20,6 +20,7 @@
  */
 
 import { spawn } from 'node:child_process';
+import { fetch as undiciFetch } from 'undici';
 import { applyOpenRouterProviderPolicy } from './protocol/openrouter-provider.mjs';
 
 const OPENROUTER_ORIGIN = 'https://openrouter.ai';
@@ -71,7 +72,8 @@ export async function generateProviderAudio({
   backend,
   body,
   signal,
-  fetchFn = fetch,
+  // Match the installed undici dispatcher contract.
+  fetchFn = undiciFetch,
   dispatcher,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   maxBytes = DEFAULT_MAX_BYTES,

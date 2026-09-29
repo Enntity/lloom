@@ -23,7 +23,7 @@ def verify():
     class Cache:
         def get_cache(self, upstream, downstream):
             assert downstream == node_id
-            value = reference if graph[upstream]["class_type"] == "LoadImage" else object()
+            value = reference if graph[upstream]["class_type"] == "JoinImageWithAlpha" else object()
             return SimpleNamespace(outputs=[[value]])
 
     def resolve(inputs):

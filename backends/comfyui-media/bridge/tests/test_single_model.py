@@ -116,3 +116,17 @@ async def test_selection_via_environment_is_honoured(monkeypatch):
         listed = {m["id"] for m in (await client.get("/v1/models")).json()["data"]}
         assert listed == {"audio-model"}
         await comfy.aclose()
+async def test_nvfp4_runtime_refuses_other_image_models(monkeypatch):
+    from graphs import MODELS
+    monkeypatch.setenv("LLOOM_MEDIA_MODEL", "BennyDaBall/Qwen-Image-2.1-NVFP4")
+    fake = FakeComfy()
+    app, comfy = make_bridge(fake, video_builder, models=MODELS)
+    async with asgi_client(app) as client:
+        await comfy.start()
+        listed = (await client.get("/v1/models")).json()["data"]
+        assert [m["id"] for m in listed] == ["BennyDaBall/Qwen-Image-2.1-NVFP4"]
+        response = await client.post("/v1/images/generations", json={"model": "Qwen/Qwen-Image-2.1", "prompt": "x"})
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "unsupported_model"
+        assert not fake.prompts
+        await comfy.aclose()

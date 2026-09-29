@@ -56,6 +56,11 @@ import { applyBackend, applyRecipe } from '../src/installer.mjs';
 import { createInterchangeRegistry, createInterchangeValidationReport } from '../src/interchange.mjs';
 import { profileMachine, rankRecipes } from '../src/machine-profile.mjs';
 import { loadManagedServiceEnvironment, resolveManagedEnvironmentValue } from '../src/managed-environment.mjs';
+import { runHeadPreparation } from '../src/head-transfer.mjs';
+import { runHeadPromotionTransfer } from '../src/head-promotion-transfer.mjs';
+import { restartGatewayService } from '../src/service-control.mjs';
+import { retargetGatewayRelay } from '../src/gateway-relay.mjs';
+import { retargetClientFile } from '../src/client-retarget.mjs';
 import { applyModelImport, applyModelImportGo } from '../src/model-intake.mjs';
 import { applyModelRemoval } from '../src/model-removal.mjs';
 import { applyOnboarding, createOnboardingPlan } from '../src/onboarding.mjs';
@@ -115,6 +120,7 @@ const COMMAND_REGISTRY = [
   { name: 'backend-plan', aliases: [], tier: 'advanced', needsInstalledConfig: false },
   { name: 'backend-install', aliases: [], tier: 'advanced', needsInstalledConfig: false },
   { name: 'runtimes', aliases: ['runtime-status'], tier: 'advanced', needsInstalledConfig: true },
+  { name: 'service', aliases: [], tier: 'advanced', needsInstalledConfig: true },
   { name: 'cluster', aliases: ['cluster-status'], tier: 'advanced', needsInstalledConfig: true },
   { name: 'runtime-plan', aliases: [], tier: 'advanced', needsInstalledConfig: true },
   { name: 'runtime-policy', aliases: [], tier: 'advanced', needsInstalledConfig: true },
@@ -207,6 +213,10 @@ Backends and runtimes:
   lloom down
   lloom cluster [status|doctor|discover] [--apply] [--id NAME] [--api-key-env NAME] [--json]
   lloom cluster add-node <id> <url> [--namespace NAME|--merge] [--include-external] [--api-key-env NAME] [--apply]
+  lloom service restart [--label com.lloom.gateway] [--apply --yes] [--drain-timeout-ms 300000]
+  lloom service relay --unit NAME [--expect-unit HASH --apply --yes]
+  lloom cluster prepare-head (--from <config.json|-> | --from-ssh HOST) [--target-ssh HOST] [--include-secrets] [--apply --yes]
+  lloom cluster promote-head (--from <config.json|-> | --from-ssh HOST) [--target-ssh HOST] --source-url URL [--include-secrets] [--expect-destination HASH] [--apply --yes]
   lloom backends [backend-id|all]
   lloom backend-plan <backend-id>
   lloom backend-install <backend-id> [--apply --yes] [--step step-id]
@@ -224,6 +234,7 @@ Models and clients:
   lloom add-model <hf-url|repo-id|local-path|ollama:tag|lmstudio:id|openai:url#model> [--backend id] [--api-key-env NAME] [--input TYPE] [--capability ID] [--tag ID] [--keep-warm] [--default] [--go|--apply --yes]
   lloom remove-model <model-id> [--delete-files] [--apply --yes]
   lloom integrations [client-id|all] [--home path] [--generated-root path]
+  lloom integrate retarget --file PATH --from-url ORIGIN --to-url ORIGIN [--expect-file HASH --apply --yes]
   lloom integrate [client-id|all] [--home path] [--generated-root path] [--apply --yes]
 
 Named voices (TTS clone profiles under ~/.lloom/voices/<id>):
@@ -310,6 +321,7 @@ function commandLine(command, parts = []) {
 const INSTALLED_CONFIG_COMMANDS = new Set([
   'add-model',
   'bootstrap',
+  'service',
   'cluster',
   'cluster-status',
   'doctor',
@@ -342,6 +354,7 @@ const INSTALLED_CONFIG_COMMANDS = new Set([
 
 const OPERATIONAL_CONFIG_COMMANDS = new Set([
   'add-model',
+  'service',
   'cluster',
   'cluster-status',
   'doctor',
@@ -2331,6 +2344,23 @@ async function main() {
       );
     },
     integrate: async ({ args, config, command: _command }) => {
+      if (positional(args)[1] === 'retarget') {
+        console.log(
+          JSON.stringify(
+            await retargetClientFile({
+              file: argValue(args, '--file'),
+              from: argValue(args, '--from-url'),
+              to: argValue(args, '--to-url'),
+              expectedHash: argValue(args, '--expect-file'),
+              apply: hasFlag(args, '--apply'),
+              yes: hasFlag(args, '--yes')
+            }),
+            null,
+            2
+          )
+        );
+        return;
+      }
       const clientId = positional(args)[1] ?? 'all';
       const registry = createRegistry(config);
       const apply = hasFlag(args, '--apply');
@@ -2482,6 +2512,36 @@ async function main() {
         )
       );
     },
+    service: async ({ args, config }) => {
+      if (positional(args)[1] === 'relay') {
+        console.log(
+          JSON.stringify(
+            await retargetGatewayRelay(config, {
+              unit: argValue(args, '--unit'),
+              apply: hasFlag(args, '--apply'),
+              yes: hasFlag(args, '--yes'),
+              expectedUnitHash: argValue(args, '--expect-unit')
+            }),
+            null,
+            2
+          )
+        );
+        return;
+      }
+      if (positional(args)[1] !== 'restart') throw new Error('Usage: lloom service restart [--apply --yes]');
+      console.log(
+        JSON.stringify(
+          await restartGatewayService(config, {
+            apply: hasFlag(args, '--apply'),
+            yes: hasFlag(args, '--yes'),
+            timeoutMs: Number(argValue(args, '--drain-timeout-ms') ?? 300000),
+            serviceLabel: argValue(args, '--label') ?? 'com.lloom.gateway'
+          }),
+          null,
+          2
+        )
+      );
+    },
     cluster: async ({ args, config, command: _command }) => {
       const action = positional(args)[1] ?? 'status';
       if (action === 'discover') {
@@ -2600,6 +2660,41 @@ async function main() {
             2
           )
         );
+        return;
+      }
+      if (action === 'prepare-head') {
+        const from = argValue(args, '--from');
+        const result = await runHeadPreparation({
+          configPath: config.sourcePath,
+          sourcePath: from,
+          sourceSsh: argValue(args, '--from-ssh'),
+          targetSsh: argValue(args, '--target-ssh'),
+          expectedDestinationHash: argValue(args, '--expect-destination'),
+          includeSecrets: hasFlag(args, '--include-secrets'),
+          apply: hasFlag(args, '--apply'),
+          yes: hasFlag(args, '--yes')
+        });
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      if (action === 'promote-head') {
+        const from = argValue(args, '--from');
+        if (!from && !argValue(args, '--from-ssh'))
+          throw new Error('cluster promote-head requires --from or --from-ssh');
+        if (!hasFlag(args, '--json')) throw new Error('cluster promote-head requires --json');
+        const result = await runHeadPromotionTransfer({
+          configPath: config.sourcePath,
+          sourcePath: from,
+          sourceSsh: argValue(args, '--from-ssh'),
+          targetSsh: argValue(args, '--target-ssh'),
+          sourceUrl: argValue(args, '--source-url'),
+          expectedDestinationHash: argValue(args, '--expect-destination'),
+          includeSecrets: hasFlag(args, '--include-secrets'),
+          apply: hasFlag(args, '--apply'),
+          yes: hasFlag(args, '--yes'),
+          stdin: process.stdin
+        });
+        console.log(JSON.stringify(result, null, 2));
         return;
       }
       const response = await gatewayRequest(config, '/gateway/cluster', { timeoutMs: 10000 });
