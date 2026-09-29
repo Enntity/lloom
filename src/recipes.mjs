@@ -123,6 +123,7 @@ export function planRecipe(
   config,
   {
     modelRoot = '${LLOOM_MODEL_ROOT}',
+    variables = {},
     platform = process.platform,
     arch = process.arch,
     backendIds,
@@ -132,6 +133,15 @@ export function planRecipe(
     benchmarkValidationErrors = []
   } = {}
 ) {
+  // Recipe setup commands use the same managed variable vocabulary as backend
+  // commands. Keep repoRoot/modelRoot available for standalone recipe plans,
+  // while callers such as setup pass the complete backend variable set
+  // (backendRoot, installRoot, shimDir, ...).
+  const templateVariables = {
+    repoRoot,
+    ...variables,
+    modelRoot
+  };
   const platformId = machineId({ platform, arch });
   const supportedPlatforms = asArray(recipe.requirements?.platforms);
   const platformSupported = !supportedPlatforms.length || supportedPlatforms.includes(platformId);
@@ -145,6 +155,11 @@ export function planRecipe(
       title: step.title ?? step.id,
       action: step.action
     };
+    // alwaysRun gates describe external state that can change without the
+    // step id or command changing (pins, images, converted overlays). Preserve
+    // the flag through planning so apply and setup-status re-run them instead
+    // of trusting a stale completed record.
+    if (step.alwaysRun === true) planned.alwaysRun = true;
     if (step.action === 'download-model') {
       planned.provider = step.provider ?? 'huggingface';
       planned.model = step.model;
@@ -165,10 +180,10 @@ export function planRecipe(
       ]);
       planned.command = planned.commands[0];
     } else if (['command', 'check-command'].includes(step.action)) {
-      planned.command = commandLine(step, { modelRoot });
+      planned.command = commandLine(step, templateVariables);
     }
     if (step.skipIfPathExists) {
-      planned.skipIfPathExists = expandTemplate(String(step.skipIfPathExists), { modelRoot });
+      planned.skipIfPathExists = expandTemplate(String(step.skipIfPathExists), templateVariables);
     }
     return planned;
   });

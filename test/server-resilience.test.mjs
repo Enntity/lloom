@@ -13,6 +13,7 @@ for (const scenario of [
   'http-buffered',
   'sse-error',
   'done',
+  'sse-comment-delayed',
   'keepalive-stall',
   'productive',
   'no-headers'
@@ -34,6 +35,20 @@ for (const scenario of [
         }
       }, 25);
       res.on('close', () => clearInterval(timer));
+      return;
+    }
+    if (scenario === 'sse-comment-delayed') {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.write(': OPENROUTER PROCESSING\r\n\r\n');
+      setTimeout(() => {
+        res.write(
+          `data: ${JSON.stringify({
+            id: 'comment-delayed',
+            choices: [{ index: 0, delta: { content: 'hé' }, finish_reason: null }]
+          })}\r\n\r\n`
+        );
+        setTimeout(() => res.end('data: [DONE]\r\n\r\n'), 20);
+      }, 20);
       return;
     }
     if (scenario.startsWith('http-')) {
@@ -91,7 +106,12 @@ for (const scenario of [
       const metrics = await (await fetch(`http://127.0.0.1:${port}/gateway/metrics`)).json();
       const entry = metrics.recent.find((x) => x.model === 'test-model');
       assert.equal(entry.status, 429);
-      assert(entry.responseBytes > 0, 'failure metrics retain forwarded processing frames');
+      assert.equal(entry.responseBytes, 0, 'keepalive comments are not forwarded as data frames');
+    } else if (scenario === 'sse-comment-delayed') {
+      assert.match(text, /comment-delayed/);
+      assert.match(text, /hé/);
+      assert.match(text, /\[DONE\]/);
+      assert(!text.includes('data: \n\n'), 'keepalive comments must not become empty data frames');
     } else assert.match(text, /\[DONE\]/);
   } finally {
     upstream.closeAllConnections();

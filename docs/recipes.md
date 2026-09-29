@@ -343,3 +343,156 @@ LLooM intentionally does not use stale model fallback aliases to make an index p
 Per-model image, video and music recipes, each in its own ComfyUI runtime, are documented in [ComfyUI media](comfyui-media.md).
 
 Per-model NVIDIA speech and transcription recipes are documented in [Spark audio](spark-audio.md).
+## Atlas SparkGLM candidate
+
+`linux-nvidia-dgx-spark-2x-glm53-atlas` is the LLooM-managed candidate lane for
+the Atlas SparkGLM engine on two directly connected DGX Sparks.
+Its portable source and model pins are final for the current candidate, while
+live hardware and full serving qualification remain pending.
+
+```sh
+lloom setup --recipe linux-nvidia-dgx-spark-2x-glm53-atlas --additive --apply --yes
+lloom runtime-start glm53-flash-atlas-cluster
+```
+
+The recipe is additive. It does not set a default model and does not overwrite
+aliases, so an existing GLM-5.3 Flash route keeps working.
+
+### Single pin manifest and fail-closed pin gate
+
+All portable identities for the lane live in exactly one place,
+`backends/atlas-sparkglm/pins.json`: the `Enntity/sparkglm` source revision and
+the git tree of its `install/` directory, the image tag and identity label, the
+`nvidia/GLM-5.3-Flash-NVFP4` and drafter revisions, and the conversion marker
+contract. The current source pin is product revision
+`9acb642b55ccfbc63fc979d747cb69eff30c9a24` with install tree
+`2ba73a2d8aee7234474ae3cb107a1d61d0c33891`, so the image is
+`ghcr.io/enntity/atlas-sparkglm:2ba73a2d8aee`. A later product revision is
+adopted by changing the revision, the install tree and its derived tag.
+
+While any required value is missing, malformed, or a placeholder, the gate
+fails closed:
+
+```sh
+node backends/atlas-sparkglm/verify-pins.mjs
+```
+
+The same check runs as backend setup step `check-atlas-pins`, and again inside
+`install.sh` and `convert-overlay.sh`, so an invalid manifest cannot build,
+convert, or start anything. The recipe test uses an explicit temporary
+placeholder manifest to cover that refusal path. The checker also rejects a
+revision or install tree that is not a 40-character git object id and an image
+tag not derived from the install tree. Image IDs are never pinned; the
+installer checks the local image's architecture and install-tree label.
+
+### Pinned image: GHCR pull or source build
+
+Setup step `build-atlas-image` runs `bash backends/atlas-sparkglm/install.sh`
+with the managed backend and install roots. It reuses an already verified local
+image, otherwise pulls the pinned tag from GHCR, otherwise clones
+`Enntity/sparkglm` at the exact `SOURCE_REVISION`, checks that `HEAD:install`
+is the pinned install tree, and runs that repository's `install/build.sh`,
+which must print the same tag. Either way the image must be arm64 and carry
+`io.enntity.sparkglm.install-tree` equal to the pinned tree, and it must ship
+the entrypoint, profile and converter with `--verify-overlay`. A mismatch is a
+hard failure.
+
+**No build runs on the serving path.** Only a prepared image is started.
+
+### Overlay conversion gate
+
+The NVFP4 checkpoint needs a once-per-node overlay conversion before it can be
+served. Setup step `convert-atlas-overlay` runs
+`backends/atlas-sparkglm/convert-overlay.sh`, which is idempotent per node and
+never infers completion from directory existence: it requires
+`conversion.complete.json` with `converted_matrices` equal to 864, nonempty
+`shards`, absolute `source` and `output` paths, and a numeric `finished` value.
+The converter's full CPU `--verify-overlay` pass must succeed. A directory
+without that marker or without successful CPU verification remains incomplete.
+
+### Container contract
+
+The engine profile ships inside the image, not in the recipe. LLooM passes
+environment and mounts; the image's `/opt/atlas/serve.py` selects the argument
+vector from `/opt/atlas/profiles/4x512k.json` (its default `SPARKGLM_PROFILE`).
+
+| Variable                                               | Meaning                                                                   |
+| ------------------------------------------------------ | ------------------------------------------------------------------------- |
+| `NODE_RANK`                                            | `0` on the leader, `1` on the worker                                      |
+| `MASTER_ADDR`                                          | discovered direct-fabric address of the leader                            |
+| `MASTER_PORT`                                          | `29510`                                                                   |
+| `FABRIC_INTERFACE`                                     | discovered direct-fabric NIC, also `NCCL_SOCKET_IFNAME`                   |
+| `MODEL_PATH`                                           | mounted converted overlay root, `${installRoot}/atlas-overlay`            |
+| `SERVED_MODEL_NAME`                                    | `glm-5.3-flash-atlas`                                                     |
+| `ATLAS_WORLD_SIZE` / `ATLAS_TP_SIZE` / `ATLAS_EP_SIZE` | `2`                                                                       |
+| `NCCL_*`                                               | IB transport with `NCCL_IB_HCA=rocep1s0f0`, `AF_INET`, `NCCL_CROSS_NIC=0` |
+
+Listeners are private and loopback-bound per node: leader `127.0.0.1:8893`,
+worker `127.0.0.1:8894`. The worker starts first (`order` 10, rank 1) with
+`healthStrategy: "container"` and no warmup, because the engine exposes no
+separate worker HTTP surface. The leader starts second (`order` 20, rank 0),
+health-checks `/health`, runs a POST warmup, and then owns routing.
+
+### Baseline envelope
+
+The candidate profile serves 524288-token contexts to four concurrent sequences
+from one shared FP8-latent KV pool (340K-560K tokens depending on memory free at startup; it also holds the prefix cache, with 16 recurrent-state snapshot slots), with FP32 SSM state,
+DFlash2 speculation (gamma 8) on the head rank, GPU memory utilization 0.88,
+and `--memory=114g` with a 4096 MiB OOM guard. `disable-tool-grammar` is **not**
+set, so structured output and tool calling stay functional. The image includes
+image and video input support; gateway and two-node serving canaries remain
+required for qualification.
+
+Both nodes must carry the same portable source, model and converter pins and an
+identical `backends/atlas-sparkglm` directory. Each host verifies its local
+image by the pinned install-tree label, whether it was pulled or built; image
+IDs may differ across hosts.
+
+### OpenAI multimodal request
+
+The Atlas model accepts OpenAI-compatible `image_url` and `video_url` content in
+`/v1/chat/completions`. Use a real base64 payload in place of the placeholders
+below. The gateway keeps these media parts intact, passes native JSON Schema and
+tools through to Atlas, and still applies its normal request body byte limit.
+
+```sh
+curl http://127.0.0.1:8100/v1/chat/completions \
+  -H 'content-type: application/json' \
+  -d '{
+    "model": "glm-5.3-flash-atlas",
+    "stream": true,
+    "messages": [{
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "Describe the clip and image."},
+        {"type": "video_url", "video_url": {"url": "data:video/mp4;base64,<base64-mp4>"}},
+        {"type": "video_url", "video_url": {"url": "data:image/gif;base64,<base64-gif>"}},
+        {"type": "image_url", "image_url": {"url": "https://example.test/frame.png", "detail": "low"}}
+      ]
+    }],
+    "response_format": {
+      "type": "json_schema",
+      "json_schema": {
+        "name": "caption",
+        "strict": true,
+        "schema": {
+          "type": "object",
+          "properties": {"caption": {"type": "string"}},
+          "required": ["caption"],
+          "additionalProperties": false
+        }
+      }
+    },
+    "tools": [{
+      "type": "function",
+      "function": {
+        "name": "save_caption",
+        "parameters": {"type": "object", "properties": {"caption": {"type": "string"}}}
+      }
+    }]
+  }'
+```
+
+Responses clients can send the same media URLs as `input_image` and
+`input_video` content parts; LLooM converts those parts to the matching Chat
+Completions form before forwarding the request.

@@ -1665,6 +1665,77 @@
         ],
         "notes": "Each inference subprocess group is terminated and reaped before its single-flight slot is released."
       }
+    },
+    {
+      "id": "docker-atlas-sparkglm",
+      "name": "Docker Atlas SparkGLM",
+      "kind": "openai-compatible-server",
+      "description": "LLooM-managed Atlas SparkGLM candidate containers. The bundled MIT installer pulls the pinned image from GHCR or builds it from an immutable Enntity/sparkglm revision with the same tag, verifies its install-tree label, and only the prepared image is started: no build runs on the serving path. The candidate includes structured output and image/video input; live qualification remains pending.",
+      "platforms": [
+        "linux-arm64"
+      ],
+      "features": [
+        "chat",
+        "responses",
+        "streaming",
+        "usage",
+        "tools",
+        "structured-output",
+        "reasoning",
+        "vision",
+        "speculative-decoding",
+        "moe",
+        "long-context",
+        "cuda",
+        "blackwell",
+        "dgx-spark",
+        "docker",
+        "nccl",
+        "distributed"
+      ],
+      "commands": [
+        "docker",
+        "bash",
+        "git",
+        "node"
+      ],
+      "setup": [
+        {
+          "id": "check-docker",
+          "title": "Check Docker",
+          "action": "check-command",
+          "command": "docker",
+          "args": [
+            "version"
+          ]
+        },
+        {
+          "id": "check-atlas-pins",
+          "title": "Verify Atlas SparkGLM pins are final",
+          "action": "command",
+          "alwaysRun": true,
+          "command": "node",
+          "args": [
+            "${repoRoot}/backends/atlas-sparkglm/verify-pins.mjs"
+          ]
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health",
+        "chatPath": "/v1/chat/completions"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "unverified",
+        "modes": [
+          "streaming",
+          "buffered",
+          "queued",
+          "generation"
+        ],
+        "notes": "Reclamation is unverified for the Atlas engine; confirm abort behaviour on the prepared image before advertising it. The LLooM watchdog drains and evicts on repeated 5xx/timeout regardless."
+      }
     }
   ]
 }
