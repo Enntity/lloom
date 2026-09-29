@@ -109,7 +109,7 @@ function sourceNodeId(config) {
   return id;
 }
 
-export function sourceReadScript() {
+export function sourceReadScript(includeSecrets = false) {
   return `import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 const home=os.homedir(); const c=JSON.parse(fs.readFileSync(path.join(home,'.lloom/config.json'),'utf8'));
 const env={...process.env};
@@ -132,20 +132,30 @@ try{if(fs.lstatSync(profilesDir).isSymbolicLink())throw Error('unsafe fleet prof
  sourceProfiles[name]=JSON.parse(fs.readFileSync(path.join(profilesDir,entry.name),'utf8'));
 }}catch(e){if(e.code!=='ENOENT')throw e;}
 function resolved(value){return typeof value==='string'?value.replace(/\\$\\{([A-Za-z_][A-Za-z0-9_]*)\\}/g,(_,k)=>Object.hasOwn(env,k)&&typeof env[k]==='string'?env[k]:''):null}
-const keys=(Array.isArray(c.security?.apiKeys)?c.security.apiKeys:[]).map(resolved).filter((v)=>typeof v==='string'&&v.length>0);
+const inferenceKeys=(Array.isArray(c.security?.apiKeys)?c.security.apiKeys:[]).map(resolved).filter((v)=>typeof v==='string'&&v.length>0);
+const configuredAdminKeys=(Array.isArray(c.security?.adminApiKeys)?c.security.adminApiKeys:[]).filter(Boolean);
+const adminKeys=configuredAdminKeys.map(resolved).filter((v)=>typeof v==='string'&&v.length>0);
+const effectiveAdminKey=configuredAdminKeys.length?(adminKeys[0]??null):(inferenceKeys[0]??null);
+const sourceConfig=Object.fromEntries(['cluster','models','backends','aliases','defaults','profiles','fleet','nodeModelIndex'].filter((k)=>Object.hasOwn(c,k)).map((k)=>[k,c[k]]));
+sourceConfig.runtimes=Object.fromEntries(Object.entries(c.runtimes??{}).map(([k,r])=>[k,Object.fromEntries(['backend','upstreamBackend','backends'].filter((f)=>Object.hasOwn(r??{},f)).map((f)=>[f,r[f]]))]));
+function scrub(value){if(Array.isArray(value)){value.forEach(scrub);return;}if(!value||typeof value!=='object')return;if(Object.hasOwn(value,'apiKey'))value.apiKey='\${LLOOM_IMPORT_CREDENTIAL_REQUIRED}';for(const k of ['apiKeys','adminApiKeys'])if(Object.hasOwn(value,k))value[k]=[];Object.values(value).forEach(scrub);}
+if(!${includeSecrets ? 'true' : 'false'}){scrub(sourceConfig);scrub(sourceProfiles);}
 process.stdout.write(JSON.stringify({
- sourceConfig:c,
+ sourceConfig,
  sourceProfiles,
- sourceInferenceKey:keys[0]??null,
+ sourceInferenceKey:${includeSecrets ? 'true' : 'false'}?(inferenceKeys[0]??null):null,
+ sourceAdminKey:${includeSecrets ? 'true' : 'false'}?effectiveAdminKey:null,
+ sourceInferenceKeyResolved:Boolean(inferenceKeys[0]),
+ sourceAdminKeyResolved:Boolean(effectiveAdminKey),
  sourceUrl,
  sourceNode:typeof c.cluster?.nodeId==='string'?c.cluster.nodeId:null
 }));`;
 }
 
-export function sourceReadCommand() {
+export function sourceReadCommand(includeSecrets = false) {
   return (
     'export PATH="$HOME/.local/bin:$PATH" LLOOM_SOURCE_SCRIPT_B64=' +
-    `'${Buffer.from(sourceReadScript()).toString('base64')}'` +
+    `'${Buffer.from(sourceReadScript(includeSecrets)).toString('base64')}'` +
     "; exec node --input-type=module --eval 'const mod = await import(`data:text/javascript;base64,${process.env.LLOOM_SOURCE_SCRIPT_B64}`);'"
   );
 }
@@ -153,6 +163,13 @@ export function sourceReadCommand() {
 function redactedEnvelope(envelope) {
   const clean = structuredClone(envelope);
   delete clean.sourceInferenceKey;
+  delete clean.sourceAdminKey;
+  clean.sourceInferenceKeyResolved =
+    (typeof envelope.sourceInferenceKey === 'string' && envelope.sourceInferenceKey.length > 0) ||
+    envelope.sourceInferenceKeyResolved === true;
+  clean.sourceAdminKeyResolved =
+    (typeof envelope.sourceAdminKey === 'string' && envelope.sourceAdminKey.length > 0) ||
+    envelope.sourceAdminKeyResolved === true;
   const scrub = (value) => {
     if (Array.isArray(value)) {
       value.forEach(scrub);
@@ -160,6 +177,9 @@ function redactedEnvelope(envelope) {
     }
     if (!value || typeof value !== 'object') return;
     if (Object.hasOwn(value, 'apiKey')) value.apiKey = '${LLOOM_IMPORT_CREDENTIAL_REQUIRED}';
+    for (const field of ['apiKeys', 'adminApiKeys']) {
+      if (Object.hasOwn(value, field)) value[field] = [];
+    }
     Object.values(value).forEach(scrub);
   };
   scrub(clean.sourceConfig);
@@ -326,7 +346,17 @@ export async function applyHeadPromotion({
   const sourceNode = sourceNodeId(sourceConfig);
   const sourceInferenceKey =
     includeSecrets && typeof envelope.sourceInferenceKey === 'string' ? envelope.sourceInferenceKey : null;
+  const sourceAdminKey = includeSecrets && typeof envelope.sourceAdminKey === 'string' ? envelope.sourceAdminKey : null;
+  const previewInferenceResolved =
+    typeof envelope.sourceInferenceKey === 'string' && envelope.sourceInferenceKey.length > 0
+      ? true
+      : envelope.sourceInferenceKeyResolved === true;
+  const previewAdminResolved =
+    typeof envelope.sourceAdminKey === 'string' && envelope.sourceAdminKey.length > 0
+      ? true
+      : envelope.sourceAdminKeyResolved === true;
   if (apply && !sourceInferenceKey) throw new Error('promotion envelope has no resolved source inference key');
+  if (apply && !sourceAdminKey) throw new Error('promotion envelope has no resolved source admin key');
   if (apply && destinationHash !== expectedDestinationHash) {
     throw new Error('destination changed since reviewed plan; expected hash does not match');
   }
@@ -335,6 +365,9 @@ export async function applyHeadPromotion({
     sourceNode: envelope.sourceNode ?? sourceNode,
     sourceUrl: url,
     sourceInferenceKey,
+    sourceAdminKey,
+    sourceInferenceKeyResolved: !includeSecrets ? previewInferenceResolved : sourceInferenceKey !== null,
+    sourceAdminKeyResolved: !includeSecrets ? previewAdminResolved : sourceAdminKey !== null,
     sourceProfiles: envelope.sourceProfiles ?? {},
     destinationProfiles: existingProfiles.parsed
   });
@@ -472,7 +505,7 @@ export async function runHeadPromotionTransfer({
 
   if (targetSsh) {
     let envelope = sourceSsh
-      ? JSON.parse(await transport(sourceSsh, sourceReadCommand(), JSON.stringify({ sourceUrl })))
+      ? JSON.parse(await transport(sourceSsh, sourceReadCommand(includeSecrets), JSON.stringify({ sourceUrl })))
       : sourcePath === '-'
         ? await readPromotionEnvelope(stdin)
         : await readPromotionEnvelope((await fs.readFile(path.resolve(sourcePath))).toString('utf8'));

@@ -160,3 +160,82 @@ test('launchd shell wrapper uses exact configuration argv and LLooM executable',
   assert.equal(matches(['/bin/zsh', '-c', cmd.replace("config.json'", "config.json.backup'")], config), false);
   assert.equal(matches(['unrelated', 'serve', '--config', config], config), false);
 });
+
+test('listener preview validates local addresses and authenticated public binds', async (t) => {
+  const f = await fixture(t);
+  const opts = { platform: 'linux', host: '0.0.0.0', fetchFn: () => assert.fail('dry run request') };
+  await assert.rejects(restartGatewayService(f.config, opts), /non-loopback/);
+  f.config.security.allowNonLoopbackBind = true;
+  assert.equal((await restartGatewayService(f.config, opts)).newHost, '0.0.0.0');
+  f.config.security.apiKeys = [];
+  await assert.rejects(restartGatewayService(f.config, opts), /credential/);
+  await assert.rejects(restartGatewayService(f.config, { ...opts, host: '192.0.2.99' }), /non-local/);
+});
+for (const failure of ['none', 'restart', 'external-change'])
+  test(`listener migration preserves disabled inference and rollback ownership: ${failure}`, async (t) => {
+    const f = await fixture(t);
+    f.raw.server.inferenceEnabled = false;
+    f.raw.security.allowNonLoopbackBind = true;
+    await fs.writeFile(f.config.sourcePath, JSON.stringify(f.raw));
+    f.config.security.allowNonLoopbackBind = true;
+    let restarts = 0,
+      drained = false;
+    const fetchFn = async (url) => ({
+      ok: true,
+      json: async () => {
+        if (url.endsWith('/health')) return { pid: restarts ? 202 : 101 };
+        if (url.endsWith('/node')) return { node: { id: 'media' } };
+        if (url.endsWith('/status')) return { server: (await f.read()).server };
+        drained = true;
+        return { active: [] };
+      }
+    });
+    const run = async (cmd, args) => {
+      if (args.includes('show')) return { stdout: 'active\n' };
+      assert.ok(drained);
+      restarts++;
+      if (restarts === 1 && failure !== 'none') {
+        if (failure === 'external-change') {
+          const raw = await f.read();
+          raw.server.host = '127.0.0.2';
+          await fs.writeFile(f.config.sourcePath, JSON.stringify(raw));
+        }
+        throw Error('fixture restart failed');
+      }
+      return { stdout: '' };
+    };
+    const call = restartGatewayService(f.config, {
+      host: '0.0.0.0',
+      platform: 'linux',
+      apply: true,
+      yes: true,
+      run,
+      fetchFn,
+      pause: async () => {}
+    });
+    if (failure === 'none') assert.equal((await call).applied, true);
+    else await assert.rejects(call, failure === 'external-change' ? /externally/ : /fixture restart failed/);
+    const raw = await f.read();
+    assert.equal(raw.server.inferenceEnabled, false);
+    assert.equal(raw.server.host, failure === 'none' ? '0.0.0.0' : failure === 'restart' ? '127.0.0.1' : '127.0.0.2');
+    assert.equal(restarts, failure === 'restart' ? 2 : 1);
+  });
+
+test('restart chooses a resolved admin credential and validates existing public listeners', async (t) => {
+  const f = await fixture(t);
+  f.config.security.adminApiKeys = ['${MISSING_RESTART_FIXTURE_KEY}', 'fixture-admin'];
+  await assert.rejects(
+    restartGatewayService(f.config, {
+      platform: 'linux',
+      apply: true,
+      yes: true,
+      fetchFn: async (url, options) => {
+        assert.equal(options.headers.authorization, 'Bearer fixture-admin');
+        return { ok: true, json: async () => ({ node: { id: 'wrong' } }) };
+      }
+    }),
+    /identity/
+  );
+  f.config.server.host = '0.0.0.0';
+  await assert.rejects(restartGatewayService(f.config, { platform: 'linux' }), /non-loopback/);
+});

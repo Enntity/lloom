@@ -15,6 +15,7 @@ import {
 const SOURCE_NODE = 'spark-src';
 const SOURCE_URL = 'http://spark-src.internal:8100';
 const SOURCE_KEY = 'sk-src-inference-0000';
+const SOURCE_ADMIN_KEY = 'sk-src-admin-3333';
 const DEST_KEY = 'sk-dest-keep-me-1111';
 
 // Destination: the already-prepared media node. It already holds a copy of the
@@ -120,6 +121,7 @@ function plan(dest = destinationConfig(), src = sourceConfig(), options = {}) {
     sourceNode: SOURCE_NODE,
     sourceUrl: SOURCE_URL,
     sourceInferenceKey: SOURCE_KEY,
+    sourceAdminKey: SOURCE_ADMIN_KEY,
     ...options
   });
 }
@@ -161,7 +163,7 @@ test('federates source distributed runtime models and never copies runtime autho
   assert.deepEqual(result.summary.federated.modelIds.sort(), ['dangling-model', 'kimi']);
   const node = next.cluster.nodes[SOURCE_NODE];
   assert.equal(node.endpoint, SOURCE_URL);
-  assert.equal(node.apiKey, SOURCE_KEY, 'inline node credential for parent integration');
+  assert.equal(node.apiKey, SOURCE_ADMIN_KEY, 'inline node admin credential');
   const proxyModels = node.proxy.models;
   const kimi = proxyModels.find((entry) => entry.id === 'kimi');
   assert.deepEqual(kimi, {
@@ -178,6 +180,7 @@ test('federates source distributed runtime models and never copies runtime autho
   );
   const backendId = `lloom-node-${SOURCE_NODE}`;
   assert.equal(next.backends[backendId].apiKey, SOURCE_KEY, 'inline backend credential');
+  assert.equal(next.security.apiKeys.includes(SOURCE_ADMIN_KEY), false);
   assert.equal(next.backends[backendId].baseUrl, `${SOURCE_URL}/v1`);
 
   // No physical runtimes or raw runtime backends copied; TP owner stays on the source.
@@ -185,6 +188,7 @@ test('federates source distributed runtime models and never copies runtime autho
   assert.equal(next.runtimes['tp2-rt'], undefined);
   assert.equal(next.backends['tp2-rt'], undefined);
   assert.equal(result.summary.fleet.sourceLeaderNode, SOURCE_NODE);
+  assert.equal(next.cluster.nodes[next.cluster.nodeId].labels.role, 'leader');
   assert.deepEqual(result.summary.runtimePolicyRetainedOnSource, ['tp2-a', 'tp2-b', 'tp2-rt']);
   assert.equal(result.summary.sourceUnchanged, true);
 });
@@ -286,6 +290,7 @@ test('repeat planning is idempotent and does not regenerate the standalone snaps
     sourceNode: SOURCE_NODE,
     sourceUrl: SOURCE_URL,
     sourceInferenceKey: SOURCE_KEY,
+    sourceAdminKey: SOURCE_ADMIN_KEY,
     destinationProfiles: first.profiles
   });
   assert.equal(second.summary.ok, true);
@@ -305,6 +310,45 @@ test('summary is secret-free and omits full model/profile bodies', () => {
   const text = assertNoSecrets(plan().summary);
   assert.equal(text.includes('serve-tp2'), false, 'no commands');
   assert.equal(text.includes('openrouter.invalid'), false, 'no backend URLs');
+});
+
+test('keyless preview flags missing administration credentials without blocking topology planning', () => {
+  const result = plan(undefined, undefined, { sourceAdminKey: null });
+  assert.equal(result.summary.ok, true);
+  assert.equal(result.summary.sourceCredentials.adminKey, 'missing');
+  assert.match(result.summary.warnings[0], /Apply requires/);
+  assert.equal(result.next.cluster.nodes[SOURCE_NODE]?.apiKey, undefined);
+});
+
+test('repairs a legacy inference-only node credential to the source admin key', () => {
+  const first = plan();
+  const legacy = first.next;
+  legacy.cluster.nodes[SOURCE_NODE].apiKey = SOURCE_KEY;
+  const repaired = planHeadPromotion(legacy, sourceConfig(), {
+    sourceNode: SOURCE_NODE,
+    sourceUrl: SOURCE_URL,
+    sourceInferenceKey: SOURCE_KEY,
+    sourceAdminKey: SOURCE_ADMIN_KEY,
+    destinationProfiles: first.profiles
+  });
+  assert.equal(repaired.summary.ok, true);
+  assert.equal(repaired.next.cluster.nodes[SOURCE_NODE].apiKey, SOURCE_ADMIN_KEY);
+  assert.equal(repaired.next.backends[`lloom-node-${SOURCE_NODE}`].apiKey, SOURCE_KEY);
+});
+
+test('rejects an unrelated conflicting source node credential', () => {
+  const first = plan();
+  const conflicted = first.next;
+  conflicted.cluster.nodes[SOURCE_NODE].apiKey = 'sk-unrelated-node-key';
+  const result = planHeadPromotion(conflicted, sourceConfig(), {
+    sourceNode: SOURCE_NODE,
+    sourceUrl: SOURCE_URL,
+    sourceInferenceKey: SOURCE_KEY,
+    sourceAdminKey: SOURCE_ADMIN_KEY,
+    destinationProfiles: first.profiles
+  });
+  assert.equal(result.summary.ok, false);
+  assert.ok(result.summary.conflicts.some((entry) => entry.type === 'cluster-node'));
 });
 
 test('rejects a mismatched pre-existing proxy or backend definition', () => {
@@ -356,7 +400,8 @@ test('rejects a source node equal to the destination node id', () => {
   const result = planHeadPromotion(destinationConfig(), sourceConfig(), {
     sourceNode: 'media-node',
     sourceUrl: SOURCE_URL,
-    sourceInferenceKey: SOURCE_KEY
+    sourceInferenceKey: SOURCE_KEY,
+    sourceAdminKey: SOURCE_ADMIN_KEY
   });
   assert.equal(result.summary.ok, false);
   assert.ok(result.summary.conflicts.some((c) => c.type === 'cluster' && c.id === 'sourceNode'));
