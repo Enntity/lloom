@@ -6,7 +6,7 @@ Thank you for helping improve LLooM. The project welcomes focused fixes, new bac
 
 Requirements:
 
-- Node.js 20 or newer
+- Node.js 22.19 or newer
 - npm
 - Python 3 for syntax-checking the optional MLX Audio and MTPLX patch helpers
 - macOS, Linux, or another platform capable of running the Node.js test suite

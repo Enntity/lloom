@@ -5,7 +5,7 @@
   "id": "linux-nvidia-comfyui-minimax-h3-turbo",
   "name": "MiniMaxAI/MiniMax-H3-Turbo (ComfyUI, NVIDIA)",
   "version": 1,
-  "summary": "Install MiniMaxAI/MiniMax-H3-Turbo with a shared, locally built ComfyUI media backend.",
+  "summary": "Install MiniMaxAI/MiniMax-H3-Turbo in an independent, single-model ComfyUI runtime.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata only; model weights retain their upstream licenses"
@@ -35,15 +35,13 @@
   ],
   "capabilities": [
     "video-generation",
-    "text-to-video",
-    "image-to-video",
-    "first-last-frame"
+    "text-to-video"
   ],
   "hardware": {
     "family": "Linux NVIDIA CUDA",
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
     "notes": [
-      "Standalone single-GPU serving; subsequent recipes share one managed ComfyUI runtime.",
+      "Independent single-model serving with per-model admission and unloading.",
       "NVIDIA Container Toolkit with CUDA 13-compatible host driver required."
     ]
   },
@@ -153,12 +151,11 @@
       "role": "minimax-h3-turbo",
       "model": "MiniMaxAI/MiniMax-H3-Turbo",
       "gatewayModel": "MiniMaxAI/MiniMax-H3-Turbo",
-      "runtime": "comfyui-media",
-      "backendConfig": "comfyui-media",
+      "runtime": "comfyui-minimax-h3-turbo",
+      "backendConfig": "comfyui-minimax-h3-turbo",
       "kind": "video",
       "input": [
-        "text",
-        "image"
+        "text"
       ],
       "output": [
         "video",
@@ -166,9 +163,7 @@
       ],
       "capabilities": [
         "video-generation",
-        "text-to-video",
-        "image-to-video",
-        "first-last-frame"
+        "text-to-video"
       ],
       "settings": {
         "memoryGb": 95,
@@ -179,11 +174,11 @@
         "runtime": {
           "adapter": "docker",
           "management": "managed",
-          "containerName": "lloom-comfyui-media",
+          "containerName": "lloom-comfyui-minimax-h3-turbo",
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/comfyui-media:source-dbfd165113ba5bf3062f953f97bfe41bff7dcb6996d0f7cdcbd6ee391f54a6cb",
+            "image": "lloom/comfyui-media:source-6d8fbbc3e58bef36bb8723cdcb01f53a7f8f5d9bd6f74ab015a3dbf06ca19147",
             "pull": false,
             "createArgs": [
               "--restart",
@@ -194,12 +189,26 @@
               "host",
               "-p",
               "127.0.0.1:${port}:8000",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--MiniMax-H3/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors,dst=/opt/ComfyUI/models/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--MiniMax-H3/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors,dst=/opt/ComfyUI/models/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--MiniMax-H3/vae/minimax_h3_audio_vae_fp32.safetensors,dst=/opt/ComfyUI/models/vae/minimax_h3_audio_vae_fp32.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--MiniMax-H3/vae/minimax_h3_video_vae_fp16.safetensors,dst=/opt/ComfyUI/models/vae/minimax_h3_video_vae_fp16.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/lightx2v--Minimax-h3-Turbo/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors,dst=/opt/ComfyUI/models/loras/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors,readonly",
               "-v",
-              "${modelRoot}:/opt/lloom-models:ro",
-              "-v",
-              "lloom-comfyui-media-data:/data",
+              "lloom-comfyui-minimax-h3-turbo-data:/data",
               "-e",
-              "LLOOM_MEDIA_DATA_ROOT=/data"
+              "LLOOM_MEDIA_DATA_ROOT=/data",
+              "-e",
+              "LLOOM_MODELS_ROOT=/opt/ComfyUI/models",
+              "-e",
+              "LLOOM_COMFY_CACHE_MODE=classic",
+              "-e",
+              "LLOOM_MEDIA_MODEL=MiniMaxAI/MiniMax-H3-Turbo"
             ]
           }
         },

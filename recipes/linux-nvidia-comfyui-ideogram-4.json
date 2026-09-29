@@ -5,7 +5,7 @@
   "id": "linux-nvidia-comfyui-ideogram-4",
   "name": "Comfy-Org/Ideogram-4 (ComfyUI, NVIDIA)",
   "version": 1,
-  "summary": "Install Comfy-Org/Ideogram-4 with a shared, locally built ComfyUI media backend.",
+  "summary": "Install Comfy-Org/Ideogram-4 in an independent, single-model ComfyUI runtime.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata only; model weights retain their upstream licenses"
@@ -51,7 +51,7 @@
     "family": "Linux NVIDIA CUDA",
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
     "notes": [
-      "Standalone single-GPU serving; subsequent recipes share one managed ComfyUI runtime.",
+      "Independent single-model serving with per-model admission and unloading.",
       "NVIDIA Container Toolkit with CUDA 13-compatible host driver required."
     ]
   },
@@ -60,7 +60,7 @@
       "linux-x64",
       "linux-arm64"
     ],
-    "memoryGb": 95,
+    "memoryGb": 64,
     "diskGb": 48,
     "commands": [
       "docker",
@@ -170,8 +170,8 @@
       "role": "ideogram-4",
       "model": "Comfy-Org/Ideogram-4",
       "gatewayModel": "Comfy-Org/Ideogram-4",
-      "runtime": "comfyui-media",
-      "backendConfig": "comfyui-media",
+      "runtime": "comfyui-ideogram-4",
+      "backendConfig": "comfyui-ideogram-4",
       "kind": "image",
       "input": [
         "text"
@@ -186,7 +186,7 @@
         "2k-output"
       ],
       "settings": {
-        "memoryGb": 95,
+        "memoryGb": 64,
         "priority": 30,
         "keepWarm": false,
         "maxActiveRequests": 1,
@@ -194,11 +194,11 @@
         "runtime": {
           "adapter": "docker",
           "management": "managed",
-          "containerName": "lloom-comfyui-media",
+          "containerName": "lloom-comfyui-ideogram-4",
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/comfyui-media:source-dbfd165113ba5bf3062f953f97bfe41bff7dcb6996d0f7cdcbd6ee391f54a6cb",
+            "image": "lloom/comfyui-media:source-6d8fbbc3e58bef36bb8723cdcb01f53a7f8f5d9bd6f74ab015a3dbf06ca19147",
             "pull": false,
             "createArgs": [
               "--restart",
@@ -209,12 +209,24 @@
               "host",
               "-p",
               "127.0.0.1:${port}:8000",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--Ideogram-4/diffusion_models/ideogram4_int8_convrot.safetensors,dst=/opt/ComfyUI/models/diffusion_models/ideogram4_int8_convrot.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--Ideogram-4/diffusion_models/ideogram4_unconditional_int8_convrot.safetensors,dst=/opt/ComfyUI/models/diffusion_models/ideogram4_unconditional_int8_convrot.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--Qwen3-VL/text_encoders/qwen3vl_8b_fp8_scaled.safetensors,dst=/opt/ComfyUI/models/text_encoders/qwen3vl_8b_fp8_scaled.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--flux2-dev/split_files/vae/flux2-vae.safetensors,dst=/opt/ComfyUI/models/vae/flux2-vae.safetensors,readonly",
               "-v",
-              "${modelRoot}:/opt/lloom-models:ro",
-              "-v",
-              "lloom-comfyui-media-data:/data",
+              "lloom-comfyui-ideogram-4-data:/data",
               "-e",
-              "LLOOM_MEDIA_DATA_ROOT=/data"
+              "LLOOM_MEDIA_DATA_ROOT=/data",
+              "-e",
+              "LLOOM_MODELS_ROOT=/opt/ComfyUI/models",
+              "-e",
+              "LLOOM_COMFY_CACHE_MODE=classic",
+              "-e",
+              "LLOOM_MEDIA_MODEL=Comfy-Org/Ideogram-4"
             ]
           }
         },

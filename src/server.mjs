@@ -8,6 +8,7 @@ import { generateProviderAudio } from './audio-providers.mjs';
 import http from 'node:http';
 import { readErrorDiagnostic, streamProviderError } from './protocol/upstream-error.mjs';
 import { fetchWithStreamProgress } from './protocol/stream-progress.mjs';
+import { applyOpenRouterProviderPolicy } from './protocol/openrouter-provider.mjs';
 import {
   appendFileSync,
   existsSync,
@@ -22,6 +23,8 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+// Dispatcher and fetch must come from the same undici copy: the package's
+// v8 Agent speaks a dispatcher contract Node 22's internal undici v6 rejects.
 import { Agent as UndiciAgent, fetch as undiciFetch } from 'undici';
 import {
   backendIds,
@@ -46,6 +49,7 @@ import {
   selectedRecipeIdFromCommunityPlan
 } from './community-client.mjs';
 import { defaultLloomHome, loadConfig } from './config.mjs';
+import { createFleetProfileController } from './config-profiles.mjs';
 import { createDoctorReport } from './doctor.mjs';
 import { readHostMemory } from './host-memory.mjs';
 import { MACHINE_PROFILE_MEDIA_TYPE, profileMachine, rankRecipes, validateMachineProfile } from './machine-profile.mjs';
@@ -105,7 +109,9 @@ import { ClusterCoordinator, currentNodeId, isFederatedGatewayBackend } from './
 const JSON_TYPE = 'application/json; charset=utf-8';
 const SSE_TYPE = 'text/event-stream; charset=utf-8';
 const execFileAsync = promisify(execFile);
-const longRunningMediaDispatcher = new UndiciAgent({
+// Tests may swap this per server instance via createLloomServer's
+// upstreamDispatcher option; production always uses the long-running Agent.
+let longRunningMediaDispatcher = new UndiciAgent({
   headersTimeout: 1800000,
   bodyTimeout: 1800000
 });
@@ -339,18 +345,25 @@ function endResponseWithError(res, error, { stream = false, config = {}, status 
 const DEFAULT_IMAGE_TOKEN_ESTIMATE = 4096;
 const LOW_DETAIL_IMAGE_TOKEN_ESTIMATE = 1024;
 
-function estimateImageTokens(value) {
+function estimateMediaTokens(value) {
   if (!value || typeof value !== 'object') return null;
   const type = String(value.type ?? '').toLowerCase();
   const source = value.source && typeof value.source === 'object' ? value.source : null;
-  const hasImagePayload =
+  const hasMediaPayload =
     type === 'image' ||
     type === 'image_url' ||
     type === 'input_image' ||
+    type === 'video' ||
+    type === 'video_url' ||
+    type === 'input_video' ||
     value.image_url != null ||
-    (source && (source.type === 'base64' || String(source.media_type ?? '').startsWith('image/')));
-  if (!hasImagePayload) return null;
-  const detail = String(value.detail ?? value.image_url?.detail ?? '').toLowerCase();
+    value.video_url != null ||
+    (source &&
+      (source.type === 'base64' ||
+        String(source.media_type ?? '').startsWith('image/') ||
+        String(source.media_type ?? '').startsWith('video/')));
+  if (!hasMediaPayload) return null;
+  const detail = String(value.detail ?? value.image_url?.detail ?? value.video_url?.detail ?? '').toLowerCase();
   return detail === 'low' ? LOW_DETAIL_IMAGE_TOKEN_ESTIMATE : DEFAULT_IMAGE_TOKEN_ESTIMATE;
 }
 
@@ -360,13 +373,13 @@ function estimateMessageTokens(value) {
     // Base64 is opaque media, not prompt text. Counting every encoded byte as
     // language tokens rejects normal multimodal requests before the backend's
     // vision processor can turn pixels into its much smaller token sequence.
-    if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(value)) return DEFAULT_IMAGE_TOKEN_ESTIMATE;
+    if (/^data:(?:image|video)\/[a-z0-9.+-]+;base64,/i.test(value)) return DEFAULT_IMAGE_TOKEN_ESTIMATE;
     return Math.ceil(value.length / 3.5);
   }
   if (Array.isArray(value)) return value.reduce((sum, item) => sum + estimateMessageTokens(item), 0);
   if (typeof value === 'object') {
-    const imageTokens = estimateImageTokens(value);
-    if (imageTokens != null) return imageTokens;
+    const mediaTokens = estimateMediaTokens(value);
+    if (mediaTokens != null) return mediaTokens;
     if (typeof value.text === 'string') return estimateMessageTokens(value.text);
     if (typeof value.content === 'string' || Array.isArray(value.content)) {
       return estimateMessageTokens(value.content);
@@ -517,6 +530,13 @@ function isClientClosedError(error) {
   return error instanceof ClientClosedError || error?.name === 'ClientClosedError' || error?.code === 'client_closed';
 }
 
+const QUEUE_BACKPRESSURE_CODES = new Set(['RUNTIME_QUEUE_TIMEOUT', 'RUNTIME_QUEUE_FULL']);
+
+/** Queue saturation (local, or relayed by a federated node) is load, not target failure. */
+function isQueueBackpressureError(error) {
+  return QUEUE_BACKPRESSURE_CODES.has(error?.code) || QUEUE_BACKPRESSURE_CODES.has(error?.upstreamCode);
+}
+
 function clientClosedStatus(error) {
   return isClientClosedError(error) ? 499 : 0;
 }
@@ -550,8 +570,11 @@ export function shouldFailoverModelRequest(error, res = null) {
 async function upstreamStatusError(upstream) {
   const text = await readErrorDiagnostic(upstream);
   let message = text;
+  let upstreamCode = null;
   try {
-    message = JSON.parse(text)?.error?.message ?? text;
+    const parsed = JSON.parse(text)?.error;
+    message = parsed?.message ?? text;
+    upstreamCode = typeof parsed?.code === 'string' ? parsed.code : null;
   } catch {
     // Keep the raw upstream response as the diagnostic message.
   }
@@ -564,10 +587,12 @@ async function upstreamStatusError(upstream) {
     if (Number.isFinite(retryAt)) retryAfterSeconds = Math.max(1, Math.ceil((retryAt - Date.now()) / 1000));
   }
   return Object.assign(new Error(message || `upstream status ${upstream.status}`), {
-    code: 'upstream_error',
+    // Relay queue saturation by its own code so every federated hop sees backpressure.
+    code: QUEUE_BACKPRESSURE_CODES.has(upstreamCode) ? upstreamCode : 'upstream_error',
     statusCode: upstream.status,
     upstreamGenerationId: upstream.headers.get('x-generation-id'),
     upstreamHeadersReceived: true,
+    ...(upstreamCode == null ? {} : { upstreamCode }),
     ...(retryAfterSeconds == null ? {} : { retryAfterSeconds })
   });
 }
@@ -643,8 +668,24 @@ async function readJson(req) {
 }
 
 function upstreamUrl(backend, path) {
+  // An absolute URL is already resolved against the backend; joining it to the
+  // baseUrl would corrupt it. Callers use this for routes a backend serves
+  // outside its advertised API prefix.
+  if (/^https?:\/\//i.test(path)) return path;
   const suffix = path.startsWith('/v1/') ? path.slice(3) : path;
   return `${stripTrailingSlash(backend.baseUrl)}${suffix}`;
+}
+
+// The Atlas engine mounts its OpenAI surface under `/v1` but token counting at
+// the bare `/tokenize` (`serve_router.rs`: `.route("/v1/chat/completions")` next
+// to `.route("/tokenize")`). An OpenAI-typed backend's baseUrl already ends in
+// `/v1`, so building this URL the ordinary way would request `…/v1/tokenize` and
+// get a 404 — the engine does not serve a `/v1` form of it. Resolve against the
+// backend origin instead, so the request lands on `/tokenize` whatever the
+// configured baseUrl path is.
+function tokenizeUpstreamUrl(backend) {
+  const origin = new URL(backend.baseUrl).origin;
+  return `${origin}/tokenize`;
 }
 
 function backendHeaders(backend, extra = {}) {
@@ -667,7 +708,11 @@ function copyResponseHeaders(upstream) {
     'x-lloom-provider-job-id',
     'x-lloom-provider-origin',
     'x-lloom-audio-format',
-    'x-lloom-upstream-model'
+    'x-lloom-upstream-model',
+    // Raw PCM speech streaming tells clients how to interpret the bytes.
+    'x-audio-sample-rate',
+    'x-audio-channels',
+    'x-audio-format'
   ]) {
     const value = upstream.headers.get(name);
     if (value) headers[name] = value;
@@ -1391,10 +1436,10 @@ async function fetchUpstream({ backend, path, body, headers = {}, signal, dispat
         : 0;
     return await fetchWithStreamProgress(
       (progressSignal) =>
-        fetch(upstreamUrl(backend, path), {
+        undiciFetch(upstreamUrl(backend, path), {
           method: 'POST',
           headers: backendHeaders(backend, headers),
-          body: JSON.stringify(body),
+          body: JSON.stringify(path === '/v1/chat/completions' ? applyOpenRouterProviderPolicy(body, backend) : body),
           signal: progressSignal,
           dispatcher
         }),
@@ -1409,7 +1454,7 @@ async function fetchRawUpstream({ backend, path, body, headers = {}, signal, dis
   const timeoutMs = backend.timeoutMs ?? 1800000;
   const fetchSignal = upstreamSignal(signal, timeoutMs);
   try {
-    return await fetch(upstreamUrl(backend, path), {
+    return await undiciFetch(upstreamUrl(backend, path), {
       method: 'POST',
       headers: backendHeaders(backend, headers),
       body,
@@ -1944,6 +1989,8 @@ export function createLloomServer(
   config,
   { logger = console, runtimeManager = null, clusterCoordinator = null, upstreamDispatcher = null } = {}
 ) {
+  // Tests install a composed mock here; production keeps the long-running Agent.
+  if (upstreamDispatcher) longRunningMediaDispatcher = upstreamDispatcher;
   const hostTelemetry = createHostTelemetry();
   const machineProfile = profileMachine().catch((error) => {
     logger.error?.(`Machine profile collection failed: ${error?.message ?? error}`);
@@ -2130,6 +2177,7 @@ export function createLloomServer(
     onApplied: (id, policy, generation) => runtimeManager.settleDesiredResidency(id, policy, generation)
   });
   const dashboardInstallation = createDashboardInstallation({ getConfig: () => config, reload: reloadConfig });
+  const fleetProfiles = createFleetProfileController({ getConfig: () => config, reload: reloadConfig });
 
   async function routingStatus() {
     const cacheMs = Math.max(0, Number(config.cluster?.routingStatusCacheMs ?? 250));
@@ -2738,7 +2786,8 @@ export function createLloomServer(
       noteRuntimeRequestOutcome(resolved.model.runtime, outcome);
       clusterCoordinator.noteTargetOutcome(resolved, outcome);
       if (status === 499 || isClientClosedError(error)) {
-        endResponseWithError(res, error, { stream, config, status: 499 });
+        if (binaryResponse && res.headersSent) res.destroy();
+        else endResponseWithError(res, error, { stream: stream && !binaryResponse, config, status: 499 });
         return {
           status: 499,
           stream,
@@ -2762,7 +2811,7 @@ export function createLloomServer(
       }
       // Upstream death mid-stream (Metal abort, connection reset): finish SSE/JSON without
       // rethrowing into the outer handler (which would try writeHead again and crash Node).
-      if (res.headersSent || stream) {
+      if (res.headersSent || (stream && !binaryResponse)) {
         endResponseWithError(res, error, {
           stream: true,
           config,
@@ -2855,7 +2904,8 @@ export function createLloomServer(
           releaseTargetProbe(resolved);
           throw error;
         }
-        if (shouldFailoverModelRequest(error, res)) noteTargetFailure(resolved, error);
+        if (isQueueBackpressureError(error)) releaseTargetProbe(resolved);
+        else if (shouldFailoverModelRequest(error, res)) noteTargetFailure(resolved, error);
         else if (!isClientClosedError(error)) noteTargetSuccess(resolved);
         else releaseTargetProbe(resolved);
         if (!hasNext || !shouldFailoverModelRequest(error, res)) throw error;
@@ -3198,6 +3248,70 @@ export function createLloomServer(
     );
   }
 
+  // Token counting for backends that render a chat template. SparkGLM's Atlas
+  // engine answers `POST /tokenize` with `{tokens, count}` and applies the same
+  // template serving uses, so the count matches what a chat request of the same
+  // messages will really render. The gateway passes the body through untouched
+  // (including `chat_template_kwargs`) because altering it would change the count
+  // this endpoint exists to report.
+  //
+  // The upstream path is the backend's own route, not the gateway path: an
+  // OpenAI-typed backend already carries `/v1` in its baseUrl, and `upstreamUrl`
+  // only strips a `/v1/` prefix when the baseUrl lacks one. Passing `/v1/tokenize`
+  // here would therefore request `…/v1/v1/tokenize` and 404.
+  async function handleOpenAITokenize(req, res) {
+    const body = await readJson(req);
+    const modelId = body.model ?? config.defaults?.chatModel;
+    if (body.prompt == null && body.messages == null) {
+      sendJson(
+        res,
+        400,
+        errorBody("tokenize request requires 'prompt' or 'messages'", {
+          code: 'missing_input'
+        })
+      );
+      return;
+    }
+    if (!modelId) {
+      sendJson(
+        res,
+        400,
+        errorBody('tokenize request requires model', {
+          code: 'missing_model'
+        })
+      );
+      return;
+    }
+    await recordModelRequestWithFailover(
+      {
+        route: '/v1/tokenize',
+        modelId,
+        stream: false,
+        req,
+        res
+      },
+      async (resolved, { signal, timing, watchdog, hasNext }) => {
+        watchdog.arm();
+        const upstream = await fetchUpstream({
+          headers: inferenceGatewayHeaders(req, resolved),
+          backend: resolved.backend,
+          // Absolute URL: `fetchUpstream` passes it through untouched, which is
+          // what keeps the request off the backend's `/v1` base path.
+          path: tokenizeUpstreamUrl(resolved.backend),
+          signal,
+          body: {
+            ...body,
+            model: resolved.model.upstreamModel
+          }
+        });
+        if (!upstream.ok && hasNext && MODEL_FAILOVER_STATUS_CODES.has(upstream.status)) {
+          throw await upstreamStatusError(upstream);
+        }
+        return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
+      }
+    );
+  }
+
   async function resolveSpeechModelOrError(modelId) {
     try {
       const resolved = await resolveRequestModel(modelId);
@@ -3259,16 +3373,22 @@ export function createLloomServer(
     });
     // Keep named profile id in voice for logging; clone backends ignore unknown speakers.
     if (profile?.id) normalized.voice = profile.id;
+    // Opt-in low-latency streaming: only real PCM payloads can be streamed as
+    // bytes (WAV needs a header with the final length). Any other combination
+    // falls back to the buffered compatibility path so normal WAV is unchanged.
+    const wantsStream = normalized.stream === true && String(normalized.response_format ?? '').toLowerCase() === 'pcm';
+    normalized.stream = wantsStream;
     await recordModelRequest(
       {
         route: '/v1/audio/speech',
         resolved,
-        stream: false,
+        stream: wantsStream,
+        binaryResponse: wantsStream,
         req,
         res,
         voiceProfile: profile?.id ?? null
       },
-      async ({ signal, timing, watchdog }) => {
+      async ({ signal, timing, progress, watchdog }) => {
         watchdog.arm();
         const upstream = await fetchUpstream({
           headers: inferenceGatewayHeaders(req, resolved),
@@ -3277,6 +3397,19 @@ export function createLloomServer(
           signal,
           body: normalized
         });
+        if (wantsStream) {
+          if (!upstream.ok) {
+            // Let upstream validation errors (400/404/…) surface as buffered JSON
+            // with their original status instead of a partial byte stream.
+            return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
+          }
+          return proxyRawResponseStreaming(res, upstream, {
+            signal,
+            timing,
+            progress,
+            corsConfig: config
+          });
+        }
         return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
       }
     );
@@ -3305,7 +3438,8 @@ export function createLloomServer(
         min_p: multipartTextField(raw, type, 'min_p'),
         language_id: multipartTextField(raw, type, 'language_id'),
         audio_prompt_path: multipartTextField(raw, type, 'audio_prompt_path'),
-        response_format: multipartTextField(raw, type, 'response_format')
+        response_format: multipartTextField(raw, type, 'response_format'),
+        stream: multipartTextField(raw, type, 'stream') === 'true'
       };
       const expanded = await expandSpeechBody(fields);
       // Named profile: expand to JSON clone request (ref on disk) so clients only send voice+input.
@@ -3339,16 +3473,41 @@ export function createLloomServer(
         );
         return;
       }
+      const multipartWantsStream =
+        String(fields.stream ?? '').toLowerCase() === 'true' &&
+        String(fields.response_format ?? '').toLowerCase() === 'pcm';
       await recordModelRequest(
         {
           route: '/v1/audio/speech',
           resolved,
-          stream: false,
+          stream: multipartWantsStream,
+          binaryResponse: multipartWantsStream,
           req,
           res
         },
-        async ({ signal, timing, watchdog }) => {
+        async ({ signal, timing, progress, watchdog }) => {
           watchdog.arm();
+          if (multipartWantsStream) {
+            const upstream = await fetchRawUpstream({
+              backend: resolved.backend,
+              path: '/v1/audio/speech',
+              body: upstreamBody,
+              signal,
+              headers: {
+                ...inferenceGatewayHeaders(req, resolved),
+                'content-type': type
+              }
+            });
+            if (!upstream.ok) {
+              return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
+            }
+            return proxyRawResponseStreaming(res, upstream, {
+              signal,
+              timing,
+              progress,
+              corsConfig: config
+            });
+          }
           const upstream = await fetchRawUpstream({
             backend: resolved.backend,
             path: '/v1/audio/speech',
@@ -3884,6 +4043,41 @@ export function createLloomServer(
           route: routeProfileStatus(config, aliasId)[0] ?? null
         });
         return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/gateway/fleet/profiles') {
+        sendJson(res, 200, { ok: true, ...(await fleetProfiles.list()) });
+        return;
+      }
+      const fleetProfileMatch = url.pathname.match(/^\/gateway\/fleet\/profiles\/([^/]+)$/);
+      if (fleetProfileMatch) {
+        const name = decodeURIComponent(fleetProfileMatch[1]);
+        if (req.method === 'GET') {
+          sendJson(res, 200, { ok: true, ...(await fleetProfiles.plan(name)) });
+          return;
+        }
+        if (req.method === 'POST') {
+          const body = await readJson(req);
+          for (const key of Object.keys(body))
+            if (!['yes', 'description', 'overwrite'].includes(key))
+              throw Object.assign(new Error('Fleet profile accepts only yes, description, and overwrite.'), {
+                statusCode: 400
+              });
+          const isApply = url.searchParams.get('apply') === '1';
+          const result = isApply
+            ? await fleetProfiles.apply(name, { yes: body.yes })
+            : await fleetProfiles.save(name, {
+                yes: body.yes,
+                description: body.description,
+                overwrite: body.overwrite
+              });
+          if (isApply) {
+            reloadConfig();
+            await reloadInFlight;
+          }
+          sendJson(res, 200, { ok: true, ...result });
+          return;
+        }
       }
 
       if (req.method === 'GET' && url.pathname === '/gateway/status') {
@@ -4500,6 +4694,11 @@ export function createLloomServer(
 
       if (req.method === 'POST' && url.pathname === '/v1/embeddings') {
         await handleOpenAIEmbeddings(req, res);
+        return;
+      }
+
+      if (req.method === 'POST' && url.pathname === '/v1/tokenize') {
+        await handleOpenAITokenize(req, res);
         return;
       }
 

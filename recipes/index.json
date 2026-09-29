@@ -840,7 +840,7 @@
         }
       ],
       "name": "ACE-Step/ACE-Step-1.5-XL-SFT (ComfyUI, NVIDIA)",
-      "summary": "Install ACE-Step/ACE-Step-1.5-XL-SFT with a shared, locally built ComfyUI media backend.",
+      "summary": "Install ACE-Step/ACE-Step-1.5-XL-SFT in an independent, single-model ComfyUI runtime.",
       "tags": ["ace-step-1.5-xl-sft", "cuda", "fp8", "nvfp4", "nvidia", "single-model"],
       "capabilities": ["audio-generation", "music-generation"],
       "source": {
@@ -860,7 +860,7 @@
         }
       ],
       "name": "ACE-Step/ACE-Step-1.5-XL-Turbo (ComfyUI, NVIDIA)",
-      "summary": "Install ACE-Step/ACE-Step-1.5-XL-Turbo with a shared, locally built ComfyUI media backend.",
+      "summary": "Install ACE-Step/ACE-Step-1.5-XL-Turbo in an independent, single-model ComfyUI runtime.",
       "tags": ["ace-step-1.5-xl-turbo", "cuda", "fp8", "nvfp4", "nvidia", "single-model"],
       "capabilities": ["audio-generation", "music-generation"],
       "source": {
@@ -880,7 +880,7 @@
         }
       ],
       "name": "black-forest-labs/FLUX.2-klein-4B (ComfyUI, NVIDIA)",
-      "summary": "Install black-forest-labs/FLUX.2-klein-4B with a shared, locally built ComfyUI media backend.",
+      "summary": "Install black-forest-labs/FLUX.2-klein-4B in an independent, single-model ComfyUI runtime.",
       "tags": ["cuda", "flux.2-klein-4b", "fp8", "nvfp4", "nvidia", "single-model"],
       "capabilities": ["image-generation", "image-editing"],
       "source": {
@@ -900,7 +900,7 @@
         }
       ],
       "name": "Comfy-Org/Ideogram-4 (ComfyUI, NVIDIA)",
-      "summary": "Install Comfy-Org/Ideogram-4 with a shared, locally built ComfyUI media backend.",
+      "summary": "Install Comfy-Org/Ideogram-4 in an independent, single-model ComfyUI runtime.",
       "tags": ["cuda", "fp8", "ideogram-4", "nvfp4", "nvidia", "single-model"],
       "capabilities": ["image-generation", "typography", "layout-control", "2k-output"],
       "source": {
@@ -920,7 +920,7 @@
         }
       ],
       "name": "Comfy-Org/Krea-2-Turbo (ComfyUI, NVIDIA)",
-      "summary": "Install Comfy-Org/Krea-2-Turbo with a shared, locally built ComfyUI media backend.",
+      "summary": "Install Comfy-Org/Krea-2-Turbo in an independent, single-model ComfyUI runtime.",
       "tags": ["cuda", "fp8", "krea-2-turbo", "nvfp4", "nvidia", "single-model"],
       "capabilities": ["image-generation", "fast-generation"],
       "source": {
@@ -940,7 +940,7 @@
         }
       ],
       "name": "Lightricks/LTX-2.5 (ComfyUI, NVIDIA)",
-      "summary": "Install Lightricks/LTX-2.5 with a shared, locally built ComfyUI media backend.",
+      "summary": "Install Lightricks/LTX-2.5 in an independent, single-model ComfyUI runtime.",
       "tags": ["cuda", "fp8", "ltx-2.5", "nvfp4", "nvidia", "single-model"],
       "capabilities": ["video-generation", "text-to-video", "image-to-video"],
       "source": {
@@ -960,7 +960,7 @@
         }
       ],
       "name": "MiniMaxAI/MiniMax-H3-Turbo (ComfyUI, NVIDIA)",
-      "summary": "Install MiniMaxAI/MiniMax-H3-Turbo with a shared, locally built ComfyUI media backend.",
+      "summary": "Install MiniMaxAI/MiniMax-H3-Turbo in an independent, single-model ComfyUI runtime.",
       "tags": ["cuda", "fp8", "minimax-h3-turbo", "nvfp4", "nvidia", "single-model"],
       "capabilities": ["video-generation", "text-to-video"],
       "source": {
@@ -980,7 +980,7 @@
         }
       ],
       "name": "MiniMaxAI/MiniMax-H3 (ComfyUI, NVIDIA)",
-      "summary": "Install MiniMaxAI/MiniMax-H3 with a shared, locally built ComfyUI media backend.",
+      "summary": "Install MiniMaxAI/MiniMax-H3 in an independent, single-model ComfyUI runtime.",
       "tags": ["cuda", "fp8", "minimax-h3", "nvfp4", "nvidia", "single-model"],
       "capabilities": ["video-generation", "text-to-video", "image-to-video"],
       "source": {
@@ -1000,7 +1000,7 @@
         }
       ],
       "name": "MiniMaxAI/MiniMax-Music3 (ComfyUI, NVIDIA)",
-      "summary": "Install MiniMaxAI/MiniMax-Music3 with a shared, locally built ComfyUI media backend.",
+      "summary": "Install MiniMaxAI/MiniMax-Music3 in an independent, single-model ComfyUI runtime.",
       "tags": ["cuda", "fp8", "minimax-music3", "nvfp4", "nvidia", "single-model"],
       "capabilities": ["audio-generation", "music-generation"],
       "source": {
@@ -1020,7 +1020,7 @@
         }
       ],
       "name": "Qwen/Qwen-Image-2.1 (ComfyUI, NVIDIA)",
-      "summary": "Install Qwen/Qwen-Image-2.1, one DiT for generation and reference editing, with the shared ComfyUI media backend.",
+      "summary": "Install Qwen/Qwen-Image-2.1 in an independent, single-model ComfyUI runtime.",
       "tags": ["cuda", "int8", "nvidia", "qwen-image-2.1", "image-editing", "transparency", "single-model"],
       "capabilities": ["image-generation", "image-editing"],
       "source": {
@@ -1040,7 +1040,7 @@
         }
       ],
       "name": "Qwen/Qwen-Image-2512-Lightning (ComfyUI, NVIDIA)",
-      "summary": "Install Qwen/Qwen-Image-2512-Lightning with a shared, locally built ComfyUI media backend.",
+      "summary": "Install Qwen/Qwen-Image-2512-Lightning in an independent, single-model ComfyUI runtime.",
       "tags": ["cuda", "fp8", "nvfp4", "nvidia", "qwen-image-2512-lightning", "single-model"],
       "capabilities": ["image-generation"],
       "source": {
@@ -1060,7 +1060,7 @@
         }
       ],
       "name": "Qwen/Qwen-Image-2512 (ComfyUI, NVIDIA)",
-      "summary": "Install Qwen/Qwen-Image-2512 with a shared, locally built ComfyUI media backend.",
+      "summary": "Install Qwen/Qwen-Image-2512 in an independent, single-model ComfyUI runtime.",
       "tags": ["cuda", "fp8", "nvfp4", "nvidia", "qwen-image-2512", "single-model"],
       "capabilities": ["image-generation"],
       "source": {
@@ -1080,7 +1080,7 @@
         }
       ],
       "name": "Qwen/Qwen-Image-Edit-2511 (ComfyUI, NVIDIA)",
-      "summary": "Install Qwen/Qwen-Image-Edit-2511 with a shared, locally built ComfyUI media backend.",
+      "summary": "Install Qwen/Qwen-Image-Edit-2511 in an independent, single-model ComfyUI runtime.",
       "tags": ["cuda", "fp8", "nvfp4", "nvidia", "qwen-image-edit-2511", "single-model"],
       "capabilities": ["image-generation", "image-editing"],
       "source": {
@@ -1100,7 +1100,7 @@
         }
       ],
       "name": "Comfy-Org/YuE2-3B (ComfyUI, NVIDIA)",
-      "summary": "Install Comfy-Org/YuE2-3B with a shared, locally built ComfyUI media backend.",
+      "summary": "Install Comfy-Org/YuE2-3B in an independent, single-model ComfyUI runtime.",
       "tags": ["cuda", "fp8", "nvfp4", "nvidia", "single-model", "yue2-3b"],
       "capabilities": ["audio-generation", "music-generation", "symbolic-score"],
       "source": {
@@ -1120,6 +1120,118 @@
         }
       ],
       "name": "Qwen Image 2.1 generation and editing (Diffusers, NVIDIA)"
+    },
+    {
+      "id": "linux-nvidia-spark-audio-qwen3-tts-1-7b-base",
+      "path": "linux-nvidia-spark-audio-qwen3-tts-1-7b-base.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-spark-audio-qwen3-tts-1-7b-base.json",
+          "status": "current"
+        }
+      ],
+      "name": "Qwen3-TTS 1.7B Base (Spark audio, NVIDIA)",
+      "summary": "Qwen3-TTS 1.7B Base in its own source-built CUDA container: zero-shot voice cloning from a short inline reference clip through the OpenAI speech API.",
+      "tags": ["cuda", "nvidia", "dgx-spark", "gb10", "docker", "tts", "audio-speech", "qwen3-tts", "base", "bf16"],
+      "capabilities": ["audio-speech", "tts", "tts-voice-clone", "qwen3-tts"],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-spark-audio-qwen3-tts-1-7b-base.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-spark-audio-qwen3-tts-1-7b-customvoice",
+      "path": "linux-nvidia-spark-audio-qwen3-tts-1-7b-customvoice.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-spark-audio-qwen3-tts-1-7b-customvoice.json",
+          "status": "current"
+        }
+      ],
+      "name": "Qwen3-TTS 1.7B CustomVoice (Spark audio, NVIDIA)",
+      "summary": "Qwen3-TTS 1.7B CustomVoice in its own source-built CUDA container: nine built-in speakers with optional style instructions through the OpenAI speech API.",
+      "tags": [
+        "cuda",
+        "nvidia",
+        "dgx-spark",
+        "gb10",
+        "docker",
+        "tts",
+        "audio-speech",
+        "qwen3-tts",
+        "customvoice",
+        "bf16"
+      ],
+      "capabilities": ["audio-speech", "tts", "tts-custom-voice", "tts-style-instruct", "qwen3-tts"],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-spark-audio-qwen3-tts-1-7b-customvoice.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-spark-audio-qwen3-tts-1-7b-voicedesign",
+      "path": "linux-nvidia-spark-audio-qwen3-tts-1-7b-voicedesign.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-spark-audio-qwen3-tts-1-7b-voicedesign.json",
+          "status": "current"
+        }
+      ],
+      "name": "Qwen3-TTS 1.7B VoiceDesign (Spark audio, NVIDIA)",
+      "summary": "Qwen3-TTS 1.7B VoiceDesign in its own source-built CUDA container: describe the voice in natural-language instructions through the OpenAI speech API.",
+      "tags": [
+        "cuda",
+        "nvidia",
+        "dgx-spark",
+        "gb10",
+        "docker",
+        "tts",
+        "audio-speech",
+        "qwen3-tts",
+        "voicedesign",
+        "bf16"
+      ],
+      "capabilities": ["audio-speech", "tts", "tts-voice-design", "qwen3-tts"],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-spark-audio-qwen3-tts-1-7b-voicedesign.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-spark-audio-whisper-large-v3-turbo",
+      "path": "linux-nvidia-spark-audio-whisper-large-v3-turbo.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-spark-audio-whisper-large-v3-turbo.json",
+          "status": "current"
+        }
+      ],
+      "name": "Whisper large-v3-turbo transcription (Spark audio, NVIDIA)",
+      "summary": "OpenAI Whisper large-v3-turbo in its own source-built CUDA container for OpenAI-compatible speech-to-text transcription.",
+      "tags": [
+        "cuda",
+        "nvidia",
+        "dgx-spark",
+        "gb10",
+        "docker",
+        "stt",
+        "audio-transcription",
+        "whisper",
+        "whisper-large-v3-turbo"
+      ],
+      "capabilities": ["audio-transcription", "stt"],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-spark-audio-whisper-large-v3-turbo.json"
+      }
     },
     {
       "id": "lloom-hear",

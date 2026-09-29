@@ -5,7 +5,7 @@
   "id": "linux-nvidia-comfyui-qwen-image-2-1-nvfp4",
   "name": "BennyDaBall/Qwen-Image-2.1-NVFP4 (ComfyUI, NVIDIA)",
   "version": 1,
-  "summary": "Install BennyDaBall/Qwen-Image-2.1-NVFP4, one NVFP4 DiT for generation and reference editing, with the shared ComfyUI media backend.",
+  "summary": "Install BennyDaBall/Qwen-Image-2.1-NVFP4, one NVFP4 DiT for generation and reference editing, in an independent, single-model ComfyUI runtime.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata only; model weights are under the Qwen Research license"
@@ -50,7 +50,7 @@
     "family": "NVIDIA Blackwell / DGX Spark",
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
     "notes": [
-      "Dedicated single-model runtime using the shared ComfyUI backend image. Its smaller admission budget is independent of the larger shared media runtime.",
+      "Independent single-model serving with per-model admission and unloading.",
       "NVIDIA Container Toolkit with a CUDA 13-compatible host driver required.",
       "Weight format is NVFP4 for the DiT and text encoder with the shared bf16 VAE; the pinned engine runs it through the bundled runtime conditioning patch. No separate LoRA is needed: 2.1 samples at its own shift and cfg 1.",
       "Native NVFP4 acceleration requires supported NVIDIA Blackwell hardware; other GPUs can dequantize or fall back and are not qualified for this recipe."
@@ -163,7 +163,7 @@
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/comfyui-media:source-dbfd165113ba5bf3062f953f97bfe41bff7dcb6996d0f7cdcbd6ee391f54a6cb",
+            "image": "lloom/comfyui-media:source-6d8fbbc3e58bef36bb8723cdcb01f53a7f8f5d9bd6f74ab015a3dbf06ca19147",
             "pull": false,
             "createArgs": [
               "--restart",
@@ -174,12 +174,18 @@
               "host",
               "-p",
               "127.0.0.1:${port}:8000",
-              "-v",
-              "${modelRoot}:/opt/lloom-models:ro",
+              "--mount",
+              "type=bind,src=${modelRoot}/BennyDaBall--Qwen-Image-2.1-NVFP4/diffusion_models/qwen_image_2.1_nvfp4.safetensors,dst=/opt/ComfyUI/models/diffusion_models/qwen_image_2.1_nvfp4.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/BennyDaBall--Qwen-Image-2.1-NVFP4/text_encoders/qwen3vl_8b_nvfp4.safetensors,dst=/opt/ComfyUI/models/text_encoders/qwen3vl_8b_nvfp4.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/BennyDaBall--Qwen-Image-2.1-NVFP4/vae/qwen_image_2.1_vae_bf16.safetensors,dst=/opt/ComfyUI/models/vae/qwen_image_2.1_vae_bf16.safetensors,readonly",
               "-v",
               "lloom-qwen-image-21-nvfp4-data:/data",
               "-e",
               "LLOOM_MEDIA_DATA_ROOT=/data",
+              "-e",
+              "LLOOM_MODELS_ROOT=/opt/ComfyUI/models",
               "-e",
               "LLOOM_MEDIA_MODEL=BennyDaBall/Qwen-Image-2.1-NVFP4",
               "-e",

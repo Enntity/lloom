@@ -116,8 +116,6 @@ async def test_selection_via_environment_is_honoured(monkeypatch):
         listed = {m["id"] for m in (await client.get("/v1/models")).json()["data"]}
         assert listed == {"audio-model"}
         await comfy.aclose()
-
-
 async def test_nvfp4_runtime_refuses_other_image_models(monkeypatch):
     from graphs import MODELS
     monkeypatch.setenv("LLOOM_MEDIA_MODEL", "BennyDaBall/Qwen-Image-2.1-NVFP4")

@@ -42,6 +42,9 @@ from requests_in import (
 log = logging.getLogger("bridge")
 
 DEFAULT_COMFY_URL = "http://127.0.0.1:8188"
+# Optional single-model selector. When set, the bridge serves exactly that one
+# registry entry. An empty or unknown value refuses startup rather than falling
+# back to advertising every bundled model.
 MAX_SEED = 2**31 - 1
 MAX_DURATION_SECONDS = 600
 # Text bounds, enforced here regardless of what the graph library does.
@@ -92,7 +95,8 @@ def _resolve_media_model(select: str | None = None) -> str | None:
     """The exact registry model a single-model runtime serves, if configured.
 
     ``select`` defaults to ``LLOOM_MEDIA_MODEL``. An absent variable selects
-    nothing, preserving the shared media runtime. A present
+    nothing, which only in-process tests rely on: the container launcher
+    refuses to start without a selection. A present
     but empty or whitespace-only value is a configuration error and refuses
     startup. Validation against the registry happens in ``create_app`` so the
     rejection also covers explicitly injected ``models``.
@@ -139,14 +143,19 @@ def create_app(
             models = default_models
         if build_graph is None:
             build_graph = default_builder
+    # A single-model runtime must never advertise a model it cannot serve, so
+    # the selector is applied here -- after any injected registry is known and
+    # before the app can accept a request. An unknown or empty value raises out
+    # of the app factory: startup (including uvicorn import of module-level
+    # ``app``) fails closed instead of degrading to the full registry.
     models = _select_models(models, _resolve_media_model(media_model))
     video_preflight_lock = asyncio.Lock()
     state = {
         "comfy": comfy,
         "models": models,
-        "media_model": next(iter(models)) if len(models) == 1 else None,
         "build_graph": build_graph,
         "comfy_url": validate_comfy_base_url(comfy_url or _default_comfy_url()),
+        "media_model": next(iter(models)) if len(models) == 1 else None,
     }
     runner = SingleFlightRunner(comfy, _default_data_roots()) if comfy is not None else None
     state["runner"] = runner

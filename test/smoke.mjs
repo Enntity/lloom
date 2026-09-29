@@ -883,6 +883,10 @@ assert.deepEqual(
     'linux-nvidia-gb10-thinkingcap-qwen36-27b-vllm',
     'linux-nvidia-qwen-image-2-1-diffusers',
     'linux-nvidia-qwen3-embedding-4b-vllm',
+    'linux-nvidia-spark-audio-qwen3-tts-1-7b-base',
+    'linux-nvidia-spark-audio-qwen3-tts-1-7b-customvoice',
+    'linux-nvidia-spark-audio-qwen3-tts-1-7b-voicedesign',
+    'linux-nvidia-spark-audio-whisper-large-v3-turbo',
     'lloom-hear'
   ]
 );
@@ -1045,7 +1049,7 @@ const recipeIndexReport = await buildRecipeIndexReport(config, {
 });
 assert.equal(recipeIndexReport.ok, true);
 assert.equal(recipeIndexReport.index.id, 'lloom-community-recipes');
-assert.equal(recipeIndexReport.recipes.length, 36);
+assert.equal(recipeIndexReport.recipes.length, 40);
 const indexedSparkRecipe = recipeIndexReport.recipes.find(
   (candidate) => candidate.id === 'linux-nvidia-gb10-qwen36-unsloth-vllm'
 );
@@ -8682,7 +8686,11 @@ if (mockListened) {
       assert(metricsJson.host?.memory?.freeBytes >= 0);
       assert(metricsJson.host?.memory?.availableBytes >= 0);
       assert.equal(typeof metricsJson.host?.memory?.pressureUtilization, 'number');
-      assert(['linux-memavailable', 'macos-memory-pressure', 'os-freemem'].includes(metricsJson.host?.memory?.source));
+      assert(
+        ['linux-memavailable', 'macos-memory-pages', 'macos-memory-pressure', 'os-freemem'].includes(
+          metricsJson.host?.memory?.source
+        )
+      );
       assert.equal(typeof metricsJson.host?.cpu?.logicalCpus, 'number');
       const modelMetrics = metricsJson.models.find(
         (model) => model.id === 'Youssofal/Qwen3.6-27B-MTPLX-Optimized-Speed'

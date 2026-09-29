@@ -37,9 +37,7 @@ The declarative form is useful for review or hand editing:
         "labels": { "role": "node", "architecture": "darwin-arm64", "accelerator": "metal" },
         "resources": { "memoryGb": 64 },
         "proxy": {
-          "models": [
-            { "id": "local/qwen", "as": "macbook-local/local/qwen", "kind": "chat", "remoteRuntime": "qwen" }
-          ]
+          "models": [{ "id": "local/qwen", "as": "macbook-local/local/qwen", "kind": "chat", "remoteRuntime": "qwen" }]
         }
       }
     }
@@ -60,7 +58,13 @@ lloom cluster discover --id ennspark-cluster
 lloom cluster discover --id ennspark-cluster --api-key-env LLOOM_ADMIN_API_KEY --apply
 ```
 
-Discovery reads only NVIDIA Sync-marked SSH entries and local interface addresses. It records the physical hostnames as metadata but uses the stable Sync/Tailscale aliases (with `-lan` removed) as node IDs. `lloom profile` includes the detected topology, so `lloom select` can rank exact-size cluster recipes before cluster configuration is applied.
+Discovery groups `NVSyncClusterAlias` entries into stable node IDs, including duplicate IP aliases and multiple rails per peer. Older Sync entries with a named `Host` alias still work. The configured local identity and leader remain unchanged. Local observations appear under `cluster.discovery.links`; they do not prove gateway reachability, bandwidth, or a complete ring.
+
+New peers remain physical inventory under `cluster.discovery.nodes`. Join a peer with `lloom cluster add-node <id> <authenticated-gateway-url> --apply` after its gateway is reachable. Discovery does not create a live gateway endpoint from an SSH address.
+
+`--apply` merges into the raw configuration and validates it before an atomic write. It preserves existing federation nodes, model catalogs, authentication references, custom endpoints, and model placements. An endpoint that names its previous `10.100.*` backend host moves to the observed address while retaining its scheme, port, and path. Other endpoints remain unchanged and receive a diagnostic. Discovery does not change gateway listeners or NCCL settings; verify new endpoints before using them.
+
+Physical membership and model placement are separate. In a three-Spark ring, a model can run on one node while a distributed model uses an explicit two-node subset. A three-node member list is also representable, but TP-3 requires a compatible model architecture and backend launcher; discovery does not infer that compatibility or repartition a loaded model. Resource admission applies to the chosen members. Select the NCCL adapters that connect those members: a TP-2 job must not use adapters whose cables lead to a third node outside its placement.
 
 Use private fabric addresses for node-to-node LLooM and raw backend traffic. `backendHost` is deliberately required when a recipe auto-materializes replicas; LLooM binds the generated backend only to that address, never to every interface.
 
@@ -131,14 +135,16 @@ The equivalent explicit config is:
 
 ```json
 {
-  "models": [{
-    "id": "example/Qwen",
-    "targets": [
-      { "id": "spark-1", "node": "spark-1", "backend": "qwen-spark-1", "runtime": "qwen-spark-1" },
-      { "id": "spark-2", "node": "spark-2", "backend": "qwen-spark-2", "runtime": "qwen-spark-2" },
-      { "id": "spark-2-proxy", "node": "spark-2", "backend": "lloom-node-spark-2", "remoteRuntime": "qwen-spark-2" }
-    ]
-  }]
+  "models": [
+    {
+      "id": "example/Qwen",
+      "targets": [
+        { "id": "spark-1", "node": "spark-1", "backend": "qwen-spark-1", "runtime": "qwen-spark-1" },
+        { "id": "spark-2", "node": "spark-2", "backend": "qwen-spark-2", "runtime": "qwen-spark-2" },
+        { "id": "spark-2-proxy", "node": "spark-2", "backend": "lloom-node-spark-2", "remoteRuntime": "qwen-spark-2" }
+      ]
+    }
+  ]
 }
 ```
 
@@ -188,19 +194,39 @@ Explicit config remains supported:
       "placement": {
         "mode": "distributed",
         "members": [
-          { "node": "spark-1", "runtime": "dsv4-ray-head", "role": "head", "order": 10, "resources": { "memoryGb": 6 } },
-          { "node": "spark-2", "runtime": "dsv4-ray-worker-2", "role": "worker", "order": 20, "resources": { "memoryGb": 54 } },
-          { "node": "spark-1", "runtime": "dsv4-vllm-server", "role": "server", "order": 30, "resources": { "memoryGb": 54 } }
+          {
+            "node": "spark-1",
+            "runtime": "dsv4-ray-head",
+            "role": "head",
+            "order": 10,
+            "resources": { "memoryGb": 6 }
+          },
+          {
+            "node": "spark-2",
+            "runtime": "dsv4-ray-worker-2",
+            "role": "worker",
+            "order": 20,
+            "resources": { "memoryGb": 54 }
+          },
+          {
+            "node": "spark-1",
+            "runtime": "dsv4-vllm-server",
+            "role": "server",
+            "order": 30,
+            "resources": { "memoryGb": 54 }
+          }
         ]
       }
     }
   },
-  "models": [{
-    "id": "deepseek-ai/DSv4Flash",
-    "backend": "dsv4flash",
-    "runtime": "dsv4flash-cluster",
-    "upstreamModel": "deepseek-ai/DSv4Flash"
-  }]
+  "models": [
+    {
+      "id": "deepseek-ai/DSv4Flash",
+      "backend": "dsv4flash",
+      "runtime": "dsv4flash-cluster",
+      "upstreamModel": "deepseek-ai/DSv4Flash"
+    }
+  ]
 }
 ```
 

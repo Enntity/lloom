@@ -463,6 +463,17 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       </div>
     </section>
 
+    <section class="band" id="fleet-band">
+      <div class="band-head">
+        <h2>Fleet Profiles</h2>
+        <span id="fleet-active" class="pill"><span class="dot"></span><span>no profile</span></span>
+      </div>
+      <div class="band-body">
+        <div id="fleet-profiles" class="grid"></div>
+        <p class="muted" style="margin-top:10px">One file describes routes and keep-warm per machine. Applying validates the whole target config first, then swaps atomically; local models load on first request.</p>
+      </div>
+    </section>
+
     <section class="band">
       <div class="band-head">
         <h2>Models</h2>
@@ -1009,6 +1020,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     function renderRuntimes() {
       const runtimes = state.status?.runtimeManager?.runtimes || {};
       const entries = Object.entries(runtimes);
+
       $("#stat-runtimes").textContent = String(entries.length);
       $("#stat-active").textContent = String(entries.reduce((sum, [, runtime]) => sum + Number(runtime.activeRequests || 0), 0));
       $("#stat-queued").textContent = String(entries.reduce((sum, [, runtime]) => sum + Number(runtime.queuedRequests || 0) + Number(runtime.admissionQueuedRequests || 0), 0));
@@ -1027,6 +1039,65 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         '</tr>'
       ).join("") : '<tr><td colspan="5"><div class="empty">No runtimes.</div></td></tr>';
     }
+    let fleetCache = null;
+    async function renderFleetProfiles() {
+      try {
+        const result = await getJson("/gateway/fleet/profiles");
+        fleetCache = result;
+      } catch {
+        return; // fleet profiles are optional; a missing profiles dir is fine
+      }
+      const active = $("#fleet-active");
+      if (active) {
+        active.querySelector("span:last-child").textContent = fleetCache.active || "no profile";
+        active.querySelector(".dot").className = "dot " + (fleetCache.active ? "ok" : "");
+      }
+      const host = $("#fleet-profiles");
+      if (!host) return;
+      const profiles = fleetCache.profiles || [];
+      const cards = profiles.map(profile => {
+        if (profile.error) {
+          return '<div class="stat"><strong>' + escapeHtml(profile.name) + '</strong><span class="muted">' + escapeHtml(profile.error) + '</span></div>';
+        }
+        const routeCount = Object.keys(profile.routes || {}).length;
+        const warmCount = Object.keys(profile.residency || {}).length;
+        const isActive = profile.active === true;
+        return '<div class="stat"><strong>' + escapeHtml(profile.name) + (isActive ? ' <span class="pill"><span class="dot ok"></span><span>active</span></span>' : '') + '</strong>' +
+          '<span class="muted">' + escapeHtml(profile.description || "") + '</span>' +
+          '<div class="muted">' + escapeHtml(String(routeCount)) + ' routes · ' + escapeHtml(String(warmCount)) + ' warm</div>' +
+          (isActive ? '' : '<button data-fleet-use="' + escapeHtml(profile.name) + '" type="button" style="margin-top:8px">Apply</button>') +
+        '</div>';
+      });
+      const current = fleetCache.active ? '' : '<button data-fleet-save type="button" style="align-self:start">Save current as profile…</button>';
+      host.innerHTML = cards.join("") + current || '<span class="muted">No profiles yet.</span>';
+    }
+
+    document.addEventListener("click", async event => {
+      const useButton = event.target.closest("[data-fleet-use]");
+      if (useButton) {
+        const name = useButton.dataset.fleetUse;
+        if (!confirm("Apply fleet profile " + name + "? Routes and keep-warm are swapped atomically.")) return;
+        try {
+          showOutput(await postJson("/gateway/fleet/profiles/" + encodeURIComponent(name) + "?apply=1", { yes: true }));
+          await refresh();
+        } catch (error) {
+          showOutput({ error: error.message });
+        }
+      }
+      if (event.target.closest("[data-fleet-save]")) {
+        const name = prompt("Profile name (letters, numbers, dots, dashes):");
+        if (!name) return;
+        const description = prompt("Description (optional):") ?? "";
+        try {
+          showOutput(await postJson("/gateway/fleet/profiles/" + encodeURIComponent(name), {
+            yes: true, description, overwrite: false
+          }));
+          await renderFleetProfiles();
+        } catch (error) {
+          showOutput({ error: error.message });
+        }
+      }
+    });
 
     function renderBackends() {
       const rows = $("#backend-rows");
@@ -2350,6 +2421,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         renderRuntimes();
         renderBackends();
         renderLibrary();
+        void renderFleetProfiles();
         renderNodeInspector();
         const authHint = security.adminAuthRequired
           ? "admin auth on"

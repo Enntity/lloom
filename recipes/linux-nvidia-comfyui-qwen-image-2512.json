@@ -5,7 +5,7 @@
   "id": "linux-nvidia-comfyui-qwen-image-2512",
   "name": "Qwen/Qwen-Image-2512 (ComfyUI, NVIDIA)",
   "version": 1,
-  "summary": "Install Qwen/Qwen-Image-2512 with a shared, locally built ComfyUI media backend.",
+  "summary": "Install Qwen/Qwen-Image-2512 in an independent, single-model ComfyUI runtime.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata only; model weights retain their upstream licenses"
@@ -40,7 +40,7 @@
     "family": "Linux NVIDIA CUDA",
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
     "notes": [
-      "Standalone single-GPU serving; subsequent recipes share one managed ComfyUI runtime.",
+      "Independent single-model serving with per-model admission and unloading.",
       "NVIDIA Container Toolkit with CUDA 13-compatible host driver required."
     ]
   },
@@ -49,7 +49,7 @@
       "linux-x64",
       "linux-arm64"
     ],
-    "memoryGb": 95,
+    "memoryGb": 48,
     "diskGb": 45,
     "commands": [
       "docker",
@@ -123,8 +123,8 @@
       "role": "qwen-image-2512-fp8",
       "model": "Qwen/Qwen-Image-2512",
       "gatewayModel": "Qwen/Qwen-Image-2512",
-      "runtime": "comfyui-media",
-      "backendConfig": "comfyui-media",
+      "runtime": "comfyui-qwen-image-2512",
+      "backendConfig": "comfyui-qwen-image-2512",
       "kind": "image",
       "input": [
         "text"
@@ -136,7 +136,7 @@
         "image-generation"
       ],
       "settings": {
-        "memoryGb": 95,
+        "memoryGb": 48,
         "priority": 30,
         "keepWarm": false,
         "maxActiveRequests": 1,
@@ -144,11 +144,11 @@
         "runtime": {
           "adapter": "docker",
           "management": "managed",
-          "containerName": "lloom-comfyui-media",
+          "containerName": "lloom-comfyui-qwen-image-2512",
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/comfyui-media:source-dbfd165113ba5bf3062f953f97bfe41bff7dcb6996d0f7cdcbd6ee391f54a6cb",
+            "image": "lloom/comfyui-media:source-6d8fbbc3e58bef36bb8723cdcb01f53a7f8f5d9bd6f74ab015a3dbf06ca19147",
             "pull": false,
             "createArgs": [
               "--restart",
@@ -159,12 +159,22 @@
               "host",
               "-p",
               "127.0.0.1:${port}:8000",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--Qwen-Image_ComfyUI/split_files/diffusion_models/qwen_image_2512_fp8_e4m3fn.safetensors,dst=/opt/ComfyUI/models/diffusion_models/qwen_image_2512_fp8_e4m3fn.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--Qwen-Image_ComfyUI/split_files/text_encoders/qwen_2.5_vl_7b_nvfp4.safetensors,dst=/opt/ComfyUI/models/text_encoders/qwen_2.5_vl_7b_nvfp4.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--Qwen-Image_ComfyUI/split_files/vae/qwen_image_vae.safetensors,dst=/opt/ComfyUI/models/vae/qwen_image_vae.safetensors,readonly",
               "-v",
-              "${modelRoot}:/opt/lloom-models:ro",
-              "-v",
-              "lloom-comfyui-media-data:/data",
+              "lloom-comfyui-qwen-image-2512-data:/data",
               "-e",
-              "LLOOM_MEDIA_DATA_ROOT=/data"
+              "LLOOM_MEDIA_DATA_ROOT=/data",
+              "-e",
+              "LLOOM_MODELS_ROOT=/opt/ComfyUI/models",
+              "-e",
+              "LLOOM_COMFY_CACHE_MODE=classic",
+              "-e",
+              "LLOOM_MEDIA_MODEL=Qwen/Qwen-Image-2512"
             ]
           }
         },

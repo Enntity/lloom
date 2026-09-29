@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { Agent, getGlobalDispatcher, setGlobalDispatcher } from 'undici';
+// Dispatcher and fetch must come from the same undici copy.
+import { Agent, fetch as undiciFetch, getGlobalDispatcher, setGlobalDispatcher } from 'undici';
 import { createLloomServer } from '../src/server.mjs';
 const listen = (server) =>
   new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server.address().port)));
@@ -47,7 +48,7 @@ try {
     );
     const port = await listen(app.server);
     try {
-      const r = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
+      const r = await undiciFetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
         method: 'POST',
         dispatcher: client,
         headers: { 'content-type': 'application/json' },

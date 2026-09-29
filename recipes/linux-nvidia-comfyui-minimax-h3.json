@@ -5,7 +5,7 @@
   "id": "linux-nvidia-comfyui-minimax-h3",
   "name": "MiniMaxAI/MiniMax-H3 (ComfyUI, NVIDIA)",
   "version": 1,
-  "summary": "Install MiniMaxAI/MiniMax-H3 with a shared, locally built ComfyUI media backend.",
+  "summary": "Install MiniMaxAI/MiniMax-H3 in an independent, single-model ComfyUI runtime.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata only; model weights retain their upstream licenses"
@@ -42,7 +42,7 @@
     "family": "Linux NVIDIA CUDA",
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
     "notes": [
-      "Standalone single-GPU serving; subsequent recipes share one managed ComfyUI runtime.",
+      "Independent single-model serving with per-model admission and unloading.",
       "NVIDIA Container Toolkit with CUDA 13-compatible host driver required."
     ]
   },
@@ -52,7 +52,7 @@
       "linux-arm64"
     ],
     "memoryGb": 95,
-    "diskGb": 80,
+    "diskGb": 60,
     "commands": [
       "docker",
       "python3"
@@ -96,10 +96,9 @@
           "diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
           "text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
           "vae/minimax_h3_audio_vae_fp32.safetensors",
-          "vae/minimax_h3_video_vae_fp16.safetensors",
-          "diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors"
+          "vae/minimax_h3_video_vae_fp16.safetensors"
         ],
-        "downloadSizeBytes": 63440965087,
+        "downloadSizeBytes": 42470585471,
         "integrity": {
           "files": [
             {
@@ -121,11 +120,6 @@
               "path": "vae/minimax_h3_video_vae_fp16.safetensors",
               "sizeBytes": 5207808496,
               "sha256": "7c1f131492e7eddacaac9069a61b81bdd39de5cc96561e677c5eab1cdce5e522"
-            },
-            {
-              "path": "diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors",
-              "sizeBytes": 20970379616,
-              "sha256": "9255f52b6677845ad238f20dfaafa94727053694127ab7f255c048f0f9365779"
             }
           ]
         }
@@ -137,14 +131,12 @@
       "role": "minimax-h3",
       "model": "MiniMaxAI/MiniMax-H3",
       "gatewayModel": "MiniMaxAI/MiniMax-H3",
-      "runtime": "comfyui-media",
-      "backendConfig": "comfyui-media",
+      "runtime": "comfyui-minimax-h3",
+      "backendConfig": "comfyui-minimax-h3",
       "kind": "video",
       "input": [
         "text",
-        "image",
-        "audio",
-        "video"
+        "image"
       ],
       "output": [
         "video",
@@ -153,10 +145,7 @@
       "capabilities": [
         "video-generation",
         "text-to-video",
-        "image-to-video",
-        "audio-reference",
-        "video-reference",
-        "first-last-frame"
+        "image-to-video"
       ],
       "settings": {
         "memoryGb": 95,
@@ -167,11 +156,11 @@
         "runtime": {
           "adapter": "docker",
           "management": "managed",
-          "containerName": "lloom-comfyui-media",
+          "containerName": "lloom-comfyui-minimax-h3",
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/comfyui-media:source-dbfd165113ba5bf3062f953f97bfe41bff7dcb6996d0f7cdcbd6ee391f54a6cb",
+            "image": "lloom/comfyui-media:source-6d8fbbc3e58bef36bb8723cdcb01f53a7f8f5d9bd6f74ab015a3dbf06ca19147",
             "pull": false,
             "createArgs": [
               "--restart",
@@ -182,15 +171,26 @@
               "host",
               "-p",
               "127.0.0.1:${port}:8000",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--MiniMax-H3/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors,dst=/opt/ComfyUI/models/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--MiniMax-H3/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors,dst=/opt/ComfyUI/models/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--MiniMax-H3/vae/minimax_h3_audio_vae_fp32.safetensors,dst=/opt/ComfyUI/models/vae/minimax_h3_audio_vae_fp32.safetensors,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/Comfy-Org--MiniMax-H3/vae/minimax_h3_video_vae_fp16.safetensors,dst=/opt/ComfyUI/models/vae/minimax_h3_video_vae_fp16.safetensors,readonly",
               "-v",
-              "${modelRoot}:/opt/lloom-models:ro",
-              "-v",
-              "lloom-comfyui-media-data:/data",
+              "lloom-comfyui-minimax-h3-data:/data",
               "-e",
-              "LLOOM_MEDIA_DATA_ROOT=/data"
+              "LLOOM_MEDIA_DATA_ROOT=/data",
+              "-e",
+              "LLOOM_MODELS_ROOT=/opt/ComfyUI/models",
+              "-e",
+              "LLOOM_COMFY_CACHE_MODE=classic",
+              "-e",
+              "LLOOM_MEDIA_MODEL=MiniMaxAI/MiniMax-H3"
             ]
-          },
-          "warmup": false
+          }
         },
         "timeoutMs": 1800000
       }

@@ -3,7 +3,8 @@ import { spawn } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Agent as UndiciAgent } from 'undici';
+// Dispatcher and fetch must come from the same undici copy (see server.mjs).
+import { Agent as UndiciAgent, fetch as undiciFetch } from 'undici';
 import {
   backendIds,
   defaultBackendVariables,
@@ -36,6 +37,7 @@ import {
   selectedRecipeIdFromCommunityPlan
 } from '../src/community-client.mjs';
 import { loadConfig } from '../src/config.mjs';
+import { mutateConfigSource } from '../src/config-mutation.mjs';
 import { runtimeControlTimeoutMs } from '../src/control-timeout.mjs';
 import { createDoctorReport } from '../src/doctor.mjs';
 import { createBrowserSetup } from '../src/browser-setup.mjs';
@@ -45,7 +47,8 @@ import {
   currentNodeId,
   detectNvidiaSyncCluster,
   federatedNodeConfigFromSnapshot,
-  nvidiaSyncClusterConfig,
+  mergeNvidiaSyncClusterDiscovery,
+  nvidiaSyncDiscoverySummary,
   validateClusterConfig
 } from '../src/cluster.mjs';
 import { applyInit, defaultUserConfigPath } from '../src/init.mjs';
@@ -64,6 +67,12 @@ import { loadRecipeById, loadRecipes, planRecipe } from '../src/recipes.mjs';
 import { RuntimeManager } from '../src/runtime-manager.mjs';
 import { runCommand } from '../src/process-control.mjs';
 import { applyRuntimePolicyPlan, createRuntimePolicyPlan } from '../src/runtime-policy.mjs';
+import {
+  applyRuntimePolicyConfig,
+  createRuntimePolicyConfigReport,
+  parseNumericMemoryFlags,
+  NUMERIC_MEMORY_FLAGS
+} from '../src/runtime-policy-config.mjs';
 import { createLloomServer } from '../src/server.mjs';
 import { applySetup, createSetupPlan, syncClusterSetupMembers } from '../src/setup.mjs';
 import { createSetupStatus } from '../src/setup-status.mjs';
@@ -89,6 +98,7 @@ const COMMAND_REGISTRY = [
   { name: 'suspend', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'resume', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'route', aliases: ['routing'], tier: 'primary', needsInstalledConfig: true },
+  { name: 'fleet', aliases: ['profiles'], tier: 'primary', needsInstalledConfig: true },
   { name: 'integrate', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'integrations', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'add-model', aliases: ['model-add'], tier: 'primary', needsInstalledConfig: true },
@@ -106,7 +116,8 @@ const COMMAND_REGISTRY = [
   { name: 'backend-install', aliases: [], tier: 'advanced', needsInstalledConfig: false },
   { name: 'runtimes', aliases: ['runtime-status'], tier: 'advanced', needsInstalledConfig: true },
   { name: 'cluster', aliases: ['cluster-status'], tier: 'advanced', needsInstalledConfig: true },
-  { name: 'runtime-plan', aliases: ['runtime-policy'], tier: 'advanced', needsInstalledConfig: true },
+  { name: 'runtime-plan', aliases: [], tier: 'advanced', needsInstalledConfig: true },
+  { name: 'runtime-policy', aliases: [], tier: 'advanced', needsInstalledConfig: true },
   { name: 'runtime-admit', aliases: [], tier: 'advanced', needsInstalledConfig: true },
   { name: 'runtime-start', aliases: [], tier: 'advanced', needsInstalledConfig: true },
   { name: 'runtime-warmup', aliases: [], tier: 'advanced', needsInstalledConfig: true },
@@ -201,6 +212,7 @@ Backends and runtimes:
   lloom backend-install <backend-id> [--apply --yes] [--step step-id]
   lloom runtimes [runtime-id|all]
   lloom runtime-plan <runtime-id>
+  lloom runtime-policy [--max-memory-utilization f] [--reserve-memory-gb n] [--apply --yes]
   lloom suspend <model-or-alias> [--apply --yes] [--drain-timeout-ms 300000]
   lloom resume <model-or-alias> [--apply --yes]
   lloom runtime-admit <runtime-id> [--apply --yes]
@@ -307,6 +319,7 @@ const INSTALLED_CONFIG_COMMANDS = new Set([
   'keep-warm',
   'model-add',
   'models',
+  'fleet',
   'remove-model',
   'route',
   'routing',
@@ -337,6 +350,7 @@ const OPERATIONAL_CONFIG_COMMANDS = new Set([
   'keep-warm',
   'model-add',
   'models',
+  'fleet',
   'remove-model',
   'route',
   'routing',
@@ -1078,7 +1092,7 @@ async function gatewayRequest(config, pathname, { method = 'GET', body, timeoutM
     bodyTimeout: timeoutMs
   });
   try {
-    const response = await fetch(`${gatewayUrlFor(config)}${pathname}`, {
+    const response = await undiciFetch(`${gatewayUrlFor(config)}${pathname}`, {
       method,
       headers: {
         ...gatewayAdminHeaders(config),
@@ -2394,6 +2408,57 @@ async function main() {
       if (!result) throw new Error(`route switch failed through ${gatewayUrlFor(config)}`);
       console.log(JSON.stringify({ ...result, applied: true }, null, 2));
     },
+    fleet: async ({ args, config }) => {
+      const action = positional(args)[1] ?? 'list';
+      const name = positional(args)[2];
+      const apply = hasFlag(args, '--apply');
+      const yes = hasFlag(args, '--yes');
+      if (!['list', 'show', 'use', 'save'].includes(action)) {
+        throw new Error(`Unknown fleet action ${action}; use list, show, use, or save.`);
+      }
+      if (action === 'list') {
+        const result = await gatewayRequest(config, '/gateway/fleet/profiles', { timeoutMs: 10000 });
+        if (!result) throw new Error(`LLooM gateway at ${gatewayUrlFor(config)} is not reachable`);
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      if (!name) throw new Error(`Missing profile name for fleet ${action}.`);
+      if (action === 'show') {
+        const result = await gatewayRequest(config, `/gateway/fleet/profiles/${encodeURIComponent(name)}`, {
+          timeoutMs: 10000
+        });
+        if (!result) throw new Error(`LLooM gateway at ${gatewayUrlFor(config)} is not reachable`);
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      const isApply = action === 'use';
+      const plan = isApply
+        ? { action: 'use', profile: name, applied: false, next: `lloom fleet use ${name} --apply --yes` }
+        : {
+            action: 'save',
+            profile: name,
+            description: argValue(args, '--description') ?? '',
+            overwrite: hasFlag(args, '--overwrite'),
+            applied: false,
+            next: `lloom fleet save ${name}${hasFlag(args, '--overwrite') ? ' --overwrite' : ''} --apply --yes`
+          };
+      if (!apply) {
+        console.log(JSON.stringify(plan, null, 2));
+        return;
+      }
+      if (!yes) throw new Error(`Refusing to ${action} a fleet profile without --yes after reviewing the plan`);
+      const result = await gatewayRequest(
+        config,
+        `/gateway/fleet/profiles/${encodeURIComponent(name)}${isApply ? '?apply=1' : ''}`,
+        {
+          method: 'POST',
+          body: isApply ? { yes: true } : { yes: true, description: plan.description, overwrite: plan.overwrite },
+          timeoutMs: 60000
+        }
+      );
+      if (!result) throw new Error(`fleet profile ${action} failed through ${gatewayUrlFor(config)}`);
+      console.log(JSON.stringify({ ...result, applied: true }, null, 2));
+    },
     runtimes: async ({ args, config, command: _command }) => {
       const runtimeId = positional(args)[1] ?? 'all';
       const manager = runtimeManagerForCli(config);
@@ -2420,18 +2485,50 @@ async function main() {
     cluster: async ({ args, config, command: _command }) => {
       const action = positional(args)[1] ?? 'status';
       if (action === 'discover') {
-        const discovery = await detectNvidiaSyncCluster();
+        const explicitLocalId =
+          process.env.LLOOM_NODE_ID ??
+          config.cluster?.nodeId ??
+          (Object.keys(config.cluster?.nodes ?? {}).length === 1 ? Object.keys(config.cluster.nodes)[0] : undefined);
+        if (process.env.LLOOM_NODE_ID && config.cluster?.nodeId && process.env.LLOOM_NODE_ID !== config.cluster.nodeId)
+          throw new Error('LLOOM_NODE_ID conflicts with configured cluster.nodeId');
+        const discovery = await detectNvidiaSyncCluster({ localNodeId: explicitLocalId });
         if (!discovery) throw new Error('No NVIDIA Sync cluster was detected from this node');
-        const cluster = nvidiaSyncClusterConfig(discovery, {
+        const options = {
+          discovery,
+          localNodeId: discovery.nodeId,
           id: argValue(args, '--id'),
-          apiKeyEnv: argValue(args, '--api-key-env') ?? 'LLOOM_CLUSTER_KEY'
-        });
+          apiKeyEnv: argValue(args, '--api-key-env')
+        };
+        // Keep authoring forms such as environment references out of expansion.
+        const source = JSON.parse(readFileSync(config.sourcePath, 'utf8'));
+        const plan = (raw) => mergeNvidiaSyncClusterDiscovery({ ...options, cluster: raw.cluster });
+        let cluster = plan(source);
+        const validationErrors = validateClusterConfig({ ...config, cluster });
+        let changed = false;
         if (hasFlag(args, '--apply')) {
-          const source = JSON.parse(readFileSync(config.sourcePath, 'utf8'));
-          source.cluster = cluster;
-          writeFileSync(config.sourcePath, `${JSON.stringify(source, null, 2)}\n`, { mode: 0o600 });
+          if (validationErrors.length) throw new Error(`Invalid discovered cluster: ${validationErrors.join('; ')}`);
+          ({ changed } = await mutateConfigSource(config, (latest) => {
+            // Replan from the current raw source inside the serialized mutation.
+            cluster = plan(latest);
+            latest.cluster = cluster;
+          }));
         }
-        console.log(JSON.stringify({ ok: true, applied: hasFlag(args, '--apply'), discovery, cluster }, null, 2));
+        console.log(
+          JSON.stringify(
+            {
+              ok: validationErrors.length === 0,
+              applied: hasFlag(args, '--apply'),
+              changed,
+              discovery,
+              summary: nvidiaSyncDiscoverySummary(discovery, { currentConfig: config }),
+              validationErrors,
+              cluster,
+              next: 'Discovery does not change model placement or gateway listeners. Verify endpoints before serving.'
+            },
+            null,
+            2
+          )
+        );
         return;
       }
       if (action === 'add-node') {
@@ -2543,6 +2640,16 @@ async function main() {
       console.log(JSON.stringify(response, null, 2));
     },
     'runtime-plan': async ({ args, config, command: _command }) => {
+      if (args.some((arg) => NUMERIC_MEMORY_FLAGS.some((flag) => arg === flag || arg.startsWith(`${flag}=`)))) {
+        throw new Error(
+          'runtime-plan is read-only and does not accept numeric memory flags; use `lloom runtime-policy --max-memory-utilization <f> --reserve-memory-gb <n> --apply --yes`'
+        );
+      }
+      if (hasFlag(args, '--apply') || hasFlag(args, '--yes')) {
+        throw new Error(
+          'runtime-plan is read-only and does not accept --apply/--yes; use `lloom runtime-policy --apply --yes` to write memory-policy changes'
+        );
+      }
       const requestedRuntimeId = positional(args)[1];
       const livePlan = clusterConfigured(config)
         ? await gatewayRequest(
@@ -2757,11 +2864,34 @@ async function main() {
   handlers['pack-export'] = handlers['recipe-export'];
   handlers['recipe-pack'] = handlers['recipe-import'];
   handlers['pack-submit'] = handlers['recipe-submit'];
-  handlers['model-add'] = handlers['add-model'];
+  handlers['profiles'] = handlers['fleet'];
   handlers['routing'] = handlers['route'];
   handlers['runtime-status'] = handlers['runtimes'];
   handlers['cluster-status'] = handlers['cluster'];
-  handlers['runtime-policy'] = handlers['runtime-plan'];
+  handlers['runtime-policy'] = async ({ args, config, command: _command }) => {
+    const flags = parseNumericMemoryFlags(args);
+    const apply = hasFlag(args, '--apply');
+    const yes = hasFlag(args, '--yes');
+    if (!flags) {
+      if (apply || yes) {
+        throw new Error('runtime-policy --apply/--yes requires --max-memory-utilization and/or --reserve-memory-gb');
+      }
+      // Compatibility: a bare `runtime-policy` with no numeric flags keeps the
+      // historical read-only alias behavior and delegates to the runtime plan.
+      return handlers['runtime-plan']({ args, config, command: 'runtime-plan' });
+    }
+    if (yes && !apply) {
+      throw new Error('runtime-policy --yes requires --apply');
+    }
+    if (!apply) {
+      console.log(JSON.stringify(createRuntimePolicyConfigReport(config, flags), null, 2));
+      return;
+    }
+    if (!yes) {
+      throw new Error('applying a memory-policy change requires both --apply and --yes');
+    }
+    console.log(JSON.stringify(await applyRuntimePolicyConfig(config, flags, { apply, yes }), null, 2));
+  };
   handlers['voice-list'] = handlers['voices'];
   handlers['install-voice'] = handlers['voice-install'];
   handlers['voice-rm'] = handlers['voice-remove'];

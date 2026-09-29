@@ -5,7 +5,10 @@ import {
   ClusterCoordinator,
   federatedNodeConfigFromSnapshot,
   materializeFederatedNodes,
+  mergeNvidiaSyncClusterDiscovery,
   modelTargets,
+  nvidiaSyncClusterConfig,
+  nvidiaSyncDiscoverySummary,
   parseNvidiaSyncSshConfig,
   runtimeAuthority,
   runtimeControlAllowed,
@@ -22,6 +25,9 @@ import {
 } from '../src/runtime-manager.mjs';
 import { createRegistry } from '../src/registry.mjs';
 import { syncClusterSetupMembers } from '../src/setup.mjs';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const syncPeers = parseNvidiaSyncSshConfig(`
 Host ennspark02-lan
@@ -32,16 +38,28 @@ Host ennspark02-lan
 Host ignored
   Hostname 192.168.1.20
 `);
-assert.deepEqual(syncPeers, [{ alias: 'ennspark02-lan', createdBySync: true, hostname: '10.100.20.2', user: 'spark' }]);
+// Legacy marked entries without `NVSyncClusterAlias` are still recognized by
+// their stable non-IP Host alias; the unmarked block is reported but ignored.
+assert.deepEqual(syncPeers, [
+  { alias: 'ennspark02-lan', createdBySync: true, hostname: '10.100.20.2', user: 'spark' },
+  { alias: 'ignored', createdBySync: false, hostname: '192.168.1.20' }
+]);
 
 const discovery = buildNvidiaSyncDiscovery({
   peers: syncPeers,
-  localAddresses: [{ interface: 'enp1s0', address: '10.100.20.1', prefixlen: 24 }],
+  localAddresses: [
+    { interface: 'enp1s0', address: '10.100.20.1', prefixlen: 24 },
+    { interface: 'enp1s1', address: '10.100.21.9', prefixlen: 24 }
+  ],
   localNodeId: 'ennspark01',
   hostname: 'spark-host'
 });
 assert.equal(discovery.provider, 'nvidia-sync');
 assert.equal(discovery.nodes.ennspark02.backendHost, '10.100.20.2');
+assert.equal(discovery.nodes.ennspark02.fabricInterface, undefined);
+assert.equal(discovery.links.length, 1);
+assert.equal(discovery.links[0].localInterface, 'enp1s0');
+assert.equal(discovery.links[0].interface, undefined);
 
 const heterogeneous = {
   cluster: {
@@ -947,4 +965,427 @@ assert.equal(
   true
 );
 
+// ---------------------------------------------------------------------------
+// NVIDIA Sync discovery: real three-node SSH fixture.
+// ---------------------------------------------------------------------------
+
+const fixturePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'nvidia-sync-three-node.json');
+const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
+const normalizeFixtureAddresses = (value) =>
+  value.flatMap((device) =>
+    (device.addr_info ?? [])
+      .filter((address) => address.family === 'inet' && address.scope !== 'host')
+      .map((address) => ({
+        interface: device.ifname,
+        address: address.local,
+        prefixlen: Number(address.prefixlen ?? 32)
+      }))
+  );
+
+const fixturePeers = parseNvidiaSyncSshConfig(fixture.sshConfig);
+assert.deepEqual(
+  fixturePeers.map((peer) => [peer.alias, peer.createdBySync, peer.clusterAlias ?? null, peer.hostname ?? null]),
+  [
+    ['10.100.16.1', false, null, null],
+    ['worker-fabric', false, null, '10.100.17.1'],
+    ['ennspark02-lan', true, 'ennspark02-lan', '10.100.192.1'],
+    ['10.100.192.1', true, 'ennspark02-lan', '10.100.192.1'],
+    ['10.100.193.1', true, 'ennspark02-lan', '10.100.193.1'],
+    ['ennspark03-lan', true, 'ennspark03-lan', '10.100.196.2'],
+    ['10.100.196.2', true, 'ennspark03-lan', '10.100.196.2'],
+    ['10.100.197.2', true, 'ennspark03-lan', '10.100.197.2']
+  ]
+);
+
+const fixtureLocalAddresses = normalizeFixtureAddresses(fixture.ipAddresses);
+const fixtureDiscovery = buildNvidiaSyncDiscovery({
+  peers: fixturePeers,
+  localAddresses: fixtureLocalAddresses,
+  localNodeId: fixture.nodeId,
+  hostname: fixture.hostname
+});
+assert.equal(fixtureDiscovery.provider, 'nvidia-sync');
+assert.equal(fixtureDiscovery.detected, true);
+assert.equal(fixtureDiscovery.nodeId, 'ennspark01');
+assert.deepEqual(Object.keys(fixtureDiscovery.nodes).sort(), ['ennspark01', 'ennspark02', 'ennspark03']);
+assert.equal(fixtureDiscovery.nodeCount, 3);
+assert.equal(fixtureDiscovery.verified, false);
+// Four distinct observed rails: two NICs per peer, with the duplicate
+// alias/address Sync blocks collapsed.
+assert.equal(fixtureDiscovery.links.length, 4);
+assert.deepEqual(
+  fixtureDiscovery.links.map((link) => link.peerAddress),
+  ['10.100.192.1', '10.100.193.1', '10.100.196.2', '10.100.197.2']
+);
+assert.deepEqual(
+  fixtureDiscovery.links.map((link) => link.localInterface),
+  ['enp1s0f0np0', 'enP2p1s0f0np0', 'enp1s0f1np1', 'enP2p1s0f1np1']
+);
+assert.equal(fixtureDiscovery.nodes.ennspark02.backendHost, '10.100.192.1');
+assert.equal(fixtureDiscovery.nodes.ennspark02.sshAlias, 'ennspark02-lan');
+assert.equal(fixtureDiscovery.nodes.ennspark03.backendHost, '10.100.196.2');
+assert.equal(fixtureDiscovery.nodes.ennspark03.sshAlias, 'ennspark03-lan');
+assert.equal(fixtureDiscovery.nodes.ennspark01.local, true);
+// Remote interface names are never asserted; only the local node has one.
+assert.equal(fixtureDiscovery.nodes.ennspark02.fabricInterface, undefined);
+assert.equal(fixtureDiscovery.nodes.ennspark03.fabricInterface, undefined);
+assert.equal(fixtureDiscovery.nodes.ennspark01.fabricInterface, 'enp1s0f0np0');
+// Discovery observes adjacency only and must not elect a leader.
+assert.equal(fixtureDiscovery.leaderNode, undefined);
+assert.equal(fixtureDiscovery.localNode, 'ennspark01');
+assert.equal(fixtureDiscovery.ambiguousPeers, undefined);
+assert.equal(fixtureDiscovery.topology, 'local-adjacency');
+
+// Permuting the SSH entries and the local address order must not change output.
+const shuffle = (list) => [...list].reverse();
+for (const peers of [shuffle(fixturePeers), [...fixturePeers].reverse()]) {
+  for (const addresses of [shuffle(fixtureLocalAddresses), [...fixtureLocalAddresses].reverse()]) {
+    const permuted = buildNvidiaSyncDiscovery({
+      peers,
+      localAddresses: addresses,
+      localNodeId: fixture.nodeId,
+      hostname: fixture.hostname
+    });
+    assert.deepEqual(permuted, fixtureDiscovery);
+    assert.deepEqual(Object.keys(permuted.nodes).sort(), Object.keys(fixtureDiscovery.nodes).sort());
+    assert.equal(permuted.nodes.ennspark02.backendHost, '10.100.192.1');
+    assert.equal(permuted.nodes.ennspark03.backendHost, '10.100.196.2');
+  }
+}
+
+const plannedFixtureCluster = nvidiaSyncClusterConfig(fixtureDiscovery, { id: 'ennspark-cluster' });
+assert.equal(plannedFixtureCluster.nodeId, 'ennspark01');
+assert.equal(plannedFixtureCluster.leaderNode, undefined);
+assert.equal(plannedFixtureCluster.nodes.ennspark01.endpoint, undefined);
+assert.equal(plannedFixtureCluster.nodes.ennspark02, undefined);
+assert.equal(plannedFixtureCluster.discovery.nodes.ennspark02.rails[0].localInterface, 'enp1s0f0np0');
+assert.equal(plannedFixtureCluster.discovery.links[0].interface, undefined);
+
+// ---------------------------------------------------------------------------
+// NVIDIA Sync discovery: legacy two-node config, malformed boundaries, refusals.
+// ---------------------------------------------------------------------------
+
+const legacyPeers = parseNvidiaSyncSshConfig(`
+Host 10.100.20.1
+  User spark
+  ### CreatedBy: NVIDIA Sync
+  ### NVSyncClusterAlias: ennspark01-lan
+  Hostname 10.100.20.1
+  User enntitysparkadmin
+`);
+assert.equal(legacyPeers.length, 1);
+assert.equal(legacyPeers[0].createdBySync, true);
+const legacyDiscovery = buildNvidiaSyncDiscovery({
+  peers: legacyPeers,
+  localAddresses: [{ interface: 'enp1s0f0np0', address: '10.100.20.2', prefixlen: 24 }],
+  localNodeId: 'ennspark02',
+  hostname: 'spark-2'
+});
+assert.deepEqual(Object.keys(legacyDiscovery.nodes).sort(), ['ennspark01', 'ennspark02']);
+assert.equal(legacyDiscovery.topology, 'direct');
+
+// Malformed SSH: wildcard/negated/multi-host Host patterns and Match blocks
+// close the previous entry instead of leaking ClusterAlias provenance forward.
+const malformedPeers = parseNvidiaSyncSshConfig(`
+Host ennspark02-lan 10.100.192.9
+  ### CreatedBy: NVIDIA Sync
+  Hostname 10.100.192.1
+Host !bad
+  ### CreatedBy: NVIDIA Sync
+  ### NVSyncClusterAlias: ennspark03-lan
+  Hostname 10.100.196.2
+Host *
+  ### CreatedBy: NVIDIA Sync
+  ### NVSyncClusterAlias: ennspark04-lan
+  Hostname 10.100.199.2
+Match host ennspark05
+  ### CreatedBy: NVIDIA Sync
+  ### NVSyncClusterAlias: ennspark05-lan
+  Hostname 10.100.200.2
+`);
+assert.deepEqual(
+  malformedPeers.map((peer) => [peer.alias, peer.createdBySync, peer.clusterAlias ?? null]),
+  []
+);
+// Conditional scopes contribute no peers.
+for (const peer of malformedPeers) assert.equal(peer.createdBySync, false);
+
+// Comments before `Host` do not become Host provenance, and the marker is only
+// honored inside the block it follows.
+assert.deepEqual(parseNvidiaSyncSshConfig('### CreatedBy: NVIDIA Sync\n### NVSyncClusterAlias: ghost\n'), []);
+
+// A Sync alias whose hostname is one of this node's own addresses is refused.
+const selfPeerDiscovery = buildNvidiaSyncDiscovery({
+  peers: [
+    {
+      alias: 'ennspark02-lan',
+      createdBySync: true,
+      clusterAlias: 'ennspark02-lan',
+      hostname: '10.100.192.2',
+      user: 'spark'
+    }
+  ],
+  localAddresses: [{ interface: 'enp1s0f0np0', address: '10.100.192.2', prefixlen: 24 }],
+  localNodeId: 'ennspark01'
+});
+assert.equal(selfPeerDiscovery, null);
+
+// An address matching two local interfaces is ambiguous: refuse instead of
+// arbitrarily picking the first rail.
+const ambiguousDiscovery = buildNvidiaSyncDiscovery({
+  peers: [
+    {
+      alias: 'ennspark02-lan',
+      createdBySync: true,
+      clusterAlias: 'ennspark02-lan',
+      hostname: '10.100.192.1',
+      user: 'spark'
+    },
+    {
+      alias: '10.100.196.2',
+      createdBySync: true,
+      clusterAlias: 'ennspark03-lan',
+      hostname: '10.100.196.2',
+      user: 'spark'
+    }
+  ],
+  localAddresses: [
+    { interface: 'enp1s0f0np0', address: '10.100.192.2', prefixlen: 24 },
+    { interface: 'enP2p1s0f0np0', address: '10.100.192.3', prefixlen: 24 },
+    { interface: 'enp1s0f1np1', address: '10.100.196.1', prefixlen: 24 }
+  ],
+  localNodeId: 'ennspark01'
+});
+assert.deepEqual(Object.keys(ambiguousDiscovery.nodes).sort(), ['ennspark01', 'ennspark03']);
+assert.deepEqual(
+  ambiguousDiscovery.ambiguousPeers.map((entry) => [entry.clusterAlias, entry.reason]),
+  [['ennspark02-lan', 'ambiguous-local-interface']]
+);
+
+// ---------------------------------------------------------------------------
+// Merge: preserve every existing node/endpoint/catalog/leader; migrate only the
+// unambiguous old-fabric endpoint; never duplicate the local hostname.
+// ---------------------------------------------------------------------------
+
+const legacyClusterConfig = {
+  cluster: {
+    id: 'spark-cluster',
+    nodeId: 'ennspark01',
+    leaderNode: 'ennspark01',
+    apiKeyEnv: 'LLOOM_ADMIN_API_KEY',
+    nodes: {
+      ennspark01: {
+        name: 'spark-8333',
+        endpoint: 'http://10.100.16.1:8100',
+        backendHost: '10.100.16.1',
+        fabricInterface: 'enp1s0f0np0',
+        apiKeyEnv: 'LOCAL_KEY',
+        labels: { role: 'leader', hardware: 'dgx-spark' },
+        resources: { memoryGb: 128, maxMemoryUtilization: 0.9 }
+      },
+      'macbook-local': {
+        name: 'MacBook Local',
+        endpoint: 'http://macbook-private:9001',
+        apiKeyEnv: 'LAB_KEY',
+        labels: { role: 'node', architecture: 'darwin-arm64', accelerator: 'metal' },
+        resources: { memoryGb: 64 },
+        proxy: {
+          models: [{ id: 'local/qwen', as: 'macbook-local/local/qwen', kind: 'chat', remoteRuntime: 'mac-qwen' }]
+        }
+      }
+    }
+  },
+  runtimes: { qwen: { enabled: true, node: 'ennspark01', memoryGb: 54 } },
+  backends: { qwen: { type: 'vllm', baseUrl: 'http://10.100.16.1:8201/v1' } },
+  models: [
+    {
+      id: 'example/Qwen',
+      backend: 'qwen',
+      runtime: 'qwen',
+      targets: [{ id: 'ennspark01', node: 'ennspark01', backend: 'qwen', runtime: 'qwen' }]
+    }
+  ]
+};
+
+const merged = mergeNvidiaSyncClusterDiscovery({
+  discovery: fixtureDiscovery,
+  cluster: legacyClusterConfig.cluster,
+  config: legacyClusterConfig
+});
+assert.equal(merged.id, 'spark-cluster');
+assert.equal(merged.nodeId, 'ennspark01');
+assert.equal(merged.leaderNode, 'ennspark01');
+assert.equal(merged.apiKeyEnv, 'LLOOM_ADMIN_API_KEY');
+assert.deepEqual(Object.keys(merged.nodes).sort(), ['ennspark01', 'macbook-local']);
+
+// An endpoint on the old fabric host migrates with that host.
+assert.equal(merged.nodes.ennspark01.name, 'spark-8333');
+assert.equal(merged.nodes.ennspark01.endpoint, 'http://10.100.192.2:8100');
+assert.equal(merged.nodes.ennspark01.apiKeyEnv, 'LOCAL_KEY');
+assert.equal(merged.nodes.ennspark01.resources.maxMemoryUtilization, 0.9);
+
+// Untouched foreign node keeps endpoint, port, catalog, credential env, labels.
+assert.equal(merged.nodes['macbook-local'].endpoint, 'http://macbook-private:9001');
+assert.equal(merged.nodes['macbook-local'].apiKeyEnv, 'LAB_KEY');
+assert.deepEqual(
+  merged.nodes['macbook-local'].proxy.models,
+  legacyClusterConfig.cluster.nodes['macbook-local'].proxy.models
+);
+assert.equal(merged.nodes['macbook-local'].labels.architecture, 'darwin-arm64');
+
+// Newly observed peers remain inventory until authenticated federation join.
+assert.equal(merged.nodes.ennspark02, undefined);
+assert.equal(merged.discovery.nodes.ennspark02.backendHost, '10.100.192.1');
+assert.equal(merged.discovery.nodes.ennspark02.fabricInterface, undefined);
+assert.equal(merged.discovery.nodes.ennspark03.backendHost, '10.100.196.2');
+assert.deepEqual(
+  merged.discovery.links.map((link) => [link.peerNodeId, link.localInterface]),
+  [
+    ['ennspark02', 'enp1s0f0np0'],
+    ['ennspark02', 'enP2p1s0f0np0'],
+    ['ennspark03', 'enp1s0f1np1'],
+    ['ennspark03', 'enP2p1s0f1np1']
+  ]
+);
+assert(Array.isArray(merged.diagnostics));
+assert(
+  merged.diagnostics.every((entry) => typeof entry === 'string' || (entry && typeof entry.message === 'string')),
+  'merge diagnostics must be actionable strings or objects with a message'
+);
+
+// Sub-migration: an old-fabric endpoint is rewritten only when its URL hostname
+// is exactly the previous backendHost of that node.
+const migrateConfig = {
+  cluster: {
+    nodeId: 'ennspark01',
+    leaderNode: 'ennspark01',
+    nodes: {
+      ennspark01: { endpoint: 'http://10.100.16.1:8100', backendHost: '10.100.16.1' },
+      ennspark02: { endpoint: 'http://10.100.16.2:9100/v1', backendHost: '10.100.16.2' }
+    }
+  }
+};
+const migrated = mergeNvidiaSyncClusterDiscovery({
+  discovery: fixtureDiscovery,
+  cluster: migrateConfig.cluster,
+  config: migrateConfig
+});
+// Preserve custom port and path when migrating the exact old hostname.
+assert.equal(migrated.nodes.ennspark02.endpoint, 'http://10.100.192.1:9100/v1');
+
+const ambiguousEndpointConfig = {
+  cluster: {
+    nodeId: 'ennspark01',
+    leaderNode: 'ennspark01',
+    nodes: {
+      ennspark01: { endpoint: 'http://10.100.16.1:8100', backendHost: '10.100.16.1' },
+      // Substring lookalike: 10.100.16.10 CONTAINS 10.100.16.1 but is not it.
+      ennspark02: { endpoint: 'http://10.100.16.10:8100', backendHost: '10.100.16.1' }
+    }
+  }
+};
+const ambiguousMerged = mergeNvidiaSyncClusterDiscovery({
+  discovery: fixtureDiscovery,
+  cluster: ambiguousEndpointConfig.cluster,
+  config: ambiguousEndpointConfig
+});
+assert.equal(ambiguousMerged.nodes.ennspark02.endpoint, 'http://10.100.16.10:8100');
+assert(
+  ambiguousMerged.diagnostics.some(
+    (entry) => typeof entry === 'object' && entry.level === 'migration-required' && entry.nodeId === 'ennspark02'
+  ),
+  'a preserved custom endpoint must be reported as migration-required'
+);
+assert.deepEqual(validateClusterConfig({ ...legacyClusterConfig, cluster: merged }), []);
+
+const fixtureSummary = nvidiaSyncDiscoverySummary(fixtureDiscovery, { currentConfig: legacyClusterConfig });
+assert.equal(fixtureSummary.observedLinks, 4);
+assert.deepEqual(fixtureSummary.discoveredNodes, ['ennspark01', 'ennspark02', 'ennspark03']);
+assert.deepEqual(fixtureSummary.newNodes, ['ennspark02', 'ennspark03']);
+assert.equal(fixtureSummary.leaderNode, 'ennspark01');
+assert(Array.isArray(fixtureSummary.diagnostics));
+
+// ---------------------------------------------------------------------------
+// Explicit runtimePlacement subsets remain honored for single/TP2/TP3.
+// ---------------------------------------------------------------------------
+
+for (const [count, expected] of [
+  [1, ['ennspark01']],
+  [2, ['ennspark01', 'ennspark02']],
+  [3, ['ennspark01', 'ennspark02', 'ennspark03']]
+]) {
+  const rendered = validateClusterConfig({ ...legacyClusterConfig, cluster: merged }).length === 0 ? '' : null;
+  assert.equal(rendered, '');
+  const nodeIds = ['ennspark01', 'ennspark02', 'ennspark03'].slice(0, count);
+  const placement = runtimePlacement(
+    { placement: { mode: 'replicated', nodes: nodeIds } },
+    { cluster: merged },
+    {
+      LLOOM_NODE_ID: 'ennspark01'
+    }
+  );
+  assert.deepEqual(placement.mode, 'replicated');
+  const members = nodeIds.map((node, index) => ({ node, runtime: `tp${count}-${index}`, order: index }));
+  const distributed = runtimePlacement(
+    {
+      placement: {
+        mode: 'distributed',
+        members: members.map((member) => ({
+          node: member.node,
+          runtime: member.runtime,
+          role: count === 1 ? 'head' : 'rank',
+          order: member.order
+        }))
+      }
+    },
+    { cluster: merged },
+    { LLOOM_NODE_ID: 'ennspark01' }
+  );
+  assert.deepEqual(distributed.nodes, expected);
+  assert.equal(distributed.members.length, count);
+}
+
+const sourceWithSettings = {
+  nodeId: '${LOCAL_NODE}',
+  leaderNode: 'ennspark02',
+  topology: 'ring',
+  links: [{ manual: true }],
+  customFlag: true,
+  nodes: {
+    ...legacyClusterConfig.cluster.nodes,
+    ennspark03: { backendHost: '100.78.22.9', endpoint: 'http://100.78.22.9:8100', apiKeyEnv: '${PEER_KEY}' }
+  }
+};
+const settingsMerged = mergeNvidiaSyncClusterDiscovery({
+  discovery: fixtureDiscovery,
+  cluster: sourceWithSettings,
+  localNodeId: 'ennspark01'
+});
+assert.equal(settingsMerged.nodeId, '${LOCAL_NODE}');
+assert.equal(settingsMerged.leaderNode, 'ennspark02');
+assert.equal(settingsMerged.topology, 'ring');
+assert.equal(settingsMerged.apiKeyEnv, undefined);
+assert.equal(settingsMerged.customFlag, true);
+assert.deepEqual(settingsMerged.links, sourceWithSettings.links);
+assert.equal(settingsMerged.nodes.ennspark03.backendHost, '100.78.22.9');
+assert.equal(settingsMerged.nodes.ennspark03.endpoint, 'http://100.78.22.9:8100');
+assert.equal(settingsMerged.nodes.ennspark03.fabricAddress, '10.100.196.2');
+assert.equal(settingsMerged.nodes.ennspark03.apiKeyEnv, '${PEER_KEY}');
+assert(!Object.hasOwn(settingsMerged.nodes, '${LOCAL_NODE}'));
+const loopbackCustom = structuredClone(migrateConfig.cluster);
+loopbackCustom.nodes.ennspark01.endpoint = 'http://127.0.0.1:8100';
+assert.equal(
+  mergeNvidiaSyncClusterDiscovery({ discovery: fixtureDiscovery, cluster: loopbackCustom }).nodes.ennspark01
+    .backendHost,
+  '10.100.16.1'
+);
+assert.throws(
+  () =>
+    mergeNvidiaSyncClusterDiscovery({
+      discovery: fixtureDiscovery,
+      cluster: legacyClusterConfig.cluster,
+      localNodeId: 'wrong-node'
+    }),
+  /identity conflicts/
+);
 console.log('cluster tests passed');
