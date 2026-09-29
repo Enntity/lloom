@@ -79,6 +79,7 @@ export function materializeFederatedNodes(config) {
       ...((node.apiKeyEnv ?? config.cluster?.apiKeyEnv)
         ? { apiKeyEnv: node.apiKeyEnv ?? config.cluster.apiKeyEnv }
         : {}),
+      ...(node.apiKey ? { apiKey: node.apiKey } : {}),
       timeoutMs: Number(proxy.timeoutMs ?? 1800000)
     };
     const namespace = proxy.namespace === false ? '' : String(proxy.namespace ?? nodeId).replace(/\/+$/, '');
@@ -644,7 +645,10 @@ export class ClusterCoordinator {
   }
 
   headersFor(node) {
-    const key = node.apiKeyEnv ? this.env[node.apiKeyEnv] : null;
+    const configured = asObject(this.config.cluster?.nodes?.[node?.id]);
+    // An explicit node credential is more specific than a cluster-wide
+    // environment credential. Public node status never includes this value.
+    const key = configured.apiKey ?? (node.apiKeyEnv ? this.env[node.apiKeyEnv] : undefined);
     return key ? { authorization: `Bearer ${key}` } : {};
   }
 

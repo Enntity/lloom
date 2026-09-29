@@ -54,6 +54,7 @@ import { createInterchangeRegistry, createInterchangeValidationReport } from '..
 import { profileMachine, rankRecipes } from '../src/machine-profile.mjs';
 import { loadManagedServiceEnvironment, resolveManagedEnvironmentValue } from '../src/managed-environment.mjs';
 import { runHeadPreparation } from '../src/head-transfer.mjs';
+import { runHeadPromotionTransfer } from '../src/head-promotion-transfer.mjs';
 import { restartGatewayService } from '../src/service-control.mjs';
 import { applyModelImport, applyModelImportGo } from '../src/model-intake.mjs';
 import { applyModelRemoval } from '../src/model-removal.mjs';
@@ -201,6 +202,7 @@ Backends and runtimes:
   lloom cluster add-node <id> <url> [--namespace NAME|--merge] [--include-external] [--api-key-env NAME] [--apply]
   lloom service restart [--apply --yes] [--drain-timeout-ms 300000]
   lloom cluster prepare-head (--from <config.json|-> | --from-ssh HOST) [--target-ssh HOST] [--include-secrets] [--apply --yes]
+  lloom cluster promote-head (--from <config.json|-> | --from-ssh HOST) [--target-ssh HOST] --source-url URL [--include-secrets] [--expect-destination HASH] [--apply --yes]
   lloom backends [backend-id|all]
   lloom backend-plan <backend-id>
   lloom backend-install <backend-id> [--apply --yes] [--step step-id]
@@ -2537,6 +2539,25 @@ async function main() {
           includeSecrets: hasFlag(args, '--include-secrets'),
           apply: hasFlag(args, '--apply'),
           yes: hasFlag(args, '--yes')
+        });
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      if (action === 'promote-head') {
+        const from = argValue(args, '--from');
+        if (!from && !argValue(args, '--from-ssh')) throw new Error('cluster promote-head requires --from or --from-ssh');
+        if (!hasFlag(args, '--json')) throw new Error('cluster promote-head requires --json');
+        const result = await runHeadPromotionTransfer({
+          configPath: config.sourcePath,
+          sourcePath: from,
+          sourceSsh: argValue(args, '--from-ssh'),
+          targetSsh: argValue(args, '--target-ssh'),
+          sourceUrl: argValue(args, '--source-url'),
+          expectedDestinationHash: argValue(args, '--expect-destination'),
+          includeSecrets: hasFlag(args, '--include-secrets'),
+          apply: hasFlag(args, '--apply'),
+          yes: hasFlag(args, '--yes'),
+          stdin: process.stdin
         });
         console.log(JSON.stringify(result, null, 2));
         return;
