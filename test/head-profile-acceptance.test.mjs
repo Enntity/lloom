@@ -8,6 +8,7 @@ const DESTINATION_NODE = 'media';
 const SOURCE_NODE = 'spark-src';
 const SOURCE_URL = 'http://spark-src.internal:8100';
 const SOURCE_KEY = 'synthetic-source-inference-key';
+const SOURCE_ADMIN_KEY = 'synthetic-source-admin-key';
 
 function destinationConfig() {
   return {
@@ -92,6 +93,7 @@ function plan(destination = destinationConfig(), source = sourceConfig(), option
     sourceNode: SOURCE_NODE,
     sourceUrl: SOURCE_URL,
     sourceInferenceKey: SOURCE_KEY,
+    sourceAdminKey: SOURCE_ADMIN_KEY,
     ...options
   });
 }

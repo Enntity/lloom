@@ -11,6 +11,7 @@ import { applyHeadPromotion, profilesPathForConfig, sourceReadScript } from '../
 
 const DESTINATION_KEY = 'synthetic-destination-key';
 const SOURCE_KEY = 'synthetic-source-inference-key';
+const SOURCE_ADMIN_KEY = 'synthetic-source-admin-key';
 const SOURCE_URL = 'http://media-source.internal:8100';
 
 function destinationConfig() {
@@ -92,6 +93,7 @@ function envelope(overrides = {}) {
     sourceConfig: sourceConfig(),
     sourceProfiles: {},
     sourceInferenceKey: SOURCE_KEY,
+    sourceAdminKey: SOURCE_ADMIN_KEY,
     sourceUrl: SOURCE_URL,
     sourceNode: 'media',
     ...overrides
@@ -140,7 +142,7 @@ async function applyArgs(configPath, options = {}) {
 
 function runSourceScript(input, env) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--input-type=module', '-e', sourceReadScript()], {
+    const child = spawn(process.execPath, ['--input-type=module', '-e', sourceReadScript(true)], {
       env,
       stdio: ['pipe', 'pipe', 'pipe']
     });
@@ -174,6 +176,7 @@ test('preview reads profiles but writes neither config nor profile files', async
   const unrelatedBefore = await fs.readFile(path.join(destination.profilesPath, 'unrelated.json'));
   const result = await applyArgs(destination.configPath);
 
+  console.error('DEBUG', JSON.stringify(result, null, 2));
   assert.equal(result.ok, true);
   assert.equal(result.applied, false);
   assert.equal(result.dryRun, true);
@@ -304,10 +307,19 @@ test('sourceReadScript reads config, environment, and canonical profile files wi
   await fs.mkdir(profilesDir, { recursive: true });
   const sourceConfigPath = path.join(configDir, 'config.json');
   const envName = 'TRANSFER_ACCEPTANCE_SOURCE_KEY';
-  const sourceConfigRaw = `${JSON.stringify(sourceConfig({ security: { apiKeys: [`\${${envName}}`] } }), null, 2)}\n`;
+  const adminEnvName = 'TRANSFER_ACCEPTANCE_SOURCE_ADMIN_KEY';
+  const sourceConfigRaw = `${JSON.stringify(
+    sourceConfig({ security: { apiKeys: [`\${${envName}}`], adminApiKeys: [`\${${adminEnvName}}`] } }),
+    null,
+    2
+  )}\n`;
   const profileRaw = `${JSON.stringify(canonicalProfile('source-profile'), null, 2)}\n`;
   await fs.writeFile(sourceConfigPath, sourceConfigRaw, { mode: 0o600 });
-  await fs.writeFile(path.join(envDir, 'env'), `${envName}=resolved-source-key\n`, { mode: 0o600 });
+  await fs.writeFile(
+    path.join(envDir, 'env'),
+    `${envName}=resolved-source-key\n${adminEnvName}=resolved-source-admin-key\n`,
+    { mode: 0o600 }
+  );
   await fs.writeFile(path.join(profilesDir, 'source-profile.json'), profileRaw, { mode: 0o600 });
   const beforeConfig = await fs.readFile(sourceConfigPath);
   const beforeProfile = await fs.readFile(path.join(profilesDir, 'source-profile.json'));
@@ -319,6 +331,7 @@ test('sourceReadScript reads config, environment, and canonical profile files wi
   assert.equal(result.sourceNode, 'media');
   assert.equal(result.sourceUrl, SOURCE_URL);
   assert.equal(result.sourceInferenceKey, 'resolved-source-key');
+  assert.equal(result.sourceAdminKey, 'resolved-source-admin-key');
   assert.deepEqual(Object.keys(result.sourceProfiles), ['source-profile']);
   assert.deepEqual(result.sourceProfiles['source-profile'], JSON.parse(profileRaw));
   assert.deepEqual(await fs.readFile(sourceConfigPath), beforeConfig);

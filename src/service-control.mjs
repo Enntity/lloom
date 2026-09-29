@@ -6,7 +6,37 @@ import { promisify } from 'node:util';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { mutateConfigSource } from './config-mutation.mjs';
 import { resolveManagedEnvironmentValue } from './managed-environment.mjs';
+import { assertBindAllowed, isLoopbackAddress } from './security.mjs';
 const exec = promisify(execFile);
+
+// A managed gateway may bind a wildcard or an exact local interface address.
+// Anything else is refused so the restart path never publishes credentials to
+// a route the operator did not intend (and never falls through to remote).
+export function isExactLocalAddressOrWildcard(value) {
+  const host = String(value ?? '');
+  if (['0.0.0.0', '::'].includes(host)) return true;
+  const local = new Set([
+    '127.0.0.1',
+    '::1',
+    'localhost',
+    ...Object.values(os.networkInterfaces())
+      .flat()
+      .filter(Boolean)
+      .map((n) => n.address)
+  ]);
+  return local.has(host);
+}
+
+// Restore the pre-change listener field exactly (present vs absent) with the
+// same bounded external-change guard used elsewhere.
+async function restoreHost(config, { hadHost, previousHost, expectedHost }) {
+  await mutateConfigSource(config, (c) => {
+    c.server ??= {};
+    if (c.server.host !== expectedHost) throw new Error('Listener changed externally; refusing rollback overwrite');
+    if (hadHost) c.server.host = previousHost;
+    else delete c.server.host;
+  });
+}
 
 export function launchAgentMatchesConfig(args, sourcePath) {
   if (!Array.isArray(args) || args.some((a) => typeof a !== 'string')) return false;
@@ -39,6 +69,7 @@ export async function restartGatewayService(
   {
     apply = false,
     yes = false,
+    host: requestedHost,
     timeoutMs = 300000,
     platform = process.platform,
     serviceLabel = 'com.lloom.gateway',
@@ -54,14 +85,35 @@ export async function restartGatewayService(
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 7200000) throw new Error('Invalid drain timeout');
   const darwin = platform === 'darwin';
   const launchTarget = `gui/${uid}/${serviceLabel}`;
+  const currentHost = config.server?.host ?? '127.0.0.1';
+  const changingHost = requestedHost !== undefined && requestedHost !== null && requestedHost !== '';
+  if (changingHost && !isExactLocalAddressOrWildcard(requestedHost)) {
+    throw new Error(`Refusing to bind service to non-local address ${requestedHost}`);
+  }
+  if (changingHost) {
+    const bindCheck = assertBindAllowed({ ...config, server: { ...config.server, host: requestedHost } });
+    if (!bindCheck.ok) throw new Error(bindCheck.message);
+    const keys = [...(config.security?.apiKeys ?? []), ...(config.security?.adminApiKeys ?? [])];
+    if (
+      !isLoopbackAddress(requestedHost) &&
+      !keys.some((value) => {
+        const key = resolveManagedEnvironmentValue(value);
+        return typeof key === 'string' && key.length > 0 && !key.includes('${');
+      })
+    )
+      throw new Error('Non-loopback listener requires a configured credential');
+  }
   const plan = {
     service: darwin ? serviceLabel : 'lloom.service',
     manager: darwin ? 'launchd' : 'systemd-user',
-    preserveRuntimes: true
+    preserveRuntimes: true,
+    ...(changingHost ? { oldHost: currentHost, newHost: requestedHost } : {})
   };
   if (!apply) return { ...plan, applied: false };
   if (!yes) throw new Error('Service restart requires --apply --yes');
   const key = resolveManagedEnvironmentValue(config.security?.adminApiKeys?.[0] ?? config.security?.apiKeys?.[0]);
+  // Inspection always targets the currently bound endpoint (a wildcard is
+  // probed on loopback); any listener change is applied only after drain.
   const host = ['0.0.0.0', '::'].includes(config.server.host) ? '127.0.0.1' : config.server.host;
   const localAddresses = new Set([
     '127.0.0.1',
@@ -82,6 +134,9 @@ export async function restartGatewayService(
     if (!r.ok) throw new Error('Gateway inspection failed');
     return r.json();
   };
+  const previousGatewayPid = changingHost ? (await get('/health')).pid : null;
+  if (changingHost && (!Number.isInteger(previousGatewayPid) || previousGatewayPid <= 0))
+    throw new Error('Cannot identify current gateway PID');
   const node = await get('/gateway/node');
   if (!config.cluster?.nodeId || node.node?.id !== config.cluster.nodeId)
     throw new Error('Gateway node identity does not match local configuration');
@@ -106,6 +161,12 @@ export async function restartGatewayService(
   const hadFlag = Object.hasOwn(raw.server ?? {}, 'inferenceEnabled');
   const previous = raw.server?.inferenceEnabled;
   let gated = false;
+  // Listener change is staged but only published to disk after drain, so an
+  // aborted restart can roll back by restoring the original host value.
+  const hadHost = Object.hasOwn(raw.server ?? {}, 'host');
+  const previousHost = raw.server?.host;
+  let hostChanged = false;
+  let healthyAfterRestart = false;
   const deadline = Date.now() + timeoutMs;
   const until = async (check) => {
     while (Date.now() < deadline) {
@@ -114,6 +175,20 @@ export async function restartGatewayService(
     }
     throw new Error('Gateway did not drain before the deadline');
   };
+  // Probe a specific host; wildcard binds are probed on loopback.
+  const endpointFor = (targetHost) => {
+    const probeHost = ['0.0.0.0', '::'].includes(targetHost) ? (targetHost === '::' ? '::1' : '127.0.0.1') : targetHost;
+    return `http://${probeHost.includes(':') ? '[' + probeHost + ']' : probeHost}:${config.server.port}`;
+  };
+  const getOn = async (targetHost, route) => {
+    const r = await fetchFn(endpointFor(targetHost) + route, {
+      headers: { authorization: 'Bearer ' + key },
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!r.ok) throw new Error('Gateway inspection failed');
+    return r.json();
+  };
+  let operationError;
   try {
     await mutateConfigSource(config, (c) => {
       c.server ??= {};
@@ -127,6 +202,16 @@ export async function restartGatewayService(
       if (!Array.isArray(m.active)) throw new Error('Gateway lacks active-request telemetry');
       return m.active.length === 0;
     });
+    // Change the managed listener only after the old endpoint has drained.
+    if (changingHost && requestedHost !== previousHost) {
+      await mutateConfigSource(config, (c) => {
+        c.server ??= {};
+        if (c.server.host !== previousHost)
+          throw new Error('Listener setting changed externally; refusing to overwrite it');
+        c.server.host = requestedHost;
+      });
+      hostChanged = true;
+    }
     if (darwin) await run('launchctl', ['kill', 'SIGTERM', launchTarget], { timeout: 60000 });
     else await run('systemctl', ['--user', 'restart', 'lloom.service'], { timeout: 60000 });
     const healthDeadline = Date.now() + 60000;
@@ -141,14 +226,52 @@ export async function restartGatewayService(
             continue;
           }
         }
-        const n = await get('/gateway/node');
+        const n = hostChanged ? await getOn(requestedHost, '/gateway/node') : await get('/gateway/node');
         healthy = n.node?.id === config.cluster.nodeId;
+        if (healthy && changingHost) {
+          const health = await getOn(requestedHost, '/health');
+          healthy = Number.isInteger(health.pid) && health.pid > 0 && health.pid !== previousGatewayPid;
+        }
         if (healthy) break;
       } catch {}
       await pause(500);
     }
-    if (!healthy) throw new Error('Restarted gateway did not become healthy');
-  } finally {
+    if (!healthy) {
+      // Roll back the listener and restart once on the original endpoint. The
+      // finally block below restores the pre-change host on disk first.
+      throw new Error('Restarted gateway did not become healthy');
+    }
+    healthyAfterRestart = true;
+  } catch (error) {
+    operationError = error;
+  }
+  {
+    // Restore admission (and, on failure, the original listener) before any
+    // rollback restart so the process re-reads the corrected config.
+    let rollbackError;
+    try {
+      if (hostChanged && !healthyAfterRestart) {
+        await restoreHost(config, { hadHost, previousHost, expectedHost: requestedHost });
+        hostChanged = false;
+        if (darwin) await run('launchctl', ['kill', 'SIGTERM', launchTarget], { timeout: 60000 });
+        else await run('systemctl', ['--user', 'restart', 'lloom.service'], { timeout: 60000 });
+        const rollbackDeadline = Date.now() + 60000;
+        let restoredHealthy = false;
+        while (Date.now() < rollbackDeadline) {
+          try {
+            const n = await get('/gateway/node');
+            if (n.node?.id === config.cluster.nodeId) {
+              restoredHealthy = true;
+              break;
+            }
+          } catch {}
+          await pause(500);
+        }
+        if (!restoredHealthy) throw new Error('Listener rollback restart did not become healthy');
+      }
+    } catch (error) {
+      rollbackError = error;
+    }
     if (gated)
       await mutateConfigSource(config, (c) => {
         if (c.server?.inferenceEnabled !== false)
@@ -156,11 +279,17 @@ export async function restartGatewayService(
         if (hadFlag) c.server.inferenceEnabled = previous;
         else delete c.server.inferenceEnabled;
       });
+    if (rollbackError)
+      throw new AggregateError(
+        [operationError, rollbackError].filter(Boolean),
+        'Gateway recovery failed: ' + rollbackError.message
+      );
   }
+  if (operationError) throw operationError;
   // Wait for the running process to adopt the restored setting as well.
   const restoredDeadline = Date.now() + 10000;
   while (Date.now() < restoredDeadline) {
-    const s = await get('/gateway/status');
+    const s = hostChanged ? await getOn(requestedHost, '/gateway/status') : await get('/gateway/status');
     if ((s.server?.inferenceEnabled !== false) === (previous !== false)) return { ...plan, applied: true };
     await pause(250);
   }

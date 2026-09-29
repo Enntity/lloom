@@ -20,7 +20,7 @@
 //   * Snapshot pre-promotion destination semantics into a `standalone` profile
 //     and preserve conflicting local aliases behind route profiles.
 //   * Add the source inference key to `security.apiKeys` without removing any
-//     destination key, and inline that key on the new proxy node/backend.
+//     destination key, and use distinct inference and admin proxy credentials.
 //
 // The parent workflow owns SSH transport, apply/service restart and relay
 // cutover. Nothing here prints secrets or full model/profile bodies.
@@ -162,6 +162,14 @@ export function planHeadPromotion(destination, source, options = {}) {
     typeof options.sourceInferenceKey === 'string' && options.sourceInferenceKey.length
       ? options.sourceInferenceKey
       : null;
+  const sourceInferenceKeyResolved =
+    typeof options.sourceInferenceKeyResolved === 'boolean'
+      ? options.sourceInferenceKeyResolved
+      : sourceInferenceKey !== null;
+  const sourceAdminKey =
+    typeof options.sourceAdminKey === 'string' && options.sourceAdminKey.length ? options.sourceAdminKey : null;
+  const sourceAdminKeyResolved =
+    typeof options.sourceAdminKeyResolved === 'boolean' ? options.sourceAdminKeyResolved : sourceAdminKey !== null;
   if (!sourceNode) throw new Error('planHeadPromotion requires a sourceNode');
   if (!sourceUrl) throw new Error('planHeadPromotion requires a sourceUrl');
   let sourceEndpointUrl;
@@ -542,7 +550,9 @@ export function planHeadPromotion(destination, source, options = {}) {
     nextDefaults[kind] = resolved.id;
   }
 
-  // --- Security: add the source inference key, never remove target keys ---
+  // --- Security: add only the source inference key, never remove target keys.
+  // The source admin credential is scoped to the cluster node and is never
+  // granted to the destination's inference security.
   const nextSecurity = { ...clone(asObject(dest.security)) };
   const existingKeys = asArray(nextSecurity.apiKeys).filter((key) => typeof key === 'string');
   let apiKeysAdded = 0;
@@ -573,14 +583,22 @@ export function planHeadPromotion(destination, source, options = {}) {
     nextCluster.nodeId = destCluster.nodeId ?? destinationNodeId;
     nextCluster.leaderNode = destinationNodeId;
     nextCluster.fleetHeadNode = destinationNodeId;
+    nextCluster.nodes[destinationNodeId] = {
+      ...asObject(nextCluster.nodes[destinationNodeId]),
+      labels: { ...asObject(nextCluster.nodes[destinationNodeId]?.labels), role: 'leader' }
+    };
   }
 
   const existingNode = asObject(asObject(destCluster.nodes)[sourceNode]);
   if (existingNode.endpoint && trimSlash(existingNode.endpoint) !== trimSlash(sourceUrl)) {
     pushConflict('cluster-node', sourceNode, 'existing node endpoint differs from the source URL');
   }
-  if (existingNode.apiKey && sourceInferenceKey && existingNode.apiKey !== sourceInferenceKey) {
-    pushConflict('cluster-node', sourceNode, 'existing node credential differs from the source inference key');
+  const adminKeyMissing = !sourceAdminKey && !sourceAdminKeyResolved;
+  if (existingNode.apiKey && sourceAdminKey && existingNode.apiKey !== sourceAdminKey) {
+    const legacySourceInferenceCredential = existingNode.apiKey === sourceInferenceKey;
+    if (!legacySourceInferenceCredential) {
+      pushConflict('cluster-node', sourceNode, 'existing node credential differs from the source admin key');
+    }
   }
   if (existingNode.proxy?.enabled === false) {
     pushConflict('cluster-node', sourceNode, 'existing node proxy is disabled');
@@ -615,7 +633,7 @@ export function planHeadPromotion(destination, source, options = {}) {
   if (federatedEntries.length) {
     const node = { ...existingNode };
     node.endpoint = trimSlash(sourceUrl);
-    if (sourceInferenceKey) node.apiKey = sourceInferenceKey;
+    if (sourceAdminKey) node.apiKey = sourceAdminKey;
     node.labels = { ...asObject(node.labels) };
     if (node.labels.role === undefined) node.labels.role = 'node';
     node.proxy = {
@@ -625,6 +643,16 @@ export function planHeadPromotion(destination, source, options = {}) {
       baseUrl: proxyBaseUrl,
       models: mergedProxyModels
     };
+    nextCluster.nodes[sourceNode] = node;
+  } else if (
+    sourceAdminKey &&
+    existingNode.proxy?.backend === proxyBackendId &&
+    existingNode.proxy?.enabled !== false
+  ) {
+    // Guarded repair for a node promoted by an older build that used the
+    // inference credential for node administration.
+    const node = { ...existingNode };
+    node.apiKey = sourceAdminKey;
     nextCluster.nodes[sourceNode] = node;
   }
 
@@ -823,6 +851,18 @@ export function planHeadPromotion(destination, source, options = {}) {
       leaderNode: destinationNodeId ?? null,
       sourceNode,
       sourceLeaderNode: str(srcCluster.leaderNode)
+    },
+    warnings: [
+      ...(adminKeyMissing
+        ? ['Source admin credential is missing; preview only. Apply requires a resolved credential.']
+        : []),
+      ...(!sourceInferenceKey && !sourceInferenceKeyResolved
+        ? ['Source inference credential is missing; preview only. Apply requires a resolved credential.']
+        : [])
+    ],
+    sourceCredentials: {
+      inferenceKey: sourceInferenceKey ? 'resolved' : sourceInferenceKeyResolved ? 'redacted' : 'missing',
+      adminKey: sourceAdminKey ? 'resolved' : sourceAdminKeyResolved ? 'redacted' : 'missing'
     },
     federated: { node: sourceNode, modelIds: [...federatedModelIds] },
     aliases: {

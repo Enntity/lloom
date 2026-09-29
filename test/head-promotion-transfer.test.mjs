@@ -17,6 +17,7 @@ import {
 } from '../src/head-promotion-transfer.mjs';
 
 const SECRET = 'sk-fixture-source-1111';
+const ADMIN_SECRET = 'sk-fixture-source-admin-2222';
 const DEST_KEY = 'sk-fixture-destination-0000';
 
 function destinationConfig(overrides = {}) {
@@ -67,6 +68,7 @@ function envelope(overrides = {}) {
     sourceConfig: sourceConfig(),
     sourceProfiles: sourceConfig().profiles,
     sourceInferenceKey: SECRET,
+    sourceAdminKey: ADMIN_SECRET,
     sourceUrl: 'http://media.example.test:8100',
     sourceNode: 'media',
     ...overrides
@@ -87,9 +89,9 @@ async function tempConfig(t, config = destinationConfig(), profiles = {}) {
   return { dir, configPath, profilesPath };
 }
 
-function runScript(input, env = {}) {
+function runScript(input, env = {}, includeSecrets = true) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--input-type=module', '-e', sourceReadScript()], {
+    const child = spawn(process.execPath, ['--input-type=module', '-e', sourceReadScript(includeSecrets)], {
       env: { ...process.env, ...env },
       stdio: ['pipe', 'pipe', 'pipe']
     });
@@ -141,23 +143,31 @@ test('source read script resolves one accepted inference key and never writes so
     path.join(dir, '.lloom/config.json'),
     JSON.stringify(
       sourceConfig({
-        security: { apiKeys: ['${LLOOM_PROMOTION_TEST_KEY}'] }
+        security: {
+          apiKeys: ['${LLOOM_PROMOTION_TEST_KEY}'],
+          adminApiKeys: ['${LLOOM_PROMOTION_TEST_ADMIN_KEY}']
+        }
       })
     )
   );
-  await fs.writeFile(path.join(dir, '.config/lloom/env'), 'LLOOM_PROMOTION_TEST_KEY=resolved-source-key\n');
+  await fs.writeFile(
+    path.join(dir, '.config/lloom/env'),
+    'LLOOM_PROMOTION_TEST_KEY=resolved-source-key\nLLOOM_PROMOTION_TEST_ADMIN_KEY=resolved-source-admin-key\n'
+  );
   await fs.mkdir(path.join(dir, '.lloom/profiles'));
   await fs.writeFile(path.join(dir, '.lloom/profiles/fast.json'), JSON.stringify(sourceConfig().profiles.fast));
   const result = await runScript(
     { sourceUrl: 'http://media.example.test:8100/' },
     {
       HOME: dir,
-      LLOOM_PROMOTION_TEST_KEY: 'resolved-source-key'
+      LLOOM_PROMOTION_TEST_KEY: 'resolved-source-key',
+      LLOOM_PROMOTION_TEST_ADMIN_KEY: 'resolved-source-admin-key'
     }
   );
   assert.equal(result.sourceNode, 'media');
   assert.equal(result.sourceUrl, 'http://media.example.test:8100');
   assert.equal(result.sourceInferenceKey, 'resolved-source-key');
+  assert.equal(result.sourceAdminKey, 'resolved-source-admin-key');
   assert.deepEqual(Object.keys(result.sourceProfiles), ['fast']);
 });
 
@@ -165,7 +175,13 @@ test('SSH transport uses stdin and redacts unresolved secrets on dry runs', asyn
   const calls = [];
   const transport = async (host, command, input) => {
     calls.push({ host, command, input: input.toString() });
-    return calls.length === 1 ? JSON.stringify(envelope()) : JSON.stringify({ ok: true, applied: false, dryRun: true });
+    return calls.length === 1
+      ? JSON.stringify(
+          envelope({
+            sourceConfig: { ...sourceConfig(), security: { apiKeys: [SECRET], adminApiKeys: [ADMIN_SECRET] } }
+          })
+        )
+      : JSON.stringify({ ok: true, applied: false, dryRun: true });
   };
   const result = await runHeadPromotionTransfer({
     sourceSsh: 'source',
@@ -186,6 +202,8 @@ test('SSH transport uses stdin and redacts unresolved secrets on dry runs', asyn
   assert.ok(calls[1].input.includes('review.example.test'));
   assert.ok(!calls[1].command.includes(SECRET));
   assert.ok(!calls[1].input.includes(SECRET));
+  assert.ok(!calls[1].command.includes(ADMIN_SECRET));
+  assert.ok(!calls[1].input.includes(ADMIN_SECRET));
 });
 
 test('local dry run is secret-free and mutates neither config nor profiles', async (t) => {
@@ -228,6 +246,7 @@ test('promotion apply preserves destination state and is idempotent', async (t) 
   assert.equal(first.ok, true);
   assert.equal(first.applied, true);
   assert.ok(!JSON.stringify(first).includes(SECRET));
+  assert.ok(!JSON.stringify(first).includes(ADMIN_SECRET));
 
   const raw = JSON.parse(await fs.readFile(configPath, 'utf8'));
   assert.deepEqual(raw.security.apiKeys, [DEST_KEY, SECRET]);
@@ -243,12 +262,13 @@ test('promotion apply preserves destination state and is idempotent', async (t) 
   );
   assert.equal(raw.runtimes, undefined);
   assert.equal(raw.backends['lloom-node-media'].apiKey, SECRET);
+  assert.equal(raw.security.apiKeys.includes(ADMIN_SECRET), false);
   assert.deepEqual(raw.backends['lloom-node-media'].baseUrl, 'http://media.example.test:8100/v1');
   const proxy = raw.cluster.nodes.media.proxy;
   assert.deepEqual(proxy.models, [
     { id: 'tp-model', as: 'tp-model', kind: 'chat', remoteRuntime: 'tp2-runtime', upstreamModel: 'tp-model' }
   ]);
-  assert.deepEqual(raw.cluster.nodes.media.apiKey, SECRET);
+  assert.equal(raw.cluster.nodes.media.apiKey, ADMIN_SECRET);
   assert.equal(raw.aliases.chat.members[0], 'tp-model');
   assert.deepEqual(raw.aliases.chat.routeProfiles.local.members, ['local-model']);
   assert.equal(raw.aliases['media/tp-model'].members[0], 'local-model');
@@ -337,6 +357,17 @@ test('apply guards, hash checks, conflicts, and validation rollback fail closed'
     }),
     /inference key/
   );
+  await assert.rejects(
+    applyHeadPromotion({
+      configPath: guard.configPath,
+      envelope: { ...guardEnvelope, sourceAdminKey: null },
+      expectedDestinationHash: 'a'.repeat(64),
+      includeSecrets: true,
+      apply: true,
+      yes: true
+    }),
+    /admin key/
+  );
 
   const changed = await tempConfig(t);
   await assert.rejects(
@@ -424,4 +455,114 @@ test('stdin target transport accepts an envelope without exposing dry-run secret
   });
   assert.equal(result.ok, true);
   assert.ok(!JSON.stringify(result).includes(SECRET));
+  assert.ok(!JSON.stringify(result).includes(ADMIN_SECRET));
+});
+
+test('apply repairs a legacy inference-only source node credential once', async (t) => {
+  const promoted = destinationConfig({
+    security: { apiKeys: [DEST_KEY, SECRET] },
+    backends: {
+      'local-backend': { type: 'openai', baseUrl: 'http://127.0.0.1:8201/v1' },
+      'lloom-node-media': {
+        type: 'openai',
+        baseUrl: 'http://media.example.test:8100/v1',
+        apiKey: SECRET,
+        timeoutMs: 1800000
+      }
+    },
+    cluster: {
+      nodeId: 'head',
+      leaderNode: 'head',
+      fleetHeadNode: 'head',
+      nodes: {
+        head: { labels: { role: 'leader' } },
+        media: {
+          endpoint: 'http://media.example.test:8100',
+          apiKey: SECRET,
+          labels: { role: 'node' },
+          proxy: {
+            enabled: true,
+            backend: 'lloom-node-media',
+            baseUrl: 'http://media.example.test:8100/v1',
+            models: []
+          }
+        }
+      }
+    }
+  });
+  const { configPath } = await tempConfig(t, promoted);
+  const hash = (await applyHeadPromotion({ configPath, envelope: envelope(), includeSecrets: true })).destinationHash;
+  const repair = await applyHeadPromotion({
+    configPath,
+    envelope: envelope(),
+    sourceUrl: 'http://media.example.test:8100',
+    expectedDestinationHash: hash,
+    includeSecrets: true,
+    apply: true,
+    yes: true
+  });
+  assert.equal(repair.applied, true);
+  const raw = JSON.parse(await fs.readFile(configPath, 'utf8'));
+  assert.equal(raw.cluster.nodes.media.apiKey, ADMIN_SECRET);
+  assert.equal(raw.backends['lloom-node-media'].apiKey, SECRET);
+  assert.equal(raw.security.apiKeys.includes(ADMIN_SECRET), false);
+  const repeat = await applyHeadPromotion({
+    configPath,
+    envelope: envelope(),
+    sourceUrl: 'http://media.example.test:8100',
+    expectedDestinationHash: (await applyHeadPromotion({ configPath, envelope: envelope(), includeSecrets: true }))
+      .destinationHash,
+    includeSecrets: true,
+    apply: true,
+    yes: true
+  });
+  assert.equal(repeat.applied, false);
+});
+
+test('source SSH reader redacts before transport and supports legacy effective admin credentials', async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'head-reader-credentials-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  await fs.mkdir(path.join(dir, '.lloom'));
+  const file = path.join(dir, '.lloom/config.json');
+  const source = sourceConfig({
+    security: { apiKeys: [SECRET], adminApiKeys: [ADMIN_SECRET] },
+    runtimes: { owned: { args: ['runtime-private-value'] } }
+  });
+  await fs.writeFile(file, JSON.stringify(source));
+  const hidden = await runScript({ sourceUrl: 'http://source.test:8100' }, { HOME: dir }, false);
+  const wire = JSON.stringify(hidden);
+  for (const value of [SECRET, ADMIN_SECRET, 'runtime-private-value']) assert.equal(wire.includes(value), false);
+  assert.equal(hidden.sourceAdminKeyResolved, true);
+  assert.equal(hidden.sourceInferenceKeyResolved, true);
+  assert.deepEqual(hidden.sourceConfig.runtimes, { owned: {} });
+  source.security.adminApiKeys = [];
+  await fs.writeFile(file, JSON.stringify(source));
+  const legacy = await runScript({ sourceUrl: 'http://source.test:8100' }, { HOME: dir }, true);
+  assert.equal(legacy.sourceAdminKey, SECRET);
+  source.security.adminApiKeys = ['${MISSING_PROMOTION_ADMIN_TEST}'];
+  await fs.writeFile(file, JSON.stringify(source));
+  const unresolved = await runScript({ sourceUrl: 'http://source.test:8100' }, { HOME: dir }, true);
+  assert.equal(unresolved.sourceAdminKey, null);
+});
+
+test('curated source snapshot retains metadata needed for inferred runtime federation', async (t) => {
+  const { planHeadPromotion } = await import('../src/head-promotion.mjs');
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'head-inferred-runtime-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  await fs.mkdir(path.join(dir, '.lloom'));
+  const source = sourceConfig({
+    models: [{ id: 'inferred', backend: 'special' }],
+    runtimes: { r: { backend: 'special', args: ['private-command'] } },
+    backends: { special: { type: 'openai', baseUrl: 'http://127.0.0.1:8202/v1' } },
+    nodeModelIndex: { media: { model: 'inferred' } }
+  });
+  await fs.writeFile(path.join(dir, '.lloom/config.json'), JSON.stringify(source));
+  const envelope = await runScript({ sourceUrl: 'http://source.test:8100' }, { HOME: dir }, false);
+  assert.deepEqual(envelope.sourceConfig.runtimes, { r: { backend: 'special' } });
+  assert.deepEqual(envelope.sourceConfig.nodeModelIndex, source.nodeModelIndex);
+  const plan = planHeadPromotion(destinationConfig(), envelope.sourceConfig, {
+    sourceNode: 'media',
+    sourceUrl: 'http://source.test:8100'
+  });
+  assert.ok(plan.summary.federated.modelIds.includes('inferred'));
 });
