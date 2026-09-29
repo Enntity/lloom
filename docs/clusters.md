@@ -17,7 +17,7 @@ Expose the joining LLooM only on a trusted private network, require authenticati
 
 ```bash
 export LLOOM_CLUSTER_KEY='the key accepted by the joining LLooM'
-lloom cluster add-node macbook-local http://macbook-private:8100 --apply
+lloom cluster add-node macbook-local http://macbook-private:8100 --apply --yes
 ```
 
 The command reads the joining node's `/gateway/node` snapshot, records its architecture, accelerators, memory, and directly hosted model catalog, and creates deterministic gateway names such as `macbook-local/local/qwen`. Imported targets retain the joining gateway's runtime ID as observational metadata, so the central topology and replica selection can reflect remote lifecycle and load without taking ownership of that process. It never copies credentials into config: the node and generated backend retain only `apiKeyEnv`. Config reload activates the node without restarting the central gateway.
@@ -60,7 +60,7 @@ lloom cluster discover --id ennspark-cluster --api-key-env LLOOM_ADMIN_API_KEY -
 
 Discovery groups `NVSyncClusterAlias` entries into stable node IDs, including duplicate IP aliases and multiple rails per peer. Older Sync entries with a named `Host` alias still work. The configured local identity and leader remain unchanged. Local observations appear under `cluster.discovery.links`; they do not prove gateway reachability, bandwidth, or a complete ring.
 
-New peers remain physical inventory under `cluster.discovery.nodes`. Join a peer with `lloom cluster add-node <id> <authenticated-gateway-url> --apply` after its gateway is reachable. Discovery does not create a live gateway endpoint from an SSH address.
+New peers remain physical inventory under `cluster.discovery.nodes`. Join a peer with `lloom cluster add-node <id> <authenticated-gateway-url> --apply --yes` after its gateway is reachable. Discovery does not create a live gateway endpoint from an SSH address.
 
 `--apply` merges into the raw configuration and validates it before an atomic write. It preserves existing federation nodes, model catalogs, authentication references, custom endpoints, and model placements. An endpoint that names its previous `10.100.*` backend host moves to the observed address while retaining its scheme, port, and path. Other endpoints remain unchanged and receive a diagnostic. Discovery does not change gateway listeners or NCCL settings; verify new endpoints before using them.
 

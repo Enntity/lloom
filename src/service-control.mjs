@@ -90,19 +90,17 @@ export async function restartGatewayService(
   if (changingHost && !isExactLocalAddressOrWildcard(requestedHost)) {
     throw new Error(`Refusing to bind service to non-local address ${requestedHost}`);
   }
-  if (changingHost) {
-    const bindCheck = assertBindAllowed({ ...config, server: { ...config.server, host: requestedHost } });
-    if (!bindCheck.ok) throw new Error(bindCheck.message);
-    const keys = [...(config.security?.apiKeys ?? []), ...(config.security?.adminApiKeys ?? [])];
-    if (
-      !isLoopbackAddress(requestedHost) &&
-      !keys.some((value) => {
-        const key = resolveManagedEnvironmentValue(value);
-        return typeof key === 'string' && key.length > 0 && !key.includes('${');
-      })
-    )
-      throw new Error('Non-loopback listener requires a configured credential');
-  }
+  if (!isExactLocalAddressOrWildcard(currentHost))
+    throw new Error('Service control requires a local interface address');
+  const bindHost = changingHost ? requestedHost : currentHost;
+  const bindCheck = assertBindAllowed({ ...config, server: { ...config.server, host: bindHost } });
+  if (!bindCheck.ok) throw new Error(bindCheck.message);
+  const adminKeys = (config.security?.adminApiKeys ?? []).filter(Boolean);
+  const inspectionKeys = adminKeys.length ? adminKeys : (config.security?.apiKeys ?? []);
+  const key = inspectionKeys
+    .map((value) => resolveManagedEnvironmentValue(value))
+    .find((value) => typeof value === 'string' && value.length > 0 && !value.includes('${'));
+  if (!isLoopbackAddress(bindHost) && !key) throw new Error('Non-loopback listener requires a configured credential');
   const plan = {
     service: darwin ? serviceLabel : 'lloom.service',
     manager: darwin ? 'launchd' : 'systemd-user',
@@ -111,7 +109,6 @@ export async function restartGatewayService(
   };
   if (!apply) return { ...plan, applied: false };
   if (!yes) throw new Error('Service restart requires --apply --yes');
-  const key = resolveManagedEnvironmentValue(config.security?.adminApiKeys?.[0] ?? config.security?.apiKeys?.[0]);
   // Inspection always targets the currently bound endpoint (a wildcard is
   // probed on loopback); any listener change is applied only after drain.
   const host = ['0.0.0.0', '::'].includes(config.server.host) ? '127.0.0.1' : config.server.host;

@@ -220,3 +220,22 @@ for (const failure of ['none', 'restart', 'external-change'])
     assert.equal(raw.server.host, failure === 'none' ? '0.0.0.0' : failure === 'restart' ? '127.0.0.1' : '127.0.0.2');
     assert.equal(restarts, failure === 'restart' ? 2 : 1);
   });
+
+test('restart chooses a resolved admin credential and validates existing public listeners', async (t) => {
+  const f = await fixture(t);
+  f.config.security.adminApiKeys = ['${MISSING_RESTART_FIXTURE_KEY}', 'fixture-admin'];
+  await assert.rejects(
+    restartGatewayService(f.config, {
+      platform: 'linux',
+      apply: true,
+      yes: true,
+      fetchFn: async (url, options) => {
+        assert.equal(options.headers.authorization, 'Bearer fixture-admin');
+        return { ok: true, json: async () => ({ node: { id: 'wrong' } }) };
+      }
+    }),
+    /identity/
+  );
+  f.config.server.host = '0.0.0.0';
+  await assert.rejects(restartGatewayService(f.config, { platform: 'linux' }), /non-loopback/);
+});

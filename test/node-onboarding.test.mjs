@@ -79,3 +79,20 @@ test('node identity mismatch, self replacement, and missing confirmation refuse 
   await assert.rejects(addAuthenticatedNode(f.config, { ...options, yes: false }), /--apply --yes/);
   assert.equal(await fs.readFile(f.sourcePath, 'utf8'), f.bytes);
 });
+
+test('environment credential mode uses the same identity, apply, and privacy guards', async (t) => {
+  const f = await fixture(t);
+  const opts = {
+    nodeId: 'peer',
+    endpoint: 'http://peer.test:8100',
+    apiKey: key,
+    apiKeyEnv: 'FIXTURE_PEER_KEY',
+    fetchFn: async () => snapshot()
+  };
+  await assert.rejects(addAuthenticatedNode(f.config, { ...opts, apply: true }), /--yes/);
+  const result = await addAuthenticatedNode(f.config, { ...opts, apply: true, yes: true });
+  const peer = JSON.parse(await fs.readFile(f.sourcePath, 'utf8')).cluster.nodes.peer;
+  assert.equal(peer.apiKeyEnv, 'FIXTURE_PEER_KEY');
+  assert.equal(peer.apiKey, undefined);
+  assert.equal(JSON.stringify(result).includes(key), false);
+});

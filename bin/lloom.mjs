@@ -44,9 +44,7 @@ import { createBrowserSetup } from '../src/browser-setup.mjs';
 import { shouldOpenSetup, openLocalBrowser } from '../src/first-run.mjs';
 import {
   ClusterCoordinator,
-  currentNodeId,
   detectNvidiaSyncCluster,
-  federatedNodeConfigFromSnapshot,
   mergeNvidiaSyncClusterDiscovery,
   nvidiaSyncDiscoverySummary,
   validateClusterConfig
@@ -2601,92 +2599,28 @@ async function main() {
             'Usage: lloom cluster add-node <id> <url> [--namespace NAME|--merge] [--include-external] [--api-key-env NAME|--api-key-stdin] [--telemetry-only] [--apply --yes]'
           );
         }
-        if (hasFlag(args, '--api-key-stdin') || hasFlag(args, '--telemetry-only')) {
-          if (hasFlag(args, '--api-key-stdin') && argValue(args, '--api-key-env'))
-            throw new Error('Choose --api-key-stdin or --api-key-env');
-          const apiKeyEnv = hasFlag(args, '--api-key-stdin')
-            ? null
-            : (argValue(args, '--api-key-env') ?? config.cluster?.apiKeyEnv ?? 'LLOOM_CLUSTER_KEY');
-          const apiKey = hasFlag(args, '--api-key-stdin')
-            ? await readBoundedStdinCredential(process.stdin)
-            : process.env[apiKeyEnv];
-          console.log(
-            JSON.stringify(
-              await addAuthenticatedNode(config, {
-                nodeId,
-                endpoint,
-                apiKey,
-                apiKeyEnv,
-                telemetryOnly: hasFlag(args, '--telemetry-only'),
-                namespace: argValue(args, '--namespace') ?? nodeId,
-                merge: hasFlag(args, '--merge'),
-                includeExternal: hasFlag(args, '--include-external'),
-                apply: hasFlag(args, '--apply'),
-                yes: hasFlag(args, '--yes')
-              }),
-              null,
-              2
-            )
-          );
-          return;
-        }
-        const apiKeyEnv = argValue(args, '--api-key-env') ?? config.cluster?.apiKeyEnv ?? 'LLOOM_CLUSTER_KEY';
-        const key = apiKeyEnv ? process.env[apiKeyEnv] : null;
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 10000);
-        let snapshot;
-        try {
-          const response = await fetch(`${String(endpoint).replace(/\/+$/, '')}/gateway/node`, {
-            headers: key ? { authorization: `Bearer ${key}` } : {},
-            signal: controller.signal
-          });
-          const payload = await response.json().catch(() => ({}));
-          if (!response.ok) {
-            throw new Error(payload?.error?.message ?? `${response.status} ${response.statusText}`);
-          }
-          snapshot = payload;
-        } finally {
-          clearTimeout(timer);
-        }
-        const node = federatedNodeConfigFromSnapshot({
-          nodeId,
-          endpoint,
-          snapshot,
-          apiKeyEnv,
-          namespace: argValue(args, '--namespace') ?? nodeId,
-          merge: hasFlag(args, '--merge'),
-          includeExternal: hasFlag(args, '--include-external')
-        });
-        const source = JSON.parse(readFileSync(config.sourcePath, 'utf8'));
-        const localNodeId = currentNodeId(config);
-        source.cluster = {
-          id: source.cluster?.id ?? argValue(args, '--id') ?? `${localNodeId}-lab`,
-          nodeId: source.cluster?.nodeId ?? localNodeId,
-          leaderNode: source.cluster?.leaderNode ?? localNodeId,
-          apiKeyEnv: source.cluster?.apiKeyEnv ?? apiKeyEnv,
-          ...source.cluster,
-          nodes: {
-            [localNodeId]: source.cluster?.nodes?.[localNodeId] ?? {
-              name: localNodeId,
-              labels: { role: 'leader' }
-            },
-            ...(source.cluster?.nodes ?? {}),
-            [nodeId]: node
-          }
-        };
-        if (hasFlag(args, '--apply')) {
-          writeFileSync(config.sourcePath, `${JSON.stringify(source, null, 2)}\n`, { mode: 0o600 });
-        }
+        if (hasFlag(args, '--api-key-stdin') && argValue(args, '--api-key-env'))
+          throw new Error('Choose --api-key-stdin or --api-key-env');
+        const apiKeyEnv = hasFlag(args, '--api-key-stdin')
+          ? null
+          : (argValue(args, '--api-key-env') ?? config.cluster?.apiKeyEnv ?? 'LLOOM_CLUSTER_KEY');
+        const apiKey = hasFlag(args, '--api-key-stdin')
+          ? await readBoundedStdinCredential(process.stdin)
+          : process.env[apiKeyEnv];
         console.log(
           JSON.stringify(
-            {
-              ok: true,
-              applied: hasFlag(args, '--apply'),
+            await addAuthenticatedNode(config, {
               nodeId,
-              importedModels: node.proxy.models.length,
-              node,
-              next: hasFlag(args, '--apply') ? 'restart or reload LLooM to activate the node' : 're-run with --apply'
-            },
+              endpoint,
+              apiKey,
+              apiKeyEnv,
+              telemetryOnly: hasFlag(args, '--telemetry-only'),
+              namespace: argValue(args, '--namespace') ?? nodeId,
+              merge: hasFlag(args, '--merge'),
+              includeExternal: hasFlag(args, '--include-external'),
+              apply: hasFlag(args, '--apply'),
+              yes: hasFlag(args, '--yes')
+            }),
             null,
             2
           )
