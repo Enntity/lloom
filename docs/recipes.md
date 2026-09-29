@@ -364,9 +364,9 @@ All portable identities for the lane live in exactly one place,
 the git tree of its `install/` directory, the image tag and identity label, the
 `nvidia/GLM-5.3-Flash-NVFP4` and drafter revisions, and the conversion marker
 contract. The current source pin is product revision
-`ec835ad489652fc1778f8f3019e78692377dc84e` with install tree
-`39d323f748d2bf38e3854189f92eabbb31e9e462`, so the image is
-`ghcr.io/enntity/atlas-sparkglm:39d323f748d2`. A later product revision is
+`9acb642b55ccfbc63fc979d747cb69eff30c9a24` with install tree
+`2ba73a2d8aee7234474ae3cb107a1d61d0c33891`, so the image is
+`ghcr.io/enntity/atlas-sparkglm:2ba73a2d8aee`. A later product revision is
 adopted by changing the revision, the install tree and its derived tag.
 
 While any required value is missing, malformed, or a placeholder, the gate
@@ -435,7 +435,7 @@ health-checks `/health`, runs a POST warmup, and then owns routing.
 ### Baseline envelope
 
 The candidate profile serves 524288-token contexts to four concurrent sequences
-from one shared FP8-latent KV pool (about 866K tokens), with FP32 SSM state,
+from one shared FP8-latent KV pool (340K-560K tokens depending on memory free at startup; it also holds the prefix cache, with 16 recurrent-state snapshot slots), with FP32 SSM state,
 DFlash2 speculation (gamma 8) on the head rank, GPU memory utilization 0.88,
 and `--memory=114g` with a 4096 MiB OOM guard. `disable-tool-grammar` is **not**
 set, so structured output and tool calling stay functional. The image includes

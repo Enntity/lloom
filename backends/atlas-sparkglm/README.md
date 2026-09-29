@@ -3,7 +3,7 @@
 LLooM-managed two-node Atlas SparkGLM candidate for a directly connected pair
 of NVIDIA DGX Spark systems. This directory is **MIT orchestration only**: no
 Atlas engine source is committed here. The engine image is built from immutable
-revision `ec835ad489652fc1778f8f3019e78692377dc84e` of `Enntity/sparkglm` by
+revision `9acb642b55ccfbc63fc979d747cb69eff30c9a24` of `Enntity/sparkglm` by
 that repository's `install/build.sh`. Live hardware and full serving
 qualification remain pending.
 
@@ -18,7 +18,7 @@ qualification remain pending.
   first 12 characters of the install tree, or any portable identity is a
   placeholder. It rejects a pinned image ID: IDs differ between a pull and a
   local build, so identity is the install-tree label.
-- `install.sh` — prepares `ghcr.io/enntity/atlas-sparkglm:39d323f748d2`. It
+- `install.sh` — prepares `ghcr.io/enntity/atlas-sparkglm:2ba73a2d8aee`. It
   reuses an already verified local image, otherwise pulls the tag from GHCR,
   otherwise clones `Enntity/sparkglm` at the pinned revision, checks that
   `HEAD:install` is the pinned tree, and runs `install/build.sh`, which must
@@ -98,11 +98,11 @@ Inside the image:
   `--gpu-memory-utilization=0.88`, `--oom-guard-mb=4096`, `--kv-cache-dtype=fp8_g128`,
   `--ssm-h-dtype=f32`, `--ssm-rollback-mode=records`, `--dflash --dflash-gamma=8`
   with the DFlash2 drafter, and the rest of the candidate settings. Four requests
-  share one physical FP8-latent KV pool (about 866K tokens); it does not reserve
+  share one physical FP8-latent KV pool (340K-560K tokens depending on memory free at startup; it also holds the prefix cache, with 16 recurrent-state snapshot slots); it does not reserve
   four full windows. `disable-tool-grammar` is deliberately **not** set, so
   structured output and tool grammar stay functional. The engine is built from
-  Enntity/atlas `sparkglm/atlas-20260928` @ `c9723935`; measured results are in
-  Enntity/sparkglm `results/2026-09-29-atlas-merged/`.
+  Enntity/atlas `sparkglm/atlas-20260929b` @ `6a115315`; measured results are in
+  Enntity/sparkglm `results/2026-09-29-prefix-caching/`.
 - `/opt/atlas/converter/convert.py` and `libatlas_mtp_quantize.so` — the
   overlay converter, including `--verify-overlay`.
 
