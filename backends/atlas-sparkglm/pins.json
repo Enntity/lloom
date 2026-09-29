@@ -4,7 +4,7 @@
   "note": "Single pin manifest for the Atlas SparkGLM candidate. Portable source, image, model and converter identities are final for this candidate; live hardware and serving qualification remains pending. The image tag and its install-tree label derive from the git tree of install/ at the pinned revision, so a GHCR pull and a local build of that source carry the same identity.",
   "source": {
     "repo": "Enntity/sparkglm",
-    "revision": "49c4219043546654ad2a68f00847aad776b71149",
+    "revision": "ec835ad489652fc1778f8f3019e78692377dc84e",
     "installTree": "39d323f748d2bf38e3854189f92eabbb31e9e462",
     "cloneUrl": "https://github.com/Enntity/sparkglm.git",
     "buildScript": "install/build.sh"

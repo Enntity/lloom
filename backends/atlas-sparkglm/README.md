@@ -3,7 +3,7 @@
 LLooM-managed two-node Atlas SparkGLM candidate for a directly connected pair
 of NVIDIA DGX Spark systems. This directory is **MIT orchestration only**: no
 Atlas engine source is committed here. The engine image is built from immutable
-revision `49c4219043546654ad2a68f00847aad776b71149` of `Enntity/sparkglm` by
+revision `ec835ad489652fc1778f8f3019e78692377dc84e` of `Enntity/sparkglm` by
 that repository's `install/build.sh`. Live hardware and full serving
 qualification remain pending.
 

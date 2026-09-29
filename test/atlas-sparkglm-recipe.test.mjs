@@ -416,7 +416,7 @@ assert.equal(pins.model.revision, '423acf37583782c51c142d145aef733d72943d93');
 assert.equal(pins.model.repo, 'nvidia/GLM-5.3-Flash-NVFP4');
 assert.equal(pins.source.repo, 'Enntity/sparkglm');
 assert.equal(pins.status, 'final');
-assert.equal(pins.source.revision, '49c4219043546654ad2a68f00847aad776b71149');
+assert.equal(pins.source.revision, 'ec835ad489652fc1778f8f3019e78692377dc84e');
 assert.equal(pins.source.installTree, '39d323f748d2bf38e3854189f92eabbb31e9e462');
 assert.equal(pins.source.buildScript, 'install/build.sh');
 assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkglm:39d323f748d2');

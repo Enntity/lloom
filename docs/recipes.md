@@ -364,7 +364,7 @@ All portable identities for the lane live in exactly one place,
 the git tree of its `install/` directory, the image tag and identity label, the
 `nvidia/GLM-5.3-Flash-NVFP4` and drafter revisions, and the conversion marker
 contract. The current source pin is product revision
-`49c4219043546654ad2a68f00847aad776b71149` with install tree
+`ec835ad489652fc1778f8f3019e78692377dc84e` with install tree
 `39d323f748d2bf38e3854189f92eabbb31e9e462`, so the image is
 `ghcr.io/enntity/atlas-sparkglm:39d323f748d2`. A later product revision is
 adopted by changing the revision, the install tree and its derived tag.
