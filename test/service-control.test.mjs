@@ -89,3 +89,74 @@ test('non-local service address is refused before transmitting credentials', asy
     /local interface/
   );
 });
+for (const matchingConfig of [true, false])
+  test(`launchd restart validates configuration and waits for replacement PID; matching=${matchingConfig}`, async (t) => {
+    const f = await fixture(t);
+    let pid = '10',
+      signalled = false,
+      observedReplacement = false;
+    const fetchFn = async (url) => ({
+      ok: true,
+      json: async () =>
+        url.endsWith('/node')
+          ? { node: { id: 'media' } }
+          : url.endsWith('/status')
+            ? { server: (await f.read()).server }
+            : { active: [] }
+    });
+    const run = async (command, args) => {
+      if (command === 'plutil')
+        return {
+          stdout: args.includes('KeepAlive')
+            ? 'true'
+            : JSON.stringify([
+                'node',
+                '/fixture/lloom/bin/lloom.mjs',
+                'serve',
+                '--config',
+                matchingConfig ? f.config.sourcePath : f.config.sourcePath + '.backup'
+              ])
+        };
+      assert.equal(command, 'launchctl');
+      assert.equal(args.at(-1), 'gui/501/com.lloom.federation');
+      if (args[0] === 'kill') {
+        assert.equal(args[1], 'SIGTERM');
+        assert.equal((await f.read()).server.inferenceEnabled, false);
+        signalled = true;
+        return { stdout: '' };
+      }
+      if (signalled) {
+        pid = '11';
+        observedReplacement = true;
+      }
+      return { stdout: `state = running\n pid = ${pid}\n` };
+    };
+    const call = restartGatewayService(f.config, {
+      platform: 'darwin',
+      uid: 501,
+      serviceLabel: 'com.lloom.federation',
+      apply: true,
+      yes: true,
+      run,
+      fetchFn,
+      pause: async () => {}
+    });
+    if (matchingConfig) {
+      assert.equal((await call).manager, 'launchd');
+      assert.equal(observedReplacement, true);
+    } else {
+      await assert.rejects(call, /selected configuration/);
+      assert.equal(signalled, false);
+    }
+    assert.deepEqual(await f.read(), f.raw);
+  });
+
+test('launchd shell wrapper uses exact configuration argv and LLooM executable', async () => {
+  const { launchAgentMatchesConfig: matches } = await import('../src/service-control.mjs');
+  const config = '/tmp/Application Support/config.json';
+  const cmd =
+    "set -a; source /fixture/env; exec /fixture/node /fixture/lloom/bin/lloom.mjs serve --config '" + config + "'";
+  assert.equal(matches(['/bin/zsh', '-c', cmd], config), true);
+  assert.equal(matches(['/bin/zsh', '-c', cmd.replace("config.json'", "config.json.backup'")], config), false);
+  assert.equal(matches(['unrelated', 'serve', '--config', config], config), false);
+});

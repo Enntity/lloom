@@ -856,15 +856,18 @@ assert.deepEqual(
     'apple-silicon-qwen36',
     'apple-silicon-ternary-bonsai-27b',
     'high-memory-local-image-generation',
+    'linux-nvidia-ace-step-1-5-xl-diffusers',
     'linux-nvidia-comfyui-ace-step-1-5-xl-sft',
     'linux-nvidia-comfyui-ace-step-1-5-xl-turbo',
     'linux-nvidia-comfyui-flux-2-klein-4b',
     'linux-nvidia-comfyui-ideogram-4',
     'linux-nvidia-comfyui-krea-2-turbo',
+    'linux-nvidia-comfyui-ltx-2-5-full',
     'linux-nvidia-comfyui-ltx-2-5',
     'linux-nvidia-comfyui-minimax-h3-turbo',
     'linux-nvidia-comfyui-minimax-h3',
     'linux-nvidia-comfyui-minimax-music3',
+    'linux-nvidia-comfyui-qwen-image-2-1-nvfp4',
     'linux-nvidia-comfyui-qwen-image-2-1',
     'linux-nvidia-comfyui-qwen-image-2512-lightning',
     'linux-nvidia-comfyui-qwen-image-2512',
@@ -880,8 +883,10 @@ assert.deepEqual(
     'linux-nvidia-gb10-chatterbox',
     'linux-nvidia-gb10-image-generation',
     'linux-nvidia-gb10-qwen36-unsloth-vllm',
+    'linux-nvidia-gb10-qwen38-27b-nvfp4-vllm',
     'linux-nvidia-gb10-ternary-bonsai-27b',
     'linux-nvidia-gb10-thinkingcap-qwen36-27b-vllm',
+    'linux-nvidia-ltx-2-5-native',
     'linux-nvidia-qwen-image-2-1-diffusers',
     'linux-nvidia-qwen3-embedding-4b-vllm',
     'linux-nvidia-spark-audio-qwen3-tts-1-7b-base',
@@ -1050,7 +1055,7 @@ const recipeIndexReport = await buildRecipeIndexReport(config, {
 });
 assert.equal(recipeIndexReport.ok, true);
 assert.equal(recipeIndexReport.index.id, 'lloom-community-recipes');
-assert.equal(recipeIndexReport.recipes.length, 41);
+assert.equal(recipeIndexReport.recipes.length, 46);
 const indexedSparkRecipe = recipeIndexReport.recipes.find(
   (candidate) => candidate.id === 'linux-nvidia-gb10-qwen36-unsloth-vllm'
 );

@@ -33,3 +33,38 @@ lloom service restart --apply --yes --drain-timeout-ms 300000
 Restart verifies the owner gateway identity and active local user service, temporarily gates inference, waits for the gateway to acknowledge the gate and finish all tracked requests, then restarts `lloom.service`. Model processes are retained by the gateway's normal shutdown path. The prior inference setting is restored on success or ordinary failure. A hard kill or host power loss can leave the gate closed; inspect and recover before retrying. This command does not manage OS-level socket proxies or modify other nodes.
 
 Preparing mappings is one phase of head promotion. Endpoint/relay cutover, fleet-wide profile coordination and distributed lifecycle ownership transfer remain separate operations. The pure `mergeExternalModels` planner and `applyHeadPreparation` apply function are reusable without SSH or CLI dependencies; HTTP/UI callers must supply their own authorization boundary.
+
+On macOS, the same drain command supports a running user LaunchAgent with
+`KeepAlive=true`. Select its label and exact configuration explicitly:
+
+```sh
+lloom service restart --label com.lloom.gateway --config /path/to/config.json --apply --yes
+```
+
+LLooM checks the LaunchAgent's configuration path and running PID, sends SIGTERM,
+then waits for launchd to start a different process and restore service. It
+preserves the previous inference-admission setting.
+
+Existing systemd socket proxies can be pointed at the local gateway with
+`lloom service relay --unit model-gateway`. The preview checks the direct
+node identity and returns a unit hash. Apply the reviewed unit with
+`--expect-unit HASH --apply --yes` from an administrator-authenticated terminal.
+The target is the selected configuration's explicit local network interface;
+loopback and wildcard destinations are refused. LLooM retains the original unit
+and writes an override, restoring the previous override on ordinary failure.
+Coordinate and drain consumers before this endpoint cutover; the proxy restart
+can close existing TCP connections. This command does not move model processes.
+
+To update an existing client endpoint while preserving its model choices and
+credentials, use:
+
+```sh
+lloom integrate retarget --file /path/to/client.yml \
+  --from-url http://old-head:8100 --to-url http://new-head:8100
+```
+
+Apply the returned file hash with `--expect-file HASH --apply --yes`. JSON,
+YAML, TOML and env files are supported. A private backup is retained, endpoint
+suffixes such as `/v1` are preserved, and symlinks or changed files are refused.
+JSON values are matched by exact origin; textual formats only change recognized
+endpoint assignment lines. Running clients may need to reload their settings.
