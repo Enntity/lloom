@@ -98,6 +98,6 @@
     "prettier": "^3.9.9"
   },
   "dependencies": {
-    "undici": "^8.10.2"
+    "undici": "^8.11.2"
   }
 }
