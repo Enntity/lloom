@@ -345,7 +345,7 @@ Standalone image, video and music recipes with a shared ComfyUI backend are docu
 ## Atlas SparkGLM candidate
 
 `linux-nvidia-dgx-spark-2x-glm53-atlas` is the LLooM-managed candidate lane for
-the source-built Atlas SparkGLM engine on two directly connected DGX Sparks.
+the Atlas SparkGLM engine on two directly connected DGX Sparks.
 Its portable source and model pins are final for the current candidate, while
 live hardware and full serving qualification remain pending.
 
@@ -360,12 +360,14 @@ aliases, so an existing GLM-5.3 Flash route keeps working.
 ### Single pin manifest and fail-closed pin gate
 
 All portable identities for the lane live in exactly one place,
-`backends/atlas-sparkglm/pins.json`: the `Enntity/sparkglm` source revision, the
-image tag, the `nvidia/GLM-5.3-Flash-NVFP4` revision, and the conversion marker
-contract. Image IDs are host-local and are checked from each build receipt plus
-the local OCI image metadata. The current source pin is product revision
-`04bc9a348caa5f37a8d35b52e141490eaf8677d1`; a later product revision can be
-adopted by changing this one portable pin and its derived local image tag.
+`backends/atlas-sparkglm/pins.json`: the `Enntity/sparkglm` source revision and
+the git tree of its `install/` directory, the image tag and identity label, the
+`nvidia/GLM-5.3-Flash-NVFP4` and drafter revisions, and the conversion marker
+contract. The current source pin is product revision
+`49c4219043546654ad2a68f00847aad776b71149` with install tree
+`39d323f748d2bf38e3854189f92eabbb31e9e462`, so the image is
+`ghcr.io/enntity/atlas-sparkglm:39d323f748d2`. A later product revision is
+adopted by changing the revision, the install tree and its derived tag.
 
 While any required value is missing, malformed, or a placeholder, the gate
 fails closed:
@@ -378,19 +380,21 @@ The same check runs as backend setup step `check-atlas-pins`, and again inside
 `install.sh` and `convert-overlay.sh`, so an invalid manifest cannot build,
 convert, or start anything. The recipe test uses an explicit temporary
 placeholder manifest to cover that refusal path. The checker also rejects a
-revision that is not a 40-character commit. Host-local image identity is
-checked by the installer against its receipt, image architecture, and OCI
-revision label.
+revision or install tree that is not a 40-character git object id and an image
+tag not derived from the install tree. Image IDs are never pinned; the
+installer checks the local image's architecture and install-tree label.
 
-### Source-built image, no registry publish
+### Pinned image: GHCR pull or source build
 
-There is no published registry image. Setup step `build-atlas-image` runs
-`bash backends/atlas-sparkglm/install.sh` with the managed backend and install
-roots. It clones `Enntity/sparkglm` at the exact `SOURCE_REVISION`, verifies
-`HEAD`, delegates compilation to that repository's
-`research/atlas/install/build.sh`, and then confirms that the local tag
-`lloom/atlas-sparkglm:SOURCE_REVISION` matches this host's build receipt, arm64
-image inspection, and OCI revision label. A mismatch is a hard failure.
+Setup step `build-atlas-image` runs `bash backends/atlas-sparkglm/install.sh`
+with the managed backend and install roots. It reuses an already verified local
+image, otherwise pulls the pinned tag from GHCR, otherwise clones
+`Enntity/sparkglm` at the exact `SOURCE_REVISION`, checks that `HEAD:install`
+is the pinned install tree, and runs that repository's `install/build.sh`,
+which must print the same tag. Either way the image must be arm64 and carry
+`io.enntity.sparkglm.install-tree` equal to the pinned tree, and it must ship
+the entrypoint, profile and converter with `--verify-overlay`. A mismatch is a
+hard failure.
 
 **No build runs on the serving path.** Only a prepared image is started.
 
@@ -409,7 +413,7 @@ without that marker or without successful CPU verification remains incomplete.
 
 The engine profile ships inside the image, not in the recipe. LLooM passes
 environment and mounts; the image's `/opt/atlas/serve.py` selects the argument
-vector from `/opt/atlas/profile.json`.
+vector from `/opt/atlas/profiles/4x512k.json` (its default `SPARKGLM_PROFILE`).
 
 | Variable                                               | Meaning                                                                   |
 | ------------------------------------------------------ | ------------------------------------------------------------------------- |
@@ -430,17 +434,18 @@ health-checks `/health`, runs a POST warmup, and then owns routing.
 
 ### Baseline envelope
 
-The candidate profile uses a 262144-token total context, concurrency 4, BF16 KV
-cache, FP32 SSM state, MTP2 speculation with native fallback above 32K, and
-`--memory=114g` with a 4096 MiB OOM guard. `disable-tool-grammar` is **not** set,
-so structured output and tool calling stay functional. The source build
-includes image and video input support; gateway and two-node serving canaries
-remain required for qualification.
+The candidate profile serves 524288-token contexts to four concurrent sequences
+from one shared FP8-latent KV pool (about 866K tokens), with FP32 SSM state,
+DFlash2 speculation (gamma 8) on the head rank, GPU memory utilization 0.88,
+and `--memory=114g` with a 4096 MiB OOM guard. `disable-tool-grammar` is **not**
+set, so structured output and tool calling stay functional. The image includes
+image and video input support; gateway and two-node serving canaries remain
+required for qualification.
 
 Both nodes must carry the same portable source, model and converter pins and an
-identical `backends/atlas-sparkglm` directory. Each host verifies its own
-node-local image against its build receipt and OCI revision label; image IDs may
-differ across hosts.
+identical `backends/atlas-sparkglm` directory. Each host verifies its local
+image by the pinned install-tree label, whether it was pulled or built; image
+IDs may differ across hosts.
 
 ### OpenAI multimodal request
 

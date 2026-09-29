@@ -1,24 +1,20 @@
 {
   "manifestVersion": 1,
   "status": "final",
-  "note": "Single pin manifest for the source-built Atlas SparkGLM candidate. Portable source, model and converter identities are final for this candidate; live hardware and serving qualification remains pending. Image IDs are host-local: source builds do not guarantee identical image IDs across machines, so each host receipt ID must match its own docker image inspect result.",
+  "note": "Single pin manifest for the Atlas SparkGLM candidate. Portable source, image, model and converter identities are final for this candidate; live hardware and serving qualification remains pending. The image tag and its install-tree label derive from the git tree of install/ at the pinned revision, so a GHCR pull and a local build of that source carry the same identity.",
   "source": {
     "repo": "Enntity/sparkglm",
-    "revision": "ba4b927af2571b81d5e98def03757d708b972d1d",
+    "revision": "49c4219043546654ad2a68f00847aad776b71149",
+    "installTree": "39d323f748d2bf38e3854189f92eabbb31e9e462",
     "cloneUrl": "https://github.com/Enntity/sparkglm.git",
-    "buildScript": "research/atlas/install/build.sh"
+    "buildScript": "install/build.sh"
   },
   "image": {
-    "tagPrefix": "lloom/atlas-sparkglm:",
-    "tag": "lloom/atlas-sparkglm:ba4b927af2571b81d5e98def03757d708b972d1d",
+    "tag": "ghcr.io/enntity/atlas-sparkglm:39d323f748d2",
+    "label": "io.enntity.sparkglm.install-tree",
     "entrypoint": "/opt/atlas/serve.py",
-    "profilePath": "/opt/atlas/profile.json",
+    "profilePath": "/opt/atlas/profiles/4x512k.json",
     "architecture": "arm64"
-  },
-  "installer": {
-    "dockerfile": "research/atlas/install/Dockerfile",
-    "sourceManifest": "research/atlas/atlas-source.json",
-    "receipt": "image-<SOURCE_REVISION>.json"
   },
   "converter": {
     "inImagePath": "/opt/atlas/converter/convert.py",

@@ -2,30 +2,35 @@
 
 LLooM-managed two-node Atlas SparkGLM candidate for a directly connected pair
 of NVIDIA DGX Spark systems. This directory is **MIT orchestration only**: no
-Atlas engine source is committed here. The engine is compiled from immutable
-revision `ba4b927af2571b81d5e98def03757d708b972d1d` of `Enntity/sparkglm` by
-that repository's `research/atlas/install/build.sh`. Live hardware and full
-serving qualification remain pending.
+Atlas engine source is committed here. The engine image is built from immutable
+revision `49c4219043546654ad2a68f00847aad776b71149` of `Enntity/sparkglm` by
+that repository's `install/build.sh`. Live hardware and full serving
+qualification remain pending.
 
 ## Layout
 
-- `pins.json` — the single portable pin manifest for the candidate. It carries
-  the immutable source and model revisions plus the image tag and conversion
-  marker contract. Image identity is host-local and lives in each build
-  receipt.
+- `pins.json` — the single portable pin manifest for the candidate: the
+  source revision and its `install/` git tree, the image tag and identity
+  label, and the model, drafter and conversion marker contract.
 - `verify-pins.mjs` — fail-closed pin gate. Exits non-zero while the manifest
-  is not final, the source revision is not a 40-character commit, or any
-  portable identity is a placeholder. It deliberately rejects a global image
-  ID because source builds produce host-local image IDs.
-- `install.sh` — clones `Enntity/sparkglm` at the exact pinned revision,
-  verifies `HEAD`, delegates compilation to `research/atlas/install/build.sh`,
-  then verifies that `lloom/atlas-sparkglm:<SOURCE_REVISION>` resolves to this
-  host's build receipt, arm64 inspection and OCI revision label.
+  is not final, the source revision or install tree is not a 40-character git
+  object id, the image tag is not `ghcr.io/enntity/atlas-sparkglm:` plus the
+  first 12 characters of the install tree, or any portable identity is a
+  placeholder. It rejects a pinned image ID: IDs differ between a pull and a
+  local build, so identity is the install-tree label.
+- `install.sh` — prepares `ghcr.io/enntity/atlas-sparkglm:39d323f748d2`. It
+  reuses an already verified local image, otherwise pulls the tag from GHCR,
+  otherwise clones `Enntity/sparkglm` at the pinned revision, checks that
+  `HEAD:install` is the pinned tree, and runs `install/build.sh`, which must
+  print the same tag. In every case the image must be arm64 with
+  `io.enntity.sparkglm.install-tree` equal to the pinned tree and must ship the
+  entrypoint, profile and converter contract below. `--check-only` verifies
+  without pulling or building.
 - `convert-overlay.sh` — explicit, once-per-node NVFP4 overlay conversion gate.
 
 ## Fail-closed pin policy
 
-The checked-in manifest carries final portable identities for this source-built
+The checked-in manifest carries final portable identities for this
 candidate. The gate still rejects temporary or malformed manifests before any
 model acquisition, image build, conversion, or serving step:
 
@@ -62,13 +67,15 @@ built while a runtime is starting.
 Setup steps, in order:
 
 1. `check-docker` — Docker must be present.
-2. `check-atlas-pins` — the final immutable pin gate above.
+2. `verify-atlas-pins` — the final immutable pin gate above.
 3. `download-atlas-model` — acquires `nvidia/GLM-5.3-Flash-NVFP4` at its exact
    40-character revision into the managed model root and records the LLooM
    acquisition manifest.
-4. `build-atlas-image` — `bash backends/atlas-sparkglm/install.sh` with the
-   managed backend and install roots.
-5. `convert-atlas-overlay` — runs the GPU conversion once with at least 8 GiB
+4. `download-atlas-drafter` — acquires `incoai/GLM-5.3-Flash-DFlash2` at its
+   pinned revision.
+5. `build-atlas-image` — `bash backends/atlas-sparkglm/install.sh` with the
+   managed backend and install roots: pull or build, then verify.
+6. `convert-atlas-overlay` — runs the GPU conversion once with at least 8 GiB
    free and then runs the full CPU verification pass. It never stops a serving
    container implicitly. On GB10, unavailable GPU-memory readings fall back to
    Linux `MemAvailable`. Forced reconversion moves the prior overlay to a dated
@@ -83,8 +90,10 @@ Inside the image:
 
 - `/opt/atlas/serve.py` — entrypoint. Reads the environment below, then starts
   the engine with the profile's argument vector.
-- `/opt/atlas/profile.json` — the benchmarked engine profile from
-  `research/atlas/install/profile.json` in Enntity/sparkglm: `--kernel-target=glm-5.3-flash`,
+- `/opt/atlas/profiles/4x512k.json` — the benchmarked engine profile from
+  `install/profiles/4x512k.json` in Enntity/sparkglm, selected by `serve.py`
+  through `SPARKGLM_PROFILE` (default `4x512k`; the image also ships `8x128k`):
+  `--kernel-target=glm-5.3-flash`,
   `--max-seq-len=524288`, `--max-num-seqs=4`, `--max-batch-size=4`,
   `--gpu-memory-utilization=0.88`, `--oom-guard-mb=4096`, `--kv-cache-dtype=fp8_g128`,
   `--ssm-h-dtype=f32`, `--ssm-rollback-mode=records`, `--dflash --dflash-gamma=8`
@@ -93,7 +102,9 @@ Inside the image:
   four full windows. `disable-tool-grammar` is deliberately **not** set, so
   structured output and tool grammar stay functional. The engine is built from
   Enntity/atlas `sparkglm/atlas-20260928` @ `c9723935`; measured results are in
-  Enntity/sparkglm `results/candidates/2026-09-29-atlas-merged/`.
+  Enntity/sparkglm `results/2026-09-29-atlas-merged/`.
+- `/opt/atlas/converter/convert.py` and `libatlas_mtp_quantize.so` — the
+  overlay converter, including `--verify-overlay`.
 
 Environment contract consumed by `/opt/atlas/serve.py`:
 
@@ -105,6 +116,7 @@ Environment contract consumed by `/opt/atlas/serve.py`:
 | `FABRIC_INTERFACE` | `${fabricInterface}` | discovered direct-fabric NIC, also used for `NCCL_SOCKET_IFNAME` |
 | `FABRIC_HCA` | `rocep1s0f0` | RoCE HCA, defaulted by the image and pinned by the recipe |
 | `MODEL_PATH` | `${installRoot}/atlas-overlay` | converted GLM-5.3-Flash-NVFP4 overlay root; the same absolute host/container path is used during conversion and serving |
+| `DRAFTER_PATH` | `${modelRoot}/incoai--GLM-5.3-Flash-DFlash2` | DFlash2 drafter checkpoint |
 | `SERVED_MODEL_NAME` | `glm-5.3-flash-atlas` | client-visible gateway model ID |
 | `ATLAS_WORLD_SIZE`, `ATLAS_TP_SIZE`, `ATLAS_EP_SIZE` | `2` | two-node tensor/expert parallelism |
 | `NCCL_*` | see recipe | IB transport, `NCCL_IB_HCA=rocep1s0f0`, `AF_INET`, `NCCL_CROSS_NIC=0` |

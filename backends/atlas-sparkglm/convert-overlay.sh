@@ -71,11 +71,10 @@ done
 
 pin() { node -e 'const m=require(process.argv[1]);const p=process.argv[2].split(".");let v=m;for(const k of p){v=v?.[k];}process.stdout.write(typeof v==="string"?v:String(v??""))' "${MANIFEST}" "$1"; }
 
-SOURCE_REPO="$(pin source.repo)"
-SOURCE_REVISION="$(pin source.revision)"
-SOURCE_BUILD_SCRIPT="$(pin source.buildScript)"
-SOURCE_MANIFEST="$(pin installer.sourceManifest)"
-IMAGE_TAG_PREFIX="$(pin image.tagPrefix)"
+INSTALL_TREE="$(pin source.installTree)"
+IMAGE_TAG="$(pin image.tag)"
+IMAGE_LABEL="$(pin image.label)"
+IMAGE_ARCHITECTURE="$(pin image.architecture)"
 MODEL_REPO="$(pin model.repo)"
 MODEL_REVISION="$(pin model.revision)"
 MARKER_NAME="$(pin overlay.marker)"
@@ -87,8 +86,6 @@ EXPECTED_MATRICES="$(pin converter.expectedMatrices)"
 fail() { echo "atlas-sparkglm overlay: $*" >&2; exit 1; }
 note() { echo "atlas-sparkglm overlay: $*"; }
 
-IMAGE_TAG="${IMAGE_TAG_PREFIX}${SOURCE_REVISION}"
-RECEIPT="${INSTALL_ROOT}/image-${SOURCE_REVISION}.json"
 MODEL_DIR_NAME="${MODEL_REPO//\//--}"
 [[ -n "${MODEL_ROOT}" ]] || MODEL_ROOT="${LLOOM_MODEL_ROOT:-${HOME}/.lloom/models}"
 SOURCE_MODEL_PATH="${MODEL_ROOT}/${MODEL_DIR_NAME}"
@@ -119,22 +116,11 @@ node "${VERIFY_PINS}" "${MANIFEST}" \
 
 command -v docker >/dev/null 2>&1 || fail "docker is required to run the in-image converter"
 
-# ---- the prepared image must be the one this host built --------------------
-[[ -f "${RECEIPT}" ]] \
-  || fail "no build receipt at ${RECEIPT}; run backends/atlas-sparkglm/install.sh --backend-root ${BACKEND_ROOT} first"
-LOCAL_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "${IMAGE_TAG}" 2>/dev/null || true)"
-[[ -n "${LOCAL_IMAGE_ID}" ]] || fail "local image ${IMAGE_TAG} is not present; run install.sh first"
-RECEIPT_IMAGE_ID="$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).image_id ?? "")' "${RECEIPT}")"
-[[ "${RECEIPT_IMAGE_ID}" == "${LOCAL_IMAGE_ID}" ]] \
-  || fail "local image ${IMAGE_TAG} is ${LOCAL_IMAGE_ID} but this host's receipt records ${RECEIPT_IMAGE_ID}; rerun install.sh"
-RECEIPT_MANIFEST_SHA256="$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).manifest_sha256 ?? "")' "${RECEIPT}")"
-SOURCE_ROOT="${INSTALL_ROOT}/sources/atlas-sparkglm-${SOURCE_REVISION}"
-SOURCE_MANIFEST_PATH="${SOURCE_ROOT}/${SOURCE_MANIFEST}"
-[[ -f "${SOURCE_MANIFEST_PATH}" ]] \
-  || fail "source manifest ${SOURCE_MANIFEST_PATH} is missing; rerun install.sh from the pinned source checkout"
-CURRENT_MANIFEST_SHA256="$(node -e 'const fs=require("fs"),c=require("crypto");process.stdout.write(c.createHash("sha256").update(fs.readFileSync(process.argv[1])).digest("hex"))' "${SOURCE_MANIFEST_PATH}")"
-[[ "${RECEIPT_MANIFEST_SHA256}" == "${CURRENT_MANIFEST_SHA256}" ]] \
-  || fail "build receipt manifest ${RECEIPT_MANIFEST_SHA256} does not match source manifest ${CURRENT_MANIFEST_SHA256}; rerun install.sh"
+# ---- the prepared image must carry the pinned install tree ------------------
+IMAGE_IDENTITY="$(docker image inspect --format "{{.Architecture}} {{index .Config.Labels \"${IMAGE_LABEL}\"}}" "${IMAGE_TAG}" 2>/dev/null)" \
+  || fail "local image ${IMAGE_TAG} is not present; run backends/atlas-sparkglm/install.sh --backend-root ${BACKEND_ROOT} first"
+[[ "${IMAGE_IDENTITY}" == "${IMAGE_ARCHITECTURE} ${INSTALL_TREE}" ]] \
+  || fail "local image ${IMAGE_TAG} has architecture and ${IMAGE_LABEL} '${IMAGE_IDENTITY}'; expected '${IMAGE_ARCHITECTURE} ${INSTALL_TREE}'. Rerun install.sh"
 docker run --rm --entrypoint bash "${IMAGE_TAG}" -lc "test -f '${CONVERTER_PATH}' && test -f '${CONVERTER_LIBRARY}'" \
   || fail "image ${IMAGE_TAG} does not ship the converter contract (${CONVERTER_PATH}, ${CONVERTER_LIBRARY})"
 
@@ -180,7 +166,7 @@ verify_marker() {
 }
 
 # Hash the converter files from the prepared image. This deliberately excludes
-# SOURCE_REVISION: an unchanged converter can safely reuse a completed overlay
+# the source revision and install tree: an unchanged converter can safely reuse a completed overlay
 # after a source/image pin moves, while a changed converter cannot.
 CONVERTER_IDENTITY_JSON=""
 load_converter_identity() {

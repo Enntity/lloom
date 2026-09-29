@@ -1158,11 +1158,11 @@
           "version": 1,
           "path": "linux-nvidia-dgx-spark-2x-glm53-atlas.json",
           "status": "current",
-          "notes": "Source-built Atlas SparkGLM two-node candidate over the private fabric, additive only, setDefault false, no aliases. Portable pins live in backends/atlas-sparkglm/pins.json and are final for the current product revision; invalid or placeholder manifests fail closed. Image identity is verified per host from the build receipt plus OCI metadata. Live hardware and full serving qualification remain pending."
+          "notes": "Atlas SparkGLM two-node candidate over the private fabric, additive only, setDefault false, no aliases. Portable pins live in backends/atlas-sparkglm/pins.json and are final for the current product revision; invalid or placeholder manifests fail closed. Image identity is verified per host by the pinned install-tree label, whether the image was pulled from GHCR or built from source. Live hardware and full serving qualification remain pending."
         }
       ],
       "name": "2x DGX Spark GLM-5.3 Flash NVFP4 Atlas",
-      "summary": "Two-node Atlas SparkGLM candidate serving GLM-5.3-Flash-NVFP4 from a source-built image and a once-per-node overlay conversion.",
+      "summary": "Two-node Atlas SparkGLM candidate serving GLM-5.3-Flash-NVFP4 from a pinned image (GHCR pull or source build) and a once-per-node overlay conversion.",
       "tags": [
         "linux",
         "nvidia",
