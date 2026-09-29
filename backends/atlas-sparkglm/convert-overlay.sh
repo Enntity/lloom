@@ -114,6 +114,11 @@ node -e '
 node "${VERIFY_PINS}" "${MANIFEST}" \
   || fail "pin manifest ${MANIFEST} is not a final immutable install manifest; verify the source, image and model identities before overlay conversion runs"
 
+# Reject an incomplete overlay before consulting a possibly unavailable daemon.
+if [[ "${VERIFY_ONLY}" -eq 1 && ! -f "${MARKER}" ]]; then
+  fail "conversion marker missing: ${MARKER}"
+fi
+
 command -v docker >/dev/null 2>&1 || fail "docker is required to run the in-image converter"
 
 # ---- the prepared image must carry the pinned install tree ------------------
