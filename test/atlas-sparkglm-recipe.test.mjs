@@ -415,7 +415,7 @@ assert.equal(pins.model.revision, '423acf37583782c51c142d145aef733d72943d93');
 assert.equal(pins.model.repo, 'nvidia/GLM-5.3-Flash-NVFP4');
 assert.equal(pins.source.repo, 'Enntity/sparkglm');
 assert.equal(pins.status, 'final');
-assert.equal(pins.source.revision, '29de4f50483368c25141f34be47ceb302057e665');
+assert.equal(pins.source.revision, 'ba4b927af2571b81d5e98def03757d708b972d1d');
 assert.equal(pins.image.entrypoint, '/opt/atlas/serve.py');
 assert(pins.overlay.marker.includes('conversion.complete.json'));
 assert.deepEqual(verifyPins(pins), []);

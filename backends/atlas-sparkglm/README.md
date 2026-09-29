@@ -3,7 +3,7 @@
 LLooM-managed two-node Atlas SparkGLM candidate for a directly connected pair
 of NVIDIA DGX Spark systems. This directory is **MIT orchestration only**: no
 Atlas engine source is committed here. The engine is compiled from immutable
-revision `04bc9a348caa5f37a8d35b52e141490eaf8677d1` of `Enntity/sparkglm` by
+revision `ba4b927af2571b81d5e98def03757d708b972d1d` of `Enntity/sparkglm` by
 that repository's `research/atlas/install/build.sh`. Live hardware and full
 serving qualification remain pending.
 
@@ -83,18 +83,17 @@ Inside the image:
 
 - `/opt/atlas/serve.py` — entrypoint. Reads the environment below, then starts
   the engine with the profile's argument vector.
-- `/opt/atlas/profile.json` — the exact reconstructed engine environment
-  profile (`--max-seq-len=262144`, `--max-prefill-tokens=4096`,
-  `--max-num-seqs=4`, `--max-batch-size=4`, `--gpu-memory-utilization=0.95`,
-  `--oom-guard-mb=4096`, `--kv-cache-dtype=bf16`, `--ssm-h-dtype=f32`,
-  `--speculative --num-drafts=2`, `--block-size=16`, and the rest of the
-  candidate settings). Its physical BF16 pool is shared across requests
-  (`ATLAS_GLM_SHARED_KV_TOKENS=270336`); it does not reserve four full windows.
-  The profile keeps native MTP through 32768 and uses its serial native
-  fallback above that boundary. `disable-tool-grammar` is deliberately **not**
-  set, so structured output and tool grammar stay functional. The source build
-  includes image and video input support; live gateway qualification remains
-  pending.
+- `/opt/atlas/profile.json` — the benchmarked engine profile from
+  `research/atlas/install/profile.json` in Enntity/sparkglm: `--kernel-target=glm-5.3-flash`,
+  `--max-seq-len=524288`, `--max-num-seqs=4`, `--max-batch-size=4`,
+  `--gpu-memory-utilization=0.88`, `--oom-guard-mb=4096`, `--kv-cache-dtype=fp8_g128`,
+  `--ssm-h-dtype=f32`, `--ssm-rollback-mode=records`, `--dflash --dflash-gamma=8`
+  with the DFlash2 drafter, and the rest of the candidate settings. Four requests
+  share one physical FP8-latent KV pool (about 866K tokens); it does not reserve
+  four full windows. `disable-tool-grammar` is deliberately **not** set, so
+  structured output and tool grammar stay functional. The engine is built from
+  Enntity/atlas `sparkglm/atlas-20260928` @ `c9723935`; measured results are in
+  Enntity/sparkglm `results/candidates/2026-09-29-atlas-merged/`.
 
 Environment contract consumed by `/opt/atlas/serve.py`:
 
