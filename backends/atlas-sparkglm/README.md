@@ -3,7 +3,7 @@
 LLooM-managed two-node Atlas SparkGLM candidate for a directly connected pair
 of NVIDIA DGX Spark systems. This directory is **MIT orchestration only**: no
 Atlas engine source is committed here. The engine image is built from immutable
-revision `9acb642b55ccfbc63fc979d747cb69eff30c9a24` of `Enntity/sparkglm` by
+revision `2c7b51a3647ed41c9fdc3981f36237b9fd7df659` of `Enntity/sparkglm` by
 that repository's `install/build.sh`. Live hardware and full serving
 qualification remain pending.
 
@@ -18,7 +18,7 @@ qualification remain pending.
   first 12 characters of the install tree, or any portable identity is a
   placeholder. It rejects a pinned image ID: IDs differ between a pull and a
   local build, so identity is the install-tree label.
-- `install.sh` — prepares `ghcr.io/enntity/atlas-sparkglm:2ba73a2d8aee`. It
+- `install.sh` — prepares `ghcr.io/enntity/atlas-sparkglm:42fd6b6147be`. It
   reuses an already verified local image, otherwise pulls the tag from GHCR,
   otherwise clones `Enntity/sparkglm` at the pinned revision, checks that
   `HEAD:install` is the pinned tree, and runs `install/build.sh`, which must
@@ -98,7 +98,7 @@ Inside the image:
   `--gpu-memory-utilization=0.88`, `--oom-guard-mb=4096`, `--kv-cache-dtype=fp8_g128`,
   `--ssm-h-dtype=f32`, `--ssm-rollback-mode=records`, `--dflash --dflash-gamma=8`
   with the DFlash2 drafter, and the rest of the candidate settings. Four requests
-  share one physical FP8-latent KV pool (340K-560K tokens depending on memory free at startup; it also holds the prefix cache, with 16 recurrent-state snapshot slots); it does not reserve
+  share one physical FP8-latent KV pool (about 1.6M tokens at the recipe's 0.93 GPU memory utilization; it also holds the prefix cache, with 16 recurrent-state snapshot slots); it does not reserve
   four full windows. `disable-tool-grammar` is deliberately **not** set, so
   structured output and tool grammar stay functional. The engine is built from
   Enntity/atlas `sparkglm/atlas-20260929b` @ `6a115315`; measured results are in
@@ -118,6 +118,7 @@ Environment contract consumed by `/opt/atlas/serve.py`:
 | `MODEL_PATH` | `${installRoot}/atlas-overlay` | converted GLM-5.3-Flash-NVFP4 overlay root; the same absolute host/container path is used during conversion and serving |
 | `DRAFTER_PATH` | `${modelRoot}/incoai--GLM-5.3-Flash-DFlash2` | DFlash2 drafter checkpoint |
 | `SERVED_MODEL_NAME` | `glm-5.3-flash-atlas` | client-visible gateway model ID |
+| `SPARKGLM_GPU_MEMORY_UTILIZATION` | `0.93` | share of each Spark's unified memory for the engine; 0.93 assumes Sparks dedicated to this model (lower it if the node also runs other workloads) |
 | `ATLAS_WORLD_SIZE`, `ATLAS_TP_SIZE`, `ATLAS_EP_SIZE` | `2` | two-node tensor/expert parallelism |
 | `NCCL_*` | see recipe | IB transport, `NCCL_IB_HCA=rocep1s0f0`, `AF_INET`, `NCCL_CROSS_NIC=0` |
 
