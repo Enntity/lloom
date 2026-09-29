@@ -3,6 +3,7 @@ import http from 'node:http';
 import {
   buildNvidiaSyncDiscovery,
   ClusterCoordinator,
+  clusterNodes,
   federatedNodeConfigFromSnapshot,
   materializeFederatedNodes,
   mergeNvidiaSyncClusterDiscovery,
@@ -1389,3 +1390,43 @@ assert.throws(
   /identity conflicts/
 );
 console.log('cluster tests passed');
+
+// Inline node credentials are private operational wiring: materialization uses
+// them, node status does not publish them, and coordinator requests use them
+// when no environment credential is configured.
+const inlineCredentialConfig = {
+  cluster: {
+    nodeId: 'head',
+    nodes: {
+      head: { endpoint: 'http://head:8100' },
+      source: {
+        endpoint: 'http://source:8100',
+        apiKey: 'sk-inline-cluster-0000',
+        proxy: { models: [{ id: 'remote-model', as: 'remote-model', remoteRuntime: 'tp2' }] }
+      }
+    }
+  },
+  backends: {},
+  models: []
+};
+materializeFederatedNodes(inlineCredentialConfig);
+assert.equal(inlineCredentialConfig.backends['lloom-node-source'].apiKey, 'sk-inline-cluster-0000');
+assert.equal(
+  inlineCredentialConfig.models.some((model) => model.id === 'remote-model'),
+  true
+);
+assert.equal(
+  JSON.stringify(clusterNodes(inlineCredentialConfig, { LLOOM_NODE_ID: 'head' })).includes('sk-inline-cluster-0000'),
+  false
+);
+const inlineCredentialCoordinator = new ClusterCoordinator(inlineCredentialConfig, {
+  env: { LLOOM_NODE_ID: 'head', LLOOM_CLUSTER_API_KEY: 'sk-env-cluster-1111' },
+  fetchImpl: async () => new Response('{}', { status: 200 })
+});
+let inlineCredentialRequest;
+inlineCredentialCoordinator.fetchImpl = async (url, options) => {
+  inlineCredentialRequest = { url, options };
+  return new Response('{}', { status: 200 });
+};
+await inlineCredentialCoordinator.requestNode('source', '/health');
+assert.equal(inlineCredentialRequest.options.headers.authorization, 'Bearer sk-inline-cluster-0000');
