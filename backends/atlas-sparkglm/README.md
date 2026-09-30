@@ -192,7 +192,7 @@ is not part of LLooM:
   `ghcr.io/enntity/atlas-sparkglm`, alongside LLooM (an aggregate); no engine
   source or binary is included in LLooM.
 - **Corresponding source.** [Enntity/sparkglm](https://github.com/Enntity/sparkglm)
-  at the pinned revision (`1592d84a`) plus the Enntity/atlas commit recorded
+  at the pinned revision (`8eed7ef4`) plus the Enntity/atlas commit recorded
   in the image's `/opt/atlas/source-manifest.json`
   ([`9b8160e3`](https://github.com/Enntity/atlas/tree/9b8160e3fb8deff898ab7c4db68483c12c37f105)).
   SparkGLM's `NOTICE` and `docs/LICENSING.md` list everything else it fetches.
