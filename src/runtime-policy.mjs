@@ -311,13 +311,7 @@ function clusterRuntimePolicyPlan(
   // local start cannot evict unrelated work or wait on an unrelated deficit.
   // A plan without a request is still a cluster-wide reconciliation pass.
   const constrainedNodeIds =
-    requested && !requested.loaded
-      ? new Set(
-          Object.entries(requested.resourcesByNode ?? {})
-            .filter(([, resources]) => (numberOrNull(resources?.memoryGb) ?? 0) > 0)
-            .map(([nodeId]) => nodeId)
-        )
-      : null;
+    requested && !requested.loaded ? new Set(Object.keys(requested.resourcesByNode ?? {})) : null;
   const nodes = {};
 
   for (const nodeId of Object.keys(configuredNodes)) {

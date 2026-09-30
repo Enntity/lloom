@@ -378,6 +378,125 @@ assert.deepEqual(
   'active work on an unrelated node is not a blocker for a local request'
 );
 
+const zeroEstimateLocal = await createRuntimePolicyPlan(
+  {
+    cluster: {
+      nodeId: 'ennspark03',
+      leaderNode: 'ennspark03',
+      nodes: {
+        ennspark01: { resources: { memoryGb: 128 } },
+        ennspark03: { resources: { memoryGb: 128 } }
+      }
+    },
+    runtimePolicy: { maxMemoryUtilization: 0.9, autoEvict: true },
+    runtimes: {
+      unrelatedIdle: { enabled: true, node: 'ennspark01', memoryGb: 20 },
+      requested: { enabled: true, node: 'ennspark03', memoryGb: 0 }
+    }
+  },
+  {
+    requestedRuntimeId: 'requested',
+    requesterNode: 'ennspark03',
+    status: {
+      runtimes: {
+        unrelatedIdle: { healthy: true, status: 'running', activeRequests: 0 },
+        requested: { healthy: false, status: 'idle', activeRequests: 0 }
+      },
+      cluster: {
+        nodes: {
+          ennspark01: {
+            reachable: true,
+            telemetry: { memory: { totalBytes: 128 * 1024 ** 3, availableBytes: 0 } }
+          },
+          ennspark03: {
+            local: true,
+            reachable: true,
+            telemetry: { memory: { totalBytes: 128 * 1024 ** 3, availableBytes: 0 } }
+          }
+        }
+      }
+    }
+  }
+);
+assert.equal(zeroEstimateLocal.admission.allowed, false, 'zero-estimate local placement still checks its target node');
+assert(zeroEstimateLocal.admission.nodes.ennspark03.overBudgetGb > 0);
+assert.equal(zeroEstimateLocal.admission.nodes.ennspark01.overBudgetGb, 0);
+assert.deepEqual(
+  zeroEstimateLocal.actions.map((action) => `${action.type}:${action.runtimeId}`),
+  ['start:requested'],
+  'zero-estimate local admission must not evict unrelated pressure'
+);
+
+const zeroEstimateDistributed = await createRuntimePolicyPlan(
+  {
+    cluster: {
+      nodeId: 'leader',
+      leaderNode: 'leader',
+      nodes: {
+        leader: { resources: { memoryGb: 128 } },
+        worker: { resources: { memoryGb: 128 } },
+        unrelated: { resources: { memoryGb: 128 } }
+      }
+    },
+    runtimePolicy: { maxMemoryUtilization: 0.9, autoEvict: true },
+    runtimes: {
+      'group-head': { enabled: true, node: 'leader', memoryGb: 0 },
+      'group-worker': { enabled: true, node: 'worker', memoryGb: 0 },
+      group: {
+        enabled: true,
+        placement: {
+          mode: 'distributed',
+          members: [
+            { node: 'leader', runtime: 'group-head' },
+            { node: 'worker', runtime: 'group-worker' }
+          ]
+        }
+      },
+      unrelatedIdle: { enabled: true, node: 'unrelated', memoryGb: 20 }
+    }
+  },
+  {
+    requestedRuntimeId: 'group',
+    requesterNode: 'leader',
+    status: {
+      runtimes: {
+        'group-head': { healthy: false, status: 'idle' },
+        'group-worker': { healthy: false, status: 'idle' },
+        group: { healthy: false, status: 'idle' },
+        unrelatedIdle: { healthy: true, status: 'running', activeRequests: 0 }
+      },
+      cluster: {
+        nodes: {
+          leader: {
+            reachable: true,
+            telemetry: { memory: { totalBytes: 128 * 1024 ** 3, availableBytes: 128 * 1024 ** 3 } }
+          },
+          worker: {
+            reachable: true,
+            telemetry: { memory: { totalBytes: 128 * 1024 ** 3, availableBytes: 0 } }
+          },
+          unrelated: {
+            reachable: true,
+            telemetry: { memory: { totalBytes: 128 * 1024 ** 3, availableBytes: 0 } }
+          }
+        }
+      }
+    }
+  }
+);
+assert.equal(
+  zeroEstimateDistributed.admission.allowed,
+  false,
+  'zero-estimate distributed member placement still checks its target node'
+);
+assert(zeroEstimateDistributed.admission.nodes.worker.overBudgetGb > 0);
+assert.equal(zeroEstimateDistributed.admission.nodes.unrelated.overBudgetGb, 0);
+assert.deepEqual(
+  zeroEstimateDistributed.actions.map((action) => `${action.type}:${action.runtimeId}`),
+  ['start:group'],
+  'distributed zero-estimate admission must not evict unrelated pressure'
+);
+
 const predictiveStatus = {
   runtimes: {
     loaded: { healthy: true, status: 'running', activeRequests: 0 },
