@@ -416,10 +416,10 @@ assert.equal(pins.model.revision, '423acf37583782c51c142d145aef733d72943d93');
 assert.equal(pins.model.repo, 'nvidia/GLM-5.3-Flash-NVFP4');
 assert.equal(pins.source.repo, 'Enntity/sparkglm');
 assert.equal(pins.status, 'final');
-assert.equal(pins.source.revision, '39b81706cbbc23fcc7763ceecefebe8e46ddbdad');
-assert.equal(pins.source.installTree, '227698449651815c0991ad31f666bf03b8b5b0b7');
+assert.equal(pins.source.revision, '5db6d0cd2b339f24a8fcb39a5a9ed3f897ae4043');
+assert.equal(pins.source.installTree, '43eed6283b969efac8eff5b59e6fc89995ffc86c');
 assert.equal(pins.source.buildScript, 'install/build.sh');
-assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkglm:227698449651');
+assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkglm:43eed6283b96');
 assert.equal(pins.image.label, 'io.enntity.sparkglm.install-tree');
 assert.equal(pins.image.architecture, 'arm64');
 assert.equal(pins.image.entrypoint, '/opt/atlas/serve.py');
@@ -666,7 +666,7 @@ assert.match(missingImageContract.stderr, /missing the Atlas entrypoint\/profile
 for (const identity of [`arm64 ${'f'.repeat(40)}`, `amd64 ${pins.source.installTree}`, 'arm64 <no value>']) {
   const mismatched = runInstaller({ ...fakeEnv, ATLAS_TEST_IDENTITY: identity }, ['--check-only']);
   assert.notEqual(mismatched.status, 0, `--check-only must reject image identity ${identity}`);
-  assert.match(mismatched.stderr, /expected 'arm64 227698449651815c0991ad31f666bf03b8b5b0b7'/);
+  assert.match(mismatched.stderr, /expected 'arm64 43eed6283b969efac8eff5b59e6fc89995ffc86c'/);
 }
 const noImageDir = fs.mkdtempSync(path.join(converterRoot, 'no-image-'));
 const checkedMissingImage = runInstaller({ ...fakeEnv, ATLAS_TEST_IMAGE_DIR: noImageDir }, ['--check-only']);
@@ -682,7 +682,7 @@ assert.match(reentered.stdout, /existing image .* verified; skipping pull and bu
 const pullImageDir = fs.mkdtempSync(path.join(converterRoot, 'pull-'));
 const pulled = runInstaller({ ...fakeEnv, ATLAS_TEST_IMAGE_DIR: pullImageDir });
 assert.equal(pulled.status, 0, `${pulled.stdout}\n${pulled.stderr}`);
-assert.match(pulled.stdout, /pulling ghcr\.io\/enntity\/atlas-sparkglm:227698449651/);
+assert.match(pulled.stdout, /pulling ghcr\.io\/enntity\/atlas-sparkglm:43eed6283b96/);
 assert.match(pulled.stdout, /image prepared/);
 // An image with the wrong label is never trusted: the installer falls through
 // to the source build, whose non-destructive checkout guard refuses to touch a
