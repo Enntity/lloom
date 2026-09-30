@@ -43,8 +43,15 @@ sidecar-coexistence memory profile:
 
 - Project: GLM-5.3-Flash-EXL3-2x-DGX-Sparks
 - Source: <https://github.com/MiaAI-Lab/GLM-5.3-Flash-EXL3-2x-DGX-Sparks>
-- Revision: `0e2e78f3de83624e6733b918724da27fc9040156`
-- License: MIT
+- Revisions: `0e2e78f3de83624e6733b918724da27fc9040156` (vendored overlays) and
+  `eb0469fbb2b49fd7c025f594a3339a121e58f7a9` (built by
+  `build-mia-image.sh` and reapplied by `entrypoint.sh`)
+- License: MIT at both revisions
+
+MiaAI relicensed this recipe to AGPL-3.0 for contributions from 2026-09-07
+(upstream `LICENSE` changed in `47e5bb4`); only material from the MIT
+revisions above may be vendored into LLooM, and no later revision may be
+copied into this MIT repository.
 
 The XGrammar patcher source-exactly backports portions of vLLM PRs 52805 and
 53046 and retains their Apache-2.0 lineage; see
@@ -106,9 +113,11 @@ pack contains Apache-2.0 substitutions derived from
 [blazux bd60fcb1](https://github.com/blazux/qwen3.8-Flash-DGX/tree/bd60fcb1b492ca920f74df7462f05da7b6d98f73),
 credited in its adjacent notice and qualified in the September 9 evidence.
 MiaAI and sparkDash comparison
-protocols are credited in the benchmark documentation; their AGPL serving code
-is not included in these NVIDIA bundles. Model weights are downloaded separately
-under their publisher's terms.
+protocols are credited in the benchmark documentation; their serving code is
+not included in these NVIDIA bundles. (sparkDash is MIT, and MiaAI's recipes
+were MIT when this lane was written; MiaAI's GLM-5.3 Flash EXL3 recipe is
+AGPL-3.0 for contributions from 2026-09-07.) Model weights are downloaded
+separately under their publisher's terms.
 
 ## ComfyUI media backend
 
@@ -124,3 +133,38 @@ Each media recipe identifies its model and download sources. Their model-weight
 licenses are separate from LLooM's MIT license; no blanket commercial-use grant
 is made. See [ComfyUI media recipes](docs/comfyui-media.md) for installation and
 source details.
+
+## Atlas SparkGLM engine image (not included)
+
+The optional Atlas SparkGLM lane in `backends/atlas-sparkglm` and
+`recipes/linux-nvidia-dgx-spark-2x-glm53-atlas.json` pulls or builds the
+container image `ghcr.io/enntity/atlas-sparkglm` from
+[Enntity/sparkglm](https://github.com/Enntity/sparkglm) at
+`1592d84a43be975ee299d65a7d27c0b11dc06db9`. LLooM starts that image as a
+separate program; no engine source or binary is included in the LLooM npm
+package, and LLooM's files for the lane remain MIT.
+
+- Engine: [Atlas](https://github.com/Atlas-Inf/atlas) (Atlas-Inf) with
+  SparkGLM's GLM-5.3 Flash work on the
+  [Enntity/atlas](https://github.com/Enntity/atlas) fork, at
+  [`9b8160e3fb8deff898ab7c4db68483c12c37f105`](https://github.com/Enntity/atlas/tree/9b8160e3fb8deff898ab7c4db68483c12c37f105)
+  (recorded in the image's `/opt/atlas/source-manifest.json`)
+- License: AGPL-3.0-only. The corresponding source is Enntity/sparkglm at the
+  revision above plus that Enntity/atlas commit; SparkGLM's `NOTICE` and
+  `docs/LICENSING.md` list what the image build fetches.
+- In-image notices: FlashKDA (MoonshotAI, MIT), FlashInfer including NVIDIA's
+  sparse-MLA prefill source (Apache-2.0) and CUTLASS (BSD-3-Clause) ship under
+  `/opt/atlas/notices/`; the engine's license is at `/LICENSE`.
+- Converter: the NVFP4 quantization kernel that setup step
+  `convert-atlas-overlay` runs is copied unchanged from
+  [Mango-kid/atlas](https://github.com/Mango-kid/atlas) (AGPL-3.0-only).
+- Transport tuning: the recipe's RoCE/NCCL tuning values (IB timeout/retry,
+  Ring/Simple, 1-2 channels, 32 MiB buffers, DMA-BUF off) follow Atlas
+  upstream's GB10 launch scripts `scripts/start-ep2.sh` and
+  `scripts/start-deepseek-ep2.sh`. Only parameter values are used; no Atlas
+  code is included.
+
+The model `nvidia/GLM-5.3-Flash-NVFP4` (MIT per SparkGLM's licensing notes)
+and the DFlash2 drafter `incoai/GLM-5.3-Flash-DFlash2` (**CC BY-NC-ND 4.0,
+non-commercial**) are downloaded from their publishers under their own terms.
+See the [backend README](backends/atlas-sparkglm/README.md#credits-and-licenses).

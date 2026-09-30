@@ -357,6 +357,14 @@ lloom runtime-start glm53-flash-atlas-cluster
 The recipe is additive. It does not set a default model and does not overwrite
 aliases, so an existing GLM-5.3 Flash route keeps working.
 
+Licenses: the recipe and LLooM's backend files are MIT. The engine is
+[Atlas](https://github.com/Atlas-Inf/atlas) with SparkGLM's work on the
+[Enntity/atlas](https://github.com/Enntity/atlas) fork, **AGPL-3.0-only**, and
+runs from its own container image; LLooM includes none of its source. The
+DFlash2 drafter `incoai/GLM-5.3-Flash-DFlash2` is **CC BY-NC-ND 4.0
+(non-commercial)**. See the backend README's "Credits and licenses" section and
+[Third-Party Notices](../THIRD_PARTY_NOTICES.md).
+
 ### Single pin manifest and fail-closed pin gate
 
 All portable identities for the lane live in exactly one place,
@@ -436,8 +444,9 @@ health-checks `/health`, runs a POST warmup, and then owns routing.
 
 The candidate profile serves 524288-token contexts to four concurrent sequences
 from one shared FP8-latent KV pool (about 1.6M tokens at the recipe's 0.93 GPU memory utilization; it also holds the prefix cache, with 16 recurrent-state snapshot slots), with FP32 SSM state,
-DFlash2 speculation (gamma 8) on the head rank, GPU memory utilization 0.88,
-and `--memory=114g` with a 4096 MiB OOM guard. `disable-tool-grammar` is **not**
+DFlash2 speculation (gamma 8) on the head rank, GPU memory utilization 0.93
+(the recipe's `SPARKGLM_GPU_MEMORY_UTILIZATION`, overriding the profile
+default of 0.88), and `--memory=114g` with a 4096 MiB OOM guard. `disable-tool-grammar` is **not**
 set, so structured output and tool calling stay functional. The image includes
 image and video input support; gateway and two-node serving canaries remain
 required for qualification.

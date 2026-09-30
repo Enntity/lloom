@@ -4,8 +4,9 @@ LLooM-managed two-node Atlas SparkGLM candidate for a directly connected pair
 of NVIDIA DGX Spark systems. This directory is **MIT orchestration only**: no
 Atlas engine source is committed here. The engine image is built from immutable
 revision `1592d84a43be975ee299d65a7d27c0b11dc06db9` of `Enntity/sparkglm` by
-that repository's `install/build.sh`. Live hardware and full serving
-qualification remain pending.
+that repository's `install/build.sh`. The engine inside the image is
+AGPL-3.0-only; see [Credits and licenses](#credits-and-licenses). Live hardware
+and full serving qualification remain pending.
 
 ## Layout
 
@@ -72,7 +73,8 @@ Setup steps, in order:
    40-character revision into the managed model root and records the LLooM
    acquisition manifest.
 4. `download-atlas-drafter` — acquires `incoai/GLM-5.3-Flash-DFlash2` at its
-   pinned revision.
+   pinned revision. The drafter's weights are licensed **CC BY-NC-ND 4.0
+   (non-commercial)**; read its model card before use.
 5. `build-atlas-image` — `bash backends/atlas-sparkglm/install.sh` with the
    managed backend and install roots: pull or build, then verify.
 6. `convert-atlas-overlay` — runs the GPU conversion once with at least 8 GiB
@@ -98,16 +100,23 @@ Inside the image:
   through `SPARKGLM_PROFILE` (default `4x512k`; the image also ships `8x128k`):
   `--kernel-target=glm-5.3-flash`,
   `--max-seq-len=524288`, `--max-num-seqs=4`, `--max-batch-size=4`,
-  `--gpu-memory-utilization=0.88`, `--oom-guard-mb=4096`, `--kv-cache-dtype=fp8_g128`,
+  `--gpu-memory-utilization=0.88` (the profile default; the recipe overrides it
+  with `SPARKGLM_GPU_MEMORY_UTILIZATION=0.93`), `--oom-guard-mb=4096`, `--kv-cache-dtype=fp8_g128`,
   `--ssm-h-dtype=f32`, `--ssm-rollback-mode=records`, `--dflash --dflash-gamma=8`
   with the DFlash2 drafter, and the rest of the candidate settings. Four requests
   share one physical FP8-latent KV pool (about 1.6M tokens at the recipe's 0.93 GPU memory utilization; it also holds the prefix cache, with 16 recurrent-state snapshot slots); it does not reserve
   four full windows. `disable-tool-grammar` is deliberately **not** set, so
   structured output and tool grammar stay functional. The engine is built from
-  Enntity/atlas `sparkglm/atlas-20260929b` @ `6a115315`; measured results are in
-  Enntity/sparkglm `results/2026-09-29-prefix-caching/`.
+  Enntity/atlas `sparkglm/atlas-20260930c` @ `9b8160e3` (recorded in the
+  image's `/opt/atlas/source-manifest.json`); measured results are in
+  Enntity/sparkglm `results/2026-09-30-decode-step/` (this engine) and
+  `results/2026-09-30-nvme-tier/` (this image).
 - `/opt/atlas/converter/convert.py` and `libatlas_mtp_quantize.so` — the
-  overlay converter, including `--verify-overlay`.
+  overlay converter, including `--verify-overlay`. Its NVFP4 quantization
+  kernel is copied unchanged from
+  [Mango-kid/atlas](https://github.com/Mango-kid/atlas)
+  (`kernels/gb10/common/quantize_bf16_to_nvfp4.cu` @ `90b3584a`,
+  AGPL-3.0-only); see SparkGLM's `install/converter/provenance.json`.
 
 Environment contract consumed by `/opt/atlas/serve.py`:
 
@@ -167,5 +176,40 @@ On each Spark, preview `lloom runtime-policy --max-memory-utilization 0.97
 --reserve-memory-gb 4`, then repeat with `--apply --yes` to apply those explicit
 candidate limits. Keep normal memory enforcement enabled. The command preserves
 mode and node overrides; review its output before starting the model. These
-values and the 262K context require live qualification. They do not qualify
-512K, four concurrent maximum windows, or 128K generated-output endurance.
+values still require live qualification through LLooM: the profile's
+524288-token context, four concurrent full-length windows, and 128K
+generated-output endurance have not been qualified on this lane yet.
+
+## Credits and licenses
+
+LLooM's files in this directory and the recipe are MIT. The engine they start
+is not part of LLooM:
+
+- **Engine.** [Atlas](https://github.com/Atlas-Inf/atlas) (Atlas-Inf), with
+  SparkGLM's GLM-5.3 Flash work on the
+  [Enntity/atlas](https://github.com/Enntity/atlas) fork, licensed
+  **AGPL-3.0-only**. It runs from a separate container image,
+  `ghcr.io/enntity/atlas-sparkglm`, alongside LLooM (an aggregate); no engine
+  source or binary is included in LLooM.
+- **Corresponding source.** [Enntity/sparkglm](https://github.com/Enntity/sparkglm)
+  at the pinned revision (`1592d84a`) plus the Enntity/atlas commit recorded
+  in the image's `/opt/atlas/source-manifest.json`
+  ([`9b8160e3`](https://github.com/Enntity/atlas/tree/9b8160e3fb8deff898ab7c4db68483c12c37f105)).
+  SparkGLM's `NOTICE` and `docs/LICENSING.md` list everything else it fetches.
+- **Third-party notices in the image.** FlashKDA (MoonshotAI, MIT), FlashInfer
+  including NVIDIA's sparse-MLA prefill source (Apache-2.0) and CUTLASS
+  (BSD-3-Clause) ship their notices under `/opt/atlas/notices/`; the engine's
+  license is at `/LICENSE`.
+- **Converter kernel.** The NVFP4 quantization kernel in
+  `libatlas_mtp_quantize.so`, which setup step `convert-atlas-overlay` runs, is
+  copied unchanged from [Mango-kid/atlas](https://github.com/Mango-kid/atlas)
+  (AGPL-3.0-only).
+- **Transport tuning.** The RoCE/NCCL transport tuning in the recipe (IB
+  timeout/retry, Ring/Simple, 1-2 channels, 32 MiB buffers, DMA-BUF off)
+  follows Atlas upstream's GB10 launch scripts (Atlas-Inf/atlas
+  `scripts/start-ep2.sh`, `scripts/start-deepseek-ep2.sh`; Thomas Braun, Nick
+  Gerakines et al.).
+- **Models.** Weights are downloaded from their publishers, not distributed by
+  LLooM. `nvidia/GLM-5.3-Flash-NVFP4` is MIT per SparkGLM's
+  `docs/LICENSING.md`; `incoai/GLM-5.3-Flash-DFlash2` is **CC BY-NC-ND 4.0
+  (non-commercial)**. Read each model card before use.
