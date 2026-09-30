@@ -80,6 +80,9 @@ Setup steps, in order:
    container implicitly. On GB10, unavailable GPU-memory readings fall back to
    Linux `MemAvailable`. Forced reconversion moves the prior overlay to a dated
    backup so it remains recoverable.
+7. `prepare-atlas-prefix-cache` — creates `${installRoot}/atlas-prefix-cache`
+   with `kv/` and `ssm/`, which both members mount at `/prefix-cache`. It stays
+   empty unless the prefix cache on disk is turned on (below).
 
 ## Container contract
 
@@ -119,6 +122,7 @@ Environment contract consumed by `/opt/atlas/serve.py`:
 | `DRAFTER_PATH` | `${modelRoot}/incoai--GLM-5.3-Flash-DFlash2` | DFlash2 drafter checkpoint |
 | `SERVED_MODEL_NAME` | `glm-5.3-flash-atlas` | client-visible gateway model ID |
 | `SPARKGLM_GPU_MEMORY_UTILIZATION` | `0.93` | share of each Spark's unified memory for the engine; 0.93 assumes Sparks dedicated to this model (lower it if the node also runs other workloads) |
+| `SPARKGLM_PREFIX_CACHE_GB` | `${prefixCacheGb}` (model setting, default `0`) | prefix cache on disk: `0` is off; 16-100 is its size in GiB per node (below) |
 | `ATLAS_WORLD_SIZE`, `ATLAS_TP_SIZE`, `ATLAS_EP_SIZE` | `2` | two-node tensor/expert parallelism |
 | `NCCL_*` | see recipe | IB transport, `NCCL_IB_HCA=rocep1s0f0`, `AF_INET`, `NCCL_CROSS_NIC=0` |
 
@@ -128,6 +132,29 @@ uses for health and routing; the worker is readiness-checked through its
 container state. The original checkpoint is also mounted read-only at the same
 absolute path used by conversion so absolute symlinks in the overlay remain
 valid at runtime.
+
+## Prefix cache on disk (optional, off by default)
+
+With the model setting `prefixCacheGb` at 16-100, each node writes prefix-cache
+entries that fall out of the KV pool to `${installRoot}/atlas-prefix-cache`
+(mounted at `/prefix-cache`) instead of dropping them, and reads them back
+when the conversation returns. `serve.py` in the image splits the size evenly
+between KV records and recurrent-state snapshots and sets the engine's tier
+variables identically on both ranks; the recipe passes no `ATLAS_*` tier
+variable itself. What it measured and what it costs (about 60K tokens of KV
+pool at the default 48 GiB) are in Enntity/sparkglm's README under "Prefix
+cache on disk".
+
+- It needs an image from a SparkGLM revision whose `serve.py` reads
+  `SPARKGLM_PREFIX_CACHE_GB`. The image pinned above predates it and ignores
+  the variable, so move the pin before setting `prefixCacheGb`.
+- The directory must be on the node's own disk (ext4/xfs), with the size free.
+  The engine refuses tmpfs, ramfs, overlayfs, an unwritable directory, a disk
+  that cannot hold the KV half, and ranks whose settings differ. To use
+  another disk, make `${installRoot}/atlas-prefix-cache` a symlink to a
+  directory there before setup.
+- Nothing is kept across restarts; the engine deletes its files while they
+  are open and clears leftovers of a crash at startup.
 
 ## Distributed startup
 
