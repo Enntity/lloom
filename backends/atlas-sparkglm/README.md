@@ -3,7 +3,7 @@
 LLooM-managed two-node Atlas SparkGLM candidate for a directly connected pair
 of NVIDIA DGX Spark systems. This directory is **MIT orchestration only**: no
 Atlas engine source is committed here. The engine image is built from immutable
-revision `5db6d0cd2b339f24a8fcb39a5a9ed3f897ae4043` of `Enntity/sparkglm` by
+revision `1592d84a43be975ee299d65a7d27c0b11dc06db9` of `Enntity/sparkglm` by
 that repository's `install/build.sh`. Live hardware and full serving
 qualification remain pending.
 
@@ -18,7 +18,7 @@ qualification remain pending.
   first 12 characters of the install tree, or any portable identity is a
   placeholder. It rejects a pinned image ID: IDs differ between a pull and a
   local build, so identity is the install-tree label.
-- `install.sh` — prepares `ghcr.io/enntity/atlas-sparkglm:43eed6283b96`. It
+- `install.sh` — prepares `ghcr.io/enntity/atlas-sparkglm:d4a121b8371a`. It
   reuses an already verified local image, otherwise pulls the tag from GHCR,
   otherwise clones `Enntity/sparkglm` at the pinned revision, checks that
   `HEAD:install` is the pinned tree, and runs `install/build.sh`, which must
@@ -122,7 +122,7 @@ Environment contract consumed by `/opt/atlas/serve.py`:
 | `DRAFTER_PATH` | `${modelRoot}/incoai--GLM-5.3-Flash-DFlash2` | DFlash2 drafter checkpoint |
 | `SERVED_MODEL_NAME` | `glm-5.3-flash-atlas` | client-visible gateway model ID |
 | `SPARKGLM_GPU_MEMORY_UTILIZATION` | `0.93` | share of each Spark's unified memory for the engine; 0.93 assumes Sparks dedicated to this model (lower it if the node also runs other workloads) |
-| `SPARKGLM_PREFIX_CACHE_GB` | `${prefixCacheGb}` (model setting, default `0`) | prefix cache on disk: `0` is off; 16-100 is its size in GiB per node (below) |
+| `SPARKGLM_PREFIX_CACHE_GB` | `${prefixCacheGb}` (model setting, default `48`) | prefix cache on disk: `0` is off; 16-100 is its size in GiB per node (below) |
 | `ATLAS_WORLD_SIZE`, `ATLAS_TP_SIZE`, `ATLAS_EP_SIZE` | `2` | two-node tensor/expert parallelism |
 | `NCCL_*` | see recipe | IB transport, `NCCL_IB_HCA=rocep1s0f0`, `AF_INET`, `NCCL_CROSS_NIC=0` |
 
@@ -133,9 +133,9 @@ container state. The original checkpoint is also mounted read-only at the same
 absolute path used by conversion so absolute symlinks in the overlay remain
 valid at runtime.
 
-## Prefix cache on disk (optional, off by default)
+## Prefix cache on disk (on, 48 GiB per node)
 
-With the model setting `prefixCacheGb` at 16-100, each node writes prefix-cache
+With the model setting `prefixCacheGb` at 16-100 (the recipe sets 48; `0` turns it off), each node writes prefix-cache
 entries that fall out of the KV pool to `${installRoot}/atlas-prefix-cache`
 (mounted at `/prefix-cache`) instead of dropping them, and reads them back
 when the conversation returns. `serve.py` in the image splits the size evenly
@@ -146,8 +146,7 @@ pool at the default 48 GiB) are in Enntity/sparkglm's README under "Prefix
 cache on disk".
 
 - It needs an image from a SparkGLM revision whose `serve.py` reads
-  `SPARKGLM_PREFIX_CACHE_GB`. The image pinned above predates it and ignores
-  the variable, so move the pin before setting `prefixCacheGb`.
+  `SPARKGLM_PREFIX_CACHE_GB` (the image pinned above does).
 - The directory must be on the node's own disk (ext4/xfs), with the size free.
   The engine refuses tmpfs, ramfs, overlayfs, an unwritable directory, a disk
   that cannot hold the KV half, and ranks whose settings differ. To use
