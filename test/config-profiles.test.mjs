@@ -168,6 +168,57 @@ try {
   await assert.rejects(() => readProfile(config, '../escape'), /Invalid profile name/);
   await assert.rejects(() => readProfile(config, 'missing'), /ENOENT/);
 
+  // -- direct singleton pins on profiled aliases ------------------------------
+  // Reset the source so this scenario exercises the controller against a
+  // profiled alias with multiple sequential singleton pins.
+  await fs.writeFile(configPath, `${JSON.stringify(source, null, 2)}\n`);
+  const directLocal = normalizeProfileDocument({ routes: { omp: 'local-model' } }, 'pin-local');
+  const directCloud = normalizeProfileDocument({ routes: { omp: 'cloud-model' } }, 'pin-cloud');
+  await writeProfileFile('pin-local', directLocal);
+  await writeProfileFile('pin-cloud', directCloud);
+
+  const directComposed = composeProfile(structuredClone(source), directLocal, 'pin-local');
+  const directRoute = directComposed.aliases.omp.activeRoute;
+  assert.match(directRoute, /^fleet-singleton-[a-f0-9]{64}$/);
+  assert.deepEqual(directComposed.aliases.omp.routeProfiles[directRoute], { members: ['local-model'] });
+  const directPlan = planProfileChanges(config, directLocal);
+  assert.equal(
+    directPlan.routes[0].activeRoute,
+    directRoute,
+    'planning and composition choose the same singleton route'
+  );
+  const directStaged = path.join(directory, 'direct-staged.json');
+  await fs.writeFile(directStaged, `${JSON.stringify(directComposed, null, 2)}\n`);
+  const directReloaded = await loadConfig(directStaged, { env: { ...process.env, OPENROUTER_API_KEY: 'test' } });
+  assert.equal(directReloaded.aliases.omp.activeRoute, directRoute);
+
+  await controller.apply('pin-local', { yes: true });
+  const pinnedLocal = JSON.parse(await fs.readFile(configPath, 'utf8'));
+  const localRoute = pinnedLocal.aliases.omp.activeRoute;
+  assert.equal(localRoute, directRoute);
+  assert.deepEqual(pinnedLocal.aliases.omp.routeProfiles[localRoute], { members: ['local-model'] });
+  await loadConfig(configPath, { env: { ...process.env, OPENROUTER_API_KEY: 'test' } });
+
+  await controller.apply('pin-cloud', { yes: true });
+  const pinnedCloud = JSON.parse(await fs.readFile(configPath, 'utf8'));
+  const cloudRoute = pinnedCloud.aliases.omp.activeRoute;
+  assert.match(cloudRoute, /^fleet-singleton-[a-f0-9]{64}$/);
+  assert.notEqual(cloudRoute, localRoute);
+  assert.deepEqual(pinnedCloud.aliases.omp.routeProfiles[localRoute], { members: ['local-model'] });
+  assert.deepEqual(pinnedCloud.aliases.omp.routeProfiles[cloudRoute], { members: ['cloud-model'] });
+  await loadConfig(configPath, { env: { ...process.env, OPENROUTER_API_KEY: 'test' } });
+
+  const savedSingleton = await controller.save('singleton-snapshot', { yes: true });
+  const singletonSnapshot = JSON.parse(await fs.readFile(savedSingleton.file, 'utf8'));
+  assert.equal(singletonSnapshot.routes.omp, cloudRoute);
+
+  await controller.apply('pin-local', { yes: true });
+  await controller.apply('singleton-snapshot', { yes: true });
+  const restoredSingleton = JSON.parse(await fs.readFile(configPath, 'utf8'));
+  assert.equal(restoredSingleton.aliases.omp.activeRoute, cloudRoute);
+  assert.deepEqual(restoredSingleton.aliases.omp.members, ['cloud-model']);
+  await loadConfig(configPath, { env: { ...process.env, OPENROUTER_API_KEY: 'test' } });
+
   console.log('fleet profile tests passed');
 } finally {
   await fs.rm(directory, { recursive: true, force: true });

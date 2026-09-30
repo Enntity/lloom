@@ -9,12 +9,14 @@
 // Applying validates the composed config completely before the atomic write
 // (mutateConfigSource validates the staged file), so a swap is all-or-nothing.
 import { promises as fs } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { mutateConfigSource } from './config-mutation.mjs';
 import { loadConfig } from './config.mjs';
 
 const RESIDENCY = new Set(['always', 'preferred', 'auto']);
 const MAX_PROFILE_BYTES = 256 * 1024;
+const SINGLETON_ROUTE_PREFIX = 'fleet-singleton-';
 
 function fail(message, statusCode = 400) {
   return Object.assign(new Error(message), { statusCode });
@@ -26,6 +28,20 @@ function object(value) {
 
 function safeName(name) {
   return typeof name === 'string' && /^[a-z0-9][a-z0-9._-]{0,63}$/i.test(name) ? name : null;
+}
+
+function singletonRouteProfileName(target) {
+  return SINGLETON_ROUTE_PREFIX + createHash('sha256').update(target).digest('hex');
+}
+
+function isSingletonRouteProfile(profile, target) {
+  if (!object(profile) || !Array.isArray(profile.members)) return false;
+  const optionalMembers = profile.optionalMembers;
+  return (
+    profile.members.length === 1 &&
+    profile.members[0] === target &&
+    (optionalMembers == null || (Array.isArray(optionalMembers) && optionalMembers.length === 0))
+  );
 }
 
 async function assertProfileDir(dir) {
@@ -65,7 +81,17 @@ export function resolveRouteTarget(alias, target) {
   const known = (candidate) =>
     candidate === id || (object(alias.members)?.includes ?? (() => false)).call(alias.members, id);
   if (!known(id) && !Array.isArray(alias.members)) throw fail(`Alias has no route profile or member named ${id}.`);
-  return { activeRoute: null, members: [id], optionalMembers: [] };
+  // A profiled alias must keep an activeRoute whenever routeProfiles exists.
+  // Use a content-addressed name so successive singleton pins retain each
+  // prior route and saved profile documents remain valid after later pins.
+  const activeRoute = alias.routeProfiles ? singletonRouteProfileName(id) : null;
+  if (activeRoute) {
+    const existing = profiles[activeRoute];
+    if (existing && !isSingletonRouteProfile(existing, id)) {
+      throw fail(`Generated route profile ${activeRoute} collides with a different singleton target.`, 409);
+    }
+  }
+  return { activeRoute, members: [id], optionalMembers: [] };
 }
 
 export function normalizeProfileDocument(raw, name) {
@@ -214,11 +240,20 @@ export function composeProfile(raw, doc, name) {
     }
     if (!object(alias)) throw fail(`Config has no alias ${aliasId}.`, 409);
     const resolved = resolveRouteTarget({ ...alias }, target);
+    const namedProfile = object(alias.routeProfiles)?.[target];
     alias.members = resolved.members;
     if (resolved.optionalMembers.length) alias.optionalMembers = resolved.optionalMembers;
     else delete alias.optionalMembers;
-    if (resolved.activeRoute) alias.activeRoute = resolved.activeRoute;
-    else delete alias.activeRoute;
+    if (resolved.activeRoute) {
+      alias.activeRoute = resolved.activeRoute;
+      if (!namedProfile && alias.routeProfiles) {
+        const routeProfiles = { ...alias.routeProfiles };
+        routeProfiles[resolved.activeRoute] ??= { members: [...resolved.members] };
+        alias.routeProfiles = routeProfiles;
+      }
+    } else {
+      delete alias.activeRoute;
+    }
     // A fresh route invalidates stale per-member suspensions.
     delete alias.suspendedMembers;
     aliases[aliasId] = alias;
