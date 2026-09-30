@@ -158,6 +158,18 @@
           "--model-root",
           "${modelRoot}"
         ]
+      },
+      {
+        "id": "prepare-atlas-prefix-cache",
+        "title": "Create the directory for the optional prefix cache on disk",
+        "action": "command",
+        "alwaysRun": true,
+        "command": "mkdir",
+        "args": [
+          "-p",
+          "${installRoot}/atlas-prefix-cache/kv",
+          "${installRoot}/atlas-prefix-cache/ssm"
+        ]
       }
     ]
   },
@@ -221,6 +233,7 @@
         "startupRetryAfterSeconds": 30,
         "healthTimeoutMs": 5000,
         "memoryGb": 114,
+        "prefixCacheGb": 0,
         "priority": 150,
         "keepWarm": false,
         "startupTimeoutMs": 7200000,
@@ -291,6 +304,8 @@
                     "type=bind,src=${installRoot}/atlas-overlay,dst=${installRoot}/atlas-overlay,readonly",
                     "--mount",
                     "type=bind,src=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2,dst=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2,readonly",
+                    "--mount",
+                    "type=bind,src=${installRoot}/atlas-prefix-cache,dst=/prefix-cache",
                     "-e",
                     "NODE_RANK=${nodeRank}",
                     "-e",
@@ -313,6 +328,8 @@
                     "SERVED_MODEL_NAME=glm-5.3-flash-atlas",
                     "-e",
                     "SPARKGLM_GPU_MEMORY_UTILIZATION=0.93",
+                    "-e",
+                    "SPARKGLM_PREFIX_CACHE_GB=${prefixCacheGb}",
                     "-e",
                     "ATLAS_WORLD_SIZE=2",
                     "-e",
@@ -434,6 +451,8 @@
                     "type=bind,src=${installRoot}/atlas-overlay,dst=${installRoot}/atlas-overlay,readonly",
                     "--mount",
                     "type=bind,src=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2,dst=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2,readonly",
+                    "--mount",
+                    "type=bind,src=${installRoot}/atlas-prefix-cache,dst=/prefix-cache",
                     "-e",
                     "NODE_RANK=${nodeRank}",
                     "-e",
@@ -456,6 +475,8 @@
                     "SERVED_MODEL_NAME=glm-5.3-flash-atlas",
                     "-e",
                     "SPARKGLM_GPU_MEMORY_UTILIZATION=0.93",
+                    "-e",
+                    "SPARKGLM_PREFIX_CACHE_GB=${prefixCacheGb}",
                     "-e",
                     "ATLAS_WORLD_SIZE=2",
                     "-e",

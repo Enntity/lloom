@@ -54,16 +54,18 @@ assert.deepEqual(
     'download-atlas-model',
     'download-atlas-drafter',
     'build-atlas-image',
-    'convert-atlas-overlay'
+    'convert-atlas-overlay',
+    'prepare-atlas-prefix-cache'
   ]
 );
+const gatedSteps = ['verify-atlas-pins', 'build-atlas-image', 'convert-atlas-overlay', 'prepare-atlas-prefix-cache'];
 assert.deepEqual(
   recipe.setup.steps
     .filter((step) => step.action !== 'check-command' && step.action !== 'download-model')
     .map((step) => step.id),
-  ['verify-atlas-pins', 'build-atlas-image', 'convert-atlas-overlay']
+  gatedSteps
 );
-for (const stepId of ['verify-atlas-pins', 'build-atlas-image', 'convert-atlas-overlay']) {
+for (const stepId of gatedSteps) {
   assert.equal(
     recipe.setup.steps.find((step) => step.id === stepId).alwaysRun,
     true,
@@ -87,6 +89,9 @@ assert.equal(model.settings.priority, 150);
 assert.equal(model.settings.startupTimeoutMs, 7200000);
 assert.equal(model.settings.watchdog.oomGuardMb ?? 4096, 4096);
 assert.deepEqual(model.input, ['text', 'image', 'video']);
+// The prefix cache on disk ships off (0). A size of 16-100 GiB per node turns
+// it on; the image's serve.py validates it and sets the engine's variables.
+assert.equal(model.settings.prefixCacheGb, 0);
 assert(model.capabilities.includes('vision'));
 assert(model.capabilities.includes('structured-output'));
 const downloadStep = recipe.setup.steps.find((step) => step.id === 'download-atlas-model');
@@ -165,10 +170,14 @@ for (const member of members) {
     'NCCL_IB_HCA=rocep1s0f0',
     'NCCL_IB_ADDR_FAMILY=AF_INET',
     'NCCL_CROSS_NIC=0',
-    'NCCL_SOCKET_IFNAME=${fabricInterface}'
+    'NCCL_SOCKET_IFNAME=${fabricInterface}',
+    'type=bind,src=${installRoot}/atlas-prefix-cache,dst=/prefix-cache',
+    'SPARKGLM_PREFIX_CACHE_GB=${prefixCacheGb}'
   ]) {
     assert(rendered.includes(expected), `missing Atlas launch control: ${expected}`);
   }
+  // Tier settings come only from serve.py, identical on both ranks.
+  assert(!/ATLAS_(KV_NVME|SSM_TIER|GLM_NVME)/.test(rendered));
   // The baseline launched with the tool grammar disabled; functionality wins.
   assert(!rendered.includes('disable-tool-grammar'), 'tool grammar must stay enabled');
   assert(!rendered.includes('--ipc private'), 'the private-ipc baseline flag must not be copied');
@@ -191,7 +200,14 @@ assert(readme.includes('127.0.0.1:8894'));
 assert(readme.includes('/opt/atlas/serve.py'));
 assert(readme.includes(pins.image.profilePath));
 assert.equal(pins.image.profilePath, '/opt/atlas/profiles/4x512k.json');
-for (const key of ['NODE_RANK', 'MASTER_ADDR', 'MASTER_PORT', 'FABRIC_INTERFACE', 'MODEL_PATH']) {
+for (const key of [
+  'NODE_RANK',
+  'MASTER_ADDR',
+  'MASTER_PORT',
+  'FABRIC_INTERFACE',
+  'MODEL_PATH',
+  'SPARKGLM_PREFIX_CACHE_GB'
+]) {
   assert(readme.includes(key), `the image env contract must document ${key}`);
 }
 
@@ -221,9 +237,16 @@ assert.deepEqual(
     'download-atlas-model',
     'download-atlas-drafter',
     'build-atlas-image',
-    'convert-atlas-overlay'
+    'convert-atlas-overlay',
+    'prepare-atlas-prefix-cache'
   ]
 );
+assert.deepEqual(plan.steps.find((step) => step.id === 'prepare-atlas-prefix-cache').command, [
+  'mkdir',
+  '-p',
+  '/install/atlas-prefix-cache/kv',
+  '/install/atlas-prefix-cache/ssm'
+]);
 // The drafter lands exactly where both members mount it as DRAFTER_PATH.
 assert.equal(
   plan.steps.find((step) => step.id === 'download-atlas-drafter').destination,
@@ -332,31 +355,33 @@ fs.rmSync(statusRoot, { recursive: true, force: true });
 // Runtime materialization must resolve the same managed paths used by setup.
 // Absolute source/output mounts are required because the converter can emit
 // absolute symlinks into the overlay.
-const materialized = deriveUserConfig(
-  {
-    server: { host: '127.0.0.1', port: 8100 },
-    security: {},
-    defaults: {},
-    models: [],
-    backends: {},
-    runtimes: {},
-    aliases: {},
-    clientCatalog: { modelOrder: [] },
-    cluster: {
-      leaderNode: 'spark01',
-      nodes: {
-        spark01: { backendHost: '10.0.0.1', fabricInterface: 'eth0' },
-        spark02: { backendHost: '10.0.0.2', fabricInterface: 'eth0', labels: { role: 'worker' } }
+const materialize = (recipeDocument) =>
+  deriveUserConfig(
+    {
+      server: { host: '127.0.0.1', port: 8100 },
+      security: {},
+      defaults: {},
+      models: [],
+      backends: {},
+      runtimes: {},
+      aliases: {},
+      clientCatalog: { modelOrder: [] },
+      cluster: {
+        leaderNode: 'spark01',
+        nodes: {
+          spark01: { backendHost: '10.0.0.1', fabricInterface: 'eth0' },
+          spark02: { backendHost: '10.0.0.2', fabricInterface: 'eth0', labels: { role: 'worker' } }
+        }
       }
+    },
+    recipeDocument,
+    {
+      modelRoot: '/models',
+      additive: true,
+      backendVariables: { repoRoot: root, backendRoot: '/backend', installRoot: '/install' }
     }
-  },
-  recipe,
-  {
-    modelRoot: '/models',
-    additive: true,
-    backendVariables: { repoRoot: root, backendRoot: '/backend', installRoot: '/install' }
-  }
-);
+  );
+const materialized = materialize(recipe);
 const additiveExisting = deriveUserConfig(
   {
     server: { host: '127.0.0.1', port: 8100 },
@@ -409,6 +434,17 @@ for (const runtimeId of ['glm53-flash-atlas-worker', 'glm53-flash-atlas-head']) 
   assert(args.includes('src=/models/nvidia--GLM-5.3-Flash-NVFP4,dst=/models/nvidia--GLM-5.3-Flash-NVFP4'));
   assert(args.includes('src=/install/atlas-overlay,dst=/install/atlas-overlay'));
   assert(args.includes('MODEL_PATH=/install/atlas-overlay'));
+  assert(args.includes('src=/install/atlas-prefix-cache,dst=/prefix-cache'));
+  assert(args.includes('-e SPARKGLM_PREFIX_CACHE_GB=0 '));
+}
+// Sizing the cache in the recipe turns it on for both ranks alike.
+const diskCacheRecipe = structuredClone(recipe);
+diskCacheRecipe.models[0].settings.prefixCacheGb = 48;
+const diskCache = materialize(diskCacheRecipe);
+for (const runtimeId of ['glm53-flash-atlas-worker', 'glm53-flash-atlas-head']) {
+  const args = diskCache.runtimes[runtimeId].bootstrap.createArgs.join(' ');
+  assert(args.includes('-e SPARKGLM_PREFIX_CACHE_GB=48 '), `${runtimeId} must size the disk cache`);
+  assert(args.includes('src=/install/atlas-prefix-cache,dst=/prefix-cache'));
 }
 
 // ---- final portable pins and explicit invalid-manifest fixture -------------
