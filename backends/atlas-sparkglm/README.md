@@ -3,7 +3,7 @@
 LLooM-managed two-node Atlas SparkGLM candidate for a directly connected pair
 of NVIDIA DGX Spark systems. This directory is **MIT orchestration only**: no
 Atlas engine source is committed here. The engine image is built from immutable
-revision `04b2dd7f5d07402ed6b7b21c4ec732781b2b8bc7` of `Enntity/sparkglm` by
+revision `be59ea7b817c610e8cd8ca0333c35238fb271383` of `Enntity/sparkglm` by
 that repository's `install/build.sh`. Live hardware and full serving
 qualification remain pending.
 
@@ -18,7 +18,7 @@ qualification remain pending.
   first 12 characters of the install tree, or any portable identity is a
   placeholder. It rejects a pinned image ID: IDs differ between a pull and a
   local build, so identity is the install-tree label.
-- `install.sh` — prepares `ghcr.io/enntity/atlas-sparkglm:f37181991505`. It
+- `install.sh` — prepares `ghcr.io/enntity/atlas-sparkglm:896f0a60a6b0`. It
   reuses an already verified local image, otherwise pulls the tag from GHCR,
   otherwise clones `Enntity/sparkglm` at the pinned revision, checks that
   `HEAD:install` is the pinned tree, and runs `install/build.sh`, which must
