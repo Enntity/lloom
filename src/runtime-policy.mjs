@@ -306,6 +306,18 @@ function clusterRuntimePolicyPlan(
   }
   const configuredNodes = clusterNodes(config);
   const clusterStatus = status?.cluster ?? profile?.cluster ?? {};
+  // A request only consumes memory on the nodes named by its placement. Keep
+  // independent pressure on other nodes out of this admission decision so a
+  // local start cannot evict unrelated work or wait on an unrelated deficit.
+  // A plan without a request is still a cluster-wide reconciliation pass.
+  const constrainedNodeIds =
+    requested && !requested.loaded
+      ? new Set(
+          Object.entries(requested.resourcesByNode ?? {})
+            .filter(([, resources]) => (numberOrNull(resources?.memoryGb) ?? 0) > 0)
+            .map(([nodeId]) => nodeId)
+        )
+      : null;
   const nodes = {};
 
   for (const nodeId of Object.keys(configuredNodes)) {
@@ -343,6 +355,7 @@ function clusterRuntimePolicyPlan(
     const predictive = nodeProfile.availableMemoryGb != null;
     const projectedMemoryGb = Math.max(actualUsedMemoryGb, loadedMemoryGb) + requestedAddsMemoryGb;
     const overBudgetGb = Math.max(0, projectedMemoryGb - memoryBudgetGb);
+    const contributesToAdmission = constrainedNodeIds === null || constrainedNodeIds.has(nodeId);
     nodes[nodeId] = {
       ...nodeProfile,
       reserveMemoryGb,
@@ -356,7 +369,7 @@ function clusterRuntimePolicyPlan(
       // Admission protects *new* allocations. A request for an already-loaded
       // runtime consumes no additional model memory and must not wait on the
       // very active request that is asking to use it.
-      overBudgetGb: requested?.loaded ? 0 : overBudgetGb
+      overBudgetGb: requested?.loaded || !contributesToAdmission ? 0 : overBudgetGb
     };
   }
 

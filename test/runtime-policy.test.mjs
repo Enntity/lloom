@@ -315,6 +315,69 @@ assert.equal(
 );
 assert.equal(clusteredReserve.admission.nodes.mac.predictive, true);
 
+const localClusterAdmission = await createRuntimePolicyPlan(
+  {
+    cluster: {
+      nodeId: 'ennspark03',
+      leaderNode: 'ennspark03',
+      nodes: {
+        ennspark01: { resources: { memoryGb: 128 } },
+        ennspark02: { resources: { memoryGb: 128 } },
+        ennspark03: { resources: { memoryGb: 128 } }
+      }
+    },
+    runtimePolicy: { maxMemoryUtilization: 0.9, autoEvict: true, protectActiveRequests: true },
+    runtimes: {
+      unrelatedIdle: { enabled: true, node: 'ennspark01', memoryGb: 20 },
+      unrelatedBusy: { enabled: true, node: 'ennspark02', memoryGb: 20 },
+      requested: { enabled: true, node: 'ennspark03', memoryGb: 46 }
+    }
+  },
+  {
+    requestedRuntimeId: 'requested',
+    requesterNode: 'ennspark03',
+    status: {
+      runtimes: {
+        unrelatedIdle: { healthy: true, status: 'running', activeRequests: 0 },
+        unrelatedBusy: { healthy: true, status: 'running', activeRequests: 1 },
+        requested: { healthy: false, status: 'idle', activeRequests: 0 }
+      },
+      cluster: {
+        nodes: {
+          ennspark01: {
+            reachable: true,
+            telemetry: { memory: { totalBytes: 128 * 1024 ** 3, availableBytes: 0 } }
+          },
+          ennspark02: {
+            reachable: true,
+            telemetry: { memory: { totalBytes: 128 * 1024 ** 3, availableBytes: 0 } }
+          },
+          ennspark03: {
+            local: true,
+            reachable: true,
+            telemetry: { memory: { totalBytes: 128 * 1024 ** 3, availableBytes: 68 * 1024 ** 3 } }
+          }
+        }
+      }
+    }
+  }
+);
+assert.equal(localClusterAdmission.admission.allowed, true, 'local request ignores unrelated node pressure');
+assert.equal(localClusterAdmission.admission.overBudgetGb, 0);
+assert.equal(localClusterAdmission.admission.nodes.ennspark01.overBudgetGb, 0);
+assert.equal(localClusterAdmission.admission.nodes.ennspark02.overBudgetGb, 0);
+assert.equal(localClusterAdmission.admission.nodes.ennspark03.projectedMemoryGb, 106);
+assert.deepEqual(
+  localClusterAdmission.actions.map((action) => `${action.type}:${action.runtimeId}`),
+  ['start:requested'],
+  'unrelated pressure must not trigger eviction while the requested node fits'
+);
+assert.deepEqual(
+  runtimeAdmissionBlockers(localClusterAdmission),
+  { active: [], pinned: [], authority: [] },
+  'active work on an unrelated node is not a blocker for a local request'
+);
+
 const predictiveStatus = {
   runtimes: {
     loaded: { healthy: true, status: 'running', activeRequests: 0 },
