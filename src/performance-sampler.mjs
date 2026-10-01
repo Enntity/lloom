@@ -21,6 +21,7 @@ export function createPerformanceSampler({ now = Date.now, windowMs = 600000, ma
     active.delete(id);
   }
   function record(entry) {
+    if (entry.interrupted === true) return;
     const model = entry.resolvedModel ?? entry.model;
     if (!model || !finite(entry.durationMs)) return;
     const first = entry.stream === true && finite(entry.firstContentMs) ? entry.firstContentMs : null;

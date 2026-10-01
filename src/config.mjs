@@ -138,6 +138,14 @@ function validateConfig(config, sourcePath, env) {
   if (config.server?.inferenceEnabled != null && typeof config.server.inferenceEnabled !== 'boolean') {
     errors.push('server.inferenceEnabled must be a boolean');
   }
+  if (
+    config.server?.foregroundIdleMs != null &&
+    (!Number.isInteger(config.server.foregroundIdleMs) ||
+      config.server.foregroundIdleMs < 0 ||
+      config.server.foregroundIdleMs > 3_600_000)
+  ) {
+    errors.push('server.foregroundIdleMs must be an integer between 0 and 3600000');
+  }
 
   for (const [index, model] of (config.models ?? []).entries()) {
     if (!model?.id) errors.push(`models[${index}] is missing id`);

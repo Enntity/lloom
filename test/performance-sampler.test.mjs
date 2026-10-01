@@ -11,6 +11,16 @@ import { createLloomServer } from '../src/server.mjs';
 const candidate = (id, runtime) => ({ resolvedId: id, model: { id, runtime } });
 const success = (model, durationMs, extra = {}) => ({ model, ok: true, durationMs, ...extra });
 
+test('priority interruptions do not bias fastest-member observations', () => {
+  const sampler = createPerformanceSampler();
+  sampler.record(success('fast', 100));
+  sampler.record(success('slow', 200));
+  sampler.record({ model: 'fast', ok: false, interrupted: true, durationMs: 10 });
+  assert.equal(sampler.stats('fast').errors, 0);
+  assert.equal(sampler.stats('fast').samples, 1);
+  assert.equal(sampler.rank([candidate('fast'), candidate('slow')])[0].resolvedId, 'fast');
+});
+
 test('bounded recent stats expire and isolate concrete models from aliases', () => {
   let time = 100;
   const sampler = createPerformanceSampler({ now: () => time, windowMs: 1000, maxSamples: 2 });

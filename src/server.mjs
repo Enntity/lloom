@@ -64,6 +64,7 @@ import { mutateConfigSource } from './config-mutation.mjs';
 import { createModelMaintenanceController } from './model-maintenance-control.mjs';
 import { acquireRateLimitSlot, consumeRateBudget, createRateLimitRegistry } from './rate-limit.mjs';
 import { RuntimeManager, runtimeWatchdogConfig, normalizeRequestClass } from './runtime-manager.mjs';
+import { ForegroundPriority } from './foreground-priority.mjs';
 import { createPreferredResidencyReconciler } from './runtime-residency.mjs';
 import { createRuntimePreferenceController } from './runtime-preferences.mjs';
 import { createDashboardInstallation } from './dashboard-installation.mjs';
@@ -318,14 +319,23 @@ function endResponseWithError(res, error, { stream = false, config = {}, status 
   if (!canWriteBody(res)) return false;
   try {
     if (!res.headersSent) {
-      const headers = error?.retryAfterSeconds ? { 'retry-after': String(error.retryAfterSeconds) } : {};
+      const headers = {
+        ...(error?.retryAfterSeconds ? { 'retry-after': String(error.retryAfterSeconds) } : {}),
+        ...(code === 'INTERACTIVE_PRIORITY' ? { 'x-lloom-error-code': code } : {})
+      };
       return sendJson(res, status, errorBody(message, { type, code, model: error?.model }), headers, config);
     }
     if (stream) {
       // OpenAI-style stream error chunk, then DONE.
       res.write(
         `data: ${JSON.stringify({
-          error: { message, type, code, status }
+          error: {
+            message,
+            type,
+            code,
+            status,
+            retryAfterMs: error?.retryAfterMs ?? Number(error?.retryAfterSeconds ?? 0) * 1000
+          }
         })}\n\n`
       );
       res.write('data: [DONE]\n\n');
@@ -530,7 +540,7 @@ function isClientClosedError(error) {
   return error instanceof ClientClosedError || error?.name === 'ClientClosedError' || error?.code === 'client_closed';
 }
 
-const QUEUE_BACKPRESSURE_CODES = new Set(['RUNTIME_QUEUE_TIMEOUT', 'RUNTIME_QUEUE_FULL']);
+const QUEUE_BACKPRESSURE_CODES = new Set(['RUNTIME_QUEUE_TIMEOUT', 'RUNTIME_QUEUE_FULL', 'INTERACTIVE_PRIORITY']);
 
 /** Queue saturation (local, or relayed by a federated node) is load, not target failure. */
 function isQueueBackpressureError(error) {
@@ -548,6 +558,7 @@ function errorStatusCode(error) {
 }
 
 export function shouldFailoverModelRequest(error, res = null) {
+  if (error?.code === 'INTERACTIVE_PRIORITY' || error?.upstreamCode === 'INTERACTIVE_PRIORITY') return false;
   if (res?.headersSent || res?.writableEnded || res?.destroyed) return false;
   if (isClientClosedError(error) || error instanceof PromptTooLargeError || error instanceof StructuredOutputError) {
     return false;
@@ -570,11 +581,12 @@ export function shouldFailoverModelRequest(error, res = null) {
 async function upstreamStatusError(upstream) {
   const text = await readErrorDiagnostic(upstream);
   let message = text;
-  let upstreamCode = null;
+  let upstreamCode =
+    upstream.headers.get('x-lloom-error-code') === 'INTERACTIVE_PRIORITY' ? 'INTERACTIVE_PRIORITY' : null;
   try {
     const parsed = JSON.parse(text)?.error;
     message = parsed?.message ?? text;
-    upstreamCode = typeof parsed?.code === 'string' ? parsed.code : null;
+    upstreamCode = typeof parsed?.code === 'string' ? parsed.code : upstreamCode;
   } catch {
     // Keep the raw upstream response as the diagnostic message.
   }
@@ -609,7 +621,9 @@ function createClientCloseTracker(req, res) {
   res.on('close', markClosed);
   if (req.aborted || (res.destroyed && !res.writableEnded)) markClosed();
   return {
-    signal: controller.signal,
+    signal: req.foregroundPrioritySignal
+      ? AbortSignal.any([controller.signal, req.foregroundPrioritySignal])
+      : controller.signal,
     get closed() {
       return closed;
     },
@@ -625,8 +639,26 @@ function upstreamSignal(parentSignal, timeoutMs) {
   return parentSignal ? AbortSignal.any([parentSignal, timeout]) : timeout;
 }
 
+async function waitForRequest(operation, signal) {
+  if (!signal) return operation;
+  signal.throwIfAborted();
+  let onAbort;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise((_, reject) => {
+        onAbort = () => reject(signal.reason);
+        signal.addEventListener('abort', onAbort, { once: true });
+      })
+    ]);
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
+}
+
 function normalizeAbortError(error, signal, timeoutMs) {
   if (!signal?.aborted) return error;
+  if (signal.reason?.code === 'INTERACTIVE_PRIORITY') return signal.reason;
   if (isClientClosedError(signal.reason)) return signal.reason;
   if (signal.reason?.name === 'TimeoutError') {
     return new Error(`upstream request timed out after ${timeoutMs}ms`);
@@ -635,6 +667,7 @@ function normalizeAbortError(error, signal, timeoutMs) {
 }
 
 function throwIfClientClosed(signal, res) {
+  if (signal?.aborted && signal.reason?.code === 'INTERACTIVE_PRIORITY') throw signal.reason;
   if (signal?.aborted && isClientClosedError(signal.reason)) throw signal.reason;
   if (res?.destroyed && !res.writableEnded) throw new ClientClosedError();
 }
@@ -643,10 +676,12 @@ async function readBody(req, { limitBytes = 64 * 1024 * 1024 } = {}) {
   const chunks = [];
   let total = 0;
   for await (const chunk of req) {
+    req.foregroundPrioritySignal?.throwIfAborted();
     total += chunk.length;
     if (total > limitBytes) throw new Error(`request body exceeds ${limitBytes} bytes`);
     chunks.push(chunk);
   }
+  req.foregroundPrioritySignal?.throwIfAborted();
   return Buffer.concat(chunks).toString('utf8');
 }
 
@@ -654,10 +689,12 @@ async function readBodyBuffer(req, { limitBytes = 512 * 1024 * 1024 } = {}) {
   const chunks = [];
   let total = 0;
   for await (const chunk of req) {
+    req.foregroundPrioritySignal?.throwIfAborted();
     total += chunk.length;
     if (total > limitBytes) throw new Error(`request body exceeds ${limitBytes} bytes`);
     chunks.push(chunk);
   }
+  req.foregroundPrioritySignal?.throwIfAborted();
   return Buffer.concat(chunks);
 }
 
@@ -704,6 +741,7 @@ function copyResponseHeaders(upstream) {
   for (const name of [
     'x-generation-id',
     'retry-after',
+    'x-lloom-error-code',
     'x-lloom-provider',
     'x-lloom-provider-job-id',
     'x-lloom-provider-origin',
@@ -1073,6 +1111,7 @@ export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } =
   }
 
   function apply(bucket, entry) {
+    if (entry.interrupted) return;
     bucket.requests += 1;
     if (!entry.ok) bucket.errors += 1;
     if (entry.stream) bucket.streams += 1;
@@ -1185,6 +1224,8 @@ export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } =
         requestClass: normalizeRequestClass(raw.requestClass ?? live?.requestClass),
         status: raw.status ?? 0,
         ok: raw.ok === true,
+        interrupted: raw.interrupted === true,
+        errorCode: raw.errorCode ?? null,
         stream: raw.stream === true,
         durationMs: raw.durationMs ?? 0,
         queueWaitMs: raw.queueWaitMs ?? null,
@@ -1229,7 +1270,11 @@ export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } =
       }
       const selectedModel = model ? (selectedGroup.models.get(model) ?? null) : null;
       const now = Date.now();
-      const rolling = rollingMetricWindows(recent, now, model);
+      const rolling = rollingMetricWindows(
+        recent.filter((entry) => !entry.interrupted),
+        now,
+        model
+      );
       return {
         object: 'gateway.metrics',
         generatedAt: new Date().toISOString(),
@@ -2018,6 +2063,7 @@ export function createLloomServer(
   const runtimeRecoveryBackoffs = new Map();
   const targetBackoffs = new Map();
   const rateLimitRegistry = createRateLimitRegistry(rateLimitSettingsFor(config));
+  const foregroundPriority = new ForegroundPriority({ idleMs: () => config.server?.foregroundIdleMs ?? 60_000 });
   const configPath = config.sourcePath;
 
   function rateLimitSettingsFor(configSnapshot = config) {
@@ -2386,6 +2432,8 @@ export function createLloomServer(
         caller: entry.caller ?? undefined,
         entity: entry.entity ?? undefined,
         purpose: entry.purpose ?? undefined,
+        interrupted: entry.interrupted || undefined,
+        errorCode: entry.errorCode,
         status: entry.status,
         durationMs: entry.durationMs,
         firstContentMs: entry.firstContentMs,
@@ -2471,9 +2519,13 @@ export function createLloomServer(
     return operation;
   }
 
-  async function ensureRuntime(runtimeId, { alternativeAvailable = false, allowEviction = true } = {}) {
+  async function ensureRuntime(runtimeId, { alternativeAvailable = false, allowEviction = true, signal = null } = {}) {
+    signal?.throwIfAborted();
     if (!runtimeId) return { runtimeId, started: false, reason: 'no-runtime' };
-    if (typeof runtimeManager.isHealthy === 'function' && (await runtimeManager.isHealthy(runtimeId))) {
+    if (
+      typeof runtimeManager.isHealthy === 'function' &&
+      (await waitForRequest(runtimeManager.isHealthy(runtimeId), signal))
+    ) {
       runtimeRecoveryBackoffs.delete(runtimeId);
       return { runtimeId, started: false, healthy: true, reason: 'already-healthy' };
     }
@@ -2485,26 +2537,33 @@ export function createLloomServer(
       // Once all ready alternatives have actually failed, let that operation
       // settle and retry under the foreground request's ordinary admission
       // authority instead of inheriting its weaker constraint.
-      await operation.catch(() => {});
+      await waitForRequest(
+        operation.catch(() => {}),
+        signal
+      );
       if (typeof runtimeManager.isHealthy === 'function' && (await runtimeManager.isHealthy(runtimeId))) {
         return { runtimeId, started: false, healthy: true, reason: 'background-recovery-completed' };
       }
       if (runtimeStartOperations.get(runtimeId) === operation) runtimeStartOperations.delete(runtimeId);
       operation = null;
     }
+    signal?.throwIfAborted();
     operation ??= startRuntimeOperation(runtimeId, { alternativeAvailable, allowEviction });
 
     const runtime = config.runtimes?.[runtimeId] ?? {};
     const foregroundWaitMs = Math.max(0, Number(runtime.requestStartupWaitMs ?? 1000));
     if (foregroundWaitMs > 0) {
       const stillStarting = Symbol('runtime-still-starting');
-      const result = await Promise.race([
-        operation,
-        new Promise((resolve) => {
-          const timer = setTimeout(() => resolve(stillStarting), foregroundWaitMs);
-          timer.unref?.();
-        })
-      ]);
+      const result = await waitForRequest(
+        Promise.race([
+          operation,
+          new Promise((resolve) => {
+            const timer = setTimeout(() => resolve(stillStarting), foregroundWaitMs);
+            timer.unref?.();
+          })
+        ]),
+        signal
+      );
       if (result !== stillStarting) {
         if (typeof runtimeManager.isHealthy !== 'function' || (await runtimeManager.isHealthy(runtimeId))) {
           return result;
@@ -2565,6 +2624,7 @@ export function createLloomServer(
     } catch (error) {
       releaseAll();
       if (error instanceof ModelRateLimitError) throw error;
+      if (error?.code === 'INTERACTIVE_PRIORITY') throw error;
       if (isClientClosedError(error)) {
         throw Object.assign(new ClientClosedError(), { cause: error });
       }
@@ -2687,7 +2747,9 @@ export function createLloomServer(
     const watchdog = { arm: armWatchdogTimer };
     try {
       const result = await clusterCoordinator.withTarget(resolved, async () => {
+        client.signal.throwIfAborted();
         await ensureRuntime(resolved.model.runtime, {
+          signal: client.signal,
           alternativeAvailable: resolved.routeSelection?.readyAlternativeAvailable === true,
           allowEviction: resolved.model.kind !== 'embedding'
         });
@@ -2695,6 +2757,7 @@ export function createLloomServer(
         return runtimeManager.withSlot(
           resolved.model.runtime,
           () => {
+            client.signal.throwIfAborted();
             runtimeStartedAt = Date.now();
             lastProgressAt = runtimeStartedAt;
             return fn({
@@ -2779,6 +2842,8 @@ export function createLloomServer(
         responseBytes: forwardedBytes,
         requestBytes,
         error: error?.message ?? String(error),
+        errorCode: error?.code,
+        interrupted: error?.code === 'INTERACTIVE_PRIORITY',
         upstreamGenerationId: error?.upstreamGenerationId,
         upstreamHeadersReceived: error?.upstreamHeadersReceived
       };
@@ -2822,7 +2887,8 @@ export function createLloomServer(
           stream: true,
           responseBytes: 0,
           usage: null,
-          error: error?.message ?? String(error)
+          error: error?.message ?? String(error),
+          interrupted: error?.code === 'INTERACTIVE_PRIORITY'
         };
       }
       throw error;
@@ -2835,6 +2901,7 @@ export function createLloomServer(
   }
 
   async function recordModelRequestWithFailover({ route, modelId, stream, req, res, kind = 'chat', request = {} }, fn) {
+    req.foregroundPrioritySignal?.throwIfAborted();
     let candidates = await resolveRequestModels(modelId, request);
     // Re-rank immediately before begin() so concurrent resolutions observe work
     // admitted by earlier requests rather than stampeding the same fast member.
@@ -2888,7 +2955,9 @@ export function createLloomServer(
           (context) => fn(resolved, { ...context, hasNext }),
           { deferUnsentErrors: hasNext }
         );
-        if (MODEL_FAILOVER_STATUS_CODES.has(Number(result?.status))) {
+        if (result?.interrupted === true) {
+          releaseTargetProbe(resolved);
+        } else if (MODEL_FAILOVER_STATUS_CODES.has(Number(result?.status))) {
           noteTargetFailure(
             resolved,
             Object.assign(new Error(`upstream status ${result.status}`), { statusCode: result.status })
@@ -2919,9 +2988,8 @@ export function createLloomServer(
 
   function inferenceGatewayHeaders(req, resolved) {
     if (!isFederatedGatewayBackend(config, resolved.model.backend)) return {};
-    return normalizeRequestClass(req.headers['x-lloom-request-class']) === 'interactive'
-      ? { 'x-lloom-request-class': 'interactive' }
-      : {};
+    const requestClass = normalizeRequestClass(req.headers['x-lloom-request-class']);
+    return requestClass !== 'standard' ? { 'x-lloom-request-class': requestClass } : {};
   }
 
   async function handleOpenAIChat(req, res) {
@@ -3879,6 +3947,7 @@ export function createLloomServer(
     }
 
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? '127.0.0.1'}`);
+    let priorityLease;
     try {
       const auth = authorizeRequest(req, config, {
         method: req.method,
@@ -3913,6 +3982,12 @@ export function createLloomServer(
       if (req.method === 'GET' && url.pathname === '/health') {
         sendJson(res, 200, { ok: true, name: config.name ?? 'LLooM', pid: process.pid }, {}, config);
         return;
+      }
+
+      if (auth.routeKind === 'inference' && req.method === 'POST') {
+        priorityLease = foregroundPriority.begin(normalizeRequestClass(req.headers['x-lloom-request-class']));
+        req.foregroundPrioritySignal = priorityLease.signal;
+        res.once('close', priorityLease.release);
       }
 
       if (req.method === 'GET' && url.pathname === '/gateway/security') {
@@ -4819,12 +4894,17 @@ export function createLloomServer(
         });
         return;
       }
-      logger.error?.(error);
+      if (error?.code !== 'INTERACTIVE_PRIORITY') logger.error?.(error);
       endResponseWithError(res, error, {
         stream: res.headersSent,
         config,
         status: errorStatusCode(error) || 500
       });
+    } finally {
+      if (priorityLease) {
+        res.off('close', priorityLease.release);
+        priorityLease.release();
+      }
     }
   }
 
