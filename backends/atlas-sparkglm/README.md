@@ -3,7 +3,7 @@
 LLooM-managed two-node Atlas SparkGLM candidate for a directly connected pair
 of NVIDIA DGX Spark systems. This directory is **MIT orchestration only**: no
 Atlas engine source is committed here. The engine image is built from immutable
-revision `80875a554bfacc458ece010deb7588fc76f5a164` of `Enntity/sparkglm` by
+revision `e58cdc237522f70e82d95e835721660608860eac` of `Enntity/sparkglm` by
 that repository's `install/build.sh`. The engine inside the image is
 AGPL-3.0-only; see [Credits and licenses](#credits-and-licenses). Live hardware
 and full serving qualification remain pending.
@@ -19,7 +19,7 @@ and full serving qualification remain pending.
   first 12 characters of the install tree, or any portable identity is a
   placeholder. It rejects a pinned image ID: IDs differ between a pull and a
   local build, so identity is the install-tree label.
-- `install.sh` — prepares `ghcr.io/enntity/atlas-sparkglm:0375d07345d8`. It
+- `install.sh` — prepares `ghcr.io/enntity/atlas-sparkglm:76b6e4976aa1`. It
   reuses an already verified local image, otherwise pulls the tag from GHCR,
   otherwise clones `Enntity/sparkglm` at the pinned revision, checks that
   `HEAD:install` is the pinned tree, and runs `install/build.sh`, which must
@@ -107,7 +107,7 @@ Inside the image:
   share one physical FP8-latent KV pool (about 1.6M tokens at the recipe's 0.93 GPU memory utilization; it also holds the prefix cache, with 16 recurrent-state snapshot slots); it does not reserve
   four full windows. `disable-tool-grammar` is deliberately **not** set, so
   structured output and tool grammar stay functional. The engine is built from
-  Enntity/atlas `sparkglm/atlas-20260930d` @ `eee8b883` (recorded in the
+  Enntity/atlas `sparkglm/atlas-20260930e` @ `08c90d8e` (recorded in the
   image's `/opt/atlas/source-manifest.json`); measured results are in
   Enntity/sparkglm `results/2026-09-30-decode-step/` (this engine) and
   `results/2026-09-30-nvme-tier/` (this image).
@@ -192,9 +192,9 @@ is not part of LLooM:
   `ghcr.io/enntity/atlas-sparkglm`, alongside LLooM (an aggregate); no engine
   source or binary is included in LLooM.
 - **Corresponding source.** [Enntity/sparkglm](https://github.com/Enntity/sparkglm)
-  at the pinned revision (`80875a55`) plus the Enntity/atlas commit recorded
+  at the pinned revision (`e58cdc23`) plus the Enntity/atlas commit recorded
   in the image's `/opt/atlas/source-manifest.json`
-  ([`eee8b883`](https://github.com/Enntity/atlas/tree/eee8b88340f83d63fdfbaf0703317477b7f38b40)).
+  ([`08c90d8e`](https://github.com/Enntity/atlas/tree/08c90d8e88f5c7db4e4542e26cddb9b3001fac5c)).
   SparkGLM's `NOTICE` and `docs/LICENSING.md` list everything else it fetches.
 - **Third-party notices in the image.** FlashKDA (MoonshotAI, MIT), FlashInfer
   including NVIDIA's sparse-MLA prefill source (Apache-2.0) and CUTLASS

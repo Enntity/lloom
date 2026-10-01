@@ -14,7 +14,7 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "Atlas SparkGLM candidate at product revision 80875a554bfacc458ece010deb7588fc76f5a164 (engine Enntity/atlas sparkglm/atlas-20260930d @ eee8b883, AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json; corresponding source is Enntity/sparkglm at that revision plus that Enntity/atlas commit). Image ghcr.io/enntity/atlas-sparkglm:0375d07345d8 is pulled from GHCR or built from Enntity/sparkglm install/ at that revision with the same tag; each host verifies its io.enntity.sparkglm.install-tree label equals install tree 0375d07345d80e132c86492851d692c431b690a7 and the image is arm64. Model nvidia/GLM-5.3-Flash-NVFP4 revision 423acf37583782c51c142d145aef733d72943d93 requires a once-per-node overlay conversion gated on conversion.complete.json plus verification; the DFlash2 drafter incoai/GLM-5.3-Flash-DFlash2 revision 7d74cdd881ed7e32c31175984a67823127b66cfe (CC BY-NC-ND 4.0, non-commercial) is served from its checkpoint. The engine argument vector ships inside the image as /opt/atlas/profiles/4x512k.json (the entrypoint default), not in this recipe. The profile carries 524288-token contexts, four sequences sharing one physical KV pool (GLM latent in FP8 with per-128 scales, about 1.6M tokens at the recipe's 0.93 GPU memory utilization, which overrides the profile default of 0.88, and shared with the prefix cache), FP32 SSM state with KDA record rollback, and DFlash2 (gamma 8) on the head rank; disable-tool-grammar is deliberately not set so structured output and tools stay functional."
+    "source": "Atlas SparkGLM candidate at product revision e58cdc237522f70e82d95e835721660608860eac (engine Enntity/atlas sparkglm/atlas-20260930e @ 08c90d8e, AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json; corresponding source is Enntity/sparkglm at that revision plus that Enntity/atlas commit). Image ghcr.io/enntity/atlas-sparkglm:76b6e4976aa1 is pulled from GHCR or built from Enntity/sparkglm install/ at that revision with the same tag; each host verifies its io.enntity.sparkglm.install-tree label equals install tree 76b6e4976aa109efa2760b8168f81c4b90521d79 and the image is arm64. Model nvidia/GLM-5.3-Flash-NVFP4 revision 423acf37583782c51c142d145aef733d72943d93 requires a once-per-node overlay conversion gated on conversion.complete.json plus verification; the DFlash2 drafter incoai/GLM-5.3-Flash-DFlash2 revision 7d74cdd881ed7e32c31175984a67823127b66cfe (CC BY-NC-ND 4.0, non-commercial) is served from its checkpoint. The engine argument vector ships inside the image as /opt/atlas/profiles/4x512k.json (the entrypoint default), not in this recipe. The profile carries 524288-token contexts, four sequences sharing one physical KV pool (GLM latent in FP8 with per-128 scales, about 1.6M tokens at the recipe's 0.93 GPU memory utilization, which overrides the profile default of 0.88, and shared with the prefix cache), FP32 SSM state with KDA record rollback, and DFlash2 (gamma 8) on the head rank; disable-tool-grammar is deliberately not set so structured output and tools stay functional."
   },
   "links": [
     {
@@ -23,7 +23,7 @@
     },
     {
       "rel": "engine",
-      "href": "https://github.com/Enntity/atlas/tree/eee8b88340f83d63fdfbaf0703317477b7f38b40"
+      "href": "https://github.com/Enntity/atlas/tree/08c90d8e88f5c7db4e4542e26cddb9b3001fac5c"
     },
     {
       "rel": "engine-upstream",
@@ -283,7 +283,7 @@
                 "warmup": false,
                 "bootstrap": {
                   "adapter": "docker",
-                  "image": "ghcr.io/enntity/atlas-sparkglm:0375d07345d8",
+                  "image": "ghcr.io/enntity/atlas-sparkglm:76b6e4976aa1",
                   "pull": false,
                   "pullTimeoutMs": 3600000,
                   "createArgs": [
@@ -430,7 +430,7 @@
                 },
                 "bootstrap": {
                   "adapter": "docker",
-                  "image": "ghcr.io/enntity/atlas-sparkglm:0375d07345d8",
+                  "image": "ghcr.io/enntity/atlas-sparkglm:76b6e4976aa1",
                   "pull": false,
                   "pullTimeoutMs": 3600000,
                   "createArgs": [
