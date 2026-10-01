@@ -1389,6 +1389,7 @@ export class RuntimeManager {
 
   acquireSlot(runtimeId, { signal = null, requestClass = 'standard' } = {}) {
     requestClass = normalizeRequestClass(requestClass);
+    if (requestClass === 'foreground') requestClass = 'interactive';
     if (maintenanceBlocksRouting(this.config, runtimeId)) throw maintenanceError(runtimeId);
     signal?.throwIfAborted?.();
     if (!runtimeId) return () => {};
@@ -2399,7 +2400,7 @@ export class RuntimeManager {
 }
 
 export function normalizeRequestClass(value) {
-  return value === 'interactive' ? 'interactive' : 'standard';
+  return ['interactive', 'foreground'].includes(value) ? value : 'standard';
 }
 
 function interactiveReservedSlots(runtime) {

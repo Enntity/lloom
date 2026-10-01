@@ -139,6 +139,7 @@ async function fixture(t, { holdStream = false, providerStatus = 200, rawFallbac
     }
   });
   return {
+    servingUrl,
     hits,
     fallbackHits,
     streamClosed: () => streamResponses.length > 0 && streamResponses.every((response) => response.destroyed),
@@ -205,7 +206,81 @@ const pathways = [
   ['speech', { route: '/v1/audio/speech', model: 'speech', body: { input: 'Hello', voice: 'alloy' } }],
   ['multipart transcription', { route: '/v1/audio/transcriptions', model: 'transcription', multipart: true }]
 ];
+test(
+  'foreground priority crosses federation and interrupts serving-node background work',
+  { timeout: 10000 },
+  async (t) => {
+    const f = await fixture(t, { holdStream: true });
+    const background = await fetch(`${f.servingUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer serving-fixture-key', 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'chat', stream: true, messages: [{ role: 'user', content: 'Synthetic presence' }] })
+    });
+    const interruptedBody = background.text();
+    await waitFor(() => f.manager.stateFor('limited').activeRequests === 1, 'serving background active');
+    const response = await f.request({
+      route: '/v1/chat/completions',
+      model: 'chat',
+      requestClass: 'foreground',
+      body: { messages: [{ role: 'user', content: 'Hello' }] }
+    }).response;
+    assert.equal(response.status, 200);
+    assert.match(await interruptedBody, /INTERACTIVE_PRIORITY/);
+    await waitFor(f.streamClosed, 'preempted serving stream closed');
+    assert.equal(f.hits.length, 2);
+    assert.equal(f.hits[1].headers['x-lloom-request-class'], undefined);
+    const blocked = await f.request({ requestClass: 'standard' }).response;
+    assert.equal(blocked.status, 409);
+    assert.equal((await blocked.json()).error.code, 'INTERACTIVE_PRIORITY');
+    await waitFor(
+      () => f.serving.metrics.snapshot().recent.some((entry) => entry.requestClass === 'foreground'),
+      'foreground serving metrics'
+    );
+  }
+);
+
+test(
+  'serving-node preemption preserves its custom idle delay in the relayed SSE error',
+  { timeout: 10000 },
+  async (t) => {
+    const f = await fixture(t, { holdStream: true });
+    f.manager.config.server.foregroundIdleMs = 125000;
+    const pending = f.request({
+      requestClass: 'standard',
+      route: '/v1/chat/completions',
+      model: 'chat',
+      body: { stream: true, messages: [{ role: 'user', content: 'Synthetic presence' }] }
+    });
+    const background = await pending.response;
+    const body = background.text();
+    await waitFor(() => f.hits.length === 1, 'relayed presence active');
+    const chat = await fetch(`${f.servingUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer serving-fixture-key',
+        'content-type': 'application/json',
+        'x-lloom-request-class': 'foreground'
+      },
+      body: JSON.stringify({ model: 'chat', messages: [{ role: 'user', content: 'Hello' }] })
+    });
+    assert.equal(chat.status, 200);
+    const text = await body;
+    assert.match(text, /INTERACTIVE_PRIORITY/);
+    assert.match(text, /"retryAfterMs":125000/);
+    assert.equal(f.front.metrics.snapshot().totals.errors, 0);
+  }
+);
+
 for (const [name, pathway] of pathways) {
+  test(`federated foreground ${name} preserves the conversation class`, { timeout: 10000 }, async (t) => {
+    const f = await fixture(t);
+    const response = await f.request({ ...pathway, requestClass: 'foreground' }).response;
+    assert.equal(response.status, 200, await response.clone().text());
+    await response.text();
+    await waitFor(() => f.serving.metrics.snapshot().recent.length === 1, 'foreground completion');
+    assert.equal(f.serving.metrics.snapshot().recent[0].requestClass, 'foreground');
+    assert.equal(f.hits[0].headers['x-lloom-request-class'], undefined);
+  });
   test(
     `federated ${name} uses serving-node reserved capacity without forwarding provider credentials`,
     { timeout: 10000 },

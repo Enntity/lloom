@@ -238,7 +238,8 @@ export function corsHeaders(config = {}) {
   return {
     'access-control-allow-origin': origin,
     'access-control-allow-methods': 'GET,POST,OPTIONS',
-    'access-control-allow-headers': 'authorization,content-type,x-api-key'
+    'access-control-allow-headers': 'authorization,content-type,x-api-key,x-lloom-request-class',
+    'access-control-expose-headers': 'retry-after,x-lloom-error-code'
   };
 }
 

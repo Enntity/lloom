@@ -38,8 +38,12 @@ export function streamProviderError(payload) {
   if (!payload?.error) return null;
   const detail = payload.error;
   const suppliedStatus = Number(detail.status ?? detail.code);
+  const retryAfterMs = Number(detail.retryAfterMs);
   return Object.assign(new Error(detail.message || 'Upstream stream failed'), {
     code: typeof detail.code === 'string' ? detail.code : 'upstream_error',
-    statusCode: suppliedStatus >= 400 && suppliedStatus <= 599 ? suppliedStatus : 502
+    statusCode: suppliedStatus >= 400 && suppliedStatus <= 599 ? suppliedStatus : 502,
+    ...(Number.isFinite(retryAfterMs) && retryAfterMs > 0
+      ? { retryAfterMs, retryAfterSeconds: Math.ceil(retryAfterMs / 1000) }
+      : {})
   });
 }
