@@ -140,14 +140,14 @@ The optional Atlas SparkGLM lane in `backends/atlas-sparkglm` and
 `recipes/linux-nvidia-dgx-spark-2x-glm53-atlas.json` pulls or builds the
 container image `ghcr.io/enntity/atlas-sparkglm` from
 [Enntity/sparkglm](https://github.com/Enntity/sparkglm) at
-`8eed7ef472d3c05c1f285c058174de6fbdd31674`. LLooM starts that image as a
+`80875a554bfacc458ece010deb7588fc76f5a164`. LLooM starts that image as a
 separate program; no engine source or binary is included in the LLooM npm
 package, and LLooM's files for the lane remain MIT.
 
 - Engine: [Atlas](https://github.com/Atlas-Inf/atlas) (Atlas-Inf) with
   SparkGLM's GLM-5.3 Flash work on the
   [Enntity/atlas](https://github.com/Enntity/atlas) fork, at
-  [`9b8160e3fb8deff898ab7c4db68483c12c37f105`](https://github.com/Enntity/atlas/tree/9b8160e3fb8deff898ab7c4db68483c12c37f105)
+  [`eee8b88340f83d63fdfbaf0703317477b7f38b40`](https://github.com/Enntity/atlas/tree/eee8b88340f83d63fdfbaf0703317477b7f38b40)
   (recorded in the image's `/opt/atlas/source-manifest.json`)
 - License: AGPL-3.0-only. The corresponding source is Enntity/sparkglm at the
   revision above plus that Enntity/atlas commit; SparkGLM's `NOTICE` and
