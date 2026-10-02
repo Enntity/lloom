@@ -136,6 +136,16 @@ function assertNoSecrets(summary) {
 
 // --- Tests ----------------------------------------------------------------
 
+test('preserves independent structured output settings in federated model entries', () => {
+  const src = sourceConfig();
+  src.models[0].structuredOutput = { adapter: 'json-schema', enabled: false };
+  const result = plan(destinationConfig(), src);
+  const entry = result.next.cluster.nodes[SOURCE_NODE].proxy.models.find((model) => model.id === 'kimi');
+  assert.deepEqual(entry.structuredOutput, src.models[0].structuredOutput);
+  entry.structuredOutput.enabled = true;
+  assert.equal(src.models[0].structuredOutput.enabled, false);
+});
+
 test('preserves destination runtimes, paths, local models and security keys', () => {
   const dest = destinationConfig();
   const snapshot = structuredClone(dest);

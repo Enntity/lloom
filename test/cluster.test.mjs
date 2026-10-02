@@ -248,6 +248,15 @@ const joinedNode = federatedNodeConfigFromSnapshot({
     }
   }
 });
+const schemaSettings = { adapter: 'json-schema', enabled: false };
+const schemaNode = federatedNodeConfigFromSnapshot({
+  nodeId: 'schema-node',
+  endpoint: 'http://schema-node:8100',
+  snapshot: { models: [{ id: 'schema-model', runtime: 'schema-runtime', structuredOutput: schemaSettings }] }
+});
+assert.deepEqual(schemaNode.proxy.models[0].structuredOutput, schemaSettings);
+schemaNode.proxy.models[0].structuredOutput.enabled = true;
+assert.equal(schemaSettings.enabled, false, 'federated schema settings must be independent of the source');
 assert.equal(joinedNode.endpoint, 'http://macbook:8100');
 assert.equal(joinedNode.labels.architecture, 'darwin-arm64');
 assert.deepEqual(
