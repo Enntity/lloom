@@ -139,7 +139,8 @@ export function prepareStructuredOutputForBackend(body = {}, resolved = {}) {
 
   const name = typeof contract.name === 'string' && contract.name.trim() ? contract.name.trim() : 'structured_output';
   const settings = isObject(resolved.backend?.structuredOutput) ? resolved.backend.structuredOutput : {};
-  if (settings.enabled === false) {
+  const modelSettings = isObject(resolved.model?.structuredOutput) ? resolved.model.structuredOutput : {};
+  if (settings.enabled === false || modelSettings.enabled === false) {
     throw new StructuredOutputError(
       `model ${resolved.requestedId ?? resolved.model?.id ?? '(unknown)'} does not enable structured output`,
       'structured_output_unsupported'
@@ -160,7 +161,7 @@ export function prepareStructuredOutputForBackend(body = {}, resolved = {}) {
     );
   }
 
-  const adapter = settings.adapter ?? (supportsTools(resolved) ? 'tool' : 'json-schema');
+  const adapter = modelSettings.adapter ?? settings.adapter ?? (supportsTools(resolved) ? 'tool' : 'json-schema');
   if (adapter === 'tool') {
     if (Array.isArray(next.tools) && next.tools.length) {
       throw new StructuredOutputError(

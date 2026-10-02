@@ -36,7 +36,11 @@ selected backend protocol. Tool-capable models default to a forced schema tool,
 whose arguments LLooM returns as ordinary JSON text; other models use native
 JSON Schema output. A backend can explicitly select `adapter: "tool"` or
 `adapter: "json-schema"` and request mandatory parameter routing under
-`backends.<id>.structuredOutput`. LLooM never infers behavior from provider
+`backends.<id>.structuredOutput`. A model's `structuredOutput.adapter` overrides
+the backend adapter, including in advertised federated model metadata. Setting
+`structuredOutput.enabled: false` on a model disables its schema contract; a
+model cannot override a disabled backend or its mandatory parameter routing.
+LLooM never infers behavior from provider
 URLs, model names, or prompt text. Schema-bound calls are currently buffered
 (`stream: false`) so LLooM can normalize and verify the complete result.
 

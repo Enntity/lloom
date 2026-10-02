@@ -161,7 +161,8 @@ export function federatedNodeConfigFromSnapshot({
         ...(Array.isArray(model.input) ? { input: model.input } : {}),
         ...(Array.isArray(model.output) ? { output: model.output } : {}),
         ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}),
-        ...(model.maxOutputTokens ? { maxOutputTokens: model.maxOutputTokens } : {})
+        ...(model.maxOutputTokens ? { maxOutputTokens: model.maxOutputTokens } : {}),
+        ...(model.structuredOutput ? { structuredOutput: structuredClone(model.structuredOutput) } : {})
       };
     });
   return {

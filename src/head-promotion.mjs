@@ -282,7 +282,7 @@ export function planHeadPromotion(destination, source, options = {}) {
       upstreamModel: id
     };
     if (model.name) entry.name = model.name;
-    for (const field of ['capabilities', 'input', 'output', 'contextWindow', 'maxOutputTokens'])
+    for (const field of ['capabilities', 'input', 'output', 'contextWindow', 'maxOutputTokens', 'structuredOutput'])
       if (model[field] !== undefined) entry[field] = clone(model[field]);
     federatedEntries.push(entry);
     federatedModelIds.push(id);

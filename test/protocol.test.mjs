@@ -15,6 +15,46 @@ import {
 
 const resolved = { model: { upstreamModel: 'upstream-qwen' } };
 
+// Models sharing a backend can declare different schema protocols without
+// overriding the backend's availability or provider routing requirements.
+{
+  const body = { lloom: { outputSchema: { name: 'answer', schema: { type: 'object' } } } };
+  const backend = { structuredOutput: { adapter: 'tool', requireParameters: true } };
+  const nativeModel = { capabilities: ['tools'], structuredOutput: { adapter: 'json-schema' } };
+  const native = prepareStructuredOutputForBackend(body, { backend, model: nativeModel });
+  const tool = prepareStructuredOutputForBackend(body, { backend, model: { capabilities: ['tools'] } });
+  assert.equal(native.output.adapter, 'json-schema');
+  assert.equal(native.body.response_format.type, 'json_schema');
+  assert.equal(native.body.tools, undefined);
+  assert.equal(tool.output.adapter, 'tool');
+  assert.equal(tool.body.tool_choice.function.name, 'answer');
+  assert.deepEqual(native.body.provider, { require_parameters: true });
+  assert.deepEqual(tool.body.provider, { require_parameters: true });
+  assert.equal(prepareStructuredOutputForBackend(body, {}).output.adapter, 'json-schema');
+  assert.equal(prepareStructuredOutputForBackend(body, { model: { supportsTools: true } }).output.adapter, 'tool');
+  assert.equal(
+    prepareStructuredOutputForBackend(body, {
+      backend: { structuredOutput: { adapter: 'json-schema' } },
+      model: { structuredOutput: { adapter: 'tool' } }
+    }).output.adapter,
+    'tool'
+  );
+  for (const settings of [
+    {
+      backend: { structuredOutput: { enabled: false } },
+      model: { structuredOutput: { enabled: true, adapter: 'json-schema' } }
+    },
+    { backend, model: { structuredOutput: { enabled: false } } }
+  ]) {
+    assert.throws(
+      () => prepareStructuredOutputForBackend(body, settings),
+      (error) => error instanceof StructuredOutputError && error.code === 'structured_output_unsupported'
+    );
+  }
+  assert.deepEqual(backend, { structuredOutput: { adapter: 'tool', requireParameters: true } });
+  assert.equal(body.lloom.outputSchema.name, 'answer');
+}
+
 // Explicit provider compatibility preserves forced tools without disabling
 // thinking for normal chat or automatically selected tools.
 {
