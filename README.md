@@ -549,11 +549,15 @@ cap concurrency, request rate, or both:
 - `burst`: extra tokens above the steady rate (default `n-1` for `rate: n/period`
   so the first `n` requests pass back-to-back; `0` spaces every request at the
   interval).
+- `queue`: `true` makes over-budget requests wait for the next conforming
+  arrival instead of failing (NGINX `limit_req` without `nodelay`). Waits share
+  the 256-request queue bound and the five-minute maximum; a request whose wait
+  would exceed it still fails fast with `429` and `retry-after`.
 
 The limiter is the standard token-bucket used by NGINX `limit_req` and Envoy's
 local rate limiter: tokens refill continuously at one per `rateMs`, requests
 over the budget fail fast with a retryable `429` (`MODEL_RATE_LIMITED`) and a
-`retry-after` header rather than queueing for minutes. No background timers:
+`retry-after` header unless the limit sets `queue: true`. No background timers:
 state advances lazily per request.
 
 Limits compose down the resolution chain. A request through

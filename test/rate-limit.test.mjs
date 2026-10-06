@@ -95,6 +95,19 @@ test('normalizeRateLimit parses rate strings, counts, concurrency, and rejects j
   assert.throws(() => normalizeRateLimit({ maxConcurrent: 0 }), /maxConcurrent/);
   assert.throws(() => normalizeRateLimit({ rate: '5/m', burst: -1 }), /burst/);
   assert.throws(() => normalizeRateLimit('nope'), /must look like/);
+  assert.deepEqual(normalizeRateLimit({ rate: '5/m', queue: true }), {
+    maxConcurrent: null,
+    burst: 4,
+    rateMs: 12_000,
+    queue: true
+  });
+  assert.deepEqual(normalizeRateLimit(normalizeRateLimit({ rate: '5/m', queue: true })), {
+    maxConcurrent: null,
+    burst: 4,
+    rateMs: 12_000,
+    queue: true
+  });
+  assert.throws(() => normalizeRateLimit({ rate: '5/m', queue: 'yes' }), /queue must be a boolean/);
 });
 
 test('the token bucket admits exactly n requests back-to-back then spaces by interval', () => {
@@ -518,4 +531,80 @@ test('invalid numeric rate limits fail validation and fresh buckets report avail
     assert.throws(() => normalizeRateLimit(value), /rateLimit/);
   }
   assert.equal(createRateLimitRegistry({ lane: '1/m' }).status()[0].rateLimited, false);
+});
+
+test('a queue-mode rate limit spaces excess requests instead of rejecting them', async () => {
+  const hits = [];
+  const fixture = await chatFixture(
+    { paced: { members: ['model-a'], rateLimit: { rate: '10/s', burst: 0, queue: true } } },
+    {
+      handleUpstream: (req, res) => {
+        hits.push(Date.now());
+        req.resume();
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'ok' } }], usage: {} }));
+      }
+    }
+  );
+  const { chat, routing, close } = await chatGateway(fixture);
+  try {
+    const pending = [chat('paced'), chat('paced'), chat('paced')];
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const waiting = (await routing()).rateLimits.find((entry) => entry.id === 'paced');
+    assert.equal(waiting.queue, true);
+    assert.equal(waiting.queued, 2, 'the two over-budget requests wait for budget');
+    const statuses = (await Promise.all(pending)).map((response) => response.status);
+    assert.deepEqual(statuses, [200, 200, 200]);
+    hits.sort((a, b) => a - b);
+    assert.ok(hits[2] - hits[0] >= 180, `three requests at 10/s span two intervals (${hits[2] - hits[0]}ms)`);
+  } finally {
+    await close();
+  }
+});
+
+test('a queue-mode wait longer than the maximum wait fails fast with retry-after', async () => {
+  const fixture = await chatGateway(
+    await chatFixture({ slow: { members: ['model-a'], rateLimit: { rate: '1/h', queue: true } } })
+  );
+  try {
+    assert.equal((await fixture.chat('slow')).status, 200);
+    const started = Date.now();
+    const rejected = await fixture.chat('slow');
+    assert.equal(rejected.status, 429);
+    assert.ok(Date.now() - started < 1000, 'an hour-long wait is rejected immediately, not queued');
+    assert.ok(Number(rejected.headers.get('retry-after')) > 300);
+    assert.equal((await rejected.json()).error.code, 'MODEL_RATE_LIMITED');
+  } finally {
+    await fixture.close();
+  }
+});
+
+test('a client that disconnects while waiting for rate budget never reaches upstream', async () => {
+  let hits = 0;
+  const fixture = await chatFixture(
+    { paced: { members: ['model-a'], rateLimit: { rate: '1/m', queue: true } } },
+    {
+      handleUpstream: (req, res) => {
+        hits++;
+        req.resume();
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'ok' } }], usage: {} }));
+      }
+    }
+  );
+  const { chat, routing, close } = await chatGateway(fixture);
+  try {
+    assert.equal((await chat('paced')).status, 200);
+    const abort = new AbortController();
+    const queued = chat('paced', { signal: abort.signal });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.equal((await routing()).rateLimits[0].queued, 1);
+    abort.abort();
+    await assert.rejects(queued);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.equal((await routing()).rateLimits[0].queued, 0, 'the aborted waiter leaves the queue');
+    assert.equal(hits, 1, 'the aborted request must never reach upstream');
+  } finally {
+    await close();
+  }
 });

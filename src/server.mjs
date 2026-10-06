@@ -62,7 +62,7 @@ import { createRegistry, UnknownModelError } from './registry.mjs';
 import { routeProfileStatus, writeRouteMemberSuspension, writeRouteProfile } from './route-control.mjs';
 import { mutateConfigSource } from './config-mutation.mjs';
 import { createModelMaintenanceController } from './model-maintenance-control.mjs';
-import { acquireRateLimitSlot, consumeRateBudget, createRateLimitRegistry } from './rate-limit.mjs';
+import { acquireRateLimitSlot, awaitRateBudget, createRateLimitRegistry } from './rate-limit.mjs';
 import { RuntimeManager, runtimeWatchdogConfig, normalizeRequestClass } from './runtime-manager.mjs';
 import { ForegroundPriority } from './foreground-priority.mjs';
 import { createPreferredResidencyReconciler } from './runtime-residency.mjs';
@@ -2611,15 +2611,15 @@ export function createLloomServer(
     try {
       for (const id of limited) {
         const entry = rateLimitRegistry.limiter(id);
-        if (entry.semaphore && entry.semaphore.queued >= RATE_LIMIT_QUEUE_CAPACITY) {
+        if ((entry.semaphore?.queued ?? 0) + entry.rateQueued >= RATE_LIMIT_QUEUE_CAPACITY) {
           throw new ModelRateLimitError(resolved.requestedId, 5, { queueFull: true });
         }
         releases.push(await acquireRateLimitSlot(rateLimitRegistry, id, { signal, rateBudget: false }));
       }
       // Consume rate budget only once every concurrency slot is held, and
       // atomically, so an inner rejection cannot burn the budget of the outer
-      // scopes the request already passed.
-      consumeRateBudget(rateLimitRegistry, limited);
+      // scopes the request already passed. Queue-mode limiters wait here.
+      await awaitRateBudget(rateLimitRegistry, limited, { signal, started });
       return releaseAll;
     } catch (error) {
       releaseAll();
