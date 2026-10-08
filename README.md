@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/banner.png" alt="LLooM: local model gateway" width="100%">
+</p>
+
 # LLooM
 
 [![CI](https://github.com/enntity/lloom/actions/workflows/ci.yml/badge.svg)](https://github.com/enntity/lloom/actions/workflows/ci.yml)
