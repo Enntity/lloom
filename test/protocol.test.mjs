@@ -191,6 +191,73 @@ const resolved = { model: { upstreamModel: 'upstream-qwen' } };
   assert.equal(normalized.choices[0].message.tool_calls, undefined);
   assert.equal(normalized.choices[0].finish_reason, 'stop');
 
+  // A forced-tool rewrite is only safe when the backend actually stopped
+  // because it answered. Truncation, filtering, and unknown/absent reasons
+  // must survive intact so a partial result is never presented as a clean one.
+  const structuredOutput = toolPrepared.output;
+  for (const reason of ['length', 'content_filter', 'cancelled', 'error', null, undefined]) {
+    const response = {
+      choices: [
+        {
+          native_finish_reason: reason,
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [{ type: 'function', function: { name: 'answer', arguments: '{"answer":"partial"}' } }]
+          },
+          finish_reason: reason
+        }
+      ]
+    };
+    const result = normalizeStructuredOutputChatCompletion(response, structuredOutput);
+    assert.equal(result.choices[0].finish_reason, reason);
+    assert.equal(result.choices[0].native_finish_reason, reason);
+    assert.equal(result.choices[0].message.content, '{"answer":"partial"}');
+  }
+  // Truncated-but-parseable arguments with a length reason keep `length`.
+  {
+    const truncated = normalizeStructuredOutputChatCompletion(
+      {
+        choices: [
+          {
+            finish_reason: 'length',
+            native_finish_reason: 'length',
+            message: {
+              role: 'assistant',
+              content: null,
+              tool_calls: [{ type: 'function', function: { name: 'answer', arguments: '{"answer":"cut off"}' } }]
+            }
+          }
+        ]
+      },
+      structuredOutput
+    );
+    assert.equal(truncated.choices[0].finish_reason, 'length');
+    assert.equal(truncated.choices[0].native_finish_reason, 'length');
+  }
+  // Successful tool/function completions still normalize to `stop`.
+  for (const reason of ['tool_calls', 'function_call', 'stop']) {
+    const response = {
+      choices: [
+        {
+          finish_reason: reason,
+          native_finish_reason: reason,
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [{ type: 'function', function: { name: 'answer', arguments: '{"answer":"ok"}' } }]
+          }
+        }
+      ],
+      usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 }
+    };
+    const result = normalizeStructuredOutputChatCompletion(response, structuredOutput);
+    assert.equal(result.choices[0].finish_reason, 'stop');
+    // Native reason and unrelated response fields pass through untouched.
+    assert.equal(result.choices[0].native_finish_reason, reason);
+    assert.deepEqual(result.usage, response.usage);
+  }
+
   assert.throws(
     () =>
       prepareStructuredOutputForBackend(
@@ -487,5 +554,54 @@ const resolved = { model: { upstreamModel: 'upstream-qwen' } };
     (error) => error.code === 'invalid_response_format'
   );
 }
+
+// Failed or missing terminal signals cannot certify a response or an action.
+for (const reason of ['error', 'cancelled', 'unknown_status', 'constructor', null, undefined]) {
+  const input = {
+    choices: [
+      {
+        finish_reason: reason,
+        message: {
+          role: 'assistant',
+          content: 'partial diagnostic',
+          tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'write', arguments: '{}' } }]
+        }
+      }
+    ],
+    usage: { prompt_tokens: 3, completion_tokens: 2 }
+  };
+  const result = openAIToResponses(input, 'fixture');
+  assert.equal(responseStatusFromFinishReason(reason), 'failed');
+  assert.equal(result.status, 'failed');
+  assert.equal(result.error.code, 'server_error');
+  assert.equal(result.output_text, 'partial diagnostic');
+  assert.equal(result.usage.output_tokens, 2);
+  assert(!result.output.some((item) => item.type === 'function_call'));
+  assert.throws(
+    () => openAIToAnthropic(input, 'fixture'),
+    (error) => error.statusCode === 502
+  );
+}
+for (const reason of ['length', 'content_filter']) {
+  const result = openAIToResponses(
+    {
+      choices: [
+        {
+          finish_reason: reason,
+          message: {
+            tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'write', arguments: '{"partial":true}' } }]
+          }
+        }
+      ]
+    },
+    'fixture'
+  );
+  assert.equal(result.status, 'incomplete');
+  assert(!result.output.some((item) => item.type === 'function_call'));
+}
+assert.equal(
+  openAIToAnthropic({ choices: [{ finish_reason: 'stop', message: { content: 'done' } }] }, 'fixture').stop_reason,
+  'end_turn'
+);
 
 console.log('protocol tests passed');

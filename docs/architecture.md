@@ -165,6 +165,16 @@ An alias may intentionally have the same ID as one of its members. This preserve
 
 The Responses bridge also supports free-form custom tool round trips and preserves developer instructions as system messages on Chat backends. See [Codex DeepSeek workers](codex-deepseek-workers.md) for the conversion contract, limits, and client qualification.
 
+Completion status comes from an explicit upstream terminal reason. Responses
+maps `stop`, `tool_calls`, and `function_call` to `completed`; output limits and
+content filtering remain `incomplete`. Missing, unknown, cancelled, or error
+reasons produce `failed`, including a stream that ends without a terminal
+reason. Partial text and usage remain available, but incomplete or failed
+Responses results do not finalize executable tool calls. The structured-output
+adapter likewise preserves non-success reasons instead of rewriting them to
+`stop`. Anthropic translation rejects missing or unsupported terminal reasons
+as upstream errors before emitting `message_stop`.
+
 `/v1/messages` is implemented as an Anthropic Messages bridge over OpenAI-compatible chat-completions backends. It converts Anthropic text, image, `thinking`, `redacted_thinking`, `tools`, `tool_choice`, assistant `tool_use`, and user `tool_result` blocks into the matching OpenAI chat shapes, then maps OpenAI reasoning, text, and function-call responses back into Anthropic `thinking`, `text`, and `tool_use` content blocks. Streaming reasoning chunks are emitted as Anthropic `thinking_delta` events, streaming function-call chunks are emitted as Anthropic `input_json_delta` events, and usage is normalized from either chat-completions token names or Responses-style `input_tokens` / `output_tokens` fields.
 
 `/v1/embeddings` proxies OpenAI-compatible embedding requests to models with `kind: "embedding"`, rewrites the selected gateway model to the upstream model ID, and preserves upstream usage fields.
@@ -285,8 +295,7 @@ provider unhealthy. Read-only catalog, health, and admin routes remain available
 
 The hold lasts while any foreground request is active, then for
 `server.foregroundIdleMs` milliseconds after the last foreground request ends or
-disconnects. The default is 60000; accepted values are integers from 0 through
-3600000. A follow-up request renews the hold. Foreground calls share interactive
+disconnects. The default is 60000; accepted values are integers from 0 through 3600000. A follow-up request renews the hold. Foreground calls share interactive
 runtime slots and keep the existing total capacity limits. Chat helper calls
 must also use `foreground`; legacy `interactive` calls do not open or renew the
 window. Foreground metadata crosses authenticated inference-proxy hops and is

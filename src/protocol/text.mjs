@@ -119,7 +119,33 @@ export function responseIncompleteDetails(finishReason) {
 }
 
 export function responseStatusFromFinishReason(finishReason) {
-  return responseIncompleteDetails(finishReason) ? 'incomplete' : 'completed';
+  if (responseIncompleteDetails(finishReason)) return 'incomplete';
+  return responseStopIsSuccessful(finishReason) ? 'completed' : 'failed';
+}
+
+// A successful stop is an explicit, affirmative terminal signal. Anything else
+// — an error, a cancellation, an unknown string, or a missing reason — means the
+// backend never told us the answer finished, so the output must not be treated
+// as completed or handed to an executor.
+export function responseStopIsSuccessful(finishReason) {
+  return finishReason === 'stop' || finishReason === 'tool_calls' || finishReason === 'function_call';
+}
+
+/** Human-readable source reason for a non-successful terminal finish. */
+export function responseFailureReason(finishReason) {
+  if (finishReason == null) return 'missing finish reason';
+  if (typeof finishReason !== 'string') return String(finishReason);
+  if (finishReason === 'error') return 'upstream error';
+  if (finishReason === 'cancelled') return 'request cancelled';
+  return `unknown finish reason: ${finishReason}`;
+}
+
+/** Responses API `error` object for a failed (not incomplete) completion. */
+export function responseFailureError(finishReason) {
+  return {
+    code: 'server_error',
+    message: `Upstream did not complete the response: ${responseFailureReason(finishReason)}`
+  };
 }
 export function rewriteJsonModelText(text, model) {
   try {
