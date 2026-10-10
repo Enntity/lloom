@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "status": "final",
-  "note": "Single pin manifest for the Atlas SparkGLM candidate. Portable source, image, model and converter identities are final for this candidate; live hardware and serving qualification remains pending. The image tag and its install-tree label derive from the git tree of install/ at the pinned revision, so a GHCR pull and a local build of that source carry the same identity.",
+  "note": "Single pin manifest for the Atlas SparkGLM candidate. Portable source, image, model and converter identities are final for this candidate; live hardware and serving qualification remains pending. The normal install path addresses image.reference, the immutable GHCR manifest digest. The tag is retained as source-build metadata (it derives from the git tree of install/ at the pinned revision) and as the local tag produced by an explicit --source-build; the install-tree label is a contents check. A tag or label alone is never the artifact identity.",
   "source": {
     "repo": "Enntity/sparkglm",
     "revision": "b6bed25903578b4f4ed4f0e7204c80700ad5b8d9",
@@ -10,6 +10,7 @@
     "buildScript": "install/build.sh"
   },
   "image": {
+    "reference": "ghcr.io/enntity/atlas-sparkglm@sha256:9a583b07912262f08f72d33773c994d2468d5292546e79e149c701962101dbc7",
     "tag": "ghcr.io/enntity/atlas-sparkglm:4046c81baa07",
     "label": "io.enntity.sparkglm.install-tree",
     "entrypoint": "/opt/atlas/serve.py",

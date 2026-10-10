@@ -5,11 +5,14 @@
 // exits non-zero while any required identity is still a DRAFT placeholder, so
 // a DRAFT manifest can never satisfy a setup step, a build, or a start.
 //
-// Every pin is portable. The image tag is derived from the git tree of the
-// pinned source's install/ directory, and the image carries that full tree as
-// a label, so a GHCR pull and a local build of the same source share one
-// identity. Image IDs are deliberately NOT pinned: install.sh verifies the
-// local image by its install-tree label and architecture instead.
+// Every pin is portable. The normal install path addresses the image by its
+// immutable registry digest: ghcr.io/enntity/atlas-sparkglm@sha256:.... The
+// tag (the first 12 characters of the install/ git tree) is retained only as
+// source-build metadata and as the local tag produced by an explicit
+// --source-build. A tag alone is NOT an immutable artifact identity, and the
+// image's io.enntity.sparkglm.install-tree label is a contents check, not an
+// artifact identity. Image IDs are deliberately NOT pinned: install.sh
+// verifies the local image by its install-tree label and architecture.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +23,7 @@ export const REQUIRED_PINS = [
   ['status', (m) => m.status],
   ['source.revision', (m) => m.source?.revision],
   ['source.installTree', (m) => m.source?.installTree],
+  ['image.reference', (m) => m.image?.reference],
   ['image.tag', (m) => m.image?.tag],
   ['model.repo', (m) => m.model?.repo],
   ['model.revision', (m) => m.model?.revision]
@@ -28,6 +32,7 @@ export const REQUIRED_PINS = [
 export const REQUIRED_IMAGE_ARCHITECTURE = 'arm64';
 export const IMAGE_REPOSITORY = 'ghcr.io/enntity/atlas-sparkglm';
 export const IMAGE_LABEL = 'io.enntity.sparkglm.install-tree';
+export const IMAGE_REFERENCE_PATTERN = /^ghcr\.io\/enntity\/atlas-sparkglm@sha256:[a-f0-9]{64}$/;
 
 export function loadPins(manifestPath = MANIFEST_PATH) {
   return JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
@@ -67,6 +72,13 @@ export function verifyPins(manifest) {
   // pinned source's install/build.sh.
   if (typeof manifest.image?.tag === 'string' && manifest.image.tag !== imageTagFor(manifest)) {
     failures.push(`image.tag must be ${imageTagFor(manifest)}, got ${manifest.image.tag}`);
+  }
+  // The normal install path must address the immutable registry digest. The
+  // tag is source-build metadata and a tag alone is never the artifact
+  // identity.
+  const reference = manifest.image?.reference;
+  if (typeof reference === 'string' && !IMAGE_REFERENCE_PATTERN.test(reference)) {
+    failures.push(`image.reference must be ${IMAGE_REPOSITORY}@sha256:<64 lowercase hex>, got ${reference}`);
   }
   if (manifest.image?.label !== IMAGE_LABEL) {
     failures.push(`image.label must be ${IMAGE_LABEL}, got ${manifest.image?.label}`);
@@ -110,7 +122,7 @@ function main() {
     for (const failure of failures) process.stderr.write(`  - ${failure}\n`);
     process.exit(1);
   }
-  process.stdout.write(`atlas-sparkglm pins verified (${imageTagFor(manifest)})\n`);
+  process.stdout.write(`atlas-sparkglm pins verified (${manifest.image.reference})\n`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

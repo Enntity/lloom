@@ -8,7 +8,13 @@ import { getBackend, loadBackendCatalog, planBackend } from '../src/backend-cata
 import { deriveUserConfig } from '../src/init.mjs';
 import { loadRecipeById, planRecipe } from '../src/recipes.mjs';
 import { createSetupStatus } from '../src/setup-status.mjs';
-import { imageTagFor, loadPins, verifyPins } from '../backends/atlas-sparkglm/verify-pins.mjs';
+import {
+  IMAGE_REFERENCE_PATTERN,
+  IMAGE_REPOSITORY,
+  imageTagFor,
+  loadPins,
+  verifyPins
+} from '../backends/atlas-sparkglm/verify-pins.mjs';
 import { conversionHeadroomMiB } from '../backends/atlas-sparkglm/conversion-headroom.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -135,7 +141,7 @@ for (const member of members) {
   assert.equal(member.runtimeSettings.management, 'managed');
   assert.equal(member.runtimeSettings.containerName, 'lloom-atlas-sparkglm-${nodeId}');
   assert.equal(bootstrap.adapter, 'docker');
-  assert.equal(bootstrap.image, pins.image.tag);
+  assert.equal(bootstrap.image, pins.image.reference);
   assert.equal(bootstrap.pull, false, 'the prepared local image must not be pulled');
   assert.deepEqual(bootstrap.command ?? [], [], 'use the image entrypoint exactly once');
 
@@ -466,6 +472,14 @@ assert.equal(pins.status, 'final');
 assert.equal(pins.source.revision, 'b6bed25903578b4f4ed4f0e7204c80700ad5b8d9');
 assert.equal(pins.source.installTree, '4046c81baa071cb109e55c3206ed1fca3bd3db9a');
 assert.equal(pins.source.buildScript, 'install/build.sh');
+// The normal install path addresses the immutable registry digest, not the
+// mutable tag. The tag stays as source-build metadata only.
+assert.equal(
+  pins.image.reference,
+  'ghcr.io/enntity/atlas-sparkglm@sha256:9a583b07912262f08f72d33773c994d2468d5292546e79e149c701962101dbc7'
+);
+assert.match(pins.image.reference, IMAGE_REFERENCE_PATTERN);
+assert.equal(pins.image.reference.split('@')[0], IMAGE_REPOSITORY);
 assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkglm:4046c81baa07');
 assert.equal(pins.image.label, 'io.enntity.sparkglm.install-tree');
 assert.equal(pins.image.architecture, 'arm64');
@@ -473,6 +487,8 @@ assert.equal(pins.image.entrypoint, '/opt/atlas/serve.py');
 // The image identity is portable; no host-local receipt or derived-tag prefix.
 assert(!Object.hasOwn(pins, 'installer'));
 assert(!Object.hasOwn(pins.image, 'tagPrefix'));
+assert.notEqual(pins.image.reference, pins.image.tag, 'the digest must not be the mutable tag');
+assert(!pins.image.reference.includes(':4046c81baa07'), 'the tag must never appear as the pulled reference');
 assert(pins.overlay.marker.includes('conversion.complete.json'));
 assert.deepEqual(verifyPins(pins), []);
 
@@ -503,6 +519,49 @@ assert(
   verifyPins({ ...finalManifest, image: { ...finalManifest.image, tag: `lloom/atlas-sparkglm:${'b'.repeat(12)}` } })
     .length > 0,
   'the image tag must be the GHCR repository plus the install tree prefix'
+);
+// The immutable reference is required and must be the pinned repository at a
+// well-formed sha256 digest. A tag-only manifest, a wrong repository, or a
+// malformed digest must all be rejected.
+assert(
+  verifyPins({ ...finalManifest, image: { ...finalManifest.image, reference: finalManifest.image.tag } }).length > 0,
+  'a tag-only image reference must be rejected'
+);
+assert(
+  verifyPins({
+    ...finalManifest,
+    image: { ...finalManifest.image, reference: pins.image.reference.replace('ghcr.io', 'ghcrXio') }
+  }).length > 0,
+  'lookalike registry names must be rejected'
+);
+const tagOnlyManifest = { ...finalManifest, image: { ...finalManifest.image } };
+delete tagOnlyManifest.image.reference;
+assert(verifyPins(tagOnlyManifest).length > 0, 'a missing image.reference must be rejected');
+assert(
+  verifyPins({
+    ...finalManifest,
+    image: { ...finalManifest.image, reference: `ghcr.io/enntity/other@sha256:${'b'.repeat(64)}` }
+  }).length > 0,
+  'the reference must address the pinned Atlas repository'
+);
+assert(
+  verifyPins({
+    ...finalManifest,
+    image: { ...finalManifest.image, reference: `${IMAGE_REPOSITORY}@sha256:${'B'.repeat(64)}` }
+  }).length > 0,
+  'the digest hex must be lowercase'
+);
+assert(
+  verifyPins({
+    ...finalManifest,
+    image: { ...finalManifest.image, reference: `${IMAGE_REPOSITORY}@sha256:${'b'.repeat(63)}` }
+  }).length > 0,
+  'the digest must be a full 64-character hex string'
+);
+assert(
+  verifyPins({ ...finalManifest, image: { ...finalManifest.image, reference: `${IMAGE_REPOSITORY}:latest` } }).length >
+    0,
+  'a mutable tag reference must be rejected'
 );
 assert(
   verifyPins({ ...finalManifest, image: { ...finalManifest.image, label: 'org.opencontainers.image.revision' } })
@@ -618,6 +677,11 @@ fs.writeFileSync(
 set -euo pipefail
 present() { [[ -z "\${ATLAS_TEST_IMAGE_DIR:-}" || -f "\${ATLAS_TEST_IMAGE_DIR}/present" ]]; }
 if [[ "\${1:-}" == "image" && "\${2:-}" == "inspect" ]]; then
+  target="\${5:-}"
+  if [[ "\${ATLAS_TEST_TAG_ONLY:-0}" == "1" && "\${target}" == *@sha256:* ]]; then
+    echo "No such digest image" >&2; exit 1
+  fi
+  [[ "\${target}" == "\${ATLAS_TEST_REFERENCE:-${pins.image.reference}}" || "\${target}" == "${pins.image.tag}" ]] || { echo "unexpected image target" >&2; exit 2; }
   present || { echo "No such image" >&2; exit 1; }
   case "\${4:-}" in
     *'.Architecture'*'${pins.image.label}'*) echo "\${ATLAS_TEST_IDENTITY:-arm64 ${pins.source.installTree}}" ;;
@@ -626,12 +690,15 @@ if [[ "\${1:-}" == "image" && "\${2:-}" == "inspect" ]]; then
   exit 0
 fi
 if [[ "\${1:-}" == "pull" ]]; then
+  [[ "\${2:-}" == "${pins.image.reference}" ]] || { echo "refusing mutable pull" >&2; exit 2; }
+  [[ "\${ATLAS_TEST_DIGEST_PULL_FAIL:-0}" == "1" ]] && { echo "denied: digest pull failed" >&2; exit 1; }
   [[ -n "\${ATLAS_TEST_IMAGE_DIR:-}" ]] && touch "\${ATLAS_TEST_IMAGE_DIR}/present"
   exit 0
 fi
 if [[ "\${1:-}" == "ps" ]]; then exit 0; fi
 if [[ "\${1:-}" == "run" ]]; then
   joined="$*"
+  [[ "\${joined}" == *"\${ATLAS_TEST_REFERENCE:-${pins.image.reference}}"* || "\${ATLAS_TEST_ALLOW_LOCAL:-0}" == "1" ]] || { echo "run must use immutable image reference" >&2; exit 2; }
   if [[ "\${ATLAS_TEST_MISSING_CONTRACT:-0}" == "1" ]]; then exit 1; fi
   if [[ "\${joined}" == *sha256sum* ]]; then
     echo "${'c'.repeat(64)}  ${pins.converter.inImagePath}"
@@ -724,22 +791,61 @@ assert(!fs.existsSync(path.join(noImageDir, 'present')));
 // Re-entry verifies the present image without pulling or building.
 const reentered = runInstaller();
 assert.equal(reentered.status, 0, `${reentered.stdout}\n${reentered.stderr}`);
-assert.match(reentered.stdout, /existing image .* verified; skipping pull and build/);
+assert.match(reentered.stdout, /existing image .* verified; skipping pull/);
 // A missing image is pulled from GHCR and then verified.
 const pullImageDir = fs.mkdtempSync(path.join(converterRoot, 'pull-'));
 const pulled = runInstaller({ ...fakeEnv, ATLAS_TEST_IMAGE_DIR: pullImageDir });
 assert.equal(pulled.status, 0, `${pulled.stdout}\n${pulled.stderr}`);
-assert.match(pulled.stdout, /pulling ghcr\.io\/enntity\/atlas-sparkglm:4046c81baa07/);
+assert.match(pulled.stdout, /pulling ghcr\.io\/enntity\/atlas-sparkglm@sha256:/);
 assert.match(pulled.stdout, /image prepared/);
-// An image with the wrong label is never trusted: the installer falls through
-// to the source build, whose non-destructive checkout guard refuses to touch a
-// non-git directory at the source root.
+// A digest failure must never fall through to source checkout/build.
 const blockedSource = path.join(converterInstallRoot, 'sources', `atlas-sparkglm-${pins.source.revision}`);
+const wrongContents = runInstaller(wrongTreeEnv);
+assert.notEqual(wrongContents.status, 0);
+assert.match(wrongContents.stderr, /refusing to build from source silently/);
+assert(!fs.existsSync(blockedSource));
+const failedPull = runInstaller({ ...fakeEnv, ATLAS_TEST_IMAGE_DIR: noImageDir, ATLAS_TEST_DIGEST_PULL_FAIL: '1' });
+assert.notEqual(failedPull.status, 0);
+assert.match(failedPull.stderr, /refusing to fall back/);
+assert(!fs.existsSync(blockedSource));
+const tagOnly = runInstaller({ ...fakeEnv, ATLAS_TEST_TAG_ONLY: '1' }, ['--check-only']);
+assert.notEqual(tagOnly.status, 0, 'a local mutable tag cannot satisfy normal check-only');
+const checkedLocal = runInstaller({ ...fakeEnv, ATLAS_TEST_TAG_ONLY: '1', ATLAS_TEST_ALLOW_LOCAL: '1' }, [
+  '--check-only',
+  '--source-build'
+]);
+assert.equal(checkedLocal.status, 0, checkedLocal.stderr);
+assert.match(checkedLocal.stdout, /does not satisfy the normal immutable recipe/);
+
+// Explicit source builds preserve the non-destructive checkout guards.
 fs.mkdirSync(blockedSource, { recursive: true });
-const fellThrough = runInstaller(wrongTreeEnv);
-assert.notEqual(fellThrough.status, 0);
-assert.match(fellThrough.stdout, /building from the pinned source/);
-assert.match(fellThrough.stderr, /exists but is not a git checkout; refusing to overwrite it/);
+const blockedBuild = runInstaller(fakeEnv, ['--source-build']);
+assert.notEqual(blockedBuild.status, 0);
+assert.match(blockedBuild.stderr, /exists but is not a git checkout; refusing to overwrite it/);
+fs.mkdirSync(path.join(blockedSource, '.git'));
+fs.mkdirSync(path.join(blockedSource, 'install'));
+fs.writeFileSync(path.join(blockedSource, 'install/build.sh'), `#!/bin/bash\nprintf '%s\\n' '${pins.image.tag}'\n`);
+fs.writeFileSync(
+  path.join(fakeBin, 'git'),
+  `#!/usr/bin/env bash
+set -euo pipefail
+case "$*" in
+  *'remote get-url origin') echo '${pins.source.cloneUrl}' ;;
+  *'rev-parse HEAD:install') echo '${pins.source.installTree}' ;;
+  *'rev-parse HEAD') echo '${pins.source.revision}' ;;
+  *'status --porcelain --untracked-files=all') printf '%s' "\${ATLAS_TEST_DIRTY:-}" ;;
+  *) echo 'unexpected git operation' >&2; exit 2 ;;
+esac
+`,
+  { mode: 0o755 }
+);
+const dirtyBuild = runInstaller({ ...fakeEnv, ATLAS_TEST_DIRTY: ' M install/build.sh' }, ['--source-build']);
+assert.notEqual(dirtyBuild.status, 0);
+assert.match(dirtyBuild.stderr, /has local changes/);
+const localBuild = runInstaller({ ...fakeEnv, ATLAS_TEST_ALLOW_LOCAL: '1' }, ['--source-build']);
+assert.equal(localBuild.status, 0, `${localBuild.stdout}\n${localBuild.stderr}`);
+assert.match(localBuild.stdout, /source build produced LOCAL tag/);
+assert.match(localBuild.stdout, /does not satisfy the normal immutable recipe/);
 fs.rmSync(path.join(converterInstallRoot, 'sources'), { recursive: true, force: true });
 
 const runConverter = (manifestPath = path.join(backendDir, 'pins.json'), env = fakeEnv, extra = []) =>
@@ -766,6 +872,13 @@ const reused = runConverter();
 assert.equal(reused.status, 0, `${reused.stdout}\n${reused.stderr}`);
 assert.match(reused.stdout, /already carries.*skipping/);
 assert(fs.existsSync(path.join(converterOverlayRoot, pins.overlay.marker)));
+
+const tagOnlyConverter = runConverter(undefined, { ...fakeEnv, ATLAS_TEST_TAG_ONLY: '1' });
+assert.notEqual(tagOnlyConverter.status, 0, 'conversion requires the digest in normal mode');
+const localConverter = runConverter(undefined, { ...fakeEnv, ATLAS_TEST_TAG_ONLY: '1', ATLAS_TEST_ALLOW_LOCAL: '1' }, [
+  '--source-build'
+]);
+assert.equal(localConverter.status, 0, `${localConverter.stdout}\n${localConverter.stderr}`);
 
 const wrongImage = runConverter(undefined, wrongTreeEnv);
 assert.notEqual(wrongImage.status, 0, 'conversion must refuse an image without the pinned install tree');
@@ -806,13 +919,15 @@ const movedPins = JSON.parse(JSON.stringify(pins));
 movedPins.source.revision = 'a'.repeat(40);
 movedPins.source.installTree = 'b'.repeat(40);
 movedPins.image.tag = imageTagFor(movedPins);
+movedPins.image.reference = `${IMAGE_REPOSITORY}@sha256:${'e'.repeat(64)}`;
 const movedManifestPath = path.join(converterRoot, 'moved-pins.json');
 fs.writeFileSync(movedManifestPath, `${JSON.stringify(movedPins, null, 2)}\n`);
 // Restore a compatible identity for this independent source revision case.
 writeConversionIdentity(pins);
 const reusedAfterSourceMove = runConverter(movedManifestPath, {
   ...fakeEnv,
-  ATLAS_TEST_IDENTITY: `arm64 ${movedPins.source.installTree}`
+  ATLAS_TEST_IDENTITY: `arm64 ${movedPins.source.installTree}`,
+  ATLAS_TEST_REFERENCE: movedPins.image.reference
 });
 assert.equal(reusedAfterSourceMove.status, 0, `${reusedAfterSourceMove.stdout}\n${reusedAfterSourceMove.stderr}`);
 assert.match(reusedAfterSourceMove.stdout, /already carries.*skipping/);

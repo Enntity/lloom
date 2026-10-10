@@ -11,23 +11,37 @@ and full serving qualification remain pending.
 ## Layout
 
 - `pins.json` — the single portable pin manifest for the candidate: the
-  source revision and its `install/` git tree, the image tag and identity
-  label, and the model, drafter and conversion marker contract.
+  source revision and its `install/` git tree, the immutable image manifest
+  reference (`image.reference`) with the tag kept as source-build metadata and
+  the install-tree contents label, and the model, drafter and conversion
+  marker contract.
 - `verify-pins.mjs` — fail-closed pin gate. Exits non-zero while the manifest
   is not final, the source revision or install tree is not a 40-character git
-  object id, the image tag is not `ghcr.io/enntity/atlas-sparkglm:` plus the
-  first 12 characters of the install tree, or any portable identity is a
+  object id, `image.reference` is not
+  `ghcr.io/enntity/atlas-sparkglm@sha256:` plus 64 lowercase hex characters,
+  the source-build metadata tag is not `ghcr.io/enntity/atlas-sparkglm:` plus
+  the first 12 characters of the install tree, or any portable identity is a
   placeholder. It rejects a pinned image ID: IDs differ between a pull and a
-  local build, so identity is the install-tree label.
-- `install.sh` — prepares `ghcr.io/enntity/atlas-sparkglm:4046c81baa07`. It
-  reuses an already verified local image, otherwise pulls the tag from GHCR,
-  otherwise clones `Enntity/sparkglm` at the pinned revision, checks that
-  `HEAD:install` is the pinned tree, and runs `install/build.sh`, which must
-  print the same tag. In every case the image must be arm64 with
+  local build. The immutable digest is the identity of the normal path; the
+  install-tree label is a contents check, not an artifact identity.
+- `install.sh` — prepares the image. The normal path reuses an already
+  verified local image, otherwise pulls the immutable manifest digest
+  `ghcr.io/enntity/atlas-sparkglm@sha256:9a583b07912262f08f72d33773c994d2468d5292546e79e149c701962101dbc7`
+  from GHCR. It never pulls the mutable tag, and a failed pinned digest pull is
+  a hard failure with no silent source build. The explicit `--source-build`
+  option instead clones `Enntity/sparkglm` at the pinned revision, checks that
+  `HEAD` is the pinned revision and `HEAD:install` is the pinned tree, and runs
+  `install/build.sh`, which must print the pinned tag. That build produces a
+  **LOCAL tag** for an explicitly overridden local recipe; it does **not**
+  satisfy the normal immutable recipe, which addresses `image.reference`. In
+  every case the selected image must be arm64 with
   `io.enntity.sparkglm.install-tree` equal to the pinned tree and must ship the
-  entrypoint, profile and converter contract below. `--check-only` verifies
-  without pulling or building.
+  entrypoint, profile and converter contract below. `--check-only` verifies the
+  local image without pulling or building; combined with `--source-build` it
+  deliberately verifies the local source-build tag instead of the digest.
 - `convert-overlay.sh` — explicit, once-per-node NVFP4 overlay conversion gate.
+  It runs the converter out of the immutable digest by default and never falls
+  back; `--source-build` runs it out of the local source-build tag instead.
 
 ## Fail-closed pin policy
 
@@ -76,7 +90,8 @@ Setup steps, in order:
    pinned revision. The drafter's weights are licensed **CC BY-NC-ND 4.0
    (non-commercial)**; read its model card before use.
 5. `build-atlas-image` — `bash backends/atlas-sparkglm/install.sh` with the
-   managed backend and install roots: pull or build, then verify.
+   managed backend and install roots: pull the immutable digest, then verify.
+   A source build runs only with the explicit `--source-build` flag.
 6. `convert-atlas-overlay` — runs the GPU conversion once with at least 8 GiB
    free and then runs the full CPU verification pass. It never stops a serving
    container implicitly. On GB10, unavailable GPU-memory readings fall back to
