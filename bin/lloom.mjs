@@ -2,6 +2,7 @@
 import { spawn } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import {
   backendIds,
@@ -57,11 +58,18 @@ import {
   gatewayBaseUrl,
   gatewayRequest as gatewayRequestShared,
   redactGatewaySecrets,
+  safeGatewayDiagnostic,
   resolveAdminCredential
 } from '../src/gateway-client.mjs';
 import { runHeadPreparation } from '../src/head-transfer.mjs';
 import { runHeadPromotionTransfer } from '../src/head-promotion-transfer.mjs';
 import { restartGatewayService } from '../src/service-control.mjs';
+import {
+  doctorGatewayService,
+  installGatewayService,
+  stopGatewayService,
+  uninstallGatewayService
+} from '../src/service-install.mjs';
 import { addAuthenticatedNode, readBoundedStdinCredential } from '../src/node-onboarding.mjs';
 import { retargetGatewayRelay } from '../src/gateway-relay.mjs';
 import { retargetClientFile } from '../src/client-retarget.mjs';
@@ -217,6 +225,10 @@ Backends and runtimes:
   lloom down
   lloom cluster [status|doctor|discover] [--apply] [--id NAME] [--api-key-env NAME] [--json]
   lloom cluster add-node <id> <url> [--namespace NAME|--merge] [--include-external] [--api-key-env NAME|--api-key-stdin] [--telemetry-only] [--apply --yes]
+  lloom service install [--enable-linger] [--apply --yes] [--json]
+  lloom service doctor [--json]
+  lloom service stop [--apply --yes] [--json]
+  lloom service uninstall [--apply --yes] [--json]
   lloom service restart [--host ADDRESS] [--label com.lloom.gateway] [--apply --yes] [--drain-timeout-ms 300000]
   lloom service relay --unit NAME [--expect-unit HASH --apply --yes]
   lloom cluster prepare-head (--from <config.json|-> | --from-ssh HOST) [--target-ssh HOST] [--include-secrets] [--apply --yes]
@@ -1084,6 +1096,7 @@ function gatewayRequestOptions(config, _args, options = {}) {
 }
 
 async function modelMaintenanceCommand({ args, config, command }) {
+  if (hasFlag(args, '--apply') && !hasFlag(args, '--yes')) throw new Error('Model maintenance requires --apply --yes');
   const id = requireRuntimeId(args, command);
   if (!id) return;
   const drainTimeoutMs = Number(argValue(args, '--drain-timeout-ms') ?? 300000);
@@ -2527,10 +2540,48 @@ async function main() {
         );
         return;
       }
-      if (positional(args)[1] !== 'restart') throw new Error('Usage: lloom service restart [--apply --yes]');
+      const action = positional(args)[1];
+      const serviceActions = {
+        install: installGatewayService,
+        doctor: doctorGatewayService,
+        stop: stopGatewayService,
+        uninstall: uninstallGatewayService
+      };
+      if (serviceActions[action]) {
+        const selectedHome = argValue(args, '--home');
+        if (selectedHome && path.resolve(selectedHome) !== os.homedir())
+          throw new Error(
+            'Service operations must use the current user home; use --config for an alternate configuration file'
+          );
+        const result = await serviceActions[action](config, {
+          apply: hasFlag(args, '--apply'),
+          yes: hasFlag(args, '--yes'),
+          home: argValue(args, '--home'),
+          enableLinger: hasFlag(args, '--enable-linger'),
+          environmentFile: argValue(args, '--environment-file'),
+          expectedUnitHash: argValue(args, '--expect-unit'),
+          adminKeyEnvName: cliAdminKeyEnvName
+        });
+        if (wantsJson(args)) console.log(JSON.stringify(result, null, 2));
+        else {
+          console.log(
+            action === 'doctor'
+              ? `Gateway service: ${result.ok ? 'ready' : 'needs attention'}`
+              : `Gateway service ${action}: ${result.applied ? 'applied' : 'dry run'}`
+          );
+          for (const check of result.checks ?? [])
+            console.log(`${check.ok ? 'OK' : 'FAIL'} ${check.id}: ${check.detail}`);
+          if (action !== 'doctor') console.log(`Unit: ${result.unitPath}`);
+          if (result.refusal) console.log(`Refused: ${result.refusal}`);
+        }
+        if (result.ok === false || result.refusal) process.exitCode = 1;
+        return;
+      }
+      if (action !== 'restart') throw new Error('Usage: lloom service install|doctor|stop|uninstall|restart|relay');
       console.log(
         JSON.stringify(
           await restartGatewayService(config, {
+            adminKeyEnvName: cliAdminKeyEnvName,
             apply: hasFlag(args, '--apply'),
             yes: hasFlag(args, '--yes'),
             host: argValue(args, '--host'),
@@ -2984,16 +3035,24 @@ function formatCliError(error, config = currentCliConfig) {
 
 // Stable, automation-safe JSON error envelope for `--json` diagnostics.
 function formatCliErrorJson(error) {
-  const kind = error?.kind ?? null;
+  const options = {
+    config: currentCliConfig,
+    extraValues: cliAdminKeyEnvName ? [process.env[cliAdminKeyEnvName]] : []
+  };
+  // Receipts describe partial service mutations; retain them while redacting
+  // every string value before serializing the envelope.
+  const sanitize = (value) =>
+    typeof value === 'string'
+      ? redactGatewaySecrets(value, options)
+      : Array.isArray(value)
+        ? value.map(sanitize)
+        : value && typeof value === 'object'
+          ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, sanitize(item)]))
+          : value;
   return {
     ok: false,
-    error: {
-      code: error?.code ?? 'cli_error',
-      kind,
-      ...(error?.upstreamCode ? { upstreamCode: error.upstreamCode } : {}),
-      status: Number.isInteger(error?.status) ? error.status : null,
-      message: safeErrorText(error?.message ?? String(error), currentCliConfig)
-    }
+    error: safeGatewayDiagnostic(error, options),
+    ...(error?.receipt ? { receipt: sanitize(error.receipt) } : {})
   };
 }
 
@@ -3006,7 +3065,10 @@ main().catch((error) => {
   // automation always receives the stable JSON error envelope on stderr.
   const json = wantsJson(process.argv.slice(2));
   if (json) console.error(JSON.stringify(formatCliErrorJson(error), null, 2));
-  else console.error(formatCliError(error));
+  else {
+    console.error(formatCliError(error));
+    if (error?.receipt) console.error(JSON.stringify(formatCliErrorJson(error).receipt, null, 2));
+  }
   // Preserve status distinction while keeping a stable nonzero exit.
   process.exitCode = mainErrorIsAuth(error) ? 3 : 1;
 });

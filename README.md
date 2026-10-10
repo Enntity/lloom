@@ -589,3 +589,5 @@ for alias setup, distributed ownership, timeouts, and recovery.
 
 For authentication, transport failures, and machine-readable CLI errors, see
 [Gateway diagnostics](docs/cli-diagnostics.md).
+
+Linux gateway persistence: [service installation and diagnostics](docs/service-installation.md).

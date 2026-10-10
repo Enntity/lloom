@@ -8,7 +8,13 @@ import { test } from 'node:test';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { gatewayRequest, gatewayErrorMessage, redactGatewaySecrets } from '../src/gateway-client.mjs';
+import {
+  gatewayRequest,
+  gatewayErrorMessage,
+  redactGatewaySecrets,
+  resolveAdminCredential,
+  safeGatewayDiagnostic
+} from '../src/gateway-client.mjs';
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const cliPath = path.join(repoRoot, 'bin', 'lloom.mjs');
@@ -357,4 +363,104 @@ test('short configured credentials are redacted', () => {
     redactGatewaySecrets('a xy b', { config: { security: { adminApiKeys: ['xy'] } }, env: {} }),
     'a [redacted] b'
   );
+});
+
+test('default and explicitly selected credential environments have documented precedence', () => {
+  const config = { security: { adminApiKeys: ['saved-key'] } };
+  assert.equal(
+    resolveAdminCredential(config, {
+      explicitEnvName: 'SELECTED_ADMIN_KEY',
+      env: { SELECTED_ADMIN_KEY: 'selected-key', LLOOM_ADMIN_API_KEY: 'default-key' }
+    }),
+    'selected-key'
+  );
+  assert.equal(resolveAdminCredential(config, { env: { LLOOM_ADMIN_API_KEY: 'default-key' } }), 'default-key');
+  assert.equal(resolveAdminCredential(config, { env: {} }), 'saved-key');
+});
+
+test('default environment credential overrides a stale literal saved key on the request', async () => {
+  const gateway = await startStatusGateway(200, { body: { cluster: { nodes: {} } } });
+  try {
+    const config = { ...gateway.config, security: { adminApiKeys: ['stale-saved-key'] } };
+    await gatewayRequest(config, '/gateway/cluster', {
+      env: { LLOOM_ADMIN_API_KEY: ADMIN_SECRET },
+      throwOnError: true
+    });
+    assert.equal(gateway.seen.at(-1).authorization, `Bearer ${ADMIN_SECRET}`);
+  } finally {
+    await gateway.close();
+  }
+});
+
+test('missing selected credential fails before gateway HTTP is attempted', async () => {
+  let requests = 0;
+  await assert.rejects(
+    gatewayRequest(
+      { server: { host: '127.0.0.1', port: 1 }, security: { adminApiKeys: ['saved-key'] } },
+      '/gateway/status',
+      {
+        explicitEnvName: 'MISSING_SELECTED_ADMIN_KEY',
+        env: {},
+        fetchImpl: async () => {
+          requests += 1;
+          throw new Error('fetch must not be called');
+        }
+      }
+    ),
+    /Selected admin credential environment variable is empty or unset/
+  );
+  assert.equal(requests, 0);
+});
+
+test('bounded rejected response bodies are cancelled at the diagnostic limit', async () => {
+  let reads = 0;
+  let cancelled = false;
+  const chunk = new TextEncoder().encode('x'.repeat(2048));
+  const response = {
+    ok: false,
+    status: 500,
+    body: {
+      getReader() {
+        return {
+          async read() {
+            reads += 1;
+            return { done: false, value: chunk };
+          },
+          async cancel() {
+            cancelled = true;
+          }
+        };
+      }
+    }
+  };
+  await assert.rejects(
+    gatewayRequest({ server: { host: '127.0.0.1', port: 8100 }, security: {} }, '/gateway/status', {
+      env: {},
+      timeoutMs: 100,
+      fetchImpl: async () => response
+    }),
+    (error) => error.kind === 'server' && error.status === 500
+  );
+  assert.equal(reads, 8);
+  assert.equal(cancelled, true);
+});
+
+test('safeGatewayDiagnostic redacts every stable string field, including exact collisions', () => {
+  const diagnostic = safeGatewayDiagnostic(
+    {
+      code: ADMIN_SECRET,
+      kind: ADMIN_SECRET,
+      upstreamCode: ADMIN_SECRET,
+      status: 500,
+      message: `upstream exposed ${ADMIN_SECRET}`
+    },
+    { config: { security: { adminApiKeys: ['${DIAGNOSTIC_ADMIN_KEY}'] } }, env: { DIAGNOSTIC_ADMIN_KEY: ADMIN_SECRET } }
+  );
+  assert.deepEqual(diagnostic, {
+    code: '[redacted]',
+    kind: '[redacted]',
+    upstreamCode: '[redacted]',
+    status: 500,
+    message: 'upstream exposed [redacted]'
+  });
 });

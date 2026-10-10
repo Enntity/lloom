@@ -1,5 +1,6 @@
 import { Agent as UndiciAgent, fetch as undiciFetch } from 'undici';
 import { resolveManagedEnvironmentValue } from './managed-environment.mjs';
+import { readErrorDiagnostic } from './protocol/upstream-error.mjs';
 
 /**
  * Shared gateway request helper for the CLI and diagnostics.
@@ -24,6 +25,7 @@ export const GATEWAY_ERROR_CODES = Object.freeze({
 });
 
 const DEFAULT_ADMIN_KEY_ENV = 'LLOOM_ADMIN_API_KEY';
+const MAX_GATEWAY_ERROR_BODY_BYTES = 16 * 1024;
 
 function createAbortError() {
   if (typeof globalThis.DOMException === 'function') {
@@ -34,12 +36,24 @@ function createAbortError() {
   return error;
 }
 
-/** Collect the raw configured credential values we may need to redact. */
+/** Collect raw configured credential values we may need to redact. */
 function rawCredentialValues(config, env) {
-  const raw = [
-    ...(Array.isArray(config?.security?.adminApiKeys) ? config.security.adminApiKeys : []),
-    ...(Array.isArray(config?.security?.apiKeys) ? config.security.apiKeys : [])
-  ];
+  const raw = [];
+  const credentialField = (key) =>
+    /(?:api[_-]?key|token|secret|password|credential)/i.test(String(key)) && !/env$/i.test(String(key));
+  const visit = (value, key = '') => {
+    if (Array.isArray(value)) {
+      if (credentialField(key)) raw.push(...value);
+      else value.forEach((entry) => visit(entry, key));
+      return;
+    }
+    if (!value || typeof value !== 'object') {
+      if (credentialField(key)) raw.push(value);
+      return;
+    }
+    for (const [childKey, childValue] of Object.entries(value)) visit(childValue, childKey);
+  };
+  visit(config);
   const values = new Set();
   for (const value of raw) {
     if (typeof value !== 'string' || value.length === 0) continue;
@@ -52,16 +66,43 @@ function rawCredentialValues(config, env) {
 
 /** Remove every configured credential value (and `${NAME}` placeholders) from text. */
 export function redactGatewaySecrets(text, { config, env = process.env, extraValues = [] } = {}) {
+  const effectiveEnv = env ?? {};
   let output = typeof text === 'string' ? text : String(text ?? '');
-  const values = [...new Set([...extraValues, env.LLOOM_ADMIN_API_KEY, ...rawCredentialValues(config, env)])].sort(
-    (a, b) => String(b ?? '').length - String(a ?? '').length
-  );
+  const values = [
+    ...new Set([...extraValues, effectiveEnv[DEFAULT_ADMIN_KEY_ENV], ...rawCredentialValues(config, effectiveEnv)])
+  ]
+    .filter((value) => typeof value === 'string' && value.length > 0)
+    .sort((a, b) => b.length - a.length);
   for (const value of values) {
-    if (typeof value !== 'string' || value.length === 0) continue;
     output = output.split(value).join('[redacted]');
   }
   output = output.replace(/\$\{[A-Za-z_][A-Za-z0-9_]*\}/g, '[redacted-credential]');
   return output;
+}
+
+function redactDiagnosticValue(value, options) {
+  if (typeof value === 'string') return redactGatewaySecrets(value, options);
+  if (Array.isArray(value)) return value.map((entry) => redactDiagnosticValue(entry, options));
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, redactDiagnosticValue(entry, options)]));
+}
+
+/**
+ * Return the stable, JSON-safe gateway diagnostic fields.
+ *
+ * Only the fields documented by the CLI envelope are projected. Every string
+ * in that projection is redacted, including codes and kinds if a configured
+ * credential happens to collide with one of them.
+ */
+export function safeGatewayDiagnostic(error, { config, env = process.env, extraValues = [] } = {}) {
+  const diagnostic = {
+    code: error?.code ?? 'cli_error',
+    kind: error?.kind ?? null,
+    ...(error?.upstreamCode ? { upstreamCode: error.upstreamCode } : {}),
+    status: Number.isInteger(error?.status) ? error.status : null,
+    message: typeof error?.message === 'string' ? error.message : String(error?.message ?? error)
+  };
+  return redactDiagnosticValue(diagnostic, { config, env, extraValues });
 }
 
 export class LLooMGatewayError extends Error {
@@ -171,11 +212,12 @@ export async function gatewayRequest(
     urlFor = null,
     headers = {},
     fetchImpl = undiciFetch,
-    env = process.env
+    env = process.env,
+    explicitEnvName
   } = {}
 ) {
   const target = /^https?:\/\//i.test(url) ? url : `${(urlFor ?? (() => gatewayBaseUrl(config)))(config)}${url}`;
-  const adminKey = resolveAdminCredential(config, { env });
+  const adminKey = resolveAdminCredential(config, { explicitEnvName, env });
 
   const controller = new AbortController();
   let timedOut = false;
@@ -203,7 +245,19 @@ export async function gatewayRequest(
     if (!response.ok) {
       // Read (and discard) the body so the connection can be reused; never
       // surface upstream text because it may echo the credential.
-      const detail = await response.json().catch(() => null);
+      const rawDetail = response.body?.getReader
+        ? await readErrorDiagnostic(response, {
+            timeoutMs: Math.min(timeoutMs, 1000),
+            maxBytes: MAX_GATEWAY_ERROR_BODY_BYTES
+          })
+        : '';
+      let detail = null;
+      try {
+        detail = JSON.parse(rawDetail);
+      } catch {
+        // A malformed or over-sized diagnostic body cannot change the HTTP
+        // classification that was already established from the response.
+      }
       const status = response.status;
       const { kind, code } = classifyStatus(status);
       const allowedCodes = new Set([
@@ -269,9 +323,11 @@ export function resolveAdminCredential(config, { explicitEnvName, env = process.
     return value;
   }
   if (typeof env[DEFAULT_ADMIN_KEY_ENV] === 'string' && env[DEFAULT_ADMIN_KEY_ENV]) return env[DEFAULT_ADMIN_KEY_ENV];
-  const configured = config?.security?.adminApiKeys?.[0] ?? config?.security?.apiKeys?.[0];
-  const value = resolveManagedEnvironmentValue(configured, env);
-  return typeof value === 'string' && !/^\$\{[^}]+\}$/.test(value) ? value : undefined;
+  const admins = config?.security?.adminApiKeys ?? [];
+  const candidates = admins.length ? admins : (config?.security?.apiKeys ?? []);
+  return candidates
+    .map((value) => resolveManagedEnvironmentValue(value, env))
+    .find((value) => typeof value === 'string' && value.length > 0 && !/^\$\{[^}]+\}$/.test(value));
 }
 
 /** The option selects an environment variable name, never a literal key. */
