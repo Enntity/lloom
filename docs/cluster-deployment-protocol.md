@@ -137,9 +137,16 @@ adapter. It owns only a reviewed archive, its reviewed manifest, the atomic
 snapshot, the immutable package/dependency tree, and the Linux user systemd
 unit. It does not rebuild an artifact, change model processes, change runtime
 contracts, or issue an inference request. The injected command runner may
-execute only the configured unit's `systemctl --user is-active` and
-`systemctl --user restart` operations, plus the fixed safe tar listing and
-extraction arguments. The gateway fence adapter must implement:
+execute only read-only metadata inspection for the configured user unit
+(`systemctl --user show` and `loginctl show-user`), the configured unit's
+`systemctl --user is-active` and `systemctl --user restart` operations, plus
+the fixed safe tar listing and extraction arguments. Preflight requires the
+unit to be active and persistently enabled, its user to have lingering
+enabled, its loaded fragment to equal the reviewed unit path, and its
+`ExecStart` to point at the atomic `<release-root>/current` layout.
+`KillMode=process` or `KillMode=none` is required so restarting the gateway
+cannot terminate model child processes; other layouts are refused before
+staging or fencing. The gateway fence adapter must implement:
 
 ```js
 gateway.inspect(context); // protocol, fence protocol, layout, loaded identity
@@ -188,7 +195,7 @@ complete matching disk/loaded identities, and explicit prepared/drained and
 released receipts. It uses `/gateway/deployment-fence/{status,prepare,canary,release}`
 and never serializes the admin key into a journal or receipt. The installed
 node-agent entry point reads `LLOOM_NODE_ID`, `LLOOM_NODE_RELEASE_ROOT`,
-`LLOOM_NODE_CONFIG_PATH`, `LLOOM_NODE_UNIT_PATH`,
+`LLOOM_NODE_CONFIG_PATH`, `LLOOM_NODE_UNIT_PATH`, `LLOOM_NODE_SERVICE_USER`,
 `LLOOM_NODE_DROP_IN_PATHS`, `LLOOM_NODE_ENVIRONMENT_PATHS`,
 `LLOOM_GATEWAY_URL`, and `LLOOM_ADMIN_API_KEY` from the service environment.
 The unit path and the two metadata path lists are explicit verified

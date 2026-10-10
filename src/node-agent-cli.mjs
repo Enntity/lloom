@@ -47,6 +47,12 @@ function configuredPathList(value, label) {
     .map((entry) => configuredPath(entry, label));
 }
 
+function configuredSegment(value, label) {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value))
+    throw Object.assign(new Error(`${label} is not configured`), { code: 'node_metadata_missing' });
+  return value;
+}
+
 export async function handleNodeAgentRequest({ phase, input, agent, output = process.stdout } = {}) {
   const selected = safePhase(phase);
   const context = input && typeof input === 'object' ? input : null;
@@ -98,6 +104,7 @@ export async function runNodeAgentCli({
         unitPath: configuredPath(env.LLOOM_NODE_UNIT_PATH, 'LLOOM_NODE_UNIT_PATH'),
         dropInPaths: configuredPathList(env.LLOOM_NODE_DROP_IN_PATHS, 'LLOOM_NODE_DROP_IN_PATHS'),
         environmentPaths: configuredPathList(env.LLOOM_NODE_ENVIRONMENT_PATHS, 'LLOOM_NODE_ENVIRONMENT_PATHS'),
+        serviceUser: configuredSegment(env.LLOOM_NODE_SERVICE_USER, 'LLOOM_NODE_SERVICE_USER'),
         serviceUnit: env.LLOOM_NODE_SERVICE_UNIT ?? 'lloom.service',
         gateway: createNodeGatewayAdapter({
           baseUrl: env.LLOOM_GATEWAY_URL ?? 'http://127.0.0.1:8100',

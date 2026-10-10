@@ -15,6 +15,7 @@ export const NODE_AGENT_PROTOCOL = 1;
 const DIGEST = /^[a-f0-9]{64}$/;
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/;
 const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const SERVICE_USER = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const PHASES = new Set([
   'preflight',
   'stage',
@@ -43,6 +44,16 @@ function safeId(value, label, pattern = ID) {
     throw new NodeReleaseError(`${label} is invalid`, 'invalid_context');
   }
   return value.trim();
+}
+
+function parseSystemdProperties(value) {
+  const result = {};
+  for (const line of String(value ?? '').split(/\r?\n/)) {
+    const separator = line.indexOf('=');
+    if (separator <= 0) continue;
+    result[line.slice(0, separator)] = line.slice(separator + 1);
+  }
+  return result;
 }
 
 function digest(value, label) {
@@ -379,6 +390,7 @@ export class NodeReleaseAgent {
     unitPath = null,
     dropInPaths = [],
     environmentPaths = [],
+    serviceUser = process.env.USER ?? process.env.LOGNAME ?? null,
     gateway,
     clock = () => new Date()
   } = {}) {
@@ -405,6 +417,7 @@ export class NodeReleaseAgent {
     this.unitPath = unitPath ? path.resolve(unitPath) : null;
     this.dropInPaths = Array.isArray(dropInPaths) ? dropInPaths.map((value) => path.resolve(value)) : [];
     this.environmentPaths = Array.isArray(environmentPaths) ? environmentPaths.map((value) => path.resolve(value)) : [];
+    this.serviceUser = serviceUser ? safeId(serviceUser, 'serviceUser', SERVICE_USER) : null;
     this.gateway = gateway;
     this.clock = clock;
   }
@@ -412,6 +425,11 @@ export class NodeReleaseAgent {
   async preflight(nodeId, context) {
     return this.#phase(nodeId, context, 'preflight', 'preflight', false, async () => {
       this.#assertContext(nodeId, context);
+      // Inspect the loaded unit before the gateway adapter.  A running unit
+      // can still be an unsafe deployment target when it is disabled,
+      // non-persistent, pointed at a mutable release, or configured to kill
+      // model children with the gateway process.
+      await this.#inspectSystemdLayout();
       const inspection = asObject(await this.gateway.inspect(context));
       const currentIdentity = await this.#readCurrentIdentity();
       const unit = await this.#systemd('is-active');
@@ -1220,6 +1238,57 @@ export class NodeReleaseAgent {
       throw new NodeReleaseError('node agent may only inspect or restart its gateway unit', 'unsupported_mutation');
     const result = await this.run('systemctl', ['--user', action, this.serviceUnit], { timeoutMs: 120000 });
     if (result?.code !== 0) throw new NodeReleaseError(`systemd ${action} failed`, 'systemd_failure');
+    return String(result.stdout ?? '');
+  }
+
+  async #inspectSystemdLayout() {
+    if (!this.unitPath || !this.serviceUser)
+      throw new NodeReleaseError(
+        'systemd unit path and service user are required for deployment inspection',
+        'systemd_layout_unknown'
+      );
+
+    const shown = await this.#runInspectionCommand('systemctl', [
+      '--user',
+      'show',
+      this.serviceUnit,
+      '--property=ActiveState,UnitFileState,FragmentPath,ExecStart,KillMode',
+      '--no-pager'
+    ]);
+    const properties = parseSystemdProperties(shown);
+    if (properties.ActiveState !== 'active')
+      throw new NodeReleaseError('gateway systemd unit is not active', 'service_inactive');
+    if (properties.UnitFileState !== 'enabled')
+      throw new NodeReleaseError('gateway systemd unit is not persistently enabled', 'service_not_enabled');
+    if (properties.FragmentPath !== this.unitPath)
+      throw new NodeReleaseError('gateway systemd unit path does not match the reviewed unit', 'unit_path_mismatch');
+
+    const execStart = properties.ExecStart ?? '';
+    const currentPath = path.join(this.root, 'current');
+    const releasePrefix = `${path.join(this.root, 'releases')}${path.sep}`;
+    if (!execStart.includes(currentPath) || execStart.includes(releasePrefix))
+      throw new NodeReleaseError(
+        'gateway systemd ExecStart does not point at the atomic current layout',
+        'execstart_layout_mismatch'
+      );
+    if (!['process', 'none'].includes(properties.KillMode))
+      throw new NodeReleaseError('gateway systemd KillMode would terminate model children', 'killmode_unsafe');
+
+    const linger = await this.#runInspectionCommand('loginctl', [
+      'show-user',
+      this.serviceUser,
+      '--property=Linger',
+      '--no-pager'
+    ]);
+    const lingerProperties = parseSystemdProperties(linger);
+    if (!['yes', 'true', '1'].includes(String(lingerProperties.Linger ?? '').toLowerCase()))
+      throw new NodeReleaseError('gateway service user does not have persistent lingering', 'linger_required');
+  }
+
+  async #runInspectionCommand(command, argv) {
+    const result = await this.run(command, argv, { timeoutMs: 120000 });
+    if (result?.code !== 0)
+      throw new NodeReleaseError(`systemd inspection failed for ${command}`, 'systemd_inspection_failed');
     return String(result.stdout ?? '');
   }
 

@@ -36,13 +36,18 @@ test('evaluates the complete Node engine range instead of only its first compara
   assert.equal(nodeEngineAllows('>=22.19.0 nonsense'), false);
 });
 
-async function makeFixture(t) {
+async function makeFixture(t, { systemd = {} } = {}) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'lloom-node-agent-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const root = path.join(directory, 'gateway');
   const input = path.join(directory, 'reviewed');
+  const unitPath = path.join(directory, 'lloom.service');
   await fs.mkdir(path.join(root, 'releases', 'old'), { recursive: true });
   await fs.mkdir(input, { recursive: true });
+  await fs.writeFile(
+    unitPath,
+    `[Service]\nExecStart=/usr/bin/node ${path.join(root, 'current', 'server.mjs')}\nKillMode=process\n`
+  );
   const oldFiles = {
     'package.json': JSON.stringify({
       name: 'lloom',
@@ -164,6 +169,23 @@ async function makeFixture(t) {
   };
   const run = async (command, argv) => {
     calls.push([command, ...argv]);
+    if (command === 'systemctl' && argv[1] === 'show') {
+      return {
+        code: 0,
+        stdout: [
+          `ActiveState=${systemd.ActiveState ?? 'active'}`,
+          `UnitFileState=${systemd.UnitFileState ?? 'enabled'}`,
+          `FragmentPath=${systemd.FragmentPath ?? unitPath}`,
+          `ExecStart=${systemd.ExecStart ?? `/usr/bin/node ${path.join(root, 'current', 'server.mjs')}`}`,
+          `KillMode=${systemd.KillMode ?? 'process'}`,
+          ''
+        ].join('\n'),
+        stderr: ''
+      };
+    }
+    if (command === 'loginctl') {
+      return { code: 0, stdout: `Linger=${systemd.Linger ?? 'yes'}\n`, stderr: '' };
+    }
     if (argv[1] === 'restart') {
       const target = await fs.readlink(path.join(root, 'current'));
       loaded.value = target.includes('rollback') || target.includes('/old') ? 'old' : 'next';
@@ -176,6 +198,8 @@ async function makeFixture(t) {
     configPath: path.join(root, 'config.json'),
     platform: 'linux',
     gateway,
+    unitPath,
+    serviceUser: 'test-user',
     extractArchive: async ({ destination }) => {
       for (const [filePath, bytes] of Object.entries(nextFiles)) {
         await fs.mkdir(path.dirname(path.join(destination, filePath)), { recursive: true });
@@ -208,7 +232,18 @@ async function makeFixture(t) {
     },
     canary: { gatewayModelId: 'atlas/local', runtimeId: 'atlas-runtime' }
   };
-  return { agent, context, root, loaded, calls, artifactSha, manifestSha: sha(manifest), gateway };
+  return {
+    agent,
+    context,
+    root,
+    loaded,
+    calls,
+    artifactSha,
+    manifestSha: sha(manifest),
+    gateway,
+    unitPath,
+    serviceUser: 'test-user'
+  };
 }
 
 test('stages, swaps, restarts, verifies and releases only the gateway unit', async (t) => {
@@ -228,7 +263,9 @@ test('stages, swaps, restarts, verifies and releases only the gateway unit', asy
   assert.equal((await agent.promote('node-1', context)).promoted, true);
   assert.equal((await agent.release('node-1', context)).released, true);
   assert.deepEqual(
-    calls.map((entry) => entry.slice(0, 4)),
+    calls
+      .filter((entry) => entry[0] === 'systemctl' && ['is-active', 'restart'].includes(entry[2]))
+      .map((entry) => entry.slice(0, 4)),
     [
       ['systemctl', '--user', 'is-active', 'lloom.service'],
       ['systemctl', '--user', 'restart', 'lloom.service'],
@@ -236,9 +273,41 @@ test('stages, swaps, restarts, verifies and releases only the gateway unit', asy
     ]
   );
   assert.equal(
+    calls.some((entry) => entry[0] === 'loginctl' && entry[1] === 'show-user'),
+    true
+  );
+  assert.equal(
     calls.some((entry) => entry.includes('model') || entry.includes('runtime')),
     false
   );
+});
+
+test('refuses a running gateway with an unsupported persistent systemd layout before fencing', async (t) => {
+  const cases = [
+    ['disabled unit', { UnitFileState: 'disabled' }, 'service_not_enabled'],
+    ['missing linger', { Linger: 'no' }, 'linger_required'],
+    ['different unit fragment', { FragmentPath: '/tmp/other.service' }, 'unit_path_mismatch'],
+    [
+      'mutable release ExecStart',
+      { ExecStart: '/usr/bin/node /srv/lloom/releases/old/server.mjs' },
+      'execstart_layout_mismatch'
+    ],
+    ['model-killing KillMode', { KillMode: 'control-group' }, 'killmode_unsafe']
+  ];
+  for (const [label, systemd, code] of cases) {
+    await t.test(label, async (caseTest) => {
+      const fixture = await makeFixture(caseTest, { systemd });
+      await assert.rejects(
+        () => fixture.agent.preflight('node-1', fixture.context),
+        (error) => error.code === code
+      );
+      assert.equal(fixture.loaded.fenced, false);
+      assert.equal(
+        fixture.calls.some((entry) => entry[0] === 'systemctl' && entry[2] === 'restart'),
+        false
+      );
+    });
+  }
 });
 
 test('rejects reviewed digest mismatch before creating a stage', async (t) => {
@@ -262,6 +331,8 @@ test('rejects archive links before invoking tar extraction', async (t) => {
     configPath: path.join(fixture.root, 'config.json'),
     platform: 'linux',
     gateway: fixture.gateway,
+    unitPath: fixture.unitPath,
+    serviceUser: fixture.serviceUser,
     run: async (command, argv, options) => {
       if (command === 'tar') {
         tarCalls.push(argv);
@@ -342,6 +413,8 @@ test('does not retry a lost prepare response and blocks a second operation on th
     configPath: path.join(root, 'config.json'),
     platform: 'linux',
     gateway,
+    unitPath: fixture.unitPath,
+    serviceUser: fixture.serviceUser,
     run: fixture.agent.run,
     clock: () => new Date('2026-10-10T17:00:00.000Z')
   });
