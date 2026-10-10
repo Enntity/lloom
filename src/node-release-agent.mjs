@@ -88,8 +88,11 @@ async function walkRegularFiles(fsImpl, root, prefix = '') {
     const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
     const absolute = path.join(root, entry.name);
     if (entry.isDirectory()) files.push(...(await walkRegularFiles(fsImpl, absolute, relative)));
-    else if (entry.isFile()) files.push({ path: relative.replaceAll(path.sep, '/'), absolute });
-    else throw new NodeReleaseError('release archive contains a link or special file', 'archive_unsafe_entry');
+    else if (entry.isFile()) {
+      const stat = await fsImpl.lstat(absolute);
+      if (stat.nlink > 1) throw new NodeReleaseError('release archive contains a hard link', 'archive_unsafe_entry');
+      files.push({ path: relative.replaceAll(path.sep, '/'), absolute });
+    } else throw new NodeReleaseError('release archive contains a link or special file', 'archive_unsafe_entry');
   }
   return files.sort((a, b) => a.path.localeCompare(b.path));
 }
