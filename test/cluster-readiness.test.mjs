@@ -438,3 +438,14 @@ test('whole-topology status marks optional offline peers without changing requir
   assert.ok(status.nodes.worker.requiredByRuntime.includes('split'));
   assert.deepEqual((await f.manager.status()).runtimes.split.requiredNodes, ['leader', 'worker']);
 });
+
+// A listening endpoint during warmup is not yet admitted for normal requests.
+test('scoped serving readiness respects the warmup barrier', { timeout: 10000 }, async (t) => {
+  const f = await boot(t);
+  f.manager.stateFor('split').status = 'warming';
+  const readiness = await f.coordinator.runtimeReadiness('split');
+  assert.equal(readiness.readyForServing, false);
+  assert.equal(readiness.readyForControl, true);
+  f.manager.stateFor('split').status = 'running';
+  assert.equal((await f.coordinator.runtimeReadiness('split')).readyForServing, true);
+});

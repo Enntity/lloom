@@ -972,13 +972,16 @@ export class RuntimeManager {
   // pinned to required nodes; this method never performs a cluster-wide sweep.
   async runtimeServingHealthy(runtimeId, nodeEvidence = {}) {
     const runtime = this.getRuntime(runtimeId);
-    if (!runtime || runtime.enabled !== true) return false;
+    if (!runtime || runtime.enabled !== true || this.stateFor(runtimeId).status === 'warming') return false;
     const placement = runtimePlacement(runtime, this.config);
 
     if (placement.mode === 'distributed') {
       if (!(await this.distributedServingOwnership(runtime))) return false;
       if (runtime.healthUrl)
-        return await healthOk(runtime.healthUrl, runtimeHealthTimeoutMs(runtime), runtime.healthModel);
+        return (
+          (await healthOk(runtime.healthUrl, runtimeHealthTimeoutMs(runtime), runtime.healthModel)) &&
+          this.stateFor(runtimeId).status !== 'warming'
+        );
       if (!placement.members.length) return false;
       for (const member of placement.members) {
         const local = this.clusterCoordinator
@@ -987,6 +990,7 @@ export class RuntimeManager {
         if (local) {
           const memberRuntime = this.getRuntime(member.runtime);
           if (!memberRuntime || memberRuntime.enabled !== true) return false;
+          if (this.stateFor(member.runtime).status === 'warming') return false;
           if (!(await runtimeHealthOk(memberRuntime))) return false;
           continue;
         }
@@ -1003,7 +1007,7 @@ export class RuntimeManager {
     if (!local) {
       return nodeEvidence?.[nodeId]?.runtimeManager?.runtimes?.[runtimeId]?.healthy === true;
     }
-    return await runtimeHealthOk(runtime);
+    return (await runtimeHealthOk(runtime)) && this.stateFor(runtimeId).status !== 'warming';
   }
 
   async assertDistributedControl(runtime) {
