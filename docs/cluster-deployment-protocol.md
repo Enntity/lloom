@@ -134,11 +134,12 @@ silently downgrades those checks.
 `src/node-release-agent.mjs` is the gateway-side implementation for the
 adapter. It owns only a reviewed archive, its reviewed manifest, the atomic
 `current` symlink and `current.manifest.json`, the configured gateway config
-snapshot, and the Linux user systemd unit. It does not rebuild an artifact,
-change model processes, change runtime contracts, or issue an inference
-request. The injected command runner may execute only the configured unit's
-`systemctl --user is-active` and `systemctl --user restart` operations. The
-gateway fence adapter must implement:
+snapshot, the immutable package/dependency tree, and the Linux user systemd
+unit. It does not rebuild an artifact, change model processes, change runtime
+contracts, or issue an inference request. The injected command runner may
+execute only the configured unit's `systemctl --user is-active` and
+`systemctl --user restart` operations, plus the fixed safe tar listing and
+extraction arguments. The gateway fence adapter must implement:
 
 ```js
 gateway.inspect(context); // protocol, fence protocol, layout, loaded identity
@@ -148,13 +149,33 @@ gateway.release(context); // { fenced: false }
 gateway.canary(context); // exact local model/runtime result while fenced
 ```
 
+The reviewed archive must contain `package.json`, a complete regular-file
+inventory in `manifest.files`, `manifest.treeSha256`, an exact
+`dependencyClosure` and matching `dependencyDigest`, a supported Node engine,
+and a runtime-contract digest. Symlinks, special files, path traversal,
+unlisted bytes, missing dependency packages, and digest drift are rejected
+before `stage` acknowledges success. The installed gateway must expose a
+complete `loadedIdentity` and `runtimeSnapshot`; a disk manifest alone is not
+proof that the running process loaded that release.
+
 The agent journals under `operations/<operation-token>/<node-id>/journal.json`
-and fsyncs the journal before an action and after its receipt. It writes the
-old manifest/config backup before reporting `prepare`. A pending action is
+and fsyncs the journal before an action and after its receipt. It copies and
+hashes the old release tree, manifest, config, unit/drop-ins/environment, and
+runtime snapshot before reporting `prepare`. A pending action is
 unknown after interruption; only `reprepare` or `rollback` may supersede that
 pending action, and they retain the fence when the old identity cannot be
 proven. The agent refuses unsupported platforms, missing fence protocol,
 non-atomic layouts, unsafe release targets, or digest mismatches.
+
+`src/node-gateway-adapter.mjs` is the concrete same-node fence adapter. It
+accepts only an authenticated loopback HTTP URL and requires fence protocol 1,
+complete matching disk/loaded identities, and explicit prepared/drained and
+released receipts. It uses `/gateway/deployment-fence/{status,prepare,canary,release}`
+and never serializes the admin key into a journal or receipt. The installed
+node-agent entry point reads `LLOOM_NODE_ID`, `LLOOM_NODE_RELEASE_ROOT`,
+`LLOOM_NODE_CONFIG_PATH`, `LLOOM_GATEWAY_URL`, and `LLOOM_ADMIN_API_KEY` from
+the service environment, accepts only bounded JSON on stdin, and emits
+public-safe JSON receipts.
 
 `src/ssh-deployment-transport.mjs` sends the public-safe context as JSON over
 an already-installed `lloom node-agent <phase> --json` command. Host, user,

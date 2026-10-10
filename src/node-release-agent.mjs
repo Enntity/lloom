@@ -55,6 +55,70 @@ function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
 }
 
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map((entry) => stableJson(entry)).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function digestJson(value) {
+  return sha256(Buffer.from(stableJson(value)));
+}
+
+function safeArchivePath(value) {
+  if (typeof value !== 'string' || !value || value.startsWith('/') || value.includes('\0')) return false;
+  const normalized = path.posix.normalize(value.replaceAll('\\', '/'));
+  return (
+    normalized === value.replaceAll('\\', '/') &&
+    normalized !== '.' &&
+    !normalized.startsWith('../') &&
+    normalized !== '..'
+  );
+}
+
+async function walkRegularFiles(fsImpl, root, prefix = '') {
+  const entries = await fsImpl.readdir(root, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+    const absolute = path.join(root, entry.name);
+    if (entry.isDirectory()) files.push(...(await walkRegularFiles(fsImpl, absolute, relative)));
+    else if (entry.isFile()) files.push({ path: relative.replaceAll(path.sep, '/'), absolute });
+    else throw new NodeReleaseError('release archive contains a link or special file', 'archive_unsafe_entry');
+  }
+  return files.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+async function treeDigest(fsImpl, root) {
+  const files = await walkRegularFiles(fsImpl, root);
+  const entries = [];
+  for (const file of files) entries.push({ path: file.path, sha256: await fileDigest(fsImpl, file.absolute) });
+  return { entries, digest: digestJson(entries) };
+}
+
+function nodeMajor() {
+  const match = /^v?(\d+)/.exec(process.versions.node);
+  return Number(match?.[1] ?? 0);
+}
+
+function nodeEngineAllows(value) {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  const major = nodeMajor();
+  return value.split(/\s*\|\|\s*/).some((part) => {
+    const match = /(?:^|[<>=~^ ])v?(\d+)(?:\.\d+)?(?:\.\d+)?/.exec(part.trim());
+    if (!match) return false;
+    const required = Number(match[1]);
+    if (/^\^|^~/.test(part.trim())) return required === major;
+    if (/^>=/.test(part.trim())) return major >= required;
+    return required === major;
+  });
+}
+
 async function fileDigest(fsImpl, filePath) {
   return sha256(await fsImpl.readFile(filePath));
 }
@@ -154,19 +218,17 @@ function currentIdentityFromManifest(manifest, manifestSha256, configSha256) {
   const artifactSha256 = typeof source.sha256 === 'string' ? source.sha256.toLowerCase() : '';
   const releaseId = source.releaseId ?? source.commit ?? source.id;
   if (!ID.test(String(releaseId ?? '')) || !DIGEST.test(artifactSha256)) return null;
-  const dependencyDigest =
-    typeof source.dependencyDigest === 'string' && ID.test(source.dependencyDigest)
-      ? source.dependencyDigest
-      : sha256(Buffer.from(JSON.stringify(source.dependencies ?? {})));
+  if (!DIGEST.test(String(manifestSha256 ?? '').toLowerCase())) return null;
+  if (!DIGEST.test(String(configSha256 ?? '').toLowerCase())) return null;
+  const dependencyDigest = typeof source.dependencyDigest === 'string' ? source.dependencyDigest.toLowerCase() : '';
   const runtimeContractDigest =
-    typeof source.runtimeContractDigest === 'string' && ID.test(source.runtimeContractDigest)
-      ? source.runtimeContractDigest
-      : sha256(Buffer.from(JSON.stringify(source.runtimeContract ?? {})));
+    typeof source.runtimeContractDigest === 'string' ? source.runtimeContractDigest.toLowerCase() : '';
+  if (!DIGEST.test(dependencyDigest) || !DIGEST.test(runtimeContractDigest)) return null;
   return {
     releaseId: String(releaseId),
     artifactSha256,
-    manifestSha256,
-    configSha256,
+    manifestSha256: manifestSha256.toLowerCase(),
+    configSha256: configSha256.toLowerCase(),
     dependencyDigest,
     runtimeContractDigest
   };
@@ -227,6 +289,10 @@ export class NodeReleaseAgent {
     serviceManager = 'systemd',
     fsImpl = fs,
     run = null,
+    extractArchive = null,
+    unitPath = null,
+    dropInPaths = [],
+    environmentPaths = [],
     gateway,
     clock = () => new Date()
   } = {}) {
@@ -249,6 +315,10 @@ export class NodeReleaseAgent {
     this.serviceManager = serviceManager;
     this.fs = fsImpl;
     this.run = run;
+    this.extractArchive = extractArchive;
+    this.unitPath = unitPath ? path.resolve(unitPath) : null;
+    this.dropInPaths = Array.isArray(dropInPaths) ? dropInPaths.map((value) => path.resolve(value)) : [];
+    this.environmentPaths = Array.isArray(environmentPaths) ? environmentPaths.map((value) => path.resolve(value)) : [];
     this.gateway = gateway;
     this.clock = clock;
   }
@@ -268,6 +338,16 @@ export class NodeReleaseAgent {
       if (inspection.atomicLayout !== true && inspection.atomicLayout !== 'atomic')
         throw new NodeReleaseError('gateway lacks the required atomic release layout', 'atomic_layout_required');
       if (!currentIdentity) throw new NodeReleaseError('current release identity is unknown', 'identity_unknown');
+      if (!inspection.loadedIdentity)
+        throw new NodeReleaseError('gateway did not report its loaded identity', 'loaded_identity_unknown');
+      const loadedIdentity = publicIdentity(inspection.loadedIdentity, 'loaded identity', { old: true });
+      if (
+        !this.#matchesExpected(currentIdentity, context.expectedOldIdentity) ||
+        !this.#matchesExpected(loadedIdentity, context.expectedOldIdentity)
+      )
+        throw new NodeReleaseError('loaded gateway identity drifted from the current release', 'loaded_identity_drift');
+      if (inspection.fenced === true || inspection.drained === true)
+        throw new NodeReleaseError('gateway is already fenced by another operation', 'fence_conflict');
       return {
         platform: this.platform,
         serviceManager: this.serviceManager,
@@ -284,30 +364,42 @@ export class NodeReleaseAgent {
       this.#assertContext(nodeId, context);
       const artifact = this.#artifact(context);
       const reviewedManifest = await this.#readReviewedManifest(artifact);
+      const configSha256 = await fileDigest(this.fs, this.configPath);
       publicIdentity(
-        currentIdentityFromManifest(
-          reviewedManifest,
-          artifact.manifestSha256,
-          await fileDigest(this.fs, this.configPath)
-        ),
+        currentIdentityFromManifest(reviewedManifest, artifact.manifestSha256, configSha256),
         'reviewed identity'
       );
       const token = releaseToken(artifact.id);
       const destination = path.join(this.root, 'releases', token);
-      await this.fs.mkdir(destination, { recursive: true, mode: 0o700 });
-      const artifactName = path.basename(artifact.path);
-      const manifestName = path.basename(artifact.manifestPath);
-      await copyAtomic(this.fs, artifact.path, path.join(destination, artifactName));
-      await copyAtomic(this.fs, artifact.manifestPath, path.join(destination, manifestName));
-      await writeAtomicJson(this.fs, path.join(destination, 'stage.json'), {
+      const temporary = `${destination}.tmp-${process.pid}-${randomUUID()}`;
+      await this.fs.rm(temporary, { recursive: true, force: true });
+      await this.fs.mkdir(temporary, { recursive: true, mode: 0o700 });
+      await this.#extractArchive(artifact.path, temporary);
+      const packageProof = await this.#validatePackage(temporary, reviewedManifest, artifact);
+      const manifestName = 'release-manifest.json';
+      // Preserve the reviewed bytes: the manifest digest is an identity field,
+      // so reserializing equivalent JSON would create a different release.
+      await copyAtomic(this.fs, artifact.manifestPath, path.join(temporary, manifestName));
+      await writeAtomicJson(this.fs, path.join(temporary, 'stage.json'), {
         protocol: NODE_AGENT_PROTOCOL,
         artifactId: artifact.id,
         artifactSha256: artifact.sha256,
         manifestSha256: artifact.manifestSha256,
-        artifactName,
-        manifestName
+        manifestName,
+        treeSha256: packageProof.treeSha256,
+        dependencyDigest: packageProof.dependencyDigest,
+        runtimeContractDigest: packageProof.runtimeContractDigest
       });
-      return { staged: true, artifactSha256: artifact.sha256, manifestSha256: artifact.manifestSha256 };
+      await this.fs.rm(destination, { recursive: true, force: true });
+      await this.fs.rename(temporary, destination);
+      return {
+        staged: true,
+        artifactSha256: artifact.sha256,
+        manifestSha256: artifact.manifestSha256,
+        treeSha256: packageProof.treeSha256,
+        dependencyDigest: packageProof.dependencyDigest,
+        runtimeContractDigest: packageProof.runtimeContractDigest
+      };
     });
   }
 
@@ -317,6 +409,8 @@ export class NodeReleaseAgent {
       const current = await this.#readCurrentIdentity();
       if (!current || !this.#matchesExpected(current, context.expectedOldIdentity))
         throw new NodeReleaseError('current release identity drifted before prepare', 'identity_drift');
+      const inspection = asObject(await this.gateway.inspect(context));
+      this.#assertInspectionFence(inspection, current, context, 'prepare');
       const fence = this.#assertFence(await this.gateway.prepare(context), 'prepare');
       const backup = await this.#backup(context, current);
       // Keep only public-safe evidence and the old symlink target in the node
@@ -325,7 +419,8 @@ export class NodeReleaseAgent {
       document.backup = {
         relativeTarget: backup.relativeTarget,
         configExisted: backup.configExisted,
-        evidence: backup.evidence
+        evidence: backup.evidence,
+        files: backup.files
       };
       // Persist the backup descriptor before the coordinator can observe a
       // successful prepare. A crash between the filesystem snapshot and the
@@ -340,6 +435,12 @@ export class NodeReleaseAgent {
       this.#assertContext(nodeId, context);
       const staged = await this.#staged(context);
       if (!document.backup) throw new NodeReleaseError('swap requires a durable prepare backup', 'prepare_required');
+      const inspection = asObject(await this.gateway.inspect(context));
+      const current = await this.#readCurrentIdentity();
+      this.#assertInspectionFence(inspection, current, context, 'swap');
+      const currentPathBefore = await this.fs.readlink(atomicLayoutPath(this.root, 'current'));
+      if (currentPathBefore !== document.backup.relativeTarget)
+        throw new NodeReleaseError('current release target changed after prepare', 'layout_drift');
       const currentPath = atomicLayoutPath(this.root, 'current');
       const temporary = `${currentPath}.tmp-${process.pid}-${randomUUID()}`;
       const relative = path.relative(this.root, staged.destination);
@@ -354,6 +455,7 @@ export class NodeReleaseAgent {
         identity.manifestSha256 !== context.artifact.manifestSha256
       )
         throw new NodeReleaseError('atomic swap did not expose the reviewed identity', 'identity_mismatch');
+      document.postSwapIdentity = identity;
       return { applied: true, identity, snapshot: document.backup.evidence };
     });
   }
@@ -373,7 +475,9 @@ export class NodeReleaseAgent {
       if (
         !identity ||
         identity.artifactSha256 !== context.artifact.sha256 ||
-        identity.manifestSha256 !== context.artifact.manifestSha256
+        identity.manifestSha256 !== context.artifact.manifestSha256 ||
+        identity.dependencyDigest !== document.postSwapIdentity?.dependencyDigest ||
+        identity.runtimeContractDigest !== document.postSwapIdentity?.runtimeContractDigest
       )
         throw new NodeReleaseError(
           'loaded gateway identity does not match the reviewed release',
@@ -381,6 +485,8 @@ export class NodeReleaseAgent {
         );
       if (inspection.loadedIdentity === undefined)
         throw new NodeReleaseError('gateway did not report the loaded release identity', 'loaded_identity_unknown');
+      if (inspection.fenced !== true || inspection.drained !== true)
+        throw new NodeReleaseError('gateway lost its deployment fence during restart', 'fence_not_ready');
       return {
         serviceRestarted: true,
         healthy: true,
@@ -404,6 +510,8 @@ export class NodeReleaseAgent {
           'verification did not prove the loaded reviewed release',
           'loaded_identity_mismatch'
         );
+      if (inspection.fenced !== true || inspection.drained !== true)
+        throw new NodeReleaseError('verification requires the gateway to remain fenced', 'fence_not_ready');
       return { verified: true, identity, snapshot: document.backup?.evidence ?? this.#evidence(context, identity) };
     });
   }
@@ -412,16 +520,25 @@ export class NodeReleaseAgent {
     return this.#phase(nodeId, context, 'canary', 'canary', false, async () => {
       this.#assertContext(nodeId, context);
       const result = asObject(await this.gateway.canary(context));
-      if (result.privileged !== true || result.fenced !== true)
+      if (
+        result.privileged !== true ||
+        result.fenced !== true ||
+        result.healthy !== true ||
+        result.aliasUsed !== false ||
+        result.cloudFallback !== false ||
+        result.source !== 'local' ||
+        result.gatewayModelId !== context.canary?.gatewayModelId ||
+        result.runtimeId !== context.canary?.runtimeId
+      )
         throw new NodeReleaseError('canary was not privileged on the fenced gateway', 'canary_not_fenced');
       return {
-        healthy: result.healthy === true,
+        healthy: true,
         gatewayModelId: safeId(result.gatewayModelId, 'canary.gatewayModelId'),
         runtimeId: safeId(result.runtimeId, 'canary.runtimeId'),
         fenced: true,
         privileged: true,
-        aliasUsed: result.aliasUsed === false,
-        cloudFallback: result.cloudFallback === false,
+        aliasUsed: false,
+        cloudFallback: false,
         source: 'local'
       };
     });
@@ -445,6 +562,16 @@ export class NodeReleaseAgent {
   async release(nodeId, context) {
     return this.#phase(nodeId, context, 'release', 'release', true, async () => {
       this.#assertContext(nodeId, context);
+      const identity = await this.#loadedIdentity(context);
+      if (
+        !identity ||
+        identity.artifactSha256 !== context.artifact.sha256 ||
+        identity.manifestSha256 !== context.artifact.manifestSha256
+      )
+        throw new NodeReleaseError(
+          'release requires the reviewed gateway identity to be loaded',
+          'loaded_identity_mismatch'
+        );
       const result = asObject(await this.gateway.release(context));
       if (result.fenced !== false)
         throw new NodeReleaseError('gateway did not affirm public release', 'release_not_affirmed');
@@ -475,9 +602,44 @@ export class NodeReleaseAgent {
           throw new NodeReleaseError('rollback has no durable backup for the changed identity', 'backup_missing');
         return { restored: true, fenced: true, identity };
       }
+      const current = await this.#readCurrentIdentity();
+      const loaded = await this.#loadedIdentity(context);
+      if (document.postSwapIdentity) {
+        const loadedIsExpectedOld = this.#matchesExpected(loaded, context.expectedOldIdentity);
+        if (
+          !this.#identitiesEqual(current, document.postSwapIdentity) ||
+          (!this.#identitiesEqual(loaded, document.postSwapIdentity) && !loadedIsExpectedOld)
+        )
+          throw new NodeReleaseError(
+            'rollback found an unreviewed live identity; refusing overwrite',
+            'rollback_cas_failed'
+          );
+      }
+      const currentConfigSha256 = await fileDigest(this.fs, this.configPath);
+      if (backup.files?.configSha256 && currentConfigSha256 !== backup.files.configSha256)
+        throw new NodeReleaseError('rollback config changed after prepare', 'rollback_cas_failed');
       const currentPath = atomicLayoutPath(this.root, 'current');
+      const backupRelease = path.join(this.#operationDirectory(context), 'previous-release');
+      const rollbackRelease = path.join(this.root, 'releases', `rollback-${releaseToken(context.operationId)}`);
+      if (!backup.files || !backup.files.releaseTreeSha256)
+        throw new NodeReleaseError('rollback snapshot evidence is incomplete', 'backup_incomplete');
+      const backupProof = await treeDigest(this.fs, backupRelease);
+      if (backupProof.digest !== backup.files.releaseTreeSha256)
+        throw new NodeReleaseError('rollback snapshot bytes changed', 'snapshot_digest_mismatch');
+      for (const [label, filePath] of [
+        ['unit', this.unitPath],
+        ...this.dropInPaths.map((value, index) => [`dropIn-${index}`, value]),
+        ...this.environmentPaths.map((value, index) => [`environment-${index}`, value])
+      ]) {
+        const expected = backup.files[`${label}Sha256`];
+        if (!expected || !filePath) continue;
+        if (!(await pathExists(this.fs, filePath)) || (await fileDigest(this.fs, filePath)) !== expected)
+          throw new NodeReleaseError(`${label} changed after prepare`, 'rollback_cas_failed');
+      }
+      await this.fs.rm(rollbackRelease, { recursive: true, force: true });
+      await this.#copyTree(backupRelease, rollbackRelease);
       const temporary = `${currentPath}.rollback-${process.pid}-${randomUUID()}`;
-      await this.fs.symlink(backup.relativeTarget, temporary);
+      await this.fs.symlink(path.relative(this.root, rollbackRelease), temporary);
       await this.fs.rename(temporary, currentPath);
       const operationDirectory = this.#operationDirectory(context);
       await copyAtomic(
@@ -491,6 +653,18 @@ export class NodeReleaseAgent {
       const identity = publicIdentity(await this.#readCurrentIdentity(), 'rollback identity', { old: true });
       if (!identity || !this.#matchesExpected(identity, context.expectedOldIdentity))
         throw new NodeReleaseError('rollback did not restore the expected old identity', 'rollback_identity_mismatch');
+      const inspection = asObject(await this.gateway.inspect(context));
+      const loadedAfter = publicIdentity(inspection.loadedIdentity, 'rollback loaded identity', { old: true });
+      if (!this.#matchesExpected(loadedAfter, context.expectedOldIdentity) || inspection.serviceActive === false)
+        throw new NodeReleaseError(
+          'rollback did not restore the loaded old identity',
+          'rollback_loaded_identity_mismatch'
+        );
+      if (inspection.runtimeSnapshot && digestJson(inspection.runtimeSnapshot) !== backup.files.runtimeSnapshotSha256)
+        throw new NodeReleaseError(
+          'rollback runtime snapshot does not match the prepared gateway',
+          'rollback_runtime_mismatch'
+        );
       return { restored: true, fenced: true, identity };
     });
   }
@@ -563,6 +737,101 @@ export class NodeReleaseAgent {
     return manifest;
   }
 
+  async #extractArchive(artifactPath, destination) {
+    if (this.extractArchive) {
+      await this.extractArchive({ artifactPath, destination, fs: this.fs });
+      return;
+    }
+    const listing = await this.#archiveCommand(['--list', '--file', artifactPath]);
+    const entries = String(listing.stdout ?? '')
+      .split(/\r?\n/)
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .map((entry) => entry.replace(/^\.\//, ''));
+    if (!entries.length || entries.some((entry) => !safeArchivePath(entry)))
+      throw new NodeReleaseError('reviewed archive has no safe file list', 'archive_invalid');
+    await this.#archiveCommand([
+      '--extract',
+      '--no-same-owner',
+      '--no-same-permissions',
+      '--file',
+      artifactPath,
+      '--directory',
+      destination
+    ]);
+  }
+
+  async #archiveCommand(argv) {
+    const result = await this.run('tar', argv, { timeoutMs: 120000 });
+    if (result?.code !== 0)
+      throw new NodeReleaseError('reviewed archive could not be safely extracted', 'archive_extract_failed');
+    return result;
+  }
+
+  async #validatePackage(destination, manifest, artifact) {
+    const packagePath = path.join(destination, 'package.json');
+    let packageJson;
+    try {
+      packageJson = JSON.parse(await this.fs.readFile(packagePath, 'utf8'));
+    } catch {
+      throw new NodeReleaseError('reviewed archive has no valid package.json', 'package_invalid');
+    }
+    if (!nodeEngineAllows(manifest.engines?.node ?? packageJson.engines?.node))
+      throw new NodeReleaseError('reviewed package requires an unsupported Node engine', 'node_engine_mismatch');
+    const closure = asObject(manifest.dependencyClosure ?? manifest.dependencies);
+    if (!Object.keys(closure).length)
+      throw new NodeReleaseError('reviewed manifest has no dependency closure', 'dependency_closure_missing');
+    const dependencyDigest =
+      typeof manifest.dependencyDigest === 'string' ? manifest.dependencyDigest.toLowerCase() : '';
+    if (!DIGEST.test(dependencyDigest) || dependencyDigest !== digestJson(closure))
+      throw new NodeReleaseError('reviewed dependency closure digest is invalid', 'dependency_digest_mismatch');
+    const declared = asObject(packageJson.dependencies);
+    for (const [name, version] of Object.entries(closure)) {
+      if (declared[name] !== version)
+        throw new NodeReleaseError(`dependency ${name} is absent from package.json`, 'dependency_closure_mismatch');
+      const dependencyPackage = path.join(destination, 'node_modules', name, 'package.json');
+      let installed;
+      try {
+        installed = JSON.parse(await this.fs.readFile(dependencyPackage, 'utf8'));
+      } catch {
+        throw new NodeReleaseError(
+          `dependency ${name} is absent from the reviewed package`,
+          'dependency_closure_mismatch'
+        );
+      }
+      if (installed.version !== version)
+        throw new NodeReleaseError(`dependency ${name} version is not reviewed`, 'dependency_closure_mismatch');
+    }
+    if (!DIGEST.test(String(manifest.runtimeContractDigest ?? '').toLowerCase()))
+      throw new NodeReleaseError('runtime contract digest is missing', 'runtime_contract_missing');
+    const expectedFiles = Array.isArray(manifest.files)
+      ? manifest.files
+          .map((entry) => ({ path: entry?.path, sha256: String(entry?.sha256 ?? '').toLowerCase() }))
+          .sort((a, b) => String(a.path).localeCompare(String(b.path)))
+      : null;
+    if (
+      !expectedFiles?.length ||
+      expectedFiles.some((entry) => !safeArchivePath(entry.path) || !DIGEST.test(entry.sha256))
+    )
+      throw new NodeReleaseError('reviewed manifest file inventory is missing or invalid', 'file_inventory_missing');
+    const actual = await treeDigest(this.fs, destination);
+    const actualEntries = actual.entries.filter(
+      (entry) => entry.path !== 'stage.json' && entry.path !== 'release-manifest.json'
+    );
+    if (stableJson(actualEntries) !== stableJson(expectedFiles))
+      throw new NodeReleaseError('reviewed archive bytes do not match its file inventory', 'file_inventory_mismatch');
+    const treeSha256 = digestJson(actualEntries);
+    if (manifest.treeSha256 !== treeSha256)
+      throw new NodeReleaseError('reviewed archive tree digest does not match its manifest', 'tree_digest_mismatch');
+    if (manifest.sha256 !== artifact.sha256)
+      throw new NodeReleaseError('reviewed package identity does not match artifact', 'manifest_identity_mismatch');
+    return {
+      treeSha256,
+      dependencyDigest,
+      runtimeContractDigest: manifest.runtimeContractDigest.toLowerCase()
+    };
+  }
+
   async #readCurrentIdentity() {
     const manifestPath = atomicLayoutPath(this.root, 'current.manifest.json');
     const manifestBytes = await this.fs.readFile(manifestPath);
@@ -572,8 +841,37 @@ export class NodeReleaseAgent {
     } catch {
       return null;
     }
+    const currentTarget = await this.fs.readlink(atomicLayoutPath(this.root, 'current'));
+    if (!currentTarget || path.isAbsolute(currentTarget) || currentTarget.split(path.sep).includes('..')) return null;
+    const packageRoot = path.resolve(this.root, currentTarget);
+    if (!packageRoot.startsWith(`${this.root}${path.sep}`)) return null;
+    const packagedManifestPath = path.join(packageRoot, 'release-manifest.json');
+    let packagedManifest;
+    let packagedManifestBytes;
+    try {
+      packagedManifestBytes = await this.fs.readFile(packagedManifestPath);
+      packagedManifest = JSON.parse(packagedManifestBytes.toString('utf8'));
+    } catch {
+      return null;
+    }
+    if (packagedManifest.sha256 !== manifest.sha256) return null;
     const configSha256 = await fileDigest(this.fs, this.configPath);
-    return currentIdentityFromManifest(manifest, sha256(manifestBytes), configSha256);
+    if (Array.isArray(packagedManifest.files)) {
+      await this.#validatePackage(packageRoot, packagedManifest, { sha256: packagedManifest.sha256 });
+    } else {
+      return null;
+    }
+    const diskIdentity = currentIdentityFromManifest(manifest, sha256(manifestBytes), configSha256);
+    const verifiedIdentity = currentIdentityFromManifest(packagedManifest, sha256(packagedManifestBytes), configSha256);
+    if (
+      !diskIdentity ||
+      !verifiedIdentity ||
+      !['releaseId', 'artifactSha256', 'dependencyDigest', 'runtimeContractDigest'].every(
+        (field) => diskIdentity[field] === verifiedIdentity[field]
+      )
+    )
+      return null;
+    return diskIdentity;
   }
 
   async #loadedIdentity(context) {
@@ -584,20 +882,35 @@ export class NodeReleaseAgent {
   async #staged(context) {
     const artifact = this.#artifact(context);
     const destination = path.join(this.root, 'releases', releaseToken(artifact.id));
-    const stage = asObject(JSON.parse(await this.fs.readFile(path.join(destination, 'stage.json'), 'utf8')));
+    let stage;
+    try {
+      stage = asObject(JSON.parse(await this.fs.readFile(path.join(destination, 'stage.json'), 'utf8')));
+    } catch {
+      throw new NodeReleaseError('staged release metadata is missing', 'stage_missing');
+    }
     if (
       stage.artifactId !== artifact.id ||
       stage.artifactSha256 !== artifact.sha256 ||
       stage.manifestSha256 !== artifact.manifestSha256 ||
-      !SEGMENT.test(stage.artifactName) ||
-      !SEGMENT.test(stage.manifestName)
+      stage.manifestName !== 'release-manifest.json' ||
+      !DIGEST.test(String(stage.treeSha256 ?? '')) ||
+      !DIGEST.test(String(stage.dependencyDigest ?? '')) ||
+      !DIGEST.test(String(stage.runtimeContractDigest ?? ''))
     ) {
       throw new NodeReleaseError(
         'staged release metadata does not match the reviewed artifact',
         'stage_identity_mismatch'
       );
     }
-    return { destination, artifactName: stage.artifactName, manifestName: stage.manifestName };
+    const manifest = JSON.parse(await this.fs.readFile(path.join(destination, stage.manifestName), 'utf8'));
+    const proof = await this.#validatePackage(destination, manifest, artifact);
+    if (
+      proof.treeSha256 !== stage.treeSha256 ||
+      proof.dependencyDigest !== stage.dependencyDigest ||
+      proof.runtimeContractDigest !== stage.runtimeContractDigest
+    )
+      throw new NodeReleaseError('staged release bytes changed after verification', 'stage_digest_mismatch');
+    return { destination, manifestName: stage.manifestName, treeSha256: proof.treeSha256 };
   }
 
   async #backup(context, current) {
@@ -612,11 +925,51 @@ export class NodeReleaseAgent {
     const relativeTarget = target.replace(/^\.?\//, '');
     if (!relativeTarget || path.isAbsolute(relativeTarget) || relativeTarget.split(path.sep).includes('..'))
       throw new NodeReleaseError('current release target is unsafe', 'layout_invalid');
+    const sourceRelease = path.resolve(this.root, relativeTarget);
+    if (!sourceRelease.startsWith(`${this.root}${path.sep}`))
+      throw new NodeReleaseError('current release target escapes the release root', 'layout_invalid');
+    const backupRelease = path.join(operationDirectory, 'previous-release');
+    await this.fs.rm(backupRelease, { recursive: true, force: true });
+    await this.#copyTree(sourceRelease, backupRelease);
+    const files = { configSha256: configExisted ? await fileDigest(this.fs, this.configPath) : null };
+    const ancillary = path.join(operationDirectory, 'ancillary');
+    const ancillarySources = [
+      ['unit', this.unitPath],
+      ...this.dropInPaths.map((filePath, index) => [`dropIn-${index}`, filePath]),
+      ...this.environmentPaths.map((filePath, index) => [`environment-${index}`, filePath])
+    ];
+    for (const [label, filePath] of ancillarySources) {
+      if (!filePath || !(await pathExists(this.fs, filePath))) continue;
+      const destination = path.join(ancillary, label);
+      await copyAtomic(this.fs, filePath, destination);
+      files[`${label}Sha256`] = await fileDigest(this.fs, filePath);
+    }
+    const releaseProof = await treeDigest(this.fs, backupRelease);
+    files.releaseTreeSha256 = releaseProof.digest;
+    const inspection = asObject(await this.gateway.inspect(context));
+    if (!inspection.runtimeSnapshot || typeof inspection.runtimeSnapshot !== 'object')
+      throw new NodeReleaseError('gateway did not provide a runtime snapshot', 'runtime_snapshot_missing');
+    files.runtimeSnapshotSha256 = digestJson(inspection.runtimeSnapshot);
+    await writeAtomicJson(this.fs, path.join(operationDirectory, 'runtime-snapshot.json'), inspection.runtimeSnapshot);
     const evidence = {
       id: snapshotId(context.operationId, this.nodeId, 'snapshot'),
-      sha256: sha256(Buffer.from(JSON.stringify({ current, target: relativeTarget })))
+      sha256: digestJson({ current, target: relativeTarget, files })
     };
-    return { relativeTarget, manifestPath, configPath, configExisted, evidence };
+    return { relativeTarget, manifestPath, configPath, configExisted, evidence, files };
+  }
+
+  async #copyTree(source, destination) {
+    const stat = await this.fs.lstat(source);
+    if (!stat.isDirectory()) throw new NodeReleaseError('release snapshot is not a directory', 'snapshot_invalid');
+    await this.fs.mkdir(destination, { recursive: true, mode: 0o700 });
+    const entries = await this.fs.readdir(source, { withFileTypes: true });
+    for (const entry of entries) {
+      const from = path.join(source, entry.name);
+      const to = path.join(destination, entry.name);
+      if (entry.isDirectory()) await this.#copyTree(from, to);
+      else if (entry.isFile()) await copyAtomic(this.fs, from, to);
+      else throw new NodeReleaseError('release snapshot contains a link or special file', 'snapshot_invalid');
+    }
   }
 
   #operationDirectory(context) {
@@ -629,6 +982,40 @@ export class NodeReleaseAgent {
 
   #matchesExpected(actual, expected) {
     return Object.entries(asObject(expected)).every(([key, value]) => actual?.[key] === value);
+  }
+
+  #identitiesEqual(left, right) {
+    if (!left || !right) return false;
+    return [
+      'releaseId',
+      'artifactSha256',
+      'manifestSha256',
+      'configSha256',
+      'dependencyDigest',
+      'runtimeContractDigest'
+    ].every((field) => left[field] === right[field]);
+  }
+
+  #assertInspectionFence(inspection, current, context, phase) {
+    if (!inspection || inspection.gatewayProtocol !== context.gatewayProtocol)
+      throw new NodeReleaseError(`${phase} gateway protocol changed`, 'protocol_mismatch');
+    if (
+      inspection.fenceProtocolVersion !== NODE_AGENT_PROTOCOL ||
+      (inspection.atomicLayout !== true && inspection.atomicLayout !== 'atomic')
+    )
+      throw new NodeReleaseError(`${phase} gateway fence/layout contract is unsupported`, 'fence_protocol_mismatch');
+    if (
+      !inspection.loadedIdentity ||
+      !this.#matchesExpected(
+        publicIdentity(inspection.loadedIdentity, 'loaded identity', { old: true }),
+        context.expectedOldIdentity
+      )
+    )
+      throw new NodeReleaseError(`${phase} loaded gateway identity drifted`, 'loaded_identity_drift');
+    if (!this.#matchesExpected(current, context.expectedOldIdentity))
+      throw new NodeReleaseError(`${phase} current release identity drifted`, 'identity_drift');
+    if (phase !== 'prepare' && (inspection.fenced !== true || inspection.drained !== true))
+      throw new NodeReleaseError(`${phase} requires a fenced drained gateway`, 'fence_not_ready');
   }
 
   #evidence(context, identity) {
@@ -647,6 +1034,8 @@ export class NodeReleaseAgent {
   }
 
   async #systemd(action) {
+    if (!['is-active', 'restart'].includes(action))
+      throw new NodeReleaseError('node agent may only inspect or restart its gateway unit', 'unsupported_mutation');
     const result = await this.run('systemctl', ['--user', action, this.serviceUnit], { timeoutMs: 120000 });
     if (result?.code !== 0) throw new NodeReleaseError(`systemd ${action} failed`, 'systemd_failure');
     return String(result.stdout ?? '');
@@ -655,6 +1044,7 @@ export class NodeReleaseAgent {
   async #phase(nodeId, context, phase, method, mutation, work) {
     if (!PHASES.has(phase)) throw new NodeReleaseError(`unsupported node phase ${phase}`, 'invalid_context');
     this.#assertContext(nodeId, context);
+    await this.#acquireLock(context);
     const filePath = this.#journalPath(context);
     const document = (await this.#load(filePath)) ?? {
       protocol: NODE_AGENT_PROTOCOL,
@@ -676,8 +1066,17 @@ export class NodeReleaseAgent {
       throw new NodeReleaseError('node journal identity mismatch', 'journal_identity_mismatch');
     if (document.generation > context.generation)
       throw new NodeReleaseError('node journal generation is newer than the request', 'stale_generation');
-    if (document.generation < context.generation) document.generation = context.generation;
-    if (document.receipts[phase]) return clone(document.receipts[phase]);
+    if (document.generation < context.generation) {
+      if (document.receipts[phase] && !['reprepare', 'rollback'].includes(phase))
+        throw new NodeReleaseError('phase receipt belongs to an older generation', 'stale_generation');
+      document.generation = context.generation;
+      if (['reprepare', 'rollback'].includes(phase)) delete document.receipts[phase];
+    }
+    if (document.receipts[phase]) {
+      if (document.receipts[phase].generation !== context.generation)
+        throw new NodeReleaseError('phase receipt generation is stale', 'stale_generation');
+      return clone(document.receipts[phase]);
+    }
     if (document.pendingAction && !['reprepare', 'rollback'].includes(phase))
       throw new NodeReleaseError('node journal contains an uncertain pending action', 'operation_uncertain');
     if (document.pendingAction) {
@@ -704,6 +1103,7 @@ export class NodeReleaseAgent {
       document.state = phase === 'discard-stage' ? 'rolled-back' : phase;
       document.updatedAt = timestamp(this.clock);
       await writeAtomicJson(this.fs, filePath, document);
+      if (['release', 'rollback', 'discard-stage'].includes(phase)) await this.#releaseLock(context);
       return receipt;
     } catch (error) {
       document.state = 'unknown';
@@ -712,6 +1112,37 @@ export class NodeReleaseAgent {
       await writeAtomicJson(this.fs, filePath, document).catch(() => {});
       throw error;
     }
+  }
+
+  async #acquireLock(context) {
+    const lockPath = path.join(this.root, '.deployment-agent.lock');
+    await this.fs.mkdir(this.root, { recursive: true, mode: 0o700 });
+    try {
+      await this.fs.mkdir(lockPath, { mode: 0o700 });
+      await writeAtomicJson(this.fs, path.join(lockPath, 'owner.json'), {
+        operationId: context.operationId,
+        generation: context.generation,
+        nodeId: this.nodeId
+      });
+      return;
+    } catch (error) {
+      if (error?.code !== 'EEXIST')
+        throw new NodeReleaseError('deployment agent lock could not be acquired', 'lock_failed');
+    }
+    let owner;
+    try {
+      owner = JSON.parse(await this.fs.readFile(path.join(lockPath, 'owner.json'), 'utf8'));
+    } catch {
+      throw new NodeReleaseError('deployment agent lock owner is unreadable', 'lock_uncertain');
+    }
+    if (owner.operationId !== context.operationId)
+      throw new NodeReleaseError('another deployment operation owns this node', 'lock_held');
+  }
+
+  async #releaseLock(context) {
+    const lockPath = path.join(this.root, '.deployment-agent.lock');
+    const owner = await this.#load(path.join(lockPath, 'owner.json'));
+    if (owner?.operationId === context.operationId) await this.fs.rm(lockPath, { recursive: true, force: true });
   }
 
   async #load(filePath) {
@@ -735,6 +1166,9 @@ export class NodeReleaseAgent {
       'identity',
       'artifactSha256',
       'manifestSha256',
+      'treeSha256',
+      'dependencyDigest',
+      'runtimeContractDigest',
       'snapshot',
       'backup',
       'fenced',
