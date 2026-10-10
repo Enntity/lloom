@@ -14,6 +14,14 @@ import { NodeReleaseAgent } from '../src/node-release-agent.mjs';
 
 const execFileAsync = promisify(execFile);
 const sha = (value) => createHash('sha256').update(value).digest('hex');
+const canonicalJson = (value) => {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value ?? null);
+  if (Array.isArray(value)) return `[${value.map((item) => canonicalJson(item)).join(',')}]`;
+  return `{${Object.keys(value)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+    .join(',')}}`;
+};
 const COMMIT = 'a'.repeat(40);
 const DEP = sha(JSON.stringify({ dep: '1.0.0' }));
 const CONTRACT = 'b'.repeat(64);
@@ -168,7 +176,12 @@ test('uses a fresh adapter per phase against createLloomServer and stages a real
   );
   const upstream = http.createServer((_req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ id: 'e2e', choices: [{ message: { role: 'assistant', content: 'ok' } }] }));
+    res.end(
+      JSON.stringify({
+        id: 'e2e',
+        choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }]
+      })
+    );
   });
   const upstreamPort = await listen(upstream);
   const config = {
@@ -224,7 +237,7 @@ test('uses a fresh adapter per phase against createLloomServer and stages a real
     artifactSha256: oldManifest.sha256,
     manifestSha256: sha(oldManifestBytes),
     configSha256: sha(await fs.readFile(configPath)),
-    effectiveConfigSha256: sha(JSON.stringify(config)),
+    effectiveConfigSha256: sha(canonicalJson(config)),
     dependencyDigest: DEP,
     runtimeContractDigest: CONTRACT
   };

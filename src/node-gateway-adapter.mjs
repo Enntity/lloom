@@ -1,7 +1,5 @@
 import { URL } from 'node:url';
 
-import { stablePreservationSnapshot } from './deployment-fence.mjs';
-
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
 const PROTOCOL = 1;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
@@ -17,6 +15,42 @@ export class NodeGatewayAdapterError extends Error {
 function publicValue(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   return value;
+}
+
+// Keep the historical adapter export independent of the gateway's richer
+// preservation contract. The status endpoint includes volatile gateway-local
+// fields; this compatibility view retains only owned runtime/process state.
+function stablePreservationSnapshot(value) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const runtimes = {};
+  const sourceRuntimes =
+    source.runtimes && typeof source.runtimes === 'object' && !Array.isArray(source.runtimes) ? source.runtimes : {};
+  for (const [runtimeId, runtime] of Object.entries(sourceRuntimes).sort(([left], [right]) =>
+    left.localeCompare(right)
+  )) {
+    const entry = runtime && typeof runtime === 'object' && !Array.isArray(runtime) ? runtime : {};
+    const stable = {};
+    for (const key of ['status', 'healthy', 'pid', 'node', 'remote', 'distributed', 'containerName']) {
+      if (entry[key] !== undefined) stable[key] = entry[key];
+    }
+    if (Array.isArray(entry.members)) {
+      stable.members = entry.members
+        .filter((member) => member && typeof member === 'object' && !Array.isArray(member))
+        .map((member) => ({
+          ...(member.runtime === undefined ? {} : { runtime: member.runtime }),
+          ...(member.status === undefined ? {} : { status: member.status }),
+          ...(member.healthy === undefined ? {} : { healthy: member.healthy })
+        }));
+    }
+    if (entry.container && typeof entry.container === 'object' && !Array.isArray(entry.container)) {
+      stable.container = {};
+      for (const key of ['id', 'name', 'image', 'imageId', 'running', 'status']) {
+        if (entry.container[key] !== undefined) stable.container[key] = entry.container[key];
+      }
+    }
+    runtimes[runtimeId] = stable;
+  }
+  return { runtimes };
 }
 
 function identity(value, label) {
