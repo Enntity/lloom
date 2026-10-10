@@ -35,7 +35,7 @@ async function chatFixture(aliases, { models = null, handleUpstream = null } = {
   await new Promise((resolve) => upstream.listen(0, '127.0.0.1', resolve));
   const config = {
     name: 'rate-limit-test',
-    server: { host: '127.0.0.1', port: 0 },
+    server: { requestScheduling: { mode: 'off' }, host: '127.0.0.1', port: 0 },
     security: { allowMissingAuth: true, apiKeys: [] },
     logging: { metricsPersistence: false },
     defaults: { chatModel: Object.keys(aliases)[0] },

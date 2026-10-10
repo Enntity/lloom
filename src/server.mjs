@@ -72,6 +72,12 @@ import {
 } from './rate-limit.mjs';
 import { RuntimeManager, runtimeWatchdogConfig, normalizeRequestClass } from './runtime-manager.mjs';
 import { ForegroundPriority } from './foreground-priority.mjs';
+import {
+  RequestScheduler,
+  RequestSchedulingTimeoutError,
+  computeGroupForRequest,
+  resolveRequestClass
+} from './request-scheduler.mjs';
 import { createPreferredResidencyReconciler } from './runtime-residency.mjs';
 import {
   assertStandbyConfig,
@@ -567,7 +573,19 @@ function isClientClosedError(error) {
   return error instanceof ClientClosedError || error?.name === 'ClientClosedError' || error?.code === 'client_closed';
 }
 
-const QUEUE_BACKPRESSURE_CODES = new Set(['RUNTIME_QUEUE_TIMEOUT', 'RUNTIME_QUEUE_FULL', 'INTERACTIVE_PRIORITY']);
+const QUEUE_BACKPRESSURE_CODES = new Set([
+  'RUNTIME_QUEUE_TIMEOUT',
+  'RUNTIME_QUEUE_FULL',
+  'INTERACTIVE_PRIORITY',
+  'REQUEST_QUEUE_FULL',
+  'REQUEST_SCHEDULING_TIMEOUT',
+  'REQUEST_SCHEDULER_CLOSED'
+]);
+const STARTUP_WAIT_CODES = new Set([
+  'REQUEST_ADMISSION_DEFERRED',
+  'RUNTIME_ADMISSION_BUSY',
+  'RUNTIME_ADMISSION_PREEMPTED'
+]);
 
 /** Queue saturation (local, or relayed by a federated node) is load, not target failure. */
 function isQueueBackpressureError(error) {
@@ -585,7 +603,12 @@ function errorStatusCode(error) {
 }
 
 export function shouldFailoverModelRequest(error, res = null) {
-  if (error?.code === 'INTERACTIVE_PRIORITY' || error?.upstreamCode === 'INTERACTIVE_PRIORITY') return false;
+  if (
+    ['INTERACTIVE_PRIORITY', 'REQUEST_QUEUE_FULL', 'REQUEST_SCHEDULING_TIMEOUT', 'REQUEST_SCHEDULER_CLOSED'].some(
+      (code) => code === error?.code || code === error?.upstreamCode
+    )
+  )
+    return false;
   if (res?.headersSent || res?.writableEnded || res?.destroyed) return false;
   if (isClientClosedError(error) || error instanceof PromptTooLargeError || error instanceof StructuredOutputError) {
     return false;
@@ -2334,11 +2357,31 @@ export function createLloomServer(
   let reloadInFlight = Promise.resolve();
   let routingStatusCache = { at: 0, value: null, pending: null };
   const runtimeStartOperations = new Map();
+  const pendingAdmissionControllers = new Set();
   const runtimeRecoveryBackoffs = new Map();
   const targetBackoffs = new Map();
   const rateLimitRegistry = createRateLimitRegistry(rateLimitSettingsFor(config));
   const foregroundPriority = new ForegroundPriority({ idleMs: () => config.server?.foregroundIdleMs ?? 60_000 });
+  // One scheduling gate per gateway. It orders admission by class across every
+  // model, alias, and runtime; `mode` selects adaptive (default), legacy
+  // interrupt, or off. The gate is in-process only: queued prompts are never
+  // persisted and a restart does not replay accepted work.
+  const requestScheduler = new RequestScheduler({
+    mode: config.server?.requestScheduling?.mode ?? 'adaptive',
+    settings: () => ({
+      ...config.server?.requestScheduling,
+      foregroundIdleMs: config.server?.foregroundIdleMs ?? 60_000
+    })
+  });
+  const unsubscribeScheduling = requestScheduler.subscribe(() => runtimeManager.nudgeAdmissionQueues?.());
+  const unsubscribeLimits = rateLimitRegistry.subscribe(() => requestScheduler.nudge());
   const configPath = config.sourcePath;
+
+  function classifyRequest(req) {
+    return requestScheduler.mode === 'adaptive'
+      ? resolveRequestClass(req, {}, { config })
+      : normalizeRequestClass(req.headers['x-lloom-request-class']);
+  }
 
   deploymentFence.setHooks({
     pauseResidency: () => residencyReconciler.pause?.(),
@@ -2481,6 +2524,7 @@ export function createLloomServer(
 
   function reloadConfig() {
     if (!configPath) return;
+    if (runtimeManager.shuttingDown) return Promise.resolve({ skipped: 'gateway-closing' });
     if (processRole !== 'primary' || isStandby(config)) {
       logger.warn?.('standby gateway rejected config reload; restart the process to apply configuration');
       const rejection = Object.assign(
@@ -2502,7 +2546,9 @@ export function createLloomServer(
       .catch(() => {})
       .then(() =>
         withDeploymentMutationScope(deploymentFenceToken, async () => {
+          if (runtimeManager.shuttingDown) return { skipped: 'gateway-closing' };
           const nextConfig = await loadConfig(configPath);
+          if (runtimeManager.shuttingDown) return { skipped: 'gateway-closing' };
           if (normalizeServerRole(nextConfig) !== processRole) {
             throw Object.assign(
               new Error('server role is frozen for the process lifetime; restart the gateway to apply changes'),
@@ -2513,15 +2559,29 @@ export function createLloomServer(
           // Publish the validated catalog before the potentially long physical
           // reconciliation. A fence racing this queued reload still retains
           // the pre-fence token until the manager mutation has settled.
-          registry = createRegistry(nextConfig);
-          rateLimitRegistry.sync(rateLimitSettingsFor(nextConfig));
-          const result = await runtimeManager.reconfigure(nextConfig);
-          for (const key of Object.keys(config)) delete config[key];
-          Object.assign(config, nextConfig);
-          freezeProcessRole(config, processRole);
-          clusterCoordinator.reconfigure(config);
-          routingStatusCache = { at: 0, value: null, pending: null };
-          logger.info?.(`reloaded LLooM config; changed runtimes: ${result.changed.join(', ') || 'none'}`);
+          const previousRegistry = registry;
+          const nextRegistry = createRegistry(nextConfig);
+          registry = nextRegistry;
+          try {
+            const result = await runtimeManager.reconfigure(nextConfig);
+            if (runtimeManager.shuttingDown) {
+              registry = previousRegistry;
+              return { skipped: 'gateway-closing' };
+            }
+            for (const key of Object.keys(config)) delete config[key];
+            Object.assign(config, nextConfig);
+            freezeProcessRole(config, processRole);
+            clusterCoordinator.reconfigure(config);
+            routingStatusCache = { at: 0, value: null, pending: null };
+            // Publish scheduling and budgets together. Limiter sync notifies
+            // admission queues synchronously, so policy must already match.
+            requestScheduler.refresh(config.server?.requestScheduling?.mode, { notify: false });
+            rateLimitRegistry.sync(rateLimitSettingsFor(config));
+            logger.info?.(`reloaded LLooM config; changed runtimes: ${result.changed.join(', ') || 'none'}`);
+          } catch (error) {
+            registry = previousRegistry;
+            throw error;
+          }
         })
       );
     reloadInFlight = reload.catch((error) => logger.error?.(`LLooM config reload failed: ${error?.message ?? error}`));
@@ -2788,15 +2848,25 @@ export function createLloomServer(
     }
   };
 
-  async function startRuntime(runtimeId, { alternativeAvailable = false, allowEviction = true } = {}) {
+  async function startRuntime(
+    runtimeId,
+    {
+      alternativeAvailable = false,
+      allowEviction = true,
+      adaptive = false,
+      admissionGuard = null,
+      waitForCapacity = null
+    } = {}
+  ) {
     if (config.runtimePolicy?.autoEvict === true) {
       const waitMs = Math.max(0, Number(config.runtimePolicy?.admissionWaitMs ?? 120000));
-      const deadline = Date.now() + waitMs;
+      const deadline = adaptive ? Infinity : Date.now() + waitMs;
       let queued = false;
       const pausedBlockers = new Set();
       try {
         while (true) {
           try {
+            admissionGuard?.();
             return await applyRuntimePolicyPlan(config, runtimeManager, {
               requestedRuntimeId: runtimeId,
               dryRun: false,
@@ -2805,23 +2875,35 @@ export function createLloomServer(
               force: false,
               reason: 'model-request',
               alternativeAvailable,
-              allowEviction: allowEviction && !alternativeAvailable
+              allowEviction: allowEviction && !alternativeAvailable,
+              admissionGuard,
+              allowPreemption: !adaptive
             });
           } catch (error) {
             if (alternativeAvailable && error instanceof RuntimeAdmissionError) throw error;
             if (!(error instanceof RuntimeAdmissionError) || !error.temporary || Date.now() >= deadline) throw error;
+            admissionGuard?.();
             if (!queued) {
               runtimeManager.markAdmissionQueued(runtimeId, true, 'waiting-for-capacity');
               queued = true;
             }
             for (const blocker of runtimeAdmissionBlockers(error.plan).active) {
-              if (pausedBlockers.has(blocker.runtimeId)) continue;
+              // Adaptive priority already withdraws lower runtime waiters.
+              // Let eligible work drain; pausing its queue would pin residency
+              // forever when queueTimeoutMs is zero, and could steal a pause
+              // owned by maintenance or watchdog recovery.
+              if (
+                adaptive ||
+                pausedBlockers.has(blocker.runtimeId) ||
+                runtimeManager.pausedRuntimes?.has(blocker.runtimeId)
+              )
+                continue;
               runtimeManager.pauseRuntime?.(blocker.runtimeId, `capacity-for:${runtimeId}`);
               pausedBlockers.add(blocker.runtimeId);
             }
-            await new Promise((resolve) =>
-              setTimeout(resolve, Math.min(error.retryAfterSeconds * 1000, deadline - Date.now()))
-            );
+            const delayMs = Math.min(error.retryAfterSeconds * 1000, deadline - Date.now());
+            if (waitForCapacity) await waitForCapacity(delayMs);
+            else await new Promise((resolve) => setTimeout(resolve, delayMs));
           }
         }
       } finally {
@@ -2834,7 +2916,14 @@ export function createLloomServer(
 
   function startRuntimeOperation(
     runtimeId,
-    { alternativeAvailable = false, allowEviction = true, deploymentFenceToken = null } = {}
+    {
+      alternativeAvailable = false,
+      allowEviction = true,
+      deploymentFenceToken = null,
+      adaptive = false,
+      admissionGuard = null,
+      waitForCapacity = null
+    } = {}
   ) {
     deploymentFenceToken = deploymentFence.captureMutation({
       operation: `runtime recovery (${runtimeId})`,
@@ -2843,13 +2932,19 @@ export function createLloomServer(
     let operation = runtimeStartOperations.get(runtimeId);
     if (operation) return operation;
     operation = withDeploymentMutationScope(deploymentFenceToken, () =>
-      startRuntime(runtimeId, { alternativeAvailable, allowEviction })
-    );
+      startRuntime(runtimeId, { alternativeAvailable, allowEviction, adaptive, admissionGuard, waitForCapacity })
+    ).catch((error) => {
+      if (STARTUP_WAIT_CODES.has(error?.code) && runtimeStartOperations.get(runtimeId) === operation) {
+        runtimeStartOperations.delete(runtimeId);
+      }
+      throw error;
+    });
     operation.lloomAlternativeAvailable = alternativeAvailable;
     runtimeStartOperations.set(runtimeId, operation);
     operation
       .then(() => runtimeRecoveryBackoffs.delete(runtimeId))
       .catch((error) => {
+        if (STARTUP_WAIT_CODES.has(error?.code)) return;
         if (alternativeAvailable) noteRuntimeRecoveryFailure(runtimeId, error);
         logger.error?.(`runtime ${runtimeId} background start failed: ${error?.message ?? error}`);
       })
@@ -2861,7 +2956,15 @@ export function createLloomServer(
 
   async function ensureRuntime(
     runtimeId,
-    { alternativeAvailable = false, allowEviction = true, signal = null, deploymentFenceToken = null } = {}
+    {
+      alternativeAvailable = false,
+      allowEviction = true,
+      signal = null,
+      deploymentFenceToken = null,
+      adaptive = false,
+      admissionGuard = null,
+      waitForCapacity = null
+    } = {}
   ) {
     signal?.throwIfAborted();
     if (!runtimeId) return { runtimeId, started: false, reason: 'no-runtime' };
@@ -2891,11 +2994,33 @@ export function createLloomServer(
       operation = null;
     }
     signal?.throwIfAborted();
+    admissionGuard?.();
     operation ??= startRuntimeOperation(runtimeId, {
       alternativeAvailable,
       allowEviction,
-      deploymentFenceToken
+      deploymentFenceToken,
+      adaptive,
+      admissionGuard,
+      waitForCapacity
     });
+
+    if (adaptive && !alternativeAvailable) {
+      try {
+        const result = await waitForRequest(operation, signal);
+        if (
+          typeof runtimeManager.isHealthy !== 'function' ||
+          (await waitForRequest(runtimeManager.isHealthy(runtimeId), signal))
+        ) {
+          return result;
+        }
+        throw new RuntimeUnavailableError(runtimeId, result?.reason ?? 'startup completed without a healthy endpoint');
+      } catch (error) {
+        if (runtimeStartOperations.get(runtimeId) === operation && error?.code === 'REQUEST_ADMISSION_DEFERRED') {
+          runtimeStartOperations.delete(runtimeId);
+        }
+        throw error;
+      }
+    }
 
     const runtime = config.runtimes?.[runtimeId] ?? {};
     const foregroundWaitMs = Math.max(0, Number(runtime.requestStartupWaitMs ?? 1000));
@@ -3011,7 +3136,7 @@ export function createLloomServer(
     const started = Date.now();
     const requestBytes = Number(req.headers['content-length']) || 0;
     const attribution = requestEnntityAttribution(req);
-    const requestClass = normalizeRequestClass(req.headers['x-lloom-request-class']);
+    const requestClass = req.lloomRequestClass ?? classifyRequest(req);
     const deploymentCanary = req.deploymentCanary ?? null;
     if (deploymentCanary && !deploymentFence.isCanaryAuthorized(deploymentCanary)) {
       throw new DeploymentFenceError('deployment canary authorization is stale or invalid', {
@@ -3020,17 +3145,69 @@ export function createLloomServer(
         retryAfterSeconds: 0
       });
     }
-    const rateLimitScopeIds = [...new Set([resolved.requestedId, ...(resolved.aliasChain ?? [])])];
+    const rateLimitScopeIds = [...new Set([resolved.requestedId, ...(resolved.aliasChain ?? []), resolved.model.id])];
     const client = createClientCloseTracker(req, res);
-    let rateLimitRelease;
+    const adaptive = requestScheduler.mode === 'adaptive';
+    const queueTimeoutMs = adaptive ? requestScheduler.settingsFor().queueTimeoutMs : 0;
+    const admissionController = adaptive ? new AbortController() : null;
+    if (admissionController) pendingAdmissionControllers.add(admissionController);
+    const admissionSignal = admissionController
+      ? AbortSignal.any([client.signal, admissionController.signal])
+      : client.signal;
+    let admissionTimer = queueTimeoutMs
+      ? setTimeout(() => {
+          admissionController.abort(new RequestSchedulingTimeoutError({ timeoutMs: queueTimeoutMs }));
+        }, queueTimeoutMs)
+      : null;
+    const clearAdmissionTimer = () => {
+      clearTimeout(admissionTimer);
+      admissionTimer = null;
+      if (admissionController) pendingAdmissionControllers.delete(admissionController);
+    };
+    let schedulingLease = null;
+    let rateLimitRelease = () => {};
+    let rateAdmitted = false;
+    const readyForAdmission = () =>
+      requestScheduler.readyFor(schedulingLease) &&
+      !requestScheduler.higherDemandForScopes(
+        schedulingLease,
+        rateLimitScopeIds.filter((id) => rateLimitRegistry.limiter(id))
+      );
+    const canAdmit = () => {
+      if (!readyForAdmission()) return false;
+      if (rateAdmitted) return true;
+      try {
+        const release = rateLimitRegistry.tryAcquireChain(rateLimitScopeIds);
+        if (!release) return false;
+        rateLimitRelease = release;
+        rateAdmitted = true;
+        clearAdmissionTimer();
+        requestScheduler.markStarted(schedulingLease);
+        return true;
+      } catch (error) {
+        if (error.name === 'RateBudgetExhaustedError')
+          throw new ModelRateLimitError(resolved.requestedId, Math.max(1, Math.ceil(error.retryAfterMs / 1000)));
+        throw error;
+      }
+    };
     try {
-      rateLimitRelease = await admitRateLimited(resolved, rateLimitScopeIds, {
-        signal: client.signal,
-        started
-      });
+      if (adaptive)
+        schedulingLease = await requestScheduler.admit({
+          requestClass,
+          groupId: computeGroupForRequest(config, resolved),
+          scopeIds: rateLimitScopeIds,
+          signal: admissionSignal
+        });
+      else
+        rateLimitRelease = await admitRateLimited(resolved, rateLimitScopeIds, {
+          signal: client.signal,
+          started
+        });
     } catch (error) {
       // A rejected admission never reaches the request lifecycle that would
       // otherwise dispose these listeners.
+      schedulingLease?.release();
+      clearAdmissionTimer();
       client.dispose();
       throw error;
     }
@@ -3119,6 +3296,34 @@ export function createLloomServer(
     try {
       const result = await clusterCoordinator.withTarget(resolved, async () => {
         client.signal.throwIfAborted();
+        const runInSlot = async () => {
+          queueStartedAt ??= Date.now();
+          if (adaptive && (!resolved.model.runtime || !runtimeManager.getRuntime?.(resolved.model.runtime))) {
+            await requestScheduler.waitFor(schedulingLease, canAdmit, admissionSignal);
+          }
+          return runtimeManager.withSlot(
+            resolved.model.runtime,
+            () => {
+              client.signal.throwIfAborted();
+              runtimeStartedAt = Date.now();
+              lastProgressAt = runtimeStartedAt;
+              return fn({ signal: client.signal, timing, progress, watchdog });
+            },
+            {
+              signal: admissionSignal,
+              requestClass,
+              ...(adaptive
+                ? {
+                    canAdmit,
+                    canWait: readyForAdmission,
+                    strictPriority: true,
+                    maxQueuedRequests: requestScheduler.settingsFor().maxQueuedRequests,
+                    queueTimeoutMs: requestScheduler.settingsFor().queueTimeoutMs
+                  }
+                : {})
+            }
+          );
+        };
         if (deploymentCanary) {
           if (resolved.model.selectedNode && !clusterCoordinator.isLocalNode(resolved.model.selectedNode)) {
             throw new DeploymentFenceError('deployment canary cannot route to a remote node', {
@@ -3139,29 +3344,46 @@ export function createLloomServer(
             });
           }
         } else {
-          await ensureRuntime(resolved.model.runtime, {
-            signal: client.signal,
-            alternativeAvailable: resolved.routeSelection?.readyAlternativeAvailable === true,
-            allowEviction: resolved.model.kind !== 'embedding',
-            deploymentFenceToken: req.deploymentFenceToken ?? null
-          });
+          const admissionGuard = adaptive
+            ? () => {
+                if (admissionSignal.aborted || !readyForAdmission()) {
+                  throw Object.assign(new Error('runtime admission yielded to higher priority work'), {
+                    code: 'REQUEST_ADMISSION_DEFERRED'
+                  });
+                }
+                return true;
+              }
+            : null;
+          while (true) {
+            if (adaptive) {
+              await requestScheduler.waitFor(schedulingLease, readyForAdmission, admissionSignal);
+            }
+            try {
+              await ensureRuntime(resolved.model.runtime, {
+                signal: admissionSignal,
+                alternativeAvailable: resolved.routeSelection?.readyAlternativeAvailable === true,
+                allowEviction: resolved.model.kind !== 'embedding',
+                deploymentFenceToken: req.deploymentFenceToken ?? null,
+                adaptive,
+                admissionGuard,
+                waitForCapacity: adaptive
+                  ? (timeoutMs) => requestScheduler.waitForChange({ signal: admissionSignal, timeoutMs })
+                  : null
+              });
+              return await runInSlot();
+            } catch (error) {
+              if (!adaptive || runtimeStartedAt != null || !STARTUP_WAIT_CODES.has(error?.code)) throw error;
+              if (error.code !== 'REQUEST_ADMISSION_DEFERRED') {
+                // A coalesced legacy recovery can still report admission busy
+                // or preempted. Wait for its lifecycle to settle, then retry
+                // under the same scheduling lease without poisoning routing.
+                await waitForRequest(runtimeManager.admissionQueue ?? Promise.resolve(), admissionSignal);
+                await waitForRequest(new Promise((resolve) => setTimeout(resolve, 25)), admissionSignal);
+              }
+            }
+          }
         }
-        queueStartedAt = Date.now();
-        return runtimeManager.withSlot(
-          resolved.model.runtime,
-          () => {
-            client.signal.throwIfAborted();
-            runtimeStartedAt = Date.now();
-            lastProgressAt = runtimeStartedAt;
-            return fn({
-              signal: client.signal,
-              timing,
-              progress,
-              watchdog
-            });
-          },
-          { signal: client.signal, requestClass }
-        );
+        return runInSlot();
       });
       const status = result?.status ?? 200;
       const outcome = {
@@ -3287,7 +3509,9 @@ export function createLloomServer(
       throw error;
     } finally {
       clearWatchdogTimer();
+      clearAdmissionTimer();
       rateLimitRelease();
+      schedulingLease?.release();
       metrics.end(connectionId);
       client.dispose();
     }
@@ -3446,8 +3670,8 @@ export function createLloomServer(
 
   function inferenceGatewayHeaders(req, resolved) {
     if (!isFederatedGatewayBackend(config, resolved.model.backend)) return {};
-    const requestClass = normalizeRequestClass(req.headers['x-lloom-request-class']);
-    return requestClass !== 'standard' ? { 'x-lloom-request-class': requestClass } : {};
+    const requestClass = req.lloomRequestClass ?? classifyRequest(req);
+    return { 'x-lloom-request-class': requestClass };
   }
 
   async function handleOpenAIChat(req, res, { bodyOverride = null } = {}) {
@@ -4639,8 +4863,9 @@ export function createLloomServer(
         return;
       }
 
-      if (auth.routeKind === 'inference' && req.method === 'POST') {
-        priorityLease = foregroundPriority.begin(normalizeRequestClass(req.headers['x-lloom-request-class']));
+      if (auth.routeKind === 'inference' && req.method === 'POST') req.lloomRequestClass = classifyRequest(req);
+      if (auth.routeKind === 'inference' && req.method === 'POST' && requestScheduler.mode === 'interrupt') {
+        priorityLease = foregroundPriority.begin(req.lloomRequestClass);
         req.foregroundPrioritySignal = priorityLease.signal;
         res.once('close', priorityLease.release);
       }
@@ -4718,7 +4943,8 @@ export function createLloomServer(
           profiles: routes,
           targetBackoffs: targetBackoffStatus(),
           runtimeRecoveryBackoffs: runtimeRecoveryBackoffStatus(),
-          rateLimits: rateLimitRegistry.status()
+          rateLimits: rateLimitRegistry.status(),
+          requestScheduling: requestScheduler.status()
         });
         return;
       }
@@ -4846,6 +5072,7 @@ export function createLloomServer(
           defaults: config.defaults,
           deploymentFence: fenceStatus,
           runtimeManager: runtimeStatus,
+          requestScheduling: requestScheduler.status(),
           cluster: await clusterCoordinator.status({ localRuntimeStatus })
         });
         return;
@@ -5687,6 +5914,7 @@ export function createLloomServer(
     runtimeManager,
     deploymentFence,
     metrics,
+    requestScheduler,
     listen() {
       const bind = assertBindAllowed(config, { logger });
       if (!bind.ok) {
@@ -5718,10 +5946,22 @@ export function createLloomServer(
     },
     async close({ stopRuntimes = true, httpGraceMs = 5000 } = {}) {
       runtimeManager.shuttingDown = true;
+      if (configPath && !isStandby(config)) unwatchFile(configPath, reloadConfig);
+      const closingError = Object.assign(new Error('gateway is closing'), {
+        statusCode: 503,
+        code: 'REQUEST_SCHEDULER_CLOSED'
+      });
+      for (const controller of pendingAdmissionControllers) controller.abort(closingError);
+      requestScheduler.close(closingError);
+      runtimeManager.cancelQueuedRequests?.(closingError);
+      runtimeManager.cancelAdmissionOperations?.(closingError);
+      rateLimitRegistry.close();
+      unsubscribeScheduling();
+      unsubscribeLimits();
+      await reloadInFlight;
       await residencyReconciler.stop();
       await residencyStartup;
       await runtimeManager.admissionQueue;
-      if (configPath && !isStandby(config)) unwatchFile(configPath, reloadConfig);
       metrics.flush();
       let runtimeError = null;
       if (stopRuntimes && !isStandby(config)) {

@@ -19,11 +19,11 @@ The gateway never guesses a stale model ID. If a client asks for an unknown mode
    - Non-loopback binds always require a configured API key for inference and admin reads.
    - Admin writes (`POST /gateway/*`) on non-loopback binds are denied unless `security.allowRemoteAdmin` is explicitly true **and** a valid API key is present.
 2. Resolve `body.model` through the registry.
-3. Admit through every `rateLimit` declared on the request's alias chain and
-   concrete model (`src/rate-limit.mjs`): concurrency waits in a bounded FIFO
-   queue, rate budget rejects fast with `429` and `retry-after`.
-4. Acquire a concurrency slot for the model's runtime if the model has one.
-5. Start or verify the configured runtime if the model has one.
+3. Classify and queue within the resolved compute group (`src/request-scheduler.mjs`).
+4. Start or verify the configured runtime if the model has one.
+5. Atomically admit runtime capacity and every model/alias rate and concurrency
+   limit (`src/runtime-manager.mjs`, `src/rate-limit.mjs`). Adaptive scheduling
+   waits for budget; explicit `queue: false` rejects with `429` and `retry-after`.
 6. Forward the request to the backend using the model's `upstreamModel`.
 7. Return the upstream stream or response body with gateway-safe headers.
 
@@ -245,26 +245,37 @@ The CLI exposes the same runtime controls without requiring an already-running g
 
 Runtime definitions include command, args, cwd, env, health URL, timeout, port, warmup request, `maxConcurrency`, and optional backend features such as `sessionCache`. Model-facing routes acquire a runtime slot before contacting upstream. This lets MTPLX and other optimized text lanes run high concurrency while image, audio, or memory-heavy runtimes serialize with `maxConcurrency: 1`.
 
-Clients can label inference with `x-lloom-request-class: interactive`. The gateway
-also accepts `foreground`; all other values normalize to `standard`. Queued requests remain FIFO within
-each class; interaction may overtake standard work, but after four interactive
-admissions the oldest eligible standard request gets a turn. The header does
-not grant authentication or bypass runtime residency, drain, or total capacity
-limits. It is scheduling metadata supplied by an authenticated caller (or an
-explicitly configured local unauthenticated client), not inferred from prompt text.
+Inference uses adaptive priority scheduling by default: `foreground`, then
+`interactive`, then `standard`, with FIFO order within a class. The policy
+coordinates runtime capacity and all model/alias rate and concurrency limits
+at the final admission step, so a waiting background request holds no slot or
+rate token needed by foreground work. Accepted calls wait on their existing
+connection. Active upstream requests and streams finish normally.
 
-Managed runtimes may reserve capacity with `interactiveReservedSlots` and
-`interactiveReservedQueueSlots`. Both default to zero. For example, a runtime
-with `maxConcurrency: 2`, `interactiveReservedSlots: 1`, `maxQueuedRequests: 8`,
-and `interactiveReservedQueueSlots: 1` admits at most one active standard
-request and at most seven queued standard requests. Interactive requests can
-use any free slot, within the total limits. Reservations are capped so at least
-one slot and, when enabled, one queue position remain available to standard
-work. A single-slot runtime supports queue priority but cannot reserve an
-additional execution slot. Unused reserved capacity stays idle; enable it only
-with a concurrency limit that the backend can sustain. Changes apply without
-restarting or canceling active requests. Queue-full and queue-timeout outcomes
-retain the existing retryable HTTP 429 contract.
+Explicit request-class headers override caller-family defaults. Recognized
+coding clients default to foreground; configured API-key policies override
+caller-supplied metadata. Authentication, residency, drain, total capacity,
+and provider budgets remain enforced. No prompt content is inspected. See
+[request scheduling](request-scheduling.md) for policy precedence, resource
+groups, queue bounds, gradual recovery, and compatibility modes.
+
+Managed runtimes may reserve execution capacity with `interactiveReservedSlots`
+(default zero). A runtime with `maxConcurrency: 2` and
+`interactiveReservedSlots: 1` admits at most one active standard request;
+interactive and foreground requests can use any free slot. Reservations are
+capped so at least one slot remains available to standard work. A single-slot
+runtime supports queue priority but cannot reserve an additional execution
+slot. Unused reserved capacity stays idle; enable it only with a concurrency
+limit that the backend can sustain.
+
+Adaptive waiting-room bounds apply independently to each priority class;
+`requestScheduling.maxQueuedRequests` and `queueTimeoutMs` own those limits.
+Legacy `interrupt` and `off` modes retain runtime `maxQueuedRequests`,
+`queueTimeoutMs`, and `interactiveReservedQueueSlots` (default zero). A legacy
+queue with `maxQueuedRequests: 8` and `interactiveReservedQueueSlots: 1` allows
+at most seven queued standard requests, reserving one position for interactive
+work. Changes apply without restarting or canceling active requests.
+Queue-full and queue-timeout outcomes retain retryable HTTP 429.
 
 Active and completed metrics retain `requestClass`; completed requests also
 report `queueWaitMs` for the runtime slot wait, separately from total duration.
@@ -282,40 +293,21 @@ and cancellation evidence is recorded in
 `docs/evidence/2026-09-05-federated-priority/`; real GPU capacity and native-client
 latency remain separate acceptance requirements.
 
-`x-lloom-request-class: foreground` opens a gateway-wide conversation window.
-After authentication, it aborts active and queued `standard` inference through
-the same upstream cancellation signal used for client disconnection. Lower
-priority `interactive` calls are also interrupted. New non-foreground requests
-receive HTTP 409 with error code `INTERACTIVE_PRIORITY`,
-`x-lloom-error-code: INTERACTIVE_PRIORITY`, and `Retry-After` seconds before route
-resolution, model startup, rate admission, or provider dispatch. An already
-streaming response receives the same structured error as an SSE event, including
-`retryAfterMs`. This interruption does not trigger target failover or mark a
-provider unhealthy. Read-only catalog, health, and admin routes remain available.
+Adaptive scheduling applies per compute group. Managed local runtimes share
+local compute; federated nodes and independent unmanaged backends have their
+own groups. Foreground demand pauses new lower-priority admission until the
+last foreground request ends and `server.foregroundIdleMs` elapses. Standard
+background concurrency then ramps up, with paced starts to avoid a backlog
+burst. Status exposes queued and running counts by class and recovery capacity.
 
-The hold lasts while any foreground request is active, then for
-`server.foregroundIdleMs` milliseconds after the last foreground request ends or
-disconnects. The default is 60000; accepted values are integers from 0 through 3600000. A follow-up request renews the hold. Foreground calls share interactive
-runtime slots and keep the existing total capacity limits. Chat helper calls
-must also use `foreground`; legacy `interactive` calls do not open or renew the
-window. Foreground metadata crosses authenticated inference-proxy hops and is
-removed before raw backend or cloud requests. Each serving gateway enforces its
-own window, including background traffic that arrived through a different client.
-
-Runtime uses foreground metadata for direct chat cognition, routing, and recall.
-All chat tools inherit the same priority through an asynchronous invocation
-scope, including nested model, image, audio, video, and avatar speech calls.
-Concurrent presence and inbox tools retain ordinary admission.
-Presence treats this response as a temporary interruption, remains enabled, and
-waits for the retry deadline without recording a failed cognitive outcome. LLooM
-cancels inference, not Runtime tools or continuity writes; a presence cycle that
-is between model calls encounters the gate on its next call. Actual backend
-compute reclamation still depends on the backend honoring connection cancellation.
-An interrupted request also stops waiting for a cold runtime. A lifecycle
-operation already started remains shared infrastructure work and finishes
-safely; cancellation cannot tear down a startup needed by another caller.
-Priority interruptions remain visible in recent request receipts but are
-excluded from error and latency aggregates and fastest-member observations.
+For compatibility, `server.requestScheduling.mode: "interrupt"` enables the old
+gateway-wide cancellation window and retryable `INTERACTIVE_PRIORITY` response.
+`"off"` keeps the earlier runtime-slot and limiter behavior. That slot scheduler
+allows four interactive overtakes before an eligible standard request, whereas
+adaptive scheduling gives higher classes strict precedence. Runtime propagates
+foreground metadata through chat tools and recall, and treats legacy holds as
+temporary suspension rather than failed cognition. Priority metadata is only
+forwarded to authenticated inference proxies and stripped from raw providers.
 
 Managed runtimes may opt into a request-evidence watchdog. It counts only configured long failures that produced no response content, requires the configured failure threshold inside a time window, and applies a restart cooldown. Buffered requests do not expose incremental engine progress: cancellation, timeout, or an error before their completed body does not count as a no-progress failure unless explicit stall evidence is supplied. Streaming stall detection and backend health checks remain enabled. Crossing the threshold pauses new admission for that runtime, drains active requests up to the configured limit, and restarts only that backend through the existing serialized lifecycle manager. If requests remain active, recovery is deferred unless `restartWithActiveRequests` is explicitly enabled. Per-runtime `firstContentTimeoutMs` and `idleContentTimeoutMs` distinguish prefill from silence after output; both default to the legacy `minNoProgressMs`. Explicit streaming stalls use time since last progress, not total request duration. `action: "observe"` records evidence without pausing admission or restarting. See [watchdog configuration](runtime-watchdog.md) for an example. Successful progress clears the streak. This complements health checks for semantic stalls where a backend still answers `/health`; it is disabled unless explicitly configured on a managed runtime.
 
