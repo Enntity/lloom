@@ -11,9 +11,9 @@ The admin endpoints are:
 - `POST /gateway/deployment-fence/canary` with `{ "opId": "...", "generation": 1, "request": { ... } }`
 - `POST /gateway/deployment-fence/release` with `{ "opId": "...", "generation": 1 }`
 
-They require an explicit `security.adminApiKeys` credential. `prepare` first
-writes a config-adjacent `config.json.deployment-fence.json` sidecar atomically,
-then blocks new POST inference and admin writes. Requests authenticated before
+They require an explicit `security.adminApiKeys` credential. `prepare` closes
+in-memory admission synchronously, then writes a config-adjacent
+`config.json.deployment-fence.json` sidecar atomically. Requests authenticated before
 the fence may finish their complete request body and response stream. The
 gateway pauses preferred residency and watchdog recovery, rejects new runtime
 lifecycle/configuration mutations, and waits for manager admission/lifecycle
@@ -53,8 +53,9 @@ loopback and its observed response is attributable to that local route; an API
 key alone is not treated as evidence of a cloud target. It never starts,
 warms, evicts, fails over, or recovers a runtime. Stream canaries are rejected
 before the upstream POST. Buffered responses are capped at 1 MiB and 30
-seconds, and must be valid OpenAI chat completions with non-empty text or a
-valid tool call; empty, error, malformed, or non-JSON bodies fail closed. The
+seconds, and must be valid OpenAI chat completions with an assistant message
+containing non-empty text and `finish_reason: "stop"`. Tool-only, unfinished,
+truncated, empty, error, malformed, or non-JSON bodies fail closed. The
 canary response must finish successfully before the fence returns to `prepared`.
 Release writes a terminal receipt before reopening admission. A malformed
 sidecar or failed persistence operation fails closed.

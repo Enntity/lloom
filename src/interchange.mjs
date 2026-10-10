@@ -150,6 +150,7 @@ const KNOWN_FIELDS = {
     'updatedAt',
     'provenance',
     'links',
+    'gateway',
     'provider',
     'clients',
     'models'

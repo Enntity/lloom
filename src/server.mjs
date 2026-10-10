@@ -73,6 +73,15 @@ import {
 import { RuntimeManager, runtimeWatchdogConfig, normalizeRequestClass } from './runtime-manager.mjs';
 import { ForegroundPriority } from './foreground-priority.mjs';
 import { createPreferredResidencyReconciler } from './runtime-residency.mjs';
+import {
+  assertStandbyConfig,
+  isStandby,
+  normalizeServerRole,
+  standbyEndpointGate,
+  standbyGatewayStatus
+} from './standby.mjs';
+
+const STANDBY_BACKEND = Symbol('lloom.standbyBackend');
 import { createRuntimePreferenceController } from './runtime-preferences.mjs';
 import { createDashboardInstallation } from './dashboard-installation.mjs';
 import {
@@ -1082,6 +1091,30 @@ function queryBool(searchParams, names, defaultValue = false) {
   return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
 }
 
+function standbyCommunityRequested(config, searchParams) {
+  if (!isStandby(config)) return false;
+  if (firstQueryParam(searchParams, ['recipe', 'recipe_id', 'recipe-id'])) return false;
+  if (queryBool(searchParams, ['offline'], false)) return false;
+  return Boolean(config.community?.hostUrl || firstQueryParam(searchParams, ['host_url', 'host-url', 'host']));
+}
+
+function sendStandbyEndpointUnsupported(
+  res,
+  config,
+  message = 'inference-only standby gateways do not execute this endpoint'
+) {
+  sendJson(
+    res,
+    503,
+    errorBody(message, {
+      type: 'service_unavailable',
+      code: 'standby_endpoint_unsupported'
+    }),
+    { 'retry-after': '2' },
+    config
+  );
+}
+
 function optionalNumber(value, name) {
   if (value == null || value === '') return undefined;
   const number = Number(value);
@@ -1694,6 +1727,7 @@ async function fetchUpstream({ backend, path, body, headers = {}, signal, dispat
           headers: backendHeaders(backend, headers),
           body: JSON.stringify(path === '/v1/chat/completions' ? applyOpenRouterProviderPolicy(body, backend) : body),
           signal: progressSignal,
+          ...(backend?.[STANDBY_BACKEND] ? { redirect: 'error' } : {}),
           dispatcher
         }),
       { signal: fetchSignal, idleMs }
@@ -1712,6 +1746,7 @@ async function fetchRawUpstream({ backend, path, body, headers = {}, signal, dis
       headers: backendHeaders(backend, headers),
       body,
       signal: fetchSignal,
+      ...(backend?.[STANDBY_BACKEND] ? { redirect: 'error' } : {}),
       dispatcher
     });
   } catch (error) {
@@ -2238,10 +2273,25 @@ export async function retryRuntimeActionAfterConfigReload(action, getReloadInFli
   }
 }
 
+function freezeProcessRole(config, processRole) {
+  config.server ??= {};
+  Object.defineProperty(config.server, 'role', {
+    value: processRole,
+    enumerable: true,
+    configurable: false,
+    writable: false
+  });
+}
+
 export function createLloomServer(
   config,
   { logger = console, runtimeManager = null, clusterCoordinator = null, upstreamDispatcher = null } = {}
 ) {
+  assertStandbyConfig(config);
+  const processRole = normalizeServerRole(config);
+  // Keep the process role immutable even if a caller retains the config
+  // object. Standby authority must only change through an explicit restart.
+  freezeProcessRole(config, processRole);
   // Tests install a composed mock here; production keeps the long-running Agent.
   if (upstreamDispatcher) longRunningMediaDispatcher = upstreamDispatcher;
   const hostTelemetry = createHostTelemetry();
@@ -2324,6 +2374,10 @@ export function createLloomServer(
     if (envName && !process.env[envName]) {
       return { allowed: false, error: new ModelTargetConfigurationError(resolved, envName) };
     }
+    // Standby endpoints are health- and model-identity-gated per request. A
+    // generic target backoff would hide a recovered endpoint behind stale
+    // state and would turn one failed probe into a lifecycle-like decision.
+    if (isStandby(config)) return { allowed: true, key: targetKey(resolved), probe: false };
     const key = targetKey(resolved);
     const state = targetBackoffs.get(key);
     if (!state) return { allowed: true, key, probe: false };
@@ -2413,6 +2467,15 @@ export function createLloomServer(
 
   function reloadConfig() {
     if (!configPath) return;
+    if (processRole !== 'primary' || isStandby(config)) {
+      logger.warn?.('standby gateway rejected config reload; restart the process to apply configuration');
+      const rejection = Object.assign(
+        new Error('standby configuration is frozen; restart the gateway to apply changes'),
+        { code: 'standby_read_only', statusCode: 403 }
+      );
+      reloadInFlight = reloadInFlight.catch(() => {}).then(() => Promise.reject(rejection));
+      return reloadInFlight;
+    }
     if (deploymentFence.isFenced()) {
       logger.warn?.('LLooM config reload skipped while deployment fence is active');
       return Promise.resolve({ skipped: 'deployment-fenced' });
@@ -2426,12 +2489,20 @@ export function createLloomServer(
       .then(() =>
         runtimeManager.withMutationScope(deploymentFenceToken, async () => {
           const nextConfig = await loadConfig(configPath);
+          if (normalizeServerRole(nextConfig) !== processRole) {
+            throw Object.assign(
+              new Error('server role is frozen for the process lifetime; restart the gateway to apply changes'),
+              { code: 'standby_read_only', statusCode: 403 }
+            );
+          }
+          assertStandbyConfig(nextConfig);
           // Keep the current catalog until the manager has accepted the whole
           // queued reload. This prevents a fence racing a watcher from
           // publishing a new registry after the manager correctly rejects it.
           const result = await runtimeManager.reconfigure(nextConfig);
           for (const key of Object.keys(config)) delete config[key];
           Object.assign(config, nextConfig);
+          freezeProcessRole(config, processRole);
           registry = createRegistry(nextConfig);
           rateLimitRegistry.sync(rateLimitSettingsFor(nextConfig));
           clusterCoordinator.reconfigure(config);
@@ -2917,6 +2988,14 @@ export function createLloomServer(
     fn,
     { deferUnsentErrors = false } = {}
   ) {
+    const standbyGate = await standbyEndpointGate(config, resolved);
+    if (standbyGate) {
+      sendJson(res, standbyGate.status, standbyGate.body, { 'retry-after': '2' }, config);
+      return { status: standbyGate.status, stream };
+    }
+    if (isStandby(config) && resolved.backend && !resolved.backend[STANDBY_BACKEND]) {
+      Object.defineProperty(resolved.backend, STANDBY_BACKEND, { value: true });
+    }
     const started = Date.now();
     const requestBytes = Number(req.headers['content-length']) || 0;
     const attribution = requestEnntityAttribution(req);
@@ -4439,6 +4518,43 @@ export function createLloomServer(
         return;
       }
 
+      if (
+        isStandby(config) &&
+        (auth.routeKind === 'admin-write' ||
+          (url.pathname.startsWith('/gateway/') && !['GET', 'HEAD'].includes(req.method)))
+      ) {
+        sendJson(
+          res,
+          403,
+          errorBody('standby gateway is read-only; configuration changes require a controlled process restart', {
+            type: 'permission_error',
+            code: 'standby_read_only'
+          }),
+          {},
+          config
+        );
+        return;
+      }
+
+      if (
+        isStandby(config) &&
+        auth.routeKind === 'inference' &&
+        req.method === 'POST' &&
+        ['/v1/web/search', '/v1/web/read'].includes(url.pathname)
+      ) {
+        sendJson(
+          res,
+          503,
+          errorBody('inference-only standby gateways do not execute web functions', {
+            type: 'service_unavailable',
+            code: 'standby_endpoint_unsupported'
+          }),
+          { 'retry-after': '2' },
+          config
+        );
+        return;
+      }
+
       if (req.method === 'GET' && url.pathname === '/health') {
         sendJson(res, 200, { ok: true, name: config.name ?? 'LLooM', pid: process.pid }, {}, config);
         return;
@@ -4714,6 +4830,7 @@ export function createLloomServer(
             fenceStatus.identity?.release?.effectiveConfigSha256 ?? null
           ),
           server: config.server,
+          gateway: standbyGatewayStatus(config),
           defaults: config.defaults,
           deploymentFence: fenceStatus,
           runtimeManager: runtimeStatus,
@@ -4859,6 +4976,10 @@ export function createLloomServer(
       }
 
       if (req.method === 'GET' && url.pathname === '/gateway/setup/status') {
+        if (standbyCommunityRequested(config, url.searchParams)) {
+          sendStandbyEndpointUnsupported(res, config);
+          return;
+        }
         const noRuntimes = queryBool(url.searchParams, ['no_runtimes', 'no-runtimes'], false);
         const runtimes = firstQueryParam(url.searchParams, ['runtimes']);
         const recipeId = firstQueryParam(url.searchParams, ['recipe', 'recipe_id', 'recipe-id']);
@@ -4891,6 +5012,10 @@ export function createLloomServer(
       }
 
       if (req.method === 'GET' && url.pathname === '/gateway/doctor') {
+        if (standbyCommunityRequested(config, url.searchParams)) {
+          sendStandbyEndpointUnsupported(res, config);
+          return;
+        }
         const scopedRuntimeId = firstQueryParam(url.searchParams, ['runtime', 'runtime_id', 'runtime-id']);
         if (scopedRuntimeId) {
           const readiness = await clusterCoordinator.runtimeReadiness(scopedRuntimeId, {
@@ -4923,6 +5048,10 @@ export function createLloomServer(
       }
 
       if (req.method === 'GET' && url.pathname === '/gateway/onboarding/plan') {
+        if (standbyCommunityRequested(config, url.searchParams)) {
+          sendStandbyEndpointUnsupported(res, config);
+          return;
+        }
         sendJson(res, 200, await createOnboardingPlan(config, onboardingOptionsFromQuery(config, url.searchParams)));
         return;
       }
@@ -4933,6 +5062,10 @@ export function createLloomServer(
       }
 
       if (req.method === 'GET' && url.pathname === '/gateway/community/recommendations') {
+        if (isStandby(config)) {
+          sendStandbyEndpointUnsupported(res, config);
+          return;
+        }
         try {
           sendJson(res, 200, await createCommunityPlan(config, communityOptionsFromQuery(config, url.searchParams)));
         } catch (error) {
@@ -5556,15 +5689,17 @@ export function createLloomServer(
           server.off('error', onError);
           residencyStartup = deploymentFence.isFenced()
             ? Promise.resolve({ skipped: 'deployment-fenced' })
-            : runtimeManager
-                .startKeepWarm()
-                .then(() => {
-                  // The periodic preferred-restore timer starts only after the
-                  // pinned (and then preferred) residency boot pass has settled.
-                  if (!runtimeManager.shuttingDown) residencyReconciler.start();
-                })
-                .catch((error) => logger.error?.(error));
-          if (configPath) watchFile(configPath, { interval: 500 }, reloadConfig);
+            : isStandby(config)
+              ? Promise.resolve()
+              : runtimeManager
+                  .startKeepWarm()
+                  .then(() => {
+                    // The periodic preferred-restore timer starts only after the
+                    // pinned (and then preferred) residency boot pass has settled.
+                    if (!runtimeManager.shuttingDown) residencyReconciler.start();
+                  })
+                  .catch((error) => logger.error?.(error));
+          if (configPath && !isStandby(config)) watchFile(configPath, { interval: 500 }, reloadConfig);
           resolve(server);
         });
       });
@@ -5574,10 +5709,10 @@ export function createLloomServer(
       await residencyReconciler.stop();
       await residencyStartup;
       await runtimeManager.admissionQueue;
-      if (configPath) unwatchFile(configPath, reloadConfig);
+      if (configPath && !isStandby(config)) unwatchFile(configPath, reloadConfig);
       metrics.flush();
       let runtimeError = null;
-      if (stopRuntimes) {
+      if (stopRuntimes && !isStandby(config)) {
         try {
           await runtimeManager.stopAll();
         } catch (error) {

@@ -12,6 +12,7 @@ import {
   runtimePlacement,
   validateClusterConfig
 } from './cluster.mjs';
+import { assertStandbyConfig, collectStandbyConfigErrors } from './standby.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const repoRoot = path.resolve(__dirname, '..');
@@ -133,6 +134,7 @@ export function normalizeLegacyAliases(input) {
 
 function validateConfig(config, sourcePath, env) {
   const errors = validateWebFunctions(config.web);
+  errors.push(...collectStandbyConfigErrors(config));
   const modelIds = new Set();
 
   if (config.server?.inferenceEnabled != null && typeof config.server.inferenceEnabled !== 'boolean') {
@@ -630,6 +632,9 @@ export async function loadConfig(
     writable: false
   });
 
+  // A standby must never be materialized into a lifecycle participant. Validate
+  // before cluster federation can inject runtime targets or proxy backends.
+  assertStandbyConfig(config);
   materializeFederatedNodes(config);
   normalizeConfigRateLimits(config);
   const resolved = applyRuntimeAliases(config);
