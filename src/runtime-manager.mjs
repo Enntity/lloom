@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { execFile } from 'node:child_process';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import { promisify } from 'node:util';
 import fs from 'node:fs/promises';
@@ -696,6 +697,10 @@ export class RuntimeManager {
     this.watchdogOperations = new Map();
     this.admissionQueue = Promise.resolve();
     this.activeAdmission = null;
+    this.pendingAdmissions = 0;
+    this.pendingLifecycles = 0;
+    this.mutationScope = new AsyncLocalStorage();
+    this.deploymentFence = null;
     this.desiredResidency = new Map();
     // Set when the owning server begins shutting down. Queued background
     // admissions must not start a runtime after shutdown has been requested;
@@ -704,6 +709,36 @@ export class RuntimeManager {
     this.events = [];
     this.clusterCoordinator = clusterCoordinator;
     this.clusterCoordinator?.attachRuntimeManager(this);
+  }
+
+  attachDeploymentFence(fence) {
+    this.deploymentFence = fence ?? null;
+    return this.deploymentFence;
+  }
+
+  captureDeploymentMutation(operation = 'runtime mutation') {
+    if (!this.deploymentFence) return null;
+    // Process shutdown is the one lifecycle path that must clean up already
+    // running runtimes even when a persisted fence remains active. The server
+    // sets this flag before close(); ordinary CLI operations never do.
+    if (this.shuttingDown && !this.mutationScope.getStore()?.token) return null;
+    return this.deploymentFence.captureMutation({
+      operation,
+      token: this.mutationScope.getStore()?.token ?? null
+    });
+  }
+
+  assertDeploymentMutationAllowed(operation = 'runtime mutation') {
+    if (!this.deploymentFence) return true;
+    return this.deploymentFence.assertMutationAllowed({
+      operation,
+      token: this.mutationScope.getStore()?.token ?? null
+    });
+  }
+
+  withMutationScope(token, fn) {
+    const parent = this.mutationScope.getStore() ?? {};
+    return this.mutationScope.run({ ...parent, token }, fn);
   }
 
   // Optional admission guard evaluated INSIDE the admission mutex, immediately
@@ -971,6 +1006,7 @@ export class RuntimeManager {
     fn,
     { runtimeId = null, reason = 'runtime-admission', preemptible = false, allowPreemption = true } = {}
   ) {
+    const deploymentFenceToken = this.captureDeploymentMutation(`runtime admission (${reason})`);
     const active = this.activeAdmission;
     if (allowPreemption && active?.runtimeId && active.runtimeId !== runtimeId) {
       if (active.preemptible && !active.preemptionRequested) {
@@ -998,6 +1034,7 @@ export class RuntimeManager {
         return Promise.reject(error);
       }
     }
+    this.pendingAdmissions += 1;
     const run = this.admissionQueue
       .catch(() => {})
       .then(async () => {
@@ -1006,21 +1043,35 @@ export class RuntimeManager {
           reason,
           preemptible,
           preemptionRequested: false,
-          controller: new AbortController()
+          controller: new AbortController(),
+          deploymentFenceToken
         };
         this.activeAdmission = admission;
         try {
-          return await fn(admission.controller.signal);
+          return await this.withMutationScope(deploymentFenceToken, () => fn(admission.controller.signal));
         } finally {
           if (this.activeAdmission === admission) this.activeAdmission = null;
         }
+      })
+      .finally(() => {
+        this.pendingAdmissions = Math.max(0, this.pendingAdmissions - 1);
       });
     this.admissionQueue = run.catch(() => {});
     return run;
   }
 
   withRuntimeLifecycleLock(runtimeId, fn) {
-    if (!runtimeId) return fn();
+    const deploymentFenceToken = this.captureDeploymentMutation(
+      `runtime lifecycle${runtimeId ? ` (${runtimeId})` : ''}`
+    );
+    this.pendingLifecycles += 1;
+    if (!runtimeId) {
+      return Promise.resolve()
+        .then(() => this.withMutationScope(deploymentFenceToken, fn))
+        .finally(() => {
+          this.pendingLifecycles = Math.max(0, this.pendingLifecycles - 1);
+        });
+    }
     const previous = this.lifecycleQueues.get(runtimeId) ?? Promise.resolve();
     const run = previous
       .catch(() => {})
@@ -1028,12 +1079,15 @@ export class RuntimeManager {
         const controller = new AbortController();
         this.lifecycleControllers.set(runtimeId, controller);
         try {
-          return await fn(controller.signal);
+          return await this.withMutationScope(deploymentFenceToken, () => fn(controller.signal));
         } finally {
           if (this.lifecycleControllers.get(runtimeId) === controller) {
             this.lifecycleControllers.delete(runtimeId);
           }
         }
+      })
+      .finally(() => {
+        this.pendingLifecycles = Math.max(0, this.pendingLifecycles - 1);
       });
     this.lifecycleQueues.set(
       runtimeId,
@@ -1042,7 +1096,99 @@ export class RuntimeManager {
     return run;
   }
 
+  quiescenceSnapshot(getActiveHandlers = () => 0) {
+    let activeRequests = 0;
+    let queuedRequests = 0;
+    let admissionQueuedRequests = 0;
+    for (const state of this.state.values()) {
+      activeRequests += Number(state.activeRequests ?? 0);
+      queuedRequests += Number(state.queuedRequests ?? 0);
+      admissionQueuedRequests += Number(state.admissionQueuedRequests ?? 0);
+    }
+    return {
+      activeHandlers: Number(getActiveHandlers?.() ?? 0),
+      activeRequests,
+      queuedRequests,
+      admissionQueuedRequests,
+      activeAdmission: this.activeAdmission?.runtimeId ?? null,
+      pendingAdmissions: this.pendingAdmissions,
+      pendingLifecycles: this.pendingLifecycles,
+      lifecycleOperations: this.lifecycleControllers.size
+    };
+  }
+
+  async waitForQuiescence({ timeoutMs = 300000, getActiveHandlers = () => 0 } = {}) {
+    const deadline = Date.now() + Math.max(1, Number(timeoutMs) || 300000);
+    const waitForTail = async (tail) => {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return false;
+      let timer;
+      let timedOut = false;
+      const timeout = new Promise((resolve) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          resolve(false);
+        }, remaining);
+      });
+      try {
+        await Promise.race([Promise.resolve(tail).catch(() => {}), timeout]);
+        return !timedOut;
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    while (Date.now() < deadline) {
+      const tails = [this.admissionQueue, ...this.lifecycleQueues.values()];
+      for (const tail of tails) {
+        if (!(await waitForTail(tail))) break;
+      }
+      if (Date.now() >= deadline) break;
+      const snapshot = this.quiescenceSnapshot(getActiveHandlers);
+      if (
+        snapshot.activeHandlers === 0 &&
+        snapshot.activeRequests === 0 &&
+        snapshot.queuedRequests === 0 &&
+        snapshot.admissionQueuedRequests === 0 &&
+        snapshot.activeAdmission == null &&
+        snapshot.pendingAdmissions === 0 &&
+        snapshot.pendingLifecycles === 0 &&
+        snapshot.lifecycleOperations === 0
+      ) {
+        // Capture the tails a second time. A pre-fence operation may have
+        // appended a successor while the first set was settling.
+        const settledTails = [this.admissionQueue, ...this.lifecycleQueues.values()];
+        let settled = true;
+        for (const tail of settledTails) {
+          if (!(await waitForTail(tail))) {
+            settled = false;
+            break;
+          }
+        }
+        if (!settled) break;
+        const settledSnapshot = this.quiescenceSnapshot(getActiveHandlers);
+        if (
+          settledSnapshot.activeHandlers === 0 &&
+          settledSnapshot.activeRequests === 0 &&
+          settledSnapshot.queuedRequests === 0 &&
+          settledSnapshot.admissionQueuedRequests === 0 &&
+          settledSnapshot.activeAdmission == null &&
+          settledSnapshot.pendingAdmissions === 0 &&
+          settledSnapshot.pendingLifecycles === 0 &&
+          settledSnapshot.lifecycleOperations === 0
+        )
+          return settledSnapshot;
+      }
+      await delay(10);
+    }
+    const error = new Error('timed out waiting for runtime manager quiescence');
+    error.code = 'RUNTIME_QUIESCENCE_TIMEOUT';
+    error.statusCode = 503;
+    error.snapshot = this.quiescenceSnapshot(getActiveHandlers);
+    throw error;
+  }
+
   abortRuntimeLifecycle(runtimeId, reason = 'lifecycle superseded') {
+    this.captureDeploymentMutation(`abort runtime lifecycle${runtimeId ? ` (${runtimeId})` : ''}`);
     const controller = this.lifecycleControllers.get(runtimeId);
     if (!controller || controller.signal.aborted) return false;
     const error = reason instanceof Error ? reason : new Error(reason);
@@ -1230,6 +1376,13 @@ export class RuntimeManager {
 
   noteRequestOutcome(runtimeId, outcome = {}) {
     if (!runtimeId) return { runtimeId, action: 'ignored', reason: 'no-runtime' };
+    if (this.deploymentFence?.isFenced()) {
+      return { runtimeId, action: 'observed', reason: 'deployment-fenced' };
+    }
+    // A watchdog observation can begin before prepare and finish after the
+    // fence closes. Preserve its admission token through every queued
+    // lifecycle callback so its cleanup cannot re-enter the fenced manager.
+    const deploymentFenceToken = this.captureDeploymentMutation(`watchdog observation (${runtimeId})`);
     const runtime = this.getRuntime(runtimeId);
     if (!runtime) return { runtimeId, action: 'ignored', reason: 'unknown-runtime' };
     const requesterNode = this.requesterNode();
@@ -1314,37 +1467,46 @@ export class RuntimeManager {
       durationMs: classification.durationMs
     });
     const progressVersion = watchdogState.progressVersion ?? 0;
-    const operation = this.withRuntimeLifecycleLock(runtimeId, (signal) =>
-      this.restartForWatchdogUnlocked(runtimeId, classification.watchdog, { signal, progressVersion })
+    const withFenceScope = (fn) => this.withMutationScope(deploymentFenceToken, fn);
+    const operation = withFenceScope(() =>
+      this.withRuntimeLifecycleLock(runtimeId, (signal) =>
+        this.restartForWatchdogUnlocked(runtimeId, classification.watchdog, { signal, progressVersion })
+      )
     )
-      .then((result) => {
-        if (!result.restarted) {
-          this.setStatus(runtimeId, previousStatus, 'watchdog-deferred');
-          this.record({ runtimeId, event: 'watchdog-restart-deferred', result });
+      .then((result) =>
+        withFenceScope(() => {
+          if (!result.restarted) {
+            this.setStatus(runtimeId, previousStatus, 'watchdog-deferred');
+            this.record({ runtimeId, event: 'watchdog-restart-deferred', result });
+            return result;
+          }
+          watchdogState.restarts += 1;
+          watchdogState.lastRestartAt = nowIso();
+          watchdogState.lastError = null;
+          this.record({ runtimeId, event: 'watchdog-restart-completed', result });
           return result;
-        }
-        watchdogState.restarts += 1;
-        watchdogState.lastRestartAt = nowIso();
-        watchdogState.lastError = null;
-        this.record({ runtimeId, event: 'watchdog-restart-completed', result });
-        return result;
-      })
-      .catch((error) => {
-        watchdogState.restartFailures += 1;
-        watchdogState.lastError = error?.message ?? String(error);
-        this.record({
-          runtimeId,
-          event: 'watchdog-restart-failed',
-          message: watchdogState.lastError
-        });
-        this.logger.error?.(`Runtime watchdog restart failed for ${runtimeId}: ${watchdogState.lastError}`);
-        return { runtimeId, restarted: false, error: watchdogState.lastError };
-      })
-      .finally(() => {
-        watchdogState.restartPending = false;
-        this.watchdogOperations.delete(runtimeId);
-        this.resumeRuntime(runtimeId);
-      });
+        })
+      )
+      .catch((error) =>
+        withFenceScope(() => {
+          watchdogState.restartFailures += 1;
+          watchdogState.lastError = error?.message ?? String(error);
+          this.record({
+            runtimeId,
+            event: 'watchdog-restart-failed',
+            message: watchdogState.lastError
+          });
+          this.logger.error?.(`Runtime watchdog restart failed for ${runtimeId}: ${watchdogState.lastError}`);
+          return { runtimeId, restarted: false, error: watchdogState.lastError };
+        })
+      )
+      .finally(() =>
+        withFenceScope(() => {
+          watchdogState.restartPending = false;
+          this.watchdogOperations.delete(runtimeId);
+          this.resumeRuntime(runtimeId);
+        })
+      );
     this.watchdogOperations.set(runtimeId, operation);
     return { runtimeId, action: 'restart-requested', reason: 'failure-threshold' };
   }
@@ -1508,6 +1670,7 @@ export class RuntimeManager {
   }
 
   resumeRuntime(runtimeId) {
+    this.captureDeploymentMutation(`resume runtime (${runtimeId})`);
     this.pausedRuntimes.delete(runtimeId);
     const state = this.stateFor(runtimeId);
     if (state.status === 'draining') this.setStatus(runtimeId, 'idle', 'resumed');
@@ -1515,6 +1678,7 @@ export class RuntimeManager {
   }
 
   async drainRuntime(runtimeId, { timeoutMs = 300000, requestedBy, reason = 'eviction' } = {}) {
+    this.captureDeploymentMutation(`drain runtime (${runtimeId})`);
     const requesterNode = this.assertRuntimeControl(runtimeId, requestedBy);
     this.pauseRuntime(runtimeId, reason, { requestedBy: requesterNode });
     const deadline = Date.now() + timeoutMs;
@@ -1526,12 +1690,19 @@ export class RuntimeManager {
   }
 
   pauseRuntime(runtimeId, reason = 'capacity-reallocation', { requestedBy } = {}) {
+    this.captureDeploymentMutation(`pause runtime (${runtimeId})`);
     this.assertRuntimeControl(runtimeId, requestedBy);
     this.pausedRuntimes.add(runtimeId);
     this.setStatus(runtimeId, 'draining', reason);
   }
 
-  async reconfigure(nextConfig, { drainTimeoutMs = 300000 } = {}) {
+  async reconfigure(nextConfig, options = {}) {
+    const deploymentFenceToken = this.captureDeploymentMutation('configuration reload');
+    return this.withMutationScope(deploymentFenceToken, () => this.reconfigureUnlocked(nextConfig, options));
+  }
+
+  async reconfigureUnlocked(nextConfig, { drainTimeoutMs = 300000 } = {}) {
+    this.captureDeploymentMutation('configuration reload');
     const previousConfig = this.config;
     const nodeId = this.clusterCoordinator?.nodeId ?? currentNodeId(nextConfig);
     const leaderNode = nextConfig.cluster?.leaderNode ?? previousConfig.cluster?.leaderNode ?? nodeId;
@@ -1666,7 +1837,12 @@ export class RuntimeManager {
     });
   }
 
-  async admit(
+  async admit(runtimeId, options = {}) {
+    const deploymentFenceToken = this.captureDeploymentMutation(`runtime admission (${runtimeId ?? 'unknown'})`);
+    return this.withMutationScope(deploymentFenceToken, () => this.admitUnlocked(runtimeId, options));
+  }
+
+  async admitUnlocked(
     runtimeId,
     {
       config = this.config,
@@ -1698,7 +1874,12 @@ export class RuntimeManager {
     });
   }
 
-  async start(runtimeId, { force = false, warmup = true, reason = 'manual-start', requestedBy } = {}) {
+  async start(runtimeId, options = {}) {
+    const deploymentFenceToken = this.captureDeploymentMutation(`runtime start (${runtimeId ?? 'unknown'})`);
+    return this.withMutationScope(deploymentFenceToken, () => this.startWithScope(runtimeId, options));
+  }
+
+  async startWithScope(runtimeId, { force = false, warmup = true, reason = 'manual-start', requestedBy } = {}) {
     assertMaintenanceStartAllowed(this.config, runtimeId);
     const requesterNode = runtimeId
       ? this.assertRuntimeControl(runtimeId, requestedBy)
@@ -1715,6 +1896,7 @@ export class RuntimeManager {
   }
 
   async startUnlocked(runtimeId, { force = false, warmup = true, reason = 'manual-start', requestedBy, signal } = {}) {
+    this.captureDeploymentMutation(`runtime start (${runtimeId ?? 'unknown'})`);
     if (this.shuttingDown) {
       const error = new Error('Runtime manager is shutting down');
       error.code = 'runtime_manager_shutdown';
@@ -2151,6 +2333,11 @@ export class RuntimeManager {
   }
 
   async warmupById(runtimeId) {
+    const deploymentFenceToken = this.captureDeploymentMutation(`runtime warmup (${runtimeId ?? 'unknown'})`);
+    return this.withMutationScope(deploymentFenceToken, () => this.warmupByIdWithScope(runtimeId));
+  }
+
+  async warmupByIdWithScope(runtimeId) {
     const runtime = this.getRuntime(runtimeId);
     if (!runtime) return { runtimeId, warmed: false, reason: 'unknown-runtime' };
     const placement = runtimePlacement(runtime, this.config);
@@ -2170,6 +2357,7 @@ export class RuntimeManager {
   }
 
   async warmup(runtimeId, runtime, { signal } = {}) {
+    this.captureDeploymentMutation(`runtime warmup (${runtimeId})`);
     const state = this.stateFor(runtimeId);
     const warmup = runtime.warmup;
     if (!warmup?.url) return { runtimeId, warmed: false, reason: 'no-warmup' };
@@ -2217,6 +2405,11 @@ export class RuntimeManager {
   }
 
   async startKeepWarm() {
+    const deploymentFenceToken = this.captureDeploymentMutation('runtime residency startup');
+    return this.withMutationScope(deploymentFenceToken, () => this.startKeepWarmWithScope());
+  }
+
+  async startKeepWarmWithScope() {
     const results = [];
     // Keep-warm is the runtime residency pin. The normal admission policy
     // protects every pinned runtime, including those started earlier in this
@@ -2253,6 +2446,13 @@ export class RuntimeManager {
   }
 
   async startResidencyRuntime(runtimeId, { admissionConfig, reason, allowEviction = true } = {}) {
+    const deploymentFenceToken = this.captureDeploymentMutation(`runtime residency (${runtimeId})`);
+    return this.withMutationScope(deploymentFenceToken, () =>
+      this.startResidencyRuntimeWithScope(runtimeId, { admissionConfig, reason, allowEviction })
+    );
+  }
+
+  async startResidencyRuntimeWithScope(runtimeId, { admissionConfig, reason, allowEviction = true } = {}) {
     try {
       const runtime = this.getRuntime(runtimeId);
       if (!runtime) {
@@ -2302,13 +2502,28 @@ export class RuntimeManager {
     }
   }
 
-  async stop(runtimeId, { requestedBy } = {}) {
-    const requesterNode = this.assertRuntimeControl(runtimeId, requestedBy);
-    this.abortRuntimeTree(runtimeId, `runtime ${runtimeId} stop requested`);
-    return this.withRuntimeLifecycleLock(runtimeId, () => this.stopUnlocked(runtimeId, { requestedBy: requesterNode }));
+  async stop(runtimeId, options = {}) {
+    const deploymentFenceToken = this.captureDeploymentMutation(`runtime stop (${runtimeId ?? 'unknown'})`);
+    return this.withMutationScope(deploymentFenceToken, () => this.stopWithScope(runtimeId, options));
   }
 
-  async stopAll() {
+  async stopWithScope(runtimeId, { requestedBy } = {}) {
+    const deploymentFenceToken = this.captureDeploymentMutation(`runtime stop (${runtimeId ?? 'unknown'})`);
+    const requesterNode = this.assertRuntimeControl(runtimeId, requestedBy);
+    // Abort an in-flight start before waiting on the lifecycle queue. This
+    // keeps an explicit stop responsive during a long model startup.
+    this.abortRuntimeTree(runtimeId, `runtime ${runtimeId} stop requested`);
+    return this.withMutationScope(deploymentFenceToken, () =>
+      this.withRuntimeLifecycleLock(runtimeId, () => this.stopUnlocked(runtimeId, { requestedBy: requesterNode }))
+    );
+  }
+
+  async stopAll(options = {}) {
+    const deploymentFenceToken = this.captureDeploymentMutation('stop all runtimes');
+    return this.withMutationScope(deploymentFenceToken, () => this.stopAllWithScope(options));
+  }
+
+  async stopAllWithScope() {
     const distributedMembers = new Set(
       Object.values(this.config.runtimes ?? {}).flatMap((runtime) =>
         runtime?.placement?.mode === 'distributed'
@@ -2332,6 +2547,7 @@ export class RuntimeManager {
   }
 
   async stopUnlocked(runtimeId, { requestedBy } = {}) {
+    this.captureDeploymentMutation(`runtime stop (${runtimeId ?? 'unknown'})`);
     const requesterNode = this.assertRuntimeControl(runtimeId, requestedBy);
     const runtime = this.getRuntime(runtimeId);
     const state = this.stateFor(runtimeId);

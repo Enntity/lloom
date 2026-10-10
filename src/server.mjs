@@ -21,6 +21,7 @@ import {
 } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 // Dispatcher and fetch must come from the same undici copy: the package's
@@ -110,12 +111,21 @@ import {
   usageFromJsonBuffer,
   usageFromJsonText
 } from './protocol/index.mjs';
-import { assertBindAllowed, authorizeRequest, corsHeaders, securityPublicStatus } from './security.mjs';
+import {
+  adminKeysConfigured,
+  assertBindAllowed,
+  authorizeRequest,
+  corsHeaders,
+  hasValidApiKey,
+  securityPublicStatus
+} from './security.mjs';
 import { ClusterCoordinator, currentNodeId, isFederatedGatewayBackend } from './cluster.mjs';
+import { createDeploymentFence, DeploymentFenceError, isDeploymentFencePath } from './deployment-fence.mjs';
 
 const JSON_TYPE = 'application/json; charset=utf-8';
 const SSE_TYPE = 'text/event-stream; charset=utf-8';
 const execFileAsync = promisify(execFile);
+const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // Tests may swap this per server instance via createLloomServer's
 // upstreamDispatcher option; production always uses the long-running Agent.
 let longRunningMediaDispatcher = new UndiciAgent({
@@ -2057,6 +2067,14 @@ export function createLloomServer(
     runtimeManager.clusterCoordinator = clusterCoordinator;
     clusterCoordinator.attachRuntimeManager(runtimeManager);
   }
+  const deploymentFence = createDeploymentFence({
+    config,
+    configPath: config.sourcePath,
+    runtimeManager,
+    packageRoot,
+    releaseManifestPath: config.releaseManifestPath ?? config.server?.releaseManifestPath
+  });
+  runtimeManager.attachDeploymentFence?.(deploymentFence);
   const residencyReconciler = createPreferredResidencyReconciler(runtimeManager, { logger });
   let residencyStartup = Promise.resolve();
   let registry = createRegistry(config);
@@ -2071,6 +2089,21 @@ export function createLloomServer(
   const rateLimitRegistry = createRateLimitRegistry(rateLimitSettingsFor(config));
   const foregroundPriority = new ForegroundPriority({ idleMs: () => config.server?.foregroundIdleMs ?? 60_000 });
   const configPath = config.sourcePath;
+
+  deploymentFence.setHooks({
+    pauseResidency: () => residencyReconciler.pause?.(),
+    resumeResidency: () => residencyReconciler.resume?.(),
+    waitForReload: () => reloadInFlight
+  });
+
+  function requireDeploymentAdmin(req) {
+    if (adminKeysConfigured(config) && hasValidApiKey(req, config, { admin: true })) return;
+    throw new DeploymentFenceError('deployment fence operations require an explicit admin API key', {
+      code: 'deployment_admin_key_required',
+      statusCode: 403,
+      retryAfterSeconds: 0
+    });
+  }
 
   function rateLimitSettingsFor(configSnapshot = config) {
     const limits = {};
@@ -2157,6 +2190,7 @@ export function createLloomServer(
   }
 
   function runtimeRecoveryAllowed(runtimeId) {
+    if (deploymentFence.isFenced()) return false;
     const state = runtimeRecoveryBackoffs.get(runtimeId);
     if (!state) return true;
     return state.until <= Date.now();
@@ -2187,23 +2221,32 @@ export function createLloomServer(
 
   function reloadConfig() {
     if (!configPath) return;
+    if (deploymentFence.isFenced()) {
+      logger.warn?.('LLooM config reload skipped while deployment fence is active');
+      return Promise.resolve({ skipped: 'deployment-fenced' });
+    }
+    // Capture before joining the reload queue. A file watcher event may be
+    // queued before prepare closes admission; the whole reload must then
+    // retain its pre-fence token until the manager mutation has settled.
+    const deploymentFenceToken = deploymentFence.captureMutation({ operation: 'configuration reload' });
     const reload = reloadInFlight
       .catch(() => {})
-      .then(async () => {
-        const nextConfig = await loadConfig(configPath);
-        // Model discovery is control-plane state and must not wait behind a
-        // multi-hour model drain, image pull, or distributed cold start. Adopt
-        // the validated on-disk catalog immediately while runtimeManager
-        // reconciles physical processes against its previous snapshot.
-        registry = createRegistry(nextConfig);
-        rateLimitRegistry.sync(rateLimitSettingsFor(nextConfig));
-        const result = await runtimeManager.reconfigure(nextConfig);
-        for (const key of Object.keys(config)) delete config[key];
-        Object.assign(config, nextConfig);
-        clusterCoordinator.reconfigure(config);
-        routingStatusCache = { at: 0, value: null, pending: null };
-        logger.info?.(`reloaded LLooM config; changed runtimes: ${result.changed.join(', ') || 'none'}`);
-      });
+      .then(() =>
+        runtimeManager.withMutationScope(deploymentFenceToken, async () => {
+          const nextConfig = await loadConfig(configPath);
+          // Keep the current catalog until the manager has accepted the whole
+          // queued reload. This prevents a fence racing a watcher from
+          // publishing a new registry after the manager correctly rejects it.
+          const result = await runtimeManager.reconfigure(nextConfig);
+          for (const key of Object.keys(config)) delete config[key];
+          Object.assign(config, nextConfig);
+          registry = createRegistry(nextConfig);
+          rateLimitRegistry.sync(rateLimitSettingsFor(nextConfig));
+          clusterCoordinator.reconfigure(config);
+          routingStatusCache = { at: 0, value: null, pending: null };
+          logger.info?.(`reloaded LLooM config; changed runtimes: ${result.changed.join(', ') || 'none'}`);
+        })
+      );
     reloadInFlight = reload.catch((error) => logger.error?.(`LLooM config reload failed: ${error?.message ?? error}`));
     return reload;
   }
@@ -2290,7 +2333,11 @@ export function createLloomServer(
     };
   }
 
-  async function resolveRequestModels(modelId, request = {}) {
+  async function resolveRequestModels(
+    modelId,
+    request = {},
+    { suppressRecovery = false, deploymentFenceToken = null } = {}
+  ) {
     const candidates = await Promise.all(registry.resolveCandidates(modelId).map(resolveRequestCandidate));
     if (candidates.length <= 1) {
       return candidates.map((candidate) => ({
@@ -2363,10 +2410,11 @@ export function createLloomServer(
       if (preferredUnavailable) {
         const runtimeState = status?.runtimes?.[preferredUnavailable.model.runtime]?.status;
         if (!['starting', 'warming', 'queued', 'draining', 'stopping'].includes(runtimeState)) {
-          if (runtimeRecoveryAllowed(preferredUnavailable.model.runtime)) {
+          if (!suppressRecovery && runtimeRecoveryAllowed(preferredUnavailable.model.runtime)) {
             void startRuntimeOperation(preferredUnavailable.model.runtime, {
               alternativeAvailable: true,
-              allowEviction: false
+              allowEviction: false,
+              deploymentFenceToken
             });
           }
         }
@@ -2507,10 +2555,21 @@ export function createLloomServer(
     return runtimeManager.ensure(runtimeId);
   }
 
-  function startRuntimeOperation(runtimeId, { alternativeAvailable = false, allowEviction = true } = {}) {
+  function startRuntimeOperation(
+    runtimeId,
+    { alternativeAvailable = false, allowEviction = true, deploymentFenceToken = null } = {}
+  ) {
+    deploymentFenceToken = deploymentFence.captureMutation({
+      operation: `runtime recovery (${runtimeId})`,
+      token: deploymentFenceToken
+    });
     let operation = runtimeStartOperations.get(runtimeId);
     if (operation) return operation;
-    operation = startRuntime(runtimeId, { alternativeAvailable, allowEviction });
+    operation = deploymentFenceToken
+      ? runtimeManager.withMutationScope(deploymentFenceToken, () =>
+          startRuntime(runtimeId, { alternativeAvailable, allowEviction })
+        )
+      : startRuntime(runtimeId, { alternativeAvailable, allowEviction });
     operation.lloomAlternativeAvailable = alternativeAvailable;
     runtimeStartOperations.set(runtimeId, operation);
     operation
@@ -2525,7 +2584,10 @@ export function createLloomServer(
     return operation;
   }
 
-  async function ensureRuntime(runtimeId, { alternativeAvailable = false, allowEviction = true, signal = null } = {}) {
+  async function ensureRuntime(
+    runtimeId,
+    { alternativeAvailable = false, allowEviction = true, signal = null, deploymentFenceToken = null } = {}
+  ) {
     signal?.throwIfAborted();
     if (!runtimeId) return { runtimeId, started: false, reason: 'no-runtime' };
     if (
@@ -2554,7 +2616,11 @@ export function createLloomServer(
       operation = null;
     }
     signal?.throwIfAborted();
-    operation ??= startRuntimeOperation(runtimeId, { alternativeAvailable, allowEviction });
+    operation ??= startRuntimeOperation(runtimeId, {
+      alternativeAvailable,
+      allowEviction,
+      deploymentFenceToken
+    });
 
     const runtime = config.runtimes?.[runtimeId] ?? {};
     const foregroundWaitMs = Math.max(0, Number(runtime.requestStartupWaitMs ?? 1000));
@@ -2587,6 +2653,7 @@ export function createLloomServer(
   }
 
   function noteRuntimeRequestOutcome(runtimeId, outcome) {
+    if (deploymentFence.isFenced()) return { runtimeId, action: 'observed', reason: 'deployment-fenced' };
     try {
       runtimeManager.noteRequestOutcome?.(runtimeId, outcome);
     } catch (error) {
@@ -2662,6 +2729,14 @@ export function createLloomServer(
     const requestBytes = Number(req.headers['content-length']) || 0;
     const attribution = requestEnntityAttribution(req);
     const requestClass = normalizeRequestClass(req.headers['x-lloom-request-class']);
+    const deploymentCanary = req.deploymentCanary ?? null;
+    if (deploymentCanary && !deploymentFence.isCanaryAuthorized(deploymentCanary)) {
+      throw new DeploymentFenceError('deployment canary authorization is stale or invalid', {
+        code: 'deployment_fence_canary_unauthorized',
+        statusCode: 409,
+        retryAfterSeconds: 0
+      });
+    }
     const rateLimitScopeIds = [...new Set([resolved.requestedId, ...(resolved.aliasChain ?? [])])];
     const client = createClientCloseTracker(req, res);
     let rateLimitRelease;
@@ -2761,11 +2836,33 @@ export function createLloomServer(
     try {
       const result = await clusterCoordinator.withTarget(resolved, async () => {
         client.signal.throwIfAborted();
-        await ensureRuntime(resolved.model.runtime, {
-          signal: client.signal,
-          alternativeAvailable: resolved.routeSelection?.readyAlternativeAvailable === true,
-          allowEviction: resolved.model.kind !== 'embedding'
-        });
+        if (deploymentCanary) {
+          if (resolved.model.selectedNode && !clusterCoordinator.isLocalNode(resolved.model.selectedNode)) {
+            throw new DeploymentFenceError('deployment canary cannot route to a remote node', {
+              code: 'deployment_fence_canary_remote_target',
+              statusCode: 409,
+              retryAfterSeconds: 0
+            });
+          }
+          if (
+            !resolved.model.runtime ||
+            typeof runtimeManager.isHealthy !== 'function' ||
+            !(await waitForRequest(runtimeManager.isHealthy(resolved.model.runtime), client.signal))
+          ) {
+            throw new DeploymentFenceError('deployment canary requires an already healthy runtime', {
+              code: 'deployment_fence_canary_runtime_unhealthy',
+              statusCode: 409,
+              retryAfterSeconds: 0
+            });
+          }
+        } else {
+          await ensureRuntime(resolved.model.runtime, {
+            signal: client.signal,
+            alternativeAvailable: resolved.routeSelection?.readyAlternativeAvailable === true,
+            allowEviction: resolved.model.kind !== 'embedding',
+            deploymentFenceToken: req.deploymentFenceToken ?? null
+          });
+        }
         queueStartedAt = Date.now();
         return runtimeManager.withSlot(
           resolved.model.runtime,
@@ -2816,7 +2913,7 @@ export function createLloomServer(
       };
       metrics.record(outcome);
       noteRuntimeRequestOutcome(resolved.model.runtime, outcome);
-      clusterCoordinator.noteTargetOutcome(resolved, outcome);
+      if (!deploymentCanary) clusterCoordinator.noteTargetOutcome(resolved, outcome);
       return result;
     } catch (error) {
       const status = client.closed
@@ -2862,7 +2959,7 @@ export function createLloomServer(
       };
       metrics.record(outcome);
       noteRuntimeRequestOutcome(resolved.model.runtime, outcome);
-      clusterCoordinator.noteTargetOutcome(resolved, outcome);
+      if (!deploymentCanary) clusterCoordinator.noteTargetOutcome(resolved, outcome);
       if (status === 499 || isClientClosedError(error)) {
         if (binaryResponse && res.headersSent) res.destroy();
         else endResponseWithError(res, error, { stream: stream && !binaryResponse, config, status: 499 });
@@ -2915,7 +3012,57 @@ export function createLloomServer(
 
   async function recordModelRequestWithFailover({ route, modelId, stream, req, res, kind = 'chat', request = {} }, fn) {
     req.foregroundPrioritySignal?.throwIfAborted();
-    let candidates = await resolveRequestModels(modelId, request);
+    const deploymentCanary = req.deploymentCanary ?? null;
+    let candidates = await resolveRequestModels(modelId, request, {
+      suppressRecovery: Boolean(deploymentCanary),
+      deploymentFenceToken: req.deploymentFenceToken ?? null
+    });
+    if (!candidates.length) throw new UnknownModelError(modelId);
+    if (deploymentCanary) {
+      const candidate = candidates[0];
+      const model = candidate?.model ?? {};
+      const runtimeId = model.runtime;
+      const runtime = runtimeId ? config.runtimes?.[runtimeId] : null;
+      const placementNode = runtime?.node ?? runtime?.placement?.node ?? null;
+      const selectedNode = model.selectedNode ?? null;
+      const localTarget = !selectedNode || clusterCoordinator.isLocalNode(selectedNode);
+      const localPlacement = !placementNode || clusterCoordinator.isLocalNode(placementNode);
+      const concreteLocal =
+        candidates.length === 1 &&
+        candidate?.alias == null &&
+        candidate?.aliasMemberCount === 1 &&
+        candidate?.requestedId === candidate?.resolvedId &&
+        (!Array.isArray(model.targets) || model.targets.length <= 1) &&
+        Boolean(runtimeId && runtime?.enabled === true) &&
+        runtime?.placement?.mode !== 'distributed' &&
+        localTarget &&
+        localPlacement &&
+        !candidate?.backend?.apiKeyEnv &&
+        !candidate?.backend?.apiKey &&
+        !candidate?.backend?.provider &&
+        !candidate?.backend?.openrouterProvider &&
+        !model.provider;
+      if (!concreteLocal) {
+        throw new DeploymentFenceError(
+          'deployment canary requires one exact model mapped to one healthy local runtime',
+          {
+            code: 'deployment_fence_canary_target_invalid',
+            statusCode: 409,
+            retryAfterSeconds: 0,
+            details: {
+              requestedModel: candidate?.requestedId ?? modelId,
+              resolvedModel: candidate?.resolvedId ?? null,
+              runtime: runtimeId ?? null,
+              candidates: candidates.length,
+              alias: candidate?.alias != null,
+              multiTarget: Array.isArray(model.targets) && model.targets.length > 1,
+              provider: Boolean(candidate?.backend?.apiKeyEnv || candidate?.backend?.provider || model.provider)
+            }
+          }
+        );
+      }
+      candidates = [candidate];
+    }
     // Re-rank immediately before begin() so concurrent resolutions observe work
     // admitted by earlier requests rather than stampeding the same fast member.
     if (candidates[0].alias?.strategy === 'fastest') {
@@ -2968,7 +3115,9 @@ export function createLloomServer(
           (context) => fn(resolved, { ...context, hasNext }),
           { deferUnsentErrors: hasNext }
         );
-        if (result?.interrupted === true) {
+        if (deploymentCanary) {
+          releaseTargetProbe(resolved);
+        } else if (result?.interrupted === true) {
           releaseTargetProbe(resolved);
         } else if (MODEL_FAILOVER_STATUS_CODES.has(Number(result?.status))) {
           noteTargetFailure(
@@ -2980,6 +3129,10 @@ export function createLloomServer(
         }
         return result;
       } catch (error) {
+        if (deploymentCanary) {
+          releaseTargetProbe(resolved);
+          throw error;
+        }
         if (error instanceof ModelRateLimitError) {
           // A route-level limit rejection says nothing about target health; do
           // not poison the target backoff or attempt failover past the cap.
@@ -3005,9 +3158,9 @@ export function createLloomServer(
     return requestClass !== 'standard' ? { 'x-lloom-request-class': requestClass } : {};
   }
 
-  async function handleOpenAIChat(req, res) {
-    const body = await readJson(req);
-    await recordModelRequestWithFailover(
+  async function handleOpenAIChat(req, res, { bodyOverride = null } = {}) {
+    const body = bodyOverride ?? (await readJson(req));
+    return recordModelRequestWithFailover(
       {
         route: '/v1/chat/completions',
         modelId: body.model ?? config.defaults?.chatModel,
@@ -3037,6 +3190,54 @@ export function createLloomServer(
         if (!upstream.ok) {
           // Avoid opening an SSE response for an already-failed upstream.
           throw await upstreamStatusError(upstream);
+        }
+        if (req.deploymentCanary) {
+          if (body.stream === true) {
+            throw new DeploymentFenceError('deployment canary requires a buffered response', {
+              code: 'deployment_fence_canary_stream_unsupported',
+              statusCode: 400,
+              retryAfterSeconds: 0
+            });
+          }
+          const responseBody = Buffer.from(await upstream.arrayBuffer());
+          if (!responseBody.length) {
+            throw new DeploymentFenceError('deployment canary returned an empty response', {
+              code: 'deployment_fence_canary_empty_response',
+              statusCode: 502,
+              retryAfterSeconds: 0
+            });
+          }
+          const contentType = String(upstream.headers.get('content-type') ?? '').toLowerCase();
+          if (contentType.includes('json')) {
+            try {
+              JSON.parse(responseBody.toString('utf8'));
+            } catch {
+              throw new DeploymentFenceError('deployment canary returned invalid JSON', {
+                code: 'deployment_fence_canary_invalid_response',
+                statusCode: 502,
+                retryAfterSeconds: 0
+              });
+            }
+          }
+          return {
+            status: upstream.status,
+            stream: false,
+            responseBytes: responseBody.length,
+            usage: usageFromJsonBuffer(responseBody, { 'content-type': contentType }),
+            responseFinished: true,
+            canary: {
+              healthy: true,
+              fenced: true,
+              privileged: true,
+              aliasUsed: false,
+              cloudFallback: false,
+              source: 'local',
+              gatewayModelId: resolved.requestedId,
+              runtimeId: resolved.model.runtime,
+              responseStatus: upstream.status,
+              responseFinished: true
+            }
+          };
         }
         return body.stream === true
           ? proxyOpenAIChatStream(res, upstream, resolved.requestedId, { signal, timing, progress, corsConfig: config })
@@ -3961,6 +4162,8 @@ export function createLloomServer(
 
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? '127.0.0.1'}`);
     let priorityLease;
+    let deploymentLease;
+    let releaseDeploymentLease;
     try {
       const auth = authorizeRequest(req, config, {
         method: req.method,
@@ -3976,6 +4179,25 @@ export function createLloomServer(
           })
         );
         return;
+      }
+
+      deploymentLease = deploymentFence.requestAdmission({
+        routeKind: auth.routeKind,
+        method: req.method,
+        pathname: url.pathname
+      });
+      req.deploymentFenceToken = deploymentLease.mutationToken ?? null;
+      releaseDeploymentLease = () => {
+        if (!deploymentLease) return;
+        deploymentLease.release();
+        if (releaseDeploymentLease) {
+          res.off('finish', releaseDeploymentLease);
+          res.off('close', releaseDeploymentLease);
+        }
+      };
+      if (deploymentLease.id) {
+        res.once('finish', releaseDeploymentLease);
+        res.once('close', releaseDeploymentLease);
       }
 
       if (auth.routeKind === 'inference' && config.server?.inferenceEnabled === false) {
@@ -3994,6 +4216,73 @@ export function createLloomServer(
 
       if (req.method === 'GET' && url.pathname === '/health') {
         sendJson(res, 200, { ok: true, name: config.name ?? 'LLooM', pid: process.pid }, {}, config);
+        return;
+      }
+
+      if (isDeploymentFencePath(url.pathname)) {
+        requireDeploymentAdmin(req);
+        if (req.method === 'GET' && url.pathname === '/gateway/deployment-fence/status') {
+          sendJson(res, 200, deploymentFence.status(), {}, config);
+          return;
+        }
+        if (req.method === 'POST' && url.pathname === '/gateway/deployment-fence/prepare') {
+          const body = await readJson(req);
+          const result = await deploymentFence.prepare({
+            opId: body.opId ?? body.operationId,
+            timeoutMs: body.timeoutMs
+          });
+          sendJson(res, 200, result, {}, config);
+          return;
+        }
+        if (req.method === 'POST' && url.pathname === '/gateway/deployment-fence/release') {
+          const body = await readJson(req);
+          const result = await deploymentFence.release({
+            opId: body.opId ?? body.operationId,
+            generation: body.generation
+          });
+          sendJson(res, 200, result, {}, config);
+          return;
+        }
+        if (req.method === 'POST' && url.pathname === '/gateway/deployment-fence/canary') {
+          const body = await readJson(req);
+          const opId = body.opId ?? body.operationId;
+          const request = body.request;
+          if (!request || typeof request !== 'object' || Array.isArray(request)) {
+            throw Object.assign(new Error('deployment canary requires a request object'), { statusCode: 400 });
+          }
+          const canaryResult = await deploymentFence.runCanary({
+            opId,
+            generation: body.generation,
+            run: async (context) => {
+              req.deploymentCanary = context;
+              try {
+                const result = await handleOpenAIChat(req, res, { bodyOverride: request });
+                return {
+                  ...(result && typeof result === 'object' ? result : {}),
+                  status: Number(result?.status ?? res.statusCode ?? 0),
+                  ok:
+                    typeof result?.ok === 'boolean'
+                      ? result.ok
+                      : Number(result?.status ?? res.statusCode ?? 0) >= 200 &&
+                        Number(result?.status ?? res.statusCode ?? 0) < 400,
+                  responseFinished: result?.responseFinished === true
+                };
+              } finally {
+                req.deploymentCanary = null;
+              }
+            }
+          });
+          if (!canaryResult?.canary) {
+            throw new DeploymentFenceError('deployment canary did not return a trusted receipt', {
+              code: 'deployment_fence_canary_receipt_missing',
+              statusCode: 502,
+              retryAfterSeconds: 0
+            });
+          }
+          sendJson(res, 200, canaryResult.canary, {}, config);
+          return;
+        }
+        sendJson(res, 404, errorBody(`unknown deployment fence route: ${url.pathname}`, { code: 'not_found' }));
         return;
       }
 
@@ -4185,10 +4474,19 @@ export function createLloomServer(
               events: runtimeStatus.events
             }
           : runtimeStatus;
+        const fenceStatus = deploymentFence.status();
         sendJson(res, 200, {
           ok: true,
+          protocol: 1,
+          gatewayProtocol: 1,
+          serviceActive: true,
+          atomicLayout: fenceStatus.identity?.atomicLayout === true,
+          releaseIdentity: fenceStatus.releaseIdentity,
+          loadedIdentity: fenceStatus.releaseIdentity,
+          runtimeSnapshot: runtimeStatus,
           server: config.server,
           defaults: config.defaults,
+          deploymentFence: fenceStatus,
           runtimeManager: runtimeStatus,
           cluster: await clusterCoordinator.status({ localRuntimeStatus })
         });
@@ -4899,6 +5197,28 @@ export function createLloomServer(
         );
         return;
       }
+      if (error instanceof DeploymentFenceError) {
+        if (res.headersSent) {
+          endResponseWithError(res, error, {
+            stream: res.headersSent,
+            config,
+            status: error.statusCode
+          });
+        } else {
+          sendJson(
+            res,
+            error.statusCode,
+            errorBody(error.message, {
+              type: error.type,
+              code: error.code,
+              details: error.details
+            }),
+            error.retryAfterSeconds > 0 ? { 'retry-after': String(error.retryAfterSeconds) } : {},
+            config
+          );
+        }
+        return;
+      }
       if (error instanceof RuntimeAdmissionError) {
         endResponseWithError(res, error, {
           stream: res.headersSent,
@@ -4914,6 +5234,9 @@ export function createLloomServer(
         status: errorStatusCode(error) || 500
       });
     } finally {
+      // `writableEnded` only means end() was called; keep the admission until
+      // finish/close so the complete response stream is outside the drain.
+      if (releaseDeploymentLease && res.destroyed) releaseDeploymentLease();
       if (priorityLease) {
         res.off('close', priorityLease.release);
         priorityLease.release();
@@ -4953,6 +5276,7 @@ export function createLloomServer(
     server,
     registry,
     runtimeManager,
+    deploymentFence,
     metrics,
     listen() {
       const bind = assertBindAllowed(config, { logger });
@@ -4966,14 +5290,16 @@ export function createLloomServer(
         server.once('error', onError);
         server.listen(config.server.port, config.server.host, () => {
           server.off('error', onError);
-          residencyStartup = runtimeManager
-            .startKeepWarm()
-            .then(() => {
-              // The periodic preferred-restore timer starts only after the
-              // pinned (and then preferred) residency boot pass has settled.
-              if (!runtimeManager.shuttingDown) residencyReconciler.start();
-            })
-            .catch((error) => logger.error?.(error));
+          residencyStartup = deploymentFence.isFenced()
+            ? Promise.resolve({ skipped: 'deployment-fenced' })
+            : runtimeManager
+                .startKeepWarm()
+                .then(() => {
+                  // The periodic preferred-restore timer starts only after the
+                  // pinned (and then preferred) residency boot pass has settled.
+                  if (!runtimeManager.shuttingDown) residencyReconciler.start();
+                })
+                .catch((error) => logger.error?.(error));
           if (configPath) watchFile(configPath, { interval: 500 }, reloadConfig);
           resolve(server);
         });

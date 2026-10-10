@@ -21,6 +21,7 @@ export function createPreferredResidencyReconciler(runtimeManager, { intervalMs 
   let running = false;
   let timer = null;
   let closed = false;
+  let paused = false;
   let activePass = Promise.resolve();
 
   function idleMs() {
@@ -30,6 +31,7 @@ export function createPreferredResidencyReconciler(runtimeManager, { intervalMs 
 
   async function runPass() {
     if (closed) return { skipped: 'closed' };
+    if (paused) return { skipped: 'deployment-fenced' };
     if (running) return { skipped: 'overlap' };
     const preferredIds = runtimeManager.preferredWarmRuntimeIds?.() ?? [];
     if (preferredIds.length === 0) return { skipped: 'no-preferred-runtimes' };
@@ -41,6 +43,7 @@ export function createPreferredResidencyReconciler(runtimeManager, { intervalMs 
       // the way so image cannot steal the space an essential runtime needs.
       const status = await runtimeManager.status();
       if (closed) return { skipped: 'closed' };
+      if (paused) return { skipped: 'deployment-fenced' };
       const pinsPending = runtimeManager
         .keepWarmRuntimeIds?.()
         .filter((runtimeId) => runtimeManager.config?.runtimes?.[runtimeId]?.enabled === true)
@@ -56,7 +59,7 @@ export function createPreferredResidencyReconciler(runtimeManager, { intervalMs 
       if (pinsPending) return { skipped: 'pins-pending' };
 
       for (const runtimeId of preferredIds) {
-        if (closed) break;
+        if (closed || paused) break;
         if (runtimeId == null) continue;
         if (status.runtimes?.[runtimeId]?.healthy === true) continue;
         const ownership = runtimeManager.residencyOwnership?.(runtimeId);
@@ -102,14 +105,31 @@ export function createPreferredResidencyReconciler(runtimeManager, { intervalMs 
     return activePass;
   }
 
+  function startTimer() {
+    if (timer || closed || paused) return;
+    timer = setInterval(() => {
+      reconcileOnce().catch((error) => logger?.warn?.(`preferred residency reconcile failed: ${error?.message}`));
+    }, period);
+    timer.unref?.();
+  }
+
   return {
     reconcileOnce,
     start() {
-      if (timer || closed) return;
-      timer = setInterval(() => {
-        reconcileOnce().catch((error) => logger?.warn?.(`preferred residency reconcile failed: ${error?.message}`));
-      }, period);
-      timer.unref?.();
+      startTimer();
+    },
+    pause() {
+      paused = true;
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+      return activePass;
+    },
+    resume() {
+      if (closed) return;
+      paused = false;
+      startTimer();
     },
     stop() {
       closed = true;
@@ -124,6 +144,9 @@ export function createPreferredResidencyReconciler(runtimeManager, { intervalMs 
     },
     get closed() {
       return closed;
+    },
+    get paused() {
+      return paused;
     }
   };
 }
