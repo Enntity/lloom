@@ -91,6 +91,8 @@ import {
   NUMERIC_MEMORY_FLAGS
 } from '../src/runtime-policy-config.mjs';
 import { createLloomServer } from '../src/server.mjs';
+import { deploymentFailureReport, formatDeploymentReport, runDeploymentCli } from '../src/cluster-deployment-cli.mjs';
+import { runNodeAgentCli } from '../src/node-agent-cli.mjs';
 import { applySetup, createSetupPlan, syncClusterSetupMembers } from '../src/setup.mjs';
 import { createSetupStatus } from '../src/setup-status.mjs';
 import {
@@ -134,6 +136,8 @@ const COMMAND_REGISTRY = [
   { name: 'runtimes', aliases: ['runtime-status'], tier: 'advanced', needsInstalledConfig: true },
   { name: 'service', aliases: [], tier: 'advanced', needsInstalledConfig: true },
   { name: 'cluster', aliases: ['cluster-status'], tier: 'advanced', needsInstalledConfig: true },
+  { name: 'deployment', aliases: ['rollout'], tier: 'advanced', needsInstalledConfig: false },
+  { name: 'node-agent', aliases: [], tier: 'advanced', needsInstalledConfig: false },
   { name: 'runtime-plan', aliases: [], tier: 'advanced', needsInstalledConfig: true },
   { name: 'runtime-policy', aliases: [], tier: 'advanced', needsInstalledConfig: true },
   { name: 'runtime-admit', aliases: [], tier: 'advanced', needsInstalledConfig: true },
@@ -224,6 +228,13 @@ Serving and discovery:
 Backends and runtimes:
   lloom down
   lloom cluster [status|doctor|discover] [--apply] [--id NAME] [--api-key-env NAME] [--json]
+  lloom deployment plan --plan FILE [--json]
+  lloom deployment apply --plan FILE --nodes FILE [--operation-id ID] --apply --yes [--journal FILE] [--json]
+  lloom deployment status --operation-id ID [--journal FILE] [--json]
+  lloom deployment resume --plan FILE --nodes FILE --operation-id ID --apply --yes [--generation N] [--journal FILE] [--json]
+  lloom deployment rollback --plan FILE --nodes FILE --operation-id ID --apply --yes [--generation N] [--journal FILE] [--json]
+  deployment plans require the reviewed archive and manifest at exact absolute paths on every target
+  lloom node-agent <phase> --json   # authenticated remote gateway release phase; request JSON on stdin
   lloom cluster add-node <id> <url> [--namespace NAME|--merge] [--include-external] [--api-key-env NAME|--api-key-stdin] [--telemetry-only] [--apply --yes]
   lloom service install [--enable-linger] [--apply --yes] [--json]
   lloom service doctor [--json]
@@ -292,6 +303,29 @@ function hasFlag(args, name) {
 
 function wantsJson(args) {
   return hasFlag(args, '--json') || argValue(args, '--format') === 'json';
+}
+
+async function runDeploymentCommand(args, action) {
+  try {
+    const generationValue = argValue(args, '--generation');
+    const result = await runDeploymentCli(action, {
+      planPath: argValue(args, '--plan'),
+      nodesPath: argValue(args, '--nodes'),
+      journalPath: argValue(args, '--journal'),
+      operationId: argValue(args, '--operation-id'),
+      generation: generationValue === undefined ? null : Number(generationValue),
+      apply: hasFlag(args, '--apply'),
+      yes: hasFlag(args, '--yes')
+    });
+    console.log(formatDeploymentReport(result, { json: wantsJson(args) }));
+  } catch (error) {
+    const failure = deploymentFailureReport(action, error);
+    if (!failure) throw error;
+    // A rollback report is the operator's recovery receipt. Keep the command's
+    // failure exit status while emitting the complete public-safe report.
+    console.error(formatDeploymentReport(failure, { json: wantsJson(args) }));
+    process.exitCode = 1;
+  }
 }
 
 function wantsGo(args) {
@@ -1390,6 +1424,14 @@ async function main() {
   currentCliConfig = config;
 
   const handlers = {
+    'node-agent': async ({ args }) => {
+      const result = await runNodeAgentCli({
+        argv: positional(args)
+          .slice(1)
+          .concat(args.includes('--json') ? ['--json'] : [])
+      });
+      if (!result.ok) process.exitCode = 1;
+    },
     serve: async ({ args, config, command: _command }) => {
       applyServeOverrides(config, args);
       const app = createLloomServer(config);
@@ -2596,8 +2638,17 @@ async function main() {
         )
       );
     },
+    deployment: async ({ args }) => {
+      const action = positional(args)[1] ?? 'plan';
+      await runDeploymentCommand(args, action);
+    },
     cluster: async ({ args, config, command: _command }) => {
       const action = positional(args)[1] ?? 'status';
+      if (action === 'rollout') {
+        const deploymentAction = positional(args)[2] ?? 'plan';
+        await runDeploymentCommand(args, deploymentAction);
+        return;
+      }
       if (action === 'discover') {
         const explicitLocalId =
           process.env.LLOOM_NODE_ID ??
