@@ -54,16 +54,18 @@ assert.deepEqual(
     'download-atlas-model',
     'download-atlas-drafter',
     'build-atlas-image',
-    'convert-atlas-overlay'
+    'convert-atlas-overlay',
+    'prepare-atlas-prefix-cache'
   ]
 );
+const gatedSteps = ['verify-atlas-pins', 'build-atlas-image', 'convert-atlas-overlay', 'prepare-atlas-prefix-cache'];
 assert.deepEqual(
   recipe.setup.steps
     .filter((step) => step.action !== 'check-command' && step.action !== 'download-model')
     .map((step) => step.id),
-  ['verify-atlas-pins', 'build-atlas-image', 'convert-atlas-overlay']
+  gatedSteps
 );
-for (const stepId of ['verify-atlas-pins', 'build-atlas-image', 'convert-atlas-overlay']) {
+for (const stepId of gatedSteps) {
   assert.equal(
     recipe.setup.steps.find((step) => step.id === stepId).alwaysRun,
     true,
@@ -78,7 +80,7 @@ assert.equal(model.model, 'nvidia/GLM-5.3-Flash-NVFP4');
 assert.equal(model.settings.port, 8893);
 assert.equal(model.settings.baseUrl, 'http://127.0.0.1:8893/v1');
 assert.equal(model.settings.healthUrl, 'http://127.0.0.1:8893/health');
-assert.equal(model.settings.contextWindow, 524288);
+assert.equal(model.settings.contextWindow, 1048576);
 assert.equal(model.settings.maxOutputTokens, 131072);
 assert.equal(model.settings.timeoutMs, 14400000);
 assert.equal(model.settings.maxActiveRequests, 4);
@@ -87,6 +89,9 @@ assert.equal(model.settings.priority, 150);
 assert.equal(model.settings.startupTimeoutMs, 7200000);
 assert.equal(model.settings.watchdog.oomGuardMb ?? 4096, 4096);
 assert.deepEqual(model.input, ['text', 'image', 'video']);
+// The prefix cache on disk ships on (48 GiB per node) beside the KV shard; 0
+// turns it off, 16-100 is its size. The image's serve.py validates both.
+assert.equal(model.settings.prefixCacheGb, 48);
 assert(model.capabilities.includes('vision'));
 assert(model.capabilities.includes('structured-output'));
 const downloadStep = recipe.setup.steps.find((step) => step.id === 'download-atlas-model');
@@ -143,6 +148,10 @@ for (const member of members) {
     '/dev/infiniband:/dev/infiniband',
     '--cap-add IPC_LOCK',
     '--cap-add SYS_NICE',
+    // The GB10 display carveout: the launcher drops SYS_ADMIN before the server starts.
+    '--cap-add SYS_ADMIN',
+    'type=bind,src=${installRoot}/atlas-carveout-lock,dst=/run/lock/sparkglm',
+    'SPARKGLM_DISPLAY_CARVEOUT=1',
     '--ulimit memlock=-1:-1',
     '--security-opt no-new-privileges=true',
     '--stop-timeout 60',
@@ -158,17 +167,23 @@ for (const member of members) {
     'ATLAS_WORLD_SIZE=2',
     'ATLAS_TP_SIZE=2',
     'ATLAS_EP_SIZE=2',
-    'ATLAS_CONTEXT_WINDOW=524288',
+    'ATLAS_CONTEXT_WINDOW=1048576',
     'type=bind,src=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2,dst=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2,readonly',
     'DRAFTER_PATH=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2',
     'SERVED_MODEL_NAME=glm-5.3-flash-atlas',
     'NCCL_IB_HCA=rocep1s0f0',
     'NCCL_IB_ADDR_FAMILY=AF_INET',
     'NCCL_CROSS_NIC=0',
-    'NCCL_SOCKET_IFNAME=${fabricInterface}'
+    'NCCL_SOCKET_IFNAME=${fabricInterface}',
+    'type=bind,src=${installRoot}/atlas-prefix-cache,dst=/prefix-cache',
+    'SPARKGLM_PREFIX_CACHE_GB=${prefixCacheGb}',
+    'SPARKGLM_KV_SHARD=1',
+    'SPARKGLM_PROFILE=4x1m'
   ]) {
     assert(rendered.includes(expected), `missing Atlas launch control: ${expected}`);
   }
+  // Tier settings come only from serve.py, identical on both ranks.
+  assert(!/ATLAS_(KV_NVME|SSM_TIER|GLM_NVME)/.test(rendered));
   // The baseline launched with the tool grammar disabled; functionality wins.
   assert(!rendered.includes('disable-tool-grammar'), 'tool grammar must stay enabled');
   assert(!rendered.includes('--ipc private'), 'the private-ipc baseline flag must not be copied');
@@ -190,8 +205,17 @@ assert(readme.includes('127.0.0.1:8893'));
 assert(readme.includes('127.0.0.1:8894'));
 assert(readme.includes('/opt/atlas/serve.py'));
 assert(readme.includes(pins.image.profilePath));
-assert.equal(pins.image.profilePath, '/opt/atlas/profiles/4x512k.json');
-for (const key of ['NODE_RANK', 'MASTER_ADDR', 'MASTER_PORT', 'FABRIC_INTERFACE', 'MODEL_PATH']) {
+assert.equal(pins.image.profilePath, '/opt/atlas/profiles/4x1m.json');
+for (const key of [
+  'NODE_RANK',
+  'MASTER_ADDR',
+  'MASTER_PORT',
+  'FABRIC_INTERFACE',
+  'MODEL_PATH',
+  'SPARKGLM_PREFIX_CACHE_GB',
+  'SPARKGLM_KV_SHARD',
+  'SPARKGLM_PROFILE'
+]) {
   assert(readme.includes(key), `the image env contract must document ${key}`);
 }
 
@@ -221,9 +245,17 @@ assert.deepEqual(
     'download-atlas-model',
     'download-atlas-drafter',
     'build-atlas-image',
-    'convert-atlas-overlay'
+    'convert-atlas-overlay',
+    'prepare-atlas-prefix-cache'
   ]
 );
+assert.deepEqual(plan.steps.find((step) => step.id === 'prepare-atlas-prefix-cache').command, [
+  'mkdir',
+  '-p',
+  '/install/atlas-prefix-cache/kv',
+  '/install/atlas-prefix-cache/ssm',
+  '/install/atlas-carveout-lock'
+]);
 // The drafter lands exactly where both members mount it as DRAFTER_PATH.
 assert.equal(
   plan.steps.find((step) => step.id === 'download-atlas-drafter').destination,
@@ -332,31 +364,33 @@ fs.rmSync(statusRoot, { recursive: true, force: true });
 // Runtime materialization must resolve the same managed paths used by setup.
 // Absolute source/output mounts are required because the converter can emit
 // absolute symlinks into the overlay.
-const materialized = deriveUserConfig(
-  {
-    server: { host: '127.0.0.1', port: 8100 },
-    security: {},
-    defaults: {},
-    models: [],
-    backends: {},
-    runtimes: {},
-    aliases: {},
-    clientCatalog: { modelOrder: [] },
-    cluster: {
-      leaderNode: 'spark01',
-      nodes: {
-        spark01: { backendHost: '10.0.0.1', fabricInterface: 'eth0' },
-        spark02: { backendHost: '10.0.0.2', fabricInterface: 'eth0', labels: { role: 'worker' } }
+const materialize = (recipeDocument) =>
+  deriveUserConfig(
+    {
+      server: { host: '127.0.0.1', port: 8100 },
+      security: {},
+      defaults: {},
+      models: [],
+      backends: {},
+      runtimes: {},
+      aliases: {},
+      clientCatalog: { modelOrder: [] },
+      cluster: {
+        leaderNode: 'spark01',
+        nodes: {
+          spark01: { backendHost: '10.0.0.1', fabricInterface: 'eth0' },
+          spark02: { backendHost: '10.0.0.2', fabricInterface: 'eth0', labels: { role: 'worker' } }
+        }
       }
+    },
+    recipeDocument,
+    {
+      modelRoot: '/models',
+      additive: true,
+      backendVariables: { repoRoot: root, backendRoot: '/backend', installRoot: '/install' }
     }
-  },
-  recipe,
-  {
-    modelRoot: '/models',
-    additive: true,
-    backendVariables: { repoRoot: root, backendRoot: '/backend', installRoot: '/install' }
-  }
-);
+  );
+const materialized = materialize(recipe);
 const additiveExisting = deriveUserConfig(
   {
     server: { host: '127.0.0.1', port: 8100 },
@@ -409,6 +443,19 @@ for (const runtimeId of ['glm53-flash-atlas-worker', 'glm53-flash-atlas-head']) 
   assert(args.includes('src=/models/nvidia--GLM-5.3-Flash-NVFP4,dst=/models/nvidia--GLM-5.3-Flash-NVFP4'));
   assert(args.includes('src=/install/atlas-overlay,dst=/install/atlas-overlay'));
   assert(args.includes('MODEL_PATH=/install/atlas-overlay'));
+  assert(args.includes('src=/install/atlas-prefix-cache,dst=/prefix-cache'));
+  assert(args.includes('-e SPARKGLM_PREFIX_CACHE_GB=48 '));
+  assert(args.includes('-e SPARKGLM_KV_SHARD=1 '));
+  assert(args.includes('-e SPARKGLM_PROFILE=4x1m '));
+}
+// A size reaches both ranks alike (the mount stays either way).
+const diskCacheRecipe = structuredClone(recipe);
+diskCacheRecipe.models[0].settings.prefixCacheGb = 0;
+const diskCache = materialize(diskCacheRecipe);
+for (const runtimeId of ['glm53-flash-atlas-worker', 'glm53-flash-atlas-head']) {
+  const args = diskCache.runtimes[runtimeId].bootstrap.createArgs.join(' ');
+  assert(args.includes('-e SPARKGLM_PREFIX_CACHE_GB=0 '), `${runtimeId} must pass the size through`);
+  assert(args.includes('src=/install/atlas-prefix-cache,dst=/prefix-cache'));
 }
 
 // ---- final portable pins and explicit invalid-manifest fixture -------------
@@ -416,10 +463,10 @@ assert.equal(pins.model.revision, '423acf37583782c51c142d145aef733d72943d93');
 assert.equal(pins.model.repo, 'nvidia/GLM-5.3-Flash-NVFP4');
 assert.equal(pins.source.repo, 'Enntity/sparkglm');
 assert.equal(pins.status, 'final');
-assert.equal(pins.source.revision, '9acb642b55ccfbc63fc979d747cb69eff30c9a24');
-assert.equal(pins.source.installTree, '2ba73a2d8aee7234474ae3cb107a1d61d0c33891');
+assert.equal(pins.source.revision, 'b6bed25903578b4f4ed4f0e7204c80700ad5b8d9');
+assert.equal(pins.source.installTree, '4046c81baa071cb109e55c3206ed1fca3bd3db9a');
 assert.equal(pins.source.buildScript, 'install/build.sh');
-assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkglm:2ba73a2d8aee');
+assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkglm:4046c81baa07');
 assert.equal(pins.image.label, 'io.enntity.sparkglm.install-tree');
 assert.equal(pins.image.architecture, 'arm64');
 assert.equal(pins.image.entrypoint, '/opt/atlas/serve.py');
@@ -666,7 +713,7 @@ assert.match(missingImageContract.stderr, /missing the Atlas entrypoint\/profile
 for (const identity of [`arm64 ${'f'.repeat(40)}`, `amd64 ${pins.source.installTree}`, 'arm64 <no value>']) {
   const mismatched = runInstaller({ ...fakeEnv, ATLAS_TEST_IDENTITY: identity }, ['--check-only']);
   assert.notEqual(mismatched.status, 0, `--check-only must reject image identity ${identity}`);
-  assert.match(mismatched.stderr, /expected 'arm64 2ba73a2d8aee7234474ae3cb107a1d61d0c33891'/);
+  assert.match(mismatched.stderr, /expected 'arm64 4046c81baa071cb109e55c3206ed1fca3bd3db9a'/);
 }
 const noImageDir = fs.mkdtempSync(path.join(converterRoot, 'no-image-'));
 const checkedMissingImage = runInstaller({ ...fakeEnv, ATLAS_TEST_IMAGE_DIR: noImageDir }, ['--check-only']);
@@ -682,7 +729,7 @@ assert.match(reentered.stdout, /existing image .* verified; skipping pull and bu
 const pullImageDir = fs.mkdtempSync(path.join(converterRoot, 'pull-'));
 const pulled = runInstaller({ ...fakeEnv, ATLAS_TEST_IMAGE_DIR: pullImageDir });
 assert.equal(pulled.status, 0, `${pulled.stdout}\n${pulled.stderr}`);
-assert.match(pulled.stdout, /pulling ghcr\.io\/enntity\/atlas-sparkglm:2ba73a2d8aee/);
+assert.match(pulled.stdout, /pulling ghcr\.io\/enntity\/atlas-sparkglm:4046c81baa07/);
 assert.match(pulled.stdout, /image prepared/);
 // An image with the wrong label is never trusted: the installer falls through
 // to the source build, whose non-destructive checkout guard refuses to touch a

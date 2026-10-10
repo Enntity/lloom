@@ -358,6 +358,14 @@ lloom runtime-start glm53-flash-atlas-cluster
 The recipe is additive. It does not set a default model and does not overwrite
 aliases, so an existing GLM-5.3 Flash route keeps working.
 
+Licenses: the recipe and LLooM's backend files are MIT. The engine is
+[Atlas](https://github.com/Atlas-Inf/atlas) with SparkGLM's work on the
+[Enntity/atlas](https://github.com/Enntity/atlas) fork, **AGPL-3.0-only**, and
+runs from its own container image; LLooM includes none of its source. The
+DFlash2 drafter `incoai/GLM-5.3-Flash-DFlash2` is **CC BY-NC-ND 4.0
+(non-commercial)**. See the backend README's "Credits and licenses" section and
+[Third-Party Notices](../THIRD_PARTY_NOTICES.md).
+
 ### Single pin manifest and fail-closed pin gate
 
 All portable identities for the lane live in exactly one place,
@@ -365,9 +373,9 @@ All portable identities for the lane live in exactly one place,
 the git tree of its `install/` directory, the image tag and identity label, the
 `nvidia/GLM-5.3-Flash-NVFP4` and drafter revisions, and the conversion marker
 contract. The current source pin is product revision
-`9acb642b55ccfbc63fc979d747cb69eff30c9a24` with install tree
-`2ba73a2d8aee7234474ae3cb107a1d61d0c33891`, so the image is
-`ghcr.io/enntity/atlas-sparkglm:2ba73a2d8aee`. A later product revision is
+`b6bed25903578b4f4ed4f0e7204c80700ad5b8d9` with install tree
+`4046c81baa071cb109e55c3206ed1fca3bd3db9a`, so the image is
+`ghcr.io/enntity/atlas-sparkglm:4046c81baa07`. A later product revision is
 adopted by changing the revision, the install tree and its derived tag.
 
 While any required value is missing, malformed, or a placeholder, the gate
@@ -435,10 +443,11 @@ health-checks `/health`, runs a POST warmup, and then owns routing.
 
 ### Baseline envelope
 
-The candidate profile serves 524288-token contexts to four concurrent sequences
-from one shared FP8-latent KV pool (340K-560K tokens depending on memory free at startup; it also holds the prefix cache, with 16 recurrent-state snapshot slots), with FP32 SSM state,
-DFlash2 speculation (gamma 8) on the head rank, GPU memory utilization 0.88,
-and `--memory=114g` with a 4096 MiB OOM guard. `disable-tool-grammar` is **not**
+The candidate profile (4x1m) serves 1048576-token contexts to four concurrent sequences
+from one shared FP8-latent KV pool, split between the two nodes (about 2.38M tokens at the recipe's 0.91 GPU memory utilization with the display carveout and the disk prefix cache; it also holds the prefix cache, with 16 recurrent-state snapshot slots), with FP32 SSM state,
+DFlash2 speculation (gamma 8) on the head rank, GPU memory utilization 0.91
+(the recipe's `SPARKGLM_GPU_MEMORY_UTILIZATION`, overriding the profile
+default of 0.88), and `--memory=114g` with a 4096 MiB OOM guard. `disable-tool-grammar` is **not**
 set, so structured output and tool calling stay functional. The image includes
 image and video input support; gateway and two-node serving canaries remain
 required for qualification.
