@@ -72,32 +72,6 @@ async function archive(root, destination) {
   return fs.readFile(destination);
 }
 
-function request(port, pathname, { method = 'GET', token = ADMIN_KEY, body } = {}) {
-  const payload = body === undefined ? null : JSON.stringify(body);
-  const req = http.request(`http://127.0.0.1:${port}${pathname}`, {
-    method,
-    headers: {
-      authorization: `Bearer ${token}`,
-      ...(payload ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } : {})
-    }
-  });
-  const response = new Promise((resolve, reject) => {
-    req.once('response', (res) => {
-      const chunks = [];
-      res.on('data', (chunk) => chunks.push(chunk));
-      res.once('end', () => {
-        const text = Buffer.concat(chunks).toString();
-        resolve({ status: res.statusCode, body: text ? JSON.parse(text) : null });
-      });
-      res.once('error', reject);
-    });
-    req.once('error', reject);
-  });
-  if (payload) req.end(payload);
-  else req.end();
-  return response;
-}
-
 function identityFields(identity) {
   return {
     releaseId: identity.releaseId,

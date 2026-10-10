@@ -1653,14 +1653,12 @@ export class NodeReleaseAgent {
     if (!PHASES.has(phase)) throw new NodeReleaseError(`unsupported node phase ${phase}`, 'invalid_context');
     this.#assertContext(nodeId, context);
     const createdOperationLock = await this.#acquireLock(context);
-    let invocationAcquired = false;
     let operationLockReleased = false;
     const releaseOperationLock = async () => {
       const released = await this.#releaseLock(context);
       operationLockReleased ||= released;
     };
     await this.#acquireInvocationLock(context);
-    invocationAcquired = true;
     try {
       const filePath = this.#journalPath(context);
       const document = (await this.#load(filePath)) ?? {
@@ -1754,8 +1752,7 @@ export class NodeReleaseAgent {
       // A failed preflight has not been allowed to mutate or fence anything;
       // do not strand a persistent reservation that no recovery action could
       // safely use.
-      if (phase === 'preflight' && !mutation && createdOperationLock && invocationAcquired)
-        await releaseOperationLock();
+      if (phase === 'preflight' && !mutation && createdOperationLock) await releaseOperationLock();
       throw error;
     } finally {
       if (!operationLockReleased) await this.#releaseInvocationLock(context);
