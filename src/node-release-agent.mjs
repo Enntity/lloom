@@ -1029,8 +1029,10 @@ export class NodeReleaseAgent {
   }
 
   async discardStage(nodeId, context) {
-    return this.#phase(nodeId, context, 'discard-stage', 'discardStage', true, async () => {
+    const reservationOnly = context?.reservationOnly === true;
+    return this.#phase(nodeId, context, 'discard-stage', 'discardStage', !reservationOnly, async () => {
       this.#assertContext(nodeId, context);
+      if (reservationOnly) return { stageDiscarded: true };
       const destination = path.join(this.root, 'releases', releaseToken(context.artifact.id));
       const current = await this.fs.readlink(atomicLayoutPath(this.root, 'current')).catch(() => null);
       if (current && path.resolve(this.root, current) === path.resolve(destination))
@@ -1911,8 +1913,11 @@ export class NodeReleaseAgent {
       invalid();
     if (
       phase === 'discard-stage' &&
-      ((!has('stage', 'rollback') && document.pendingAction !== 'stage' && document.state !== 'unknown') ||
-        (has('prepare', 'swap', 'restart', 'verify', 'canary', 'promote', 'release') && !has('rollback')))
+      (context?.reservationOnly === true
+        ? document.state !== 'preflight' ||
+          has('stage', 'prepare', 'swap', 'restart', 'verify', 'canary', 'promote', 'release', 'rollback')
+        : (!has('stage', 'rollback') && document.pendingAction !== 'stage' && document.state !== 'unknown') ||
+          (has('prepare', 'swap', 'restart', 'verify', 'canary', 'promote', 'release') && !has('rollback')))
     )
       invalid();
     if (phase === 'reprepare' && !document.mutationPossible && !has('prepare') && !document.pendingAction) invalid();

@@ -829,9 +829,15 @@ export class ClusterDeploymentCoordinator {
     return clone(document.plan.expectedOldIdentityByNode?.[node.nodeId] ?? document.plan.expectedOldIdentity);
   }
 
-  async #action(document, node, phase, method, { nextState = null, mutation = true, validate = null } = {}) {
+  async #action(
+    document,
+    node,
+    phase,
+    method,
+    { nextState = null, mutation = true, validate = null, contextOptions = {} } = {}
+  ) {
     if (!OPERATION_PHASES.has(phase)) throw new Error(`unsupported operation phase ${phase}`);
-    const context = this.#context(document, node, phase);
+    const context = this.#context(document, node, phase, contextOptions);
     node.pendingAction = phase;
     node.possiblyMutated = node.possiblyMutated || mutation;
     if (mutation && !document.mutationOrder.includes(node.nodeId)) document.mutationOrder.push(node.nodeId);
@@ -890,6 +896,7 @@ export class ClusterDeploymentCoordinator {
     const nodes = this.#rollbackOrder(document);
     const restoreCandidates = [];
     const discardCandidates = [];
+    const reservationCandidates = [];
     const recordFailure = (node, error, phase = node.pendingAction ?? 'rollback') => {
       node.state = 'rollback-failed';
       node.lastError = safeError(error, phase);
@@ -901,7 +908,27 @@ export class ClusterDeploymentCoordinator {
     // that reached an active/public phase belongs to the fleet fence barrier;
     // a stage-only node can be discarded without touching its service.
     for (const node of nodes) {
-      if (!node.possiblyMutated && node.state === 'preflight') continue;
+      // A successful preflight reserves the node's durable agent lock even
+      // though it has not fenced or touched the service. Release that
+      // reservation explicitly on an abort so a later operation is not
+      // stranded behind a harmless, completed inspection.
+      if (!node.possiblyMutated && node.state === 'preflight') {
+        reservationCandidates.push(node);
+        continue;
+      }
+      const onlyStageCleanup =
+        node.state === 'rolled-back' &&
+        Boolean(node.receipts['discard-stage']) &&
+        !['prepare', 'swap', 'restart', 'verify', 'canary', 'promote', 'release', 'rollback'].some(
+          (phase) => node.receipts[phase]
+        );
+      // A stage-only cleanup already released the node reservation and never
+      // fenced the gateway. Do not reclassify that terminal receipt as a
+      // service mutation if an operator later retries journal cleanup.
+      if (onlyStageCleanup) {
+        node.possiblyMutated = false;
+        continue;
+      }
       const preparedOrBeyond = Boolean(
         node.receipts.prepare ||
         node.receipts.swap ||
@@ -938,6 +965,26 @@ export class ClusterDeploymentCoordinator {
       restoreCandidates.push(node);
     }
     await this.#saveBestEffort(document);
+
+    // Release preflight-only reservations before establishing the fleet
+    // rollback barrier. This path has no service or artifact mutation and is
+    // deliberately distinct from discard-stage cleanup for an uncertain or
+    // failed stage.
+    for (const node of reservationCandidates) {
+      try {
+        await this.#action(document, node, 'discard-stage', 'discardStage', {
+          mutation: false,
+          nextState: 'rolled-back',
+          contextOptions: { reservationOnly: true },
+          validate: (receipt) => {
+            if (receipt.stageDiscarded !== true)
+              throw new ReceiptError('discard-stage', 'preflight reservation was not released');
+          }
+        });
+      } catch (error) {
+        recordFailure(node, error, 'discard-stage');
+      }
+    }
 
     // Establish one fleet-wide fence/drain barrier before any rollback swap
     // or restart. A partial forward release may have opened one gateway while
@@ -1089,7 +1136,7 @@ export class ClusterDeploymentCoordinator {
     );
   }
 
-  #context(document, node, phase) {
+  #context(document, node, phase, options = {}) {
     return {
       operationId: document.operationId,
       generation: document.generation,
@@ -1105,7 +1152,8 @@ export class ClusterDeploymentCoordinator {
       expectedOldIdentity: this.#expectedOldIdentity(document, node),
       canary: clone(document.plan.canary),
       rollbackCanary: phase === 'canary' && Boolean(node.receipts.rollback),
-      rollbackRelease: phase === 'release' && Boolean(node.receipts.rollback)
+      rollbackRelease: phase === 'release' && Boolean(node.receipts.rollback),
+      ...(options.reservationOnly === true ? { reservationOnly: true } : {})
     };
   }
 

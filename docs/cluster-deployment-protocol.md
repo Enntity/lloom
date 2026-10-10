@@ -106,7 +106,11 @@ Phase-specific evidence is required:
   release of a restored old identity also returns `rollbackReleased: true`.
 - `rollback`: `restored: true, fenced: true`, and the exact expected old
   identity.
-- `discardStage`: `stageDiscarded: true`.
+- `discardStage`: `stageDiscarded: true`. When the coordinator sends
+  `reservationOnly: true` after a successful preflight that has not staged an
+  artifact, the node agent must release only its durable deployment
+  reservation and leave the release tree and gateway untouched; it returns the
+  same `stageDiscarded: true` receipt as an explicit cleanup acknowledgement.
 
 An adapter must treat a timeout, disconnect, or lost response after a possible
 mutation as unknown. It must not report that the node was untouched. The

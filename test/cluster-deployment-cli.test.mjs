@@ -131,7 +131,17 @@ test('binds resume and rollback to the original endpoint map', async (t) => {
     async release() {},
     async reprepare() {},
     async rollback() {},
-    async discardStage() {}
+    async discardStage(nodeId, context) {
+      return {
+        status: 'ok',
+        operationId: context.operationId,
+        generation: context.generation,
+        nodeId,
+        phase: 'discard-stage',
+        observedAt: new Date().toISOString(),
+        stageDiscarded: true
+      };
+    }
   };
   await assert.rejects(
     () =>

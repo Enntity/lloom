@@ -270,7 +270,7 @@ test('holds the prepare barrier when any node fails stage verification', async (
     transport.calls.some(({ phase }) => phase === 'swap'),
     false
   );
-  assert.equal(transport.calls.filter(({ phase }) => phase === 'discard-stage').length, 1);
+  assert.equal(transport.calls.filter(({ phase }) => phase === 'discard-stage').length, 2);
 });
 
 test('refuses preflight drift and never fences a node', async (t) => {
@@ -284,6 +284,20 @@ test('refuses preflight drift and never fences a node', async (t) => {
   );
   assert.equal(
     transport.calls.some(({ phase }) => phase === 'prepare'),
+    false
+  );
+});
+
+test('releases successful preflight reservations when a later preflight fails', async (t) => {
+  const journal = await tempJournal(t);
+  const transport = makeTransport({ fault: { at: 'preflight:leader', code: 'disconnect' } });
+  const error = await rejected(coordinator(journal, transport).deploy(plan()));
+  assert.equal(error.report.operationState, 'rolled-back');
+  const reservation = transport.calls.find(({ phase, nodeId }) => phase === 'discard-stage' && nodeId === 'worker-1');
+  assert.ok(reservation, 'the successful preflight node must receive cleanup');
+  assert.equal(reservation.context.reservationOnly, true);
+  assert.equal(
+    transport.calls.some(({ phase }) => ['prepare', 'swap', 'restart', 'release'].includes(phase)),
     false
   );
 });

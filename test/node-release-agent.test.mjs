@@ -320,6 +320,33 @@ test('stages, swaps, restarts, verifies and releases only the gateway unit', asy
   );
 });
 
+test('releases a preflight-only reservation without touching the release tree', async (t) => {
+  const fixture = await makeFixture(t);
+  const { agent, context, root, artifactSha, manifestSha } = fixture;
+  await agent.preflight('node-1', context);
+  const lockPath = path.join(root, '.deployment-agent.lock');
+  await fs.stat(lockPath);
+  const beforeReleases = await fs.readdir(path.join(root, 'releases'));
+
+  const cleanup = await agent.discardStage('node-1', { ...context, phase: 'discard-stage', reservationOnly: true });
+  assert.equal(cleanup.stageDiscarded, true);
+  assert.deepEqual(await fs.readdir(path.join(root, 'releases')), beforeReleases);
+  await assert.rejects(fs.stat(lockPath), { code: 'ENOENT' });
+
+  // A fresh operation can inspect the same node after the aborted operation
+  // released its reservation; the old operation's journal remains immutable.
+  const nextContext = {
+    ...context,
+    operationId: 'op-node-next',
+    planHash: 'c'.repeat(64),
+    artifact: { ...context.artifact, sha256: artifactSha, manifestSha256: manifestSha }
+  };
+  const next = await agent.preflight('node-1', nextContext);
+  assert.equal(next.currentIdentity.releaseId, 'release-old');
+  await agent.discardStage('node-1', { ...nextContext, phase: 'discard-stage', reservationOnly: true });
+  await assert.rejects(fs.stat(lockPath), { code: 'ENOENT' });
+});
+
 test('requires effective config and preservation evidence in the final release inspection', async (t) => {
   const fixture = await makeFixture(t);
   const { agent, context, gateway } = fixture;
