@@ -63,7 +63,8 @@ function publicContext(value) {
     'nodeId',
     'role',
     'gatewayProtocol',
-    'manifestSha256'
+    'manifestSha256',
+    'rollbackRelease'
   ]) {
     if (source[key] !== undefined) result[key] = structuredClone(source[key]);
   }
@@ -130,6 +131,7 @@ function spawnSsh(node, argv, input, timeoutMs) {
     }, timeoutMs);
     child.stdout.on('data', (chunk) => append(stdout, chunk));
     child.stderr.on('data', (chunk) => append(stderr, chunk));
+    child.stdin.on('error', (error) => finish(reject, publicError(error, 'ssh')));
     child.on('error', (error) => finish(reject, publicError(error, 'ssh')));
     child.on('close', (code) => {
       if (code !== 0) {
@@ -145,7 +147,11 @@ function spawnSsh(node, argv, input, timeoutMs) {
         });
       }
     });
-    child.stdin.end(input);
+    try {
+      child.stdin.end(input);
+    } catch (error) {
+      finish(reject, publicError(error, 'ssh'));
+    }
   });
 }
 
