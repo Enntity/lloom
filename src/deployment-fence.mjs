@@ -672,6 +672,10 @@ export function createDeploymentFence({
     record = { ...next };
     state = 'draining';
     preparingOpId = opId;
+    // Stop new residency/watchdog work in the same synchronous turn that
+    // closes admission. Persistence remains queued, but a slow filesystem
+    // must not leave the gateway actively recovering while a fence is open.
+    pause();
     preparePromise = enqueue(async () => {
       try {
         await persist(next);
@@ -681,7 +685,6 @@ export function createDeploymentFence({
         lastError = error?.message ?? String(error);
         throw error;
       }
-      pause();
       try {
         await waitForDrain(timeoutMs);
         const prepared = {
