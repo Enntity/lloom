@@ -7,6 +7,9 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   acquireRateLimitSlot,
+  awaitRateBudget,
+  RATE_LIMIT_QUEUE_CAPACITY,
+  RateQueueFullError,
   createGcra,
   createRateLimitRegistry,
   createSemaphore,
@@ -608,3 +611,95 @@ test('a client that disconnects while waiting for rate budget never reaches upst
     await close();
   }
 });
+
+test('concurrent rate-only admissions reserve their queue capacity before yielding', async () => {
+  const registry = createRateLimitRegistry({ lane: { rate: '1/m', burst: 0, queue: true } });
+  const abort = new AbortController();
+  const failures = [];
+  const pending = Array.from({ length: 300 }, async () => {
+    const release = await acquireRateLimitSlot(registry, 'lane', { rateBudget: false, signal: abort.signal });
+    try {
+      await awaitRateBudget(registry, ['lane'], { signal: abort.signal });
+      return 'admitted';
+    } catch (error) {
+      failures.push(error);
+      return error.name;
+    } finally {
+      release();
+    }
+  });
+  try {
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(registry.limiter('lane').rateQueued, RATE_LIMIT_QUEUE_CAPACITY);
+    assert.equal(failures.length, 43);
+    assert(failures.every((error) => error instanceof RateQueueFullError));
+  } finally {
+    abort.abort();
+    await Promise.all(pending);
+  }
+  assert.equal(registry.limiter('lane').rateQueued, 0);
+});
+
+test('the rate queue capacity includes existing semaphore waiters', async () => {
+  const registry = createRateLimitRegistry({ lane: { maxConcurrent: 1, rate: '1/m', burst: 0, queue: true } });
+  const abort = new AbortController();
+  const release = await acquireRateLimitSlot(registry, 'lane');
+  const semaphoreWaiter = acquireRateLimitSlot(registry, 'lane', { signal: abort.signal }).catch((e) => e);
+  try {
+    assert.equal(registry.limiter('lane').semaphore.queued, 1);
+    await assert.rejects(awaitRateBudget(registry, ['lane'], { capacity: 1 }), RateQueueFullError);
+    assert.equal(registry.limiter('lane').rateQueued, 0);
+  } finally {
+    abort.abort();
+    release();
+    await semaphoreWaiter;
+  }
+  assert.equal(registry.limiter('lane').semaphore.queued, 0);
+});
+
+test(
+  'a rate-only HTTP burst returns queue-full 429s and disconnects drain every waiter',
+  { timeout: 15000 },
+  async () => {
+    const gateway = await chatGateway(
+      await chatFixture({
+        paced: { members: ['model-a'], rateLimit: { rate: '1/m', burst: 0, queue: true } }
+      })
+    );
+    const abort = new AbortController();
+    const completed = [];
+    const pending = Array.from({ length: 300 }, () =>
+      gateway
+        .chat('paced', { signal: abort.signal })
+        .then(async (response) => {
+          const result = { status: response.status, body: await response.json() };
+          completed.push(result);
+          return result;
+        })
+        .catch((error) => ({ error: error.name }))
+    );
+    async function waitFor(check) {
+      const deadline = Date.now() + 8000;
+      while (Date.now() < deadline) {
+        if (await check()) return;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      assert.fail('rate queue did not reach the expected bounded state');
+    }
+    try {
+      await waitFor(() => completed.length === 44);
+      assert.equal(completed.filter((r) => r.status === 200).length, 1);
+      const rejected = completed.filter((r) => r.status === 429);
+      assert.equal(rejected.length, 43);
+      assert(rejected.every((r) => r.body.error.code === 'MODEL_RATE_LIMIT_QUEUE_FULL'));
+      assert.equal((await gateway.routing()).rateLimits[0].queued, RATE_LIMIT_QUEUE_CAPACITY);
+      abort.abort();
+      await Promise.all(pending);
+      await waitFor(async () => (await gateway.routing()).rateLimits[0].queued === 0);
+    } finally {
+      abort.abort();
+      await Promise.all(pending);
+      await gateway.close();
+    }
+  }
+);

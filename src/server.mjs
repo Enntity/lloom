@@ -62,7 +62,13 @@ import { createRegistry, UnknownModelError } from './registry.mjs';
 import { routeProfileStatus, writeRouteMemberSuspension, writeRouteProfile } from './route-control.mjs';
 import { mutateConfigSource } from './config-mutation.mjs';
 import { createModelMaintenanceController } from './model-maintenance-control.mjs';
-import { acquireRateLimitSlot, awaitRateBudget, createRateLimitRegistry } from './rate-limit.mjs';
+import {
+  acquireRateLimitSlot,
+  awaitRateBudget,
+  createRateLimitRegistry,
+  RATE_LIMIT_QUEUE_CAPACITY,
+  RateQueueFullError
+} from './rate-limit.mjs';
 import { RuntimeManager, runtimeWatchdogConfig, normalizeRequestClass } from './runtime-manager.mjs';
 import { ForegroundPriority } from './foreground-priority.mjs';
 import { createPreferredResidencyReconciler } from './runtime-residency.mjs';
@@ -2588,8 +2594,6 @@ export function createLloomServer(
     }
   }
 
-  const RATE_LIMIT_QUEUE_CAPACITY = 256;
-
   /**
    * Gate a request through every rateLimit declared on its resolution chain
    * (the requested alias, any nested aliases, and the concrete model). Limits
@@ -2619,7 +2623,11 @@ export function createLloomServer(
       // Consume rate budget only once every concurrency slot is held, and
       // atomically, so an inner rejection cannot burn the budget of the outer
       // scopes the request already passed. Queue-mode limiters wait here.
-      await awaitRateBudget(rateLimitRegistry, limited, { signal, started });
+      await awaitRateBudget(rateLimitRegistry, limited, {
+        signal,
+        started,
+        capacity: RATE_LIMIT_QUEUE_CAPACITY
+      });
       return releaseAll;
     } catch (error) {
       releaseAll();
@@ -2627,6 +2635,11 @@ export function createLloomServer(
       if (error?.code === 'INTERACTIVE_PRIORITY') throw error;
       if (isClientClosedError(error)) {
         throw Object.assign(new ClientClosedError(), { cause: error });
+      }
+      // The rate-queue bound maps to the existing queue-full 429 so clients see
+      // the same retryable contract as a saturated concurrency queue.
+      if (error instanceof RateQueueFullError) {
+        throw new ModelRateLimitError(resolved.requestedId, 5, { queueFull: true });
       }
       if (error?.name === 'RateBudgetExhaustedError') {
         const retryAfterSeconds = Math.max(1, Math.ceil(Number(error.retryAfterMs ?? 1000) / 1000));
