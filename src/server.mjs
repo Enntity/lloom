@@ -2828,7 +2828,7 @@ export function createLloomServer(
     });
     let operation = runtimeStartOperations.get(runtimeId);
     if (operation) return operation;
-    operation = deploymentFenceToken
+    operation = deploymentFenceToken && typeof runtimeManager.withMutationScope === 'function'
       ? runtimeManager.withMutationScope(deploymentFenceToken, () =>
           startRuntime(runtimeId, { alternativeAvailable, allowEviction })
         )
