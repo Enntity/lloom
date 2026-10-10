@@ -3,8 +3,6 @@ import { spawn } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-// Dispatcher and fetch must come from the same undici copy (see server.mjs).
-import { Agent as UndiciAgent, fetch as undiciFetch } from 'undici';
 import {
   backendIds,
   defaultBackendVariables,
@@ -53,7 +51,14 @@ import { applyInit, defaultUserConfigPath } from '../src/init.mjs';
 import { applyBackend, applyRecipe } from '../src/installer.mjs';
 import { createInterchangeRegistry, createInterchangeValidationReport } from '../src/interchange.mjs';
 import { profileMachine, rankRecipes } from '../src/machine-profile.mjs';
-import { loadManagedServiceEnvironment, resolveManagedEnvironmentValue } from '../src/managed-environment.mjs';
+import { loadManagedServiceEnvironment } from '../src/managed-environment.mjs';
+import {
+  adminApiKeyEnvFromArgs,
+  gatewayBaseUrl,
+  gatewayRequest as gatewayRequestShared,
+  redactGatewaySecrets,
+  resolveAdminCredential
+} from '../src/gateway-client.mjs';
 import { runHeadPreparation } from '../src/head-transfer.mjs';
 import { runHeadPromotionTransfer } from '../src/head-promotion-transfer.mjs';
 import { restartGatewayService } from '../src/service-control.mjs';
@@ -1044,10 +1049,7 @@ function applyServeOverrides(config, args) {
 }
 
 function gatewayUrlFor(config) {
-  const configuredHost = config.server?.host ?? '127.0.0.1';
-  const host = ['0.0.0.0', '::', '[::]'].includes(configuredHost) ? '127.0.0.1' : configuredHost;
-  const port = config.server?.port ?? 8100;
-  return `http://${host}:${port}`;
+  return gatewayBaseUrl(config);
 }
 
 function clusterConfigured(config) {
@@ -1070,9 +1072,15 @@ async function gatewayHealth(config) {
   }
 }
 
-function gatewayAdminHeaders(config) {
-  const key = resolveManagedEnvironmentValue(config.security?.adminApiKeys?.[0] ?? config.security?.apiKeys?.[0]);
-  return key ? { authorization: `Bearer ${key}` } : {};
+// Only the environment variable name is accepted in argv.
+let cliAdminKeyEnvName;
+function gatewayRequestOptions(config, _args, options = {}) {
+  const key = resolveAdminCredential(config, { explicitEnvName: cliAdminKeyEnvName });
+  return {
+    ...options,
+    urlFor: gatewayUrlFor,
+    headers: { ...options.headers, ...(key ? { authorization: `Bearer ${key}` } : {}) }
+  };
 }
 
 async function modelMaintenanceCommand({ args, config, command }) {
@@ -1082,53 +1090,29 @@ async function modelMaintenanceCommand({ args, config, command }) {
   if (!Number.isInteger(drainTimeoutMs) || drainTimeoutMs < 0 || drainTimeoutMs > 7200000) {
     throw new Error('--drain-timeout-ms must be an integer from 0 to 7200000');
   }
-  const result = await gatewayRequest(config, `/gateway/models/${encodeURIComponent(id)}/${command}`, {
-    method: 'POST',
-    body: { apply: hasFlag(args, '--apply'), yes: hasFlag(args, '--yes'), drainTimeoutMs },
-    timeoutMs: hasFlag(args, '--apply') ? 14400000 : 10000,
-    throwOnError: true
-  });
+  const result = await gatewayRequest(
+    config,
+    `/gateway/models/${encodeURIComponent(id)}/${command}`,
+    gatewayRequestOptions(config, args, {
+      method: 'POST',
+      body: { apply: hasFlag(args, '--apply'), yes: hasFlag(args, '--yes'), drainTimeoutMs },
+      timeoutMs: hasFlag(args, '--apply') ? 14400000 : 10000,
+      throwOnError: true
+    })
+  );
   if (!result) throw new Error(`model maintenance requires a reachable gateway at ${gatewayUrlFor(config)}`);
   console.log(JSON.stringify(result, null, 2));
 }
 
-async function gatewayRequest(config, pathname, { method = 'GET', body, timeoutMs = 2000, throwOnError = false } = {}) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  // Node's built-in fetch otherwise inherits Undici's roughly five-minute
-  // response-header timeout, which is shorter than a cold multi-node model
-  // start. Keep the transport timeout aligned with LLooM's explicit request
-  // timeout while the AbortSignal remains the per-call deadline.
-  const dispatcher = new UndiciAgent({
-    headersTimeout: timeoutMs,
-    bodyTimeout: timeoutMs
+// Gateway calls default to strict error propagation so transport/auth failures
+// can never be mistaken for an absent gateway; only the transport-safe
+// connection-refusal local fallback is opted into per call.
+async function gatewayRequest(config, pathname, options = {}) {
+  const { args, ...rest } = options;
+  return await gatewayRequestShared(config, pathname, {
+    throwOnError: true,
+    ...gatewayRequestOptions(config, args, rest)
   });
-  try {
-    const response = await undiciFetch(`${gatewayUrlFor(config)}${pathname}`, {
-      method,
-      headers: {
-        ...gatewayAdminHeaders(config),
-        ...(body == null ? {} : { 'content-type': 'application/json' })
-      },
-      body: body == null ? undefined : JSON.stringify(body),
-      signal: controller.signal,
-      dispatcher
-    });
-    if (!response.ok) {
-      if (throwOnError) {
-        const detail = await response.json().catch(() => null);
-        throw new Error(detail?.error?.message ?? `gateway returned HTTP ${response.status}`);
-      }
-      return null;
-    }
-    return await response.json();
-  } catch (error) {
-    if (throwOnError) throw error;
-    return null;
-  } finally {
-    clearTimeout(timer);
-    await dispatcher.close();
-  }
 }
 
 async function waitGatewayHealth(config, { timeoutMs = 15000 } = {}) {
@@ -1353,8 +1337,12 @@ async function firstRunCliOptions(args) {
   };
 }
 
+// Non-secret config context used only to redact credential values from errors.
+let currentCliConfig = null;
+
 async function main() {
   const args = process.argv.slice(2);
+  cliAdminKeyEnvName = adminApiKeyEnvFromArgs(args);
   const firstArg = args[0];
   if (firstArg === 'help' || firstArg === '--help' || firstArg === '-h') {
     const helpPositionals = positional(args);
@@ -1383,6 +1371,7 @@ async function main() {
   }
   const configPath = installedConfigPath(args, command);
   const config = await loadConfig(configPath);
+  currentCliConfig = config;
 
   const handlers = {
     serve: async ({ args, config, command: _command }) => {
@@ -2105,7 +2094,12 @@ async function main() {
       }
       const apply = hasFlag(args, '--apply');
       const localManager = runtimeManagerForCli(config);
-      const gatewayStatus = await gatewayRequest(config, '/gateway/status');
+      let gatewayStatus = null;
+      try {
+        gatewayStatus = await gatewayRequest(config, '/gateway/status');
+      } catch (error) {
+        if (error?.kind !== 'refused') throw error;
+      }
       const runtimeStatus = gatewayStatus?.runtimeManager ?? (await localManager.status());
       const report = await applyModelRemoval(config, {
         modelId,
@@ -2115,7 +2109,12 @@ async function main() {
         dryRun: !apply,
         yes: hasFlag(args, '--yes'),
         stopRuntime: async (runtimeId) => {
-          const latestGatewayStatus = await gatewayRequest(config, '/gateway/status');
+          let latestGatewayStatus = null;
+          try {
+            latestGatewayStatus = await gatewayRequest(config, '/gateway/status');
+          } catch (error) {
+            if (error?.kind !== 'refused') throw error;
+          }
           const latestStatus = latestGatewayStatus?.runtimeManager ?? (await localManager.status());
           const activeRequests = Number(latestStatus.runtimes?.[runtimeId]?.activeRequests ?? 0);
           if (activeRequests > 0) {
@@ -2123,7 +2122,8 @@ async function main() {
           }
           return (
             (await gatewayRequest(config, `/gateway/runtimes/${encodeURIComponent(runtimeId)}/stop`, {
-              method: 'POST'
+              method: 'POST',
+              fallbackOnRefused: true
             })) ?? localManager.stop(runtimeId)
           );
         }
@@ -2662,7 +2662,7 @@ async function main() {
         console.log(JSON.stringify(result, null, 2));
         return;
       }
-      const response = await gatewayRequest(config, '/gateway/cluster', { timeoutMs: 10000 });
+      const response = await gatewayRequest(config, '/gateway/cluster', { args, timeoutMs: 10000 });
       if (!response?.cluster) {
         throw new Error(
           `LLooM gateway at ${gatewayUrlFor(config)} is not reachable; cluster status requires a running gateway`
@@ -2965,13 +2965,48 @@ async function main() {
   await handler({ args, config, configPath, command });
 }
 
-function formatCliError(error) {
-  if (process.env.LLOOM_DEBUG) return error?.stack ?? error?.message ?? String(error);
+// Redact any configured credential value from arbitrary text (including stacks)
+// before it can reach a log, error, or receipt.
+function safeErrorText(text, config = null) {
+  return redactGatewaySecrets(text, {
+    config: config ?? currentCliConfig ?? undefined,
+    extraValues: cliAdminKeyEnvName ? [process.env[cliAdminKeyEnvName]] : []
+  });
+}
+
+function formatCliError(error, config = currentCliConfig) {
+  const typed = error && (error.kind || error.code) ? ` [${error.code ?? error.kind}]` : '';
+  if (process.env.LLOOM_DEBUG) return safeErrorText(error?.stack ?? error?.message ?? String(error), config);
   const message = error?.message ?? String(error);
-  return message.startsWith('Error:') ? message : `Error: ${message}`;
+  const body = message.startsWith('Error:') ? message : `Error: ${message}`;
+  return safeErrorText(`${body}${typed}`, config);
+}
+
+// Stable, automation-safe JSON error envelope for `--json` diagnostics.
+function formatCliErrorJson(error) {
+  const kind = error?.kind ?? null;
+  return {
+    ok: false,
+    error: {
+      code: error?.code ?? 'cli_error',
+      kind,
+      ...(error?.upstreamCode ? { upstreamCode: error.upstreamCode } : {}),
+      status: Number.isInteger(error?.status) ? error.status : null,
+      message: safeErrorText(error?.message ?? String(error), currentCliConfig)
+    }
+  };
+}
+
+function mainErrorIsAuth(error) {
+  return error?.kind === 'auth' || error?.kind === 'authorization';
 }
 
 main().catch((error) => {
-  console.error(formatCliError(error));
-  process.exitCode = 1;
+  // Match the same `--json` / `--format json` detection used by handlers so
+  // automation always receives the stable JSON error envelope on stderr.
+  const json = wantsJson(process.argv.slice(2));
+  if (json) console.error(JSON.stringify(formatCliErrorJson(error), null, 2));
+  else console.error(formatCliError(error));
+  // Preserve status distinction while keeping a stable nonzero exit.
+  process.exitCode = mainErrorIsAuth(error) ? 3 : 1;
 });
