@@ -239,22 +239,58 @@ test('standby proxies authenticated text and streaming inference while denying w
     res.end();
   });
   const upstreamPort = await listen(upstream);
-  const primary = http.createServer((_req, res) => {
-    res.writeHead(200);
-    res.end('primary');
+  const primaryConfig = standbyConfig(upstreamPort);
+  primaryConfig.server.role = 'primary';
+  const primaryApp = createLloomServer(primaryConfig, {
+    runtimeManager: new RuntimeManager(primaryConfig, { logger: { error() {}, warn() {} } }),
+    logger: { error() {}, warn() {} }
   });
-  await listen(primary);
+  await primaryApp.listen();
+  const primaryPort = primaryApp.server.address().port;
+
   const config = standbyConfig(upstreamPort);
   const manager = new RuntimeManager(config, { logger: { error() {}, warn() {} } });
+  const standbyLifecycleCalls = [];
+  for (const method of [
+    'abortRuntimeLifecycle',
+    'abortRuntimeTree',
+    'drainRuntime',
+    'noteDesiredResidency',
+    'pauseRuntime',
+    'reconfigure',
+    'resumeRuntime',
+    'settleDesiredResidency',
+    'start',
+    'startKeepWarm',
+    'startLocalUnlocked',
+    'startLocalWithMemorySafety',
+    'startResidencyRuntime',
+    'startUnlocked',
+    'stop',
+    'stopAll',
+    'stopUnlocked',
+    'warmup',
+    'warmupById'
+  ]) {
+    const original = manager[method];
+    manager[method] = function (...args) {
+      standbyLifecycleCalls.push(method);
+      return original.apply(this, args);
+    };
+  }
   const app = createLloomServer(config, { runtimeManager: manager, logger: { error() {}, warn() {} } });
   assert.throws(() => {
     config.server.role = 'primary';
   }, TypeError);
   const gatewayPort = await listen(app.server);
+  let recoveredPrimaryApp = null;
   t.after(async () => {
-    await app.close({ stopRuntimes: false, httpGraceMs: 25 });
+    if (app.server.listening) await app.close({ stopRuntimes: false, httpGraceMs: 25 });
+    if (recoveredPrimaryApp?.server.listening) {
+      await recoveredPrimaryApp.close({ stopRuntimes: false, httpGraceMs: 25 });
+    }
+    if (primaryApp.server.listening) await primaryApp.close({ stopRuntimes: false, httpGraceMs: 25 });
     await close(upstream);
-    await close(primary);
   });
 
   const statusBefore = await fetch(`http://127.0.0.1:${gatewayPort}/gateway/status`, {
@@ -262,6 +298,40 @@ test('standby proxies authenticated text and streaming inference while denying w
   });
   assert.equal(statusBefore.status, 200);
   assert.equal((await statusBefore.json()).gateway.inferenceReady, false);
+
+  const initialPrimaryResponse = await fetch(`http://127.0.0.1:${primaryPort}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { authorization: 'Bearer standby-inference-key', 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'standby-chat', messages: [{ role: 'user', content: 'primary-before-loss' }] })
+  });
+  assert.equal(initialPrimaryResponse.status, 200);
+  assert.equal((await initialPrimaryResponse.json()).choices[0].message.content, 'ok');
+  await primaryApp.close({ stopRuntimes: false, httpGraceMs: 25 });
+
+  const standbyDuringPrimaryLoss = await fetch(`http://127.0.0.1:${gatewayPort}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { authorization: 'Bearer standby-inference-key', 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'standby-chat', messages: [{ role: 'user', content: 'standby-after-loss' }] })
+  });
+  assert.equal(standbyDuringPrimaryLoss.status, 200);
+  assert.equal((await standbyDuringPrimaryLoss.json()).choices[0].message.content, 'ok');
+
+  const recoveredPrimaryConfig = standbyConfig(upstreamPort);
+  recoveredPrimaryConfig.server.role = 'primary';
+  recoveredPrimaryConfig.server.port = primaryPort;
+  recoveredPrimaryApp = createLloomServer(recoveredPrimaryConfig, {
+    runtimeManager: new RuntimeManager(recoveredPrimaryConfig, { logger: { error() {}, warn() {} } }),
+    logger: { error() {}, warn() {} }
+  });
+  await recoveredPrimaryApp.listen();
+  const recoveredPrimaryResponse = await fetch(`http://127.0.0.1:${primaryPort}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { authorization: 'Bearer standby-inference-key', 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'standby-chat', messages: [{ role: 'user', content: 'primary-recovered' }] })
+  });
+  assert.equal(recoveredPrimaryResponse.status, 200);
+  assert.equal((await recoveredPrimaryResponse.json()).choices[0].message.content, 'ok');
+  assert.deepEqual(standbyLifecycleCalls, [], 'standby must not perform lifecycle work during primary recovery');
 
   const unauthenticatedWrite = await fetch(`http://127.0.0.1:${gatewayPort}/gateway/runtimes/nope/stop`, {
     method: 'POST'
@@ -336,10 +406,11 @@ test('standby proxies authenticated text and streaming inference while denying w
     body: JSON.stringify({ model: 'standby-chat', stream: true, messages: [{ role: 'user', content: 'stream' }] })
   });
   assert.equal(streamResponse.status, 200);
-  await close(primary);
+  await recoveredPrimaryApp.close({ stopRuntimes: false, httpGraceMs: 25 });
   const streamText = await streamResponse.text();
   assert.match(streamText, /partial/);
   assert.match(streamText, /\[DONE\]/);
+  assert.deepEqual(standbyLifecycleCalls, [], 'active standby streams must not trigger lifecycle work');
 });
 
 test('standby runtime manager rejects every lifecycle entry point', async () => {
