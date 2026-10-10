@@ -2,6 +2,7 @@ import { URL } from 'node:url';
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
 const PROTOCOL = 1;
+const MAX_RESPONSE_BYTES = 1024 * 1024;
 
 export class NodeGatewayAdapterError extends Error {
   constructor(message, code = 'gateway_adapter_failure') {
@@ -47,12 +48,46 @@ function safeBaseUrl(value) {
   } catch {
     throw new NodeGatewayAdapterError('gateway URL is invalid', 'invalid_gateway_url');
   }
-  if (parsed.protocol !== 'http:' || !LOOPBACK.has(parsed.hostname) || parsed.username || parsed.password)
+  const hostname = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (parsed.protocol !== 'http:' || !LOOPBACK.has(hostname) || parsed.username || parsed.password)
     throw new NodeGatewayAdapterError(
       'node agent only accepts an authenticated loopback gateway',
       'unsupported_gateway_url'
     );
   return parsed.origin;
+}
+
+async function readCappedResponse(response) {
+  const declaredLength = Number(response.headers?.get?.('content-length') ?? 0);
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_RESPONSE_BYTES)
+    throw new NodeGatewayAdapterError('gateway response is too large', 'response_too_large');
+
+  const reader = response.body?.getReader?.();
+  if (!reader) {
+    const text = await response.text();
+    if (Buffer.byteLength(text) > MAX_RESPONSE_BYTES)
+      throw new NodeGatewayAdapterError('gateway response is too large', 'response_too_large');
+    return text;
+  }
+
+  const chunks = [];
+  let bytes = 0;
+  try {
+    while (true) {
+      const result = await reader.read();
+      if (result.done) break;
+      const chunk = Buffer.from(result.value ?? '');
+      bytes += chunk.byteLength;
+      if (bytes > MAX_RESPONSE_BYTES) {
+        await reader.cancel('response_too_large').catch(() => {});
+        throw new NodeGatewayAdapterError('gateway response is too large', 'response_too_large');
+      }
+      chunks.push(chunk);
+    }
+  } finally {
+    reader.releaseLock?.();
+  }
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 export class NodeGatewayAdapter {
@@ -215,12 +250,7 @@ export class NodeGatewayAdapter {
         },
         ...(body ? { body: JSON.stringify(body) } : {})
       });
-      const contentLength = Number(response.headers?.get?.('content-length') ?? 0);
-      if (contentLength > 1024 * 1024)
-        throw new NodeGatewayAdapterError('gateway response is too large', 'response_too_large');
-      const text = await response.text();
-      if (Buffer.byteLength(text) > 1024 * 1024)
-        throw new NodeGatewayAdapterError('gateway response is too large', 'response_too_large');
+      const text = await readCappedResponse(response);
       let payload = null;
       try {
         payload = JSON.parse(text);

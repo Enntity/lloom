@@ -16,6 +16,7 @@ const PHASES = new Set([
   'rollback',
   'discard-stage'
 ]);
+const MAX_SSH_OUTPUT_BYTES = 1024 * 1024;
 
 function safeToken(value, label, pattern = TOKEN) {
   if (typeof value !== 'string' || !value || !pattern.test(value) || /[\r\n;|&$`<>]/.test(value)) {
@@ -102,8 +103,9 @@ function publicContext(value) {
 function spawnSsh(node, argv, input, timeoutMs) {
   return new Promise((resolve, reject) => {
     const child = spawn('ssh', argv, { stdio: ['pipe', 'pipe', 'pipe'] });
-    let stdout = '';
-    let stderr = '';
+    const stdout = [];
+    const stderr = [];
+    let outputBytes = 0;
     let settled = false;
     const finish = (callback, value) => {
       if (settled) return;
@@ -111,12 +113,23 @@ function spawnSsh(node, argv, input, timeoutMs) {
       clearTimeout(timer);
       callback(value);
     };
+    const append = (target, chunk) => {
+      if (settled) return;
+      const value = Buffer.from(chunk);
+      outputBytes += value.byteLength;
+      if (outputBytes > MAX_SSH_OUTPUT_BYTES) {
+        child.kill('SIGKILL');
+        finish(reject, new SshTransportError(`remote ${node.host} returned too much output`, 'output_too_large'));
+        return;
+      }
+      target.push(value);
+    };
     const timer = setTimeout(() => {
       child.kill('SIGKILL');
       finish(reject, new SshTransportError(`remote ${node.host} timed out`, 'timeout'));
     }, timeoutMs);
-    child.stdout.on('data', (chunk) => (stdout += chunk));
-    child.stderr.on('data', (chunk) => (stderr += chunk));
+    child.stdout.on('data', (chunk) => append(stdout, chunk));
+    child.stderr.on('data', (chunk) => append(stderr, chunk));
     child.on('error', (error) => finish(reject, publicError(error, 'ssh')));
     child.on('close', (code) => {
       if (code !== 0) {
@@ -125,7 +138,11 @@ function spawnSsh(node, argv, input, timeoutMs) {
           new SshTransportError(`remote command exited ${code}`, code === null ? 'disconnect' : 'remote_failure')
         );
       } else {
-        finish(resolve, { code, stdout, stderr });
+        finish(resolve, {
+          code,
+          stdout: Buffer.concat(stdout).toString('utf8'),
+          stderr: Buffer.concat(stderr).toString('utf8')
+        });
       }
     });
     child.stdin.end(input);

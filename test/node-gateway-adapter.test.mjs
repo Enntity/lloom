@@ -108,3 +108,34 @@ test('refuses remote gateways and unsupported fence protocol', async () => {
     (error) => error instanceof NodeGatewayAdapterError && error.code === 'fence_protocol_mismatch'
   );
 });
+
+test('accepts bracketed IPv6 loopback and cancels oversized chunked responses', async () => {
+  assert.doesNotThrow(() => new NodeGatewayAdapter({ baseUrl: 'http://[::1]:8100', adminApiKey: 'key' }));
+  let cancelled = false;
+  const adapter = new NodeGatewayAdapter({
+    adminApiKey: 'key',
+    fetchFn: async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      body: {
+        getReader() {
+          return {
+            async read() {
+              return { done: false, value: Buffer.alloc(1024 * 1024 + 1, 65) };
+            },
+            async cancel() {
+              cancelled = true;
+            },
+            releaseLock() {}
+          };
+        }
+      }
+    })
+  });
+  await assert.rejects(
+    () => adapter.inspect(),
+    (error) => error instanceof NodeGatewayAdapterError && error.code === 'response_too_large'
+  );
+  assert.equal(cancelled, true);
+});

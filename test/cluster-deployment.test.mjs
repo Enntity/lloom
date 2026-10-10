@@ -52,7 +52,15 @@ function identity(next = true, overrides = {}) {
         runtimeContractDigest: CONTRACT,
         ...overrides
       }
-    : { releaseId: 'release-old', artifactSha256: OLD, manifestSha256: OLD_MANIFEST, ...overrides };
+    : {
+        releaseId: 'release-old',
+        artifactSha256: OLD,
+        manifestSha256: OLD_MANIFEST,
+        configSha256: CONFIG,
+        dependencyDigest: DEPENDENCY,
+        runtimeContractDigest: CONTRACT,
+        ...overrides
+      };
 }
 
 function receipt(phase, nodeId, context, extra = {}) {

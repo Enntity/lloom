@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { NodeReleaseAgent } from '../src/node-release-agent.mjs';
+import { NodeReleaseAgent, nodeEngineAllows } from '../src/node-release-agent.mjs';
 
 const sha = (value) => createHash('sha256').update(value).digest('hex');
 const OLD_ARTIFACT = 'old-artifact-content';
@@ -14,6 +14,7 @@ const CONFIG_SHA = sha(CONFIG);
 const DEP = sha(JSON.stringify({ dep: '1.0.0' }));
 const CONTRACT = '2'.repeat(64);
 const NODE_MAJOR = Number(process.versions.node.split('.')[0]);
+const [NODE_MAJOR_NUMBER, NODE_MINOR_NUMBER, NODE_PATCH_NUMBER] = process.versions.node.split('.').map(Number);
 
 function fileInventory(files) {
   return Object.entries(files)
@@ -24,6 +25,16 @@ function fileInventory(files) {
 function treeDigest(entries) {
   return sha(JSON.stringify(entries));
 }
+
+test('evaluates the complete Node engine range instead of only its first comparator', () => {
+  const [major, minor, patch] = [NODE_MAJOR_NUMBER, NODE_MINOR_NUMBER, NODE_PATCH_NUMBER];
+  assert.equal(nodeEngineAllows(`>=${major}.${minor}.${patch} <${major + 1}.0.0`), true);
+  assert.equal(nodeEngineAllows(`>=${major}.${minor + 1}.0 <${major + 1}.0.0`), false);
+  assert.equal(nodeEngineAllows(`>=${major}.0.0 <${major}.0.0`), false);
+  assert.equal(nodeEngineAllows(`^${major}.${minor}.${patch}`), true);
+  assert.equal(nodeEngineAllows(`~${major}.${minor + 1}.0`), false);
+  assert.equal(nodeEngineAllows('>=22.19.0 nonsense'), false);
+});
 
 async function makeFixture(t) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'lloom-node-agent-'));
@@ -233,12 +244,48 @@ test('stages, swaps, restarts, verifies and releases only the gateway unit', asy
 test('rejects reviewed digest mismatch before creating a stage', async (t) => {
   const fixture = await makeFixture(t);
   const bad = { ...fixture.context, artifact: { ...fixture.context.artifact, sha256: 'f'.repeat(64) } };
+  await fixture.agent.preflight('node-1', fixture.context);
   await assert.rejects(
     () => fixture.agent.stage('node-1', bad),
     (error) => error.code === 'artifact_digest_mismatch'
   );
   assert.equal(await fs.stat(path.join(fixture.root, 'releases')).then(() => true), true);
   assert.equal((await fs.readdir(path.join(fixture.root, 'releases'))).length, 1);
+});
+
+test('rejects archive links before invoking tar extraction', async (t) => {
+  const fixture = await makeFixture(t);
+  const tarCalls = [];
+  const agent = new NodeReleaseAgent({
+    nodeId: 'node-1',
+    root: fixture.root,
+    configPath: path.join(fixture.root, 'config.json'),
+    platform: 'linux',
+    gateway: fixture.gateway,
+    run: async (command, argv, options) => {
+      if (command === 'tar') {
+        tarCalls.push(argv);
+        return {
+          code: 0,
+          stdout: argv.includes('--verbose')
+            ? 'lrwxrwxrwx 0/0 0 2026-10-10 17:00 package.js -> /outside\n'
+            : 'package.js\n',
+          stderr: ''
+        };
+      }
+      return fixture.agent.run(command, argv, options);
+    },
+    clock: () => new Date('2026-10-10T17:00:00.000Z')
+  });
+  await agent.preflight('node-1', fixture.context);
+  await assert.rejects(
+    () => agent.stage('node-1', fixture.context),
+    (error) => error.code === 'archive_unsafe_entry'
+  );
+  assert.equal(
+    tarCalls.some((argv) => argv.includes('--extract')),
+    false
+  );
 });
 
 test('restores a prepared node under a fresh fence and keeps it fenced', async (t) => {
@@ -302,4 +349,40 @@ test('does not retry a lost prepare response and blocks a second operation on th
     () => second.preflight('node-1', { ...context, operationId: 'op-other' }),
     (error) => error.code === 'lock_held'
   );
+});
+
+test('rejects direct phase calls out of order and serializes same-operation invocations', async (t) => {
+  const fixture = await makeFixture(t);
+  await assert.rejects(
+    () => fixture.agent.restart('node-1', fixture.context),
+    (error) => error.code === 'phase_order_invalid'
+  );
+  const inspect = fixture.gateway.inspect;
+  fixture.gateway.inspect = async (...args) => {
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    return inspect.apply(fixture.gateway, args);
+  };
+  const results = await Promise.allSettled([
+    fixture.agent.preflight('node-1', fixture.context),
+    fixture.agent.preflight('node-1', fixture.context)
+  ]);
+  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+  assert.equal(results.filter((result) => result.status === 'rejected')[0].reason.code, 'lock_held');
+});
+
+test('replaying a cached terminal receipt releases the invocation and operation locks', async (t) => {
+  const fixture = await makeFixture(t);
+  const { agent, context, root } = fixture;
+  await agent.preflight('node-1', context);
+  await agent.stage('node-1', context);
+  await agent.prepare('node-1', context);
+  await agent.swap('node-1', context);
+  await agent.restart('node-1', context);
+  await agent.verify('node-1', context);
+  await agent.canary('node-1', context);
+  await agent.promote('node-1', context);
+  await agent.release('node-1', context);
+  const replay = await agent.release('node-1', context);
+  assert.equal(replay.phase, 'release');
+  await assert.rejects(() => fs.access(path.join(root, '.deployment-agent.lock')));
 });

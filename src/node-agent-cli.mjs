@@ -16,6 +16,7 @@ const PHASES = new Set([
   'rollback',
   'discard-stage'
 ]);
+const MAX_COMMAND_OUTPUT_BYTES = 1024 * 1024;
 
 function safePhase(value) {
   if (!PHASES.has(value)) throw Object.assign(new Error('unsupported node-agent phase'), { code: 'invalid_phase' });
@@ -29,6 +30,21 @@ function publicError(error, phase) {
     code: /^[a-z][a-z0-9_:-]{0,63}$/.test(error?.code ?? '') ? error.code : 'node_agent_failure',
     message: 'node operation failed'
   };
+}
+
+function configuredPath(value, label) {
+  if (typeof value !== 'string' || !value || !path.isAbsolute(value))
+    throw Object.assign(new Error(`${label} is not configured`), { code: 'node_metadata_missing' });
+  return value;
+}
+
+function configuredPathList(value, label) {
+  if (typeof value !== 'string')
+    throw Object.assign(new Error(`${label} is not configured`), { code: 'node_metadata_missing' });
+  return value
+    .split(path.delimiter)
+    .filter(Boolean)
+    .map((entry) => configuredPath(entry, label));
 }
 
 export async function handleNodeAgentRequest({ phase, input, agent, output = process.stdout } = {}) {
@@ -79,29 +95,65 @@ export async function runNodeAgentCli({
         nodeId: env.LLOOM_NODE_ID,
         root: env.LLOOM_NODE_RELEASE_ROOT ?? env.LLOOM_NODE_ROOT,
         configPath: env.LLOOM_NODE_CONFIG_PATH,
+        unitPath: configuredPath(env.LLOOM_NODE_UNIT_PATH, 'LLOOM_NODE_UNIT_PATH'),
+        dropInPaths: configuredPathList(env.LLOOM_NODE_DROP_IN_PATHS, 'LLOOM_NODE_DROP_IN_PATHS'),
+        environmentPaths: configuredPathList(env.LLOOM_NODE_ENVIRONMENT_PATHS, 'LLOOM_NODE_ENVIRONMENT_PATHS'),
         serviceUnit: env.LLOOM_NODE_SERVICE_UNIT ?? 'lloom.service',
         gateway: createNodeGatewayAdapter({
           baseUrl: env.LLOOM_GATEWAY_URL ?? 'http://127.0.0.1:8100',
-          adminApiKey: env.LLOOM_ADMIN_API_KEY
+          adminApiKey: env.LLOOM_ADMIN_API_KEY,
+          releaseRoot: env.LLOOM_NODE_RELEASE_ROOT ?? env.LLOOM_NODE_ROOT,
+          configPath: env.LLOOM_NODE_CONFIG_PATH
         }),
         run: async (command, args, options) => {
           const { default: childProcess } = await import('node:child_process');
           return new Promise((resolve, reject) => {
             const child = childProcess.spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-            let stdout = '';
-            let stderr = '';
+            const stdout = [];
+            const stderr = [];
+            let outputBytes = 0;
             let timer = null;
-            child.stdout.on('data', (chunk) => (stdout += chunk));
-            child.stderr.on('data', (chunk) => (stderr += chunk));
-            child.on('error', (error) => {
+            let settled = false;
+
+            const finishError = (error) => {
+              if (settled) return;
+              settled = true;
               if (timer) clearTimeout(timer);
               reject(error);
-            });
+            };
+            const append = (target, chunk) => {
+              if (settled) return;
+              const value = Buffer.from(chunk);
+              outputBytes += value.byteLength;
+              if (outputBytes > MAX_COMMAND_OUTPUT_BYTES) {
+                const error = Object.assign(new Error('command output exceeded the safety limit'), {
+                  code: 'command_output_too_large'
+                });
+                child.kill('SIGKILL');
+                finishError(error);
+                return;
+              }
+              target.push(value);
+            };
+            child.stdout.on('data', (chunk) => append(stdout, chunk));
+            child.stderr.on('data', (chunk) => append(stderr, chunk));
+            child.on('error', (error) => finishError(error));
             child.on('close', (code) => {
+              if (settled) return;
               if (timer) clearTimeout(timer);
-              resolve({ code, stdout, stderr });
+              settled = true;
+              resolve({
+                code,
+                stdout: Buffer.concat(stdout).toString('utf8'),
+                stderr: Buffer.concat(stderr).toString('utf8')
+              });
             });
-            if (options?.timeoutMs) timer = setTimeout(() => child.kill('SIGKILL'), options.timeoutMs);
+            if (options?.timeoutMs)
+              timer = setTimeout(() => {
+                const error = Object.assign(new Error('command timed out'), { code: 'command_timeout' });
+                child.kill('SIGKILL');
+                finishError(error);
+              }, options.timeoutMs);
           });
         }
       });

@@ -768,6 +768,11 @@ export class ClusterDeploymentCoordinator {
       if (typeof identity[field] !== 'string' || !DIGEST.test(identity[field]))
         throw new ReceiptError(phase, `${field} evidence is missing or invalid`);
     }
+    const baseline = node?.receipts?.preflight?.currentIdentity;
+    for (const field of ['configSha256', 'dependencyDigest', 'runtimeContractDigest']) {
+      if (baseline?.[field] !== undefined && identity[field] !== baseline[field])
+        throw new ReceiptError(phase, `${field} changed from the preflight gateway contract`);
+    }
     if (!identity.releaseId || !SAFE_ID.test(identity.releaseId))
       throw new ReceiptError(phase, 'releaseId evidence is missing');
     const previousPhases = ['swap', 'restart', 'verify', 'promote'].filter((candidate) => candidate !== phase);

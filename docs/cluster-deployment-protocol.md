@@ -158,6 +158,14 @@ before `stage` acknowledges success. The installed gateway must expose a
 complete `loadedIdentity` and `runtimeSnapshot`; a disk manifest alone is not
 proof that the running process loaded that release.
 
+The archive layout is the reviewed gateway layout itself: `package.json` and
+the listed `node_modules` entries are at the archive root. A standard
+`npm pack` tarball with a leading `package/` directory is rejected; it must be
+rebuilt by the reviewed release builder into this layout. The closure must
+match every declared runtime dependency exactly (optional and peer
+dependencies are unsupported), with each installed package version and every
+regular file covered by the manifest inventory.
+
 The agent journals under `operations/<operation-token>/<node-id>/journal.json`
 and fsyncs the journal before an action and after its receipt. It copies and
 hashes the old release tree, manifest, config, unit/drop-ins/environment, and
@@ -167,14 +175,25 @@ pending action, and they retain the fence when the old identity cannot be
 proven. The agent refuses unsupported platforms, missing fence protocol,
 non-atomic layouts, unsafe release targets, or digest mismatches.
 
+This is a migration boundary, not an automatic upgrade path for an older
+gateway. The gateway must already expose fence protocol 1, the atomic
+`releases/<id>` plus `current` layout, a boot-time loaded release identity, and
+the persistent deployment-fence sidecar. A legacy gateway is refused until a
+separately reviewed migration installs those prerequisites; the node agent
+does not rebuild or bootstrap them during a rollout.
+
 `src/node-gateway-adapter.mjs` is the concrete same-node fence adapter. It
 accepts only an authenticated loopback HTTP URL and requires fence protocol 1,
 complete matching disk/loaded identities, and explicit prepared/drained and
 released receipts. It uses `/gateway/deployment-fence/{status,prepare,canary,release}`
 and never serializes the admin key into a journal or receipt. The installed
 node-agent entry point reads `LLOOM_NODE_ID`, `LLOOM_NODE_RELEASE_ROOT`,
-`LLOOM_NODE_CONFIG_PATH`, `LLOOM_GATEWAY_URL`, and `LLOOM_ADMIN_API_KEY` from
-the service environment, accepts only bounded JSON on stdin, and emits
+`LLOOM_NODE_CONFIG_PATH`, `LLOOM_NODE_UNIT_PATH`,
+`LLOOM_NODE_DROP_IN_PATHS`, `LLOOM_NODE_ENVIRONMENT_PATHS`,
+`LLOOM_GATEWAY_URL`, and `LLOOM_ADMIN_API_KEY` from the service environment.
+The unit path and the two metadata path lists are explicit verified
+configuration; omitted metadata is refused rather than silently producing an
+incomplete rollback snapshot. It accepts only bounded JSON on stdin and emits
 public-safe JSON receipts.
 
 `src/ssh-deployment-transport.mjs` sends the public-safe context as JSON over

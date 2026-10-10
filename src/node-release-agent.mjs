@@ -81,6 +81,45 @@ function safeArchivePath(value) {
   );
 }
 
+function archiveEntry(value) {
+  if (typeof value !== 'string') return null;
+  const raw = value.replace(/^\.\//, '');
+  const directory = raw.endsWith('/');
+  const relative = directory ? raw.slice(0, -1) : raw;
+  if (!safeArchivePath(relative)) return null;
+  return { path: relative, directory };
+}
+
+function archivePathEntries(listing) {
+  const entries = [];
+  const seen = new Set();
+  for (const rawLine of String(listing ?? '')
+    .split(/\r?\n/)
+    .filter(Boolean)) {
+    const entry = archiveEntry(rawLine.trim());
+    if (!entry || seen.has(entry.path))
+      throw new NodeReleaseError('reviewed archive has unsafe or duplicate entries', 'archive_invalid');
+    seen.add(entry.path);
+    entries.push(entry);
+  }
+  if (!entries.length) throw new NodeReleaseError('reviewed archive has no safe file list', 'archive_invalid');
+  return entries;
+}
+
+function archiveListingTypes(listing, expectedCount) {
+  const lines = String(listing ?? '')
+    .split(/\r?\n/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (lines.length !== expectedCount)
+    throw new NodeReleaseError('reviewed archive listing is inconsistent', 'archive_invalid');
+  for (const line of lines) {
+    const type = line[0];
+    if (!['-', 'd'].includes(type) || /\s(?:hard )?link to\s/i.test(line))
+      throw new NodeReleaseError('reviewed archive contains a link or special file', 'archive_unsafe_entry');
+  }
+}
+
 async function walkRegularFiles(fsImpl, root, prefix = '') {
   const entries = await fsImpl.readdir(root, { withFileTypes: true });
   const files = [];
@@ -104,21 +143,65 @@ async function treeDigest(fsImpl, root) {
   return { entries, digest: digestJson(entries) };
 }
 
-function nodeMajor() {
-  const match = /^v?(\d+)/.exec(process.versions.node);
-  return Number(match?.[1] ?? 0);
+function parseVersion(value) {
+  const match = /^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?$/.exec(value);
+  if (!match) return null;
+  return {
+    value: [Number(match[1]), Number(match[2] ?? 0), Number(match[3] ?? 0)],
+    components: match[3] === undefined ? (match[2] === undefined ? 1 : 2) : 3
+  };
 }
 
-function nodeEngineAllows(value) {
+function compareVersions(left, right) {
+  for (let index = 0; index < 3; index += 1) {
+    if (left[index] !== right[index]) return left[index] < right[index] ? -1 : 1;
+  }
+  return 0;
+}
+
+function upperForBareVersion(parsed) {
+  if (parsed.components === 1) return [parsed.value[0] + 1, 0, 0];
+  if (parsed.components === 2) return [parsed.value[0], parsed.value[1] + 1, 0];
+  return null;
+}
+
+function satisfiesComparator(version, token) {
+  const match = /^(<=|>=|<|>|=|~|\^)?(v?\d+(?:\.\d+){0,2})$/.exec(token);
+  if (!match) return false;
+  const operator = match[1] ?? '';
+  const parsed = parseVersion(match[2]);
+  if (!parsed) return false;
+  if (operator === '^' || operator === '~') {
+    if (parsed.components !== 3) return false;
+    const upper =
+      operator === '~'
+        ? [parsed.value[0], parsed.value[1] + 1, 0]
+        : parsed.value[0] > 0
+          ? [parsed.value[0] + 1, 0, 0]
+          : parsed.value[1] > 0
+            ? [0, parsed.value[1] + 1, 0]
+            : [0, 0, parsed.value[2] + 1];
+    return compareVersions(version, parsed.value) >= 0 && compareVersions(version, upper) < 0;
+  }
+  const compared = parsed.value;
+  const relation = compareVersions(version, compared);
+  if (operator === '>=') return relation >= 0;
+  if (operator === '>') return relation > 0;
+  if (operator === '<=') return relation <= 0;
+  if (operator === '<') return relation < 0;
+  if (operator === '=') return relation === 0;
+  // npm's bare partial versions denote the corresponding major/minor band.
+  const upper = upperForBareVersion(parsed);
+  return upper ? relation >= 0 && compareVersions(version, upper) < 0 : relation === 0;
+}
+
+export function nodeEngineAllows(value) {
   if (typeof value !== 'string' || !value.trim()) return false;
-  const major = nodeMajor();
+  const current = parseVersion(process.versions.node)?.value;
+  if (!current) return false;
   return value.split(/\s*\|\|\s*/).some((part) => {
-    const match = /(?:^|[<>=~^ ])v?(\d+)(?:\.\d+)?(?:\.\d+)?/.exec(part.trim());
-    if (!match) return false;
-    const required = Number(match[1]);
-    if (/^\^|^~/.test(part.trim())) return required === major;
-    if (/^>=/.test(part.trim())) return major >= required;
-    return required === major;
+    const tokens = part.trim().split(/\s+/).filter(Boolean);
+    return tokens.length > 0 && tokens.every((token) => satisfiesComparator(current, token));
   });
 }
 
@@ -357,21 +440,22 @@ export class NodeReleaseAgent {
         gatewayProtocol: context.gatewayProtocol,
         fenceProtocolVersion: NODE_AGENT_PROTOCOL,
         atomicLayout: true,
-        currentIdentity: publicIdentity(currentIdentity, 'currentIdentity', { old: true })
+        currentIdentity: publicIdentity(currentIdentity, 'currentIdentity')
       };
     });
   }
 
   async stage(nodeId, context) {
-    return this.#phase(nodeId, context, 'stage', 'stage', true, async () => {
+    return this.#phase(nodeId, context, 'stage', 'stage', true, async (document) => {
       this.#assertContext(nodeId, context);
       const artifact = this.#artifact(context);
       const reviewedManifest = await this.#readReviewedManifest(artifact);
       const configSha256 = await fileDigest(this.fs, this.configPath);
-      publicIdentity(
+      const reviewedIdentity = publicIdentity(
         currentIdentityFromManifest(reviewedManifest, artifact.manifestSha256, configSha256),
         'reviewed identity'
       );
+      this.#assertContractBaseline(document, reviewedIdentity, 'stage');
       const token = releaseToken(artifact.id);
       const destination = path.join(this.root, 'releases', token);
       const temporary = `${destination}.tmp-${process.pid}-${randomUUID()}`;
@@ -393,6 +477,16 @@ export class NodeReleaseAgent {
         dependencyDigest: packageProof.dependencyDigest,
         runtimeContractDigest: packageProof.runtimeContractDigest
       });
+      let currentTarget;
+      try {
+        currentTarget = await this.fs.readlink(atomicLayoutPath(this.root, 'current'));
+      } catch {
+        currentTarget = null;
+      }
+      const resolvedDestination = path.resolve(destination);
+      const resolvedCurrent = currentTarget ? path.resolve(this.root, currentTarget) : null;
+      if (resolvedCurrent && resolvedCurrent === resolvedDestination)
+        throw new NodeReleaseError('cannot replace the active release in place', 'stage_active_release');
       await this.fs.rm(destination, { recursive: true, force: true });
       await this.fs.rename(temporary, destination);
       return {
@@ -447,11 +541,28 @@ export class NodeReleaseAgent {
       const currentPath = atomicLayoutPath(this.root, 'current');
       const temporary = `${currentPath}.tmp-${process.pid}-${randomUUID()}`;
       const relative = path.relative(this.root, staged.destination);
+      const manifestPath = atomicLayoutPath(this.root, 'current.manifest.json');
+      const oldManifestSha256 = await fileDigest(this.fs, manifestPath);
+      const newManifestSha256 = await fileDigest(this.fs, path.join(staged.destination, staged.manifestName));
+      document.swapIntent = {
+        oldTarget: currentPathBefore,
+        newTarget: relative,
+        oldManifestSha256,
+        newManifestSha256
+      };
+      // This intent is durable before either pointer can change. Recovery can
+      // therefore distinguish a complete swap from either half of the two
+      // pointer updates without trusting an absent receipt.
+      await writeAtomicJson(this.fs, this.#journalPath(context), document);
       await this.fs.symlink(relative, temporary);
       await this.fs.rename(temporary, currentPath);
-      const manifestPath = atomicLayoutPath(this.root, 'current.manifest.json');
+      document.swapPointerApplied = true;
+      await writeAtomicJson(this.fs, this.#journalPath(context), document);
       await copyAtomic(this.fs, path.join(staged.destination, staged.manifestName), manifestPath);
+      document.swapManifestApplied = true;
+      await writeAtomicJson(this.fs, this.#journalPath(context), document);
       const identity = publicIdentity(await this.#readCurrentIdentity(), 'swap identity');
+      this.#assertContractBaseline(document, identity, 'swap');
       if (
         !identity ||
         identity.artifactSha256 !== context.artifact.sha256 ||
@@ -486,6 +597,7 @@ export class NodeReleaseAgent {
           'loaded gateway identity does not match the reviewed release',
           'loaded_identity_mismatch'
         );
+      this.#assertContractBaseline(document, identity, 'restart');
       if (inspection.loadedIdentity === undefined)
         throw new NodeReleaseError('gateway did not report the loaded release identity', 'loaded_identity_unknown');
       if (inspection.fenced !== true || inspection.drained !== true)
@@ -513,6 +625,7 @@ export class NodeReleaseAgent {
           'verification did not prove the loaded reviewed release',
           'loaded_identity_mismatch'
         );
+      this.#assertContractBaseline(document, identity, 'verify');
       if (inspection.fenced !== true || inspection.drained !== true)
         throw new NodeReleaseError('verification requires the gateway to remain fenced', 'fence_not_ready');
       return { verified: true, identity, snapshot: document.backup?.evidence ?? this.#evidence(context, identity) };
@@ -552,6 +665,7 @@ export class NodeReleaseAgent {
       this.#assertContext(nodeId, context);
       const identity = await this.#loadedIdentity(context);
       if (!identity) throw new NodeReleaseError('cannot promote without loaded identity', 'loaded_identity_unknown');
+      this.#assertContractBaseline(document, identity, 'promote');
       await writeAtomicJson(this.fs, path.join(this.#operationDirectory(context), 'promoted.json'), {
         operationId: context.operationId,
         generation: context.generation,
@@ -605,12 +719,14 @@ export class NodeReleaseAgent {
           throw new NodeReleaseError('rollback has no durable backup for the changed identity', 'backup_missing');
         return { restored: true, fenced: true, identity };
       }
+      await this.#repairPartialSwap(context, document);
       const current = await this.#readCurrentIdentity();
       const loaded = await this.#loadedIdentity(context);
       if (document.postSwapIdentity) {
+        const currentIsExpectedOld = this.#matchesExpected(current, context.expectedOldIdentity);
         const loadedIsExpectedOld = this.#matchesExpected(loaded, context.expectedOldIdentity);
         if (
-          !this.#identitiesEqual(current, document.postSwapIdentity) ||
+          (!this.#identitiesEqual(current, document.postSwapIdentity) && !currentIsExpectedOld) ||
           (!this.#identitiesEqual(loaded, document.postSwapIdentity) && !loadedIsExpectedOld)
         )
           throw new NodeReleaseError(
@@ -684,6 +800,40 @@ export class NodeReleaseAgent {
     });
   }
 
+  async #repairPartialSwap(context, document) {
+    const intent = asObject(document.swapIntent);
+    if (
+      !intent.oldTarget ||
+      !intent.newTarget ||
+      !DIGEST.test(String(intent.oldManifestSha256 ?? '')) ||
+      !DIGEST.test(String(intent.newManifestSha256 ?? ''))
+    )
+      return;
+    const currentPath = atomicLayoutPath(this.root, 'current');
+    const manifestPath = atomicLayoutPath(this.root, 'current.manifest.json');
+    const pointer = await this.fs.readlink(currentPath).catch(() => null);
+    if (pointer !== intent.oldTarget && pointer !== intent.newTarget)
+      throw new NodeReleaseError('rollback found an unknown current release pointer', 'rollback_cas_failed');
+    let manifestSha256;
+    try {
+      manifestSha256 = await fileDigest(this.fs, manifestPath);
+    } catch {
+      throw new NodeReleaseError('rollback found an unknown current manifest', 'rollback_cas_failed');
+    }
+    if (manifestSha256 !== intent.oldManifestSha256 && manifestSha256 !== intent.newManifestSha256)
+      throw new NodeReleaseError('rollback found an unknown current manifest', 'rollback_cas_failed');
+    if (manifestSha256 === intent.newManifestSha256)
+      await copyAtomic(this.fs, path.join(this.#operationDirectory(context), 'current.manifest.json'), manifestPath);
+    if (pointer === intent.newTarget) {
+      const observed = await this.fs.readlink(currentPath).catch(() => null);
+      if (observed !== intent.newTarget)
+        throw new NodeReleaseError('rollback current release pointer changed during recovery', 'rollback_cas_failed');
+      const temporary = `${currentPath}.repair-${process.pid}-${randomUUID()}`;
+      await this.fs.symlink(intent.oldTarget, temporary);
+      await this.fs.rename(temporary, currentPath);
+    }
+  }
+
   #assertContext(nodeId, context) {
     if (nodeId !== this.nodeId || context?.nodeId !== this.nodeId)
       throw new NodeReleaseError('node identity does not match the agent', 'node_identity_mismatch');
@@ -746,13 +896,13 @@ export class NodeReleaseAgent {
       return;
     }
     const listing = await this.#archiveCommand(['--list', '--file', artifactPath]);
-    const entries = String(listing.stdout ?? '')
-      .split(/\r?\n/)
-      .map((entry) => entry.trim())
-      .filter(Boolean)
-      .map((entry) => entry.replace(/^\.\//, ''));
-    if (!entries.length || entries.some((entry) => !safeArchivePath(entry)))
-      throw new NodeReleaseError('reviewed archive has no safe file list', 'archive_invalid');
+    // Reject links, hard links, special files, traversal and duplicate names
+    // from the verbose type listing before tar gets a chance to write any
+    // bytes.  A fresh destination alone is not sufficient: a symlink entry
+    // can become an ancestor for a later regular-file entry.
+    const entries = archivePathEntries(listing.stdout);
+    const typedListing = await this.#archiveCommand(['--list', '--verbose', '--numeric-owner', '--file', artifactPath]);
+    archiveListingTypes(typedListing.stdout, entries.length);
     await this.#archiveCommand([
       '--extract',
       '--no-same-owner',
@@ -789,7 +939,27 @@ export class NodeReleaseAgent {
     if (!DIGEST.test(dependencyDigest) || dependencyDigest !== digestJson(closure))
       throw new NodeReleaseError('reviewed dependency closure digest is invalid', 'dependency_digest_mismatch');
     const declared = asObject(packageJson.dependencies);
+    if (
+      Object.keys(packageJson.optionalDependencies ?? {}).length ||
+      Object.keys(packageJson.peerDependencies ?? {}).length
+    )
+      throw new NodeReleaseError(
+        'optional and peer dependencies are unsupported in a reviewed gateway release',
+        'dependency_closure_mismatch'
+      );
+    const declaredNames = Object.keys(declared).sort();
+    const closureNames = Object.keys(closure).sort();
+    if (stableJson(declaredNames) !== stableJson(closureNames))
+      throw new NodeReleaseError(
+        'reviewed dependency closure does not exactly match package.json',
+        'dependency_closure_mismatch'
+      );
     for (const [name, version] of Object.entries(closure)) {
+      if (
+        !/^(?:[A-Za-z0-9][A-Za-z0-9._~-]*|@[A-Za-z0-9][A-Za-z0-9._~-]*\/[A-Za-z0-9][A-Za-z0-9._~-]*)$/.test(name) ||
+        name.includes('..')
+      )
+        throw new NodeReleaseError('reviewed dependency name is unsafe', 'dependency_closure_mismatch');
       if (declared[name] !== version)
         throw new NodeReleaseError(`dependency ${name} is absent from package.json`, 'dependency_closure_mismatch');
       const dependencyPackage = path.join(destination, 'node_modules', name, 'package.json');
@@ -999,6 +1169,15 @@ export class NodeReleaseAgent {
     ].every((field) => left[field] === right[field]);
   }
 
+  #assertContractBaseline(document, identity, phase) {
+    const baseline = document.receipts?.preflight?.currentIdentity;
+    if (!baseline) return;
+    for (const field of ['configSha256', 'dependencyDigest', 'runtimeContractDigest']) {
+      if (baseline[field] !== undefined && identity?.[field] !== baseline[field])
+        throw new NodeReleaseError(`${phase} changed the reviewed gateway contract`, 'runtime_contract_mismatch');
+    }
+  }
+
   #assertInspectionFence(inspection, current, context, phase) {
     if (!inspection || inspection.gatewayProtocol !== context.gatewayProtocol)
       throw new NodeReleaseError(`${phase} gateway protocol changed`, 'protocol_mismatch');
@@ -1048,71 +1227,87 @@ export class NodeReleaseAgent {
     if (!PHASES.has(phase)) throw new NodeReleaseError(`unsupported node phase ${phase}`, 'invalid_context');
     this.#assertContext(nodeId, context);
     await this.#acquireLock(context);
-    const filePath = this.#journalPath(context);
-    const document = (await this.#load(filePath)) ?? {
-      protocol: NODE_AGENT_PROTOCOL,
-      operationId: context.operationId,
-      generation: context.generation,
-      planHash: context.planHash,
-      nodeId: this.nodeId,
-      receipts: {},
-      pendingAction: null,
-      state: 'preflight',
-      backup: null,
-      updatedAt: timestamp(this.clock)
-    };
-    if (
-      document.operationId !== context.operationId ||
-      document.nodeId !== this.nodeId ||
-      document.planHash !== context.planHash
-    )
-      throw new NodeReleaseError('node journal identity mismatch', 'journal_identity_mismatch');
-    if (document.generation > context.generation)
-      throw new NodeReleaseError('node journal generation is newer than the request', 'stale_generation');
-    if (document.generation < context.generation) {
-      if (document.receipts[phase] && !['reprepare', 'rollback'].includes(phase))
-        throw new NodeReleaseError('phase receipt belongs to an older generation', 'stale_generation');
-      document.generation = context.generation;
-      if (['reprepare', 'rollback'].includes(phase)) delete document.receipts[phase];
-    }
-    if (document.receipts[phase]) {
-      if (document.receipts[phase].generation !== context.generation)
-        throw new NodeReleaseError('phase receipt generation is stale', 'stale_generation');
-      return clone(document.receipts[phase]);
-    }
-    if (document.pendingAction && !['reprepare', 'rollback'].includes(phase))
-      throw new NodeReleaseError('node journal contains an uncertain pending action', 'operation_uncertain');
-    if (document.pendingAction) {
-      document.uncertainAction = document.pendingAction;
-      document.pendingAction = null;
-    }
-    document.pendingAction = phase;
-    document.mutationPossible = Boolean(document.mutationPossible || mutation);
-    document.updatedAt = timestamp(this.clock);
-    await writeAtomicJson(this.fs, filePath, document);
     try {
-      const body = await work(document);
-      const receipt = {
-        operationId: context.operationId,
-        generation: context.generation,
-        nodeId: this.nodeId,
-        phase,
-        status: 'ok',
-        observedAt: timestamp(this.clock),
-        ...this.#publicBody(body)
-      };
-      document.receipts[phase] = receipt;
-      document.pendingAction = null;
-      document.state = phase === 'discard-stage' ? 'rolled-back' : phase;
-      document.updatedAt = timestamp(this.clock);
-      await writeAtomicJson(this.fs, filePath, document);
-      if (['release', 'rollback', 'discard-stage'].includes(phase)) await this.#releaseLock(context);
-      return receipt;
+      await this.#acquireInvocationLock(context);
+      try {
+        const filePath = this.#journalPath(context);
+        const document = (await this.#load(filePath)) ?? {
+          protocol: NODE_AGENT_PROTOCOL,
+          operationId: context.operationId,
+          generation: context.generation,
+          planHash: context.planHash,
+          nodeId: this.nodeId,
+          receipts: {},
+          pendingAction: null,
+          state: 'preflight',
+          backup: null,
+          updatedAt: timestamp(this.clock)
+        };
+        document.receipts ??= {};
+        if (
+          document.operationId !== context.operationId ||
+          document.nodeId !== this.nodeId ||
+          document.planHash !== context.planHash
+        )
+          throw new NodeReleaseError('node journal identity mismatch', 'journal_identity_mismatch');
+        if (document.generation > context.generation)
+          throw new NodeReleaseError('node journal generation is newer than the request', 'stale_generation');
+        if (document.generation < context.generation) {
+          if (document.receipts[phase] && !['reprepare', 'rollback'].includes(phase))
+            throw new NodeReleaseError('phase receipt belongs to an older generation', 'stale_generation');
+          document.generation = context.generation;
+          if (['reprepare', 'rollback'].includes(phase)) delete document.receipts[phase];
+        }
+        if (document.receipts[phase]) {
+          if (document.receipts[phase].generation !== context.generation)
+            throw new NodeReleaseError('phase receipt generation is stale', 'stale_generation');
+          if (['release', 'rollback', 'discard-stage'].includes(phase)) await this.#releaseLock(context);
+          return clone(document.receipts[phase]);
+        }
+        this.#assertPhaseOrder(document, phase);
+        if (document.pendingAction && !['reprepare', 'rollback'].includes(phase))
+          throw new NodeReleaseError('node journal contains an uncertain pending action', 'operation_uncertain');
+        if (document.pendingAction) {
+          document.uncertainAction = document.pendingAction;
+          document.pendingAction = null;
+        }
+        document.pendingAction = phase;
+        document.mutationPossible = Boolean(document.mutationPossible || mutation);
+        document.updatedAt = timestamp(this.clock);
+        await writeAtomicJson(this.fs, filePath, document);
+        try {
+          const body = await work(document);
+          const receipt = {
+            operationId: context.operationId,
+            generation: context.generation,
+            nodeId: this.nodeId,
+            phase,
+            status: 'ok',
+            observedAt: timestamp(this.clock),
+            ...this.#publicBody(body)
+          };
+          document.receipts[phase] = receipt;
+          document.pendingAction = null;
+          document.state = phase === 'discard-stage' ? 'rolled-back' : phase;
+          document.updatedAt = timestamp(this.clock);
+          await writeAtomicJson(this.fs, filePath, document);
+          if (['release', 'rollback', 'discard-stage'].includes(phase)) await this.#releaseLock(context);
+          return receipt;
+        } catch (error) {
+          document.state = 'unknown';
+          document.error = publicError(error, phase);
+          document.updatedAt = timestamp(this.clock);
+          await writeAtomicJson(this.fs, filePath, document).catch(() => {});
+          throw error;
+        }
+      } finally {
+        await this.#releaseInvocationLock(context);
+      }
     } catch (error) {
-      document.state = 'unknown';
-      document.error = publicError(error, phase);
-      document.updatedAt = timestamp(this.clock);
-      await writeAtomicJson(this.fs, filePath, document).catch(() => {});
+      // A failed preflight has not been allowed to mutate or fence anything;
+      // do not strand a persistent reservation that no recovery action could
+      // safely use.
+      if (phase === 'preflight' && !mutation) await this.#releaseLock(context);
       throw error;
     }
   }
@@ -1140,6 +1335,56 @@ export class NodeReleaseAgent {
     }
     if (owner.operationId !== context.operationId)
       throw new NodeReleaseError('another deployment operation owns this node', 'lock_held');
+  }
+
+  async #acquireInvocationLock(context) {
+    const filePath = path.join(this.root, '.deployment-agent.lock', 'invocation.lock');
+    let handle;
+    try {
+      handle = await this.fs.open(filePath, 'wx', 0o600);
+      await handle.writeFile(
+        JSON.stringify({ operationId: context.operationId, generation: context.generation, pid: process.pid })
+      );
+      await handle.sync();
+      await handle.close();
+    } catch (error) {
+      await handle?.close().catch(() => {});
+      if (error?.code === 'EEXIST') throw new NodeReleaseError('another phase invocation owns this node', 'lock_held');
+      throw new NodeReleaseError('deployment invocation lock could not be acquired', 'lock_failed');
+    }
+  }
+
+  async #releaseInvocationLock() {
+    await this.fs.unlink(path.join(this.root, '.deployment-agent.lock', 'invocation.lock')).catch(() => {});
+  }
+
+  #assertPhaseOrder(document, phase) {
+    const receipts = document.receipts ?? {};
+    const has = (...names) => names.some((name) => receipts[name]);
+    const invalid = () => {
+      throw new NodeReleaseError(`${phase} was requested out of order`, 'phase_order_invalid');
+    };
+    if (phase === 'stage' && !has('preflight') && document.pendingAction !== 'preflight') invalid();
+    if (phase === 'prepare' && !has('stage') && document.pendingAction !== 'stage') invalid();
+    if (phase === 'swap' && !has('prepare') && document.pendingAction !== 'prepare') invalid();
+    if (phase === 'restart' && !has('swap') && document.pendingAction !== 'swap') invalid();
+    if (phase === 'verify' && !has('restart') && document.pendingAction !== 'restart') invalid();
+    if (phase === 'canary' && !has('verify') && document.pendingAction !== 'verify') invalid();
+    if (phase === 'promote' && !has('canary') && document.pendingAction !== 'canary') invalid();
+    if (phase === 'release' && !has('promote') && document.pendingAction !== 'promote') invalid();
+    if (
+      phase === 'discard-stage' &&
+      (!has('stage') || has('prepare', 'swap', 'restart', 'verify', 'canary', 'promote', 'release'))
+    )
+      invalid();
+    if (phase === 'reprepare' && !document.mutationPossible && !has('prepare') && !document.pendingAction) invalid();
+    if (
+      phase === 'rollback' &&
+      !document.mutationPossible &&
+      !has('prepare', 'swap', 'restart', 'verify', 'canary', 'promote', 'release') &&
+      !document.pendingAction
+    )
+      invalid();
   }
 
   async #releaseLock(context) {
