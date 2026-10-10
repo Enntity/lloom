@@ -2662,6 +2662,25 @@ async function main() {
         console.log(JSON.stringify(result, null, 2));
         return;
       }
+      if (action === 'doctor') {
+        const scopedRuntimeId = argValue(args, '--runtime');
+        if (scopedRuntimeId) {
+          const params = new URLSearchParams({ runtime: scopedRuntimeId });
+          if (hasFlag(args, '--include-federation')) params.set('includeFederation', '1');
+          const readiness = await gatewayRequest(config, `/gateway/cluster/readiness?${params}`, {
+            timeoutMs: 10000,
+            throwOnError: true
+          });
+          if (!readiness) {
+            throw new Error(
+              `LLooM gateway at ${gatewayUrlFor(config)} is not reachable; scoped cluster doctor requires a running gateway`
+            );
+          }
+          console.log(JSON.stringify(readiness, null, 2));
+          if (!readiness.readyForServing || !readiness.readyForControl) process.exitCode = 1;
+          return;
+        }
+      }
       const response = await gatewayRequest(config, '/gateway/cluster', { timeoutMs: 10000 });
       if (!response?.cluster) {
         throw new Error(
@@ -2673,7 +2692,14 @@ async function main() {
         const validationErrors = validateClusterConfig(config);
         const nodeChecks = Object.values(response.cluster.nodes ?? {}).map((node) => ({
           id: node.id,
-          ok: node.reachable !== false && Boolean(node.telemetry?.memory),
+          ok: node.required === false || node.reachable !== false,
+          required: node.required ?? true,
+          requiredByRuntime: node.requiredByRuntime ?? [],
+          availabilityState: node.availabilityState ?? (node.reachable === false ? 'unavailable' : 'healthy'),
+          warnings: [
+            node.required === false && node.reachable === false ? 'optional-offline' : null,
+            !node.telemetry?.memory ? 'memory-telemetry-missing' : null
+          ].filter(Boolean),
           reachable: node.reachable !== false,
           telemetry: Boolean(node.telemetry?.memory),
           platform:
@@ -2879,6 +2905,23 @@ async function main() {
       );
     },
     doctor: async ({ args, config, command: _command }) => {
+      const scopedRuntimeId = argValue(args, '--runtime');
+      if (scopedRuntimeId) {
+        const params = new URLSearchParams({ runtime: scopedRuntimeId });
+        if (hasFlag(args, '--include-federation')) params.set('includeFederation', '1');
+        const readiness = await gatewayRequest(config, `/gateway/doctor?${params}`, {
+          timeoutMs: 10000,
+          throwOnError: true
+        });
+        if (!readiness) {
+          throw new Error(
+            `LLooM gateway at ${gatewayUrlFor(config)} is not reachable; scoped doctor requires a running gateway`
+          );
+        }
+        console.log(JSON.stringify(readiness, null, 2));
+        if (!readiness.readyForServing || !readiness.readyForControl) process.exitCode = 1;
+        return;
+      }
       const noRuntimes = hasFlag(args, '--no-runtimes');
       const recipeId = argValue(args, '--recipe');
       const home = argValue(args, '--home') ?? process.env.HOME;

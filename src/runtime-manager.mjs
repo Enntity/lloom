@@ -12,6 +12,7 @@ import {
   runtimeAuthority,
   runtimeControlAllowed,
   runtimePlacement,
+  runtimeReadinessScope,
   runtimeResourcesByNode
 } from './cluster.mjs';
 import { cleanupPortListener, terminateProcessTree } from './process-control.mjs';
@@ -96,6 +97,7 @@ function compactRuntime(runtimeId, runtime, config) {
   if (!runtime) return null;
   return {
     enabled: runtime.enabled === true,
+    requiredNodes: runtimeReadinessScope(runtimeId, config).requiredNodes,
     keepWarm: runtime.keepWarm === true,
     maintenance: runtimeMaintenance(config, runtimeId),
     memoryGb: runtime.memoryGb ?? runtime.memory?.requiredGb ?? null,
@@ -965,6 +967,45 @@ export class RuntimeManager {
     return true;
   }
 
+  // Probe only the runtime named by a scoped readiness request. Node evidence
+  // supplied by ClusterCoordinator.runtimeReadiness keeps remote member checks
+  // pinned to required nodes; this method never performs a cluster-wide sweep.
+  async runtimeServingHealthy(runtimeId, nodeEvidence = {}) {
+    const runtime = this.getRuntime(runtimeId);
+    if (!runtime || runtime.enabled !== true) return false;
+    const placement = runtimePlacement(runtime, this.config);
+
+    if (placement.mode === 'distributed') {
+      if (!(await this.distributedServingOwnership(runtime))) return false;
+      if (runtime.healthUrl)
+        return await healthOk(runtime.healthUrl, runtimeHealthTimeoutMs(runtime), runtime.healthModel);
+      if (!placement.members.length) return false;
+      for (const member of placement.members) {
+        const local = this.clusterCoordinator
+          ? this.clusterCoordinator.isLocalNode(member.node)
+          : !member.node || member.node === currentNodeId(this.config);
+        if (local) {
+          const memberRuntime = this.getRuntime(member.runtime);
+          if (!memberRuntime || memberRuntime.enabled !== true) return false;
+          if (!(await runtimeHealthOk(memberRuntime))) return false;
+          continue;
+        }
+        const observed = nodeEvidence?.[member.node]?.runtimeManager?.runtimes?.[member.runtime];
+        if (observed?.healthy !== true) return false;
+      }
+      return true;
+    }
+
+    const nodeId = placement.node;
+    const local = this.clusterCoordinator
+      ? this.clusterCoordinator.isLocalNode(nodeId)
+      : !nodeId || nodeId === currentNodeId(this.config);
+    if (!local) {
+      return nodeEvidence?.[nodeId]?.runtimeManager?.runtimes?.[runtimeId]?.healthy === true;
+    }
+    return await runtimeHealthOk(runtime);
+  }
+
   async assertDistributedControl(runtime) {
     const placement = runtimePlacement(runtime, this.config);
     if (placement.mode !== 'distributed' || typeof this.clusterCoordinator?.nodeStatus !== 'function') return;
@@ -984,7 +1025,12 @@ export class RuntimeManager {
     const runtime = this.getRuntime(runtimeId);
     if (!runtime) return false;
     if (this.stateFor(runtimeId).status === 'warming') return false;
-    const healthy = (await this.distributedServingOwnership(runtime)) && (await runtimeHealthOk(runtime));
+    const distributed = runtimePlacement(runtime, this.config).mode === 'distributed';
+    const healthy =
+      (await this.distributedServingOwnership(runtime)) &&
+      (await (distributed && runtime.healthUrl
+        ? healthOk(runtime.healthUrl, runtimeHealthTimeoutMs(runtime), runtime.healthModel)
+        : runtimeHealthOk(runtime)));
     if (this.stateFor(runtimeId).status === 'warming') return false;
     if (healthy) return true;
     // Distributed serving health is owned by the configured logical endpoint.
@@ -1243,7 +1289,8 @@ export class RuntimeManager {
         // to the members.every aggregate for backward compatibility.
         const memberServingHealthy = members.length > 0 && members.every((member) => member.servingHealthy);
         const servingHealthy = runtime.healthUrl
-          ? (await this.distributedServingOwnership(runtime)) && (await runtimeHealthOk(runtime))
+          ? (await this.distributedServingOwnership(runtime)) &&
+            (await healthOk(runtime.healthUrl, runtimeHealthTimeoutMs(runtime), runtime.healthModel))
           : memberServingHealthy;
         const healthy = servingHealthy;
         const availabilityState = servingHealthy ? (controlHealthy ? 'healthy' : 'management-degraded') : 'unavailable';
@@ -1617,6 +1664,22 @@ export class RuntimeManager {
     const nodeId = this.clusterCoordinator?.nodeId ?? currentNodeId(nextConfig);
     const leaderNode = nextConfig.cluster?.leaderNode ?? previousConfig.cluster?.leaderNode ?? nodeId;
     const changed = reconfigureRuntimeIds(previousConfig, nextConfig, { nodeId, leaderNode });
+    // A lifecycle change must not preflight an old gateway and then act on a
+    // newly configured endpoint. Apply topology/credential edits separately.
+    const controlEndpoints = (value) =>
+      JSON.stringify({
+        apiKey: value.cluster?.apiKey,
+        apiKeyEnv: value.cluster?.apiKeyEnv,
+        nodes: Object.entries(value.cluster?.nodes ?? {})
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([id, node]) => [id, node.endpoint, node.apiKey, node.apiKeyEnv])
+      });
+    if (changed.length && controlEndpoints(previousConfig) !== controlEndpoints(nextConfig)) {
+      const error = new Error('Apply cluster topology changes separately from runtime lifecycle changes');
+      error.code = 'RUNTIME_CONTROL_TOPOLOGY_CHANGED';
+      error.statusCode = 409;
+      throw error;
+    }
     const liveAdmissionChanged = liveAdmissionRuntimeIds(previousConfig, nextConfig);
     if (!changed.length && liveAdmissionChanged.length) {
       // Wait for a running admission decision to finish before changing its

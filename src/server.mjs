@@ -4213,6 +4213,29 @@ export function createLloomServer(
         return;
       }
 
+      if (req.method === 'GET' && url.pathname === '/gateway/cluster/readiness') {
+        const runtimeId = firstQueryParam(url.searchParams, ['runtime', 'runtime_id', 'runtime-id']);
+        if (!runtimeId) {
+          sendJson(
+            res,
+            400,
+            errorBody('runtime is required', {
+              code: 'invalid_request'
+            })
+          );
+          return;
+        }
+        const readiness = await clusterCoordinator.runtimeReadiness(runtimeId, {
+          includeFederation: queryBool(
+            url.searchParams,
+            ['include_federation', 'include-federation', 'includeFederation'],
+            false
+          )
+        });
+        sendJson(res, 200, { ok: readiness.readyForServing && readiness.readyForControl, ...readiness });
+        return;
+      }
+
       if (req.method === 'GET' && url.pathname === '/gateway/runtimes/plan') {
         const runtimeStatus = await runtimeManager.status();
         runtimeStatus.cluster = await clusterCoordinator.status();
@@ -4341,6 +4364,18 @@ export function createLloomServer(
       }
 
       if (req.method === 'GET' && url.pathname === '/gateway/doctor') {
+        const scopedRuntimeId = firstQueryParam(url.searchParams, ['runtime', 'runtime_id', 'runtime-id']);
+        if (scopedRuntimeId) {
+          const readiness = await clusterCoordinator.runtimeReadiness(scopedRuntimeId, {
+            includeFederation: queryBool(
+              url.searchParams,
+              ['include_federation', 'include-federation', 'includeFederation'],
+              false
+            )
+          });
+          sendJson(res, 200, { ok: readiness.readyForServing && readiness.readyForControl, ...readiness });
+          return;
+        }
         const options = doctorOptionsFromQuery(url.searchParams);
         const communityContext = await communityStatusContextFromQuery(config, url.searchParams, {
           recipeId: options.recipeId

@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import test from 'node:test';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { ClusterCoordinator } from '../src/cluster.mjs';
 import { RuntimeManager } from '../src/runtime-manager.mjs';
 import { createLloomServer } from '../src/server.mjs';
@@ -270,4 +273,43 @@ test('endpoint-free legacy groups retain member health aggregation', async (t) =
   assert.equal(await f.manager.isHealthy('split'), true);
   await new Promise((resolve) => f.workerControl.server.close(resolve));
   assert.equal(await f.manager.isHealthy('split'), false);
+});
+
+test('logical HTTP health is authoritative even with container health strategy', async (t) => {
+  const f = await boot(t);
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lloom-logical-health-'));
+  const previousPath = process.env.PATH;
+  t.after(async () => {
+    process.env.PATH = previousPath;
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+  await fs.writeFile(
+    path.join(dir, 'docker'),
+    `#!/bin/sh
+printf '%s\\n' '{"State":{"Running":true,"Status":"running"}}'
+`,
+    { mode: 0o755 }
+  );
+  process.env.PATH = `${dir}${path.delimiter}${previousPath}`;
+  Object.assign(f.manager.config.runtimes.split, {
+    adapter: 'docker',
+    containerName: 'logical-fixture',
+    healthStrategy: 'container'
+  });
+  f.head.state.healthy = false;
+  assert.equal(await f.manager.isHealthy('split'), false);
+  assert.equal((await f.manager.status()).runtimes.split.servingHealthy, false);
+  assert.equal((await f.coordinator.runtimeReadiness('split')).servingHealthy, false);
+});
+
+test('coupled control endpoint and runtime edits fail before lifecycle changes', async (t) => {
+  const f = await boot(t);
+  const next = structuredClone(f.manager.config);
+  next.cluster.nodes.worker.endpoint = 'http://127.0.0.1:1';
+  next.runtimes.split.healthModel = 'new-model';
+  await assert.rejects(f.manager.reconfigure(next), { code: 'RUNTIME_CONTROL_TOPOLOGY_CHANGED' });
+  assert.equal(f.workerControl.state.statusHits, 0);
+  assert.equal(f.manager.stateFor('head').stops, 0);
+  assert.equal(f.manager.stateFor('worker').stops, 0);
+  assert.notEqual(f.manager.config, next);
 });
