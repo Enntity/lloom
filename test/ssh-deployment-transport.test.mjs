@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { Writable } from 'node:stream';
 import test from 'node:test';
+import { handleNodeAgentRequest } from '../src/node-agent-cli.mjs';
 import { SshDeploymentTransport, SshTransportError } from '../src/ssh-deployment-transport.mjs';
 
 const context = {
@@ -89,6 +91,96 @@ test('forwards the bounded drain timeout and complete expected old identity exac
   assert.equal(input.drainTimeoutMs, 900000);
   assert.deepEqual(input.expectedOldIdentity, expectedOldIdentity);
   assert.equal('secret' in input, false);
+});
+
+test('preserves rollback recovery context through the node-agent JSON boundary', async () => {
+  const seen = [];
+  const expectedOldIdentity = {
+    releaseId: 'release-old',
+    artifactSha256: 'f'.repeat(64),
+    manifestSha256: 'g'.repeat(64),
+    configSha256: 'h'.repeat(64),
+    effectiveConfigSha256: 'i'.repeat(64),
+    dependencyDigest: 'j'.repeat(64),
+    runtimeContractDigest: 'k'.repeat(64)
+  };
+  const remoteAgent = {
+    async canary(nodeId, received) {
+      seen.push({ method: 'canary', nodeId, context: structuredClone(received) });
+      return {
+        operationId: received.operationId,
+        generation: received.generation,
+        nodeId,
+        phase: 'canary',
+        status: 'ok',
+        observedAt: '2026-10-10T17:00:00.000Z'
+      };
+    },
+    async discardStage(nodeId, received) {
+      seen.push({ method: 'discardStage', nodeId, context: structuredClone(received) });
+      return {
+        operationId: received.operationId,
+        generation: received.generation,
+        nodeId,
+        phase: 'discard-stage',
+        status: 'ok',
+        stageDiscarded: true,
+        observedAt: '2026-10-10T17:00:00.000Z'
+      };
+    }
+  };
+  const transport = new SshDeploymentTransport({
+    nodes: { 'node-1': { host: 'gateway-1.internal' } },
+    runSsh: async (_node, request) => {
+      const chunks = [];
+      const output = new Writable({
+        write(chunk, _encoding, callback) {
+          chunks.push(Buffer.from(chunk));
+          callback();
+        }
+      });
+      await handleNodeAgentRequest({
+        phase: request.phase,
+        input: JSON.parse(request.input),
+        agent: remoteAgent,
+        output
+      });
+      return { code: 0, stdout: Buffer.concat(chunks).toString('utf8') };
+    }
+  });
+
+  const recoveryContext = {
+    ...context,
+    generation: 2,
+    drainTimeoutMs: 900000,
+    expectedOldIdentity,
+    rollbackCanary: true,
+    rollbackRelease: true,
+    reservationOnly: true,
+    secret: 'must-not-cross-the-wire'
+  };
+  await transport.canary('node-1', { ...recoveryContext, phase: 'canary' });
+  await transport.discardStage('node-1', {
+    ...recoveryContext,
+    phase: 'discard-stage',
+    rollbackCanary: false
+  });
+
+  assert.equal(seen.length, 2);
+  assert.equal(seen[0].method, 'canary');
+  assert.equal(seen[0].nodeId, 'node-1');
+  assert.equal(seen[0].context.rollbackCanary, true);
+  assert.equal(seen[0].context.rollbackRelease, true);
+  assert.equal(seen[0].context.reservationOnly, true);
+  assert.equal(seen[0].context.drainTimeoutMs, 900000);
+  assert.deepEqual(seen[0].context.expectedOldIdentity, expectedOldIdentity);
+  assert.equal('secret' in seen[0].context, false);
+  assert.equal(seen[1].method, 'discardStage');
+  assert.equal(seen[1].context.rollbackCanary, false);
+  assert.equal(seen[1].context.rollbackRelease, true);
+  assert.equal(seen[1].context.reservationOnly, true);
+  assert.equal(seen[1].context.drainTimeoutMs, 900000);
+  assert.deepEqual(seen[1].context.expectedOldIdentity, expectedOldIdentity);
 });
 
 test('uploads only reviewed paths before stage and does not persist credentials', async () => {
