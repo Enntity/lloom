@@ -718,10 +718,24 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
     }
 
     function runtimeClass(runtime) {
-      if (runtime.healthy || runtime.status === "running" || runtime.status === "external") return "ok";
+      const servingHealthy = runtime.servingHealthy ?? runtime.healthy;
+      if (servingHealthy === true) return runtime.controlHealthy === false ? "warn" : "ok";
       if (runtime.status === "starting") return "warn";
       if (runtime.status === "failed") return "bad";
       return "";
+    }
+
+    function runtimeBadges(runtime) {
+      const badges = [];
+      if (runtime.requiredNodes?.length) badges.push("requires " + runtime.requiredNodes.join(", "));
+      if (runtime.controlHealthy === false) badges.push("control down");
+      if (runtime.availabilityState) badges.push(runtime.availabilityState);
+      for (const warning of runtime.optionalWarnings || []) {
+        if (warning?.code === "optional_peer_offline") badges.push("optional peer offline");
+      }
+      return [...new Set(badges)].slice(0, 3)
+        .map(value => '<span class="pill">' + escapeHtml(value) + '</span>')
+        .join(" ");
     }
 
     function tags(values) {
@@ -805,8 +819,8 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       const hasGpu = nodeHasGpu(node);
       const hasDedicatedGpuMemory = nodeHasDedicatedGpuMemory(node);
       const marker = $("#node-inspector-state");
-      marker.querySelector(".dot").className = "dot " + (node.reachable === false ? "bad" : "ok");
-      marker.querySelector("span:last-child").textContent = node.reachable === false ? "offline" : activity.requests ? activity.requests + " active" : node.local ? "local" : "reachable";
+      marker.querySelector(".dot").className = "dot " + (node.reachable === false ? node.required === false ? "warn" : "bad" : "ok");
+      marker.querySelector("span:last-child").textContent = node.reachable === false ? node.required === false ? "optional offline" : "offline" : activity.requests ? activity.requests + " active" : node.local ? "local" : "reachable";
       $("#node-inspector-title").textContent = node.name || node.id;
       const details = [
         ["Node ID", node.id],
@@ -1027,7 +1041,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
       $("#runtime-rows").innerHTML = entries.length ? entries.map(([id, runtime]) =>
         '<tr>' +
           '<td><code>' + escapeHtml(id) + '</code><div class="muted">' + escapeHtml(runtime.command || "") + '</div></td>' +
-          '<td><span class="pill"><span class="dot ' + runtimeClass(runtime) + '"></span><span>' + escapeHtml(runtime.status || "idle") + '</span></span></td>' +
+          '<td><span class="pill"><span class="dot ' + runtimeClass(runtime) + '"></span><span>' + escapeHtml(runtime.status || "idle") + '</span></span>' + runtimeBadges(runtime) + '</td>' +
           '<td>' + escapeHtml(runtime.activeRequests || 0) + ' / ' + escapeHtml(runtime.maxConcurrency || 1) +
             '<div class="muted">queue ' + escapeHtml(Number(runtime.queuedRequests || 0) + Number(runtime.admissionQueuedRequests || 0)) + '</div></td>' +
           '<td>' + escapeHtml(runtime.port || "-") + '</td>' +
@@ -2003,7 +2017,7 @@ const DASHBOARD_HTML = String.raw`<!doctype html>
         ctx.fillStyle = node.reachable === false ? "#ff6f7d" : "#e9fffb";
         ctx.fillText(fitCanvasText(ctx, node.name || node.id, clusterEnabled ? 116 : 94), cardLeft + 10, cardTop + 19);
         ctx.textAlign = "right"; ctx.fillStyle = node.local ? "#8fb4ff" : "rgba(153,163,176,.9)";
-        const nodeRole = node.reachable === false ? "OFFLINE" : node.id === leaderNodeId ? "LEADER" : String(node.labels?.role || "NODE").toUpperCase();
+        const nodeRole = node.reachable === false ? node.required === false ? "OPTIONAL OFFLINE" : "OFFLINE" : node.id === leaderNodeId ? "LEADER" : String(node.labels?.role || "NODE").toUpperCase();
         ctx.fillText(nodeRole, cardLeft + nodeCardWidth - 10, cardTop + 19);
         if (clusterEnabled) {
           const platform = node.profile?.platformId || [node.system?.platform, node.system?.arch].filter(Boolean).join("-") || "unknown architecture";

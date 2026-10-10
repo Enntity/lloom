@@ -13,6 +13,7 @@ import {
   runtimeAuthority,
   runtimeControlAllowed,
   runtimePlacement,
+  runtimeReadinessScope,
   runtimeResourcesByNode
 } from './cluster.mjs';
 import { cleanupPortListener, terminateProcessTree } from './process-control.mjs';
@@ -97,6 +98,7 @@ function compactRuntime(runtimeId, runtime, config) {
   if (!runtime) return null;
   return {
     enabled: runtime.enabled === true,
+    requiredNodes: runtimeReadinessScope(runtimeId, config).requiredNodes,
     keepWarm: runtime.keepWarm === true,
     maintenance: runtimeMaintenance(config, runtimeId),
     memoryGb: runtime.memoryGb ?? runtime.memory?.requiredGb ?? null,
@@ -985,14 +987,99 @@ export class RuntimeManager {
     return ['running', 'external', 'starting', 'warming'].includes(this.stateFor(runtimeId).status);
   }
 
+  async distributedServingOwnership(runtime) {
+    // A shared URL may belong to another model allocation. Verify owned local
+    // Docker members without depending on remote management availability.
+    for (const member of runtimePlacement(runtime, this.config).members ?? []) {
+      const local = this.clusterCoordinator
+        ? this.clusterCoordinator.isLocalNode(member.node)
+        : !member.node || member.node === currentNodeId(this.config);
+      const child = this.getRuntime(member.runtime);
+      if (local && runtimeAdapter(child) === 'docker' && runtimeManagement(child) === 'managed') {
+        if (!(await dockerContainerState(child)).running) return false;
+      }
+    }
+    return true;
+  }
+
+  // Probe only the runtime named by a scoped readiness request. Node evidence
+  // supplied by ClusterCoordinator.runtimeReadiness keeps remote member checks
+  // pinned to required nodes; this method never performs a cluster-wide sweep.
+  async runtimeServingHealthy(runtimeId, nodeEvidence = {}) {
+    const runtime = this.getRuntime(runtimeId);
+    if (!runtime || runtime.enabled !== true || this.stateFor(runtimeId).status === 'warming') return false;
+    const placement = runtimePlacement(runtime, this.config);
+
+    if (placement.mode === 'distributed') {
+      if (!(await this.distributedServingOwnership(runtime))) return false;
+      if (runtime.healthUrl)
+        return (
+          (await healthOk(runtime.healthUrl, runtimeHealthTimeoutMs(runtime), runtime.healthModel)) &&
+          this.stateFor(runtimeId).status !== 'warming'
+        );
+      if (!placement.members.length) return false;
+      for (const member of placement.members) {
+        const local = this.clusterCoordinator
+          ? this.clusterCoordinator.isLocalNode(member.node)
+          : !member.node || member.node === currentNodeId(this.config);
+        if (local) {
+          const memberRuntime = this.getRuntime(member.runtime);
+          if (!memberRuntime || memberRuntime.enabled !== true) return false;
+          if (this.stateFor(member.runtime).status === 'warming') return false;
+          if (!(await runtimeHealthOk(memberRuntime))) return false;
+          continue;
+        }
+        const observed = nodeEvidence?.[member.node]?.runtimeManager?.runtimes?.[member.runtime];
+        if (observed?.healthy !== true) return false;
+      }
+      return true;
+    }
+
+    const nodeId = placement.node;
+    const local = this.clusterCoordinator
+      ? this.clusterCoordinator.isLocalNode(nodeId)
+      : !nodeId || nodeId === currentNodeId(this.config);
+    if (!local) {
+      return nodeEvidence?.[nodeId]?.runtimeManager?.runtimes?.[runtimeId]?.healthy === true;
+    }
+    return (await runtimeHealthOk(runtime)) && this.stateFor(runtimeId).status !== 'warming';
+  }
+
+  async assertDistributedControl(runtime) {
+    const placement = runtimePlacement(runtime, this.config);
+    if (placement.mode !== 'distributed' || typeof this.clusterCoordinator?.nodeStatus !== 'function') return;
+    for (const nodeId of new Set(placement.members.map((member) => member.node))) {
+      if (this.clusterCoordinator.isLocalNode(nodeId)) continue;
+      const node = await this.clusterCoordinator.nodeStatus(nodeId, { refresh: true });
+      if (node?.reachable !== true) {
+        const error = new Error(`Distributed lifecycle requires reachable control gateway for ${nodeId}`);
+        error.code = 'RUNTIME_CONTROL_UNAVAILABLE';
+        error.statusCode = 503;
+        throw error;
+      }
+    }
+  }
+
   async isHealthy(runtimeId) {
     const runtime = this.getRuntime(runtimeId);
     if (!runtime) return false;
     if (this.stateFor(runtimeId).status === 'warming') return false;
-    const healthy = await runtimeHealthOk(runtime);
+    const distributed = runtimePlacement(runtime, this.config).mode === 'distributed';
+    const healthy =
+      (await this.distributedServingOwnership(runtime)) &&
+      (await (distributed && runtime.healthUrl
+        ? healthOk(runtime.healthUrl, runtimeHealthTimeoutMs(runtime), runtime.healthModel)
+        : runtimeHealthOk(runtime)));
     if (this.stateFor(runtimeId).status === 'warming') return false;
     if (healthy) return true;
+    // Distributed serving health is owned by the configured logical endpoint.
+    // When a logical healthUrl is configured, an unhealthy probe fails closed:
+    // member reachability and process state must never turn a failed endpoint
+    // probe into "healthy". Only a distributed runtime with no logical health
+    // endpoint falls back to the aggregate member status, preserving the older
+    // member-derived behavior for such configs.
     if (runtimePlacement(runtime, this.config).mode !== 'distributed') return false;
+    if (runtime.healthUrl) return false;
     const status = await this.status();
     return status.runtimes?.[runtimeId]?.healthy === true;
   }
@@ -1309,12 +1396,54 @@ export class RuntimeManager {
         const placement = runtimePlacement(runtime, this.config);
         if (placement.mode !== 'distributed') continue;
         const state = this.stateFor(runtimeId);
-        const members = placement.members.map((member) => ({
-          ...member,
-          status: runtimes[member.runtime]?.status ?? 'unknown',
-          healthy: runtimes[member.runtime]?.healthy === true
-        }));
-        const healthy = members.length > 0 && members.every((member) => member.healthy);
+        // Member serving health is read from the runtimes map computed above
+        // (local probes plus cached remote node status); this block performs no
+        // extra member probing or lifecycle work. Control health comes from the
+        // same per-node cached reachability used for remote runtimes: a local
+        // member is reachable by definition, and a remote member whose control
+        // gateway reachability is unknown is treated as unreachable rather than
+        // presumed healthy.
+        const members = [];
+        let controlHealthy = placement.members.length > 0;
+        for (const member of placement.members) {
+          const memberEntry = runtimes[member.runtime];
+          const isLocal = this.clusterCoordinator
+            ? this.clusterCoordinator.isLocalNode(member.node)
+            : !member.node || member.node === currentNodeId(this.config);
+          let memberControlHealthy;
+          if (isLocal) {
+            memberControlHealthy = true;
+          } else if (this.clusterCoordinator && typeof this.clusterCoordinator.nodeStatus === 'function') {
+            if (!remoteNodes.has(member.node))
+              remoteNodes.set(member.node, this.clusterCoordinator.nodeStatus(member.node));
+            const node = await remoteNodes.get(member.node);
+            // nodeStatus resolves to an unreachable object (never a throw) when
+            // the member control gateway is down; only an explicit reachable
+            // true counts as healthy control.
+            memberControlHealthy = node?.reachable === true;
+          } else {
+            memberControlHealthy = false;
+          }
+          if (!memberControlHealthy) controlHealthy = false;
+          members.push({
+            ...member,
+            status: memberEntry?.status ?? 'unknown',
+            healthy: memberEntry?.healthy === true,
+            servingHealthy: memberEntry?.healthy === true,
+            controlHealthy: memberControlHealthy
+          });
+        }
+        // Serving health is the logical runtime.healthUrl probe when present,
+        // which is the authoritative distributed serving endpoint and fails
+        // closed on a failed probe. Only an absent logical endpoint falls back
+        // to the members.every aggregate for backward compatibility.
+        const memberServingHealthy = members.length > 0 && members.every((member) => member.servingHealthy);
+        const servingHealthy = runtime.healthUrl
+          ? (await this.distributedServingOwnership(runtime)) &&
+            (await healthOk(runtime.healthUrl, runtimeHealthTimeoutMs(runtime), runtime.healthModel))
+          : memberServingHealthy;
+        const healthy = servingHealthy;
+        const availabilityState = servingHealthy ? (controlHealthy ? 'healthy' : 'management-degraded') : 'unavailable';
         const anyLoaded = members.some((member) => ['running', 'external', 'starting'].includes(member.status));
         const transitionalStatus = ['queued', 'draining', 'stopping'].includes(state.status) ? state.status : null;
         runtimes[runtimeId] = {
@@ -1325,6 +1454,9 @@ export class RuntimeManager {
           members,
           resourcesByNode: runtimeResourcesByNode(runtime, this.config),
           healthy,
+          servingHealthy,
+          controlHealthy,
+          availabilityState,
           status: transitionalStatus ?? (healthy ? 'running' : anyLoaded ? 'starting' : 'stopped'),
           keepWarm: keepWarm.has(runtimeId),
           preferredWarm: preferredWarm.has(runtimeId),
@@ -1707,6 +1839,22 @@ export class RuntimeManager {
     const nodeId = this.clusterCoordinator?.nodeId ?? currentNodeId(nextConfig);
     const leaderNode = nextConfig.cluster?.leaderNode ?? previousConfig.cluster?.leaderNode ?? nodeId;
     const changed = reconfigureRuntimeIds(previousConfig, nextConfig, { nodeId, leaderNode });
+    // A lifecycle change must not preflight an old gateway and then act on a
+    // newly configured endpoint. Apply topology/credential edits separately.
+    const controlEndpoints = (value) =>
+      JSON.stringify({
+        apiKey: value.cluster?.apiKey,
+        apiKeyEnv: value.cluster?.apiKeyEnv,
+        nodes: Object.entries(value.cluster?.nodes ?? {})
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([id, node]) => [id, node.endpoint, node.apiKey, node.apiKeyEnv])
+      });
+    if (changed.length && controlEndpoints(previousConfig) !== controlEndpoints(nextConfig)) {
+      const error = new Error('Apply cluster topology changes separately from runtime lifecycle changes');
+      error.code = 'RUNTIME_CONTROL_TOPOLOGY_CHANGED';
+      error.statusCode = 409;
+      throw error;
+    }
     const liveAdmissionChanged = liveAdmissionRuntimeIds(previousConfig, nextConfig);
     if (!changed.length && liveAdmissionChanged.length) {
       // Wait for a running admission decision to finish before changing its
@@ -1745,6 +1893,10 @@ export class RuntimeManager {
     const stopOrder = [...changed].sort(
       (left, right) => Number(distributed.has(right)) - Number(distributed.has(left))
     );
+    for (const runtimeId of ownedChanges) {
+      await this.assertDistributedControl(previousConfig.runtimes?.[runtimeId]);
+      await this.assertDistributedControl(nextConfig.runtimes?.[runtimeId]);
+    }
     for (const runtimeId of ownedChanges) this.reconfiguringRuntimes.add(runtimeId);
     for (const runtimeId of ownedChanges) this.abortRuntimeLifecycle(runtimeId, 'superseded by config reload');
     const wasRunning = new Map();
@@ -1918,7 +2070,7 @@ export class RuntimeManager {
     const placement = runtimePlacement(runtime, this.config);
 
     if (placement.mode === 'distributed') {
-      if (!force && (await runtimeHealthOk(runtime))) {
+      if (!force && runtime.healthUrl && (await this.isHealthy(runtimeId))) {
         state.lastError = null;
         this.setStatus(runtimeId, 'running');
         return {
@@ -1930,6 +2082,7 @@ export class RuntimeManager {
         };
       }
 
+      await this.assertDistributedControl(runtime);
       const started = [];
       this.setStatus(runtimeId, 'starting', reason);
       try {
@@ -2510,6 +2663,7 @@ export class RuntimeManager {
   async stopWithScope(runtimeId, { requestedBy } = {}) {
     const deploymentFenceToken = this.captureDeploymentMutation(`runtime stop (${runtimeId ?? 'unknown'})`);
     const requesterNode = this.assertRuntimeControl(runtimeId, requestedBy);
+    await this.assertDistributedControl(this.getRuntime(runtimeId));
     // Abort an in-flight start before waiting on the lifecycle queue. This
     // keeps an explicit stop responsive during a long model startup.
     this.abortRuntimeTree(runtimeId, `runtime ${runtimeId} stop requested`);

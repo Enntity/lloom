@@ -119,13 +119,15 @@ import {
   hasValidApiKey,
   securityPublicStatus
 } from './security.mjs';
-import { ClusterCoordinator, currentNodeId, isFederatedGatewayBackend } from './cluster.mjs';
+import { ClusterCoordinator, currentNodeId, isFederatedGatewayBackend, runtimePlacement } from './cluster.mjs';
 import { createDeploymentFence, DeploymentFenceError, isDeploymentFencePath } from './deployment-fence.mjs';
 
 const JSON_TYPE = 'application/json; charset=utf-8';
 const SSE_TYPE = 'text/event-stream; charset=utf-8';
 const execFileAsync = promisify(execFile);
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const DEPLOYMENT_CANARY_MAX_RESPONSE_BYTES = 1024 * 1024;
+const DEPLOYMENT_CANARY_TIMEOUT_MS = 30_000;
 // Tests may swap this per server instance via createLloomServer's
 // upstreamDispatcher option; production always uses the long-running Agent.
 let longRunningMediaDispatcher = new UndiciAgent({
@@ -670,6 +672,196 @@ async function waitForRequest(operation, signal) {
   } finally {
     signal.removeEventListener('abort', onAbort);
   }
+}
+
+async function readDeploymentCanaryBody(response, { signal, maxBytes = DEPLOYMENT_CANARY_MAX_RESPONSE_BYTES } = {}) {
+  const declaredLength = Number(response.headers?.get?.('content-length') ?? 0);
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    throw new DeploymentFenceError('deployment canary response exceeds the size limit', {
+      code: 'deployment_fence_canary_response_too_large',
+      statusCode: 502,
+      retryAfterSeconds: 0,
+      details: { maxBytes }
+    });
+  }
+  if (!response.body) return Buffer.alloc(0);
+  const reader = response.body.getReader();
+  const chunks = [];
+  let bytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await waitForRequest(reader.read(), signal);
+      if (done) break;
+      const chunk = Buffer.from(value ?? '');
+      bytes += chunk.length;
+      if (bytes > maxBytes) {
+        await reader.cancel('deployment_canary_response_too_large').catch(() => {});
+        throw new DeploymentFenceError('deployment canary response exceeds the size limit', {
+          code: 'deployment_fence_canary_response_too_large',
+          statusCode: 502,
+          retryAfterSeconds: 0,
+          details: { maxBytes }
+        });
+      }
+      chunks.push(chunk);
+    }
+  } catch (error) {
+    await reader.cancel('deployment_canary_read_failed').catch(() => {});
+    throw error;
+  } finally {
+    reader.releaseLock?.();
+  }
+  return Buffer.concat(chunks);
+}
+
+function parseDeploymentCanaryCompletion(responseBody) {
+  let payload;
+  try {
+    payload = JSON.parse(responseBody.toString('utf8'));
+  } catch {
+    throw new DeploymentFenceError('deployment canary returned invalid JSON', {
+      code: 'deployment_fence_canary_invalid_response',
+      statusCode: 502,
+      retryAfterSeconds: 0
+    });
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload) || payload.error) {
+    throw new DeploymentFenceError('deployment canary did not return a completion', {
+      code: 'deployment_fence_canary_invalid_response',
+      statusCode: 502,
+      retryAfterSeconds: 0
+    });
+  }
+  const completed = Array.isArray(payload.choices)
+    ? payload.choices.some((choice) => {
+        const message = choice?.message;
+        // The deployment probe sends a deterministic text prompt. Require a
+        // completed assistant text choice so a successful HTTP status, an
+        // unfinished/tool-only response, or an error-shaped JSON body cannot
+        // be mistaken for evidence that the loaded model served inference.
+        return (
+          message?.role === 'assistant' &&
+          typeof message.content === 'string' &&
+          message.content.trim().length > 0 &&
+          choice?.finish_reason === 'stop'
+        );
+      })
+    : false;
+  if (!completed) {
+    throw new DeploymentFenceError('deployment canary did not return a completed chat choice', {
+      code: 'deployment_fence_canary_invalid_response',
+      statusCode: 502,
+      retryAfterSeconds: 0
+    });
+  }
+  return payload;
+}
+
+function isLoopbackBackend(backend) {
+  try {
+    const parsed = new URL(String(backend?.baseUrl ?? ''));
+    return (
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+      new Set(['127.0.0.1', '::1', 'localhost']).has(parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase())
+    );
+  } catch {
+    return false;
+  }
+}
+
+function deploymentPreservationSnapshot(runtimeStatus, effectiveConfigSha256) {
+  const runtimes = Object.fromEntries(
+    Object.entries(runtimeStatus?.runtimes ?? {}).map(([runtimeId, runtime]) => {
+      const contract = Object.fromEntries(
+        [
+          'enabled',
+          'requiredNodes',
+          'keepWarm',
+          'memoryGb',
+          'maxConcurrency',
+          'maxQueuedRequests',
+          'interactiveReservedSlots',
+          'interactiveReservedQueueSlots',
+          'queueTimeoutMs',
+          'command',
+          'args',
+          'effectiveArgs',
+          'cwd',
+          'port',
+          'healthUrl',
+          'healthModel',
+          'healthTimeoutMs',
+          'startupTimeoutMs',
+          'watchdog',
+          'sessionCache',
+          'adapter',
+          'management',
+          'containerName',
+          'recipe',
+          'bootstrap',
+          'cachePersistence',
+          'node',
+          'placement',
+          'authority'
+        ]
+          .filter((field) => Object.hasOwn(runtime ?? {}, field))
+          .map((field) => [field, runtime[field]])
+      );
+      if (contract.watchdog && typeof contract.watchdog === 'object') {
+        const stableWatchdogFields = [
+          'enabled',
+          'action',
+          'restartWithActiveRequests',
+          'firstContentTimeoutMs',
+          'idleContentTimeoutMs',
+          'failureThreshold',
+          'failureWindowMs',
+          'minNoProgressMs',
+          'cooldownMs',
+          'drainTimeoutMs',
+          'failureStatuses'
+        ];
+        contract.watchdog = Object.fromEntries(
+          stableWatchdogFields
+            .filter((field) => Object.hasOwn(contract.watchdog, field))
+            .map((field) => [field, contract.watchdog[field]])
+        );
+      }
+      const observed = {
+        status: runtime?.status ?? null,
+        healthy: runtime?.healthy === true,
+        servingHealthy: runtime?.servingHealthy ?? null,
+        controlHealthy: runtime?.controlHealthy ?? null,
+        availabilityState: runtime?.availabilityState ?? null,
+        pid: Number.isInteger(runtime?.pid) ? runtime.pid : null,
+        containerId: runtime?.container?.id ?? runtime?.container?.containerId ?? null,
+        containerRunning: typeof runtime?.container?.running === 'boolean' ? runtime.container.running : null
+      };
+      const members = Array.isArray(runtime?.members)
+        ? runtime.members.map((member) => {
+            const memberObserved = runtimeStatus?.runtimes?.[member.runtime] ?? {};
+            return {
+              node: member.node ?? null,
+              runtime: member.runtime ?? null,
+              role: member.role ?? null,
+              order: member.order ?? null,
+              status: member.status ?? null,
+              healthy: member.healthy === true,
+              servingHealthy: member.servingHealthy ?? null,
+              controlHealthy: member.controlHealthy ?? null,
+              pid: Number.isInteger(memberObserved.pid) ? memberObserved.pid : null,
+              containerId: memberObserved.container?.id ?? memberObserved.container?.containerId ?? null
+            };
+          })
+        : undefined;
+      return [runtimeId, { contract, observed, ...(members ? { members } : {}) }];
+    })
+  );
+  return {
+    schemaVersion: 1,
+    effectiveConfigSha256: effectiveConfigSha256 ?? null,
+    runtimes
+  };
 }
 
 function normalizeAbortError(error, signal, timeoutMs) {
@@ -3027,6 +3219,14 @@ export function createLloomServer(
       const selectedNode = model.selectedNode ?? null;
       const localTarget = !selectedNode || clusterCoordinator.isLocalNode(selectedNode);
       const localPlacement = !placementNode || clusterCoordinator.isLocalNode(placementNode);
+      const placement = runtime ? runtimePlacement(runtime, config) : null;
+      const localDistributedHead =
+        placement?.mode !== 'distributed' ||
+        placement.members.some(
+          (member) => member.role === 'head' && (!member.node || clusterCoordinator.isLocalNode(member.node))
+        );
+      const federatedBackend = isFederatedGatewayBackend(config, model.backend);
+      const localBackend = isLoopbackBackend(candidate?.backend) && !federatedBackend;
       const concreteLocal =
         candidates.length === 1 &&
         candidate?.alias == null &&
@@ -3034,12 +3234,10 @@ export function createLloomServer(
         candidate?.requestedId === candidate?.resolvedId &&
         (!Array.isArray(model.targets) || model.targets.length <= 1) &&
         Boolean(runtimeId && runtime?.enabled === true) &&
-        runtime?.placement?.mode !== 'distributed' &&
+        localDistributedHead &&
         localTarget &&
         localPlacement &&
-        !candidate?.backend?.apiKeyEnv &&
-        !candidate?.backend?.apiKey &&
-        !candidate?.backend?.provider &&
+        localBackend &&
         !candidate?.backend?.openrouterProvider &&
         !model.provider;
       if (!concreteLocal) {
@@ -3056,7 +3254,10 @@ export function createLloomServer(
               candidates: candidates.length,
               alias: candidate?.alias != null,
               multiTarget: Array.isArray(model.targets) && model.targets.length > 1,
-              provider: Boolean(candidate?.backend?.apiKeyEnv || candidate?.backend?.provider || model.provider)
+              distributedHeadLocal: localDistributedHead,
+              federatedBackend,
+              localBackend,
+              provider: Boolean(candidate?.backend?.openrouterProvider || model.provider)
             }
           }
         );
@@ -3172,11 +3373,83 @@ export function createLloomServer(
       async (resolved, { signal, timing, progress, watchdog }) => {
         assertPromptWithinBudget(resolved, body, { logger });
         watchdog.arm();
+        if (req.deploymentCanary && body.stream === true) {
+          throw new DeploymentFenceError('deployment canary requires a buffered response', {
+            code: 'deployment_fence_canary_stream_unsupported',
+            statusCode: 400,
+            retryAfterSeconds: 0
+          });
+        }
         // Normalize history so reasoning_content is OpenAI-shaped before MTPLX render.
         const normalizedRequest = prepareStructuredOutputForBackend(
           translateReasoningEffortForBackend(normalizeOpenAIChatRequestBody(body), resolved),
           resolved
         );
+        if (req.deploymentCanary) {
+          const timeoutController = new AbortController();
+          const timeout = setTimeout(() => timeoutController.abort(), DEPLOYMENT_CANARY_TIMEOUT_MS);
+          const canarySignal = AbortSignal.any([signal, timeoutController.signal]);
+          try {
+            const upstream = await fetchUpstream({
+              headers: inferenceGatewayHeaders(req, resolved),
+              backend: resolved.backend,
+              path: '/v1/chat/completions',
+              signal: canarySignal,
+              body: {
+                ...normalizedRequest.body,
+                model: resolved.model.upstreamModel
+              }
+            });
+            if (!upstream.ok) {
+              // Avoid opening an SSE response for an already-failed upstream.
+              throw await upstreamStatusError(upstream);
+            }
+            const responseBody = await readDeploymentCanaryBody(upstream, {
+              signal: canarySignal,
+              maxBytes: DEPLOYMENT_CANARY_MAX_RESPONSE_BYTES
+            });
+            if (!responseBody.length) {
+              throw new DeploymentFenceError('deployment canary returned an empty response', {
+                code: 'deployment_fence_canary_empty_response',
+                statusCode: 502,
+                retryAfterSeconds: 0
+              });
+            }
+            parseDeploymentCanaryCompletion(responseBody);
+            const contentType = String(upstream.headers.get('content-type') ?? '').toLowerCase();
+            return {
+              status: upstream.status,
+              stream: false,
+              responseBytes: responseBody.length,
+              usage: usageFromJsonBuffer(responseBody, { 'content-type': contentType }),
+              responseFinished: true,
+              canary: {
+                healthy: true,
+                fenced: true,
+                privileged: true,
+                aliasUsed: false,
+                cloudFallback: false,
+                source: 'local',
+                gatewayModelId: resolved.requestedId,
+                runtimeId: resolved.model.runtime,
+                responseStatus: upstream.status,
+                responseFinished: true
+              }
+            };
+          } catch (error) {
+            if (timeoutController.signal.aborted) {
+              throw new DeploymentFenceError('deployment canary timed out', {
+                code: 'deployment_fence_canary_timeout',
+                statusCode: 504,
+                retryAfterSeconds: 0,
+                details: { timeoutMs: DEPLOYMENT_CANARY_TIMEOUT_MS }
+              });
+            }
+            throw error;
+          } finally {
+            clearTimeout(timeout);
+          }
+        }
         const upstream = await fetchUpstream({
           headers: inferenceGatewayHeaders(req, resolved),
           backend: resolved.backend,
@@ -3190,54 +3463,6 @@ export function createLloomServer(
         if (!upstream.ok) {
           // Avoid opening an SSE response for an already-failed upstream.
           throw await upstreamStatusError(upstream);
-        }
-        if (req.deploymentCanary) {
-          if (body.stream === true) {
-            throw new DeploymentFenceError('deployment canary requires a buffered response', {
-              code: 'deployment_fence_canary_stream_unsupported',
-              statusCode: 400,
-              retryAfterSeconds: 0
-            });
-          }
-          const responseBody = Buffer.from(await upstream.arrayBuffer());
-          if (!responseBody.length) {
-            throw new DeploymentFenceError('deployment canary returned an empty response', {
-              code: 'deployment_fence_canary_empty_response',
-              statusCode: 502,
-              retryAfterSeconds: 0
-            });
-          }
-          const contentType = String(upstream.headers.get('content-type') ?? '').toLowerCase();
-          if (contentType.includes('json')) {
-            try {
-              JSON.parse(responseBody.toString('utf8'));
-            } catch {
-              throw new DeploymentFenceError('deployment canary returned invalid JSON', {
-                code: 'deployment_fence_canary_invalid_response',
-                statusCode: 502,
-                retryAfterSeconds: 0
-              });
-            }
-          }
-          return {
-            status: upstream.status,
-            stream: false,
-            responseBytes: responseBody.length,
-            usage: usageFromJsonBuffer(responseBody, { 'content-type': contentType }),
-            responseFinished: true,
-            canary: {
-              healthy: true,
-              fenced: true,
-              privileged: true,
-              aliasUsed: false,
-              cloudFallback: false,
-              source: 'local',
-              gatewayModelId: resolved.requestedId,
-              runtimeId: resolved.model.runtime,
-              responseStatus: upstream.status,
-              responseFinished: true
-            }
-          };
         }
         return body.stream === true
           ? proxyOpenAIChatStream(res, upstream, resolved.requestedId, { signal, timing, progress, corsConfig: config })
@@ -4484,6 +4709,10 @@ export function createLloomServer(
           releaseIdentity: fenceStatus.releaseIdentity,
           loadedIdentity: fenceStatus.releaseIdentity,
           runtimeSnapshot: runtimeStatus,
+          preservationSnapshot: deploymentPreservationSnapshot(
+            runtimeStatus,
+            fenceStatus.identity?.release?.effectiveConfigSha256 ?? null
+          ),
           server: config.server,
           defaults: config.defaults,
           deploymentFence: fenceStatus,
@@ -4508,6 +4737,29 @@ export function createLloomServer(
           ok: true,
           cluster: await clusterCoordinator.status()
         });
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/gateway/cluster/readiness') {
+        const runtimeId = firstQueryParam(url.searchParams, ['runtime', 'runtime_id', 'runtime-id']);
+        if (!runtimeId) {
+          sendJson(
+            res,
+            400,
+            errorBody('runtime is required', {
+              code: 'invalid_request'
+            })
+          );
+          return;
+        }
+        const readiness = await clusterCoordinator.runtimeReadiness(runtimeId, {
+          includeFederation: queryBool(
+            url.searchParams,
+            ['include_federation', 'include-federation', 'includeFederation'],
+            false
+          )
+        });
+        sendJson(res, 200, { ok: readiness.readyForServing && readiness.readyForControl, ...readiness });
         return;
       }
 
@@ -4639,6 +4891,18 @@ export function createLloomServer(
       }
 
       if (req.method === 'GET' && url.pathname === '/gateway/doctor') {
+        const scopedRuntimeId = firstQueryParam(url.searchParams, ['runtime', 'runtime_id', 'runtime-id']);
+        if (scopedRuntimeId) {
+          const readiness = await clusterCoordinator.runtimeReadiness(scopedRuntimeId, {
+            includeFederation: queryBool(
+              url.searchParams,
+              ['include_federation', 'include-federation', 'includeFederation'],
+              false
+            )
+          });
+          sendJson(res, 200, { ok: readiness.readyForServing && readiness.readyForControl, ...readiness });
+          return;
+        }
         const options = doctorOptionsFromQuery(url.searchParams);
         const communityContext = await communityStatusContextFromQuery(config, url.searchParams, {
           recipeId: options.recipeId

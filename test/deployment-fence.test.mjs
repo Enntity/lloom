@@ -215,7 +215,12 @@ test('gateway status is truthful and fenced canary returns observed local attrib
     req.resume();
     req.once('end', () => {
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ id: 'canary', choices: [{ message: { role: 'assistant', content: 'ok' } }] }));
+      res.end(
+        JSON.stringify({
+          id: 'canary',
+          choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }]
+        })
+      );
     });
   });
   const upstreamPort = await listen(upstream);
@@ -286,6 +291,211 @@ test('gateway status is truthful and fenced canary returns observed local attrib
     await requestWithBody(port, '/gateway/deployment-fence/release', {
       token: 'admin',
       body: { opId: operationId, generation: preparedBody.generation }
+    }).response;
+  } finally {
+    await app.close({ stopRuntimes: false }).catch(() => {});
+    await new Promise((resolve) => upstream.close(resolve));
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('deployment canary rejects non-completions, oversized bodies, and streams before upstream POST', async () => {
+  const { directory, sourcePath } = await tempConfig();
+  let mode = 'error';
+  let upstreamRequests = 0;
+  const upstream = http.createServer((req, res) => {
+    upstreamRequests += 1;
+    req.resume();
+    req.once('end', () => {
+      if (mode === 'empty') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+      if (mode === 'text') {
+        res.writeHead(200, { 'content-type': 'text/plain' });
+        res.end('ok');
+        return;
+      }
+      if (mode === 'unfinished') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            choices: [{ message: { role: 'assistant', content: 'partial' }, finish_reason: 'length' }]
+          })
+        );
+        return;
+      }
+      if (mode === 'tool') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  role: 'assistant',
+                  tool_calls: [{ type: 'function', function: { name: 'not-run' } }]
+                },
+                finish_reason: 'tool_calls'
+              }
+            ]
+          })
+        );
+        return;
+      }
+      if (mode === 'large') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(Buffer.alloc(1024 * 1024 + 1, 'x'));
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'synthetic upstream error' } }));
+    });
+  });
+  const upstreamPort = await listen(upstream);
+  const config = {
+    sourcePath,
+    server: { host: '127.0.0.1', port: 0 },
+    security: { allowMissingAuth: false, apiKeys: ['infer'], adminApiKeys: ['admin'] },
+    defaults: { chatModel: 'local-model' },
+    backends: { local: { type: 'openai', baseUrl: `http://127.0.0.1:${upstreamPort}/v1` } },
+    models: [{ id: 'local-model', backend: 'local', upstreamModel: 'local', runtime: 'hot', kind: 'chat' }],
+    runtimes: { hot: { enabled: true, command: 'false' } }
+  };
+  const app = createLloomServer(config, { logger });
+  app.runtimeManager.isHealthy = async (runtimeId) => runtimeId === 'hot';
+  app.runtimeManager.withSlot = async (_runtimeId, fn) => fn();
+  const port = await listen(app.server);
+  const run = async (operationId, expectedCode) => {
+    const prepared = await requestWithBody(port, '/gateway/deployment-fence/prepare', {
+      token: 'admin',
+      body: { opId: operationId, timeoutMs: 1000 }
+    }).response;
+    const preparedBody = JSON.parse(prepared.text);
+    const canary = await requestWithBody(port, '/gateway/deployment-fence/canary', {
+      token: 'admin',
+      body: {
+        opId: operationId,
+        generation: preparedBody.generation,
+        request: { model: 'local-model', messages: [{ role: 'user', content: 'synthetic' }] }
+      }
+    }).response;
+    assert.equal(canary.res.statusCode, 502);
+    assert.equal(JSON.parse(canary.text).error.code, expectedCode);
+    const release = await requestWithBody(port, '/gateway/deployment-fence/release', {
+      token: 'admin',
+      body: { opId: operationId, generation: preparedBody.generation }
+    }).response;
+    assert.equal(release.res.statusCode, 200);
+  };
+  try {
+    await run('canary-error-body', 'deployment_fence_canary_invalid_response');
+    mode = 'empty';
+    await run('canary-empty-body', 'deployment_fence_canary_empty_response');
+    mode = 'text';
+    await run('canary-text-body', 'deployment_fence_canary_invalid_response');
+    mode = 'unfinished';
+    await run('canary-unfinished-choice', 'deployment_fence_canary_invalid_response');
+    mode = 'tool';
+    await run('canary-tool-choice', 'deployment_fence_canary_invalid_response');
+    mode = 'large';
+    await run('canary-large-body', 'deployment_fence_canary_response_too_large');
+
+    const prepared = await requestWithBody(port, '/gateway/deployment-fence/prepare', {
+      token: 'admin',
+      body: { opId: 'canary-stream-before-post', timeoutMs: 1000 }
+    }).response;
+    const preparedBody = JSON.parse(prepared.text);
+    const before = upstreamRequests;
+    const stream = await requestWithBody(port, '/gateway/deployment-fence/canary', {
+      token: 'admin',
+      body: {
+        opId: 'canary-stream-before-post',
+        generation: preparedBody.generation,
+        request: { model: 'local-model', messages: [{ role: 'user', content: 'synthetic' }], stream: true }
+      }
+    }).response;
+    assert.equal(stream.res.statusCode, 400);
+    assert.equal(JSON.parse(stream.text).error.code, 'deployment_fence_canary_stream_unsupported');
+    assert.equal(upstreamRequests, before, 'stream canary must reject before issuing an upstream POST');
+    await requestWithBody(port, '/gateway/deployment-fence/release', {
+      token: 'admin',
+      body: { opId: 'canary-stream-before-post', generation: preparedBody.generation }
+    }).response;
+  } finally {
+    await app.close({ stopRuntimes: false }).catch(() => {});
+    await new Promise((resolve) => upstream.close(resolve));
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('deployment canary permits a healthy distributed runtime served by its local head', async () => {
+  const { directory, sourcePath } = await tempConfig();
+  const upstream = http.createServer((req, res) => {
+    req.resume();
+    req.once('end', () => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          id: 'distributed',
+          choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }]
+        })
+      );
+    });
+  });
+  const upstreamPort = await listen(upstream);
+  const config = {
+    sourcePath,
+    cluster: { nodeId: 'leader', nodes: { leader: {}, worker: { endpoint: 'http://127.0.0.1:1' } } },
+    server: { host: '127.0.0.1', port: 0 },
+    security: { allowMissingAuth: false, apiKeys: ['infer'], adminApiKeys: ['admin'] },
+    defaults: { chatModel: 'distributed-model' },
+    backends: {
+      local: { type: 'openai', baseUrl: `http://127.0.0.1:${upstreamPort}/v1`, apiKey: 'private-local-key' }
+    },
+    models: [
+      { id: 'distributed-model', backend: 'local', upstreamModel: 'distributed', runtime: 'logical', kind: 'chat' }
+    ],
+    runtimes: {
+      logical: {
+        enabled: true,
+        management: 'external',
+        healthUrl: `http://127.0.0.1:${upstreamPort}/v1/models`,
+        placement: {
+          mode: 'distributed',
+          members: [
+            { node: 'leader', runtime: 'head', role: 'head', order: 20 },
+            { node: 'worker', runtime: 'worker', role: 'worker', order: 10 }
+          ]
+        }
+      },
+      head: { enabled: true, management: 'external', node: 'leader' },
+      worker: { enabled: true, management: 'external', node: 'worker' }
+    }
+  };
+  const app = createLloomServer(config, { logger });
+  app.runtimeManager.isHealthy = async (runtimeId) => runtimeId === 'logical';
+  app.runtimeManager.withSlot = async (_runtimeId, fn) => fn();
+  const port = await listen(app.server);
+  try {
+    const prepared = await requestWithBody(port, '/gateway/deployment-fence/prepare', {
+      token: 'admin',
+      body: { opId: 'distributed-local-head', timeoutMs: 1000 }
+    }).response;
+    const preparedBody = JSON.parse(prepared.text);
+    const canary = await requestWithBody(port, '/gateway/deployment-fence/canary', {
+      token: 'admin',
+      body: {
+        opId: 'distributed-local-head',
+        generation: preparedBody.generation,
+        request: { model: 'distributed-model', messages: [{ role: 'user', content: 'synthetic' }] }
+      }
+    }).response;
+    assert.equal(canary.res.statusCode, 200);
+    assert.equal(JSON.parse(canary.text).runtimeId, 'logical');
+    await requestWithBody(port, '/gateway/deployment-fence/release', {
+      token: 'admin',
+      body: { opId: 'distributed-local-head', generation: preparedBody.generation }
     }).response;
   } finally {
     await app.close({ stopRuntimes: false }).catch(() => {});

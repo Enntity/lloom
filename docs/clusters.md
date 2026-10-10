@@ -245,9 +245,18 @@ lloom runtime-start dsv4flash-cluster
 
 `GET /gateway/node` returns the local node's system identity, machine profile, directly advertised models, CPU/RAM telemetry, optional GPU telemetry, and local runtime state. `GET /gateway/cluster` returns all node snapshots, reachability, labels, and runtime state. `/gateway/status` includes the same cluster graph alongside logical runtime status.
 
+`GET /gateway/cluster/readiness?runtime=ID` and `GET /gateway/doctor?runtime=ID` return the
+same scoped readiness contract. `lloom doctor --runtime ID` and
+`lloom cluster doctor --runtime ID` use those gateway endpoints. Add
+`--include-federation` / `includeFederation=1` to collect warnings for optional peers. The
+scope contains only the nodes needed to judge that runtime: the effective local or pinned
+node, deduplicated explicit distributed member nodes, all member nodes in the owning group, or a
+materialized replica node. Unknown, disabled, ambiguous, or unmaterialized scopes fail closed
+before contacting any node.
+
 The live dashboard renders node cards between the main LLooM chassis and model cards. Each node card reports architecture, accelerator type, CPU, RAM, GPU compute, GPU memory, temperature, and power when the host can report them. Unsupported fields render as unavailable rather than inventing values; Apple Silicon still reports its profile and shared-memory pressure even when per-GPU utilization is unavailable. Select a node for its complete profile. Replicated models connect to every target node and distributed models connect to every member node.
 
-Before sending model traffic, `lloom cluster doctor` should report every declared node reachable with memory telemetry. Then start a small replicated lane, verify requests alternate under equal load, and only then canary the distributed engine.
+Before sending model traffic, use `lloom cluster doctor --runtime ID` to verify the required nodes and serving endpoint. Whole-topology doctor reports optional offline nodes and missing memory telemetry as warnings; they do not make unrelated runtimes unavailable. Then start a small replicated lane, verify requests alternate under equal load, and only then canary the distributed engine.
 
 ## A note on example identifiers
 

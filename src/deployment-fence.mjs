@@ -221,13 +221,14 @@ function configFileDigest(configPath) {
   }
 }
 
-function completeReleaseIdentity(release, configSha256) {
+function completeReleaseIdentity(release, configSha256, effectiveConfigSha256) {
   if (
     !release?.known ||
     !release.commit ||
     !/^[0-9a-f]{64}$/i.test(String(release.releaseDigest ?? '')) ||
     !/^[0-9a-f]{64}$/i.test(String(release.manifestBytesDigest ?? '')) ||
     !/^[0-9a-f]{64}$/i.test(String(configSha256 ?? '')) ||
+    !/^[0-9a-f]{64}$/i.test(String(effectiveConfigSha256 ?? '')) ||
     !/^[0-9a-f]{64}$/i.test(String(release.dependencyDigest ?? '')) ||
     !/^[0-9a-f]{64}$/i.test(String(release.runtimeContractDigest ?? ''))
   )
@@ -237,6 +238,7 @@ function completeReleaseIdentity(release, configSha256) {
     artifactSha256: String(release.releaseDigest).toLowerCase(),
     manifestSha256: String(release.manifestBytesDigest).toLowerCase(),
     configSha256: String(configSha256).toLowerCase(),
+    effectiveConfigSha256: String(effectiveConfigSha256).toLowerCase(),
     dependencyDigest: String(release.dependencyDigest).toLowerCase(),
     runtimeContractDigest: String(release.runtimeContractDigest).toLowerCase()
   };
@@ -263,14 +265,15 @@ export function atomicLayoutProof(packageRoot) {
 export function createProcessIdentity({ config = {}, configPath, packageRoot, releaseManifestPath } = {}) {
   const release = readReleaseIdentity({ packageRoot, releaseManifestPath });
   const configSha256 = configFileDigest(configPath);
+  const effectiveConfigSha256 = configDigest(config);
   return {
     bootId: randomUUID(),
     pid: process.pid,
     startedAt: new Date().toISOString(),
     nodeId: config.cluster?.nodeId ?? null,
     hostname: os.hostname(),
-    release: { ...release, configSha256 },
-    releaseIdentity: completeReleaseIdentity(release, configSha256),
+    release: { ...release, configSha256, effectiveConfigSha256 },
+    releaseIdentity: completeReleaseIdentity(release, configSha256, effectiveConfigSha256),
     atomicLayout: atomicLayoutProof(packageRoot)
   };
 }
@@ -322,9 +325,18 @@ async function writeAtomicJson(filePath, value) {
   }
 }
 
+function canonicalJson(value) {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value ?? null);
+  if (Array.isArray(value)) return `[${value.map((item) => canonicalJson(item)).join(',')}]`;
+  return `{${Object.keys(value)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+    .join(',')}}`;
+}
+
 function configDigest(config) {
   try {
-    return sha256(Buffer.from(JSON.stringify(config ?? {})));
+    return sha256(Buffer.from(canonicalJson(config ?? {})));
   } catch {
     return null;
   }
@@ -764,8 +776,9 @@ export function createDeploymentFence({
         releasedAt: new Date().toISOString(),
         error: null
       };
-      // Write the terminal state before opening admission. A crash in this
-      // window remains fenced rather than exposing a half-released gateway.
+      // Write the terminal state before opening admission. A crash before this
+      // commit restores the active fence; after it, startup resumes open from
+      // the durable released receipt.
       try {
         await persist(released);
       } catch (error) {

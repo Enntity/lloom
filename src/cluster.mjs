@@ -703,6 +703,88 @@ export function runtimePlacement(runtime, config, env = process.env) {
 }
 
 /**
+ * Resolve the minimum set of nodes required to assess one runtime. This is pure
+ * configuration interpretation: it never contacts a node, expands to every
+ * cluster peer, or treats an optional federation peer as required evidence.
+ */
+export function runtimeReadinessScope(runtimeId, config, env = process.env) {
+  const nodes = clusterNodes(config, env);
+  const runtimes = asObject(config.runtimes);
+  const runtime = runtimes[runtimeId];
+  const result = {
+    runtimeId: runtimeId ?? null,
+    groupRuntimeId: null,
+    scope: 'config-error',
+    requiredNodes: [],
+    members: [],
+    configErrors: [],
+    diagnostics: []
+  };
+  const fail = (message) => {
+    result.configErrors.push(message);
+    return result;
+  };
+  if (!runtime) return fail(`unknown runtime ${runtimeId ?? '(missing)'}`);
+  if (runtime.enabled !== true) return fail(`runtime ${runtimeId} is disabled`);
+  const placement = runtimePlacement(runtime, config, env);
+  if (!['local', 'pinned', 'replicated', 'distributed'].includes(placement.mode))
+    return fail(`runtime ${runtimeId} has unsupported placement ${placement.mode}`);
+  if (placement.mode === 'replicated' && !runtime.node && !runtime.placement?.node)
+    return fail(`replicated runtime ${runtimeId} has no materialized node`);
+
+  const owners = Object.entries(runtimes).filter(
+    ([id, candidate]) =>
+      id !== runtimeId &&
+      candidate?.enabled === true &&
+      candidate.placement?.mode === 'distributed' &&
+      candidate.placement.members?.some((member) => member.runtime === runtimeId)
+  );
+  if (owners.length > 1) return fail(`runtime ${runtimeId} is a member of multiple distributed runtimes`);
+  if (owners.length && placement.mode === 'distributed')
+    return fail(`nested distributed runtime ${runtimeId} is unsupported`);
+  if (owners.length) {
+    const groupId = owners[0][0];
+    const group = runtimeReadinessScope(groupId, config, env);
+    return {
+      ...group,
+      runtimeId,
+      groupRuntimeId: groupId,
+      scope: group.configErrors.length ? 'config-error' : 'distributed-member'
+    };
+  }
+
+  if (placement.mode === 'distributed') {
+    if (!placement.members.length) return fail(`distributed runtime ${runtimeId} has no members`);
+    const seen = new Set();
+    for (const member of placement.members) {
+      const child = runtimes[member.runtime];
+      if (!child || child.enabled !== true) {
+        fail(`distributed runtime ${runtimeId} has missing or disabled member ${member.runtime ?? '(missing)'}`);
+        continue;
+      }
+      if (seen.has(member.runtime)) fail(`distributed runtime ${runtimeId} has duplicate member ${member.runtime}`);
+      seen.add(member.runtime);
+      if (child.placement?.mode === 'distributed') fail(`nested distributed member ${member.runtime} is unsupported`);
+      if (!member.node || !nodes[member.node])
+        fail(`distributed runtime ${runtimeId} member ${member.runtime} has missing or unknown node`);
+      const explicitNode = child.node ?? child.placement?.node;
+      if (explicitNode && explicitNode !== member.node)
+        fail(`distributed member ${member.runtime} placement disagrees with node ${member.node}`);
+      result.members.push({ ...member });
+    }
+    result.requiredNodes = [...new Set(result.members.map((member) => member.node).filter(Boolean))];
+    if (!result.configErrors.length) result.scope = 'distributed-model';
+    return result;
+  }
+  const node = placement.node;
+  if (!node || !nodes[node]) return fail(`runtime ${runtimeId} has missing or unknown node ${node ?? '(missing)'}`);
+  result.scope = placement.mode === 'replicated' ? 'replica' : placement.mode;
+  result.requiredNodes = [node];
+  result.members = [{ node, runtime: runtimeId, role: 'runtime', order: 0 }];
+  return result;
+}
+
+/**
  * Return the effective lifecycle authority for a runtime.
  *
  * Ordinary runtimes are owned by the node where they run. A distributed
@@ -1018,6 +1100,26 @@ export class ClusterCoordinator {
     const pending = (async () => {
       try {
         const result = await this.requestNode(nodeId, '/gateway/node?memoryUsage=1');
+        const claimedNodeId = result?.node?.id ?? null;
+        if (claimedNodeId !== nodeId) {
+          return {
+            id: nodeId,
+            name: node.name,
+            local: false,
+            reachable: false,
+            labels: node.labels,
+            resources: node.resources,
+            telemetry: null,
+            runtimeManager: { runtimes: {} },
+            error: `remote node identity mismatch: configured ${nodeId}, claimed ${claimedNodeId ?? '(missing)'}`,
+            identity: {
+              configuredId: nodeId,
+              claimedId: claimedNodeId,
+              verified: false,
+              mismatch: true
+            }
+          };
+        }
         return {
           ...result.node,
           id: nodeId,
@@ -1025,7 +1127,13 @@ export class ClusterCoordinator {
           local: false,
           reachable: true,
           labels: node.labels,
-          resources: node.resources
+          resources: node.resources,
+          identity: {
+            configuredId: nodeId,
+            claimedId: claimedNodeId,
+            verified: true,
+            mismatch: false
+          }
         };
       } catch (error) {
         return {
@@ -1037,7 +1145,13 @@ export class ClusterCoordinator {
           resources: node.resources,
           telemetry: null,
           runtimeManager: { runtimes: {} },
-          error: error?.message ?? String(error)
+          error: error?.message ?? String(error),
+          identity: {
+            configuredId: nodeId,
+            claimedId: null,
+            verified: false,
+            mismatch: false
+          }
         };
       }
     })();
@@ -1056,12 +1170,154 @@ export class ClusterCoordinator {
           : await this.nodeStatus(id)
       ])
     );
+    const scopes = Object.keys(this.config.runtimes ?? {})
+      .filter((id) => this.config.runtimes[id]?.enabled === true)
+      .map((id) => runtimeReadinessScope(id, this.config, this.env));
+    for (const [id, node] of entries) {
+      node.requiredByRuntime = scopes
+        .filter((scope) => scope.requiredNodes.includes(id))
+        .map((scope) => scope.runtimeId);
+      node.required = this.isLocalNode(id) || node.requiredByRuntime.length > 0;
+      node.availabilityState = node.reachable === true ? 'healthy' : node.required ? 'unavailable' : 'optional-offline';
+    }
     return {
+      runtimeScopes: scopes,
       enabled: Object.keys(this.config.cluster?.nodes ?? {}).length > 0,
       id: this.config.cluster?.id ?? 'local',
       nodeId: this.nodeId,
       leaderNode: this.config.cluster?.leaderNode ?? this.nodeId,
       nodes: Object.fromEntries(entries)
+    };
+  }
+
+  async localReadinessNode(nodeId) {
+    return {
+      id: nodeId,
+      name: this.nodes[nodeId]?.name ?? nodeId,
+      local: true,
+      reachable: true,
+      telemetry: this.telemetry ? await this.telemetry.snapshot() : null,
+      runtimeManager: { runtimes: {} },
+      controlHealthy: true
+    };
+  }
+
+  async runtimeReadinessNode(nodeId) {
+    if (this.isLocalNode(nodeId)) return this.localReadinessNode(nodeId);
+    const node = await this.nodeStatus(nodeId, { refresh: true });
+    return {
+      ...node,
+      id: nodeId,
+      controlHealthy: node?.reachable === true
+    };
+  }
+
+  async runtimeReadiness(runtimeId, { includeFederation = false } = {}) {
+    const scope = runtimeReadinessScope(runtimeId, this.config, this.env);
+    const base = {
+      runtimeId: scope.runtimeId,
+      groupRuntimeId: scope.groupRuntimeId,
+      scope: scope.scope,
+      requiredNodes: scope.requiredNodes,
+      readyForServing: false,
+      readyForControl: false,
+      servingHealthy: false,
+      controlHealthy: false,
+      availabilityState: 'config-error',
+      configErrors: [...scope.configErrors],
+      optionalWarnings: [],
+      diagnostics: [...scope.diagnostics]
+    };
+    if (scope.configErrors.length) return base;
+
+    const requiredNodeIds = [...new Set(scope.requiredNodes)];
+    const nodeEvidence = Object.fromEntries(
+      await Promise.all(requiredNodeIds.map(async (nodeId) => [nodeId, await this.runtimeReadinessNode(nodeId)]))
+    );
+    const servingHealthy = this.runtimeManager?.runtimeServingHealthy
+      ? await this.runtimeManager.runtimeServingHealthy(scope.groupRuntimeId ?? runtimeId, nodeEvidence)
+      : false;
+    const controlHealthy = requiredNodeIds.every((nodeId) => nodeEvidence[nodeId]?.controlHealthy === true);
+
+    // A reachable member gateway that has no record of an enabled required
+    // member is a control-plane consistency failure. A reported stopped or
+    // external member is not missing; it may still be control-ready.
+    const requiredMemberMissing = scope.members.filter((member) => {
+      const node = nodeEvidence[member.node];
+      return (
+        node?.local !== true &&
+        node?.controlHealthy === true &&
+        node?.runtimeManager?.runtimes?.[member.runtime] == null
+      );
+    });
+    const readyForControl = controlHealthy && requiredMemberMissing.length === 0;
+
+    const optionalWarnings = [];
+    for (const nodeId of requiredNodeIds) {
+      const node = nodeEvidence[nodeId];
+      if (!node?.telemetry?.memory?.totalBytes) {
+        optionalWarnings.push({
+          code: 'memory_telemetry_missing',
+          nodeId,
+          message: `node ${nodeId} did not report memory telemetry`
+        });
+      }
+      if (node?.error) {
+        scope.diagnostics.push({
+          code: 'node_probe_failed',
+          nodeId,
+          error: node.error
+        });
+        optionalWarnings.push({
+          code: 'node_error',
+          nodeId,
+          message: node.error,
+          required: true
+        });
+      }
+    }
+    for (const member of requiredMemberMissing) {
+      optionalWarnings.push({
+        code: 'required_member_missing',
+        nodeId: member.node,
+        runtimeId: member.runtime,
+        message: `required member ${member.runtime} was not reported by node ${member.node}`
+      });
+    }
+
+    if (includeFederation) {
+      const optionalNodeIds = Object.keys(this.nodes).filter((nodeId) => !requiredNodeIds.includes(nodeId));
+      for (const nodeId of optionalNodeIds) {
+        const node = await this.runtimeReadinessNode(nodeId);
+        if (node.reachable !== true) {
+          optionalWarnings.push({
+            code: 'optional_peer_offline',
+            availabilityState: 'optional-offline',
+            required: false,
+            nodeId,
+            message: node.error ?? `optional peer ${nodeId} is offline`
+          });
+        } else if (!node.telemetry?.memory?.totalBytes) {
+          optionalWarnings.push({
+            code: 'memory_telemetry_missing',
+            nodeId,
+            message: `optional peer ${nodeId} did not report memory telemetry`
+          });
+        }
+      }
+    }
+
+    const availabilityState = servingHealthy ? (readyForControl ? 'healthy' : 'management-degraded') : 'unavailable';
+    return {
+      ...base,
+      readyForServing: servingHealthy,
+      readyForControl,
+      servingHealthy,
+      controlHealthy: readyForControl,
+      availabilityState,
+      optionalWarnings,
+      diagnostics: scope.diagnostics,
+      nodeEvidence
     };
   }
 
