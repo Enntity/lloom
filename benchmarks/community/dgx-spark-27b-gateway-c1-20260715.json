@@ -6,7 +6,7 @@
   "name": "DGX Spark 27B LLooM Gateway Single-Stream Comparison",
   "summary": "Gateway-only comparison of Ternary Bonsai 27B plain and DSpark lanes against Unsloth and ThinkingCap Qwen3.6 27B NVFP4, plus a longer Bonsai code/reasoning slice.",
   "license": { "id": "CC0-1.0", "name": "CC0 1.0" },
-  "source": { "type": "local-measurement", "name": "LLooM gateway benchmark on ennspark01" },
+  "source": { "type": "local-measurement", "name": "LLooM gateway benchmark on spark-node-01" },
   "submittedAt": "2026-07-15T18:08:16.267Z",
   "provenance": {
     "createdBy": "lloom",

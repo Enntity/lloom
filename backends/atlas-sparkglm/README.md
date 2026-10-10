@@ -3,30 +3,45 @@
 LLooM-managed two-node Atlas SparkGLM candidate for a directly connected pair
 of NVIDIA DGX Spark systems. This directory is **MIT orchestration only**: no
 Atlas engine source is committed here. The engine image is built from immutable
-revision `9acb642b55ccfbc63fc979d747cb69eff30c9a24` of `Enntity/sparkglm` by
-that repository's `install/build.sh`. Live hardware and full serving
-qualification remain pending.
+revision `b6bed25903578b4f4ed4f0e7204c80700ad5b8d9` of `Enntity/sparkglm` by
+that repository's `install/build.sh`. The engine inside the image is
+AGPL-3.0-only; see [Credits and licenses](#credits-and-licenses). Live hardware
+and full serving qualification remain pending.
 
 ## Layout
 
 - `pins.json` — the single portable pin manifest for the candidate: the
-  source revision and its `install/` git tree, the image tag and identity
-  label, and the model, drafter and conversion marker contract.
+  source revision and its `install/` git tree, the immutable image manifest
+  reference (`image.reference`) with the tag kept as source-build metadata and
+  the install-tree contents label, and the model, drafter and conversion
+  marker contract.
 - `verify-pins.mjs` — fail-closed pin gate. Exits non-zero while the manifest
   is not final, the source revision or install tree is not a 40-character git
-  object id, the image tag is not `ghcr.io/enntity/atlas-sparkglm:` plus the
-  first 12 characters of the install tree, or any portable identity is a
+  object id, `image.reference` is not
+  `ghcr.io/enntity/atlas-sparkglm@sha256:` plus 64 lowercase hex characters,
+  the source-build metadata tag is not `ghcr.io/enntity/atlas-sparkglm:` plus
+  the first 12 characters of the install tree, or any portable identity is a
   placeholder. It rejects a pinned image ID: IDs differ between a pull and a
-  local build, so identity is the install-tree label.
-- `install.sh` — prepares `ghcr.io/enntity/atlas-sparkglm:2ba73a2d8aee`. It
-  reuses an already verified local image, otherwise pulls the tag from GHCR,
-  otherwise clones `Enntity/sparkglm` at the pinned revision, checks that
-  `HEAD:install` is the pinned tree, and runs `install/build.sh`, which must
-  print the same tag. In every case the image must be arm64 with
+  local build. The immutable digest is the identity of the normal path; the
+  install-tree label is a contents check, not an artifact identity.
+- `install.sh` — prepares the image. The normal path reuses an already
+  verified local image, otherwise pulls the immutable manifest digest
+  `ghcr.io/enntity/atlas-sparkglm@sha256:9a583b07912262f08f72d33773c994d2468d5292546e79e149c701962101dbc7`
+  from GHCR. It never pulls the mutable tag, and a failed pinned digest pull is
+  a hard failure with no silent source build. The explicit `--source-build`
+  option instead clones `Enntity/sparkglm` at the pinned revision, checks that
+  `HEAD` is the pinned revision and `HEAD:install` is the pinned tree, and runs
+  `install/build.sh`, which must print the pinned tag. That build produces a
+  **LOCAL tag** for an explicitly overridden local recipe; it does **not**
+  satisfy the normal immutable recipe, which addresses `image.reference`. In
+  every case the selected image must be arm64 with
   `io.enntity.sparkglm.install-tree` equal to the pinned tree and must ship the
-  entrypoint, profile and converter contract below. `--check-only` verifies
-  without pulling or building.
+  entrypoint, profile and converter contract below. `--check-only` verifies the
+  local image without pulling or building; combined with `--source-build` it
+  deliberately verifies the local source-build tag instead of the digest.
 - `convert-overlay.sh` — explicit, once-per-node NVFP4 overlay conversion gate.
+  It runs the converter out of the immutable digest by default and never falls
+  back; `--source-build` runs it out of the local source-build tag instead.
 
 ## Fail-closed pin policy
 
@@ -72,14 +87,19 @@ Setup steps, in order:
    40-character revision into the managed model root and records the LLooM
    acquisition manifest.
 4. `download-atlas-drafter` — acquires `incoai/GLM-5.3-Flash-DFlash2` at its
-   pinned revision.
+   pinned revision. The drafter's weights are licensed **CC BY-NC-ND 4.0
+   (non-commercial)**; read its model card before use.
 5. `build-atlas-image` — `bash backends/atlas-sparkglm/install.sh` with the
-   managed backend and install roots: pull or build, then verify.
+   managed backend and install roots: pull the immutable digest, then verify.
+   A source build runs only with the explicit `--source-build` flag.
 6. `convert-atlas-overlay` — runs the GPU conversion once with at least 8 GiB
    free and then runs the full CPU verification pass. It never stops a serving
    container implicitly. On GB10, unavailable GPU-memory readings fall back to
    Linux `MemAvailable`. Forced reconversion moves the prior overlay to a dated
    backup so it remains recoverable.
+7. `prepare-atlas-prefix-cache` — creates `${installRoot}/atlas-prefix-cache`
+   with `kv/` and `ssm/`, which both members mount at `/prefix-cache`. It stays
+   empty unless the prefix cache on disk is turned on (below).
 
 ## Container contract
 
@@ -90,21 +110,28 @@ Inside the image:
 
 - `/opt/atlas/serve.py` — entrypoint. Reads the environment below, then starts
   the engine with the profile's argument vector.
-- `/opt/atlas/profiles/4x512k.json` — the benchmarked engine profile from
-  `install/profiles/4x512k.json` in Enntity/sparkglm, selected by `serve.py`
-  through `SPARKGLM_PROFILE` (default `4x512k`; the image also ships `8x128k`):
+- `/opt/atlas/profiles/4x1m.json` — the engine profile the recipe selects
+  (`SPARKGLM_PROFILE=4x1m`; the image also ships `4x512k`, `serve.py`'s
+  default, and `8x128k`), from `install/profiles/` in Enntity/sparkglm:
   `--kernel-target=glm-5.3-flash`,
-  `--max-seq-len=524288`, `--max-num-seqs=4`, `--max-batch-size=4`,
-  `--gpu-memory-utilization=0.88`, `--oom-guard-mb=4096`, `--kv-cache-dtype=fp8_g128`,
+  `--max-seq-len=1048576`, `--max-num-seqs=4`, `--max-batch-size=4`,
+  `--gpu-memory-utilization=0.88` (the profile default; the recipe overrides it
+  with `SPARKGLM_GPU_MEMORY_UTILIZATION=0.91`), `--oom-guard-mb=4096`, `--kv-cache-dtype=fp8_g128`,
   `--ssm-h-dtype=f32`, `--ssm-rollback-mode=records`, `--dflash --dflash-gamma=8`
   with the DFlash2 drafter, and the rest of the candidate settings. Four requests
-  share one physical FP8-latent KV pool (340K-560K tokens depending on memory free at startup; it also holds the prefix cache, with 16 recurrent-state snapshot slots); it does not reserve
+  share one physical FP8-latent KV pool, split between the nodes by `SPARKGLM_KV_SHARD=1` (about 2.38M tokens at the recipe's 0.91 GPU memory utilization with the display carveout and the disk prefix cache, up to 1,048,576 per request with `SPARKGLM_PROFILE=4x1m`; it also holds the prefix cache, with 16 recurrent-state snapshot slots); it does not reserve
   four full windows. `disable-tool-grammar` is deliberately **not** set, so
   structured output and tool grammar stay functional. The engine is built from
-  Enntity/atlas `sparkglm/atlas-20260929b` @ `6a115315`; measured results are in
-  Enntity/sparkglm `results/2026-09-29-prefix-caching/`.
+  Enntity/atlas `sparkglm/atlas-20261009-rc2` @ `f2b805e7` (recorded in the
+  image's `/opt/atlas/source-manifest.json`); measured results are in
+  Enntity/sparkglm `results/2026-09-30-decode-step/` (this engine) and
+  `results/2026-09-30-nvme-tier/` (this image).
 - `/opt/atlas/converter/convert.py` and `libatlas_mtp_quantize.so` — the
-  overlay converter, including `--verify-overlay`.
+  overlay converter, including `--verify-overlay`. Its NVFP4 quantization
+  kernel is copied unchanged from
+  [Mango-kid/atlas](https://github.com/Mango-kid/atlas)
+  (`kernels/gb10/common/quantize_bf16_to_nvfp4.cu` @ `90b3584a`,
+  AGPL-3.0-only); see SparkGLM's `install/converter/provenance.json`.
 
 Environment contract consumed by `/opt/atlas/serve.py`:
 
@@ -118,6 +145,10 @@ Environment contract consumed by `/opt/atlas/serve.py`:
 | `MODEL_PATH` | `${installRoot}/atlas-overlay` | converted GLM-5.3-Flash-NVFP4 overlay root; the same absolute host/container path is used during conversion and serving |
 | `DRAFTER_PATH` | `${modelRoot}/incoai--GLM-5.3-Flash-DFlash2` | DFlash2 drafter checkpoint |
 | `SERVED_MODEL_NAME` | `glm-5.3-flash-atlas` | client-visible gateway model ID |
+| `SPARKGLM_GPU_MEMORY_UTILIZATION` | `0.91` | share of each Spark's unified memory for the engine; 0.91 assumes Sparks dedicated to this model (lower it if the node also runs other workloads) |
+| `SPARKGLM_KV_SHARD` | `1` | split the GLM latent KV between the two nodes (each stores half the blocks' latents): about 2.38M pool tokens at 0.91 with the display carveout and the disk prefix cache; the disk prefix cache runs beside it, and the outputs are bit-identical to the unsplit pool's |
+| `SPARKGLM_PROFILE` | `4x1m` | the launch profile in the image: `4x1m` (four 1,048,576-token contexts sharing the pool), `4x512k` or `8x128k` |
+| `SPARKGLM_PREFIX_CACHE_GB` | `${prefixCacheGb}` (model setting, default `48`) | prefix cache on disk: `0` is off; 16-100 is its size in GiB per node (below) |
 | `ATLAS_WORLD_SIZE`, `ATLAS_TP_SIZE`, `ATLAS_EP_SIZE` | `2` | two-node tensor/expert parallelism |
 | `NCCL_*` | see recipe | IB transport, `NCCL_IB_HCA=rocep1s0f0`, `AF_INET`, `NCCL_CROSS_NIC=0` |
 
@@ -127,6 +158,53 @@ uses for health and routing; the worker is readiness-checked through its
 container state. The original checkpoint is also mounted read-only at the same
 absolute path used by conversion so absolute symlinks in the overlay remain
 valid at runtime.
+
+## Prefix cache on disk (on, 48 GiB per node)
+
+With the model setting `prefixCacheGb` at 16-100 (the recipe sets 48; `0` turns it off), each node writes prefix-cache
+entries that fall out of the KV pool to `${installRoot}/atlas-prefix-cache`
+(mounted at `/prefix-cache`) instead of dropping them, and reads them back
+when the conversation returns. `serve.py` in the image splits the size evenly
+between KV records and recurrent-state snapshots and sets the engine's tier
+variables identically on both ranks; the recipe passes no `ATLAS_*` tier
+variable itself. What it measured and what it costs (about 60K tokens of KV
+pool at the default 48 GiB) are in Enntity/sparkglm's README under "Prefix
+cache on disk".
+
+- It needs an image from a SparkGLM revision whose `serve.py` reads
+  `SPARKGLM_PREFIX_CACHE_GB` (the image pinned above does).
+- The directory must be on the node's own disk (ext4/xfs), with the size free.
+  The engine refuses tmpfs, ramfs, overlayfs, an unwritable directory, a disk
+  that cannot hold the KV half, and ranks whose settings differ. To use
+  another disk, make `${installRoot}/atlas-prefix-cache` a symlink to a
+  directory there before setup.
+- Nothing is kept across restarts; the engine deletes its files while they
+  are open and clears leftovers of a crash at startup.
+
+## Display memory as KV cache (on)
+
+The recipe sets `SPARKGLM_DISPLAY_CARVEOUT=1` on both members. Each DGX Spark's
+firmware reserves 2 GiB for the display (`DISPLAY_FRM`), which Linux never sees
+and the GB10 driver never allocates from; the engine borrows it for whole
+per-layer latent KV pools, so the pool grows about 19% (about 1.13M to 1.38M
+tokens at 0.91) with system memory unchanged. The GPU does not cache this
+memory in L2, so the sparse-index buffers stay in ordinary memory, where cold
+prefill keeps its speed (Enntity/sparkglm#30). To make that possible the recipe adds, on
+both members:
+
+- `--cap-add SYS_ADMIN`: exporting the carveout needs it. The image starts the
+  engine through `spark display-carveout`, which exports the memory, takes a
+  host lock, drops `CAP_SYS_ADMIN` from every capability set (bounding set
+  included) and only then starts the server; `no-new-privileges` stays on.
+- a bind mount of `${installRoot}/atlas-carveout-lock` (created by the
+  prepare step, so it survives reboots) at `/run/lock/sparkglm`: one process per
+  host may hold the carveout.
+
+The engine uses the carveout only with validated NVIDIA drivers (580.173.02 and
+580.178.04) and serves without it, logging why, when it cannot export it. To roll
+back, set `SPARKGLM_DISPLAY_CARVEOUT=0` (the capability and mount are then
+unused). It is SparkGLM-only (the Enntity/atlas fork's SparkGLM layer); details
+and credits are in Enntity/sparkglm's README under "Display memory as KV cache".
 
 ## Distributed startup
 
@@ -140,5 +218,41 @@ On each Spark, preview `lloom runtime-policy --max-memory-utilization 0.97
 --reserve-memory-gb 4`, then repeat with `--apply --yes` to apply those explicit
 candidate limits. Keep normal memory enforcement enabled. The command preserves
 mode and node overrides; review its output before starting the model. These
-values and the 262K context require live qualification. They do not qualify
-512K, four concurrent maximum windows, or 128K generated-output endurance.
+values still require live qualification through LLooM: the profile's
+1048576-token context (a 925K-token needle prompt was answered correctly
+outside LLooM), four concurrent full-length windows, and 128K
+generated-output endurance have not been qualified on this lane yet.
+
+## Credits and licenses
+
+LLooM's files in this directory and the recipe are MIT. The engine they start
+is not part of LLooM:
+
+- **Engine.** [Atlas](https://github.com/Atlas-Inf/atlas) (Atlas-Inf), with
+  SparkGLM's GLM-5.3 Flash work on the
+  [Enntity/atlas](https://github.com/Enntity/atlas) fork, licensed
+  **AGPL-3.0-only**. It runs from a separate container image,
+  `ghcr.io/enntity/atlas-sparkglm`, alongside LLooM (an aggregate); no engine
+  source or binary is included in LLooM.
+- **Corresponding source.** [Enntity/sparkglm](https://github.com/Enntity/sparkglm)
+  at the pinned revision (`b6bed259`) plus the Enntity/atlas commit recorded
+  in the image's `/opt/atlas/source-manifest.json`
+  ([`f2b805e7`](https://github.com/Enntity/atlas/tree/f2b805e73d36a7e5527622e24f2f8199052e01e6)).
+  SparkGLM's `NOTICE` and `docs/LICENSING.md` list everything else it fetches.
+- **Third-party notices in the image.** FlashKDA (MoonshotAI, MIT), FlashInfer
+  including NVIDIA's sparse-MLA prefill source (Apache-2.0) and CUTLASS
+  (BSD-3-Clause) ship their notices under `/opt/atlas/notices/`; the engine's
+  license is at `/LICENSE`.
+- **Converter kernel.** The NVFP4 quantization kernel in
+  `libatlas_mtp_quantize.so`, which setup step `convert-atlas-overlay` runs, is
+  copied unchanged from [Mango-kid/atlas](https://github.com/Mango-kid/atlas)
+  (AGPL-3.0-only).
+- **Transport tuning.** The RoCE/NCCL transport tuning in the recipe (IB
+  timeout/retry, Ring/Simple, 1-2 channels, 32 MiB buffers, DMA-BUF off)
+  follows Atlas upstream's GB10 launch scripts (Atlas-Inf/atlas
+  `scripts/start-ep2.sh`, `scripts/start-deepseek-ep2.sh`; Thomas Braun, Nick
+  Gerakines et al.).
+- **Models.** Weights are downloaded from their publishers, not distributed by
+  LLooM. `nvidia/GLM-5.3-Flash-NVFP4` is MIT per SparkGLM's
+  `docs/LICENSING.md`; `incoai/GLM-5.3-Flash-DFlash2` is **CC BY-NC-ND 4.0
+  (non-commercial)**. Read each model card before use.

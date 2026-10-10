@@ -16,10 +16,24 @@ import {
 import { readSseEvents } from './sse.mjs';
 import { normalizeOpenAIChatCompletionChunk } from './reasoning-normalize.mjs';
 
+// Only the stop reasons the Anthropic contract defines as terminal successes
+// may close a streamed message. Everything else — including an EOF that never
+// delivered a finish_reason — is an upstream failure.
+const ANTHROPIC_SUCCESS_STOP_REASONS = new Set([
+  'end_turn',
+  'max_tokens',
+  'stop_sequence',
+  'tool_use',
+  'pause_turn',
+  'refusal'
+]);
+
 export function createAnthropicStreamTranslator(requestedModel, { messageId = `msg_${Date.now()}` } = {}) {
   const events = [];
   let usage = { input_tokens: 0, output_tokens: 0 };
-  let stopReason = 'end_turn';
+  // No terminal status has been observed yet. Defaulting to `end_turn` would
+  // present an EOF without a finish_reason as a successful Anthropic message.
+  let stopReason = null;
   let nextContentIndex = 0;
   let thinkingBlock = null;
   let thinkingSignature = '';
@@ -190,6 +204,17 @@ export function createAnthropicStreamTranslator(requestedModel, { messageId = `m
 
   function finish() {
     const before = events.length;
+    // Unlike the Responses bridge, Anthropic has no failed-message terminal
+    // event: an unknown/error/absent terminal status must raise a classified
+    // upstream error before any successful `message_stop`.
+    if (!ANTHROPIC_SUCCESS_STOP_REASONS.has(stopReason)) {
+      const error = new Error(
+        `Upstream stream ended without a successful Anthropic stop reason: ${stopReason ?? 'missing stop reason'}`
+      );
+      error.statusCode = 502;
+      error.code = 'upstream_error';
+      throw error;
+    }
     stopThinkingBlock();
     stopTextBlock();
     for (const block of toolBlocks.values()) {

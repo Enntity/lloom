@@ -6,7 +6,9 @@ import {
   openAIChoiceReasoningSummary,
   responseUsageFromOpenAI,
   responseIncompleteDetails,
-  responseStatusFromFinishReason
+  responseStatusFromFinishReason,
+  responseFailureError,
+  responseStopIsSuccessful
 } from './text.mjs';
 import { normalizeOpenAIChatCompletionBody, normalizeOpenAIChatRequestBody } from './reasoning-normalize.mjs';
 import { translateReasoningEffortForBackend } from './reasoning-effort.mjs';
@@ -312,15 +314,16 @@ export function openAIToResponses(responseJson, requestedModel, { tools = [] } =
   const reasoningSummary = openAIChoiceReasoningSummary(choice);
   const responseId = normalized.id?.startsWith('resp_') ? normalized.id : `resp_${normalized.id ?? Date.now()}`;
   const status = responseStatusFromFinishReason(choice.finish_reason);
+  // Preserve partial text for diagnostics without handing an executor a call
+  // that the upstream did not finish.
+  const toolsAreExecutable = responseStopIsSuccessful(choice.finish_reason);
   const output = [
     ...(reasoningText || reasoningSummary
       ? [responseReasoningItem(responseId, { text: reasoningText, summary: reasoningSummary })]
       : []),
     ...(text ? [responseOutputTextItem(responseId, text)] : []),
     ...responseFunctionCallItems(choice.message?.tool_calls)
-      .filter(
-        (item) => status !== 'incomplete' || !tools.some((tool) => tool.type === 'custom' && tool.name === item.name)
-      )
+      .filter(() => toolsAreExecutable)
       .map((item) => restoreResponsesToolItem(item, tools))
   ];
   return {
@@ -333,7 +336,7 @@ export function openAIToResponses(responseJson, requestedModel, { tools = [] } =
     output_text: text,
     parallel_tool_calls: true,
     usage: responseUsageFromOpenAI(normalized.usage),
-    error: null,
+    error: status === 'failed' ? responseFailureError(choice.finish_reason) : null,
     incomplete_details: responseIncompleteDetails(choice.finish_reason),
     metadata: normalized.metadata ?? {}
   };

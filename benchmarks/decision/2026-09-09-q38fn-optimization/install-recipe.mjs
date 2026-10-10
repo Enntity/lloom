@@ -1,7 +1,12 @@
 // Scoped package metadata update; preserves every unrelated recipe entry.
 import fs from 'node:fs/promises';
 import assert from 'node:assert/strict';
-const root = '/home/enntitysparkadmin/.local/lib/node_modules/lloom/recipes';
+const lloomRoot = process.env.LLOOM_ROOT;
+if (!lloomRoot)
+  throw new Error(
+    'LLOOM_ROOT is required: absolute path to the installed LLooM package (e.g. /opt/lloom or a checkout root).'
+  );
+const root = lloomRoot + '/recipes';
 const entry = JSON.parse(await fs.readFile('/tmp/q38-recipe-index-entry.json', 'utf8'));
 assert.equal(entry.id, 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm');
 assert.equal(entry.currentVersion, 7);

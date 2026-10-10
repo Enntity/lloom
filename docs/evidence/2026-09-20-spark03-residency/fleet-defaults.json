@@ -4,48 +4,48 @@
     "imageModel": "image-quality",
     "videoModel": "video",
     "embeddingModel": "embeddings",
-    "speechModel": "ennspark03/Qwen/Qwen3-TTS-12Hz-1.7B-Base",
-    "transcriptionModel": "ennspark03/openai/whisper-large-v3-turbo",
+    "speechModel": "spark-node-03/Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+    "transcriptionModel": "spark-node-03/openai/whisper-large-v3-turbo",
     "audioGenerationModel": "music"
   },
   "aliases": {
     "image-fast": {
       "members": [
-        "ennspark03/Qwen/Qwen-Image-2.1-Diffusers"
+        "spark-node-03/Qwen/Qwen-Image-2.1-Diffusers"
       ],
       "description": "Qwen Image 2.1 generation and editing on Spark 3 via the shared Diffusers pipeline",
       "advertise": true
     },
     "image-quality": {
       "members": [
-        "ennspark03/Qwen/Qwen-Image-2.1-Diffusers"
+        "spark-node-03/Qwen/Qwen-Image-2.1-Diffusers"
       ],
       "description": "Qwen Image 2.1 generation and editing on Spark 3 via the shared Diffusers pipeline",
       "advertise": true
     },
     "image-quality-fast": {
       "members": [
-        "ennspark03/Qwen/Qwen-Image-2.1-Diffusers"
+        "spark-node-03/Qwen/Qwen-Image-2.1-Diffusers"
       ],
       "description": "Qwen Image 2.1 generation and editing on Spark 3 via the shared Diffusers pipeline",
       "advertise": true
     },
     "image-edit": {
       "members": [
-        "ennspark03/Qwen/Qwen-Image-2.1-Diffusers"
+        "spark-node-03/Qwen/Qwen-Image-2.1-Diffusers"
       ],
       "description": "Qwen Image 2.1 reference editing on Spark 3 via official Diffusers",
       "advertise": true
     },
     "music": {
       "members": [
-        "ennspark03/ACE-Step/ACE-Step-1.5-XL-SFT"
+        "spark-node-03/ACE-Step/ACE-Step-1.5-XL-SFT"
       ],
       "advertise": true
     },
     "video": {
       "members": [
-        "ennspark03/Lightricks/LTX-2.5"
+        "spark-node-03/Lightricks/LTX-2.5"
       ],
       "advertise": true
     }
@@ -55,8 +55,8 @@
       "at": "2026-09-20T19:35:52.390Z",
       "route": "/v1/images/generations",
       "requestedModel": "image-quality",
-      "resolvedModel": "ennspark03/Qwen/Qwen-Image-2.1-Diffusers",
-      "node": "ennspark03",
+      "resolvedModel": "spark-node-03/Qwen/Qwen-Image-2.1-Diffusers",
+      "node": "spark-node-03",
       "status": 200,
       "failedOver": false,
       "durationMs": 33808
@@ -65,8 +65,8 @@
       "at": "2026-09-20T19:36:52.142Z",
       "route": "/v1/images/edits",
       "requestedModel": "image-edit",
-      "resolvedModel": "ennspark03/Qwen/Qwen-Image-2.1-Diffusers",
-      "node": "ennspark03",
+      "resolvedModel": "spark-node-03/Qwen/Qwen-Image-2.1-Diffusers",
+      "node": "spark-node-03",
       "status": 200,
       "failedOver": false,
       "durationMs": 59542

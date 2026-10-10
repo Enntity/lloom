@@ -2,7 +2,11 @@
 // Synthetic gateway validation only; never reads entity prompts or continuity.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-const root = process.env.LLOOM_ROOT || '/home/enntitysparkadmin/.local/lib/node_modules/lloom';
+const root = process.env.LLOOM_ROOT;
+if (!root)
+  throw new Error(
+    'LLOOM_ROOT is required: absolute path to the installed LLooM package (e.g. /opt/lloom or a checkout root).'
+  );
 const { loadManagedServiceEnvironment } = await import(root + '/src/managed-environment.mjs');
 const { loadConfig } = await import(root + '/src/config.mjs');
 loadManagedServiceEnvironment();

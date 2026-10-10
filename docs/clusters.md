@@ -54,8 +54,8 @@ Only runtime-backed models are imported by default. Pass `--include-external` wh
 On a DGX Spark cluster created by NVIDIA Sync, LLooM can discover the peer alias and private fabric directly:
 
 ```bash
-lloom cluster discover --id ennspark-cluster
-lloom cluster discover --id ennspark-cluster --api-key-env LLOOM_ADMIN_API_KEY --apply
+lloom cluster discover --id spark-node-cluster
+lloom cluster discover --id spark-node-cluster --api-key-env LLOOM_ADMIN_API_KEY --apply
 ```
 
 Discovery groups `NVSyncClusterAlias` entries into stable node IDs, including duplicate IP aliases and multiple rails per peer. Older Sync entries with a named `Host` alias still work. The configured local identity and leader remain unchanged. Local observations appear under `cluster.discovery.links`; they do not prove gateway reachability, bandwidth, or a complete ring.
@@ -248,3 +248,10 @@ lloom runtime-start dsv4flash-cluster
 The live dashboard renders node cards between the main LLooM chassis and model cards. Each node card reports architecture, accelerator type, CPU, RAM, GPU compute, GPU memory, temperature, and power when the host can report them. Unsupported fields render as unavailable rather than inventing values; Apple Silicon still reports its profile and shared-memory pressure even when per-GPU utilization is unavailable. Select a node for its complete profile. Replicated models connect to every target node and distributed models connect to every member node.
 
 Before sending model traffic, `lloom cluster doctor` should report every declared node reachable with memory telemetry. Then start a small replicated lane, verify requests alternate under equal load, and only then canary the distributed engine.
+
+## A note on example identifiers
+
+Host aliases such as `spark-node-01` and addresses in configuration examples
+are placeholders. Replace them with the names and private addresses used by
+your deployment. Historical benchmark and evidence files use anonymized node
+labels; their measurements and artifact hashes are preserved.

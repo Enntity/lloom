@@ -12,7 +12,7 @@ poor default for interactive work.
 
 ## Method
 
-- All requests went through the authenticated LLooM gateway on `ennspark01`.
+- All requests went through the authenticated LLooM gateway on `spark-node-01`.
 - Routes were strictly local: `dsv4f-local`, `q38fn`, and `glm53f`.
 - The frozen suite is `examples/qualitative-benchmark-enntity.v1.json`.
 - TTFB is request start to the first SSE response-body byte. Tok/s is provider

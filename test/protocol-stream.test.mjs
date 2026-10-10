@@ -157,4 +157,49 @@ function chunk({ content, reasoning, toolCalls, finish, usage } = {}) {
   assert.equal(t.fullText, fixture.expect.fullText);
 }
 
+// EOF is not a successful finish signal, even when a partial call parses.
+for (const reason of [
+  'error',
+  'cancelled',
+  'unknown_status',
+  'constructor',
+  null,
+  undefined,
+  'length',
+  'content_filter'
+]) {
+  const t = createResponsesStreamTranslator('fixture');
+  t.handleChunk({
+    choices: [
+      {
+        delta: {
+          content: 'partial',
+          tool_calls: [{ index: 0, id: 'call-1', type: 'function', function: { name: 'write', arguments: '{}' } }]
+        },
+        finish_reason: reason
+      }
+    ],
+    usage: { prompt_tokens: 3, completion_tokens: 2 }
+  });
+  t.finish();
+  const expected = ['length', 'content_filter'].includes(reason) ? 'incomplete' : 'failed';
+  const last = t.events.at(-1);
+  assert.equal(last.event, `response.${expected}`);
+  assert.equal(last.data.response.output_text, 'partial');
+  assert.equal(last.data.response.usage.output_tokens, 2);
+  assert(!last.data.response.output.some((item) => item.type === 'function_call'));
+  assert(!t.events.some((e) => e.event === 'response.function_call_arguments.done'));
+  if (expected === 'failed') {
+    const a = createAnthropicStreamTranslator('fixture');
+    assert.throws(
+      () => {
+        a.handleChunk({ choices: [{ delta: { content: 'partial' }, finish_reason: reason }] });
+        a.finish();
+      },
+      (error) => error.statusCode === 502
+    );
+    assert(!a.events.some((e) => e.event === 'message_stop'));
+  }
+}
+
 console.log('protocol-stream tests passed');

@@ -6,6 +6,13 @@
 # (/opt/atlas/converter/convert.py plus /opt/atlas/converter/libatlas_mtp_quantize.so);
 # LLooM does not ship a product convert-overlay.sh of its own.
 #
+# The normal path runs the converter out of the immutable registry digest in
+# the manifest (image.reference, ghcr.io/...@sha256:...). The image tag is
+# source-build metadata; an explicit --source-build runs the converter out of
+# the LOCAL source-build tag instead. There is never any fallback between the
+# two: if the selected image is absent or fails identity/contract checks this
+# script fails closed.
+#
 # Directory existence never means "converted": this script requires the
 # conversion marker (conversion.complete.json with converted_matrices, shards,
 # source, output and finished) plus a real --verify-overlay run against the
@@ -26,7 +33,7 @@
 #
 # Usage: convert-overlay.sh --backend-root <path> [--install-root <path>] [--model-root <path>]
 #                          [--overlay-root <path>] [--manifest <pins.json>]
-#                          [--verify-only] [--force]
+#                          [--verify-only] [--force] [--source-build]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -38,6 +45,7 @@ MODEL_ROOT=""
 OVERLAY_ROOT=""
 VERIFY_ONLY=0
 FORCE=0
+SOURCE_BUILD=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -53,7 +61,8 @@ while [[ $# -gt 0 ]]; do
     --manifest=*) MANIFEST="${1#*=}"; shift ;;
     --verify-only) VERIFY_ONLY=1; shift ;;
     --force) FORCE=1; shift ;;
-    -h|--help) sed -n '2,26p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    --source-build) SOURCE_BUILD=1; shift ;;
+    -h|--help) sed -n '2,33p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "convert-overlay.sh: unexpected argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -72,6 +81,7 @@ done
 pin() { node -e 'const m=require(process.argv[1]);const p=process.argv[2].split(".");let v=m;for(const k of p){v=v?.[k];}process.stdout.write(typeof v==="string"?v:String(v??""))' "${MANIFEST}" "$1"; }
 
 INSTALL_TREE="$(pin source.installTree)"
+IMAGE_REFERENCE="$(pin image.reference)"
 IMAGE_TAG="$(pin image.tag)"
 IMAGE_LABEL="$(pin image.label)"
 IMAGE_ARCHITECTURE="$(pin image.architecture)"
@@ -114,6 +124,14 @@ node -e '
 node "${VERIFY_PINS}" "${MANIFEST}" \
   || fail "pin manifest ${MANIFEST} is not a final immutable install manifest; verify the source, image and model identities before overlay conversion runs"
 
+# Select exactly one image identity; never fall back between them.
+if [[ "${SOURCE_BUILD}" == "1" ]]; then
+  IMAGE_TARGET="${IMAGE_TAG}"
+  note "converting out of the LOCAL source-build tag ${IMAGE_TAG}; this does not satisfy the normal immutable recipe, which addresses ${IMAGE_REFERENCE}"
+else
+  IMAGE_TARGET="${IMAGE_REFERENCE}"
+fi
+
 # Reject an incomplete overlay before consulting a possibly unavailable daemon.
 if [[ "${VERIFY_ONLY}" -eq 1 && ! -f "${MARKER}" ]]; then
   fail "conversion marker missing: ${MARKER}"
@@ -122,12 +140,12 @@ fi
 command -v docker >/dev/null 2>&1 || fail "docker is required to run the in-image converter"
 
 # ---- the prepared image must carry the pinned install tree ------------------
-IMAGE_IDENTITY="$(docker image inspect --format "{{.Architecture}} {{index .Config.Labels \"${IMAGE_LABEL}\"}}" "${IMAGE_TAG}" 2>/dev/null)" \
-  || fail "local image ${IMAGE_TAG} is not present; run backends/atlas-sparkglm/install.sh --backend-root ${BACKEND_ROOT} first"
+IMAGE_IDENTITY="$(docker image inspect --format "{{.Architecture}} {{index .Config.Labels \"${IMAGE_LABEL}\"}}" "${IMAGE_TARGET}" 2>/dev/null)" \
+  || fail "local image ${IMAGE_TARGET} is not present; run backends/atlas-sparkglm/install.sh --backend-root ${BACKEND_ROOT} first"
 [[ "${IMAGE_IDENTITY}" == "${IMAGE_ARCHITECTURE} ${INSTALL_TREE}" ]] \
-  || fail "local image ${IMAGE_TAG} has architecture and ${IMAGE_LABEL} '${IMAGE_IDENTITY}'; expected '${IMAGE_ARCHITECTURE} ${INSTALL_TREE}'. Rerun install.sh"
-docker run --rm --entrypoint bash "${IMAGE_TAG}" -lc "test -f '${CONVERTER_PATH}' && test -f '${CONVERTER_LIBRARY}'" \
-  || fail "image ${IMAGE_TAG} does not ship the converter contract (${CONVERTER_PATH}, ${CONVERTER_LIBRARY})"
+  || fail "local image ${IMAGE_TARGET} has architecture and ${IMAGE_LABEL} '${IMAGE_IDENTITY}'; expected '${IMAGE_ARCHITECTURE} ${INSTALL_TREE}'. Rerun install.sh"
+docker run --rm --entrypoint bash "${IMAGE_TARGET}" -lc "test -f '${CONVERTER_PATH}' && test -f '${CONVERTER_LIBRARY}'" \
+  || fail "image ${IMAGE_TARGET} does not ship the converter contract (${CONVERTER_PATH}, ${CONVERTER_LIBRARY})"
 
 # ---- current model acquisition --------------------------------------------
 # An existing overlay is reusable across source/image revisions when the model
@@ -176,7 +194,7 @@ verify_marker() {
 CONVERTER_IDENTITY_JSON=""
 load_converter_identity() {
   local hashes
-  hashes="$(docker run --rm --entrypoint bash "${IMAGE_TAG}" -lc \
+  hashes="$(docker run --rm --entrypoint bash "${IMAGE_TARGET}" -lc \
     "sha256sum -- '${CONVERTER_PATH}' '${CONVERTER_LIBRARY}'" 2>/dev/null)" \
     || return 1
   CONVERTER_IDENTITY_JSON="$(node -e '
@@ -250,12 +268,12 @@ verify_overlay() {
     -v "${source_model_path}:${source_model_path}:ro" \
     -v "$(dirname "${OVERLAY_ROOT}"):$(dirname "${OVERLAY_ROOT}")" \
     -v "${OVERLAY_ROOT}:${OVERLAY_ROOT}" \
-    --entrypoint python3 "${IMAGE_TAG}" \
+    --entrypoint python3 "${IMAGE_TARGET}" \
     "${CONVERTER_PATH}" --source "${source_model_path}" --output "${OVERLAY_ROOT}" --verify-overlay
 }
 
 load_converter_identity \
-  || fail "could not fingerprint the converter files in ${IMAGE_TAG}; refusing to reuse or create an overlay"
+  || fail "could not fingerprint the converter files in ${IMAGE_TARGET}; refusing to reuse or create an overlay"
 
 if [[ "${VERIFY_ONLY}" == "1" ]]; then
   if ! verify_marker; then
@@ -312,7 +330,7 @@ docker run --rm --gpus=all \
   -e NVIDIA_VISIBLE_DEVICES=all \
   -v "${SOURCE_MODEL_PATH}:${SOURCE_MODEL_PATH}:ro" \
   -v "${OUTPUT_PARENT}:${OUTPUT_PARENT}" \
-  --entrypoint python3 "${IMAGE_TAG}" \
+  --entrypoint python3 "${IMAGE_TARGET}" \
   "${CONVERTER_PATH}" --source "${SOURCE_MODEL_PATH}" --output "${OVERLAY_ROOT}" \
   --library "${CONVERTER_LIBRARY}"
 

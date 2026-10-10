@@ -119,7 +119,7 @@ Generated PNG, WAV and MP4 payloads stay in private artifact storage.
 
 Owner default editing returned in 62.138 seconds. Fleet default generation
 (`image-quality`) returned in 33.883 seconds and `image-edit` in 59.566 seconds.
-Both fleet calls resolved to `ennspark03/Qwen/Qwen-Image-2.1-Diffusers`, returned
+Both fleet calls resolved to `spark-node-03/Qwen/Qwen-Image-2.1-Diffusers`, returned
 HTTP 200 without failover, and matched the corresponding owner PNG byte for
 byte. All five pinned container PIDs and start times were unchanged across the
 transition. Embeddings returned 2560 dimensions, and all three TTS outputs

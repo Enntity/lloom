@@ -11,7 +11,7 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "lloom streaming benchmark harness",
-    "source": "Reproducible local measurement on ennspark-cluster"
+    "source": "Reproducible local measurement on spark-node-cluster"
   },
   "methodology": {
     "harness": "LLooM OpenAI-compatible streaming endpoint",
@@ -122,12 +122,12 @@
     "notes": "The first measured C1 batch retained a cold shape/compile outlier. Reported metrics are medians across all three measurement batches."
   },
   "x-coexistence": {
-    "qwenEmbeddingNode": "ennspark01",
-    "fluxNode": "ennspark02",
+    "qwenEmbeddingNode": "spark-node-01",
+    "fluxNode": "spark-node-02",
     "embeddingDimensions": 2560,
     "fluxProofImageBase64Bytes": 359984,
     "deepseekHealthyAfterProof": true,
-    "availableMemoryGb": { "ennspark01": 9.12, "ennspark02": 12.44 }
+    "availableMemoryGb": { "spark-node-01": 9.12, "spark-node-02": 12.44 }
   },
   "x-fileName": "dgx-spark-2x-deepseek-v4-flash-lloom-20260807.json"
 }

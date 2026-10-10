@@ -23,6 +23,16 @@
 
 const MAX_WAIT_MS = 5 * 60 * 1000;
 
+export const RATE_LIMIT_QUEUE_CAPACITY = 256;
+
+export class RateQueueFullError extends Error {
+  constructor(limiterId, capacity) {
+    super(`rate limit queue for ${limiterId} is full (capacity ${capacity})`);
+    this.name = 'RateQueueFullError';
+    this.limiterId = limiterId;
+  }
+}
+
 function positiveNumber(value) {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : null;
@@ -442,7 +452,12 @@ export function consumeRateBudget(registry, ids) {
  * The total wait since `started` stays within the maximum wait; a wait that
  * cannot finish in time fails fast with the usual retry-after instead.
  */
-export async function awaitRateBudget(registry, ids, { signal = null, started = Date.now() } = {}) {
+export async function awaitRateBudget(
+  registry,
+  ids,
+  { signal = null, started = Date.now(), capacity = RATE_LIMIT_QUEUE_CAPACITY } = {}
+) {
+  const maxQueued = Number.isSafeInteger(capacity) && capacity >= 0 ? capacity : RATE_LIMIT_QUEUE_CAPACITY;
   for (;;) {
     signal?.throwIfAborted?.();
     try {
@@ -450,6 +465,11 @@ export async function awaitRateBudget(registry, ids, { signal = null, started = 
     } catch (error) {
       const entry = error?.name === 'RateBudgetExhaustedError' ? registry.limiter(error.limiterId) : null;
       if (!entry?.settings.queue || Date.now() + error.retryAfterMs - started > MAX_WAIT_MS) throw error;
+      // Reserve before yielding: a concurrent caller can have passed the
+      // server's precheck while this caller was acquiring semaphore slots.
+      if ((entry.semaphore?.queued ?? 0) + entry.rateQueued >= maxQueued) {
+        throw new RateQueueFullError(error.limiterId, maxQueued);
+      }
       entry.rateQueued += 1;
       try {
         await delay(error.retryAfterMs, signal);

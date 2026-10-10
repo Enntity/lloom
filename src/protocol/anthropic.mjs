@@ -4,15 +4,32 @@ import {
   openAIChoiceText,
   openAIChoiceReasoning,
   openAIChoiceReasoningSignature,
-  anthropicUsageFromOpenAI
+  anthropicUsageFromOpenAI,
+  responseFailureReason
 } from './text.mjs';
 import { normalizeOpenAIChatCompletionBody, normalizeOpenAIChatRequestBody } from './reasoning-normalize.mjs';
 
+const ANTHROPIC_STOP_REASONS = {
+  stop: 'end_turn',
+  tool_calls: 'tool_use',
+  function_call: 'tool_use',
+  length: 'max_tokens',
+  content_filter: 'refusal',
+  stop_sequence: 'stop_sequence',
+  pause_turn: 'pause_turn'
+};
+
 export function anthropicStopReason(choice) {
   const reason = choice?.finish_reason;
-  if (reason === 'length') return 'max_tokens';
-  if (reason === 'tool_calls') return 'tool_use';
-  return reason ?? 'end_turn';
+  const mapped = Object.hasOwn(ANTHROPIC_STOP_REASONS, reason) ? ANTHROPIC_STOP_REASONS[reason] : null;
+  if (mapped) return mapped;
+  // Unknown, absent, or error terminal statuses must not be presented to a
+  // caller as a successful Anthropic message. Surface a classified upstream
+  // error instead of fabricating `end_turn`.
+  const error = new Error(`Upstream returned an unsupported Anthropic stop reason: ${responseFailureReason(reason)}`);
+  error.statusCode = 502;
+  error.code = 'upstream_error';
+  throw error;
 }
 
 export function anthropicContentToOpenAI(content) {

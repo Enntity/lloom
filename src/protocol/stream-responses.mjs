@@ -13,6 +13,8 @@ import {
   openAIStreamChunkHasContent,
   responseIncompleteDetails,
   responseStatusFromFinishReason,
+  responseFailureError,
+  responseStopIsSuccessful,
   responseUsageFromOpenAI
 } from './text.mjs';
 import { readSseEvents } from './sse.mjs';
@@ -28,7 +30,9 @@ export function createResponsesStreamTranslator(
   let fullReasoning = '';
   let fullReasoningSummary = '';
   let usage = responseUsageFromOpenAI();
-  let stopReason = 'stop';
+  // No terminal signal has been observed yet. Assuming `stop` here would let an
+  // EOF without a finish_reason look like a successful completion.
+  let stopReason = null;
   let nextOutputIndex = 0;
   let reasoningItem = null;
   let textItem = null;
@@ -193,7 +197,9 @@ export function createResponsesStreamTranslator(
     if (openAIStreamChunkHasContent(chunk)) firstContent = true;
     if (chunk.usage) usage = responseUsageFromOpenAI(chunk.usage);
     const choice = chunk.choices?.[0];
-    if (choice?.finish_reason) stopReason = choice.finish_reason;
+    if (choice?.finish_reason) {
+      stopReason = choice.finish_reason;
+    }
     const reasoning = openAIChoiceReasoning(choice);
     if (reasoning) {
       const item = startReasoningItem();
@@ -323,12 +329,10 @@ export function createResponsesStreamTranslator(
       output.push(item);
     }
     for (const item of [...toolItems.values()].sort((a, b) => a.outputIndex - b.outputIndex)) {
-      // Never hand an executor a custom call cut short by the output budget.
-      if (
-        responseStatusFromFinishReason(stopReason) === 'incomplete' &&
-        tools.some((tool) => tool.type === 'custom' && tool.name === item.name)
-      )
-        continue;
+      // A response that never reached an affirmative terminal reason is not
+      // executable: suppress its function/custom tool items and their done
+      // events entirely. Partial text and usage remain for diagnostics.
+      if (!responseStopIsSuccessful(stopReason)) continue;
       addToolItemOutput(item);
       emitToolItemArguments(item);
       const completed = {
@@ -352,8 +356,11 @@ export function createResponsesStreamTranslator(
       });
       output.push(restoreResponsesToolItem(completed, tools));
     }
+    // An absent/unknown/error terminal reason (including EOF with no
+    // finish_reason) is a failure, not a completion.
     const status = responseStatusFromFinishReason(stopReason);
-    const finalEvent = status === 'incomplete' ? 'response.incomplete' : 'response.completed';
+    const finalEvent =
+      status === 'incomplete' ? 'response.incomplete' : status === 'failed' ? 'response.failed' : 'response.completed';
     emit(finalEvent, {
       type: finalEvent,
       response: {
@@ -363,6 +370,7 @@ export function createResponsesStreamTranslator(
         output_text: fullText,
         output,
         usage,
+        ...(status === 'failed' ? { error: responseFailureError(stopReason) } : {}),
         incomplete_details: responseIncompleteDetails(stopReason)
       }
     });

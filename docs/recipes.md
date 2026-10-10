@@ -358,17 +358,30 @@ lloom runtime-start glm53-flash-atlas-cluster
 The recipe is additive. It does not set a default model and does not overwrite
 aliases, so an existing GLM-5.3 Flash route keeps working.
 
+Licenses: the recipe and LLooM's backend files are MIT. The engine is
+[Atlas](https://github.com/Atlas-Inf/atlas) with SparkGLM's work on the
+[Enntity/atlas](https://github.com/Enntity/atlas) fork, **AGPL-3.0-only**, and
+runs from its own container image; LLooM includes none of its source. The
+DFlash2 drafter `incoai/GLM-5.3-Flash-DFlash2` is **CC BY-NC-ND 4.0
+(non-commercial)**. See the backend README's "Credits and licenses" section and
+[Third-Party Notices](../THIRD_PARTY_NOTICES.md).
+
 ### Single pin manifest and fail-closed pin gate
 
 All portable identities for the lane live in exactly one place,
 `backends/atlas-sparkglm/pins.json`: the `Enntity/sparkglm` source revision and
-the git tree of its `install/` directory, the image tag and identity label, the
-`nvidia/GLM-5.3-Flash-NVFP4` and drafter revisions, and the conversion marker
-contract. The current source pin is product revision
-`9acb642b55ccfbc63fc979d747cb69eff30c9a24` with install tree
-`2ba73a2d8aee7234474ae3cb107a1d61d0c33891`, so the image is
-`ghcr.io/enntity/atlas-sparkglm:2ba73a2d8aee`. A later product revision is
-adopted by changing the revision, the install tree and its derived tag.
+the git tree of its `install/` directory, the immutable image manifest
+reference (`image.reference`) with the tag kept as source-build metadata and
+the install-tree contents label, the `nvidia/GLM-5.3-Flash-NVFP4` and drafter
+revisions, and the conversion marker contract. The current source pin is product revision
+`b6bed25903578b4f4ed4f0e7204c80700ad5b8d9` with install tree
+`4046c81baa071cb109e55c3206ed1fca3bd3db9a`, so the normal install path
+addresses the immutable digest
+`ghcr.io/enntity/atlas-sparkglm@sha256:9a583b07912262f08f72d33773c994d2468d5292546e79e149c701962101dbc7`.
+The tag `ghcr.io/enntity/atlas-sparkglm:4046c81baa07` is source-build metadata
+(first 12 characters of the install tree) and is never pulled; a tag alone is
+not an immutable artifact identity. A later product revision is adopted by
+changing the revision, the install tree, the derived tag and the pinned digest.
 
 While any required value is missing, malformed, or a placeholder, the gate
 fails closed:
@@ -381,21 +394,31 @@ The same check runs as backend setup step `check-atlas-pins`, and again inside
 `install.sh` and `convert-overlay.sh`, so an invalid manifest cannot build,
 convert, or start anything. The recipe test uses an explicit temporary
 placeholder manifest to cover that refusal path. The checker also rejects a
-revision or install tree that is not a 40-character git object id and an image
-tag not derived from the install tree. Image IDs are never pinned; the
-installer checks the local image's architecture and install-tree label.
+revision or install tree that is not a 40-character git object id, an image tag
+not derived from the install tree, and an `image.reference` that is not
+`ghcr.io/enntity/atlas-sparkglm@sha256:` followed by 64 lowercase hex
+characters. Image IDs are never pinned; the installer checks the local image's
+architecture and install-tree contents label, which proves contents but is not
+the artifact identity.
 
-### Pinned image: GHCR pull or source build
+### Pinned image: immutable digest pull or explicit source build
 
 Setup step `build-atlas-image` runs `bash backends/atlas-sparkglm/install.sh`
-with the managed backend and install roots. It reuses an already verified local
-image, otherwise pulls the pinned tag from GHCR, otherwise clones
-`Enntity/sparkglm` at the exact `SOURCE_REVISION`, checks that `HEAD:install`
-is the pinned install tree, and runs that repository's `install/build.sh`,
-which must print the same tag. Either way the image must be arm64 and carry
-`io.enntity.sparkglm.install-tree` equal to the pinned tree, and it must ship
-the entrypoint, profile and converter with `--verify-overlay`. A mismatch is a
-hard failure.
+with the managed backend and install roots. The normal path reuses an already
+verified local image, otherwise pulls the immutable manifest digest
+(`image.reference`) from GHCR. It never pulls the mutable tag, and a failed
+pinned digest pull is a hard failure: there is no silent fallback to the tag or
+to a source build. The explicit `--source-build` option instead clones
+`Enntity/sparkglm` at the exact `SOURCE_REVISION`, checks that `HEAD` is the
+pinned revision and `HEAD:install` is the pinned install tree, and runs that
+repository's `install/build.sh`, which must print the pinned tag. That build
+produces a **LOCAL tag** for an explicitly overridden local recipe only; it does
+**not** satisfy the normal immutable recipe, which addresses `image.reference`.
+`--check-only` combined with `--source-build` deliberately verifies the local
+source-build tag instead of the digest. On every path the selected image must be
+arm64 and carry `io.enntity.sparkglm.install-tree` equal to the pinned tree, and
+it must ship the entrypoint, profile and converter with `--verify-overlay`. A
+mismatch is a hard failure.
 
 **No build runs on the serving path.** Only a prepared image is started.
 
@@ -435,18 +458,22 @@ health-checks `/health`, runs a POST warmup, and then owns routing.
 
 ### Baseline envelope
 
-The candidate profile serves 524288-token contexts to four concurrent sequences
-from one shared FP8-latent KV pool (340K-560K tokens depending on memory free at startup; it also holds the prefix cache, with 16 recurrent-state snapshot slots), with FP32 SSM state,
-DFlash2 speculation (gamma 8) on the head rank, GPU memory utilization 0.88,
-and `--memory=114g` with a 4096 MiB OOM guard. `disable-tool-grammar` is **not**
+The candidate profile (4x1m) serves 1048576-token contexts to four concurrent sequences
+from one shared FP8-latent KV pool, split between the two nodes (about 2.38M tokens at the recipe's 0.91 GPU memory utilization with the display carveout and the disk prefix cache; it also holds the prefix cache, with 16 recurrent-state snapshot slots), with FP32 SSM state,
+DFlash2 speculation (gamma 8) on the head rank, GPU memory utilization 0.91
+(the recipe's `SPARKGLM_GPU_MEMORY_UTILIZATION`, overriding the profile
+default of 0.88), and `--memory=114g` with a 4096 MiB OOM guard. `disable-tool-grammar` is **not**
 set, so structured output and tool calling stay functional. The image includes
 image and video input support; gateway and two-node serving canaries remain
 required for qualification.
 
 Both nodes must carry the same portable source, model and converter pins and an
-identical `backends/atlas-sparkglm` directory. Each host verifies its local
-image by the pinned install-tree label, whether it was pulled or built; image
-IDs may differ across hosts.
+identical `backends/atlas-sparkglm` directory. The normal path has both hosts
+pull the same immutable digest, so they run the same artifact; each host then
+verifies the pulled image's install-tree contents label and arm64 architecture.
+An explicit `--source-build` produces a **LOCAL tag** for an explicitly
+overridden local recipe only, does not satisfy the normal immutable recipe, and
+can produce different image IDs across hosts.
 
 ### OpenAI multimodal request
 

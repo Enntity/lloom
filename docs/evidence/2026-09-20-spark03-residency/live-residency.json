@@ -1,6 +1,6 @@
 {
   "at": "2026-09-20T19:35:37.663Z",
-  "node": "ennspark03",
+  "node": "spark-node-03",
   "defaults": {
     "imageModel": "Qwen/Qwen-Image-2.1-Diffusers",
     "videoModel": "Lightricks/LTX-2.5",

@@ -8,7 +8,13 @@ import { getBackend, loadBackendCatalog, planBackend } from '../src/backend-cata
 import { deriveUserConfig } from '../src/init.mjs';
 import { loadRecipeById, planRecipe } from '../src/recipes.mjs';
 import { createSetupStatus } from '../src/setup-status.mjs';
-import { imageTagFor, loadPins, verifyPins } from '../backends/atlas-sparkglm/verify-pins.mjs';
+import {
+  IMAGE_REFERENCE_PATTERN,
+  IMAGE_REPOSITORY,
+  imageTagFor,
+  loadPins,
+  verifyPins
+} from '../backends/atlas-sparkglm/verify-pins.mjs';
 import { conversionHeadroomMiB } from '../backends/atlas-sparkglm/conversion-headroom.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -54,16 +60,18 @@ assert.deepEqual(
     'download-atlas-model',
     'download-atlas-drafter',
     'build-atlas-image',
-    'convert-atlas-overlay'
+    'convert-atlas-overlay',
+    'prepare-atlas-prefix-cache'
   ]
 );
+const gatedSteps = ['verify-atlas-pins', 'build-atlas-image', 'convert-atlas-overlay', 'prepare-atlas-prefix-cache'];
 assert.deepEqual(
   recipe.setup.steps
     .filter((step) => step.action !== 'check-command' && step.action !== 'download-model')
     .map((step) => step.id),
-  ['verify-atlas-pins', 'build-atlas-image', 'convert-atlas-overlay']
+  gatedSteps
 );
-for (const stepId of ['verify-atlas-pins', 'build-atlas-image', 'convert-atlas-overlay']) {
+for (const stepId of gatedSteps) {
   assert.equal(
     recipe.setup.steps.find((step) => step.id === stepId).alwaysRun,
     true,
@@ -78,7 +86,7 @@ assert.equal(model.model, 'nvidia/GLM-5.3-Flash-NVFP4');
 assert.equal(model.settings.port, 8893);
 assert.equal(model.settings.baseUrl, 'http://127.0.0.1:8893/v1');
 assert.equal(model.settings.healthUrl, 'http://127.0.0.1:8893/health');
-assert.equal(model.settings.contextWindow, 524288);
+assert.equal(model.settings.contextWindow, 1048576);
 assert.equal(model.settings.maxOutputTokens, 131072);
 assert.equal(model.settings.timeoutMs, 14400000);
 assert.equal(model.settings.maxActiveRequests, 4);
@@ -87,6 +95,9 @@ assert.equal(model.settings.priority, 150);
 assert.equal(model.settings.startupTimeoutMs, 7200000);
 assert.equal(model.settings.watchdog.oomGuardMb ?? 4096, 4096);
 assert.deepEqual(model.input, ['text', 'image', 'video']);
+// The prefix cache on disk ships on (48 GiB per node) beside the KV shard; 0
+// turns it off, 16-100 is its size. The image's serve.py validates both.
+assert.equal(model.settings.prefixCacheGb, 48);
 assert(model.capabilities.includes('vision'));
 assert(model.capabilities.includes('structured-output'));
 const downloadStep = recipe.setup.steps.find((step) => step.id === 'download-atlas-model');
@@ -130,7 +141,7 @@ for (const member of members) {
   assert.equal(member.runtimeSettings.management, 'managed');
   assert.equal(member.runtimeSettings.containerName, 'lloom-atlas-sparkglm-${nodeId}');
   assert.equal(bootstrap.adapter, 'docker');
-  assert.equal(bootstrap.image, pins.image.tag);
+  assert.equal(bootstrap.image, pins.image.reference);
   assert.equal(bootstrap.pull, false, 'the prepared local image must not be pulled');
   assert.deepEqual(bootstrap.command ?? [], [], 'use the image entrypoint exactly once');
 
@@ -143,6 +154,10 @@ for (const member of members) {
     '/dev/infiniband:/dev/infiniband',
     '--cap-add IPC_LOCK',
     '--cap-add SYS_NICE',
+    // The GB10 display carveout: the launcher drops SYS_ADMIN before the server starts.
+    '--cap-add SYS_ADMIN',
+    'type=bind,src=${installRoot}/atlas-carveout-lock,dst=/run/lock/sparkglm',
+    'SPARKGLM_DISPLAY_CARVEOUT=1',
     '--ulimit memlock=-1:-1',
     '--security-opt no-new-privileges=true',
     '--stop-timeout 60',
@@ -158,17 +173,23 @@ for (const member of members) {
     'ATLAS_WORLD_SIZE=2',
     'ATLAS_TP_SIZE=2',
     'ATLAS_EP_SIZE=2',
-    'ATLAS_CONTEXT_WINDOW=524288',
+    'ATLAS_CONTEXT_WINDOW=1048576',
     'type=bind,src=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2,dst=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2,readonly',
     'DRAFTER_PATH=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2',
     'SERVED_MODEL_NAME=glm-5.3-flash-atlas',
     'NCCL_IB_HCA=rocep1s0f0',
     'NCCL_IB_ADDR_FAMILY=AF_INET',
     'NCCL_CROSS_NIC=0',
-    'NCCL_SOCKET_IFNAME=${fabricInterface}'
+    'NCCL_SOCKET_IFNAME=${fabricInterface}',
+    'type=bind,src=${installRoot}/atlas-prefix-cache,dst=/prefix-cache',
+    'SPARKGLM_PREFIX_CACHE_GB=${prefixCacheGb}',
+    'SPARKGLM_KV_SHARD=1',
+    'SPARKGLM_PROFILE=4x1m'
   ]) {
     assert(rendered.includes(expected), `missing Atlas launch control: ${expected}`);
   }
+  // Tier settings come only from serve.py, identical on both ranks.
+  assert(!/ATLAS_(KV_NVME|SSM_TIER|GLM_NVME)/.test(rendered));
   // The baseline launched with the tool grammar disabled; functionality wins.
   assert(!rendered.includes('disable-tool-grammar'), 'tool grammar must stay enabled');
   assert(!rendered.includes('--ipc private'), 'the private-ipc baseline flag must not be copied');
@@ -190,8 +211,17 @@ assert(readme.includes('127.0.0.1:8893'));
 assert(readme.includes('127.0.0.1:8894'));
 assert(readme.includes('/opt/atlas/serve.py'));
 assert(readme.includes(pins.image.profilePath));
-assert.equal(pins.image.profilePath, '/opt/atlas/profiles/4x512k.json');
-for (const key of ['NODE_RANK', 'MASTER_ADDR', 'MASTER_PORT', 'FABRIC_INTERFACE', 'MODEL_PATH']) {
+assert.equal(pins.image.profilePath, '/opt/atlas/profiles/4x1m.json');
+for (const key of [
+  'NODE_RANK',
+  'MASTER_ADDR',
+  'MASTER_PORT',
+  'FABRIC_INTERFACE',
+  'MODEL_PATH',
+  'SPARKGLM_PREFIX_CACHE_GB',
+  'SPARKGLM_KV_SHARD',
+  'SPARKGLM_PROFILE'
+]) {
   assert(readme.includes(key), `the image env contract must document ${key}`);
 }
 
@@ -221,9 +251,17 @@ assert.deepEqual(
     'download-atlas-model',
     'download-atlas-drafter',
     'build-atlas-image',
-    'convert-atlas-overlay'
+    'convert-atlas-overlay',
+    'prepare-atlas-prefix-cache'
   ]
 );
+assert.deepEqual(plan.steps.find((step) => step.id === 'prepare-atlas-prefix-cache').command, [
+  'mkdir',
+  '-p',
+  '/install/atlas-prefix-cache/kv',
+  '/install/atlas-prefix-cache/ssm',
+  '/install/atlas-carveout-lock'
+]);
 // The drafter lands exactly where both members mount it as DRAFTER_PATH.
 assert.equal(
   plan.steps.find((step) => step.id === 'download-atlas-drafter').destination,
@@ -332,31 +370,33 @@ fs.rmSync(statusRoot, { recursive: true, force: true });
 // Runtime materialization must resolve the same managed paths used by setup.
 // Absolute source/output mounts are required because the converter can emit
 // absolute symlinks into the overlay.
-const materialized = deriveUserConfig(
-  {
-    server: { host: '127.0.0.1', port: 8100 },
-    security: {},
-    defaults: {},
-    models: [],
-    backends: {},
-    runtimes: {},
-    aliases: {},
-    clientCatalog: { modelOrder: [] },
-    cluster: {
-      leaderNode: 'spark01',
-      nodes: {
-        spark01: { backendHost: '10.0.0.1', fabricInterface: 'eth0' },
-        spark02: { backendHost: '10.0.0.2', fabricInterface: 'eth0', labels: { role: 'worker' } }
+const materialize = (recipeDocument) =>
+  deriveUserConfig(
+    {
+      server: { host: '127.0.0.1', port: 8100 },
+      security: {},
+      defaults: {},
+      models: [],
+      backends: {},
+      runtimes: {},
+      aliases: {},
+      clientCatalog: { modelOrder: [] },
+      cluster: {
+        leaderNode: 'spark01',
+        nodes: {
+          spark01: { backendHost: '10.0.0.1', fabricInterface: 'eth0' },
+          spark02: { backendHost: '10.0.0.2', fabricInterface: 'eth0', labels: { role: 'worker' } }
+        }
       }
+    },
+    recipeDocument,
+    {
+      modelRoot: '/models',
+      additive: true,
+      backendVariables: { repoRoot: root, backendRoot: '/backend', installRoot: '/install' }
     }
-  },
-  recipe,
-  {
-    modelRoot: '/models',
-    additive: true,
-    backendVariables: { repoRoot: root, backendRoot: '/backend', installRoot: '/install' }
-  }
-);
+  );
+const materialized = materialize(recipe);
 const additiveExisting = deriveUserConfig(
   {
     server: { host: '127.0.0.1', port: 8100 },
@@ -409,6 +449,19 @@ for (const runtimeId of ['glm53-flash-atlas-worker', 'glm53-flash-atlas-head']) 
   assert(args.includes('src=/models/nvidia--GLM-5.3-Flash-NVFP4,dst=/models/nvidia--GLM-5.3-Flash-NVFP4'));
   assert(args.includes('src=/install/atlas-overlay,dst=/install/atlas-overlay'));
   assert(args.includes('MODEL_PATH=/install/atlas-overlay'));
+  assert(args.includes('src=/install/atlas-prefix-cache,dst=/prefix-cache'));
+  assert(args.includes('-e SPARKGLM_PREFIX_CACHE_GB=48 '));
+  assert(args.includes('-e SPARKGLM_KV_SHARD=1 '));
+  assert(args.includes('-e SPARKGLM_PROFILE=4x1m '));
+}
+// A size reaches both ranks alike (the mount stays either way).
+const diskCacheRecipe = structuredClone(recipe);
+diskCacheRecipe.models[0].settings.prefixCacheGb = 0;
+const diskCache = materialize(diskCacheRecipe);
+for (const runtimeId of ['glm53-flash-atlas-worker', 'glm53-flash-atlas-head']) {
+  const args = diskCache.runtimes[runtimeId].bootstrap.createArgs.join(' ');
+  assert(args.includes('-e SPARKGLM_PREFIX_CACHE_GB=0 '), `${runtimeId} must pass the size through`);
+  assert(args.includes('src=/install/atlas-prefix-cache,dst=/prefix-cache'));
 }
 
 // ---- final portable pins and explicit invalid-manifest fixture -------------
@@ -416,16 +469,26 @@ assert.equal(pins.model.revision, '423acf37583782c51c142d145aef733d72943d93');
 assert.equal(pins.model.repo, 'nvidia/GLM-5.3-Flash-NVFP4');
 assert.equal(pins.source.repo, 'Enntity/sparkglm');
 assert.equal(pins.status, 'final');
-assert.equal(pins.source.revision, '9acb642b55ccfbc63fc979d747cb69eff30c9a24');
-assert.equal(pins.source.installTree, '2ba73a2d8aee7234474ae3cb107a1d61d0c33891');
+assert.equal(pins.source.revision, 'b6bed25903578b4f4ed4f0e7204c80700ad5b8d9');
+assert.equal(pins.source.installTree, '4046c81baa071cb109e55c3206ed1fca3bd3db9a');
 assert.equal(pins.source.buildScript, 'install/build.sh');
-assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkglm:2ba73a2d8aee');
+// The normal install path addresses the immutable registry digest, not the
+// mutable tag. The tag stays as source-build metadata only.
+assert.equal(
+  pins.image.reference,
+  'ghcr.io/enntity/atlas-sparkglm@sha256:9a583b07912262f08f72d33773c994d2468d5292546e79e149c701962101dbc7'
+);
+assert.match(pins.image.reference, IMAGE_REFERENCE_PATTERN);
+assert.equal(pins.image.reference.split('@')[0], IMAGE_REPOSITORY);
+assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkglm:4046c81baa07');
 assert.equal(pins.image.label, 'io.enntity.sparkglm.install-tree');
 assert.equal(pins.image.architecture, 'arm64');
 assert.equal(pins.image.entrypoint, '/opt/atlas/serve.py');
 // The image identity is portable; no host-local receipt or derived-tag prefix.
 assert(!Object.hasOwn(pins, 'installer'));
 assert(!Object.hasOwn(pins.image, 'tagPrefix'));
+assert.notEqual(pins.image.reference, pins.image.tag, 'the digest must not be the mutable tag');
+assert(!pins.image.reference.includes(':4046c81baa07'), 'the tag must never appear as the pulled reference');
 assert(pins.overlay.marker.includes('conversion.complete.json'));
 assert.deepEqual(verifyPins(pins), []);
 
@@ -456,6 +519,49 @@ assert(
   verifyPins({ ...finalManifest, image: { ...finalManifest.image, tag: `lloom/atlas-sparkglm:${'b'.repeat(12)}` } })
     .length > 0,
   'the image tag must be the GHCR repository plus the install tree prefix'
+);
+// The immutable reference is required and must be the pinned repository at a
+// well-formed sha256 digest. A tag-only manifest, a wrong repository, or a
+// malformed digest must all be rejected.
+assert(
+  verifyPins({ ...finalManifest, image: { ...finalManifest.image, reference: finalManifest.image.tag } }).length > 0,
+  'a tag-only image reference must be rejected'
+);
+assert(
+  verifyPins({
+    ...finalManifest,
+    image: { ...finalManifest.image, reference: pins.image.reference.replace('ghcr.io', 'ghcrXio') }
+  }).length > 0,
+  'lookalike registry names must be rejected'
+);
+const tagOnlyManifest = { ...finalManifest, image: { ...finalManifest.image } };
+delete tagOnlyManifest.image.reference;
+assert(verifyPins(tagOnlyManifest).length > 0, 'a missing image.reference must be rejected');
+assert(
+  verifyPins({
+    ...finalManifest,
+    image: { ...finalManifest.image, reference: `ghcr.io/enntity/other@sha256:${'b'.repeat(64)}` }
+  }).length > 0,
+  'the reference must address the pinned Atlas repository'
+);
+assert(
+  verifyPins({
+    ...finalManifest,
+    image: { ...finalManifest.image, reference: `${IMAGE_REPOSITORY}@sha256:${'B'.repeat(64)}` }
+  }).length > 0,
+  'the digest hex must be lowercase'
+);
+assert(
+  verifyPins({
+    ...finalManifest,
+    image: { ...finalManifest.image, reference: `${IMAGE_REPOSITORY}@sha256:${'b'.repeat(63)}` }
+  }).length > 0,
+  'the digest must be a full 64-character hex string'
+);
+assert(
+  verifyPins({ ...finalManifest, image: { ...finalManifest.image, reference: `${IMAGE_REPOSITORY}:latest` } }).length >
+    0,
+  'a mutable tag reference must be rejected'
 );
 assert(
   verifyPins({ ...finalManifest, image: { ...finalManifest.image, label: 'org.opencontainers.image.revision' } })
@@ -571,6 +677,11 @@ fs.writeFileSync(
 set -euo pipefail
 present() { [[ -z "\${ATLAS_TEST_IMAGE_DIR:-}" || -f "\${ATLAS_TEST_IMAGE_DIR}/present" ]]; }
 if [[ "\${1:-}" == "image" && "\${2:-}" == "inspect" ]]; then
+  target="\${5:-}"
+  if [[ "\${ATLAS_TEST_TAG_ONLY:-0}" == "1" && "\${target}" == *@sha256:* ]]; then
+    echo "No such digest image" >&2; exit 1
+  fi
+  [[ "\${target}" == "\${ATLAS_TEST_REFERENCE:-${pins.image.reference}}" || "\${target}" == "${pins.image.tag}" ]] || { echo "unexpected image target" >&2; exit 2; }
   present || { echo "No such image" >&2; exit 1; }
   case "\${4:-}" in
     *'.Architecture'*'${pins.image.label}'*) echo "\${ATLAS_TEST_IDENTITY:-arm64 ${pins.source.installTree}}" ;;
@@ -579,12 +690,15 @@ if [[ "\${1:-}" == "image" && "\${2:-}" == "inspect" ]]; then
   exit 0
 fi
 if [[ "\${1:-}" == "pull" ]]; then
+  [[ "\${2:-}" == "${pins.image.reference}" ]] || { echo "refusing mutable pull" >&2; exit 2; }
+  [[ "\${ATLAS_TEST_DIGEST_PULL_FAIL:-0}" == "1" ]] && { echo "denied: digest pull failed" >&2; exit 1; }
   [[ -n "\${ATLAS_TEST_IMAGE_DIR:-}" ]] && touch "\${ATLAS_TEST_IMAGE_DIR}/present"
   exit 0
 fi
 if [[ "\${1:-}" == "ps" ]]; then exit 0; fi
 if [[ "\${1:-}" == "run" ]]; then
   joined="$*"
+  [[ "\${joined}" == *"\${ATLAS_TEST_REFERENCE:-${pins.image.reference}}"* || "\${ATLAS_TEST_ALLOW_LOCAL:-0}" == "1" ]] || { echo "run must use immutable image reference" >&2; exit 2; }
   if [[ "\${ATLAS_TEST_MISSING_CONTRACT:-0}" == "1" ]]; then exit 1; fi
   if [[ "\${joined}" == *sha256sum* ]]; then
     echo "${'c'.repeat(64)}  ${pins.converter.inImagePath}"
@@ -666,7 +780,7 @@ assert.match(missingImageContract.stderr, /missing the Atlas entrypoint\/profile
 for (const identity of [`arm64 ${'f'.repeat(40)}`, `amd64 ${pins.source.installTree}`, 'arm64 <no value>']) {
   const mismatched = runInstaller({ ...fakeEnv, ATLAS_TEST_IDENTITY: identity }, ['--check-only']);
   assert.notEqual(mismatched.status, 0, `--check-only must reject image identity ${identity}`);
-  assert.match(mismatched.stderr, /expected 'arm64 2ba73a2d8aee7234474ae3cb107a1d61d0c33891'/);
+  assert.match(mismatched.stderr, /expected 'arm64 4046c81baa071cb109e55c3206ed1fca3bd3db9a'/);
 }
 const noImageDir = fs.mkdtempSync(path.join(converterRoot, 'no-image-'));
 const checkedMissingImage = runInstaller({ ...fakeEnv, ATLAS_TEST_IMAGE_DIR: noImageDir }, ['--check-only']);
@@ -677,22 +791,61 @@ assert(!fs.existsSync(path.join(noImageDir, 'present')));
 // Re-entry verifies the present image without pulling or building.
 const reentered = runInstaller();
 assert.equal(reentered.status, 0, `${reentered.stdout}\n${reentered.stderr}`);
-assert.match(reentered.stdout, /existing image .* verified; skipping pull and build/);
+assert.match(reentered.stdout, /existing image .* verified; skipping pull/);
 // A missing image is pulled from GHCR and then verified.
 const pullImageDir = fs.mkdtempSync(path.join(converterRoot, 'pull-'));
 const pulled = runInstaller({ ...fakeEnv, ATLAS_TEST_IMAGE_DIR: pullImageDir });
 assert.equal(pulled.status, 0, `${pulled.stdout}\n${pulled.stderr}`);
-assert.match(pulled.stdout, /pulling ghcr\.io\/enntity\/atlas-sparkglm:2ba73a2d8aee/);
+assert.match(pulled.stdout, /pulling ghcr\.io\/enntity\/atlas-sparkglm@sha256:/);
 assert.match(pulled.stdout, /image prepared/);
-// An image with the wrong label is never trusted: the installer falls through
-// to the source build, whose non-destructive checkout guard refuses to touch a
-// non-git directory at the source root.
+// A digest failure must never fall through to source checkout/build.
 const blockedSource = path.join(converterInstallRoot, 'sources', `atlas-sparkglm-${pins.source.revision}`);
+const wrongContents = runInstaller(wrongTreeEnv);
+assert.notEqual(wrongContents.status, 0);
+assert.match(wrongContents.stderr, /refusing to build from source silently/);
+assert(!fs.existsSync(blockedSource));
+const failedPull = runInstaller({ ...fakeEnv, ATLAS_TEST_IMAGE_DIR: noImageDir, ATLAS_TEST_DIGEST_PULL_FAIL: '1' });
+assert.notEqual(failedPull.status, 0);
+assert.match(failedPull.stderr, /refusing to fall back/);
+assert(!fs.existsSync(blockedSource));
+const tagOnly = runInstaller({ ...fakeEnv, ATLAS_TEST_TAG_ONLY: '1' }, ['--check-only']);
+assert.notEqual(tagOnly.status, 0, 'a local mutable tag cannot satisfy normal check-only');
+const checkedLocal = runInstaller({ ...fakeEnv, ATLAS_TEST_TAG_ONLY: '1', ATLAS_TEST_ALLOW_LOCAL: '1' }, [
+  '--check-only',
+  '--source-build'
+]);
+assert.equal(checkedLocal.status, 0, checkedLocal.stderr);
+assert.match(checkedLocal.stdout, /does not satisfy the normal immutable recipe/);
+
+// Explicit source builds preserve the non-destructive checkout guards.
 fs.mkdirSync(blockedSource, { recursive: true });
-const fellThrough = runInstaller(wrongTreeEnv);
-assert.notEqual(fellThrough.status, 0);
-assert.match(fellThrough.stdout, /building from the pinned source/);
-assert.match(fellThrough.stderr, /exists but is not a git checkout; refusing to overwrite it/);
+const blockedBuild = runInstaller(fakeEnv, ['--source-build']);
+assert.notEqual(blockedBuild.status, 0);
+assert.match(blockedBuild.stderr, /exists but is not a git checkout; refusing to overwrite it/);
+fs.mkdirSync(path.join(blockedSource, '.git'));
+fs.mkdirSync(path.join(blockedSource, 'install'));
+fs.writeFileSync(path.join(blockedSource, 'install/build.sh'), `#!/bin/bash\nprintf '%s\\n' '${pins.image.tag}'\n`);
+fs.writeFileSync(
+  path.join(fakeBin, 'git'),
+  `#!/usr/bin/env bash
+set -euo pipefail
+case "$*" in
+  *'remote get-url origin') echo '${pins.source.cloneUrl}' ;;
+  *'rev-parse HEAD:install') echo '${pins.source.installTree}' ;;
+  *'rev-parse HEAD') echo '${pins.source.revision}' ;;
+  *'status --porcelain --untracked-files=all') printf '%s' "\${ATLAS_TEST_DIRTY:-}" ;;
+  *) echo 'unexpected git operation' >&2; exit 2 ;;
+esac
+`,
+  { mode: 0o755 }
+);
+const dirtyBuild = runInstaller({ ...fakeEnv, ATLAS_TEST_DIRTY: ' M install/build.sh' }, ['--source-build']);
+assert.notEqual(dirtyBuild.status, 0);
+assert.match(dirtyBuild.stderr, /has local changes/);
+const localBuild = runInstaller({ ...fakeEnv, ATLAS_TEST_ALLOW_LOCAL: '1' }, ['--source-build']);
+assert.equal(localBuild.status, 0, `${localBuild.stdout}\n${localBuild.stderr}`);
+assert.match(localBuild.stdout, /source build produced LOCAL tag/);
+assert.match(localBuild.stdout, /does not satisfy the normal immutable recipe/);
 fs.rmSync(path.join(converterInstallRoot, 'sources'), { recursive: true, force: true });
 
 const runConverter = (manifestPath = path.join(backendDir, 'pins.json'), env = fakeEnv, extra = []) =>
@@ -719,6 +872,13 @@ const reused = runConverter();
 assert.equal(reused.status, 0, `${reused.stdout}\n${reused.stderr}`);
 assert.match(reused.stdout, /already carries.*skipping/);
 assert(fs.existsSync(path.join(converterOverlayRoot, pins.overlay.marker)));
+
+const tagOnlyConverter = runConverter(undefined, { ...fakeEnv, ATLAS_TEST_TAG_ONLY: '1' });
+assert.notEqual(tagOnlyConverter.status, 0, 'conversion requires the digest in normal mode');
+const localConverter = runConverter(undefined, { ...fakeEnv, ATLAS_TEST_TAG_ONLY: '1', ATLAS_TEST_ALLOW_LOCAL: '1' }, [
+  '--source-build'
+]);
+assert.equal(localConverter.status, 0, `${localConverter.stdout}\n${localConverter.stderr}`);
 
 const wrongImage = runConverter(undefined, wrongTreeEnv);
 assert.notEqual(wrongImage.status, 0, 'conversion must refuse an image without the pinned install tree');
@@ -759,13 +919,15 @@ const movedPins = JSON.parse(JSON.stringify(pins));
 movedPins.source.revision = 'a'.repeat(40);
 movedPins.source.installTree = 'b'.repeat(40);
 movedPins.image.tag = imageTagFor(movedPins);
+movedPins.image.reference = `${IMAGE_REPOSITORY}@sha256:${'e'.repeat(64)}`;
 const movedManifestPath = path.join(converterRoot, 'moved-pins.json');
 fs.writeFileSync(movedManifestPath, `${JSON.stringify(movedPins, null, 2)}\n`);
 // Restore a compatible identity for this independent source revision case.
 writeConversionIdentity(pins);
 const reusedAfterSourceMove = runConverter(movedManifestPath, {
   ...fakeEnv,
-  ATLAS_TEST_IDENTITY: `arm64 ${movedPins.source.installTree}`
+  ATLAS_TEST_IDENTITY: `arm64 ${movedPins.source.installTree}`,
+  ATLAS_TEST_REFERENCE: movedPins.image.reference
 });
 assert.equal(reusedAfterSourceMove.status, 0, `${reusedAfterSourceMove.stdout}\n${reusedAfterSourceMove.stderr}`);
 assert.match(reusedAfterSourceMove.stdout, /already carries.*skipping/);

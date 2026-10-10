@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-const root = process.env.LLOOM_ROOT || '/home/enntitysparkadmin/.local/lib/node_modules/lloom';
+const root = process.env.LLOOM_ROOT;
+if (!root)
+  throw new Error(
+    'LLOOM_ROOT is required: absolute path to the installed LLooM package (e.g. /opt/lloom or a checkout root).'
+  );
 const { loadManagedServiceEnvironment } = await import(root + '/src/managed-environment.mjs');
 loadManagedServiceEnvironment();
 const model = process.env.TEST_MODEL || 'q38fn-prefix-test';
@@ -11,7 +15,11 @@ const headers = {
   'content-type': 'application/json',
   'x-lloom-client': caller
 };
-const metricsURL = process.env.METRICS_URL || 'http://10.100.16.2:8894/metrics';
+const metricsURL = process.env.METRICS_URL;
+if (!metricsURL)
+  throw new Error(
+    'METRICS_URL is required: the vLLM Prometheus metrics endpoint for the candidate backend (e.g. http://127.0.0.1:8894/metrics).'
+  );
 async function hits() {
   const t = await (await fetch(metricsURL)).text();
   return t

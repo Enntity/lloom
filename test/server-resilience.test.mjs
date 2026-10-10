@@ -1141,3 +1141,86 @@ console.log('server-resilience tests passed');
   assert(Date.now() - startedAt < 1000);
   socket.destroy();
 }
+
+// A successful HTTP transport cannot certify an interrupted model response.
+for (const finishReason of ['error', null]) {
+  const upstream = http.createServer(async (req, res) => {
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    const request = JSON.parse(body);
+    const message = {
+      role: 'assistant',
+      content: 'partial diagnostic',
+      tool_calls: [
+        {
+          id: 'call-1',
+          type: 'function',
+          function: { name: 'write', arguments: '{}' }
+        }
+      ]
+    };
+    if (request.stream) {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.end(
+        `data: ${JSON.stringify({ choices: [{ delta: message, finish_reason: finishReason }] })}\n\ndata: [DONE]\n\n`
+      );
+    } else {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ choices: [{ message, finish_reason: finishReason }] }));
+    }
+  });
+  const upstreamPort = await listen(upstream);
+  const app = createLloomServer(
+    {
+      server: { host: '127.0.0.1', port: 0 },
+      security: { allowMissingAuth: true, apiKeys: [] },
+      defaults: { chatModel: 'test-model' },
+      backends: { local: { type: 'openai', baseUrl: `http://127.0.0.1:${upstreamPort}/v1`, timeoutMs: 2000 } },
+      models: ['responses-false', 'responses-true', 'messages-false', 'messages-true'].map((id) => ({
+        id,
+        backend: 'local',
+        upstreamModel: id,
+        kind: 'chat'
+      })),
+      runtimes: {}
+    },
+    { logger: { error() {}, warn() {} } }
+  );
+  const port = await listen(app.server);
+  try {
+    for (const endpoint of ['responses', 'messages'])
+      for (const stream of [false, true]) {
+        const response = await fetch(`http://127.0.0.1:${port}/v1/${endpoint}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            model: `${endpoint}-${stream}`,
+            stream,
+            max_tokens: 128,
+            ...(endpoint === 'responses' ? { input: 'hello' } : { messages: [{ role: 'user', content: 'hello' }] })
+          }),
+          signal: AbortSignal.timeout(5000)
+        });
+        const text = await response.text();
+        if (endpoint === 'responses') {
+          assert.equal(response.status, 200);
+          if (stream) {
+            assert.match(text, /response.failed/);
+            assert.doesNotMatch(text, /response.completed|response.function_call_arguments.done/);
+          } else {
+            const result = JSON.parse(text);
+            assert.equal(result.status, 'failed');
+            assert.equal(result.error.code, 'server_error');
+            assert(!result.output.some((item) => item.type === 'function_call'));
+          }
+        } else if (stream) {
+          assert.match(text, /"code":"upstream_error","status":502/);
+          assert.doesNotMatch(text, /event: message_stop/);
+        } else assert.equal(response.status, 502);
+      }
+  } finally {
+    upstream.closeAllConnections();
+    await app.close({ stopRuntimes: false, httpGraceMs: 25 });
+    await close(upstream);
+  }
+}

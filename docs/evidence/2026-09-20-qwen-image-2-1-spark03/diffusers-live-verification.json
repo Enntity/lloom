@@ -3,7 +3,7 @@
     "commit": "ad5401dc068ede032312cbae52b2114a3153b19e",
     "sha256": "cd282c07f1ea8250f72cb0955452d55d4d8a24ad2da1a7c767619b20b9e6d6aa"
   },
-  "owner": "ennspark03",
+  "owner": "spark-node-03",
   "runtime": "qwen-image-diffusers",
   "image": "lloom/qwen-image-diffusers:source-22af06376c2b0336c4803c6a8607599e7f0bf1941a4722c513fb291a0d262697",
   "privatePort": 8211,
@@ -60,8 +60,8 @@
     "at": "2026-09-20T18:10:11.662Z",
     "route": "/v1/images/edits",
     "requestedModel": "image-edit",
-    "resolvedModel": "ennspark03/Qwen/Qwen-Image-2.1-Diffusers",
-    "node": "ennspark03",
+    "resolvedModel": "spark-node-03/Qwen/Qwen-Image-2.1-Diffusers",
+    "node": "spark-node-03",
     "status": 200,
     "failedOver": false,
     "durationMs": 59590
@@ -69,28 +69,28 @@
   "aliases": {
     "image-fast": {
       "members": [
-        "ennspark03/Qwen/Qwen-Image-2.1"
+        "spark-node-03/Qwen/Qwen-Image-2.1"
       ],
       "description": "Qwen Image 2.1 generation on Spark 3",
       "advertise": true
     },
     "image-quality": {
       "members": [
-        "ennspark03/Qwen/Qwen-Image-2.1"
+        "spark-node-03/Qwen/Qwen-Image-2.1"
       ],
       "description": "Qwen Image 2.1 generation on Spark 3",
       "advertise": true
     },
     "image-quality-fast": {
       "members": [
-        "ennspark03/Qwen/Qwen-Image-2.1"
+        "spark-node-03/Qwen/Qwen-Image-2.1"
       ],
       "description": "Qwen Image 2.1 generation on Spark 3",
       "advertise": true
     },
     "image-edit": {
       "members": [
-        "ennspark03/Qwen/Qwen-Image-2.1-Diffusers"
+        "spark-node-03/Qwen/Qwen-Image-2.1-Diffusers"
       ],
       "description": "Qwen Image 2.1 reference editing on Spark 3 via official Diffusers",
       "advertise": true

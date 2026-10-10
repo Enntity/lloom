@@ -253,6 +253,13 @@ export function normalizeStructuredOutputChatCompletion(response, output) {
       );
     }
     matched = true;
+    const finishReason = choice?.finish_reason;
+    // Only a successful forced-tool completion may be rewritten to `stop`.
+    // `length`, `content_filter`, `error`, and absent/unknown terminal reasons
+    // describe how the backend actually stopped; hiding them would let a
+    // truncated or filtered result look like a clean structured answer.
+    const successfulFinish =
+      finishReason === 'tool_calls' || finishReason === 'function_call' || finishReason === 'stop';
     const { tool_calls: _toolCalls, ...remainingMessage } = message;
     return {
       ...choice,
@@ -260,7 +267,7 @@ export function normalizeStructuredOutputChatCompletion(response, output) {
         ...remainingMessage,
         content: argumentsText
       },
-      finish_reason: 'stop'
+      finish_reason: successfulFinish ? 'stop' : finishReason
     };
   });
 
