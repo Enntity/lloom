@@ -138,9 +138,13 @@ repairs a partial pair after a crash only when both observed digests match that
 intent.
 
 The local journal lock is held for `deploy`, `resume`, and `rollback`. `status`
-is read-only. A concrete transport must additionally refuse an old gateway
-protocol or a non-atomic layout during `preflight`; the coordinator never
-silently downgrades those checks.
+is read-only. A coordinator process crash leaves its lock in place; recovery
+must verify the recorded owner is dead before removing that exact lock and
+then resume. A missing or malformed owner is uncertain and remains blocked for
+manual intervention. The coordinator does not silently reap an abandoned
+lock. A concrete transport must additionally refuse an old gateway protocol
+or a non-atomic layout during `preflight`; the coordinator never silently
+downgrades those checks.
 
 ## Local node agent and SSH transport
 

@@ -826,8 +826,15 @@ export class NodeReleaseAgent {
       const inspection = asObject(await this.gateway.inspect(context));
       const identity = publicIdentity(inspection.loadedIdentity, 'release loaded identity');
       const expectedIdentity = rollingBackOldRelease
-        ? context.expectedOldIdentity
+        ? (document.receipts.preflight?.currentIdentity ?? context.expectedOldIdentity)
         : (document.receipts.promote?.identity ?? document.receipts.verify?.identity ?? document.postSwapIdentity);
+      const diskIdentityRaw = await this.#readCurrentIdentity();
+      if (!diskIdentityRaw) throw new NodeReleaseError('release current disk identity is unknown', 'identity_unknown');
+      const diskIdentity = publicIdentity(diskIdentityRaw, 'release current disk identity');
+      if (!this.#matchesExpected(diskIdentity, expectedIdentity))
+        throw new NodeReleaseError('release current disk identity drifted', 'identity_drift');
+      if (!this.#identitiesEqual(diskIdentity, identity))
+        throw new NodeReleaseError('release disk and loaded identities disagree', 'identity_drift');
       this.#assertReleaseInspection(inspection, identity, expectedIdentity, document, context);
       const result = asObject(await this.gateway.release(context));
       if (result.fenced !== false)
@@ -1540,7 +1547,7 @@ export class NodeReleaseAgent {
     const currentIdentity = publicIdentity(inspection.currentIdentity, 'release current identity');
     if (!this.#identitiesEqual(currentIdentity, loadedIdentity))
       throw new NodeReleaseError('release current and loaded identities disagree', 'identity_drift');
-    if (!this.#identitiesEqual(loadedIdentity, expectedIdentity))
+    if (!this.#matchesExpected(loadedIdentity, expectedIdentity))
       throw new NodeReleaseError(
         'release requires the fully verified gateway identity to be loaded',
         'loaded_identity_mismatch'
@@ -1551,6 +1558,12 @@ export class NodeReleaseAgent {
       throw new NodeReleaseError('release effective config identity is missing', 'runtime_contract_mismatch');
     if (loadedIdentity.effectiveConfigSha256 !== effectiveConfigSha256)
       throw new NodeReleaseError('release effective config identity disagrees', 'runtime_contract_mismatch');
+    const expectedEffectiveConfigSha256 = document.backup?.files?.effectiveConfigSha256;
+    if (
+      !DIGEST.test(String(expectedEffectiveConfigSha256 ?? '')) ||
+      effectiveConfigSha256 !== expectedEffectiveConfigSha256
+    )
+      throw new NodeReleaseError('release effective config identity changed from prepare', 'runtime_contract_mismatch');
 
     const preservationSnapshot = inspection.preservationSnapshot;
     const expectedSnapshotSha256 = document.backup?.files?.preservationSnapshotSha256;
@@ -1641,7 +1654,7 @@ export class NodeReleaseAgent {
   async #phase(nodeId, context, phase, method, mutation, work) {
     if (!PHASES.has(phase)) throw new NodeReleaseError(`unsupported node phase ${phase}`, 'invalid_context');
     this.#assertContext(nodeId, context);
-    await this.#acquireLock(context);
+    const createdOperationLock = await this.#acquireLock(context);
     try {
       await this.#acquireInvocationLock(context);
       try {
@@ -1682,8 +1695,19 @@ export class NodeReleaseAgent {
             throw new NodeReleaseError('phase receipt generation is stale', 'stale_generation');
           if (replacingReleaseAfterRollback) delete document.receipts[phase];
           else {
-            if (['release', 'rollback', 'discard-stage'].includes(phase)) await this.#releaseLock(context);
-            return clone(document.receipts[phase]);
+            const requiresFreshObservation =
+              phase === 'reprepare' ||
+              (phase === 'canary' && (context.rollbackCanary === true || Boolean(document.receipts.rollback))) ||
+              (phase === 'release' && (context.rollbackRelease === true || Boolean(document.receipts.rollback)));
+            if (!requiresFreshObservation) {
+              if (['release', 'discard-stage'].includes(phase)) await this.#releaseLock(context);
+              return clone(document.receipts[phase]);
+            }
+            // A recovery fence/canary/release is a new observation even when
+            // the coordinator keeps the same generation. Remove the forward
+            // receipt before entering the phase so a crash cannot replay it
+            // as proof that the restored old release was served.
+            delete document.receipts[phase];
           }
         }
         this.#assertPhaseOrder(document, phase, context);
@@ -1713,7 +1737,7 @@ export class NodeReleaseAgent {
           document.state = phase === 'discard-stage' ? 'rolled-back' : phase;
           document.updatedAt = timestamp(this.clock);
           await writeAtomicJson(this.fs, filePath, document);
-          if (['release', 'rollback', 'discard-stage'].includes(phase)) await this.#releaseLock(context);
+          if (['release', 'discard-stage'].includes(phase)) await this.#releaseLock(context);
           return receipt;
         } catch (error) {
           document.state = 'unknown';
@@ -1729,7 +1753,7 @@ export class NodeReleaseAgent {
       // A failed preflight has not been allowed to mutate or fence anything;
       // do not strand a persistent reservation that no recovery action could
       // safely use.
-      if (phase === 'preflight' && !mutation) await this.#releaseLock(context);
+      if (phase === 'preflight' && !mutation && createdOperationLock) await this.#releaseLock(context);
       throw error;
     }
   }
@@ -1744,7 +1768,7 @@ export class NodeReleaseAgent {
         generation: context.generation,
         nodeId: this.nodeId
       });
-      return;
+      return true;
     } catch (error) {
       if (error?.code !== 'EEXIST')
         throw new NodeReleaseError('deployment agent lock could not be acquired', 'lock_failed');
@@ -1757,13 +1781,77 @@ export class NodeReleaseAgent {
     }
     if (owner.operationId !== context.operationId)
       throw new NodeReleaseError('another deployment operation owns this node', 'lock_held');
+    return false;
   }
 
   async #acquireInvocationLock(context) {
     const filePath = path.join(this.root, '.deployment-agent.lock', 'invocation.lock');
+    try {
+      await this.#writeInvocationLock(filePath, context);
+      return;
+    } catch (error) {
+      if (error?.code !== 'EEXIST')
+        throw new NodeReleaseError('deployment invocation lock could not be acquired', 'lock_failed');
+    }
+
+    // Reaping a stale invocation is itself a serialized operation. Without a
+    // separate guard, two resumptions can both observe the same dead owner;
+    // the second rename can then remove the first resumer's newly-created
+    // live invocation lock. The recovery guard is deliberately never
+    // auto-reaped: an abandoned guard requires explicit operator recovery.
+    const recoveryPath = path.join(this.root, '.deployment-agent.lock', 'invocation-recovery.lock');
     let handle;
     try {
+      handle = await this.fs.open(recoveryPath, 'wx', 0o600);
+      await handle.writeFile(
+        JSON.stringify({ pid: process.pid, startIdentity: await processStartIdentity(process.pid) })
+      );
+      await handle.sync();
+      await handle.close();
+      handle = null;
+    } catch (error) {
+      await handle?.close().catch(() => {});
+      if (error?.code === 'EEXIST')
+        throw new NodeReleaseError('invocation lock recovery is already in progress', 'lock_held');
+      throw new NodeReleaseError('invocation lock recovery could not be acquired', 'lock_failed');
+    }
+
+    try {
+      const existing = await this.#loadInvocationOwner(filePath);
+      if (existing && !(await invocationOwnerIsStale(existing)))
+        throw new NodeReleaseError('another phase invocation owns this node', 'lock_held');
+      if (existing) {
+        // A dead process or a PID whose kernel start identity no longer
+        // matches cannot still own the invocation. Quarantine the exact
+        // observed inode with one atomic rename while the recovery guard is
+        // held; a blind unlink could remove a new live owner's lock.
+        const quarantinePath = `${filePath}.stale-${process.pid}-${randomUUID()}`;
+        try {
+          await this.fs.rename(filePath, quarantinePath);
+        } catch (renameError) {
+          if (renameError?.code !== 'ENOENT')
+            throw new NodeReleaseError('stale invocation lock could not be quarantined', 'lock_uncertain');
+        }
+        await this.fs.unlink(quarantinePath).catch(() => {});
+      }
+      try {
+        await this.#writeInvocationLock(filePath, context);
+      } catch (error) {
+        if (error?.code === 'EEXIST')
+          throw new NodeReleaseError('another phase invocation owns this node', 'lock_held');
+        throw new NodeReleaseError('deployment invocation lock could not be acquired', 'lock_failed');
+      }
+    } finally {
+      await this.fs.unlink(recoveryPath).catch(() => {});
+    }
+  }
+
+  async #writeInvocationLock(filePath, context) {
+    let handle;
+    let created = false;
+    try {
       handle = await this.fs.open(filePath, 'wx', 0o600);
+      created = true;
       await handle.writeFile(
         JSON.stringify({
           operationId: context.operationId,
@@ -1774,28 +1862,11 @@ export class NodeReleaseAgent {
       );
       await handle.sync();
       await handle.close();
+      handle = null;
     } catch (error) {
       await handle?.close().catch(() => {});
-      if (error?.code === 'EEXIST') {
-        const existing = await this.#loadInvocationOwner(filePath);
-        if (!existing || !(await invocationOwnerIsStale(existing)))
-          throw new NodeReleaseError('another phase invocation owns this node', 'lock_held');
-        // A dead process or a PID whose kernel start identity no longer
-        // matches cannot still own the invocation. Quarantine the exact
-        // observed inode with one atomic rename before deleting it; a blind
-        // unlink could remove a new live owner's lock between the stale read
-        // and cleanup.
-        const quarantinePath = `${filePath}.stale-${process.pid}-${randomUUID()}`;
-        try {
-          await this.fs.rename(filePath, quarantinePath);
-        } catch (renameError) {
-          if (renameError?.code === 'ENOENT') return this.#acquireInvocationLock(context);
-          throw new NodeReleaseError('stale invocation lock could not be quarantined', 'lock_uncertain');
-        }
-        await this.fs.unlink(quarantinePath).catch(() => {});
-        return this.#acquireInvocationLock(context);
-      }
-      throw new NodeReleaseError('deployment invocation lock could not be acquired', 'lock_failed');
+      if (created) await this.fs.unlink(filePath).catch(() => {});
+      throw error;
     }
   }
 

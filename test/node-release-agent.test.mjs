@@ -348,6 +348,32 @@ test('requires effective config and preservation evidence in the final release i
   );
 });
 
+test('rechecks the reviewed disk identity immediately before public release', async (t) => {
+  const fixture = await makeFixture(t);
+  const { agent, context, root, gateway } = fixture;
+  await agent.preflight('node-1', context);
+  await agent.stage('node-1', context);
+  await agent.prepare('node-1', context);
+  await agent.swap('node-1', context);
+  await agent.restart('node-1', context);
+  await agent.verify('node-1', context);
+  await agent.canary('node-1', context);
+  await agent.promote('node-1', context);
+  await fs.writeFile(path.join(root, 'config.json'), `${CONFIG}tampered-after-promote`);
+  await assert.rejects(
+    () => agent.release('node-1', context),
+    (error) => error.code === 'identity_drift'
+  );
+  assert.equal(
+    fixture.calls.some((entry) => entry[0] === 'release'),
+    false,
+    'release must not open traffic after disk/config drift'
+  );
+  // Keep the fixture reference used here explicit: the inspection may still
+  // report the boot-loaded identity, but that is insufficient evidence.
+  assert.equal(typeof gateway.inspect, 'function');
+});
+
 test('refuses a running gateway with an unsupported persistent systemd layout before fencing', async (t) => {
   const cases = [
     ['disabled unit', { UnitFileState: 'disabled' }, 'service_not_enabled'],
@@ -496,6 +522,86 @@ test('repairs a rollback pointer after a crash before its manifest update', asyn
   );
 });
 
+test('same-generation recovery runs a fresh old canary and compensating release', async (t) => {
+  const fixture = await makeFixture(t);
+  const { agent, context, gateway, loaded } = fixture;
+  const documentedOldIdentityContext = {
+    ...context,
+    expectedOldIdentity: {
+      releaseId: context.expectedOldIdentity.releaseId,
+      artifactSha256: context.expectedOldIdentity.artifactSha256,
+      manifestSha256: context.expectedOldIdentity.manifestSha256
+    }
+  };
+  let reprepareCalls = 0;
+  let canaryCalls = 0;
+  let releaseCalls = 0;
+  let loseForwardRelease = true;
+  const originalReprepare = gateway.reprepare;
+  const originalCanary = gateway.canary;
+  const originalRelease = gateway.release;
+  gateway.reprepare = async (...args) => {
+    reprepareCalls += 1;
+    return originalReprepare(...args);
+  };
+  gateway.canary = async (...args) => {
+    canaryCalls += 1;
+    return originalCanary(...args);
+  };
+  gateway.release = async (...args) => {
+    releaseCalls += 1;
+    const result = await originalRelease(...args);
+    if (loseForwardRelease) {
+      loseForwardRelease = false;
+      throw Object.assign(new Error('lost forward release response'), { code: 'disconnect' });
+    }
+    return result;
+  };
+
+  await agent.preflight('node-1', documentedOldIdentityContext);
+  await agent.stage('node-1', documentedOldIdentityContext);
+  await agent.prepare('node-1', documentedOldIdentityContext);
+  await agent.swap('node-1', documentedOldIdentityContext);
+  await agent.restart('node-1', documentedOldIdentityContext);
+  await agent.verify('node-1', documentedOldIdentityContext);
+  await agent.canary('node-1', documentedOldIdentityContext);
+  await agent.promote('node-1', documentedOldIdentityContext);
+  await assert.rejects(
+    () => agent.release('node-1', documentedOldIdentityContext),
+    (error) => error.code === 'disconnect'
+  );
+
+  // The coordinator's recovery sequence fences before rollback. Both this
+  // call and the rollback-internal fence must reach the gateway even though
+  // the operation generation remains one.
+  await agent.reprepare('node-1', documentedOldIdentityContext);
+  await agent.rollback('node-1', documentedOldIdentityContext);
+  await agent.reprepare('node-1', documentedOldIdentityContext);
+  const competing = new NodeReleaseAgent({
+    nodeId: 'node-1',
+    root: fixture.root,
+    configPath: path.join(fixture.root, 'config.json'),
+    platform: 'linux',
+    gateway,
+    unitPath: fixture.unitPath,
+    serviceUser: fixture.serviceUser,
+    run: fixture.agent.run,
+    clock: () => new Date('2026-10-10T17:00:00.000Z')
+  });
+  await assert.rejects(
+    () => competing.preflight('node-1', { ...documentedOldIdentityContext, operationId: 'op-other' }),
+    (error) => error.code === 'lock_held'
+  );
+  await agent.canary('node-1', { ...documentedOldIdentityContext, rollbackCanary: true });
+  const released = await agent.release('node-1', { ...documentedOldIdentityContext, rollbackRelease: true });
+
+  assert.equal(released.rollbackReleased, true);
+  assert.equal(loaded.value, 'old');
+  assert.equal(reprepareCalls, 3);
+  assert.equal(canaryCalls, 2, 'the old canary must not replay the forward receipt');
+  assert.equal(releaseCalls, 2, 'the compensating release must call the gateway again');
+});
+
 test('returns the durable receipt on repeated phase calls', async (t) => {
   const fixture = await makeFixture(t);
   const first = await fixture.agent.preflight('node-1', fixture.context);
@@ -563,6 +669,57 @@ test('rejects direct phase calls out of order and serializes same-operation invo
   ]);
   assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
   assert.equal(results.filter((result) => result.status === 'rejected')[0].reason.code, 'lock_held');
+});
+
+test('serializes stale invocation-lock recovery without deleting a new owner', async (t) => {
+  const fixture = await makeFixture(t);
+  const { root, context } = fixture;
+  const lockPath = path.join(root, '.deployment-agent.lock');
+  await fs.mkdir(lockPath, { recursive: true });
+  await fs.writeFile(
+    path.join(lockPath, 'owner.json'),
+    JSON.stringify({ operationId: context.operationId, generation: context.generation, nodeId: context.nodeId })
+  );
+  await fs.writeFile(
+    path.join(lockPath, 'invocation.lock'),
+    JSON.stringify({ operationId: context.operationId, generation: context.generation, pid: 999999 })
+  );
+  const inspect = fixture.gateway.inspect;
+  fixture.gateway.inspect = async (...args) => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    return inspect.apply(fixture.gateway, args);
+  };
+  const agentTwo = new NodeReleaseAgent({
+    nodeId: 'node-1',
+    root,
+    configPath: path.join(root, 'config.json'),
+    platform: 'linux',
+    gateway: fixture.gateway,
+    unitPath: fixture.unitPath,
+    serviceUser: fixture.serviceUser,
+    run: fixture.agent.run,
+    clock: () => new Date('2026-10-10T17:00:00.000Z')
+  });
+  const results = await Promise.allSettled([
+    fixture.agent.preflight('node-1', context),
+    agentTwo.preflight('node-1', context)
+  ]);
+  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+  assert.equal(results.filter((result) => result.status === 'rejected')[0].reason.code, 'lock_held');
+  assert.equal(
+    await fs.stat(path.join(lockPath, 'invocation-recovery.lock')).then(
+      () => false,
+      () => true
+    ),
+    true
+  );
+  assert.equal(
+    await fs.stat(path.join(lockPath, 'invocation.lock')).then(
+      () => false,
+      () => true
+    ),
+    true
+  );
 });
 
 test('replaying a cached terminal receipt releases the invocation and operation locks', async (t) => {
