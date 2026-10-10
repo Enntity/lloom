@@ -1,9 +1,10 @@
 # Cluster deployment coordinator protocol
 
 `src/cluster-deployment.mjs` coordinates a reviewed artifact across a small
-gateway fleet. It is deliberately transport-neutral. A later node agent or SSH
-implementation must satisfy the adapter below; the coordinator never opens
-SSH, restarts a service, rebuilds an image, or sends inference requests itself.
+gateway fleet. It is deliberately transport-neutral. The concrete node agent
+and SSH adapter below satisfy the adapter contract; the coordinator never
+opens SSH, restarts a service, rebuilds an image, or sends inference requests
+itself.
 
 The supported target is a Linux gateway managed by systemd. A deployment plan
 must contain all of the following:
@@ -14,6 +15,8 @@ must contain all of the following:
   gatewayProtocol: 1,
   reviewedArtifact: {
     id: 'release-2026-10-10',
+    path: '/reviewed/releases/lloom-gateway.tar',
+    manifestPath: '/reviewed/releases/lloom-gateway.tar.manifest.json',
     sha256: '<64 lowercase hex>',
     manifestSha256: '<64 lowercase hex>',
     reviewed: true
@@ -88,14 +91,19 @@ Phase-specific evidence is required:
 - `prepare` and `reprepare`: `fenced: true`, `drained: true`, and both
   `{ id, sha256 }` `backup` and `snapshot` evidence.
 - `swap`, `restart`, `verify`, and `promote`: the exact new artifact and
-  manifest identity, `configSha256`, `dependencyDigest`,
-  `runtimeContractDigest`, and snapshot evidence. `restart` also returns
+  manifest identity, raw `configSha256`, `effectiveConfigSha256`,
+  `dependencyDigest`, `runtimeContractDigest`, and snapshot evidence. `restart` also returns
   `serviceRestarted: true, healthy: true`; `verify` returns `verified: true`;
   `promote` returns `promoted: true`.
 - `canary`: `healthy: true`, the exact reviewed gateway model and runtime,
   `fenced: true`, `privileged: true`, `source: 'local'`, `aliasUsed: false`,
   and `cloudFallback: false`.
-- `release`: `released: true, fenced: false`.
+- `release`: immediately before opening traffic, the same inspection must
+  affirm protocol 1, the atomic layout, an active systemd unit, `fenced: true`,
+  `drained: true`, matching current and loaded identities (including distinct
+  raw and effective config digests), and the unchanged stable preservation
+  snapshot. It then returns `released: true, fenced: false`; a compensating
+  release of a restored old identity also returns `rollbackReleased: true`.
 - `rollback`: `restored: true, fenced: true`, and the exact expected old
   identity.
 - `discardStage`: `stageDiscarded: true`.
@@ -118,11 +126,16 @@ The journal is atomically replaced and fsynced before every possible mutation.
 It records a pending action before calling the adapter and a public-safe
 receipt afterward. A process that resumes with a pending action treats its
 outcome as uncertain and rolls back; it never repeats the swap or restart.
-Rollback reverses the recorded mutation order. If any node was released or
-promoted, rollback first performs a fresh `reprepare` fence and drain. Every
-rollback attempt continues even when another node fails. `rollback-failed` and
-`manual-intervention` are durable outcomes; they are never represented as
-successful completion.
+Rollback first performs a fresh `reprepare` fence and drain for every possibly
+mutated, promoted, or released node. No rollback swap or restart begins until
+that fleet-wide barrier succeeds. It then reverses the recorded mutation order,
+verifies the old leader under the fence, and performs compensating release only
+after every old identity is proven. Every rollback attempt continues even when
+another node fails. `rollback-failed` and `manual-intervention` are durable
+outcomes; they are never represented as successful completion. The node agent
+persists rollback pointer/manifest intent before changing either half and
+repairs a partial pair after a crash only when both observed digests match that
+intent.
 
 The local journal lock is held for `deploy`, `resume`, and `rollback`. `status`
 is read-only. A concrete transport must additionally refuse an old gateway
@@ -167,11 +180,24 @@ proof that the running process loaded that release.
 
 The archive layout is the reviewed gateway layout itself: `package.json` and
 the listed `node_modules` entries are at the archive root. A standard
-`npm pack` tarball with a leading `package/` directory is rejected; it must be
-rebuilt by the reviewed release builder into this layout. The closure must
-match every declared runtime dependency exactly (optional and peer
-dependencies are unsupported), with each installed package version and every
-regular file covered by the manifest inventory.
+`npm pack` tarball with a leading `package/` directory is rejected. Build the
+deployable reviewed bundle from the committed checkout and locked
+`node_modules` with:
+
+```sh
+npm run release:bundle -- --runtime-contract-digest <reviewed-contract-sha256>
+```
+
+The command performs no install or network operation. It writes the reviewed
+archive and adjacent manifest under `dist/releases/<commit>/`; the resulting
+paths and digests belong in `reviewedArtifact.path`,
+`reviewedArtifact.manifestPath`, `reviewedArtifact.sha256`, and
+`reviewedArtifact.manifestSha256` before the plan is reviewed. Pass
+`--allow-dirty` only for a local fixture; a deployable bundle must be built
+from a committed checkout. The closure must match every declared runtime
+dependency range at its installed version (optional and peer dependencies are
+unsupported), with each installed package version and every regular file
+covered by the manifest inventory.
 
 The agent journals under `operations/<operation-token>/<node-id>/journal.json`
 and fsyncs the journal before an action and after its receipt. It copies and

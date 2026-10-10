@@ -1,5 +1,7 @@
 import { URL } from 'node:url';
 
+import { stablePreservationSnapshot } from './deployment-fence.mjs';
+
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
 const PROTOCOL = 1;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
@@ -25,6 +27,7 @@ function identity(value, label) {
     'artifactSha256',
     'manifestSha256',
     'configSha256',
+    'effectiveConfigSha256',
     'dependencyDigest',
     'runtimeContractDigest'
   ];
@@ -39,6 +42,29 @@ function extractIdentity(...sources) {
     if (candidate) return candidate;
   }
   return null;
+}
+
+// Preserve the historical adapter export while sharing the fence's stable
+// preservation contract with the gateway endpoint.
+export const stableRuntimeSnapshot = stablePreservationSnapshot;
+
+function validatePreservationSnapshot(value, effectiveConfigSha256) {
+  const source = publicValue(value);
+  if (!source || source.schemaVersion !== 1 || source.effectiveConfigSha256 !== effectiveConfigSha256)
+    throw new NodeGatewayAdapterError('gateway preservation snapshot is invalid', 'preservation_snapshot_invalid');
+  const runtimes = publicValue(source.runtimes);
+  if (!runtimes)
+    throw new NodeGatewayAdapterError('gateway preservation runtimes are missing', 'preservation_snapshot_invalid');
+  for (const runtime of Object.values(runtimes)) {
+    if (!publicValue(runtime?.contract) || !publicValue(runtime?.observed))
+      throw new NodeGatewayAdapterError(
+        'gateway preservation runtime evidence is incomplete',
+        'preservation_snapshot_invalid'
+      );
+    if (runtime.members !== undefined && !Array.isArray(runtime.members))
+      throw new NodeGatewayAdapterError('gateway preservation members are invalid', 'preservation_snapshot_invalid');
+  }
+  return source;
 }
 
 function safeBaseUrl(value) {
@@ -91,7 +117,13 @@ async function readCappedResponse(response) {
 }
 
 export class NodeGatewayAdapter {
-  constructor({ baseUrl = 'http://127.0.0.1:8100', adminApiKey, fetchFn = globalThis.fetch, timeoutMs = 30000 } = {}) {
+  constructor({
+    baseUrl = 'http://127.0.0.1:8100',
+    adminApiKey,
+    fetchFn = globalThis.fetch,
+    timeoutMs = 30000,
+    drainTimeoutMs = 300000
+  } = {}) {
     this.baseUrl = safeBaseUrl(baseUrl);
     if (typeof adminApiKey !== 'string' || !adminApiKey)
       throw new NodeGatewayAdapterError('gateway admin key is required', 'admin_key_missing');
@@ -100,6 +132,7 @@ export class NodeGatewayAdapter {
     this.adminApiKey = adminApiKey;
     this.fetch = fetchFn;
     this.timeoutMs = timeoutMs;
+    this.drainTimeoutMs = drainTimeoutMs;
     this.fenceGenerations = new Map();
   }
 
@@ -125,9 +158,15 @@ export class NodeGatewayAdapter {
     const atomicLayout = gateway.atomicLayout === true || gateway.atomicLayout === 'atomic';
     if (!atomicLayout)
       throw new NodeGatewayAdapterError('gateway release layout is not atomic', 'atomic_layout_required');
-    const runtimeSnapshot = gateway.runtimeSnapshot ?? gateway.runtimeManager?.deploymentSnapshot;
-    if (!runtimeSnapshot || typeof runtimeSnapshot !== 'object')
+    const rawRuntimeSnapshot = gateway.runtimeSnapshot ?? gateway.runtimeManager?.deploymentSnapshot;
+    if (!rawRuntimeSnapshot || typeof rawRuntimeSnapshot !== 'object' || Array.isArray(rawRuntimeSnapshot))
       throw new NodeGatewayAdapterError('gateway runtime snapshot is unavailable', 'runtime_snapshot_missing');
+    const runtimeSnapshot = stableRuntimeSnapshot(rawRuntimeSnapshot);
+    const effectiveConfigSha256 =
+      fence.effectiveConfigSha256 ?? gateway.effectiveConfigSha256 ?? fenceIdentity.effectiveConfigSha256;
+    if (effectiveConfigSha256 !== fenceIdentity.effectiveConfigSha256)
+      throw new NodeGatewayAdapterError('gateway effective config identity disagrees', 'config_identity_drift');
+    const preservationSnapshot = validatePreservationSnapshot(gateway.preservationSnapshot, effectiveConfigSha256);
     return {
       gatewayProtocol,
       fenceProtocolVersion: PROTOCOL,
@@ -137,24 +176,36 @@ export class NodeGatewayAdapter {
       serviceActive: true,
       fenced: fence.fenced === true,
       drained: fence.state === 'prepared' || fence.state === 'canary',
-      runtimeSnapshot
+      runtimeSnapshot,
+      preservationSnapshot,
+      effectiveConfigSha256
     };
   }
 
   async prepare(context) {
-    const result = await this.#request('/gateway/deployment-fence/prepare', {
-      method: 'POST',
-      body: { opId: context.operationId }
-    });
+    const timeoutMs = Number(context?.drainTimeoutMs ?? this.drainTimeoutMs);
+    const result = await this.#request(
+      '/gateway/deployment-fence/prepare',
+      {
+        method: 'POST',
+        body: { opId: context.operationId, timeoutMs }
+      },
+      Math.max(this.timeoutMs, timeoutMs + 5000)
+    );
     this.#rememberGeneration(context.operationId, result);
     return this.#fenceReceipt(result, 'prepare');
   }
 
   async reprepare(context) {
-    const result = await this.#request('/gateway/deployment-fence/prepare', {
-      method: 'POST',
-      body: { opId: context.operationId }
-    });
+    const timeoutMs = Number(context?.drainTimeoutMs ?? this.drainTimeoutMs);
+    const result = await this.#request(
+      '/gateway/deployment-fence/prepare',
+      {
+        method: 'POST',
+        body: { opId: context.operationId, timeoutMs }
+      },
+      Math.max(this.timeoutMs, timeoutMs + 5000)
+    );
     this.#rememberGeneration(context.operationId, result);
     return this.#fenceReceipt(result, 'reprepare');
   }
@@ -235,9 +286,9 @@ export class NodeGatewayAdapter {
     return { fenced: true, drained: true };
   }
 
-  async #request(pathname, { method = 'GET', body } = {}) {
+  async #request(pathname, { method = 'GET', body } = {}, requestTimeoutMs = this.timeoutMs) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
     try {
       const response = await this.fetch(`${this.baseUrl}${pathname}`, {
         method,

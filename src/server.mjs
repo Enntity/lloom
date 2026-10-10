@@ -672,6 +672,100 @@ async function waitForRequest(operation, signal) {
   }
 }
 
+// Preserve configuration and owned runtime/process evidence while excluding
+// gateway-local timestamps, counters, and event history. The node agent
+// compares this contract across a systemd restart and verified rollback.
+function deploymentPreservationSnapshot(runtimeStatus, effectiveConfigSha256) {
+  const runtimes = Object.fromEntries(
+    Object.entries(runtimeStatus?.runtimes ?? {}).map(([runtimeId, runtime]) => {
+      const contract = Object.fromEntries(
+        [
+          'enabled',
+          'requiredNodes',
+          'keepWarm',
+          'memoryGb',
+          'maxConcurrency',
+          'maxQueuedRequests',
+          'interactiveReservedSlots',
+          'interactiveReservedQueueSlots',
+          'queueTimeoutMs',
+          'command',
+          'args',
+          'effectiveArgs',
+          'cwd',
+          'port',
+          'healthUrl',
+          'healthModel',
+          'healthTimeoutMs',
+          'startupTimeoutMs',
+          'watchdog',
+          'sessionCache',
+          'adapter',
+          'management',
+          'containerName',
+          'recipe',
+          'bootstrap',
+          'cachePersistence',
+          'node',
+          'placement',
+          'authority'
+        ]
+          .filter((field) => Object.hasOwn(runtime ?? {}, field))
+          .map((field) => [field, runtime[field]])
+      );
+      if (contract.watchdog && typeof contract.watchdog === 'object') {
+        const stableWatchdogFields = [
+          'enabled',
+          'action',
+          'restartWithActiveRequests',
+          'firstContentTimeoutMs',
+          'idleContentTimeoutMs',
+          'failureThreshold',
+          'failureWindowMs',
+          'minNoProgressMs',
+          'cooldownMs',
+          'drainTimeoutMs',
+          'failureStatuses'
+        ];
+        contract.watchdog = Object.fromEntries(
+          stableWatchdogFields
+            .filter((field) => Object.hasOwn(contract.watchdog, field))
+            .map((field) => [field, contract.watchdog[field]])
+        );
+      }
+      const observed = {
+        status: runtime?.status ?? null,
+        healthy: runtime?.healthy === true,
+        servingHealthy: runtime?.servingHealthy ?? null,
+        controlHealthy: runtime?.controlHealthy ?? null,
+        availabilityState: runtime?.availabilityState ?? null,
+        pid: Number.isInteger(runtime?.pid) ? runtime.pid : null,
+        containerId: runtime?.container?.id ?? runtime?.container?.containerId ?? null,
+        containerRunning: typeof runtime?.container?.running === 'boolean' ? runtime.container.running : null
+      };
+      const members = Array.isArray(runtime?.members)
+        ? runtime.members.map((member) => {
+            const memberObserved = runtimeStatus?.runtimes?.[member.runtime] ?? {};
+            return {
+              node: member.node ?? null,
+              runtime: member.runtime ?? null,
+              role: member.role ?? null,
+              order: member.order ?? null,
+              status: member.status ?? null,
+              healthy: member.healthy === true,
+              servingHealthy: member.servingHealthy ?? null,
+              controlHealthy: member.controlHealthy ?? null,
+              pid: Number.isInteger(memberObserved.pid) ? memberObserved.pid : null,
+              containerId: memberObserved.container?.id ?? memberObserved.container?.containerId ?? null
+            };
+          })
+        : undefined;
+      return [runtimeId, { contract, observed, ...(members ? { members } : {}) }];
+    })
+  );
+  return { schemaVersion: 1, effectiveConfigSha256: effectiveConfigSha256 ?? null, runtimes };
+}
+
 function normalizeAbortError(error, signal, timeoutMs) {
   if (!signal?.aborted) return error;
   if (signal.reason?.code === 'INTERACTIVE_PRIORITY') return signal.reason;
@@ -2048,7 +2142,15 @@ export async function retryRuntimeActionAfterConfigReload(action, getReloadInFli
 
 export function createLloomServer(
   config,
-  { logger = console, runtimeManager = null, clusterCoordinator = null, upstreamDispatcher = null } = {}
+  {
+    logger = console,
+    runtimeManager = null,
+    clusterCoordinator = null,
+    upstreamDispatcher = null,
+    // Tests may point identity verification at a disposable atomic release;
+    // production leaves this unset and uses the installed package root.
+    deploymentPackageRoot = null
+  } = {}
 ) {
   // Tests install a composed mock here; production keeps the long-running Agent.
   if (upstreamDispatcher) longRunningMediaDispatcher = upstreamDispatcher;
@@ -2071,7 +2173,7 @@ export function createLloomServer(
     config,
     configPath: config.sourcePath,
     runtimeManager,
-    packageRoot,
+    packageRoot: deploymentPackageRoot ?? packageRoot,
     releaseManifestPath: config.releaseManifestPath ?? config.server?.releaseManifestPath
   });
   runtimeManager.attachDeploymentFence?.(deploymentFence);
@@ -4484,6 +4586,11 @@ export function createLloomServer(
           releaseIdentity: fenceStatus.releaseIdentity,
           loadedIdentity: fenceStatus.releaseIdentity,
           runtimeSnapshot: runtimeStatus,
+          effectiveConfigSha256: fenceStatus.identity?.release?.effectiveConfigSha256 ?? null,
+          preservationSnapshot: deploymentPreservationSnapshot(
+            runtimeStatus,
+            fenceStatus.identity?.release?.effectiveConfigSha256 ?? null
+          ),
           server: config.server,
           defaults: config.defaults,
           deploymentFence: fenceStatus,

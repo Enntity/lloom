@@ -60,6 +60,7 @@ const IDENTITY_FIELDS = [
   'artifactSha256',
   'manifestSha256',
   'configSha256',
+  'effectiveConfigSha256',
   'dependencyDigest',
   'runtimeContractDigest'
 ];
@@ -79,9 +80,12 @@ const RECEIPT_KEYS = new Set([
   'identity',
   'artifactSha256',
   'manifestSha256',
+  'treeSha256',
   'configSha256',
   'dependencyDigest',
   'runtimeContractDigest',
+  'effectiveConfigSha256',
+  'preservationSnapshotSha256',
   'snapshot',
   'backup',
   'fenced',
@@ -93,6 +97,7 @@ const RECEIPT_KEYS = new Set([
   'verified',
   'promoted',
   'released',
+  'rollbackReleased',
   'stageDiscarded',
   'restored',
   'gatewayModelId',
@@ -224,7 +229,15 @@ function receiptSummary(receipt) {
       if (!SAFE_ID.test(receipt[key]) || /[\r\n]/.test(receipt[key]))
         throw new ReceiptError('receipt', `${key} is not public-safe`);
       if (
-        ['artifactSha256', 'manifestSha256', 'configSha256', 'dependencyDigest', 'runtimeContractDigest'].includes(key)
+        [
+          'artifactSha256',
+          'manifestSha256',
+          'configSha256',
+          'dependencyDigest',
+          'runtimeContractDigest',
+          'effectiveConfigSha256',
+          'preservationSnapshotSha256'
+        ].includes(key)
       ) {
         if (!DIGEST.test(receipt[key].toLowerCase())) throw new ReceiptError('receipt', `${key} is not a digest`);
         result[key] = receipt[key].toLowerCase();
@@ -334,6 +347,9 @@ export function normalizeDeploymentPlan(input = {}) {
   const gatewayProtocol = Number(input.gatewayProtocol ?? 1);
   if (!Number.isInteger(gatewayProtocol) || gatewayProtocol < 1)
     throw new DeploymentPlanError('gatewayProtocol must be a positive integer');
+  const drainTimeoutMs = Number(input.drainTimeoutMs ?? 300000);
+  if (!Number.isInteger(drainTimeoutMs) || drainTimeoutMs < 1000 || drainTimeoutMs > 3600000)
+    throw new DeploymentPlanError('drainTimeoutMs must be an integer between 1000 and 3600000');
   return {
     version: 1,
     scope: { platform: 'linux', serviceManager: 'systemd', mode: 'gateway' },
@@ -348,6 +364,7 @@ export function normalizeDeploymentPlan(input = {}) {
       reviewed: true
     },
     manifestSha256,
+    drainTimeoutMs,
     targetNodes: nodes,
     expectedOldIdentity,
     ...(expectedOldIdentityByNode ? { expectedOldIdentityByNode } : {}),
@@ -633,6 +650,19 @@ export class ClusterDeploymentCoordinator {
             throw new ReceiptError('preflight', 'node lacks an atomic deployment layout');
           if (!identityMatches(receipt.currentIdentity, this.#expectedOldIdentity(document, node)))
             throw new ReceiptError('preflight', 'expected old identity drifted');
+          const expected = this.#expectedOldIdentity(document, node);
+          if (
+            receipt.effectiveConfigSha256 !== undefined &&
+            (!DIGEST.test(String(receipt.effectiveConfigSha256).toLowerCase()) ||
+              (expected.effectiveConfigSha256 !== undefined &&
+                receipt.effectiveConfigSha256 !== expected.effectiveConfigSha256))
+          )
+            throw new ReceiptError('preflight', 'effective config identity drifted');
+          if (
+            receipt.preservationSnapshotSha256 !== undefined &&
+            !DIGEST.test(String(receipt.preservationSnapshotSha256).toLowerCase())
+          )
+            throw new ReceiptError('preflight', 'preservation snapshot evidence is invalid');
         }
       });
     }
@@ -768,8 +798,16 @@ export class ClusterDeploymentCoordinator {
       if (typeof identity[field] !== 'string' || !DIGEST.test(identity[field]))
         throw new ReceiptError(phase, `${field} evidence is missing or invalid`);
     }
+    if (
+      identity.effectiveConfigSha256 !== undefined &&
+      (typeof identity.effectiveConfigSha256 !== 'string' || !DIGEST.test(identity.effectiveConfigSha256))
+    )
+      throw new ReceiptError(phase, 'effectiveConfigSha256 evidence is invalid');
+    const baselineSnapshot = node?.receipts?.preflight?.preservationSnapshotSha256;
+    if (baselineSnapshot !== undefined && receipt.preservationSnapshotSha256 !== baselineSnapshot)
+      throw new ReceiptError(phase, 'preservation snapshot changed from the preflight gateway contract');
     const baseline = node?.receipts?.preflight?.currentIdentity;
-    for (const field of ['configSha256', 'dependencyDigest', 'runtimeContractDigest']) {
+    for (const field of ['configSha256', 'effectiveConfigSha256', 'dependencyDigest', 'runtimeContractDigest']) {
       if (baseline?.[field] !== undefined && identity[field] !== baseline[field])
         throw new ReceiptError(phase, `${field} changed from the preflight gateway contract`);
     }
@@ -850,77 +888,104 @@ export class ClusterDeploymentCoordinator {
     const failures = [];
     document.rollback.attempted = true;
     const nodes = this.#rollbackOrder(document);
+    const restoreCandidates = [];
+    const discardCandidates = [];
+    const recordFailure = (node, error, phase = node.pendingAction ?? 'rollback') => {
+      node.state = 'rollback-failed';
+      node.lastError = safeError(error, phase);
+      failures.push({ nodeId: node.nodeId, error: node.lastError });
+      this.#append(document, { type: 'rollback-failure', phase, nodeId: node.nodeId, error: node.lastError });
+    };
+
+    // Classify the journal before issuing any compensating mutation. A node
+    // that reached an active/public phase belongs to the fleet fence barrier;
+    // a stage-only node can be discarded without touching its service.
     for (const node of nodes) {
       if (!node.possiblyMutated && node.state === 'preflight') continue;
+      const preparedOrBeyond = Boolean(
+        node.receipts.prepare ||
+        node.receipts.swap ||
+        node.receipts.restart ||
+        node.receipts.verify ||
+        node.receipts.canary ||
+        node.receipts.promote ||
+        node.receipts.release ||
+        node.receipts.rollback ||
+        [
+          'prepared',
+          'mutating',
+          'active',
+          'verified',
+          'promoted',
+          'released',
+          'rolled-back',
+          'rollback-failed'
+        ].includes(node.state) ||
+        ['prepare', 'swap', 'restart', 'verify', 'canary', 'promote', 'release', 'reprepare', 'rollback'].includes(
+          node.pendingAction
+        )
+      );
+      if (!preparedOrBeyond) {
+        if (node.receipts.stage || node.pendingAction === 'stage' || node.state === 'unknown') {
+          discardCandidates.push(node);
+        } else {
+          node.state = 'rolled-back';
+          node.possiblyMutated = false;
+          this.#append(document, { type: 'rolled-back', phase: 'rollback', nodeId: node.nodeId });
+        }
+        continue;
+      }
+      restoreCandidates.push(node);
+    }
+    await this.#saveBestEffort(document);
+
+    // Establish one fleet-wide fence/drain barrier before any rollback swap
+    // or restart. A partial forward release may have opened one gateway while
+    // another is still on new bytes; restoring nodes one at a time would make
+    // that mixed public state observable. Attempt the barrier for every
+    // affected node even after one failure so the report identifies all
+    // nodes that could not be fenced. No rollback action is issued unless all
+    // of these fresh receipts succeed.
+    for (const node of restoreCandidates) {
       try {
-        const preparedOrBeyond = Boolean(
-          node.receipts.prepare ||
-          node.receipts.swap ||
-          node.receipts.restart ||
-          node.receipts.verify ||
-          node.receipts.canary ||
-          node.receipts.promote ||
-          node.receipts.release ||
-          ['prepared', 'mutating', 'active', 'verified', 'promoted', 'released'].includes(node.state) ||
-          ['prepare', 'swap', 'restart', 'verify', 'canary', 'promote', 'release', 'reprepare', 'rollback'].includes(
-            node.pendingAction
-          )
-        );
-        if (!preparedOrBeyond) {
-          if (node.receipts.stage || node.pendingAction === 'stage' || node.state === 'unknown') {
-            await this.#action(document, node, 'discard-stage', 'discardStage', {
-              nextState: 'rolled-back',
-              validate: (receipt) => {
-                if (receipt.stageDiscarded !== true)
-                  throw new ReceiptError('discard-stage', 'staged artifact was not discarded');
-              }
-            });
-          } else {
-            node.state = 'rolled-back';
-            node.possiblyMutated = false;
-            this.#append(document, { type: 'rolled-back', phase: 'rollback', nodeId: node.nodeId });
-            await this.#save(document);
+        await this.#action(document, node, 'reprepare', 'reprepare', {
+          nextState: 'rollback-required',
+          validate: (receipt) => {
+            if (receipt.fenced !== true || receipt.drained !== true)
+              throw new ReceiptError('reprepare', 'fresh fence and drain were not affirmed');
           }
-          continue;
-        }
-        if (
-          ['released', 'promoted'].includes(node.state) ||
-          node.receipts.release ||
-          node.receipts.promote ||
-          node.pendingAction === 'release'
-        ) {
-          await this.#action(document, node, 'reprepare', 'reprepare', {
-            nextState: 'rollback-required',
-            validate: (receipt) => {
-              if (receipt.fenced !== true || receipt.drained !== true)
-                throw new ReceiptError('reprepare', 'fresh fence and drain were not affirmed');
-            }
-          });
-        }
-        if (node.state !== 'rolled-back') {
+        });
+      } catch (error) {
+        recordFailure(node, error, 'reprepare');
+      }
+    }
+
+    // Restore every possibly mutated node while the fleet barrier is held.
+    // Public release is deliberately deferred until the whole fleet has an
+    // independently verified old identity.
+    if (!failures.length) {
+      for (const node of restoreCandidates) {
+        if (node.state === 'rolled-back') continue;
+        try {
           await this.#action(document, node, 'rollback', 'rollback', {
             nextState: 'rolled-back',
             validate: (receipt) => {
-              if (receipt.restored !== true || receipt.fenced !== true)
+              if (receipt.restored !== true || receipt.fenced !== true || receipt.drained !== true)
                 throw new ReceiptError('rollback', 'rollback did not affirm restored fenced state');
               if (!identityMatches(receipt.identity, this.#expectedOldIdentity(document, node)))
                 throw new ReceiptError('rollback', 'rollback identity does not match expected old release');
             }
           });
+        } catch (error) {
+          recordFailure(node, error);
         }
-      } catch (error) {
-        node.state = 'rollback-failed';
-        node.lastError = safeError(error, node.pendingAction ?? 'rollback');
-        failures.push({ nodeId: node.nodeId, error: node.lastError });
-        this.#append(document, {
-          type: 'rollback-failure',
-          phase: 'rollback',
-          nodeId: node.nodeId,
-          error: node.lastError
-        });
-        await this.#saveBestEffort(document);
       }
-      if (node.receipts.stage && node.state === 'rolled-back') {
+    }
+
+    // Stage-only or interrupted preflight nodes never need a service fence,
+    // but their reviewed artifact must still be discarded before completion.
+    if (!failures.length) {
+      for (const node of discardCandidates) {
         try {
           await this.#action(document, node, 'discard-stage', 'discardStage', {
             nextState: 'rolled-back',
@@ -930,10 +995,73 @@ export class ClusterDeploymentCoordinator {
             }
           });
         } catch (error) {
-          node.state = 'rollback-failed';
-          node.lastError = safeError(error, 'discard-stage');
-          failures.push({ nodeId: node.nodeId, error: node.lastError });
-          await this.#saveBestEffort(document);
+          recordFailure(node, error, 'discard-stage');
+        }
+      }
+    }
+
+    // A single old-release canary on the leader is the last fleet-wide gate.
+    // If it fails, all successfully restored nodes stay fenced for manual
+    // intervention; no mixed public state is opened.
+    const leader = nodes.find((node) => node.role === 'leader');
+    if (!failures.length && leader && restoreCandidates.includes(leader) && leader.state === 'rolled-back') {
+      try {
+        await this.#action(document, leader, 'canary', 'canary', {
+          mutation: false,
+          nextState: 'rolled-back',
+          validate: (receipt) => {
+            if (
+              receipt.healthy !== true ||
+              receipt.fenced !== true ||
+              receipt.privileged !== true ||
+              receipt.aliasUsed !== false ||
+              receipt.cloudFallback !== false ||
+              receipt.source !== 'local' ||
+              receipt.gatewayModelId !== document.plan.canary.gatewayModelId ||
+              receipt.runtimeId !== document.plan.canary.runtimeId
+            )
+              throw new ReceiptError('canary', 'old-release canary was not local, healthy, and fenced');
+          }
+        });
+      } catch (error) {
+        recordFailure(leader, error, 'canary');
+      }
+    }
+
+    // Only after every node is restored and the leader canary succeeds may the
+    // compensating release open the gateways. Each release is still a
+    // separately journaled action; a partial release becomes manual
+    // intervention rather than a false global completion.
+    if (!failures.length) {
+      for (const node of restoreCandidates) {
+        if (node.state !== 'rolled-back') continue;
+        try {
+          await this.#action(document, node, 'release', 'release', {
+            nextState: 'rolled-back',
+            validate: (receipt) => {
+              if (receipt.released !== true || receipt.fenced !== false || receipt.rollbackReleased !== true)
+                throw new ReceiptError('release', 'restored old release was not publicly released');
+            }
+          });
+        } catch (error) {
+          recordFailure(node, error, 'release');
+        }
+      }
+    }
+
+    if (!failures.length) {
+      for (const node of restoreCandidates) {
+        if (node.state !== 'rolled-back' || !node.receipts.stage) continue;
+        try {
+          await this.#action(document, node, 'discard-stage', 'discardStage', {
+            nextState: 'rolled-back',
+            validate: (receipt) => {
+              if (receipt.stageDiscarded !== true)
+                throw new ReceiptError('discard-stage', 'staged artifact was not discarded');
+            }
+          });
+        } catch (error) {
+          recordFailure(node, error, 'discard-stage');
         }
       }
     }
@@ -971,10 +1099,13 @@ export class ClusterDeploymentCoordinator {
       role: node.role,
       scope: clone(document.plan.scope),
       gatewayProtocol: document.plan.gatewayProtocol,
+      drainTimeoutMs: document.plan.drainTimeoutMs,
       artifact: clone(document.plan.reviewedArtifact),
       manifestSha256: document.plan.manifestSha256,
       expectedOldIdentity: this.#expectedOldIdentity(document, node),
-      canary: clone(document.plan.canary)
+      canary: clone(document.plan.canary),
+      rollbackCanary: phase === 'canary' && Boolean(node.receipts.rollback),
+      rollbackRelease: phase === 'release' && Boolean(node.receipts.rollback)
     };
   }
 

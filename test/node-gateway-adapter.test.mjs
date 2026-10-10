@@ -8,6 +8,7 @@ const IDENTITY = {
   artifactSha256: digest('a'),
   manifestSha256: digest('b'),
   configSha256: digest('c'),
+  effectiveConfigSha256: digest('f'),
   dependencyDigest: digest('d'),
   runtimeContractDigest: digest('e')
 };
@@ -50,7 +51,13 @@ test('uses authenticated loopback fence API and preserves strict receipts', asyn
         atomicLayout: true,
         serviceActive: true,
         releaseIdentity: IDENTITY,
-        runtimeSnapshot: { pid: 3 }
+        effectiveConfigSha256: IDENTITY.effectiveConfigSha256,
+        runtimeSnapshot: { pid: 3 },
+        preservationSnapshot: {
+          schemaVersion: 1,
+          effectiveConfigSha256: IDENTITY.effectiveConfigSha256,
+          runtimes: {}
+        }
       });
     if (url.endsWith('/deployment-fence/prepare'))
       return response({ protocol: 1, state: 'prepared', fenced: true, drained: true, generation: 7 });
@@ -83,7 +90,10 @@ test('uses authenticated loopback fence API and preserves strict receipts', asyn
   assert.equal(canary.source, 'local');
   await resumedAdapter.release({ operationId: 'op-1' });
   assert.ok(requests.every(({ options }) => options.headers.authorization === 'Bearer synthetic-key'));
-  assert.deepEqual(JSON.parse(requests.find(({ url }) => url.endsWith('/prepare')).options.body), { opId: 'op-1' });
+  assert.deepEqual(JSON.parse(requests.find(({ url }) => url.endsWith('/prepare')).options.body), {
+    opId: 'op-1',
+    timeoutMs: 300000
+  });
   const canaryRequest = requests.find(({ url }) => url.endsWith('/canary'));
   const canaryBody = JSON.parse(canaryRequest.options.body);
   assert.equal(canaryBody.request.max_tokens, 8);

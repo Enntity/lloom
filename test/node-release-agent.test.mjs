@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { NodeReleaseAgent, nodeEngineAllows } from '../src/node-release-agent.mjs';
+import { NodeReleaseAgent, dependencyVersionAllows, nodeEngineAllows } from '../src/node-release-agent.mjs';
 
 const sha = (value) => createHash('sha256').update(value).digest('hex');
 const OLD_ARTIFACT = 'old-artifact-content';
@@ -13,6 +13,7 @@ const CONFIG = '{"gateway":"reviewed"}\n';
 const CONFIG_SHA = sha(CONFIG);
 const DEP = sha(JSON.stringify({ dep: '1.0.0' }));
 const CONTRACT = '2'.repeat(64);
+const EFFECTIVE_CONFIG = sha(JSON.stringify({ gateway: 'reviewed' }));
 const NODE_MAJOR = Number(process.versions.node.split('.')[0]);
 const [NODE_MAJOR_NUMBER, NODE_MINOR_NUMBER, NODE_PATCH_NUMBER] = process.versions.node.split('.').map(Number);
 
@@ -34,6 +35,15 @@ test('evaluates the complete Node engine range instead of only its first compara
   assert.equal(nodeEngineAllows(`^${major}.${minor}.${patch}`), true);
   assert.equal(nodeEngineAllows(`~${major}.${minor + 1}.0`), false);
   assert.equal(nodeEngineAllows('>=22.19.0 nonsense'), false);
+});
+
+test('checks installed dependency versions against declared ranges while retaining exact closure bytes', () => {
+  assert.equal(dependencyVersionAllows('^8.11.2', '8.11.2'), true);
+  assert.equal(dependencyVersionAllows('^8.11.2', '8.12.0'), true);
+  assert.equal(dependencyVersionAllows('^8.11.2', '9.0.0'), false);
+  assert.equal(dependencyVersionAllows('~8.11.2', '8.11.3'), true);
+  assert.equal(dependencyVersionAllows('~8.11.2', '8.12.0'), false);
+  assert.equal(dependencyVersionAllows('workspace:*', '8.11.2'), false);
 });
 
 async function makeFixture(t, { systemd = {} } = {}) {
@@ -126,6 +136,7 @@ async function makeFixture(t, { systemd = {} } = {}) {
               artifactSha256: artifactSha,
               manifestSha256: sha(manifest),
               configSha256: CONFIG_SHA,
+              effectiveConfigSha256: EFFECTIVE_CONFIG,
               dependencyDigest: DEP,
               runtimeContractDigest: CONTRACT
             }
@@ -134,12 +145,38 @@ async function makeFixture(t, { systemd = {} } = {}) {
               artifactSha256: OLD_ARTIFACT_SHA,
               manifestSha256: sha(oldManifest),
               configSha256: CONFIG_SHA,
+              effectiveConfigSha256: EFFECTIVE_CONFIG,
+              dependencyDigest: DEP,
+              runtimeContractDigest: CONTRACT
+            },
+        currentIdentity: next
+          ? {
+              releaseId: 'release-next',
+              artifactSha256: artifactSha,
+              manifestSha256: sha(manifest),
+              configSha256: CONFIG_SHA,
+              effectiveConfigSha256: EFFECTIVE_CONFIG,
+              dependencyDigest: DEP,
+              runtimeContractDigest: CONTRACT
+            }
+          : {
+              releaseId: 'release-old',
+              artifactSha256: OLD_ARTIFACT_SHA,
+              manifestSha256: sha(oldManifest),
+              configSha256: CONFIG_SHA,
+              effectiveConfigSha256: EFFECTIVE_CONFIG,
               dependencyDigest: DEP,
               runtimeContractDigest: CONTRACT
             },
         fenced: loaded.fenced,
         drained: loaded.fenced,
-        runtimeSnapshot: { gateway: 'old' }
+        runtimeSnapshot: { gateway: 'old' },
+        preservationSnapshot: {
+          schemaVersion: 1,
+          effectiveConfigSha256: EFFECTIVE_CONFIG,
+          runtimes: {}
+        },
+        effectiveConfigSha256: EFFECTIVE_CONFIG
       };
     },
     async prepare() {
@@ -228,7 +265,8 @@ async function makeFixture(t, { systemd = {} } = {}) {
     expectedOldIdentity: {
       releaseId: 'release-old',
       artifactSha256: OLD_ARTIFACT_SHA,
-      manifestSha256: sha(oldManifest)
+      manifestSha256: sha(oldManifest),
+      effectiveConfigSha256: EFFECTIVE_CONFIG
     },
     canary: { gatewayModelId: 'atlas/local', runtimeId: 'atlas-runtime' }
   };
@@ -279,6 +317,34 @@ test('stages, swaps, restarts, verifies and releases only the gateway unit', asy
   assert.equal(
     calls.some((entry) => entry.includes('model') || entry.includes('runtime')),
     false
+  );
+});
+
+test('requires effective config and preservation evidence in the final release inspection', async (t) => {
+  const fixture = await makeFixture(t);
+  const { agent, context, gateway } = fixture;
+  await agent.preflight('node-1', context);
+  await agent.stage('node-1', context);
+  await agent.prepare('node-1', context);
+  await agent.swap('node-1', context);
+  await agent.restart('node-1', context);
+  await agent.verify('node-1', context);
+  await agent.canary('node-1', context);
+  await agent.promote('node-1', context);
+  const inspect = gateway.inspect;
+  gateway.inspect = async (...args) => {
+    const value = await inspect.apply(gateway, args);
+    delete value.effectiveConfigSha256;
+    return value;
+  };
+  await assert.rejects(
+    () => agent.release('node-1', context),
+    (error) => error.code === 'runtime_contract_mismatch'
+  );
+  assert.equal(
+    fixture.calls.some((entry) => entry[0] === 'release'),
+    false,
+    'the gateway release endpoint must not run after an incomplete final inspection'
   );
 });
 
@@ -372,6 +438,62 @@ test('restores a prepared node under a fresh fence and keeps it fenced', async (
   const restored = JSON.parse(await fs.readFile(path.join(root, 'current.manifest.json'), 'utf8'));
   assert.equal(restored.releaseId, 'release-old');
   assert.match(await fs.readlink(path.join(root, 'current')), /^releases\/rollback-/);
+});
+
+test('repairs a rollback pointer after a crash before its manifest update', async (t) => {
+  const fixture = await makeFixture(t);
+  const { agent, context, root, gateway, unitPath, serviceUser } = fixture;
+  await agent.preflight('node-1', context);
+  await agent.stage('node-1', context);
+  await agent.prepare('node-1', context);
+  await agent.swap('node-1', context);
+
+  let failRollbackJournal = true;
+  const crashingFs = new Proxy(fs, {
+    get(target, property) {
+      if (property !== 'writeFile') return target[property];
+      return async (filePath, data, ...options) => {
+        if (failRollbackJournal && String(filePath).includes(`${path.sep}journal.json.`)) {
+          try {
+            const value = JSON.parse(String(data));
+            if (value.pendingAction === 'rollback' && value.rollbackIntent?.pointerApplied === true) {
+              failRollbackJournal = false;
+              throw new Error('simulated process loss after rollback pointer swap');
+            }
+          } catch (error) {
+            if (error?.message === 'simulated process loss after rollback pointer swap') throw error;
+          }
+        }
+        return target.writeFile(filePath, data, ...options);
+      };
+    }
+  });
+  const crashingAgent = new NodeReleaseAgent({
+    nodeId: 'node-1',
+    root,
+    configPath: path.join(root, 'config.json'),
+    platform: 'linux',
+    gateway,
+    unitPath,
+    serviceUser,
+    fsImpl: crashingFs,
+    run: fixture.agent.run,
+    clock: () => new Date('2026-10-10T17:00:00.000Z')
+  });
+  await assert.rejects(() => crashingAgent.rollback('node-1', context));
+  assert.match(await fs.readlink(path.join(root, 'current')), /^releases\/rollback-/);
+  assert.equal(
+    JSON.parse(await fs.readFile(path.join(root, 'current.manifest.json'), 'utf8')).releaseId,
+    'release-next'
+  );
+
+  const recovered = await agent.rollback('node-1', context);
+  assert.equal(recovered.restored, true);
+  assert.equal(recovered.fenced, true);
+  assert.equal(
+    JSON.parse(await fs.readFile(path.join(root, 'current.manifest.json'), 'utf8')).releaseId,
+    'release-old'
+  );
 });
 
 test('returns the durable receipt on repeated phase calls', async (t) => {

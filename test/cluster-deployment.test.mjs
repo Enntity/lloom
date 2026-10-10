@@ -84,7 +84,7 @@ function makeTransport(options = {}) {
     async call(phase, nodeId, context, body = {}) {
       calls.push({ phase, nodeId, context });
       const key = `${phase}:${nodeId}`;
-      if (fault?.at === key || fault?.at === phase || fault?.at === `before:${key}`) {
+      if (!context.rollbackRelease && (fault?.at === key || fault?.at === phase || fault?.at === `before:${key}`)) {
         const error = new Error('Authorization: Bearer secret should never be persisted');
         error.code = fault.code ?? 'injected_failure';
         throw error;
@@ -163,7 +163,11 @@ function makeTransport(options = {}) {
       });
     },
     async release(nodeId, context) {
-      return this.call('release', nodeId, context, { released: true, fenced: false });
+      return this.call('release', nodeId, context, {
+        released: true,
+        fenced: false,
+        ...(context.rollbackRelease ? { rollbackReleased: true } : {})
+      });
     },
     async reprepare(nodeId, context) {
       return this.call('reprepare', nodeId, context, { fenced: true, drained: true });
@@ -173,6 +177,7 @@ function makeTransport(options = {}) {
       return this.call('rollback', nodeId, context, {
         restored: true,
         fenced: true,
+        drained: true,
         identity: identity(false)
       });
     },
@@ -329,7 +334,9 @@ test('rolls back when restart fails before health is affirmed', async (t) => {
   const error = await rejected(coordinator(journal, transport).deploy(plan()));
   assert.equal(error.report.operationState, 'rolled-back');
   assert.equal(
-    transport.calls.some(({ phase }) => phase === 'promote' || phase === 'release'),
+    transport.calls.some(
+      ({ phase, context }) => phase === 'promote' || (phase === 'release' && !context.rollbackRelease)
+    ),
     false
   );
 });
@@ -344,7 +351,7 @@ test('rejects a bad apply identity and does not promote', async (t) => {
     false
   );
   assert.equal(
-    transport.calls.some(({ phase }) => phase === 'release'),
+    transport.calls.some(({ phase, context }) => phase === 'release' && !context.rollbackRelease),
     false
   );
 });
@@ -353,14 +360,19 @@ test('keeps public fencing when the canary fails', async (t) => {
   const journal = await tempJournal(t);
   const transport = makeTransport({ badCanary: true });
   const error = await rejected(coordinator(journal, transport).deploy(plan()));
-  assert.equal(error.report.operationState, 'rolled-back');
+  assert.equal(error.report.operationState, 'rollback-failed');
+  assert.equal(error.report.rollback.manualIntervention, true);
   assert.equal(
-    transport.calls.some(({ phase }) => phase === 'release'),
+    transport.calls.some(({ phase, context }) => phase === 'release' && !context.rollbackRelease),
     false
   );
-  assert.equal(
-    transport.calls.some(({ phase }) => phase === 'reprepare'),
-    false
+  assert.deepEqual(
+    transport.calls.filter(({ phase }) => phase === 'reprepare').map(({ nodeId }) => nodeId),
+    ['leader', 'worker-1']
+  );
+  assert.deepEqual(
+    transport.calls.filter(({ phase }) => phase === 'rollback').map(({ nodeId }) => nodeId),
+    ['leader', 'worker-1']
   );
 });
 
@@ -376,6 +388,12 @@ test('re-fences and drains every promoted node before rolling back a partial rel
   assert.deepEqual(
     transport.calls.filter(({ phase }) => phase === 'rollback').map(({ nodeId }) => nodeId),
     ['leader', 'worker-1']
+  );
+  assert.deepEqual(
+    transport.calls
+      .filter(({ phase }) => phase === 'reprepare' || phase === 'rollback')
+      .map(({ phase, nodeId }) => `${phase}:${nodeId}`),
+    ['reprepare:leader', 'reprepare:worker-1', 'rollback:leader', 'rollback:worker-1']
   );
 });
 

@@ -333,7 +333,7 @@ test('deployment fence persists, rejects manager mutations, and allows only matc
     () => fence.prepare({ opId: 'different-concurrent-op', timeoutMs: 1000 }),
     (error) => error.code === 'deployment_fence_prepare_in_progress'
   );
-  await wait(25);
+  for (let attempt = 0; attempt < 40 && hookState.paused === 0; attempt += 1) await wait(10);
   assert.equal(fence.status().state, 'draining');
   assert.equal(hookState.paused, 1);
   held.resolve({ ok: true });

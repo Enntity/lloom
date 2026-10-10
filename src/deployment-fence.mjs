@@ -221,13 +221,52 @@ function configFileDigest(configPath) {
   }
 }
 
-function completeReleaseIdentity(release, configSha256) {
+// Keep rollback evidence limited to the owned runtime/process state. Gateway
+// status also contains volatile event history, timestamps and counters which
+// legitimately change when systemd restarts the process. A deploy coordinator
+// must compare the preservation contract rather than those gateway-local
+// bookkeeping fields.
+export function stablePreservationSnapshot(value) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const runtimes = {};
+  const sourceRuntimes =
+    source.runtimes && typeof source.runtimes === 'object' && !Array.isArray(source.runtimes) ? source.runtimes : {};
+  for (const [runtimeId, runtime] of Object.entries(sourceRuntimes).sort(([left], [right]) =>
+    left.localeCompare(right)
+  )) {
+    const entry = runtime && typeof runtime === 'object' && !Array.isArray(runtime) ? runtime : {};
+    const stable = {};
+    for (const key of ['status', 'healthy', 'pid', 'node', 'remote', 'distributed', 'containerName']) {
+      if (entry[key] !== undefined) stable[key] = entry[key];
+    }
+    if (Array.isArray(entry.members)) {
+      stable.members = entry.members
+        .filter((member) => member && typeof member === 'object' && !Array.isArray(member))
+        .map((member) => ({
+          ...(member.runtime === undefined ? {} : { runtime: member.runtime }),
+          ...(member.status === undefined ? {} : { status: member.status }),
+          ...(member.healthy === undefined ? {} : { healthy: member.healthy })
+        }));
+    }
+    if (entry.container && typeof entry.container === 'object' && !Array.isArray(entry.container)) {
+      stable.container = {};
+      for (const key of ['id', 'name', 'image', 'imageId', 'running', 'status']) {
+        if (entry.container[key] !== undefined) stable.container[key] = entry.container[key];
+      }
+    }
+    runtimes[runtimeId] = stable;
+  }
+  return { runtimes };
+}
+
+function completeReleaseIdentity(release, configSha256, effectiveConfigSha256) {
   if (
     !release?.known ||
     !release.commit ||
     !/^[0-9a-f]{64}$/i.test(String(release.releaseDigest ?? '')) ||
     !/^[0-9a-f]{64}$/i.test(String(release.manifestBytesDigest ?? '')) ||
     !/^[0-9a-f]{64}$/i.test(String(configSha256 ?? '')) ||
+    !/^[0-9a-f]{64}$/i.test(String(effectiveConfigSha256 ?? '')) ||
     !/^[0-9a-f]{64}$/i.test(String(release.dependencyDigest ?? '')) ||
     !/^[0-9a-f]{64}$/i.test(String(release.runtimeContractDigest ?? ''))
   )
@@ -237,6 +276,7 @@ function completeReleaseIdentity(release, configSha256) {
     artifactSha256: String(release.releaseDigest).toLowerCase(),
     manifestSha256: String(release.manifestBytesDigest).toLowerCase(),
     configSha256: String(configSha256).toLowerCase(),
+    effectiveConfigSha256: String(effectiveConfigSha256).toLowerCase(),
     dependencyDigest: String(release.dependencyDigest).toLowerCase(),
     runtimeContractDigest: String(release.runtimeContractDigest).toLowerCase()
   };
@@ -263,14 +303,15 @@ export function atomicLayoutProof(packageRoot) {
 export function createProcessIdentity({ config = {}, configPath, packageRoot, releaseManifestPath } = {}) {
   const release = readReleaseIdentity({ packageRoot, releaseManifestPath });
   const configSha256 = configFileDigest(configPath);
+  const effectiveConfigSha256 = configDigest(config);
   return {
     bootId: randomUUID(),
     pid: process.pid,
     startedAt: new Date().toISOString(),
     nodeId: config.cluster?.nodeId ?? null,
     hostname: os.hostname(),
-    release: { ...release, configSha256 },
-    releaseIdentity: completeReleaseIdentity(release, configSha256),
+    release: { ...release, configSha256, effectiveConfigSha256 },
+    releaseIdentity: completeReleaseIdentity(release, configSha256, effectiveConfigSha256),
     atomicLayout: atomicLayoutProof(packageRoot)
   };
 }
@@ -409,6 +450,7 @@ export function createDeploymentFence({
         atomicLayout: identity.atomicLayout
       },
       releaseIdentity: identity.releaseIdentity,
+      effectiveConfigSha256: identity.release?.effectiveConfigSha256 ?? null,
       activeHandlers: activeHandlers.size,
       canaryInFlight,
       persistenceError: persistenceError?.message ?? null,
