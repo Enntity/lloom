@@ -2338,6 +2338,12 @@ export function createLloomServer(
     waitForReload: () => reloadInFlight
   });
 
+  function withDeploymentMutationScope(token, action) {
+    return token && typeof runtimeManager.withMutationScope === 'function'
+      ? runtimeManager.withMutationScope(token, action)
+      : action();
+  }
+
   function requireDeploymentAdmin(req) {
     if (adminKeysConfigured(config) && hasValidApiKey(req, config, { admin: true })) return;
     throw new DeploymentFenceError('deployment fence operations require an explicit admin API key', {
@@ -2487,7 +2493,7 @@ export function createLloomServer(
     const reload = reloadInFlight
       .catch(() => {})
       .then(() =>
-        runtimeManager.withMutationScope(deploymentFenceToken, async () => {
+        withDeploymentMutationScope(deploymentFenceToken, async () => {
           const nextConfig = await loadConfig(configPath);
           if (normalizeServerRole(nextConfig) !== processRole) {
             throw Object.assign(
@@ -2496,15 +2502,15 @@ export function createLloomServer(
             );
           }
           assertStandbyConfig(nextConfig);
-          // Keep the current catalog until the manager has accepted the whole
-          // queued reload. This prevents a fence racing a watcher from
-          // publishing a new registry after the manager correctly rejects it.
+          // Publish the validated catalog before the potentially long physical
+          // reconciliation. A fence racing this queued reload still retains
+          // the pre-fence token until the manager mutation has settled.
+          registry = createRegistry(nextConfig);
+          rateLimitRegistry.sync(rateLimitSettingsFor(nextConfig));
           const result = await runtimeManager.reconfigure(nextConfig);
           for (const key of Object.keys(config)) delete config[key];
           Object.assign(config, nextConfig);
           freezeProcessRole(config, processRole);
-          registry = createRegistry(nextConfig);
-          rateLimitRegistry.sync(rateLimitSettingsFor(nextConfig));
           clusterCoordinator.reconfigure(config);
           routingStatusCache = { at: 0, value: null, pending: null };
           logger.info?.(`reloaded LLooM config; changed runtimes: ${result.changed.join(', ') || 'none'}`);
@@ -2828,11 +2834,9 @@ export function createLloomServer(
     });
     let operation = runtimeStartOperations.get(runtimeId);
     if (operation) return operation;
-    operation = deploymentFenceToken && typeof runtimeManager.withMutationScope === 'function'
-      ? runtimeManager.withMutationScope(deploymentFenceToken, () =>
-          startRuntime(runtimeId, { alternativeAvailable, allowEviction })
-        )
-      : startRuntime(runtimeId, { alternativeAvailable, allowEviction });
+    operation = withDeploymentMutationScope(deploymentFenceToken, () =>
+      startRuntime(runtimeId, { alternativeAvailable, allowEviction })
+    );
     operation.lloomAlternativeAvailable = alternativeAvailable;
     runtimeStartOperations.set(runtimeId, operation);
     operation
