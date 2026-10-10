@@ -233,11 +233,18 @@ public-safe JSON receipts.
 an already-installed `lloom node-agent <phase> --json` command. Host, user,
 port, host-key alias, and command tokens are validated without shell
 interpolation; strict host-key checking and batch mode are always enabled.
-An optional `upload(node, context)` callback may place the already-reviewed
-archive and manifest and must return their remote paths. The transport never
-stores credentials or forwards unknown context fields. A nonzero SSH exit,
-disconnect, timeout, or non-JSON response is an operation failure; the
-coordinator decides whether rollback is required.
+The reviewed archive and manifest must already be present at the exact absolute
+normalized paths in `reviewedArtifact.path` and `reviewedArtifact.manifestPath`
+on every target. The CLI does not perform implicit uploads. A library caller
+may provide an `upload(node, context)` callback to pre-stage the files, but it
+must return those exact declared paths; the transport rejects a different or
+relative path so a fresh resume cannot depend on in-memory upload state.
+Prepare and reprepare use the gateway's bounded 300000 ms drain timeout by
+default and set the SSH deadline to that timeout plus a 60000 ms margin (or an
+explicit library context timeout), capped at 3660000 ms. The transport never stores
+credentials or forwards unknown context fields. A nonzero SSH exit, disconnect,
+timeout, or non-JSON response is an operation failure; the coordinator decides
+whether rollback is required.
 
 The reviewable CLI is:
 
@@ -254,6 +261,12 @@ configuration is already present. `plan` and `status` are read-only. The
 mutating commands require both `--apply` and `--yes`, and every plan remains
 bound to its immutable reviewed artifact, manifest, old identity, target
 nodes, gateway model, and runtime id.
+
+When a mutation fails after the coordinator has produced a rollback receipt,
+the CLI emits the complete public-safe per-node receipt and exits nonzero. Use
+`--json` for machine-readable `staged`, `active`, `promoted`, and rollback
+states; human output lists the same node states and completed phases. Resume or
+rollback with the original `--nodes` endpoint map and plan.
 
 The `--nodes` file is an endpoint map, for example
 `{ "worker-1": { "host": "worker-1.internal" }, "leader": { "host":

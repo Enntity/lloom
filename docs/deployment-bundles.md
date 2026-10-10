@@ -46,6 +46,11 @@ node test/deployment-bundle.test.mjs
 ```
 
 Keep the archive and sidecar together. Their paths and digests are deployment
-inputs, not values to regenerate on a target node. Repeating a build for the
-same commit is create-or-verify: existing bytes must match exactly, and a
-conflicting archive or sidecar is refused rather than overwritten.
+inputs, not values to regenerate on a target node. Before applying a plan,
+copy or mount both files at the exact absolute normalized paths recorded in
+`reviewedArtifact.path` and `reviewedArtifact.manifestPath` on every target.
+The deployment CLI does not upload or choose per-process temporary paths; this
+keeps a fresh resume and rollback bound to the same reviewed bytes. Repeating
+a build for the same commit is create-or-verify: existing bytes must match
+exactly, and a conflicting archive or sidecar is refused rather than
+overwritten.

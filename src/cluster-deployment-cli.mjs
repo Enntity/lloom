@@ -6,9 +6,88 @@ import {
   DeploymentJournal,
   DeploymentPlanError,
   deploymentPlanHash,
-  normalizeDeploymentPlan
+  normalizeDeploymentPlan,
+  sha256
 } from './cluster-deployment.mjs';
 import { createSshDeploymentTransport } from './ssh-deployment-transport.mjs';
+
+const NODE_BINDING_SCHEMA_VERSION = 1;
+
+function requiredRemotePath(value, label) {
+  if (
+    typeof value !== 'string' ||
+    !value ||
+    !value.startsWith('/') ||
+    path.posix.normalize(value) !== value ||
+    value.endsWith('/') ||
+    /[\u0000-\u001f\u007f\r\n]/.test(value)
+  ) {
+    throw new DeploymentPlanError(`${label} must be an absolute normalized file path pre-staged on every target node`);
+  }
+  return value;
+}
+
+function normalizeCliDeploymentPlan(rawPlan) {
+  const plan = normalizeDeploymentPlan(rawPlan);
+  const artifactPath = requiredRemotePath(plan.reviewedArtifact.path, 'reviewedArtifact.path');
+  const manifestPath = requiredRemotePath(plan.reviewedArtifact.manifestPath, 'reviewedArtifact.manifestPath');
+  if (artifactPath === manifestPath)
+    throw new DeploymentPlanError('reviewedArtifact.path and reviewedArtifact.manifestPath must differ');
+  return plan;
+}
+
+function nodeEndpointBinding(nodeDefinitions) {
+  if (!nodeDefinitions || typeof nodeDefinitions !== 'object' || Array.isArray(nodeDefinitions))
+    throw new DeploymentPlanError('--nodes must contain an endpoint object');
+  if (!Object.keys(nodeDefinitions).length) throw new DeploymentPlanError('--nodes must contain at least one node');
+  return { schemaVersion: NODE_BINDING_SCHEMA_VERSION, sha256: sha256(nodeDefinitions) };
+}
+
+function assertNodeCoverage(plan, nodeDefinitions) {
+  for (const node of plan.targetNodes) {
+    if (!Object.prototype.hasOwnProperty.call(nodeDefinitions, node.id))
+      throw new DeploymentPlanError(`--nodes is missing target node ${node.id}`);
+  }
+}
+
+class EndpointBoundJournal {
+  constructor(inner, binding, { expectedPlanHash = null } = {}) {
+    this.inner = inner;
+    this.binding = binding;
+    this.expectedPlanHash = expectedPlanHash;
+  }
+
+  async load() {
+    const document = await this.inner.load();
+    if (!document) return null;
+    if (
+      document.nodeEndpointBinding?.schemaVersion !== this.binding.schemaVersion ||
+      document.nodeEndpointBinding?.sha256 !== this.binding.sha256
+    ) {
+      throw new DeploymentPlanError(
+        'the --nodes endpoint map does not match the operation journal; resume or rollback with the original map'
+      );
+    }
+    if (this.expectedPlanHash && document.planHash !== this.expectedPlanHash)
+      throw new DeploymentPlanError('the supplied deployment plan does not match the immutable operation journal');
+    return document;
+  }
+
+  save(document) {
+    return this.inner.save({
+      ...document,
+      nodeEndpointBinding: this.binding
+    });
+  }
+
+  acquire(operationId) {
+    return this.inner.acquire(operationId);
+  }
+
+  release() {
+    return this.inner.release();
+  }
+}
 
 async function readJson(filePath, label) {
   if (!filePath) throw new DeploymentPlanError(`${label} is required`);
@@ -28,7 +107,7 @@ export async function readDeploymentPlan(planPath) {
 }
 
 export async function createDeploymentPlanReport(rawPlan) {
-  const plan = normalizeDeploymentPlan(rawPlan);
+  const plan = normalizeCliDeploymentPlan(rawPlan);
   return { ok: true, action: 'plan', applied: false, planHash: deploymentPlanHash(plan), plan };
 }
 
@@ -64,14 +143,24 @@ export async function runDeploymentCli(
     };
   }
   const rawPlan = await readDeploymentPlan(planPath);
+  const plan = normalizeCliDeploymentPlan(rawPlan);
   const nodeDefinitions = await readJson(nodesPath, '--nodes');
+  assertNodeCoverage(plan, nodeDefinitions);
+  const binding = nodeEndpointBinding(nodeDefinitions);
   const effectiveTransport = transport ?? createSshDeploymentTransport({ nodes: nodeDefinitions });
-  const coordinator = new ClusterDeploymentCoordinator({ journalPath, journal, transport: effectiveTransport });
+  const boundJournal = new EndpointBoundJournal(journal, binding, {
+    expectedPlanHash: action === 'resume' || action === 'rollback' ? deploymentPlanHash(plan) : null
+  });
+  const coordinator = new ClusterDeploymentCoordinator({
+    journalPath,
+    journal: boundJournal,
+    transport: effectiveTransport
+  });
   let report;
-  if (action === 'apply') report = await coordinator.deploy(rawPlan, { operationId });
+  if (action === 'apply') report = await coordinator.deploy(plan, { operationId });
   else if (action === 'resume') {
     if (!operationId) throw new DeploymentPlanError('--operation-id is required for resume');
-    report = await coordinator.resume(operationId, { generation, plan: rawPlan });
+    report = await coordinator.resume(operationId, { generation, plan });
   } else {
     if (!operationId) throw new DeploymentPlanError('--operation-id is required for rollback');
     report = await coordinator.rollback(operationId, { generation });
@@ -87,12 +176,48 @@ export async function runDeploymentCli(
   };
 }
 
+export function deploymentFailureReport(action, error) {
+  const report = error?.report;
+  if (!report || typeof report !== 'object' || Array.isArray(report)) return null;
+  return {
+    ok: false,
+    action,
+    applied: true,
+    operationId: report.operationId ?? null,
+    generation: report.generation ?? null,
+    operationState: report.operationState ?? 'unknown',
+    report
+  };
+}
+
+function formatNodeProgress(node) {
+  const phases = Object.keys(node?.receipts ?? {});
+  const phaseText = phases.length ? ` [${phases.join(', ')}]` : '';
+  const errorCode = typeof node?.lastError?.code === 'string' ? `; error=${node.lastError.code}` : '';
+  return `  ${node.nodeId}: ${node.state}${phaseText}${errorCode}`;
+}
+
+function formatOperationReport(result) {
+  const report = result.report;
+  const lines = [`${result.operationId}: ${result.operationState}`];
+  for (const node of Object.values(report?.nodes ?? {})) lines.push(formatNodeProgress(node));
+  if (report?.rollback?.attempted) {
+    lines.push(
+      report.rollback.manualIntervention || report.operationState === 'rollback-failed'
+        ? '  rollback: manual intervention required'
+        : '  rollback: completed'
+    );
+  }
+  return lines.join('\n');
+}
+
 export function formatDeploymentReport(result, { json = false } = {}) {
   if (json) return JSON.stringify(result, null, 2);
   if (result.action === 'plan') return `Deployment plan ${result.planHash} is ready; review it before --apply --yes.`;
   if (result.action === 'status') {
     const state = result.report?.operationState ?? 'not-found';
-    return `${result.operationId}: ${state}`;
+    if (!result.report) return `${result.operationId}: ${state}`;
+    return formatOperationReport({ ...result, operationState: state });
   }
-  return `${result.operationId}: ${result.operationState}`;
+  return formatOperationReport(result);
 }

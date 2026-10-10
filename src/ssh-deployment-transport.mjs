@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import path from 'node:path';
 
 const HOST = /^[A-Za-z0-9][A-Za-z0-9._:@%+-]{0,255}$/;
 const TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:/@%+,-]{0,255}$/;
@@ -17,12 +18,39 @@ const PHASES = new Set([
   'discard-stage'
 ]);
 const MAX_SSH_OUTPUT_BYTES = 1024 * 1024;
+const MAX_SSH_TIMEOUT_MS = 3_660_000;
+const DEFAULT_DRAIN_TIMEOUT_MS = 300_000;
+const DRAIN_PHASES = new Set(['prepare', 'reprepare']);
+const DRAIN_TIMEOUT_MARGIN_MS = 60_000;
+const ARTIFACT_PHASES = new Set(['stage', 'swap', 'restart', 'verify', 'promote']);
 
 function safeToken(value, label, pattern = TOKEN) {
   if (typeof value !== 'string' || !value || !pattern.test(value) || /[\r\n;|&$`<>]/.test(value)) {
     throw new SshTransportError(`${label} is invalid`, 'invalid_transport_config');
   }
   return value;
+}
+
+function reviewedRemotePath(value, label) {
+  if (
+    typeof value !== 'string' ||
+    !value ||
+    !value.startsWith('/') ||
+    path.posix.normalize(value) !== value ||
+    /[\u0000-\u001f\u007f\r\n;|&$`<>]/.test(value)
+  ) {
+    throw new SshTransportError(`${label} must be an absolute normalized path`, 'invalid_artifact_path');
+  }
+  return value;
+}
+
+function reviewedArtifactPaths(context) {
+  const artifact = context?.artifact;
+  const artifactPath = reviewedRemotePath(artifact?.path, 'reviewed artifact path');
+  const manifestPath = reviewedRemotePath(artifact?.manifestPath, 'reviewed manifest path');
+  if (artifactPath === manifestPath)
+    throw new SshTransportError('reviewed artifact and manifest paths must differ', 'invalid_artifact_path');
+  return { artifactPath, manifestPath };
 }
 
 function nodeSpec(value, nodeId) {
@@ -167,8 +195,10 @@ export class SshTransportError extends Error {
  * Coordinator transport for an already-reviewed artifact and an installed
  * node-agent. It never builds, uploads, or changes a model/runtime process.
  * `runSsh(node, request)` is injectable for tests; its request contains only
- * public plan context and the remote argv. If `upload` is supplied, it must
- * return reviewed `artifactPath` and `manifestPath` strings before `stage`.
+ * public plan context and the remote argv. Artifact and manifest paths are
+ * absolute, normalized paths already present on the target. If `upload` is
+ * supplied, it may pre-stage those files but must return the exact paths from
+ * the reviewed plan so a later process can resume without transport state.
  */
 export class SshDeploymentTransport {
   constructor({ nodes, runSsh = null, upload = null, timeoutMs = 120000 } = {}) {
@@ -178,7 +208,7 @@ export class SshDeploymentTransport {
     if (!this.nodes.size) throw new SshTransportError('nodes map must not be empty', 'invalid_transport_config');
     if (typeof upload !== 'function' && upload !== null)
       throw new SshTransportError('upload must be a function', 'invalid_transport_config');
-    if (!Number.isInteger(timeoutMs) || timeoutMs < 1000)
+    if (!Number.isInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > MAX_SSH_TIMEOUT_MS)
       throw new SshTransportError('timeoutMs is invalid', 'invalid_transport_config');
     this.runSsh = runSsh ?? ((node, request) => spawnSsh(node, request.argv, request.input, request.timeoutMs));
     this.upload = upload;
@@ -191,13 +221,19 @@ export class SshDeploymentTransport {
 
   async stage(nodeId, context) {
     let nextContext = context;
+    const configuredPaths = reviewedArtifactPaths(context);
     if (this.upload) {
       const uploaded = await this.upload(this.#node(nodeId), publicContext(context));
       if (!uploaded || typeof uploaded !== 'object')
         throw new SshTransportError('artifact upload did not return paths', 'upload_failed');
-      const artifactPath = safeToken(uploaded.artifactPath, 'uploaded.artifactPath', /^[^\r\n;|&$`<>]+$/);
-      const manifestPath = safeToken(uploaded.manifestPath, 'uploaded.manifestPath', /^[^\r\n;|&$`<>]+$/);
-      nextContext = { ...context, artifact: { ...context.artifact, path: artifactPath, manifestPath } };
+      const artifactPath = reviewedRemotePath(uploaded.artifactPath, 'uploaded.artifactPath');
+      const manifestPath = reviewedRemotePath(uploaded.manifestPath, 'uploaded.manifestPath');
+      if (artifactPath !== configuredPaths.artifactPath || manifestPath !== configuredPaths.manifestPath) {
+        throw new SshTransportError(
+          'artifact upload paths must exactly match the reviewed plan paths',
+          'upload_path_mismatch'
+        );
+      }
     }
     return this.#call(nodeId, 'stage', nextContext);
   }
@@ -241,6 +277,7 @@ export class SshDeploymentTransport {
 
   async #call(nodeId, phase, context) {
     if (!PHASES.has(phase)) throw new SshTransportError('unsupported remote phase', 'invalid_phase');
+    if (ARTIFACT_PHASES.has(phase)) reviewedArtifactPaths(context);
     const node = this.#node(nodeId);
     const destination = node.user ? `${node.user}@${node.host}` : node.host;
     const argv = ['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=15'];
@@ -250,7 +287,7 @@ export class SshDeploymentTransport {
     const request = {
       argv,
       input: `${JSON.stringify(publicContext(context))}\n`,
-      timeoutMs: this.timeoutMs,
+      timeoutMs: this.#timeoutFor(phase, context),
       phase,
       nodeId
     };
@@ -271,6 +308,20 @@ export class SshDeploymentTransport {
     if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt))
       throw new SshTransportError(`remote ${phase} returned invalid receipt`, 'invalid_receipt');
     return receipt;
+  }
+
+  #timeoutFor(phase, context) {
+    let timeoutMs = this.timeoutMs;
+    if (DRAIN_PHASES.has(phase)) {
+      const drainTimeoutMs = Number(context?.drainTimeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS);
+      if (!Number.isInteger(drainTimeoutMs) || drainTimeoutMs < 1000 || drainTimeoutMs > 3_600_000) {
+        throw new SshTransportError('drain timeout is invalid', 'invalid_timeout');
+      }
+      timeoutMs = Math.max(timeoutMs, drainTimeoutMs + DRAIN_TIMEOUT_MARGIN_MS);
+    }
+    if (timeoutMs > MAX_SSH_TIMEOUT_MS)
+      throw new SshTransportError('remote phase timeout exceeds the safety limit', 'invalid_timeout');
+    return timeoutMs;
   }
 }
 
