@@ -103,7 +103,7 @@ async function fixture(t, { managed = true, idleMs = 100 } = {}) {
   });
   const providerUrl = await listen(provider);
   const config = {
-    server: { host: '127.0.0.1', port: 0, foregroundIdleMs: idleMs },
+    server: { requestScheduling: { mode: 'interrupt' }, host: '127.0.0.1', port: 0, foregroundIdleMs: idleMs },
     security: { apiKeys: ['fixture-key'], allowMissingAuth: false },
     logging: { metricsPersistence: false },
     backends: { provider: { type: 'openai', baseUrl: `${providerUrl}/v1` } },

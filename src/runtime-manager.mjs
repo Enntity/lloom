@@ -1145,6 +1145,7 @@ export class RuntimeManager {
     const run = this.admissionQueue
       .catch(() => {})
       .then(async () => {
+        if (this.shuttingDown) throw admissionShutdownError();
         const admission = {
           runtimeId,
           reason,
@@ -1167,7 +1168,7 @@ export class RuntimeManager {
     return run;
   }
 
-  withRuntimeLifecycleLock(runtimeId, fn) {
+  withRuntimeLifecycleLock(runtimeId, fn, { allowDuringShutdown = false } = {}) {
     this.assertNotStandby('runtime lifecycle');
     const deploymentFenceToken = this.captureDeploymentMutation(
       `runtime lifecycle${runtimeId ? ` (${runtimeId})` : ''}`
@@ -1175,7 +1176,10 @@ export class RuntimeManager {
     this.pendingLifecycles += 1;
     if (!runtimeId) {
       return Promise.resolve()
-        .then(() => this.withMutationScope(deploymentFenceToken, fn))
+        .then(() => {
+          if (this.shuttingDown && !allowDuringShutdown) throw admissionShutdownError();
+          return this.withMutationScope(deploymentFenceToken, fn);
+        })
         .finally(() => {
           this.pendingLifecycles = Math.max(0, this.pendingLifecycles - 1);
         });
@@ -1184,6 +1188,7 @@ export class RuntimeManager {
     const run = previous
       .catch(() => {})
       .then(async () => {
+        if (this.shuttingDown && !allowDuringShutdown) throw admissionShutdownError();
         const controller = new AbortController();
         this.lifecycleControllers.set(runtimeId, controller);
         try {
@@ -1520,9 +1525,10 @@ export class RuntimeManager {
     };
   }
 
-  async withSlot(runtimeId, fn, { signal = null, requestClass = 'standard' } = {}) {
+  async withSlot(runtimeId, fn, options = {}) {
+    const { signal = null, requestClass = 'standard' } = options;
     if (runtimeId && this.standby === true) this.assertNotStandby('runtime request slot');
-    const release = await this.acquireSlot(runtimeId, { signal, requestClass });
+    const release = await this.acquireSlot(runtimeId, { ...options, signal, requestClass });
     try {
       return await fn();
     } finally {
@@ -1707,9 +1713,21 @@ export class RuntimeManager {
     return { runtimeId, restarted: true, forced, stop, start };
   }
 
-  acquireSlot(runtimeId, { signal = null, requestClass = 'standard' } = {}) {
+  acquireSlot(
+    runtimeId,
+    {
+      signal = null,
+      requestClass = 'standard',
+      canAdmit = () => true,
+      canWait = null,
+      strictPriority = false,
+      maxQueuedRequests: queueLimit,
+      queueTimeoutMs: timeout
+    } = {}
+  ) {
     if (runtimeId && this.standby === true) this.assertNotStandby('runtime request slot');
     requestClass = normalizeRequestClass(requestClass);
+    const foreground = strictPriority && requestClass === 'foreground';
     if (requestClass === 'foreground') requestClass = 'interactive';
     if (maintenanceBlocksRouting(this.config, runtimeId)) throw maintenanceError(runtimeId);
     signal?.throwIfAborted?.();
@@ -1718,23 +1736,34 @@ export class RuntimeManager {
     if (!runtime) return () => {};
     const state = this.stateFor(runtimeId);
     state.lastRequestedAt = nowIso();
-    if (this.canAdmitRequest(runtimeId, requestClass)) {
+    if (this.canAdmitRequest(runtimeId, requestClass) && canAdmit()) {
       return this.activateSlot(runtimeId, requestClass);
     }
+    if (canWait && !canWait()) return Promise.reject(admissionDeferredError());
     const queue = this.queueFor(runtimeId);
-    const maxQueuedRequests = runtimeMaxQueuedRequests(runtime);
+    const maxQueuedRequests = queueLimit ?? runtimeMaxQueuedRequests(runtime);
     const retryAfterSeconds = runtimeQueueRetryAfterSeconds(runtime);
     const standardQueued = queue.filter((entry) => entry.requestClass !== 'interactive').length;
-    if (
-      queue.length >= maxQueuedRequests ||
-      (requestClass !== 'interactive' && standardQueued >= maxQueuedRequests - interactiveReservedQueueSlots(runtime))
-    ) {
+    // Adaptive waiting rooms are bounded per priority class so background
+    // saturation cannot consume the foreground class's queue capacity.
+    const sameClassQueued = queue.filter((entry) =>
+      foreground ? entry.foreground : !entry.foreground && entry.requestClass === requestClass
+    ).length;
+    const queueFull = strictPriority
+      ? sameClassQueued >= maxQueuedRequests
+      : queue.length >= maxQueuedRequests ||
+        (requestClass !== 'interactive' &&
+          standardQueued >= maxQueuedRequests - interactiveReservedQueueSlots(runtime));
+    if (queueFull) {
       return Promise.reject(new RuntimeQueueError(runtimeId, { reason: 'full', retryAfterSeconds }));
     }
     state.queuedRequests = queue.length + 1;
     return new Promise((resolve, reject) => {
       const entry = {
         requestClass,
+        foreground,
+        canAdmit,
+        canWait,
         resolve: (release) => {
           if (entry.timer) clearTimeout(entry.timer);
           signal?.removeEventListener?.('abort', entry.abort);
@@ -1755,7 +1784,7 @@ export class RuntimeManager {
       queue.push(entry);
       signal?.addEventListener?.('abort', entry.abort, { once: true });
       if (signal?.aborted) entry.abort();
-      const queueTimeoutMs = runtimeQueueTimeoutMs(runtime);
+      const queueTimeoutMs = timeout ?? runtimeQueueTimeoutMs(runtime);
       if (!signal?.aborted && queueTimeoutMs > 0) {
         entry.timer = setTimeout(
           () => entry.reject(new RuntimeQueueError(runtimeId, { reason: 'timeout', retryAfterSeconds })),
@@ -1799,16 +1828,33 @@ export class RuntimeManager {
     for (const entry of [...queue]) {
       if (entry.signal?.aborted) entry.reject(entry.signal.reason ?? abortError());
     }
-    const eligible = (entry) => this.canAdmitRequest(runtimeId, entry.requestClass);
-    const interactive = queue.findIndex((entry) => entry.requestClass === 'interactive' && eligible(entry));
-    const standard = queue.findIndex((entry) => entry.requestClass !== 'interactive' && eligible(entry));
-    // Four interactive admissions may overtake waiting standard work, then
-    // the oldest eligible standard request gets a turn. Neither class starves.
-    const index =
-      interactive >= 0 && (standard < 0 || this.stateFor(runtimeId).consecutiveInteractiveAdmissions < 4)
-        ? interactive
-        : standard;
-    return index < 0 ? null : queue.splice(index, 1)[0];
+    const eligible = (entry) => {
+      try {
+        return this.canAdmitRequest(runtimeId, entry.requestClass) && entry.canAdmit();
+      } catch (error) {
+        entry.reject(error);
+        return false;
+      }
+    };
+    const takeEligible = (matches) => {
+      for (const entry of [...queue]) {
+        if (!matches(entry) || !eligible(entry)) continue;
+        const index = queue.indexOf(entry);
+        if (index >= 0) return queue.splice(index, 1)[0];
+      }
+      return null;
+    };
+    const foreground = takeEligible((entry) => entry.foreground);
+    if (foreground) return foreground;
+    // Legacy admission retains its four-to-one fairness rule. In adaptive
+    // mode eligibility guards hold standard work while higher demand exists.
+    const preferInteractive = this.stateFor(runtimeId).consecutiveInteractiveAdmissions < 4;
+    const classes = preferInteractive ? ['interactive', 'standard'] : ['standard', 'interactive'];
+    for (const requestClass of classes) {
+      const entry = takeEligible((item) => item.requestClass === requestClass);
+      if (entry) return entry;
+    }
+    return null;
   }
 
   releaseSlot(runtimeId, requestClass = 'standard') {
@@ -1829,6 +1875,33 @@ export class RuntimeManager {
     this.stateFor(runtimeId).queuedRequests = this.queueFor(runtimeId).length;
   }
 
+  cancelQueuedRequests(error) {
+    for (const queue of this.queues.values()) {
+      for (const entry of [...queue]) entry.reject(error);
+    }
+  }
+
+  cancelAdmissionOperations(error) {
+    this.activeAdmission?.controller.abort(error);
+    for (const controller of this.lifecycleControllers.values()) controller.abort(error);
+  }
+
+  nudgeAdmissionQueues() {
+    for (const [runtimeId, queue] of this.queues) {
+      // A lower-priority waiter must not pin model residency while a higher
+      // request needs to load another model. Its connected request returns to
+      // the scheduler and rechecks runtime health when it becomes eligible.
+      for (const entry of [...queue]) {
+        try {
+          if (entry.canWait && !entry.canWait()) entry.reject(admissionDeferredError());
+        } catch (error) {
+          entry.reject(error);
+        }
+      }
+      this.admitQueuedRequests(runtimeId);
+    }
+  }
+
   resumeRuntime(runtimeId) {
     this.assertNotStandby('runtime pause/resume');
     this.captureDeploymentMutation(`resume runtime (${runtimeId})`);
@@ -1846,6 +1919,7 @@ export class RuntimeManager {
     const deadline = Date.now() + timeoutMs;
     const state = this.stateFor(runtimeId);
     while (state.activeRequests > 0) {
+      if (this.shuttingDown) throw admissionShutdownError();
       if (Date.now() >= deadline) throw new Error(`timed out draining runtime ${runtimeId}`);
       await delay(50);
     }
@@ -1865,6 +1939,7 @@ export class RuntimeManager {
   }
 
   async reconfigureUnlocked(nextConfig, { drainTimeoutMs = 300000 } = {}) {
+    if (this.shuttingDown) throw admissionShutdownError();
     const nextRole = nextConfig?.server?.role ?? 'primary';
     if (nextRole !== this.processRole) {
       const error = new Error('server role is frozen for the process lifetime; restart the gateway to change role');
@@ -2723,7 +2798,9 @@ export class RuntimeManager {
     // keeps an explicit stop responsive during a long model startup.
     this.abortRuntimeTree(runtimeId, `runtime ${runtimeId} stop requested`);
     return this.withMutationScope(deploymentFenceToken, () =>
-      this.withRuntimeLifecycleLock(runtimeId, () => this.stopUnlocked(runtimeId, { requestedBy: requesterNode }))
+      this.withRuntimeLifecycleLock(runtimeId, () => this.stopUnlocked(runtimeId, { requestedBy: requesterNode }), {
+        allowDuringShutdown: true
+      })
     );
   }
 
@@ -2845,5 +2922,18 @@ function abortError() {
   return Object.assign(new Error('Request aborted while waiting for runtime admission'), {
     name: 'AbortError',
     code: 'ABORT_ERR'
+  });
+}
+
+function admissionDeferredError() {
+  return Object.assign(new Error('runtime waiter yielded to higher priority admission'), {
+    code: 'REQUEST_ADMISSION_DEFERRED'
+  });
+}
+
+function admissionShutdownError() {
+  return Object.assign(new Error('runtime admission stopped for gateway shutdown'), {
+    code: 'REQUEST_SCHEDULER_CLOSED',
+    statusCode: 503
   });
 }

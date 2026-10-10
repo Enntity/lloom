@@ -132,6 +132,56 @@ export function normalizeLegacyAliases(input) {
   return config;
 }
 
+const REQUEST_SCHEDULING_CLASSES = new Set(['standard', 'interactive', 'foreground']);
+const REQUEST_SCHEDULING_MODES = new Set(['adaptive', 'interrupt', 'off']);
+
+function validateRequestScheduling(raw) {
+  if (raw == null) return [];
+  const errors = [];
+  if (typeof raw !== 'object' || Array.isArray(raw)) return ['server.requestScheduling must be an object'];
+  for (const [key, minimum, maximum] of [
+    ['maxQueuedRequests', 0, 1_000_000],
+    ['queueTimeoutMs', 0, 86_400_000],
+    ['backgroundMaxConcurrency', 1, 10_000],
+    ['rampIntervalMs', 0, 3_600_000]
+  ]) {
+    const value = raw[key];
+    if (value == null) continue;
+    if (!Number.isInteger(value) || value < minimum || value > maximum) {
+      errors.push(`server.requestScheduling.${key} must be an integer between ${minimum} and ${maximum}`);
+    }
+  }
+  if (raw.mode != null && !REQUEST_SCHEDULING_MODES.has(raw.mode)) {
+    errors.push(`server.requestScheduling.mode must be one of adaptive, interrupt, off`);
+  }
+  errors.push(...validateSchedulingClassMap(raw.clients, 'server.requestScheduling.clients'));
+  errors.push(...validateSchedulingClassMap(raw.apiKeyEnv, 'server.requestScheduling.apiKeyEnv'));
+  if (raw.modelGroups != null) {
+    if (typeof raw.modelGroups !== 'object' || Array.isArray(raw.modelGroups)) {
+      errors.push('server.requestScheduling.modelGroups must be an object mapping model id to group');
+    } else {
+      for (const [id, group] of Object.entries(raw.modelGroups)) {
+        if (typeof group !== 'string' || !group.trim()) {
+          errors.push(`server.requestScheduling.modelGroups.${id} must be a non-empty group name`);
+        }
+      }
+    }
+  }
+  return errors;
+}
+
+function validateSchedulingClassMap(value, label) {
+  if (value == null) return [];
+  if (typeof value !== 'object' || Array.isArray(value)) return [`${label} must be an object mapping name to class`];
+  const errors = [];
+  for (const [name, requestClass] of Object.entries(value)) {
+    if (!REQUEST_SCHEDULING_CLASSES.has(requestClass)) {
+      errors.push(`${label}.${name} must be one of standard, interactive, foreground`);
+    }
+  }
+  return errors;
+}
+
 function validateConfig(config, sourcePath, env) {
   const errors = validateWebFunctions(config.web);
   errors.push(...collectStandbyConfigErrors(config));
@@ -148,6 +198,7 @@ function validateConfig(config, sourcePath, env) {
   ) {
     errors.push('server.foregroundIdleMs must be an integer between 0 and 3600000');
   }
+  errors.push(...validateRequestScheduling(config.server?.requestScheduling));
 
   for (const [index, model] of (config.models ?? []).entries()) {
     if (!model?.id) errors.push(`models[${index}] is missing id`);
@@ -543,7 +594,19 @@ export async function loadConfig(
     server: {
       host: '127.0.0.1',
       port: 8100,
-      ...asObject(expanded.server)
+      ...asObject(expanded.server),
+      // Declarative priority scheduling. Defaults enable queued adaptive
+      // admission; operators override per environment. All fields are safe to
+      // place in a checked-in config (no secrets): `apiKeyEnv` names the env
+      // variable that holds the credential, it never contains the secret.
+      requestScheduling: {
+        mode: 'adaptive',
+        maxQueuedRequests: 1024,
+        queueTimeoutMs: 0,
+        backgroundMaxConcurrency: 4,
+        rampIntervalMs: 1000,
+        ...asObject(expanded.server?.requestScheduling)
+      }
     },
     security: {
       allowMissingAuth: true,

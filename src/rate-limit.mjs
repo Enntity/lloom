@@ -57,7 +57,7 @@ export function normalizeRateLimit(value) {
   if (settings.queue != null && typeof settings.queue !== 'boolean') {
     throw new Error(`rateLimit.queue must be a boolean: ${JSON.stringify(settings.queue)}`);
   }
-  const queue = settings.queue === true ? { queue: true } : {};
+  const queue = settings.queue == null ? {} : { queue: settings.queue };
   const rawMaxConcurrent = settings.maxConcurrent ?? settings.concurrency;
   const maxConcurrent = positiveInteger(rawMaxConcurrent);
   // A fractional or zero value floors to 0, which would silently mean "no
@@ -203,6 +203,17 @@ export function createSemaphore(limit) {
         tryAdmit(entry);
       }
     },
+    tryAcquire() {
+      if (active >= max || waiters.length) return null;
+      active += 1;
+      let released = false;
+      return () => {
+        if (!released) {
+          released = true;
+          release();
+        }
+      };
+    },
     acquire(signal = null, { timeoutMs = MAX_WAIT_MS } = {}) {
       signal?.throwIfAborted?.();
       const entry = { signal, timer: null, onAbort: null, resolve: null, reject: null };
@@ -297,6 +308,27 @@ export function createGcra({ rateMs, burst }) {
  */
 export function createRateLimitRegistry(limits = {}) {
   const limiters = new Map();
+  const listeners = new Set();
+  let wakeTimer = null;
+  let wakeAt = Infinity;
+  const notify = () => {
+    for (const fn of listeners) fn();
+  };
+  const wakeAfter = (ms) => {
+    const at = Date.now() + ms;
+    if (at >= wakeAt) return;
+    clearTimeout(wakeTimer);
+    wakeAt = at;
+    wakeTimer = setTimeout(
+      () => {
+        wakeTimer = null;
+        wakeAt = Infinity;
+        notify();
+      },
+      Math.max(1, ms)
+    );
+    wakeTimer.unref?.();
+  };
   function sync(limitsNow) {
     // Validate and normalize the full incoming map BEFORE touching live state so
     // a malformed value cannot half-apply and strand in-flight releases.
@@ -358,7 +390,66 @@ export function createRateLimitRegistry(limits = {}) {
   }
   sync(limits);
   return {
-    sync,
+    sync(limitsNow) {
+      sync(limitsNow);
+      notify();
+    },
+    subscribe(fn) {
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    },
+    close() {
+      clearTimeout(wakeTimer);
+      listeners.clear();
+    },
+    tryAcquireChain(ids) {
+      const entries = [...new Set(ids)].map((id) => [id, limiters.get(id)]).filter(([, entry]) => entry);
+      let waitMs = 0;
+      for (const [id, entry] of entries) {
+        const delay = entry.gcra?.nextAllowedInMs() ?? 0;
+        if (delay && entry.settings.queue === false) {
+          const error = new Error(`rate budget for ${id} exhausted`);
+          Object.assign(error, { name: 'RateBudgetExhaustedError', limiterId: id, retryAfterMs: delay });
+          throw error;
+        }
+        waitMs = Math.max(waitMs, delay);
+      }
+      if (waitMs) {
+        wakeAfter(waitMs);
+        return null;
+      }
+      if (
+        entries.some(
+          ([, entry]) => entry.semaphore && (entry.semaphore.active >= entry.semaphore.limit || entry.semaphore.queued)
+        )
+      )
+        return null;
+      const releases = [];
+      for (const [, entry] of entries) {
+        if (!entry.semaphore) continue;
+        const release = entry.semaphore.tryAcquire();
+        if (!release) {
+          releases.forEach((fn) => fn());
+          return null;
+        }
+        releases.push(release);
+      }
+      try {
+        consumeRateBudget({ limiter: (id) => limiters.get(id) }, ids);
+      } catch (error) {
+        releases.forEach((fn) => fn());
+        if (error.name !== 'RateBudgetExhaustedError') throw error;
+        wakeAfter(error.retryAfterMs);
+        return null;
+      }
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        releases.forEach((fn) => fn());
+        notify();
+      };
+    },
     limiter(id) {
       return limiters.get(id) ?? null;
     },

@@ -4,6 +4,39 @@ import http from 'node:http';
 import { RuntimeManager, RuntimeQueueError } from '../src/runtime-manager.mjs';
 import { createLloomServer } from '../src/server.mjs';
 
+test('shutdown aborts pending lifecycle admission while retaining runtime stop authority', async () => {
+  const manager = new RuntimeManager({ runtimes: { limited: { enabled: true } } }, { logger: { error() {} } });
+  const reason = Object.assign(new Error('closing'), { code: 'REQUEST_SCHEDULER_CLOSED', statusCode: 503 });
+  const active = manager.withAdmissionLock(
+    (signal) =>
+      new Promise((resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      })
+  );
+  const queued = manager.withAdmissionLock(() => assert.fail('queued admission must not start during shutdown'));
+  await waitFor(() => manager.activeAdmission != null);
+  manager.shuttingDown = true;
+  manager.cancelAdmissionOperations(reason);
+  await assert.rejects(active, { code: 'REQUEST_SCHEDULER_CLOSED' });
+  await assert.rejects(queued, { code: 'REQUEST_SCHEDULER_CLOSED' });
+  await assert.rejects(manager.reconfigure(manager.config), { code: 'REQUEST_SCHEDULER_CLOSED' });
+  await assert.rejects(
+    manager.withRuntimeLifecycleLock('limited', () => assert.fail('new startup must not run')),
+    { code: 'REQUEST_SCHEDULER_CLOSED' }
+  );
+  manager.stopUnlocked = async () => ({ stopped: true });
+  assert.deepEqual(await manager.stopAll(), { stopped: 1, total: 1, results: [{ stopped: true }] });
+});
+
+test('shutdown interrupts a capacity drain before waiting indefinitely for active inference', async () => {
+  const manager = new RuntimeManager({ runtimes: { limited: { enabled: true } } }, { logger: { error() {} } });
+  const release = await manager.acquireSlot('limited');
+  const draining = manager.drainRuntime('limited', { timeoutMs: 60_000 });
+  manager.shuttingDown = true;
+  await assert.rejects(draining, { code: 'REQUEST_SCHEDULER_CLOSED' });
+  release();
+});
+
 test('an aborted queued request leaves admission immediately and never executes', async () => {
   const manager = new RuntimeManager({ runtimes: { limited: { maxConcurrency: 1 } } }, { logger: { error() {} } });
   let releaseBlockingSlot;
@@ -316,7 +349,7 @@ test('gateway embeddings carry interactive admission through to completed metric
   });
   const config = {
     name: 'interactive-admission-test',
-    server: { host: '127.0.0.1', port: 0 },
+    server: { requestScheduling: { mode: 'off' }, host: '127.0.0.1', port: 0 },
     security: { allowMissingAuth: true, apiKeys: [] },
     logging: { metricsPersistence: false },
     defaults: { embeddingModel: 'memory' },

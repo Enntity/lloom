@@ -333,14 +333,14 @@ Runtime definitions can set `maxConcurrency`. Model requests acquire a runtime s
 
 Runtime definitions can also declare `memoryGb` and `policy.priority`. `lloom runtime-plan <runtime-id>` and `GET /gateway/runtimes/plan?runtime=<runtime-id>` return a dry-run admission plan: projected loaded memory, configured memory budget, protected active runtimes, and any lower-priority runtimes that should be stopped before starting the requested lane. `lloom runtime-admit <runtime-id> --apply --yes` and `POST /gateway/runtimes/:id/admit` apply that plan through guarded stop/start calls. Applied admissions are serialized, so concurrent requests re-plan against the latest runtime state instead of dueling over stale eviction snapshots. Model requests only perform policy evictions automatically when `runtimePolicy.autoEvict` is explicitly set to `true`; the default is conservative preview/manual admission.
 
-Interactive clients can send `x-lloom-request-class: foreground` to interrupt
-background inference and reserve a conversation window across the gateway's
-models and aliases. New background calls receive `INTERACTIVE_PRIORITY` with
-retry guidance until the last foreground request has finished and chat has been
-idle for 60 seconds. Set `server.foregroundIdleMs` to change that interval.
-Foreground priority also propagates to federated serving gateways. See
-[request scheduling](docs/architecture.md#runtime-policy) for cancellation and
-client protocol details.
+LLooM automatically gives recognized coding clients foreground priority. Other
+clients can send `x-lloom-request-class: foreground`, or you can assign priority
+to their API key in `server.requestScheduling.apiKeyEnv`. Foreground requests
+get the next available capacity; accepted background calls stay queued and
+active streams finish normally. After foreground work is idle, background work
+resumes gradually. The default idle interval is 60 seconds; change it with
+`server.foregroundIdleMs`. Priority crosses authenticated federation hops.
+See [request scheduling](docs/request-scheduling.md) for configuration and limits.
 
 Keep-warm startup is capacity-aware regardless of request-time `autoEvict`. LLooM processes enabled keep-warm runtimes by descending `policy.priority` (configuration order breaks ties), protects everything already loaded during that pass, and skips with a warning when another runtime cannot fit. A skipped large runtime does not prevent a later smaller runtime from being considered. Recipes and ad hoc runtimes should provide `memoryGb` so the warning and admission decision are meaningful.
 

@@ -18,7 +18,7 @@ async function listen(server) {
   return `http://127.0.0.1:${server.address().port}`;
 }
 
-async function fixture(t, { holdStream = false, providerStatus = 200, rawFallback = false } = {}) {
+async function fixture(t, { holdStream = false, providerStatus = 200, rawFallback = false, mode = 'interrupt' } = {}) {
   const hits = [];
   const fallbackHits = [];
   const streamResponses = [];
@@ -81,7 +81,7 @@ async function fixture(t, { holdStream = false, providerStatus = 200, rawFallbac
   const fallbackUrl = fallback ? await listen(fallback) : null;
   const config = {
     name: 'federated-priority-serving',
-    server: { host: '127.0.0.1', port: 0 },
+    server: { requestScheduling: { mode }, foregroundIdleMs: 25, host: '127.0.0.1', port: 0 },
     security: { allowMissingAuth: false, apiKeys: ['serving-fixture-key'] },
     logging: { metricsPersistence: false },
     defaults: { chatModel: 'chat', embeddingModel: 'memory' },
@@ -101,7 +101,7 @@ async function fixture(t, { holdStream = false, providerStatus = 200, rawFallbac
   const servingUrl = await listen(serving.server);
   const frontConfig = {
     name: 'federated-priority-front',
-    server: { host: '127.0.0.1', port: 0 },
+    server: { requestScheduling: { mode }, foregroundIdleMs: 25, host: '127.0.0.1', port: 0 },
     security: { allowMissingAuth: false, apiKeys: ['front-fixture-key'] },
     logging: { metricsPersistence: false },
     cluster: {
@@ -142,11 +142,13 @@ async function fixture(t, { holdStream = false, providerStatus = 200, rawFallbac
     servingUrl,
     hits,
     fallbackHits,
+    finishStreams: () => streamResponses.forEach((response) => response.end('data: [DONE]\n\n')),
     streamClosed: () => streamResponses.length > 0 && streamResponses.every((response) => response.destroyed),
     manager,
     front,
     serving,
     frontConfig,
+    servingConfig: config,
     async holdBackground() {
       const release = await manager.acquireSlot('limited');
       releases.push(release);
@@ -305,6 +307,15 @@ for (const [name, pathway] of pathways) {
   );
 }
 
+test('explicit standard survives a federation hop whose proxy client defaults to foreground', async (t) => {
+  const f = await fixture(t, { mode: 'adaptive' });
+  f.servingConfig.server.requestScheduling.clients = { node: 'foreground' };
+  assert.equal((await f.request({ requestClass: 'standard' }).response).status, 200);
+  await waitFor(() => f.serving.metrics.snapshot().recent.length === 1, 'standard completion');
+  assert.equal(f.serving.metrics.snapshot().recent[0].requestClass, 'standard');
+  assert.equal(f.hits[0].headers['x-lloom-request-class'], undefined);
+});
+
 test('canceling a federated queued request removes it at the serving gateway', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   await f.holdBackground();
@@ -392,3 +403,44 @@ test('only explicit enabled inference proxies identify gateway backends', () => 
   assert.equal(isFederatedGatewayBackend(config, 'lloom-node-disabled'), false);
   assert.equal(isFederatedGatewayBackend(config, 'provider'), false);
 });
+
+test(
+  'adaptive federation preserves an active stream and queues lower work on both hops',
+  { timeout: 10000 },
+  async (t) => {
+    const f = await fixture(t, { holdStream: true, mode: 'adaptive' });
+    const background = await fetch(`${f.servingUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer serving-fixture-key', 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'chat', stream: true, messages: [{ role: 'user', content: 'background' }] })
+    });
+    const text = background.text();
+    const foreground = f.request({
+      route: '/v1/chat/completions',
+      model: 'chat',
+      requestClass: 'foreground',
+      body: { messages: [{ role: 'user', content: 'foreground' }] }
+    });
+    assert.equal((await foreground.response).status, 200);
+    assert.equal(f.streamClosed(), false);
+    const lower = f.request({ requestClass: 'standard' });
+    f.finishStreams();
+    assert.equal((await lower.response).status, 200);
+    assert.match(await text, /\[DONE\]/);
+    assert.ok(f.serving.metrics.snapshot().recent.some((entry) => entry.requestClass === 'foreground'));
+    assert.ok(f.front.metrics.snapshot().recent.some((entry) => entry.requestClass === 'foreground'));
+    assert.ok(f.hits.every((entry) => !entry.headers['x-lloom-request-class']));
+  }
+);
+
+for (const [name, pathway] of pathways) {
+  test(`adaptive federation carries foreground ${name}`, { timeout: 10000 }, async (t) => {
+    const f = await fixture(t, { mode: 'adaptive' });
+    const response = await f.request({ ...pathway, requestClass: 'foreground' }).response;
+    assert.equal(response.status, 200);
+    await response.arrayBuffer();
+    await waitFor(() => f.serving.metrics.snapshot().recent.length === 1, 'foreground completion');
+    assert.equal(f.serving.metrics.snapshot().recent[0].requestClass, 'foreground');
+    assert.equal(f.hits[0].headers['x-lloom-request-class'], undefined);
+  });
+}

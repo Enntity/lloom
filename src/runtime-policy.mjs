@@ -648,6 +648,7 @@ export async function applyRuntimePolicyPlan(
     preferredRestore = false,
     preferredWarmIdleMs = 0,
     admissionGuard,
+    allowPreemption = true,
     profile,
     requesterNode = currentNodeId(config)
   } = {}
@@ -895,7 +896,8 @@ export async function applyRuntimePolicyPlan(
     return runtimeManager.withAdmissionLock(applyPlan, {
       runtimeId: requestedRuntimeId,
       reason,
-      preemptible: alternativeAvailable
+      preemptible: alternativeAvailable,
+      allowPreemption
     });
   }
   return applyPlan();
