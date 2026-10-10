@@ -73,6 +73,15 @@ import {
 import { RuntimeManager, runtimeWatchdogConfig, normalizeRequestClass } from './runtime-manager.mjs';
 import { ForegroundPriority } from './foreground-priority.mjs';
 import { createPreferredResidencyReconciler } from './runtime-residency.mjs';
+import {
+  assertStandbyConfig,
+  isStandby,
+  normalizeServerRole,
+  standbyEndpointGate,
+  standbyGatewayStatus
+} from './standby.mjs';
+
+const STANDBY_BACKEND = Symbol('lloom.standbyBackend');
 import { createRuntimePreferenceController } from './runtime-preferences.mjs';
 import { createDashboardInstallation } from './dashboard-installation.mjs';
 import {
@@ -119,13 +128,15 @@ import {
   hasValidApiKey,
   securityPublicStatus
 } from './security.mjs';
-import { ClusterCoordinator, currentNodeId, isFederatedGatewayBackend } from './cluster.mjs';
+import { ClusterCoordinator, currentNodeId, isFederatedGatewayBackend, runtimePlacement } from './cluster.mjs';
 import { createDeploymentFence, DeploymentFenceError, isDeploymentFencePath } from './deployment-fence.mjs';
 
 const JSON_TYPE = 'application/json; charset=utf-8';
 const SSE_TYPE = 'text/event-stream; charset=utf-8';
 const execFileAsync = promisify(execFile);
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const DEPLOYMENT_CANARY_MAX_RESPONSE_BYTES = 1024 * 1024;
+const DEPLOYMENT_CANARY_TIMEOUT_MS = 30_000;
 // Tests may swap this per server instance via createLloomServer's
 // upstreamDispatcher option; production always uses the long-running Agent.
 let longRunningMediaDispatcher = new UndiciAgent({
@@ -672,9 +683,101 @@ async function waitForRequest(operation, signal) {
   }
 }
 
-// Preserve configuration and owned runtime/process evidence while excluding
-// gateway-local timestamps, counters, and event history. The node agent
-// compares this contract across a systemd restart and verified rollback.
+async function readDeploymentCanaryBody(response, { signal, maxBytes = DEPLOYMENT_CANARY_MAX_RESPONSE_BYTES } = {}) {
+  const declaredLength = Number(response.headers?.get?.('content-length') ?? 0);
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    throw new DeploymentFenceError('deployment canary response exceeds the size limit', {
+      code: 'deployment_fence_canary_response_too_large',
+      statusCode: 502,
+      retryAfterSeconds: 0,
+      details: { maxBytes }
+    });
+  }
+  if (!response.body) return Buffer.alloc(0);
+  const reader = response.body.getReader();
+  const chunks = [];
+  let bytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await waitForRequest(reader.read(), signal);
+      if (done) break;
+      const chunk = Buffer.from(value ?? '');
+      bytes += chunk.length;
+      if (bytes > maxBytes) {
+        await reader.cancel('deployment_canary_response_too_large').catch(() => {});
+        throw new DeploymentFenceError('deployment canary response exceeds the size limit', {
+          code: 'deployment_fence_canary_response_too_large',
+          statusCode: 502,
+          retryAfterSeconds: 0,
+          details: { maxBytes }
+        });
+      }
+      chunks.push(chunk);
+    }
+  } catch (error) {
+    await reader.cancel('deployment_canary_read_failed').catch(() => {});
+    throw error;
+  } finally {
+    reader.releaseLock?.();
+  }
+  return Buffer.concat(chunks);
+}
+
+function parseDeploymentCanaryCompletion(responseBody) {
+  let payload;
+  try {
+    payload = JSON.parse(responseBody.toString('utf8'));
+  } catch {
+    throw new DeploymentFenceError('deployment canary returned invalid JSON', {
+      code: 'deployment_fence_canary_invalid_response',
+      statusCode: 502,
+      retryAfterSeconds: 0
+    });
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload) || payload.error) {
+    throw new DeploymentFenceError('deployment canary did not return a completion', {
+      code: 'deployment_fence_canary_invalid_response',
+      statusCode: 502,
+      retryAfterSeconds: 0
+    });
+  }
+  const completed = Array.isArray(payload.choices)
+    ? payload.choices.some((choice) => {
+        const message = choice?.message;
+        // The deployment probe sends a deterministic text prompt. Require a
+        // completed assistant text choice so a successful HTTP status, an
+        // unfinished/tool-only response, or an error-shaped JSON body cannot
+        // be mistaken for evidence that the loaded model served inference.
+        return (
+          message?.role === 'assistant' &&
+          typeof message.content === 'string' &&
+          message.content.trim().length > 0 &&
+          choice?.finish_reason === 'stop'
+        );
+      })
+    : false;
+  if (!completed) {
+    throw new DeploymentFenceError('deployment canary did not return a completed chat choice', {
+      code: 'deployment_fence_canary_invalid_response',
+      statusCode: 502,
+      retryAfterSeconds: 0
+    });
+  }
+  return payload;
+}
+
+function isLoopbackBackend(backend) {
+  try {
+    const parsed = new URL(String(backend?.baseUrl ?? ''));
+    return (
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+      new Set(['127.0.0.1', '::1', 'localhost']).has(parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase())
+    );
+  } catch {
+    return false;
+  }
+}
+
 function deploymentPreservationSnapshot(runtimeStatus, effectiveConfigSha256) {
   const runtimes = Object.fromEntries(
     Object.entries(runtimeStatus?.runtimes ?? {}).map(([runtimeId, runtime]) => {
@@ -763,7 +866,11 @@ function deploymentPreservationSnapshot(runtimeStatus, effectiveConfigSha256) {
       return [runtimeId, { contract, observed, ...(members ? { members } : {}) }];
     })
   );
-  return { schemaVersion: 1, effectiveConfigSha256: effectiveConfigSha256 ?? null, runtimes };
+  return {
+    schemaVersion: 1,
+    effectiveConfigSha256: effectiveConfigSha256 ?? null,
+    runtimes
+  };
 }
 
 function normalizeAbortError(error, signal, timeoutMs) {
@@ -982,6 +1089,30 @@ function queryBool(searchParams, names, defaultValue = false) {
   const value = firstQueryParam(searchParams, names);
   if (value == null) return defaultValue;
   return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+}
+
+function standbyCommunityRequested(config, searchParams) {
+  if (!isStandby(config)) return false;
+  if (firstQueryParam(searchParams, ['recipe', 'recipe_id', 'recipe-id'])) return false;
+  if (queryBool(searchParams, ['offline'], false)) return false;
+  return Boolean(config.community?.hostUrl || firstQueryParam(searchParams, ['host_url', 'host-url', 'host']));
+}
+
+function sendStandbyEndpointUnsupported(
+  res,
+  config,
+  message = 'inference-only standby gateways do not execute this endpoint'
+) {
+  sendJson(
+    res,
+    503,
+    errorBody(message, {
+      type: 'service_unavailable',
+      code: 'standby_endpoint_unsupported'
+    }),
+    { 'retry-after': '2' },
+    config
+  );
 }
 
 function optionalNumber(value, name) {
@@ -1596,6 +1727,7 @@ async function fetchUpstream({ backend, path, body, headers = {}, signal, dispat
           headers: backendHeaders(backend, headers),
           body: JSON.stringify(path === '/v1/chat/completions' ? applyOpenRouterProviderPolicy(body, backend) : body),
           signal: progressSignal,
+          ...(backend?.[STANDBY_BACKEND] ? { redirect: 'error' } : {}),
           dispatcher
         }),
       { signal: fetchSignal, idleMs }
@@ -1614,6 +1746,7 @@ async function fetchRawUpstream({ backend, path, body, headers = {}, signal, dis
       headers: backendHeaders(backend, headers),
       body,
       signal: fetchSignal,
+      ...(backend?.[STANDBY_BACKEND] ? { redirect: 'error' } : {}),
       dispatcher
     });
   } catch (error) {
@@ -2140,6 +2273,16 @@ export async function retryRuntimeActionAfterConfigReload(action, getReloadInFli
   }
 }
 
+function freezeProcessRole(config, processRole) {
+  config.server ??= {};
+  Object.defineProperty(config.server, 'role', {
+    value: processRole,
+    enumerable: true,
+    configurable: false,
+    writable: false
+  });
+}
+
 export function createLloomServer(
   config,
   {
@@ -2152,6 +2295,11 @@ export function createLloomServer(
     deploymentPackageRoot = null
   } = {}
 ) {
+  assertStandbyConfig(config);
+  const processRole = normalizeServerRole(config);
+  // Keep the process role immutable even if a caller retains the config
+  // object. Standby authority must only change through an explicit restart.
+  freezeProcessRole(config, processRole);
   // Tests install a composed mock here; production keeps the long-running Agent.
   if (upstreamDispatcher) longRunningMediaDispatcher = upstreamDispatcher;
   const hostTelemetry = createHostTelemetry();
@@ -2198,6 +2346,12 @@ export function createLloomServer(
     waitForReload: () => reloadInFlight
   });
 
+  function withDeploymentMutationScope(token, action) {
+    return token && typeof runtimeManager.withMutationScope === 'function'
+      ? runtimeManager.withMutationScope(token, action)
+      : action();
+  }
+
   function requireDeploymentAdmin(req) {
     if (adminKeysConfigured(config) && hasValidApiKey(req, config, { admin: true })) return;
     throw new DeploymentFenceError('deployment fence operations require an explicit admin API key', {
@@ -2234,6 +2388,10 @@ export function createLloomServer(
     if (envName && !process.env[envName]) {
       return { allowed: false, error: new ModelTargetConfigurationError(resolved, envName) };
     }
+    // Standby endpoints are health- and model-identity-gated per request. A
+    // generic target backoff would hide a recovered endpoint behind stale
+    // state and would turn one failed probe into a lifecycle-like decision.
+    if (isStandby(config)) return { allowed: true, key: targetKey(resolved), probe: false };
     const key = targetKey(resolved);
     const state = targetBackoffs.get(key);
     if (!state) return { allowed: true, key, probe: false };
@@ -2323,6 +2481,15 @@ export function createLloomServer(
 
   function reloadConfig() {
     if (!configPath) return;
+    if (processRole !== 'primary' || isStandby(config)) {
+      logger.warn?.('standby gateway rejected config reload; restart the process to apply configuration');
+      const rejection = Object.assign(
+        new Error('standby configuration is frozen; restart the gateway to apply changes'),
+        { code: 'standby_read_only', statusCode: 403 }
+      );
+      reloadInFlight = reloadInFlight.catch(() => {}).then(() => Promise.reject(rejection));
+      return reloadInFlight;
+    }
     if (deploymentFence.isFenced()) {
       logger.warn?.('LLooM config reload skipped while deployment fence is active');
       return Promise.resolve({ skipped: 'deployment-fenced' });
@@ -2334,16 +2501,24 @@ export function createLloomServer(
     const reload = reloadInFlight
       .catch(() => {})
       .then(() =>
-        runtimeManager.withMutationScope(deploymentFenceToken, async () => {
+        withDeploymentMutationScope(deploymentFenceToken, async () => {
           const nextConfig = await loadConfig(configPath);
-          // Keep the current catalog until the manager has accepted the whole
-          // queued reload. This prevents a fence racing a watcher from
-          // publishing a new registry after the manager correctly rejects it.
+          if (normalizeServerRole(nextConfig) !== processRole) {
+            throw Object.assign(
+              new Error('server role is frozen for the process lifetime; restart the gateway to apply changes'),
+              { code: 'standby_read_only', statusCode: 403 }
+            );
+          }
+          assertStandbyConfig(nextConfig);
+          // Publish the validated catalog before the potentially long physical
+          // reconciliation. A fence racing this queued reload still retains
+          // the pre-fence token until the manager mutation has settled.
+          registry = createRegistry(nextConfig);
+          rateLimitRegistry.sync(rateLimitSettingsFor(nextConfig));
           const result = await runtimeManager.reconfigure(nextConfig);
           for (const key of Object.keys(config)) delete config[key];
           Object.assign(config, nextConfig);
-          registry = createRegistry(nextConfig);
-          rateLimitRegistry.sync(rateLimitSettingsFor(nextConfig));
+          freezeProcessRole(config, processRole);
           clusterCoordinator.reconfigure(config);
           routingStatusCache = { at: 0, value: null, pending: null };
           logger.info?.(`reloaded LLooM config; changed runtimes: ${result.changed.join(', ') || 'none'}`);
@@ -2667,11 +2842,9 @@ export function createLloomServer(
     });
     let operation = runtimeStartOperations.get(runtimeId);
     if (operation) return operation;
-    operation = deploymentFenceToken
-      ? runtimeManager.withMutationScope(deploymentFenceToken, () =>
-          startRuntime(runtimeId, { alternativeAvailable, allowEviction })
-        )
-      : startRuntime(runtimeId, { alternativeAvailable, allowEviction });
+    operation = withDeploymentMutationScope(deploymentFenceToken, () =>
+      startRuntime(runtimeId, { alternativeAvailable, allowEviction })
+    );
     operation.lloomAlternativeAvailable = alternativeAvailable;
     runtimeStartOperations.set(runtimeId, operation);
     operation
@@ -2827,6 +3000,14 @@ export function createLloomServer(
     fn,
     { deferUnsentErrors = false } = {}
   ) {
+    const standbyGate = await standbyEndpointGate(config, resolved);
+    if (standbyGate) {
+      sendJson(res, standbyGate.status, standbyGate.body, { 'retry-after': '2' }, config);
+      return { status: standbyGate.status, stream };
+    }
+    if (isStandby(config) && resolved.backend && !resolved.backend[STANDBY_BACKEND]) {
+      Object.defineProperty(resolved.backend, STANDBY_BACKEND, { value: true });
+    }
     const started = Date.now();
     const requestBytes = Number(req.headers['content-length']) || 0;
     const attribution = requestEnntityAttribution(req);
@@ -3129,6 +3310,14 @@ export function createLloomServer(
       const selectedNode = model.selectedNode ?? null;
       const localTarget = !selectedNode || clusterCoordinator.isLocalNode(selectedNode);
       const localPlacement = !placementNode || clusterCoordinator.isLocalNode(placementNode);
+      const placement = runtime ? runtimePlacement(runtime, config) : null;
+      const localDistributedHead =
+        placement?.mode !== 'distributed' ||
+        placement.members.some(
+          (member) => member.role === 'head' && (!member.node || clusterCoordinator.isLocalNode(member.node))
+        );
+      const federatedBackend = isFederatedGatewayBackend(config, model.backend);
+      const localBackend = isLoopbackBackend(candidate?.backend) && !federatedBackend;
       const concreteLocal =
         candidates.length === 1 &&
         candidate?.alias == null &&
@@ -3136,12 +3325,10 @@ export function createLloomServer(
         candidate?.requestedId === candidate?.resolvedId &&
         (!Array.isArray(model.targets) || model.targets.length <= 1) &&
         Boolean(runtimeId && runtime?.enabled === true) &&
-        runtime?.placement?.mode !== 'distributed' &&
+        localDistributedHead &&
         localTarget &&
         localPlacement &&
-        !candidate?.backend?.apiKeyEnv &&
-        !candidate?.backend?.apiKey &&
-        !candidate?.backend?.provider &&
+        localBackend &&
         !candidate?.backend?.openrouterProvider &&
         !model.provider;
       if (!concreteLocal) {
@@ -3158,7 +3345,10 @@ export function createLloomServer(
               candidates: candidates.length,
               alias: candidate?.alias != null,
               multiTarget: Array.isArray(model.targets) && model.targets.length > 1,
-              provider: Boolean(candidate?.backend?.apiKeyEnv || candidate?.backend?.provider || model.provider)
+              distributedHeadLocal: localDistributedHead,
+              federatedBackend,
+              localBackend,
+              provider: Boolean(candidate?.backend?.openrouterProvider || model.provider)
             }
           }
         );
@@ -3274,11 +3464,83 @@ export function createLloomServer(
       async (resolved, { signal, timing, progress, watchdog }) => {
         assertPromptWithinBudget(resolved, body, { logger });
         watchdog.arm();
+        if (req.deploymentCanary && body.stream === true) {
+          throw new DeploymentFenceError('deployment canary requires a buffered response', {
+            code: 'deployment_fence_canary_stream_unsupported',
+            statusCode: 400,
+            retryAfterSeconds: 0
+          });
+        }
         // Normalize history so reasoning_content is OpenAI-shaped before MTPLX render.
         const normalizedRequest = prepareStructuredOutputForBackend(
           translateReasoningEffortForBackend(normalizeOpenAIChatRequestBody(body), resolved),
           resolved
         );
+        if (req.deploymentCanary) {
+          const timeoutController = new AbortController();
+          const timeout = setTimeout(() => timeoutController.abort(), DEPLOYMENT_CANARY_TIMEOUT_MS);
+          const canarySignal = AbortSignal.any([signal, timeoutController.signal]);
+          try {
+            const upstream = await fetchUpstream({
+              headers: inferenceGatewayHeaders(req, resolved),
+              backend: resolved.backend,
+              path: '/v1/chat/completions',
+              signal: canarySignal,
+              body: {
+                ...normalizedRequest.body,
+                model: resolved.model.upstreamModel
+              }
+            });
+            if (!upstream.ok) {
+              // Avoid opening an SSE response for an already-failed upstream.
+              throw await upstreamStatusError(upstream);
+            }
+            const responseBody = await readDeploymentCanaryBody(upstream, {
+              signal: canarySignal,
+              maxBytes: DEPLOYMENT_CANARY_MAX_RESPONSE_BYTES
+            });
+            if (!responseBody.length) {
+              throw new DeploymentFenceError('deployment canary returned an empty response', {
+                code: 'deployment_fence_canary_empty_response',
+                statusCode: 502,
+                retryAfterSeconds: 0
+              });
+            }
+            parseDeploymentCanaryCompletion(responseBody);
+            const contentType = String(upstream.headers.get('content-type') ?? '').toLowerCase();
+            return {
+              status: upstream.status,
+              stream: false,
+              responseBytes: responseBody.length,
+              usage: usageFromJsonBuffer(responseBody, { 'content-type': contentType }),
+              responseFinished: true,
+              canary: {
+                healthy: true,
+                fenced: true,
+                privileged: true,
+                aliasUsed: false,
+                cloudFallback: false,
+                source: 'local',
+                gatewayModelId: resolved.requestedId,
+                runtimeId: resolved.model.runtime,
+                responseStatus: upstream.status,
+                responseFinished: true
+              }
+            };
+          } catch (error) {
+            if (timeoutController.signal.aborted) {
+              throw new DeploymentFenceError('deployment canary timed out', {
+                code: 'deployment_fence_canary_timeout',
+                statusCode: 504,
+                retryAfterSeconds: 0,
+                details: { timeoutMs: DEPLOYMENT_CANARY_TIMEOUT_MS }
+              });
+            }
+            throw error;
+          } finally {
+            clearTimeout(timeout);
+          }
+        }
         const upstream = await fetchUpstream({
           headers: inferenceGatewayHeaders(req, resolved),
           backend: resolved.backend,
@@ -3292,54 +3554,6 @@ export function createLloomServer(
         if (!upstream.ok) {
           // Avoid opening an SSE response for an already-failed upstream.
           throw await upstreamStatusError(upstream);
-        }
-        if (req.deploymentCanary) {
-          if (body.stream === true) {
-            throw new DeploymentFenceError('deployment canary requires a buffered response', {
-              code: 'deployment_fence_canary_stream_unsupported',
-              statusCode: 400,
-              retryAfterSeconds: 0
-            });
-          }
-          const responseBody = Buffer.from(await upstream.arrayBuffer());
-          if (!responseBody.length) {
-            throw new DeploymentFenceError('deployment canary returned an empty response', {
-              code: 'deployment_fence_canary_empty_response',
-              statusCode: 502,
-              retryAfterSeconds: 0
-            });
-          }
-          const contentType = String(upstream.headers.get('content-type') ?? '').toLowerCase();
-          if (contentType.includes('json')) {
-            try {
-              JSON.parse(responseBody.toString('utf8'));
-            } catch {
-              throw new DeploymentFenceError('deployment canary returned invalid JSON', {
-                code: 'deployment_fence_canary_invalid_response',
-                statusCode: 502,
-                retryAfterSeconds: 0
-              });
-            }
-          }
-          return {
-            status: upstream.status,
-            stream: false,
-            responseBytes: responseBody.length,
-            usage: usageFromJsonBuffer(responseBody, { 'content-type': contentType }),
-            responseFinished: true,
-            canary: {
-              healthy: true,
-              fenced: true,
-              privileged: true,
-              aliasUsed: false,
-              cloudFallback: false,
-              source: 'local',
-              gatewayModelId: resolved.requestedId,
-              runtimeId: resolved.model.runtime,
-              responseStatus: upstream.status,
-              responseFinished: true
-            }
-          };
         }
         return body.stream === true
           ? proxyOpenAIChatStream(res, upstream, resolved.requestedId, { signal, timing, progress, corsConfig: config })
@@ -4316,6 +4530,43 @@ export function createLloomServer(
         return;
       }
 
+      if (
+        isStandby(config) &&
+        (auth.routeKind === 'admin-write' ||
+          (url.pathname.startsWith('/gateway/') && !['GET', 'HEAD'].includes(req.method)))
+      ) {
+        sendJson(
+          res,
+          403,
+          errorBody('standby gateway is read-only; configuration changes require a controlled process restart', {
+            type: 'permission_error',
+            code: 'standby_read_only'
+          }),
+          {},
+          config
+        );
+        return;
+      }
+
+      if (
+        isStandby(config) &&
+        auth.routeKind === 'inference' &&
+        req.method === 'POST' &&
+        ['/v1/web/search', '/v1/web/read'].includes(url.pathname)
+      ) {
+        sendJson(
+          res,
+          503,
+          errorBody('inference-only standby gateways do not execute web functions', {
+            type: 'service_unavailable',
+            code: 'standby_endpoint_unsupported'
+          }),
+          { 'retry-after': '2' },
+          config
+        );
+        return;
+      }
+
       if (req.method === 'GET' && url.pathname === '/health') {
         sendJson(res, 200, { ok: true, name: config.name ?? 'LLooM', pid: process.pid }, {}, config);
         return;
@@ -4586,12 +4837,12 @@ export function createLloomServer(
           releaseIdentity: fenceStatus.releaseIdentity,
           loadedIdentity: fenceStatus.releaseIdentity,
           runtimeSnapshot: runtimeStatus,
-          effectiveConfigSha256: fenceStatus.identity?.release?.effectiveConfigSha256 ?? null,
           preservationSnapshot: deploymentPreservationSnapshot(
             runtimeStatus,
             fenceStatus.identity?.release?.effectiveConfigSha256 ?? null
           ),
           server: config.server,
+          gateway: standbyGatewayStatus(config),
           defaults: config.defaults,
           deploymentFence: fenceStatus,
           runtimeManager: runtimeStatus,
@@ -4615,6 +4866,29 @@ export function createLloomServer(
           ok: true,
           cluster: await clusterCoordinator.status()
         });
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/gateway/cluster/readiness') {
+        const runtimeId = firstQueryParam(url.searchParams, ['runtime', 'runtime_id', 'runtime-id']);
+        if (!runtimeId) {
+          sendJson(
+            res,
+            400,
+            errorBody('runtime is required', {
+              code: 'invalid_request'
+            })
+          );
+          return;
+        }
+        const readiness = await clusterCoordinator.runtimeReadiness(runtimeId, {
+          includeFederation: queryBool(
+            url.searchParams,
+            ['include_federation', 'include-federation', 'includeFederation'],
+            false
+          )
+        });
+        sendJson(res, 200, { ok: readiness.readyForServing && readiness.readyForControl, ...readiness });
         return;
       }
 
@@ -4714,6 +4988,10 @@ export function createLloomServer(
       }
 
       if (req.method === 'GET' && url.pathname === '/gateway/setup/status') {
+        if (standbyCommunityRequested(config, url.searchParams)) {
+          sendStandbyEndpointUnsupported(res, config);
+          return;
+        }
         const noRuntimes = queryBool(url.searchParams, ['no_runtimes', 'no-runtimes'], false);
         const runtimes = firstQueryParam(url.searchParams, ['runtimes']);
         const recipeId = firstQueryParam(url.searchParams, ['recipe', 'recipe_id', 'recipe-id']);
@@ -4746,6 +5024,22 @@ export function createLloomServer(
       }
 
       if (req.method === 'GET' && url.pathname === '/gateway/doctor') {
+        if (standbyCommunityRequested(config, url.searchParams)) {
+          sendStandbyEndpointUnsupported(res, config);
+          return;
+        }
+        const scopedRuntimeId = firstQueryParam(url.searchParams, ['runtime', 'runtime_id', 'runtime-id']);
+        if (scopedRuntimeId) {
+          const readiness = await clusterCoordinator.runtimeReadiness(scopedRuntimeId, {
+            includeFederation: queryBool(
+              url.searchParams,
+              ['include_federation', 'include-federation', 'includeFederation'],
+              false
+            )
+          });
+          sendJson(res, 200, { ok: readiness.readyForServing && readiness.readyForControl, ...readiness });
+          return;
+        }
         const options = doctorOptionsFromQuery(url.searchParams);
         const communityContext = await communityStatusContextFromQuery(config, url.searchParams, {
           recipeId: options.recipeId
@@ -4766,6 +5060,10 @@ export function createLloomServer(
       }
 
       if (req.method === 'GET' && url.pathname === '/gateway/onboarding/plan') {
+        if (standbyCommunityRequested(config, url.searchParams)) {
+          sendStandbyEndpointUnsupported(res, config);
+          return;
+        }
         sendJson(res, 200, await createOnboardingPlan(config, onboardingOptionsFromQuery(config, url.searchParams)));
         return;
       }
@@ -4776,6 +5074,10 @@ export function createLloomServer(
       }
 
       if (req.method === 'GET' && url.pathname === '/gateway/community/recommendations') {
+        if (isStandby(config)) {
+          sendStandbyEndpointUnsupported(res, config);
+          return;
+        }
         try {
           sendJson(res, 200, await createCommunityPlan(config, communityOptionsFromQuery(config, url.searchParams)));
         } catch (error) {
@@ -5399,15 +5701,17 @@ export function createLloomServer(
           server.off('error', onError);
           residencyStartup = deploymentFence.isFenced()
             ? Promise.resolve({ skipped: 'deployment-fenced' })
-            : runtimeManager
-                .startKeepWarm()
-                .then(() => {
-                  // The periodic preferred-restore timer starts only after the
-                  // pinned (and then preferred) residency boot pass has settled.
-                  if (!runtimeManager.shuttingDown) residencyReconciler.start();
-                })
-                .catch((error) => logger.error?.(error));
-          if (configPath) watchFile(configPath, { interval: 500 }, reloadConfig);
+            : isStandby(config)
+              ? Promise.resolve()
+              : runtimeManager
+                  .startKeepWarm()
+                  .then(() => {
+                    // The periodic preferred-restore timer starts only after the
+                    // pinned (and then preferred) residency boot pass has settled.
+                    if (!runtimeManager.shuttingDown) residencyReconciler.start();
+                  })
+                  .catch((error) => logger.error?.(error));
+          if (configPath && !isStandby(config)) watchFile(configPath, { interval: 500 }, reloadConfig);
           resolve(server);
         });
       });
@@ -5417,10 +5721,10 @@ export function createLloomServer(
       await residencyReconciler.stop();
       await residencyStartup;
       await runtimeManager.admissionQueue;
-      if (configPath) unwatchFile(configPath, reloadConfig);
+      if (configPath && !isStandby(config)) unwatchFile(configPath, reloadConfig);
       metrics.flush();
       let runtimeError = null;
-      if (stopRuntimes) {
+      if (stopRuntimes && !isStandby(config)) {
         try {
           await runtimeManager.stopAll();
         } catch (error) {

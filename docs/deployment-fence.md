@@ -11,9 +11,9 @@ The admin endpoints are:
 - `POST /gateway/deployment-fence/canary` with `{ "opId": "...", "generation": 1, "request": { ... } }`
 - `POST /gateway/deployment-fence/release` with `{ "opId": "...", "generation": 1 }`
 
-They require an explicit `security.adminApiKeys` credential. `prepare` first
-writes a config-adjacent `config.json.deployment-fence.json` sidecar atomically,
-then blocks new POST inference and admin writes. Requests authenticated before
+They require an explicit `security.adminApiKeys` credential. `prepare` closes
+in-memory admission synchronously, then writes a config-adjacent
+`config.json.deployment-fence.json` sidecar atomically. Requests authenticated before
 the fence may finish their complete request body and response stream. The
 gateway pauses preferred residency and watchdog recovery, rejects new runtime
 lifecycle/configuration mutations, and waits for manager admission/lifecycle
@@ -31,19 +31,32 @@ and generation as conflict evidence.
 Status and prepare/release responses carry `protocol: 1` and
 `fenceProtocolVersion: 1`. `operation.opId` and `operation.generation` remain
 durable in the sidecar, including after restart. A complete `releaseIdentity`
-is present only when the boot manifest, exact config bytes, dependency digest,
-and runtime-contract digest are all verified; callers must refuse `null` or a
-partial identity. `/gateway/status` also reports `gatewayProtocol: 1`,
-`serviceActive`, `atomicLayout`, `loadedIdentity`, and an observed
-`runtimeSnapshot`. `atomicLayout` is true only when the process can prove that
-its package is the target of a real `current` symlink with a matching manifest.
+is present only when the boot manifest, exact config bytes, effective loaded
+configuration digest, dependency digest, and runtime-contract digest are all
+verified; callers must refuse `null` or a partial identity. `/gateway/status`
+also reports `gatewayProtocol: 1`, `serviceActive`, `atomicLayout`,
+`loadedIdentity`, the volatile diagnostic `runtimeSnapshot`, and a stable
+`preservationSnapshot`. The latter carries the effective loaded configuration
+digest, resolved runtime contracts, serving and control states, and only
+process/container identifiers actually observed by the manager; it omits
+gateway events, timestamps, and counters. `atomicLayout` is true only when the
+process can prove that its package is the target of a real `current` symlink
+with a matching manifest.
 
 `canary` is an explicitly authorized, matching-operation-and-generation request
 through the ordinary chat route while public admission remains closed. It
-accepts only one exact configured model mapped to one healthy local runtime; an
-alias, provider, remote/distributed target, or multi-target model is rejected.
-It never starts, warms, evicts, fails over, or recovers a runtime. The canary
-response must finish successfully before the fence returns to `prepared`.
+accepts only one exact configured model mapped to one healthy local runtime (or
+to a distributed logical runtime whose configured serving head is local and
+healthy); an alias, federated gateway, remote target, or multi-target model is
+rejected. An authenticated backend is allowed when its configured endpoint is
+loopback and its observed response is attributable to that local route; an API
+key alone is not treated as evidence of a cloud target. It never starts,
+warms, evicts, fails over, or recovers a runtime. Stream canaries are rejected
+before the upstream POST. Buffered responses are capped at 1 MiB and 30
+seconds, and must be valid OpenAI chat completions with an assistant message
+containing non-empty text and `finish_reason: "stop"`. Tool-only, unfinished,
+truncated, empty, error, malformed, or non-JSON bodies fail closed. The
+canary response must finish successfully before the fence returns to `prepared`.
 Release writes a terminal receipt before reopening admission. A malformed
 sidecar or failed persistence operation fails closed.
 

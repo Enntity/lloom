@@ -221,44 +221,6 @@ function configFileDigest(configPath) {
   }
 }
 
-// Keep rollback evidence limited to the owned runtime/process state. Gateway
-// status also contains volatile event history, timestamps and counters which
-// legitimately change when systemd restarts the process. A deploy coordinator
-// must compare the preservation contract rather than those gateway-local
-// bookkeeping fields.
-export function stablePreservationSnapshot(value) {
-  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-  const runtimes = {};
-  const sourceRuntimes =
-    source.runtimes && typeof source.runtimes === 'object' && !Array.isArray(source.runtimes) ? source.runtimes : {};
-  for (const [runtimeId, runtime] of Object.entries(sourceRuntimes).sort(([left], [right]) =>
-    left.localeCompare(right)
-  )) {
-    const entry = runtime && typeof runtime === 'object' && !Array.isArray(runtime) ? runtime : {};
-    const stable = {};
-    for (const key of ['status', 'healthy', 'pid', 'node', 'remote', 'distributed', 'containerName']) {
-      if (entry[key] !== undefined) stable[key] = entry[key];
-    }
-    if (Array.isArray(entry.members)) {
-      stable.members = entry.members
-        .filter((member) => member && typeof member === 'object' && !Array.isArray(member))
-        .map((member) => ({
-          ...(member.runtime === undefined ? {} : { runtime: member.runtime }),
-          ...(member.status === undefined ? {} : { status: member.status }),
-          ...(member.healthy === undefined ? {} : { healthy: member.healthy })
-        }));
-    }
-    if (entry.container && typeof entry.container === 'object' && !Array.isArray(entry.container)) {
-      stable.container = {};
-      for (const key of ['id', 'name', 'image', 'imageId', 'running', 'status']) {
-        if (entry.container[key] !== undefined) stable.container[key] = entry.container[key];
-      }
-    }
-    runtimes[runtimeId] = stable;
-  }
-  return { runtimes };
-}
-
 function completeReleaseIdentity(release, configSha256, effectiveConfigSha256) {
   if (
     !release?.known ||
@@ -363,9 +325,18 @@ async function writeAtomicJson(filePath, value) {
   }
 }
 
+function canonicalJson(value) {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value ?? null);
+  if (Array.isArray(value)) return `[${value.map((item) => canonicalJson(item)).join(',')}]`;
+  return `{${Object.keys(value)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+    .join(',')}}`;
+}
+
 function configDigest(config) {
   try {
-    return sha256(Buffer.from(JSON.stringify(config ?? {})));
+    return sha256(Buffer.from(canonicalJson(config ?? {})));
   } catch {
     return null;
   }
@@ -450,7 +421,6 @@ export function createDeploymentFence({
         atomicLayout: identity.atomicLayout
       },
       releaseIdentity: identity.releaseIdentity,
-      effectiveConfigSha256: identity.release?.effectiveConfigSha256 ?? null,
       activeHandlers: activeHandlers.size,
       canaryInFlight,
       persistenceError: persistenceError?.message ?? null,
@@ -702,6 +672,10 @@ export function createDeploymentFence({
     record = { ...next };
     state = 'draining';
     preparingOpId = opId;
+    // Stop new residency/watchdog work in the same synchronous turn that
+    // closes admission. Persistence remains queued, but a slow filesystem
+    // must not leave the gateway actively recovering while a fence is open.
+    pause();
     preparePromise = enqueue(async () => {
       try {
         await persist(next);
@@ -711,7 +685,6 @@ export function createDeploymentFence({
         lastError = error?.message ?? String(error);
         throw error;
       }
-      pause();
       try {
         await waitForDrain(timeoutMs);
         const prepared = {
@@ -806,8 +779,9 @@ export function createDeploymentFence({
         releasedAt: new Date().toISOString(),
         error: null
       };
-      // Write the terminal state before opening admission. A crash in this
-      // window remains fenced rather than exposing a half-released gateway.
+      // Write the terminal state before opening admission. A crash before this
+      // commit restores the active fence; after it, startup resumes open from
+      // the durable released receipt.
       try {
         await persist(released);
       } catch (error) {

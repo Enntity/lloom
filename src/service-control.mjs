@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { mutateConfigSource } from './config-mutation.mjs';
-import { resolveManagedEnvironmentValue } from './managed-environment.mjs';
+import { gatewayRequest, resolveAdminCredential } from './gateway-client.mjs';
 import { assertBindAllowed, isLoopbackAddress } from './security.mjs';
 const exec = promisify(execFile);
 
@@ -74,7 +74,9 @@ export async function restartGatewayService(
     platform = process.platform,
     serviceLabel = 'com.lloom.gateway',
     uid = process.getuid?.(),
-    fetchFn = fetch,
+    fetchFn,
+    adminKeyEnvName,
+    env = process.env,
     run = exec,
     pause = sleep
   } = {}
@@ -95,11 +97,7 @@ export async function restartGatewayService(
   const bindHost = changingHost ? requestedHost : currentHost;
   const bindCheck = assertBindAllowed({ ...config, server: { ...config.server, host: bindHost } });
   if (!bindCheck.ok) throw new Error(bindCheck.message);
-  const adminKeys = (config.security?.adminApiKeys ?? []).filter(Boolean);
-  const inspectionKeys = adminKeys.length ? adminKeys : (config.security?.apiKeys ?? []);
-  const key = inspectionKeys
-    .map((value) => resolveManagedEnvironmentValue(value))
-    .find((value) => typeof value === 'string' && value.length > 0 && !value.includes('${'));
+  const key = resolveAdminCredential(config, { explicitEnvName: adminKeyEnvName, env });
   if (!isLoopbackAddress(bindHost) && !key) throw new Error('Non-loopback listener requires a configured credential');
   const plan = {
     service: darwin ? serviceLabel : 'lloom.service',
@@ -123,14 +121,14 @@ export async function restartGatewayService(
   ]);
   if (!localAddresses.has(host)) throw new Error('Service control requires a local interface address');
   const base = `http://${host.includes(':') ? '[' + host + ']' : host}:${config.server.port}`;
-  const get = async (route) => {
-    const r = await fetchFn(base + route, {
-      headers: { authorization: 'Bearer ' + key },
-      signal: AbortSignal.timeout(10000)
+  const get = (route) =>
+    gatewayRequest(config, base + route, {
+      timeoutMs: 10000,
+      headers: key ? { authorization: `Bearer ${key}` } : {},
+      fetchImpl: fetchFn,
+      env,
+      explicitEnvName: adminKeyEnvName
     });
-    if (!r.ok) throw new Error('Gateway inspection failed');
-    return r.json();
-  };
   const previousGatewayPid = changingHost ? (await get('/health')).pid : null;
   if (changingHost && (!Number.isInteger(previousGatewayPid) || previousGatewayPid <= 0))
     throw new Error('Cannot identify current gateway PID');
@@ -177,14 +175,14 @@ export async function restartGatewayService(
     const probeHost = ['0.0.0.0', '::'].includes(targetHost) ? (targetHost === '::' ? '::1' : '127.0.0.1') : targetHost;
     return `http://${probeHost.includes(':') ? '[' + probeHost + ']' : probeHost}:${config.server.port}`;
   };
-  const getOn = async (targetHost, route) => {
-    const r = await fetchFn(endpointFor(targetHost) + route, {
-      headers: { authorization: 'Bearer ' + key },
-      signal: AbortSignal.timeout(10000)
+  const getOn = (targetHost, route) =>
+    gatewayRequest(config, endpointFor(targetHost) + route, {
+      timeoutMs: 10000,
+      headers: key ? { authorization: `Bearer ${key}` } : {},
+      fetchImpl: fetchFn,
+      env,
+      explicitEnvName: adminKeyEnvName
     });
-    if (!r.ok) throw new Error('Gateway inspection failed');
-    return r.json();
-  };
   let operationError;
   try {
     await mutateConfigSource(config, (c) => {
