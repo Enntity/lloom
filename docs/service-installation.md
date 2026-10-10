@@ -21,7 +21,10 @@ claims persistence when verification fails. Uninstall leaves lingering unchanged
 because other user services may depend on it.
 
 Use `--environment-file /absolute/path` for an existing service environment file.
-Otherwise an existing `~/.config/lloom/env` is included. Keys are never written
+Pass the same custom path to subsequent `service doctor`, stop and uninstall
+commands so their unit comparison uses the installed environment-file path.
+The file is loaded before expanding the configuration; existing shell variables
+retain precedence for inspection. Otherwise an existing `~/.config/lloom/env` is included. Keys are never written
 into the unit. `--admin-api-key-env NAME` selects the inspection credential from
 the invoking environment; the service still needs its own environment file or
 other persistent configuration. `--expect-unit HASH` guards a previously reviewed

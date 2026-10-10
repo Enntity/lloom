@@ -1371,7 +1371,10 @@ async function main() {
     process.exitCode = 2;
     return;
   }
-  loadManagedServiceEnvironment({ home: argValue(args, '--home') ?? process.env.HOME });
+  loadManagedServiceEnvironment({
+    home: argValue(args, '--home') ?? process.env.HOME,
+    filePath: command === 'service' ? argValue(args, '--environment-file') : undefined
+  });
   const missingConfig = missingInstalledConfig(args, command);
   if (missingConfig) {
     const report = missingInstalledConfigReport(missingConfig);

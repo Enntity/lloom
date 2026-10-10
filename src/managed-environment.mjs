@@ -21,14 +21,18 @@ export function parseManagedEnvironmentFile(source) {
   return values;
 }
 
-export function loadManagedServiceEnvironment({ home = process.env.HOME, env = process.env } = {}) {
-  if (!home) return { loaded: false, path: null, keys: [] };
-  const filePath = path.join(home, '.config', 'lloom', 'env');
+export function loadManagedServiceEnvironment({
+  home = process.env.HOME,
+  env = process.env,
+  filePath: explicitPath
+} = {}) {
+  if (!home && !explicitPath) return { loaded: false, path: null, keys: [] };
+  const filePath = explicitPath ? path.resolve(explicitPath) : path.join(home, '.config', 'lloom', 'env');
   let values;
   try {
     values = parseManagedEnvironmentFile(readFileSync(filePath, 'utf8'));
   } catch (error) {
-    if (error?.code === 'ENOENT') return { loaded: false, path: filePath, keys: [] };
+    if (error?.code === 'ENOENT' && !explicitPath) return { loaded: false, path: filePath, keys: [] };
     throw error;
   }
   const loadedKeys = [];

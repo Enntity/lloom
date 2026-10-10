@@ -464,3 +464,35 @@ test('safeGatewayDiagnostic redacts every stable string field, including exact c
     message: 'upstream exposed [redacted]'
   });
 });
+
+test('service doctor loads explicit environment file before templated config and credential inspection', async (t) => {
+  const seen = [];
+  const server = http.createServer((req, res) => {
+    seen.push(req.headers.authorization);
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(req.url === '/health' ? { ok: true, pid: 42 } : { node: { id: 'custom-node' } }));
+  });
+  const port = await listen(server);
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const home = await writeConfigFixture({
+    server: { host: '127.0.0.1', port },
+    cluster: { nodeId: '${LLOOM_SERVICE_TEST_NODE}', leaderNode: '${LLOOM_SERVICE_TEST_NODE}' },
+    security: { adminApiKeys: ['${LLOOM_SERVICE_TEST_KEY}'], apiKeys: [] }
+  });
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  const envFile = path.join(home, 'custom.env');
+  await fs.writeFile(envFile, 'LLOOM_SERVICE_TEST_NODE=custom-node\nLLOOM_SERVICE_TEST_KEY=custom-file-secret\n');
+  const child = await runCli(['service', 'doctor', '--environment-file', envFile, '--json'], {
+    home,
+    // No service-manager executable is available: this test checks only CLI
+    // configuration expansion and authenticated inspection, never a real unit.
+    env: { PATH: home, LLOOM_ADMIN_API_KEY: '' }
+  });
+  assert.equal(child.code, 1);
+  const result = JSON.parse(child.stdout);
+  assert.equal(result.gateway.expectedNodeId, 'custom-node');
+  assert.equal(result.gateway.nodeIdMatch, true);
+  assert.equal(result.environmentFile.path, envFile);
+  assert.deepEqual(seen, ['Bearer custom-file-secret', 'Bearer custom-file-secret']);
+  assert.doesNotMatch(child.stdout + child.stderr, /custom-file-secret/);
+});
