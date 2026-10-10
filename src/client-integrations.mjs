@@ -387,6 +387,15 @@ export function buildClientIntegrationManifest(config, models) {
     provenance: {
       generatedBy: 'lloom'
     },
+    gateway: {
+      role: config.server?.role === 'standby' ? 'standby' : 'primary',
+      lifecycleAuthority: config.server?.role === 'standby' ? 'none' : 'primary',
+      failover: {
+        mode: 'ordered-authenticated-gateway-endpoints',
+        retry: 'new-requests-only',
+        streamMigration: false
+      }
+    },
     provider: {
       id: settings.providerId,
       name: settings.providerName,
@@ -446,6 +455,38 @@ export function validateClientIntegrationManifest(manifest) {
   if (manifest.schemaVersion !== 1) errors.push('client integrations manifest schemaVersion must be 1');
   if (!manifest.id) errors.push('client integrations manifest id is required');
   if (!manifest.name) errors.push('client integrations manifest name is required');
+  if (manifest.gateway != null) {
+    if (!manifest.gateway || typeof manifest.gateway !== 'object' || Array.isArray(manifest.gateway)) {
+      errors.push('client integrations manifest gateway must be an object when provided');
+    } else {
+      if (!['primary', 'standby'].includes(manifest.gateway.role)) {
+        errors.push('client integrations manifest gateway.role must be primary or standby');
+      }
+      if (!['primary', 'none'].includes(manifest.gateway.lifecycleAuthority)) {
+        errors.push('client integrations manifest gateway.lifecycleAuthority must be primary or none');
+      }
+      if (
+        (manifest.gateway.role === 'standby' && manifest.gateway.lifecycleAuthority !== 'none') ||
+        (manifest.gateway.role === 'primary' && manifest.gateway.lifecycleAuthority !== 'primary')
+      ) {
+        errors.push('client integrations manifest gateway lifecycleAuthority does not match role');
+      }
+      const failover = manifest.gateway.failover;
+      if (!failover || typeof failover !== 'object' || Array.isArray(failover)) {
+        errors.push('client integrations manifest gateway.failover is required');
+      } else {
+        if (failover.mode !== 'ordered-authenticated-gateway-endpoints') {
+          errors.push('client integrations manifest gateway.failover.mode is unsupported');
+        }
+        if (failover.retry !== 'new-requests-only') {
+          errors.push('client integrations manifest gateway.failover.retry must be new-requests-only');
+        }
+        if (failover.streamMigration !== false) {
+          errors.push('client integrations manifest gateway.failover.streamMigration must be false');
+        }
+      }
+    }
+  }
   if (!manifest.provider || typeof manifest.provider !== 'object' || Array.isArray(manifest.provider)) {
     errors.push('client integrations manifest provider is required');
   } else {
