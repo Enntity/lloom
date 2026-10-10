@@ -78,6 +78,7 @@ import {
   NUMERIC_MEMORY_FLAGS
 } from '../src/runtime-policy-config.mjs';
 import { createLloomServer } from '../src/server.mjs';
+import { formatDeploymentReport, runDeploymentCli } from '../src/cluster-deployment-cli.mjs';
 import { applySetup, createSetupPlan, syncClusterSetupMembers } from '../src/setup.mjs';
 import { createSetupStatus } from '../src/setup-status.mjs';
 import {
@@ -121,6 +122,7 @@ const COMMAND_REGISTRY = [
   { name: 'runtimes', aliases: ['runtime-status'], tier: 'advanced', needsInstalledConfig: true },
   { name: 'service', aliases: [], tier: 'advanced', needsInstalledConfig: true },
   { name: 'cluster', aliases: ['cluster-status'], tier: 'advanced', needsInstalledConfig: true },
+  { name: 'deployment', aliases: ['rollout'], tier: 'advanced', needsInstalledConfig: false },
   { name: 'runtime-plan', aliases: [], tier: 'advanced', needsInstalledConfig: true },
   { name: 'runtime-policy', aliases: [], tier: 'advanced', needsInstalledConfig: true },
   { name: 'runtime-admit', aliases: [], tier: 'advanced', needsInstalledConfig: true },
@@ -211,6 +213,11 @@ Serving and discovery:
 Backends and runtimes:
   lloom down
   lloom cluster [status|doctor|discover] [--apply] [--id NAME] [--api-key-env NAME] [--json]
+  lloom deployment plan --plan FILE [--json]
+  lloom deployment apply --plan FILE --nodes FILE [--operation-id ID] --apply --yes [--journal FILE] [--json]
+  lloom deployment status --operation-id ID [--journal FILE] [--json]
+  lloom deployment resume --plan FILE --nodes FILE --operation-id ID --apply --yes [--generation N] [--journal FILE] [--json]
+  lloom deployment rollback --plan FILE --nodes FILE --operation-id ID --apply --yes [--generation N] [--journal FILE] [--json]
   lloom cluster add-node <id> <url> [--namespace NAME|--merge] [--include-external] [--api-key-env NAME|--api-key-stdin] [--telemetry-only] [--apply --yes]
   lloom service restart [--host ADDRESS] [--label com.lloom.gateway] [--apply --yes] [--drain-timeout-ms 300000]
   lloom service relay --unit NAME [--expect-unit HASH --apply --yes]
@@ -2542,8 +2549,37 @@ async function main() {
         )
       );
     },
+    deployment: async ({ args }) => {
+      const action = positional(args)[1] ?? 'plan';
+      const generationValue = argValue(args, '--generation');
+      const result = await runDeploymentCli(action, {
+        planPath: argValue(args, '--plan'),
+        nodesPath: argValue(args, '--nodes'),
+        journalPath: argValue(args, '--journal'),
+        operationId: argValue(args, '--operation-id'),
+        generation: generationValue === undefined ? null : Number(generationValue),
+        apply: hasFlag(args, '--apply'),
+        yes: hasFlag(args, '--yes')
+      });
+      console.log(formatDeploymentReport(result, { json: wantsJson(args) }));
+    },
     cluster: async ({ args, config, command: _command }) => {
       const action = positional(args)[1] ?? 'status';
+      if (action === 'rollout') {
+        const deploymentAction = positional(args)[2] ?? 'plan';
+        const generationValue = argValue(args, '--generation');
+        const result = await runDeploymentCli(deploymentAction, {
+          planPath: argValue(args, '--plan'),
+          nodesPath: argValue(args, '--nodes'),
+          journalPath: argValue(args, '--journal'),
+          operationId: argValue(args, '--operation-id'),
+          generation: generationValue === undefined ? null : Number(generationValue),
+          apply: hasFlag(args, '--apply'),
+          yes: hasFlag(args, '--yes')
+        });
+        console.log(formatDeploymentReport(result, { json: wantsJson(args) }));
+        return;
+      }
       if (action === 'discover') {
         const explicitLocalId =
           process.env.LLOOM_NODE_ID ??
