@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { Writable } from 'node:stream';
+import { Readable, Writable } from 'node:stream';
 import test from 'node:test';
-import { handleNodeAgentRequest } from '../src/node-agent-cli.mjs';
+import { runNodeAgentCli } from '../src/node-agent-cli.mjs';
 import { SshDeploymentTransport, SshTransportError } from '../src/ssh-deployment-transport.mjs';
 
 const context = {
@@ -139,9 +139,14 @@ test('preserves rollback recovery context through the node-agent JSON boundary',
           callback();
         }
       });
-      await handleNodeAgentRequest({
-        phase: request.phase,
-        input: JSON.parse(request.input),
+      await runNodeAgentCli({
+        argv: [request.phase, '--json'],
+        input: Readable.from([request.input]),
+        errorOutput: new Writable({
+          write(_chunk, _encoding, callback) {
+            callback();
+          }
+        }),
         agent: remoteAgent,
         output
       });
