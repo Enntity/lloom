@@ -163,7 +163,14 @@ export async function runDeploymentCli(
     report = await coordinator.resume(operationId, { generation, plan });
   } else {
     if (!operationId) throw new DeploymentPlanError('--operation-id is required for rollback');
-    report = await coordinator.rollback(operationId, { generation });
+    try {
+      report = await coordinator.rollback(operationId, { generation });
+    } catch (error) {
+      // The coordinator uses DeploymentError as its durable rollback receipt,
+      // including when an explicit rollback reaches the safe rolled-back state.
+      if (error?.code !== 'DEPLOYMENT_FAILED' || error?.report?.operationState !== 'rolled-back') throw error;
+      report = error.report;
+    }
   }
   return {
     ok: report.operationState === 'completed' || report.operationState === 'rolled-back',

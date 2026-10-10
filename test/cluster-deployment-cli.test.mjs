@@ -162,4 +162,20 @@ test('binds resume and rollback to the original endpoint map', async (t) => {
       }),
     /endpoint map does not match/
   );
+
+  const document = JSON.parse(await fs.readFile(journalPath, 'utf8'));
+  document.operationState = 'rollback-required';
+  document.rollback = { attempted: false, failures: [], manualIntervention: false };
+  await fs.writeFile(journalPath, JSON.stringify(document));
+  const rollback = await runDeploymentCli('rollback', {
+    planPath,
+    nodesPath,
+    journalPath,
+    operationId: 'op-binding',
+    apply: true,
+    yes: true,
+    transport
+  });
+  assert.equal(rollback.ok, true);
+  assert.equal(rollback.operationState, 'rolled-back');
 });
