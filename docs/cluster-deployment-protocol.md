@@ -263,10 +263,11 @@ bound to its immutable reviewed artifact, manifest, old identity, target
 nodes, gateway model, and runtime id.
 
 When a mutation fails after the coordinator has produced a rollback receipt,
-the CLI emits the complete public-safe per-node receipt and exits nonzero. Use
-`--json` for machine-readable `staged`, `active`, `promoted`, and rollback
-states; human output lists the same node states and completed phases. Resume or
-rollback with the original `--nodes` endpoint map and plan.
+the CLI emits the complete public-safe per-node receipt to stderr and exits
+nonzero, leaving stdout suitable for successful-output pipelines. Use `--json`
+for machine-readable `staged`, `active`, `promoted`, and rollback states; human
+output lists the same node states and completed phases. Resume or rollback with
+the original `--nodes` endpoint map and plan.
 
 The `--nodes` file is an endpoint map, for example
 `{ "worker-1": { "host": "worker-1.internal" }, "leader": { "host":

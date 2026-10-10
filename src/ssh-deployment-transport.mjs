@@ -92,6 +92,7 @@ function publicContext(value) {
     'role',
     'gatewayProtocol',
     'manifestSha256',
+    'drainTimeoutMs',
     'rollbackRelease'
   ]) {
     if (source[key] !== undefined) result[key] = structuredClone(source[key]);
@@ -108,6 +109,7 @@ function publicContext(value) {
       'artifactSha256',
       'manifestSha256',
       'configSha256',
+      'effectiveConfigSha256',
       'dependencyDigest',
       'runtimeContractDigest'
     ]) {

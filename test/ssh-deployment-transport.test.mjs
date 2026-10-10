@@ -60,6 +60,37 @@ test('builds a shell-free SSH request and parses the public receipt', async () =
   assert.match(requests[0].request.input, /op-ssh/);
 });
 
+test('forwards the bounded drain timeout and complete expected old identity exactly', async () => {
+  const requests = [];
+  const expectedOldIdentity = {
+    releaseId: 'release-old',
+    artifactSha256: 'f'.repeat(64),
+    manifestSha256: 'g'.repeat(64),
+    configSha256: 'h'.repeat(64),
+    effectiveConfigSha256: 'i'.repeat(64),
+    dependencyDigest: 'j'.repeat(64),
+    runtimeContractDigest: 'k'.repeat(64)
+  };
+  const transport = new SshDeploymentTransport({
+    nodes: { 'node-1': { host: 'gateway-1.internal' } },
+    runSsh: async (_node, request) => {
+      requests.push(request);
+      return { code: 0, stdout: '{}' };
+    }
+  });
+  await transport.prepare('node-1', {
+    ...context,
+    phase: 'prepare',
+    drainTimeoutMs: 900000,
+    expectedOldIdentity,
+    secret: 'must-not-be-sent'
+  });
+  const input = JSON.parse(requests[0].input);
+  assert.equal(input.drainTimeoutMs, 900000);
+  assert.deepEqual(input.expectedOldIdentity, expectedOldIdentity);
+  assert.equal('secret' in input, false);
+});
+
 test('uploads only reviewed paths before stage and does not persist credentials', async () => {
   const seen = [];
   const requests = [];
