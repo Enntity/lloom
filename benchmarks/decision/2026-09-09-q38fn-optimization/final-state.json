@@ -47,7 +47,7 @@
     "qwen3.8-flash-next|qwen38-flash-next|200": 5
   },
   "testContainersRemoved": [
-    "lloom-qwen38-prefix-test-ennspark01",
-    "lloom-qwen38-prefix-test-ennspark02"
+    "lloom-qwen38-prefix-test-spark-node-01",
+    "lloom-qwen38-prefix-test-spark-node-02"
   ]
 }

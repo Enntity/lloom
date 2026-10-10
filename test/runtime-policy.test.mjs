@@ -318,24 +318,24 @@ assert.equal(clusteredReserve.admission.nodes.mac.predictive, true);
 const localClusterAdmission = await createRuntimePolicyPlan(
   {
     cluster: {
-      nodeId: 'ennspark03',
-      leaderNode: 'ennspark03',
+      nodeId: 'spark-node-03',
+      leaderNode: 'spark-node-03',
       nodes: {
-        ennspark01: { resources: { memoryGb: 128 } },
-        ennspark02: { resources: { memoryGb: 128 } },
-        ennspark03: { resources: { memoryGb: 128 } }
+        'spark-node-01': { resources: { memoryGb: 128 } },
+        'spark-node-02': { resources: { memoryGb: 128 } },
+        'spark-node-03': { resources: { memoryGb: 128 } }
       }
     },
     runtimePolicy: { maxMemoryUtilization: 0.9, autoEvict: true, protectActiveRequests: true },
     runtimes: {
-      unrelatedIdle: { enabled: true, node: 'ennspark01', memoryGb: 20 },
-      unrelatedBusy: { enabled: true, node: 'ennspark02', memoryGb: 20 },
-      requested: { enabled: true, node: 'ennspark03', memoryGb: 46 }
+      unrelatedIdle: { enabled: true, node: 'spark-node-01', memoryGb: 20 },
+      unrelatedBusy: { enabled: true, node: 'spark-node-02', memoryGb: 20 },
+      requested: { enabled: true, node: 'spark-node-03', memoryGb: 46 }
     }
   },
   {
     requestedRuntimeId: 'requested',
-    requesterNode: 'ennspark03',
+    requesterNode: 'spark-node-03',
     status: {
       runtimes: {
         unrelatedIdle: { healthy: true, status: 'running', activeRequests: 0 },
@@ -344,15 +344,15 @@ const localClusterAdmission = await createRuntimePolicyPlan(
       },
       cluster: {
         nodes: {
-          ennspark01: {
+          'spark-node-01': {
             reachable: true,
             telemetry: { memory: { totalBytes: 128 * 1024 ** 3, availableBytes: 0 } }
           },
-          ennspark02: {
+          'spark-node-02': {
             reachable: true,
             telemetry: { memory: { totalBytes: 128 * 1024 ** 3, availableBytes: 0 } }
           },
-          ennspark03: {
+          'spark-node-03': {
             local: true,
             reachable: true,
             telemetry: { memory: { totalBytes: 128 * 1024 ** 3, availableBytes: 68 * 1024 ** 3 } }
@@ -364,9 +364,9 @@ const localClusterAdmission = await createRuntimePolicyPlan(
 );
 assert.equal(localClusterAdmission.admission.allowed, true, 'local request ignores unrelated node pressure');
 assert.equal(localClusterAdmission.admission.overBudgetGb, 0);
-assert.equal(localClusterAdmission.admission.nodes.ennspark01.overBudgetGb, 0);
-assert.equal(localClusterAdmission.admission.nodes.ennspark02.overBudgetGb, 0);
-assert.equal(localClusterAdmission.admission.nodes.ennspark03.projectedMemoryGb, 106);
+assert.equal(localClusterAdmission.admission.nodes['spark-node-01'].overBudgetGb, 0);
+assert.equal(localClusterAdmission.admission.nodes['spark-node-02'].overBudgetGb, 0);
+assert.equal(localClusterAdmission.admission.nodes['spark-node-03'].projectedMemoryGb, 106);
 assert.deepEqual(
   localClusterAdmission.actions.map((action) => `${action.type}:${action.runtimeId}`),
   ['start:requested'],
@@ -381,22 +381,22 @@ assert.deepEqual(
 const zeroEstimateLocal = await createRuntimePolicyPlan(
   {
     cluster: {
-      nodeId: 'ennspark03',
-      leaderNode: 'ennspark03',
+      nodeId: 'spark-node-03',
+      leaderNode: 'spark-node-03',
       nodes: {
-        ennspark01: { resources: { memoryGb: 128 } },
-        ennspark03: { resources: { memoryGb: 128 } }
+        'spark-node-01': { resources: { memoryGb: 128 } },
+        'spark-node-03': { resources: { memoryGb: 128 } }
       }
     },
     runtimePolicy: { maxMemoryUtilization: 0.9, autoEvict: true },
     runtimes: {
-      unrelatedIdle: { enabled: true, node: 'ennspark01', memoryGb: 20 },
-      requested: { enabled: true, node: 'ennspark03', memoryGb: 0 }
+      unrelatedIdle: { enabled: true, node: 'spark-node-01', memoryGb: 20 },
+      requested: { enabled: true, node: 'spark-node-03', memoryGb: 0 }
     }
   },
   {
     requestedRuntimeId: 'requested',
-    requesterNode: 'ennspark03',
+    requesterNode: 'spark-node-03',
     status: {
       runtimes: {
         unrelatedIdle: { healthy: true, status: 'running', activeRequests: 0 },
@@ -404,11 +404,11 @@ const zeroEstimateLocal = await createRuntimePolicyPlan(
       },
       cluster: {
         nodes: {
-          ennspark01: {
+          'spark-node-01': {
             reachable: true,
             telemetry: { memory: { totalBytes: 128 * 1024 ** 3, availableBytes: 0 } }
           },
-          ennspark03: {
+          'spark-node-03': {
             local: true,
             reachable: true,
             telemetry: { memory: { totalBytes: 128 * 1024 ** 3, availableBytes: 0 } }
@@ -419,8 +419,8 @@ const zeroEstimateLocal = await createRuntimePolicyPlan(
   }
 );
 assert.equal(zeroEstimateLocal.admission.allowed, false, 'zero-estimate local placement still checks its target node');
-assert(zeroEstimateLocal.admission.nodes.ennspark03.overBudgetGb > 0);
-assert.equal(zeroEstimateLocal.admission.nodes.ennspark01.overBudgetGb, 0);
+assert(zeroEstimateLocal.admission.nodes['spark-node-03'].overBudgetGb > 0);
+assert.equal(zeroEstimateLocal.admission.nodes['spark-node-01'].overBudgetGb, 0);
 assert.deepEqual(
   zeroEstimateLocal.actions.map((action) => `${action.type}:${action.runtimeId}`),
   ['start:requested'],

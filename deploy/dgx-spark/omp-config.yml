@@ -1,14 +1,14 @@
 modelRoles:
-  default: ennspark01/q38fn:low
-  smol: ennspark01/q38fn:low
-  slow: ennspark01/q38fn:low
-  plan: ennspark01/q38fn:low
-  commit: ennspark01/q38fn:low
-  designer: ennspark01/q38fn:low
-  advisor: ennspark01/q38fn:low
-  tiny: ennspark01/q38fn:low
-  vision: ennspark01/q38fn:low
-  task: ennspark01/q38fn:low
+  default: spark-node-01/q38fn:low
+  smol: spark-node-01/q38fn:low
+  slow: spark-node-01/q38fn:low
+  plan: spark-node-01/q38fn:low
+  commit: spark-node-01/q38fn:low
+  designer: spark-node-01/q38fn:low
+  advisor: spark-node-01/q38fn:low
+  tiny: spark-node-01/q38fn:low
+  vision: spark-node-01/q38fn:low
+  task: spark-node-01/q38fn:low
 defaultThinkingLevel: auto
 hideThinkingBlock: true
 startup:

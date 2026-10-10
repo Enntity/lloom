@@ -33,23 +33,23 @@
     "limitation": "One serving workload at 28 GiB after rejecting a preliminary 32 GiB allocation trial; not a production eviction-rate or model-quality study."
   },
   "memory": {
-    "ennspark01": {
+    "spark-node-01": {
       "availableGiB": 12.075481414794922,
       "inferenceSwapOutBytes": 0,
       "pageSize": 4096
     },
-    "ennspark02": {
+    "spark-node-02": {
       "availableGiB": 13.503192901611328,
       "inferenceSwapOutBytes": 28672,
       "pageSize": 4096
     }
   },
   "gpuNumericalTests": {
-    "ennspark01": {
+    "spark-node-01": {
       "passed": 22,
       "mode": "isolated before model load"
     },
-    "ennspark02": {
+    "spark-node-02": {
       "passed": 22,
       "mode": "same kernels while preliminary 32 GiB candidate resident"
     }

@@ -1,9 +1,9 @@
 [
   {
-    "host": "ennspark01",
+    "host": "spark-node-01",
     "containers": [
       {
-        "name": "/lloom-qwen38-resident-ennspark01",
+        "name": "/lloom-qwen38-resident-spark-node-01",
         "image": "vllm/vllm-openai@sha256:df871f170ee7070fbdce162bde08fb616e311570c948a620be0d4b33fe02f87b",
         "imageId": "sha256:39584ec79a77d56dd4e3585dab26307e0c72bea1946427fe54e43a176f9e5b7a",
         "state": "running",
@@ -12,7 +12,7 @@
         ]
       },
       {
-        "name": "/lloom-qwen38-prefix-test-ennspark01",
+        "name": "/lloom-qwen38-prefix-test-spark-node-01",
         "image": "vllm/vllm-openai@sha256:df871f170ee7070fbdce162bde08fb616e311570c948a620be0d4b33fe02f87b",
         "imageId": "sha256:39584ec79a77d56dd4e3585dab26307e0c72bea1946427fe54e43a176f9e5b7a",
         "state": "exited",
@@ -23,10 +23,10 @@
     ]
   },
   {
-    "host": "ennspark02",
+    "host": "spark-node-02",
     "containers": [
       {
-        "name": "/lloom-qwen38-resident-ennspark02",
+        "name": "/lloom-qwen38-resident-spark-node-02",
         "image": "vllm/vllm-openai@sha256:df871f170ee7070fbdce162bde08fb616e311570c948a620be0d4b33fe02f87b",
         "imageId": "sha256:39584ec79a77d56dd4e3585dab26307e0c72bea1946427fe54e43a176f9e5b7a",
         "state": "running",
@@ -35,7 +35,7 @@
         ]
       },
       {
-        "name": "/lloom-qwen38-prefix-test-ennspark02",
+        "name": "/lloom-qwen38-prefix-test-spark-node-02",
         "image": "vllm/vllm-openai@sha256:df871f170ee7070fbdce162bde08fb616e311570c948a620be0d4b33fe02f87b",
         "imageId": "sha256:39584ec79a77d56dd4e3585dab26307e0c72bea1946427fe54e43a176f9e5b7a",
         "state": "exited",

@@ -6,7 +6,7 @@
   "name": "DGX Spark LLooM Image Gateway Dogfood",
   "summary": "OpenAI-compatible LLooM gateway measurements for local image generation and reference editing on NVIDIA GB10.",
   "license": { "id": "CC0-1.0", "name": "CC0 1.0" },
-  "source": { "type": "local-measurement", "name": "LLooM gateway benchmark on ennspark01" },
+  "source": { "type": "local-measurement", "name": "LLooM gateway benchmark on spark-node-01" },
   "submittedAt": "2026-07-17T21:17:08Z",
   "provenance": {
     "createdBy": "lloom",

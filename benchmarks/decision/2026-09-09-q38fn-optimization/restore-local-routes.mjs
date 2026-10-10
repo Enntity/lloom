@@ -1,6 +1,10 @@
 // Run after canonical strict-local canaries. Existing cloud calls may finish.
 import assert from 'node:assert/strict';
-const root = '/home/enntitysparkadmin/.local/lib/node_modules/lloom';
+const root = process.env.LLOOM_ROOT;
+if (!root)
+  throw new Error(
+    'LLOOM_ROOT is required: absolute path to the installed LLooM package (e.g. /opt/lloom or a checkout root).'
+  );
 const { loadManagedServiceEnvironment } = await import(root + '/src/managed-environment.mjs');
 const { loadConfig } = await import(root + '/src/config.mjs');
 loadManagedServiceEnvironment();
@@ -12,8 +16,13 @@ const headers = {
   authorization: 'Bearer ' + (c.security.adminApiKeys?.[0] || c.security.apiKeys[0]),
   'content-type': 'application/json'
 };
+const canonicalBackend = process.env.CANONICAL_BACKEND_URL;
+if (!canonicalBackend)
+  throw new Error(
+    'CANONICAL_BACKEND_URL is required: the canonical backend health base URL (e.g. http://127.0.0.1:8889).'
+  );
 assert(
-  (await fetch('http://10.100.16.2:8889/health', { signal: AbortSignal.timeout(5000) })).ok,
+  (await fetch(canonicalBackend + '/health', { signal: AbortSignal.timeout(5000) })).ok,
   'Canonical backend not healthy'
 );
 for (const alias of aliases) {

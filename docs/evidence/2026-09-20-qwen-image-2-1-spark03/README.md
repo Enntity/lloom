@@ -4,14 +4,14 @@ Later rollout: [resident essentials and one shared generation/editing pipeline](
 
 Measured September 20, 2026 through the live gateways, not from model cards. The
 work added Qwen-Image 2.1 to the shared ComfyUI media backend, installed it on
-`ennspark03` with the recipe below, and then federated it from `ennspark01` as
+`spark-node-03` with the recipe below, and then federated it from `spark-node-01` as
 the default image lane.
 
 ## What was installed
 
 | Item | Value |
 | --- | --- |
-| Gateway model ID | `Qwen/Qwen-Image-2.1` (federated as `ennspark03/Qwen/Qwen-Image-2.1`) |
+| Gateway model ID | `Qwen/Qwen-Image-2.1` (federated as `spark-node-03/Qwen/Qwen-Image-2.1`) |
 | Upstream artifact | `Comfy-Org/Qwen-Image-2.1` at `7562a343278731b94b18803d7de6d660cb56f841` |
 | Quantization | int8 convrot DiT and text encoder, bf16 VAE |
 | Engine | Comfy-Org/ComfyUI `5ba116a40f1944f64e2e4a8ace826656e6293bf4` (2.1 nodes from `6bfaacc6`) |
@@ -36,7 +36,7 @@ and artifact transfer. `results.json` is the raw capture.
 | 2.1, repeat | 25 | 1024x1024 | 21.2 s | 2.0 MB PNG |
 | 2.1 | 8 | 1024x1024 | 10.1 s | 1.9 MB PNG |
 | 2.1 | 25 | 1536x1024 | 37.3 s | 2.9 MB PNG |
-| 2.1 via the `ennspark01` default alias | 25 | 1024x1024 | 21.3 s | 1.8 MB PNG |
+| 2.1 via the `spark-node-01` default alias | 25 | 1024x1024 | 21.3 s | 1.8 MB PNG |
 | 2512 fp8 | 50 | 1024x1024 | 173.8 s | 1.6 MB PNG |
 | 2512 Lightning | 4 | 1024x1024 | 16.2 s | 1.7 MB PNG |
 
@@ -93,7 +93,7 @@ uses the original pinned int8 weights.
 
 ## Leader configuration
 
-`ennspark01` carries `ennspark03/Qwen/Qwen-Image-2.1` on the
+`spark-node-01` carries `spark-node-03/Qwen/Qwen-Image-2.1` on the
 `spark03-premium` remote runtime. `image-quality`, `image-fast` and
 `image-quality-fast` now resolve to it; `defaults.imageModel` remains
 `image-quality`. Spark 3's own `defaults.imageModel` now names
@@ -111,7 +111,7 @@ transparency were not scored; 2.1 decodes RGBA and the graph saves PNG, but no
 transparent-background artifact was generated here. The 2.1 and 2512 figures come from the same host and window but
 not from an interleaved A/B run, so treat the ratio as an order-of-magnitude
 result rather than a controlled benchmark. The federated timing covers the
-Tailscale hop from `ennspark01` to `ennspark03` and one inline base64 payload.
+Tailscale hop from `spark-node-01` to `spark-node-03` and one inline base64 payload.
 
 ## Reproduce
 
@@ -182,10 +182,10 @@ The cottage edit also colored the adjacent window trim green; this is not a
 claim of pixel-exact editing.
 
 The fleet `image-edit` alias now resolves to
-`ennspark03/Qwen/Qwen-Image-2.1-Diffusers`. A real multipart request through that
+`spark-node-03/Qwen/Qwen-Image-2.1-Diffusers`. A real multipart request through that
 alias returned HTTP 200 in 59.725 seconds, attributed to Spark 3 with no failover.
 Its image matched the direct teapot canary byte for byte. The three generation
-aliases remain on `ennspark03/Qwen/Qwen-Image-2.1`; the existing Edit-2511 model
+aliases remain on `spark-node-03/Qwen/Qwen-Image-2.1`; the existing Edit-2511 model
 remains configured for explicit fallback calls. Existing runtime definitions and
 other defaults were preserved by the additive setup.
 

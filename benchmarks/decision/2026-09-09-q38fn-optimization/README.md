@@ -150,3 +150,12 @@ See `final-validation.jsonl`, `leader-route-verification.jsonl`,
 hashes and repository checks are in `installation-verification.json`. The
 inference hardware sample reported no active power or thermal throttling on
 either Spark; historical throttle counters were unchanged from startup.
+
+## Reusing the scripts
+
+Set `LLOOM_ROOT` to the absolute path of the LLooM checkout or installed package
+to use. `cache-correctness.mjs` also requires `METRICS_URL`;
+`restore-local-routes.mjs` requires `CANONICAL_BACKEND_URL`. These scripts target
+the selected installation and some change its configuration, so review them
+and choose the intended gateway before running them. The measurements above
+are the historical run, with machine identifiers anonymized for publication.

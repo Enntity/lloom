@@ -1,5 +1,9 @@
 import fs from 'node:fs/promises';
-const root = '/home/enntitysparkadmin/.local/lib/node_modules/lloom';
+const root = process.env.LLOOM_ROOT;
+if (!root)
+  throw new Error(
+    'LLOOM_ROOT is required: absolute path to the installed LLooM package (e.g. /opt/lloom or a checkout root).'
+  );
 const { loadManagedServiceEnvironment } = await import(root + '/src/managed-environment.mjs');
 loadManagedServiceEnvironment();
 const c = JSON.parse(await fs.readFile(process.env.HOME + '/.lloom/config.json', 'utf8'));

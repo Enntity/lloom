@@ -2532,11 +2532,11 @@ dsparkBase.models.push({
   backend: 'openrouter-deepseek-v4-flash'
 });
 dsparkBase.cluster = {
-  nodeId: 'ennspark01',
-  leaderNode: 'ennspark01',
+  nodeId: 'spark-node-01',
+  leaderNode: 'spark-node-01',
   nodes: {
-    ennspark01: { endpoint: 'http://spark-one:8100', backendHost: '10.20.30.12' },
-    ennspark02: { endpoint: 'http://spark-two:8100', backendHost: '10.20.30.11' }
+    'spark-node-01': { endpoint: 'http://spark-one:8100', backendHost: '10.20.30.12' },
+    'spark-node-02': { endpoint: 'http://spark-two:8100', backendHost: '10.20.30.11' }
   }
 };
 const ds4fvConfig = deriveUserConfig(dsparkBase, ds4fvRecipe, { modelRoot: '/models', additive: true });
@@ -2546,7 +2546,7 @@ assert.equal(ds4fvConfig.runtimes['deepseek-v4-flash-vision-exp-cluster'].health
 assert.equal(ds4fvConfig.runtimes['deepseek-v4-flash-vision-exp-head'].healthModel, 'deepseek-v4-flash-vision-exp');
 assert.deepEqual(
   ds4fvConfig.runtimes['deepseek-v4-flash-vision-exp-cluster'].placement.members.map((member) => member.node),
-  ['ennspark02', 'ennspark01']
+  ['spark-node-02', 'spark-node-01']
 );
 assert.deepEqual(ds4fvConfig.aliases.ds4fv.members, ['deepseek-v4-flash-vision-exp']);
 const qwen38Recipe = await loadRecipeById('linux-nvidia-dgx-spark-2x-qwen38-flash-next-vllm');
@@ -2555,7 +2555,7 @@ assert.equal(qwen38Config.runtimes['qwen38-flash-next-cluster'].healthTimeoutMs,
 assert.equal(qwen38Config.runtimes['qwen38-flash-next-head'].healthTimeoutMs, 5000);
 const clusterEmbeddingRecipe = await loadRecipeById('linux-nvidia-dgx-spark-cluster-qwen3-embedding-4b-vllm');
 const clusterEmbeddingBase = structuredClone(dsparkBase);
-clusterEmbeddingBase.cluster.nodes.ennspark02.labels = { role: 'worker', hardware: 'dgx-spark' };
+clusterEmbeddingBase.cluster.nodes['spark-node-02'].labels = { role: 'worker', hardware: 'dgx-spark' };
 clusterEmbeddingBase.cluster.nodes['macbook-local'] = {
   endpoint: 'http://macbook:8100',
   backendHost: '10.20.30.13',
@@ -2565,8 +2565,8 @@ const clusterEmbeddingConfig = deriveUserConfig(clusterEmbeddingBase, clusterEmb
   modelRoot: '/models',
   additive: true
 });
-const leaderEmbeddingRuntime = clusterEmbeddingConfig.runtimes['qwen3-embedding-4b-ennspark01'];
-assert.equal(leaderEmbeddingRuntime.node, 'ennspark01');
+const leaderEmbeddingRuntime = clusterEmbeddingConfig.runtimes['qwen3-embedding-4b-spark-node-01'];
+assert.equal(leaderEmbeddingRuntime.node, 'spark-node-01');
 assert.equal(leaderEmbeddingRuntime.healthUrl, 'http://10.20.30.12:8002/v1/models');
 assert.equal(leaderEmbeddingRuntime.keepWarm, false);
 assert.equal(leaderEmbeddingRuntime.policy.priority, 40);
@@ -2580,15 +2580,15 @@ assert.deepEqual(
   ),
   ['--host', '0.0.0.0']
 );
-assert.equal(clusterEmbeddingConfig.runtimes['qwen3-embedding-4b-ennspark02'], undefined);
+assert.equal(clusterEmbeddingConfig.runtimes['qwen3-embedding-4b-spark-node-02'], undefined);
 assert.equal(clusterEmbeddingConfig.runtimes['qwen3-embedding-4b-macbook-local'], undefined);
-assert.equal(clusterEmbeddingConfig.backends['qwen3-embedding-4b-ennspark01'].baseUrl, 'http://10.20.30.12:8002/v1');
+assert.equal(clusterEmbeddingConfig.backends['qwen3-embedding-4b-spark-node-01'].baseUrl, 'http://10.20.30.12:8002/v1');
 assert.deepEqual(clusterEmbeddingConfig.models.find((model) => model.id === 'Qwen/Qwen3-Embedding-4B').targets, [
   {
-    id: 'ennspark01',
-    node: 'ennspark01',
-    backend: 'qwen3-embedding-4b-ennspark01',
-    runtime: 'qwen3-embedding-4b-ennspark01'
+    id: 'spark-node-01',
+    node: 'spark-node-01',
+    backend: 'qwen3-embedding-4b-spark-node-01',
+    runtime: 'qwen3-embedding-4b-spark-node-01'
   }
 ]);
 
@@ -2600,7 +2600,7 @@ const glm53Config = deriveUserConfig(clusterEmbeddingBase, glm53Recipe, {
 const glm53LogicalRuntime = glm53Config.runtimes['glm53-flash-exl3-cluster'];
 assert.equal(glm53LogicalRuntime.keepWarm, true, 'only the leader-owned logical GLM service is pinned');
 assert.deepEqual(glm53LogicalRuntime.authority, {
-  owner: 'ennspark01',
+  owner: 'spark-node-01',
   scope: 'distributed-model',
   group: 'glm53-flash-exl3-cluster'
 });
@@ -2608,7 +2608,7 @@ for (const member of glm53LogicalRuntime.placement.members) {
   const memberRuntime = glm53Config.runtimes[member.runtime];
   assert.equal(memberRuntime.keepWarm, false, 'physical TP members must not acquire independent residency pins');
   assert.deepEqual(memberRuntime.authority, {
-    owner: 'ennspark01',
+    owner: 'spark-node-01',
     scope: 'distributed-member',
     group: 'glm53-flash-exl3-cluster'
   });
@@ -2619,26 +2619,26 @@ const clusterFluxConfig = deriveUserConfig(clusterEmbeddingBase, clusterFluxReci
   modelRoot: '/models',
   additive: true
 });
-const clusterFluxRuntime = clusterFluxConfig.runtimes['flux2-klein-4b-sdcpp-ennspark02'];
+const clusterFluxRuntime = clusterFluxConfig.runtimes['flux2-klein-4b-sdcpp-spark-node-02'];
 assert.equal(clusterFluxRuntime.keepWarm, false);
 assert.equal(clusterFluxRuntime.policy.priority, 30);
-assert.equal(clusterFluxRuntime.node, 'ennspark02');
+assert.equal(clusterFluxRuntime.node, 'spark-node-02');
 const clusterFluxModel = clusterFluxConfig.models.find((model) => model.id === 'black-forest-labs/FLUX.2-klein-4B');
 assert.deepEqual(
   clusterFluxModel.targets.map((target) => target.id),
-  ['ennspark02', 'ennspark02-proxy']
+  ['spark-node-02', 'spark-node-02-proxy']
 );
 const leaderFlux = createRegistry(clusterFluxConfig).resolve('black-forest-labs/FLUX.2-klein-4B');
 assert.equal(leaderFlux.model.runtime, undefined, 'leader inference must use the worker LLooM proxy');
-assert.equal(leaderFlux.model.targets[0].remoteRuntime, 'flux2-klein-4b-sdcpp-ennspark02');
+assert.equal(leaderFlux.model.targets[0].remoteRuntime, 'flux2-klein-4b-sdcpp-spark-node-02');
 const workerFluxConfig = structuredClone(clusterFluxConfig);
-workerFluxConfig.cluster.nodeId = 'ennspark02';
+workerFluxConfig.cluster.nodeId = 'spark-node-02';
 const workerFlux = createRegistry(workerFluxConfig).resolve('black-forest-labs/FLUX.2-klein-4B');
-assert.equal(workerFlux.model.runtime, 'flux2-klein-4b-sdcpp-ennspark02');
+assert.equal(workerFlux.model.runtime, 'flux2-klein-4b-sdcpp-spark-node-02');
 assert.equal(workerFlux.model.targets[0].remoteRuntime, null);
 
 const labeledDsparkBase = structuredClone(dsparkBase);
-labeledDsparkBase.cluster.nodes.ennspark02.labels = { role: 'worker', hardware: 'dgx-spark' };
+labeledDsparkBase.cluster.nodes['spark-node-02'].labels = { role: 'worker', hardware: 'dgx-spark' };
 labeledDsparkBase.cluster.nodes['macbook-local'] = {
   endpoint: 'http://macbook:8100',
   labels: { role: 'node', architecture: 'darwin-arm64', accelerator: 'apple-gpu' }
@@ -2649,7 +2649,7 @@ const labeledDsparkInstalled = deriveUserConfig(labeledDsparkBase, dsparkRecipe,
 });
 assert.deepEqual(
   labeledDsparkInstalled.runtimes['deepseek-v4-flash-0731-cluster'].placement.members.map((member) => member.node),
-  ['ennspark02', 'ennspark01']
+  ['spark-node-02', 'spark-node-01']
 );
 assert.equal(labeledDsparkInstalled.runtimes['deepseek-v4-flash-0731-worker-macbook-local'], undefined);
 const dsparkInstalled = deriveUserConfig(dsparkBase, dsparkRecipe, { modelRoot: '/models', additive: true });
@@ -2663,7 +2663,7 @@ const dsparkRefreshed = deriveUserConfig(dsparkInstalled, dsparkRecipe, {
 });
 assert.deepEqual(
   dsparkRefreshed.runtimes['deepseek-v4-flash-0731-cluster'].placement.members.map((member) => member.node),
-  ['ennspark02', 'ennspark01']
+  ['spark-node-02', 'spark-node-01']
 );
 assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-worker'].recipe.version, 19);
 assert.equal(dsparkRefreshed.runtimes['deepseek-v4-flash-0731-head'].recipe.version, 19);
