@@ -183,8 +183,9 @@ inventory in `manifest.files`, `manifest.treeSha256`, an exact
 and a runtime-contract digest. Symlinks, special files, path traversal,
 unlisted bytes, missing dependency packages, and digest drift are rejected
 before `stage` acknowledges success. The installed gateway must expose a
-complete `loadedIdentity` and `runtimeSnapshot`; a disk manifest alone is not
-proof that the running process loaded that release.
+complete `loadedIdentity` and stable `preservationSnapshot`; the volatile
+`runtimeSnapshot` is diagnostic only. A disk manifest alone is not proof that
+the running process loaded that release.
 
 The archive layout is the reviewed gateway layout itself: `package.json` and
 the listed `node_modules` entries are at the archive root. A standard

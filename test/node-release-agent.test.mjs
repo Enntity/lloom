@@ -347,6 +347,22 @@ test('releases a preflight-only reservation without touching the release tree', 
   await assert.rejects(fs.stat(lockPath), { code: 'ENOENT' });
 });
 
+test('releases a reservation when recovery advances the operation generation', async (t) => {
+  const fixture = await makeFixture(t);
+  const { agent, context, root } = fixture;
+  await agent.preflight('node-1', context);
+  const lockPath = path.join(root, '.deployment-agent.lock');
+  await fs.stat(lockPath);
+
+  await agent.discardStage('node-1', {
+    ...context,
+    generation: 2,
+    phase: 'discard-stage',
+    reservationOnly: true
+  });
+  await assert.rejects(fs.stat(lockPath), { code: 'ENOENT' });
+});
+
 test('requires effective config and preservation evidence in the final release inspection', async (t) => {
   const fixture = await makeFixture(t);
   const { agent, context, gateway } = fixture;
@@ -373,6 +389,21 @@ test('requires effective config and preservation evidence in the final release i
     false,
     'the gateway release endpoint must not run after an incomplete final inspection'
   );
+});
+
+test('rejects a diagnostic runtime snapshot without the stable preservation contract', async (t) => {
+  const fixture = await makeFixture(t);
+  const inspect = fixture.gateway.inspect;
+  fixture.gateway.inspect = async (...args) => {
+    const value = await inspect.apply(fixture.gateway, args);
+    delete value.preservationSnapshot;
+    return value;
+  };
+  await assert.rejects(
+    () => fixture.agent.preflight('node-1', fixture.context),
+    (error) => error.code === 'runtime_snapshot_missing'
+  );
+  assert.equal(fixture.loaded.fenced, false);
 });
 
 test('rechecks the reviewed disk identity immediately before public release', async (t) => {
@@ -696,6 +727,101 @@ test('rejects direct phase calls out of order and serializes same-operation invo
   ]);
   assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
   assert.equal(results.filter((result) => result.status === 'rejected')[0].reason.code, 'lock_held');
+});
+
+test('does not release a reservation when invocation acquisition loses to the same operation', async (t) => {
+  const fixture = await makeFixture(t);
+  const lockPath = path.join(fixture.root, '.deployment-agent.lock');
+  let signalInvocationOpen;
+  const invocationOpenStarted = new Promise((resolve) => {
+    signalInvocationOpen = resolve;
+  });
+  let releaseInvocationOpen;
+  const holdInvocationOpen = new Promise((resolve) => {
+    releaseInvocationOpen = resolve;
+  });
+  let delayed = false;
+  const delayedFs = new Proxy(fs, {
+    get(target, property) {
+      if (property !== 'open') return target[property];
+      return async (...args) => {
+        if (!delayed && args[1] === 'wx' && String(args[0]).endsWith(`${path.sep}invocation.lock`)) {
+          delayed = true;
+          signalInvocationOpen();
+          await holdInvocationOpen;
+        }
+        return target.open(...args);
+      };
+    }
+  });
+  const delayedAgent = new NodeReleaseAgent({
+    nodeId: 'node-1',
+    root: fixture.root,
+    configPath: path.join(fixture.root, 'config.json'),
+    platform: 'linux',
+    gateway: fixture.gateway,
+    unitPath: fixture.unitPath,
+    serviceUser: fixture.serviceUser,
+    fsImpl: delayedFs,
+    run: fixture.agent.run,
+    clock: () => new Date('2026-10-10T17:00:00.000Z')
+  });
+  let releaseInspection;
+  const holdInspection = new Promise((resolve) => {
+    releaseInspection = resolve;
+  });
+  const inspect = fixture.gateway.inspect;
+  fixture.gateway.inspect = async (...args) => {
+    await holdInspection;
+    return inspect.apply(fixture.gateway, args);
+  };
+
+  const first = delayedAgent.preflight('node-1', fixture.context);
+  await invocationOpenStarted;
+  const second = fixture.agent.preflight('node-1', fixture.context);
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (
+      await fs.stat(path.join(lockPath, 'invocation.lock')).then(
+        () => true,
+        () => false
+      )
+    )
+      break;
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+  assert.equal(
+    await fs.stat(path.join(lockPath, 'invocation.lock')).then(
+      () => true,
+      () => false
+    ),
+    true
+  );
+  releaseInvocationOpen();
+
+  const firstResult = await first.then(
+    () => null,
+    (error) => error
+  );
+  assert.equal(firstResult?.code, 'lock_held');
+  assert.equal(
+    await fs.stat(lockPath).then(
+      () => true,
+      () => false
+    ),
+    true
+  );
+
+  releaseInspection();
+  const secondResult = await second;
+  assert.equal(secondResult.currentIdentity.releaseId, 'release-old');
+  await fixture.agent.discardStage('node-1', { ...fixture.context, phase: 'discard-stage', reservationOnly: true });
+  assert.equal(
+    await fs.stat(lockPath).then(
+      () => true,
+      () => false
+    ),
+    false
+  );
 });
 
 test('serializes stale invocation-lock recovery without deleting a new owner', async (t) => {

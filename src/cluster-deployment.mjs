@@ -808,7 +808,10 @@ export class ClusterDeploymentCoordinator {
       throw new ReceiptError(phase, 'preservation snapshot changed from the preflight gateway contract');
     const baseline = node?.receipts?.preflight?.currentIdentity;
     for (const field of ['configSha256', 'effectiveConfigSha256', 'dependencyDigest', 'runtimeContractDigest']) {
-      if (baseline?.[field] !== undefined && identity[field] !== baseline[field])
+      // The swap receipt is a raw disk identity and cannot prove the
+      // gateway-resolved effective config until restart.  Once a phase emits
+      // that optional field, it must remain equal to the preflight baseline.
+      if (baseline?.[field] !== undefined && identity[field] !== undefined && identity[field] !== baseline[field])
         throw new ReceiptError(phase, `${field} changed from the preflight gateway contract`);
     }
     if (!identity.releaseId || !SAFE_ID.test(identity.releaseId))
@@ -818,7 +821,9 @@ export class ClusterDeploymentCoordinator {
       const previous = node?.receipts?.[previousPhase]?.identity;
       if (!previous) continue;
       for (const field of IDENTITY_FIELDS) {
-        if (identity[field] !== previous[field])
+        // Raw swap identities omit the gateway-resolved effective digest;
+        // compare fields only when both phases actually observed them.
+        if (identity[field] !== undefined && previous[field] !== undefined && identity[field] !== previous[field])
           throw new ReceiptError(phase, `${field} identity drifted from ${previousPhase}`);
       }
     }

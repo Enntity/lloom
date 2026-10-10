@@ -94,6 +94,7 @@ function publicContext(value) {
     'manifestSha256',
     'drainTimeoutMs',
     'reservationOnly',
+    'rollbackCanary',
     'rollbackRelease'
   ]) {
     if (source[key] !== undefined) result[key] = structuredClone(source[key]);

@@ -15,6 +15,14 @@ import { NodeReleaseAgent } from '../src/node-release-agent.mjs';
 
 const execFileAsync = promisify(execFile);
 const sha = (value) => createHash('sha256').update(value).digest('hex');
+const canonicalJson = (value) => {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value ?? null);
+  if (Array.isArray(value)) return `[${value.map((item) => canonicalJson(item)).join(',')}]`;
+  return `{${Object.keys(value)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+    .join(',')}}`;
+};
 const OLD_COMMIT = 'a'.repeat(40);
 const NEXT_COMMIT = 'd'.repeat(40);
 const DEPENDENCY_DIGEST = sha(JSON.stringify({ dep: '1.0.0' }));
@@ -354,7 +362,7 @@ async function makeFleet(t, { failRestartNode = null, failReleaseNode = null } =
 
     await startGateway(oldRoot);
     const configBytes = await fs.readFile(configPath);
-    const effectiveConfigSha256 = sha(JSON.stringify(config));
+    const effectiveConfigSha256 = sha(canonicalJson(config));
     const expectedOldIdentity = {
       releaseId: OLD_COMMIT,
       artifactSha256: oldManifest.sha256,
@@ -480,16 +488,13 @@ async function makeFleet(t, { failRestartNode = null, failReleaseNode = null } =
 }
 
 async function rejectedDeployment(promise) {
+  let captured;
   await assert.rejects(promise, (error) => {
     assert.equal(error instanceof DeploymentError, true);
+    captured = error;
     return true;
   });
-  try {
-    await promise;
-  } catch (error) {
-    return error;
-  }
-  throw new Error('deployment unexpectedly succeeded');
+  return captured;
 }
 
 function receiptOrder(report, phases) {

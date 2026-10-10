@@ -517,9 +517,7 @@ export class NodeReleaseAgent {
         throw new NodeReleaseError('gateway effective config identity drifted', 'runtime_contract_mismatch');
       if (effectiveConfigSha256 !== undefined && !DIGEST.test(String(effectiveConfigSha256)))
         throw new NodeReleaseError('gateway effective config identity is invalid', 'runtime_contract_mismatch');
-      const preservationSnapshot = inspection.preservationSnapshot ?? inspection.runtimeSnapshot;
-      if (!preservationSnapshot || typeof preservationSnapshot !== 'object' || Array.isArray(preservationSnapshot))
-        throw new NodeReleaseError('gateway did not provide a preservation snapshot', 'runtime_snapshot_missing');
+      const preservationSnapshot = this.#preservationSnapshot(inspection, 'preflight');
       if (
         !this.#matchesExpected(currentIdentity, context.expectedOldIdentity) ||
         !this.#matchesExpected(loadedIdentity, context.expectedOldIdentity)
@@ -538,8 +536,7 @@ export class NodeReleaseAgent {
           ...(effectiveConfigSha256 === undefined ? {} : { effectiveConfigSha256 })
         },
         ...(effectiveConfigSha256 === undefined ? {} : { effectiveConfigSha256 }),
-        preservationSnapshotSha256: digestJson(preservationSnapshot),
-        preservationSnapshot
+        preservationSnapshotSha256: digestJson(preservationSnapshot)
       };
     });
   }
@@ -669,7 +666,7 @@ export class NodeReleaseAgent {
       )
         throw new NodeReleaseError('atomic swap did not expose the reviewed identity', 'identity_mismatch');
       document.postSwapIdentity = identity;
-      const preservationSnapshot = inspection.preservationSnapshot ?? inspection.runtimeSnapshot;
+      const preservationSnapshot = this.#preservationSnapshot(inspection, 'swap');
       return {
         applied: true,
         identity,
@@ -714,7 +711,7 @@ export class NodeReleaseAgent {
         serviceRestarted: true,
         healthy: true,
         identity,
-        preservationSnapshotSha256: digestJson(inspection.preservationSnapshot ?? inspection.runtimeSnapshot ?? {}),
+        preservationSnapshotSha256: digestJson(this.#preservationSnapshot(inspection, 'restart')),
         snapshot: document.backup?.evidence ?? this.#evidence(context, identity)
       };
     });
@@ -740,7 +737,7 @@ export class NodeReleaseAgent {
       return {
         verified: true,
         identity,
-        preservationSnapshotSha256: digestJson(inspection.preservationSnapshot ?? inspection.runtimeSnapshot ?? {}),
+        preservationSnapshotSha256: digestJson(this.#preservationSnapshot(inspection, 'verify')),
         snapshot: document.backup?.evidence ?? this.#evidence(context, identity)
       };
     });
@@ -786,7 +783,7 @@ export class NodeReleaseAgent {
         source: 'local',
         identity: loadedIdentity,
         snapshot: document.backup?.evidence ?? this.#evidence(context, loadedIdentity),
-        preservationSnapshotSha256: digestJson(inspection.preservationSnapshot ?? inspection.runtimeSnapshot ?? {})
+        preservationSnapshotSha256: digestJson(this.#preservationSnapshot(inspection, 'canary'))
       };
     });
   }
@@ -807,7 +804,7 @@ export class NodeReleaseAgent {
       return {
         promoted: true,
         identity,
-        preservationSnapshotSha256: digestJson(inspection.preservationSnapshot ?? inspection.runtimeSnapshot ?? {}),
+        preservationSnapshotSha256: digestJson(this.#preservationSnapshot(inspection, 'promote')),
         snapshot: document.backup?.evidence ?? this.#evidence(context, identity)
       };
     });
@@ -1415,9 +1412,7 @@ export class NodeReleaseAgent {
     const releaseProof = await treeDigest(this.fs, backupRelease);
     files.releaseTreeSha256 = releaseProof.digest;
     const inspection = asObject(await this.gateway.inspect(context));
-    const preservationSnapshot = inspection.preservationSnapshot ?? inspection.runtimeSnapshot;
-    if (!preservationSnapshot || typeof preservationSnapshot !== 'object' || Array.isArray(preservationSnapshot))
-      throw new NodeReleaseError('gateway did not provide a preservation snapshot', 'runtime_snapshot_missing');
+    const preservationSnapshot = this.#preservationSnapshot(inspection, 'prepare');
     files.preservationSnapshotSha256 = digestJson(preservationSnapshot);
     if (inspection.effectiveConfigSha256 !== undefined) {
       if (!DIGEST.test(String(inspection.effectiveConfigSha256)))
@@ -1522,13 +1517,7 @@ export class NodeReleaseAgent {
       throw new NodeReleaseError(`${phase} effective config identity drifted`, 'runtime_contract_mismatch');
     if (inspection.effectiveConfigSha256 !== undefined && !DIGEST.test(String(inspection.effectiveConfigSha256)))
       throw new NodeReleaseError(`${phase} effective config identity is invalid`, 'runtime_contract_mismatch');
-    if (
-      inspection.preservationSnapshot !== undefined &&
-      (!inspection.preservationSnapshot ||
-        typeof inspection.preservationSnapshot !== 'object' ||
-        Array.isArray(inspection.preservationSnapshot))
-    )
-      throw new NodeReleaseError(`${phase} preservation snapshot is invalid`, 'runtime_snapshot_missing');
+    this.#preservationSnapshot(inspection, phase);
     if (phase !== 'prepare' && (inspection.fenced !== true || inspection.drained !== true))
       throw new NodeReleaseError(`${phase} requires a fenced drained gateway`, 'fence_not_ready');
   }
@@ -1577,6 +1566,13 @@ export class NodeReleaseAgent {
       digestJson(preservationSnapshot) !== expectedSnapshotSha256
     )
       throw new NodeReleaseError('release preservation snapshot changed or is missing', 'runtime_contract_mismatch');
+  }
+
+  #preservationSnapshot(inspection, phase) {
+    const value = inspection?.preservationSnapshot;
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+      throw new NodeReleaseError(`${phase} gateway preservation snapshot is missing`, 'runtime_snapshot_missing');
+    return value;
   }
 
   #evidence(context, identity) {
@@ -1657,106 +1653,112 @@ export class NodeReleaseAgent {
     if (!PHASES.has(phase)) throw new NodeReleaseError(`unsupported node phase ${phase}`, 'invalid_context');
     this.#assertContext(nodeId, context);
     const createdOperationLock = await this.#acquireLock(context);
+    let invocationAcquired = false;
+    let operationLockReleased = false;
+    const releaseOperationLock = async () => {
+      const released = await this.#releaseLock(context);
+      operationLockReleased ||= released;
+    };
+    await this.#acquireInvocationLock(context);
+    invocationAcquired = true;
     try {
-      await this.#acquireInvocationLock(context);
+      const filePath = this.#journalPath(context);
+      const document = (await this.#load(filePath)) ?? {
+        protocol: NODE_AGENT_PROTOCOL,
+        operationId: context.operationId,
+        generation: context.generation,
+        planHash: context.planHash,
+        nodeId: this.nodeId,
+        receipts: {},
+        pendingAction: null,
+        state: 'preflight',
+        backup: null,
+        updatedAt: timestamp(this.clock)
+      };
+      document.receipts ??= {};
+      if (
+        document.operationId !== context.operationId ||
+        document.nodeId !== this.nodeId ||
+        document.planHash !== context.planHash
+      )
+        throw new NodeReleaseError('node journal identity mismatch', 'journal_identity_mismatch');
+      if (document.generation > context.generation)
+        throw new NodeReleaseError('node journal generation is newer than the request', 'stale_generation');
+      if (document.generation < context.generation) {
+        if (document.receipts[phase] && !['reprepare', 'rollback', 'canary'].includes(phase))
+          throw new NodeReleaseError('phase receipt belongs to an older generation', 'stale_generation');
+        document.generation = context.generation;
+        if (['reprepare', 'rollback', 'canary'].includes(phase)) delete document.receipts[phase];
+      }
+      if (document.receipts[phase]) {
+        const replacingReleaseAfterRollback =
+          phase === 'release' &&
+          Boolean(document.receipts.rollback) &&
+          document.receipts[phase].generation !== context.generation;
+        if (document.receipts[phase].generation !== context.generation && !replacingReleaseAfterRollback)
+          throw new NodeReleaseError('phase receipt generation is stale', 'stale_generation');
+        if (replacingReleaseAfterRollback) delete document.receipts[phase];
+        else {
+          const requiresFreshObservation =
+            phase === 'reprepare' ||
+            (phase === 'canary' && (context.rollbackCanary === true || Boolean(document.receipts.rollback))) ||
+            (phase === 'release' && (context.rollbackRelease === true || Boolean(document.receipts.rollback)));
+          if (!requiresFreshObservation) {
+            if (['release', 'discard-stage'].includes(phase)) await releaseOperationLock();
+            return clone(document.receipts[phase]);
+          }
+          // A recovery fence/canary/release is a new observation even when
+          // the coordinator keeps the same generation. Remove the forward
+          // receipt before entering the phase so a crash cannot replay it
+          // as proof that the restored old release was served.
+          delete document.receipts[phase];
+        }
+      }
+      this.#assertPhaseOrder(document, phase, context);
+      if (document.pendingAction && !['reprepare', 'rollback', 'discard-stage'].includes(phase))
+        throw new NodeReleaseError('node journal contains an uncertain pending action', 'operation_uncertain');
+      if (document.pendingAction) {
+        document.uncertainAction = document.pendingAction;
+        document.pendingAction = null;
+      }
+      document.pendingAction = phase;
+      document.mutationPossible = Boolean(document.mutationPossible || mutation);
+      document.updatedAt = timestamp(this.clock);
+      await writeAtomicJson(this.fs, filePath, document);
       try {
-        const filePath = this.#journalPath(context);
-        const document = (await this.#load(filePath)) ?? {
-          protocol: NODE_AGENT_PROTOCOL,
+        const body = await work(document);
+        const receipt = {
           operationId: context.operationId,
           generation: context.generation,
-          planHash: context.planHash,
           nodeId: this.nodeId,
-          receipts: {},
-          pendingAction: null,
-          state: 'preflight',
-          backup: null,
-          updatedAt: timestamp(this.clock)
+          phase,
+          status: 'ok',
+          observedAt: timestamp(this.clock),
+          ...this.#publicBody(body)
         };
-        document.receipts ??= {};
-        if (
-          document.operationId !== context.operationId ||
-          document.nodeId !== this.nodeId ||
-          document.planHash !== context.planHash
-        )
-          throw new NodeReleaseError('node journal identity mismatch', 'journal_identity_mismatch');
-        if (document.generation > context.generation)
-          throw new NodeReleaseError('node journal generation is newer than the request', 'stale_generation');
-        if (document.generation < context.generation) {
-          if (document.receipts[phase] && !['reprepare', 'rollback', 'canary'].includes(phase))
-            throw new NodeReleaseError('phase receipt belongs to an older generation', 'stale_generation');
-          document.generation = context.generation;
-          if (['reprepare', 'rollback', 'canary'].includes(phase)) delete document.receipts[phase];
-        }
-        if (document.receipts[phase]) {
-          const replacingReleaseAfterRollback =
-            phase === 'release' &&
-            Boolean(document.receipts.rollback) &&
-            document.receipts[phase].generation !== context.generation;
-          if (document.receipts[phase].generation !== context.generation && !replacingReleaseAfterRollback)
-            throw new NodeReleaseError('phase receipt generation is stale', 'stale_generation');
-          if (replacingReleaseAfterRollback) delete document.receipts[phase];
-          else {
-            const requiresFreshObservation =
-              phase === 'reprepare' ||
-              (phase === 'canary' && (context.rollbackCanary === true || Boolean(document.receipts.rollback))) ||
-              (phase === 'release' && (context.rollbackRelease === true || Boolean(document.receipts.rollback)));
-            if (!requiresFreshObservation) {
-              if (['release', 'discard-stage'].includes(phase)) await this.#releaseLock(context);
-              return clone(document.receipts[phase]);
-            }
-            // A recovery fence/canary/release is a new observation even when
-            // the coordinator keeps the same generation. Remove the forward
-            // receipt before entering the phase so a crash cannot replay it
-            // as proof that the restored old release was served.
-            delete document.receipts[phase];
-          }
-        }
-        this.#assertPhaseOrder(document, phase, context);
-        if (document.pendingAction && !['reprepare', 'rollback', 'discard-stage'].includes(phase))
-          throw new NodeReleaseError('node journal contains an uncertain pending action', 'operation_uncertain');
-        if (document.pendingAction) {
-          document.uncertainAction = document.pendingAction;
-          document.pendingAction = null;
-        }
-        document.pendingAction = phase;
-        document.mutationPossible = Boolean(document.mutationPossible || mutation);
+        document.receipts[phase] = receipt;
+        document.pendingAction = null;
+        document.state = phase === 'discard-stage' ? 'rolled-back' : phase;
         document.updatedAt = timestamp(this.clock);
         await writeAtomicJson(this.fs, filePath, document);
-        try {
-          const body = await work(document);
-          const receipt = {
-            operationId: context.operationId,
-            generation: context.generation,
-            nodeId: this.nodeId,
-            phase,
-            status: 'ok',
-            observedAt: timestamp(this.clock),
-            ...this.#publicBody(body)
-          };
-          document.receipts[phase] = receipt;
-          document.pendingAction = null;
-          document.state = phase === 'discard-stage' ? 'rolled-back' : phase;
-          document.updatedAt = timestamp(this.clock);
-          await writeAtomicJson(this.fs, filePath, document);
-          if (['release', 'discard-stage'].includes(phase)) await this.#releaseLock(context);
-          return receipt;
-        } catch (error) {
-          document.state = 'unknown';
-          document.error = publicError(error, phase);
-          document.updatedAt = timestamp(this.clock);
-          await writeAtomicJson(this.fs, filePath, document).catch(() => {});
-          throw error;
-        }
-      } finally {
-        await this.#releaseInvocationLock(context);
+        if (['release', 'discard-stage'].includes(phase)) await releaseOperationLock();
+        return receipt;
+      } catch (error) {
+        document.state = 'unknown';
+        document.error = publicError(error, phase);
+        document.updatedAt = timestamp(this.clock);
+        await writeAtomicJson(this.fs, filePath, document).catch(() => {});
+        throw error;
       }
     } catch (error) {
       // A failed preflight has not been allowed to mutate or fence anything;
       // do not strand a persistent reservation that no recovery action could
       // safely use.
-      if (phase === 'preflight' && !mutation && createdOperationLock) await this.#releaseLock(context);
+      if (phase === 'preflight' && !mutation && createdOperationLock && invocationAcquired)
+        await releaseOperationLock();
       throw error;
+    } finally {
+      if (!operationLockReleased) await this.#releaseInvocationLock(context);
     }
   }
 
@@ -1880,8 +1882,15 @@ export class NodeReleaseAgent {
     }
   }
 
-  async #releaseInvocationLock() {
-    await this.fs.unlink(path.join(this.root, '.deployment-agent.lock', 'invocation.lock')).catch(() => {});
+  async #releaseInvocationLock(context) {
+    const filePath = path.join(this.root, '.deployment-agent.lock', 'invocation.lock');
+    const owner = await this.#loadInvocationOwner(filePath);
+    // Invocation ownership is scoped to one phase attempt. A later recovery
+    // generation must not be able to remove an earlier invocation's lock (or
+    // vice versa), even though both share the durable operation reservation.
+    if (owner?.operationId !== context.operationId || owner?.generation !== context.generation) return false;
+    await this.fs.unlink(filePath).catch(() => {});
+    return true;
   }
 
   #assertPhaseOrder(document, phase, context) {
@@ -1933,7 +1942,12 @@ export class NodeReleaseAgent {
   async #releaseLock(context) {
     const lockPath = path.join(this.root, '.deployment-agent.lock');
     const owner = await this.#load(path.join(lockPath, 'owner.json'));
-    if (owner?.operationId === context.operationId) await this.fs.rm(lockPath, { recursive: true, force: true });
+    // The operation reservation spans generation changes during recovery;
+    // operationId is the durable ownership key. The invocation lock remains
+    // generation-bound and prevents another phase from racing this cleanup.
+    if (owner?.operationId !== context.operationId) return false;
+    await this.fs.rm(lockPath, { recursive: true, force: true });
+    return true;
   }
 
   async #load(filePath) {
@@ -1961,7 +1975,7 @@ export class NodeReleaseAgent {
       'dependencyDigest',
       'runtimeContractDigest',
       'effectiveConfigSha256',
-      'preservationSnapshot',
+      'preservationSnapshotSha256',
       'snapshot',
       'backup',
       'fenced',
