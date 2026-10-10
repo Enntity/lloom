@@ -51,6 +51,27 @@ test('actual LLooM bundle round trips with stable inventory and direct closure',
       buildDeploymentBundle({ root, runtimeContractDigest: 'b'.repeat(64), allowDirty: true, outputDir }),
       /refusing to replace existing reviewed bundle file/
     );
+    await inspectDeploymentBundle(first);
+  } finally {
+    await fs.rm(outputDir, { recursive: true, force: true });
+  }
+});
+
+test('concurrent conflicting sidecars never remove the immutable artifact', async () => {
+  const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), 'lloom-concurrent-output-'));
+  try {
+    const results = await Promise.allSettled([
+      buildDeploymentBundle({ root, runtimeContractDigest: 'c'.repeat(64), allowDirty: true, outputDir }),
+      buildDeploymentBundle({ root, runtimeContractDigest: 'd'.repeat(64), allowDirty: true, outputDir })
+    ]);
+    const fulfilled = results.filter((result) => result.status === 'fulfilled');
+    const rejected = results.filter((result) => result.status === 'rejected');
+    assert.equal(fulfilled.length, 1);
+    assert.equal(rejected.length, 1);
+    const published = fulfilled[0].value;
+    const artifactBytes = await fs.readFile(published.artifact);
+    assert.equal(crypto.createHash('sha256').update(artifactBytes).digest('hex'), published.manifest.sha256);
+    await inspectDeploymentBundle(published);
   } finally {
     await fs.rm(outputDir, { recursive: true, force: true });
   }

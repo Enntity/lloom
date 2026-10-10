@@ -14,8 +14,8 @@ node scripts/build-deployment-bundle.mjs \
   --runtime-contract-digest "$RUNTIME_CONTRACT_DIGEST"
 ```
 
-The coordinator branch exposes the same entry point as `npm run
-release:bundle`. `RUNTIME_CONTRACT_DIGEST` is a reviewed SHA-256 digest of the
+After the coordinator package script is integrated, use the same entry point
+as `npm run release:bundle`. `RUNTIME_CONTRACT_DIGEST` is a reviewed SHA-256 digest of the
 gateway runtime contract used by the deployment plan. The bundle command does
 not invent this value from the current checkout; leaving it out or supplying a
 non-digest fails closed. `--allow-dirty` is available only for local fixture

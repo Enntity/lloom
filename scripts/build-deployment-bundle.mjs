@@ -350,13 +350,11 @@ async function immutableFile(pathname, bytes, mode = 0o600) {
 
 async function publishImmutablePair(artifactPath, artifactBytes, manifestPath, manifestBytes) {
   const artifactResult = await immutableFile(artifactPath, artifactBytes, 0o600);
-  try {
-    const manifestResult = await immutableFile(manifestPath, manifestBytes, 0o600);
-    return { artifactResult, manifestResult };
-  } catch (error) {
-    if (artifactResult === 'created') await fs.unlink(artifactPath).catch(() => {});
-    throw error;
-  }
+  // The artifact is independently immutable. A concurrent builder may have
+  // published a valid sidecar for the same bytes, so never remove a bundle
+  // after a sidecar conflict; leave the pair for explicit recovery/audit.
+  const manifestResult = await immutableFile(manifestPath, manifestBytes, 0o600);
+  return { artifactResult, manifestResult };
 }
 
 async function writeArchive(bundleRoot, files, artifactPath, temporary) {
