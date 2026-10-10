@@ -16,6 +16,10 @@
 // callers gate requests and time out the wait the same way they gate on the
 // concurrency semaphore. Waiters keep their queue order (fairness), and an
 // aborted request removes itself without consuming rate budget.
+//
+// Over-budget requests fail fast by default. `queue: true` makes them wait for
+// the next conforming arrival instead (nginx `limit_req` with a burst queue
+// and no `nodelay`), bounded by the same maximum wait.
 
 const MAX_WAIT_MS = 5 * 60 * 1000;
 
@@ -40,6 +44,10 @@ export function normalizeRateLimit(value) {
     throw new Error('rateLimit must be a string like "20/m" or an object');
   }
   const settings = value.rateLimit ?? value;
+  if (settings.queue != null && typeof settings.queue !== 'boolean') {
+    throw new Error(`rateLimit.queue must be a boolean: ${JSON.stringify(settings.queue)}`);
+  }
+  const queue = settings.queue === true ? { queue: true } : {};
   const rawMaxConcurrent = settings.maxConcurrent ?? settings.concurrency;
   const maxConcurrent = positiveInteger(rawMaxConcurrent);
   // A fractional or zero value floors to 0, which would silently mean "no
@@ -59,7 +67,7 @@ export function normalizeRateLimit(value) {
       throw new Error('rateLimit.burst must be a non-negative integer');
     }
     burst = settings.burst ?? 0;
-    return { maxConcurrent, burst, rateMs };
+    return { maxConcurrent, burst, rateMs, ...queue };
   }
   const rate = settings.rate ?? settings.requestsPerMinute ?? settings.requests;
   let rateCount = null;
@@ -113,7 +121,8 @@ export function normalizeRateLimit(value) {
     // rest at the steady interval (GCRA, the nginx limit_req / Envoy model).
     // An explicit burst overrides this.
     burst: rateMs == null ? 0 : (burst ?? Math.max(0, Math.floor(rateCount) - 1)),
-    rateMs
+    rateMs,
+    ...queue
   };
 }
 
@@ -307,7 +316,8 @@ export function createRateLimitRegistry(limits = {}) {
         limiters.set(id, {
           settings,
           semaphore: settings.maxConcurrent ? createSemaphore(settings.maxConcurrent) : null,
-          gcra: settings.rateMs ? createGcra(settings) : null
+          gcra: settings.rateMs ? createGcra(settings) : null,
+          rateQueued: 0
         });
         continue;
       }
@@ -317,7 +327,8 @@ export function createRateLimitRegistry(limits = {}) {
       if (
         entry.settings.maxConcurrent === settings.maxConcurrent &&
         entry.settings.rateMs === settings.rateMs &&
-        entry.settings.burst === settings.burst
+        entry.settings.burst === settings.burst &&
+        entry.settings.queue === settings.queue
       ) {
         continue;
       }
@@ -350,8 +361,9 @@ export function createRateLimitRegistry(limits = {}) {
         maxConcurrent: entry.settings.maxConcurrent ?? null,
         rateMs: entry.settings.rateMs ?? null,
         burst: entry.settings.burst ?? null,
+        queue: entry.settings.queue === true,
         active: entry.semaphore?.active ?? 0,
-        queued: entry.semaphore?.queued ?? 0,
+        queued: (entry.semaphore?.queued ?? 0) + entry.rateQueued,
         rateLimited: entry.gcra ? entry.gcra.nextAllowedInMs(now) > 0 : false,
         nextAllowedInMs: entry.gcra ? entry.gcra.nextAllowedInMs(now) : 0
       }));
@@ -419,8 +431,47 @@ export function consumeRateBudget(registry, ids) {
     );
     error.name = 'RateBudgetExhaustedError';
     error.retryAfterMs = decision.retryAfterMs;
+    error.limiterId = id;
     throw error;
   }
+}
+
+/**
+ * Consume the rate budget of a chain like `consumeRateBudget`, but wait out a
+ * rejection from a `queue: true` limiter until its next conforming arrival.
+ * The total wait since `started` stays within the maximum wait; a wait that
+ * cannot finish in time fails fast with the usual retry-after instead.
+ */
+export async function awaitRateBudget(registry, ids, { signal = null, started = Date.now() } = {}) {
+  for (;;) {
+    signal?.throwIfAborted?.();
+    try {
+      return consumeRateBudget(registry, ids);
+    } catch (error) {
+      const entry = error?.name === 'RateBudgetExhaustedError' ? registry.limiter(error.limiterId) : null;
+      if (!entry?.settings.queue || Date.now() + error.retryAfterMs - started > MAX_WAIT_MS) throw error;
+      entry.rateQueued += 1;
+      try {
+        await delay(error.retryAfterMs, signal);
+      } finally {
+        entry.rateQueued -= 1;
+      }
+    }
+  }
+}
+
+function delay(ms, signal) {
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal.reason ?? abortError());
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener?.('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener?.('abort', onAbort, { once: true });
+  });
 }
 
 function abortError() {
