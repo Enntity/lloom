@@ -586,3 +586,8 @@ Suspend drains and unloads the managed model while its aliases use their remaini
 candidates. Resume restores eligibility after guarded loading and health checks.
 Omit `--apply --yes` to preview. See [model maintenance](docs/model-maintenance.md)
 for alias setup, distributed ownership, timeouts, and recovery.
+
+For authentication, transport failures, and machine-readable CLI errors, see
+[Gateway diagnostics](docs/cli-diagnostics.md).
+
+Linux gateway persistence: [service installation and diagnostics](docs/service-installation.md).
