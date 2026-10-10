@@ -681,6 +681,8 @@ export class RuntimeManager {
     { logger = console, captureOutput = true, clusterCoordinator = null, memorySampler, memoryUsageSampler } = {}
   ) {
     this.config = config;
+    this.processRole = config?.server?.role ?? 'primary';
+    this.standby = this.processRole === 'standby';
     this.logger = logger;
     this.captureOutput = captureOutput;
     this.memorySampler = memorySampler;
@@ -713,9 +715,11 @@ export class RuntimeManager {
   // queued admission whose runtime was disabled, suspended, unowned, or whose
   // supervision was torn down is skipped safely rather than started.
   noteDesiredResidency(runtimeId, policy, generation) {
+    this.assertNotStandby('residency changes');
     this.desiredResidency.set(runtimeId, { policy, generation });
   }
   settleDesiredResidency(runtimeId, policy, generation) {
+    this.assertNotStandby('residency changes');
     if (
       this.desiredResidency.get(runtimeId)?.generation === generation &&
       (policy === 'always'
@@ -731,6 +735,13 @@ export class RuntimeManager {
   }
 
   resolveAdmissionGuard({ runtimeId, reason } = {}) {
+    if (this.standby === true) {
+      return {
+        ok: false,
+        code: 'standby_read_only',
+        message: 'inference-only standby gateways have no runtime admission authority'
+      };
+    }
     if (!runtimeId) return { ok: true };
     if (this.shuttingDown === true) {
       return {
@@ -806,6 +817,14 @@ export class RuntimeManager {
       });
     }
     return this.state.get(runtimeId);
+  }
+
+  assertNotStandby(action) {
+    if (this.standby !== true) return;
+    const error = new Error(`runtime ${action} is forbidden on an inference-only standby gateway`);
+    error.code = 'standby_read_only';
+    error.statusCode = 403;
+    throw error;
   }
 
   record(event) {
@@ -1058,6 +1077,7 @@ export class RuntimeManager {
     fn,
     { runtimeId = null, reason = 'runtime-admission', preemptible = false, allowPreemption = true } = {}
   ) {
+    this.assertNotStandby('admission');
     const active = this.activeAdmission;
     if (allowPreemption && active?.runtimeId && active.runtimeId !== runtimeId) {
       if (active.preemptible && !active.preemptionRequested) {
@@ -1107,6 +1127,7 @@ export class RuntimeManager {
   }
 
   withRuntimeLifecycleLock(runtimeId, fn) {
+    this.assertNotStandby('runtime lifecycle');
     if (!runtimeId) return fn();
     const previous = this.lifecycleQueues.get(runtimeId) ?? Promise.resolve();
     const run = previous
@@ -1130,6 +1151,7 @@ export class RuntimeManager {
   }
 
   abortRuntimeLifecycle(runtimeId, reason = 'lifecycle superseded') {
+    this.assertNotStandby('runtime lifecycle');
     const controller = this.lifecycleControllers.get(runtimeId);
     if (!controller || controller.signal.aborted) return false;
     const error = reason instanceof Error ? reason : new Error(reason);
@@ -1139,6 +1161,7 @@ export class RuntimeManager {
   }
 
   abortRuntimeTree(runtimeId, reason = 'lifecycle superseded') {
+    this.assertNotStandby('runtime lifecycle');
     const runtime = this.getRuntime(runtimeId);
     let aborted = this.abortRuntimeLifecycle(runtimeId, reason);
     if (runtimePlacement(runtime, this.config).mode === 'distributed') {
@@ -1352,6 +1375,7 @@ export class RuntimeManager {
   }
 
   async withSlot(runtimeId, fn, { signal = null, requestClass = 'standard' } = {}) {
+    if (runtimeId && this.standby === true) this.assertNotStandby('runtime request slot');
     const release = await this.acquireSlot(runtimeId, { signal, requestClass });
     try {
       return await fn();
@@ -1361,6 +1385,7 @@ export class RuntimeManager {
   }
 
   noteRequestOutcome(runtimeId, outcome = {}) {
+    if (this.standby === true) return { runtimeId, action: 'ignored', reason: 'standby-no-authority' };
     if (!runtimeId) return { runtimeId, action: 'ignored', reason: 'no-runtime' };
     const runtime = this.getRuntime(runtimeId);
     if (!runtime) return { runtimeId, action: 'ignored', reason: 'unknown-runtime' };
@@ -1482,6 +1507,7 @@ export class RuntimeManager {
   }
 
   async restartForWatchdogUnlocked(runtimeId, watchdog, { signal, progressVersion } = {}) {
+    this.assertNotStandby('watchdog restart');
     const state = this.stateFor(runtimeId);
     const deadline = Date.now() + watchdog.drainTimeoutMs;
     while (state.activeRequests > 0 && Date.now() < deadline) {
@@ -1520,6 +1546,7 @@ export class RuntimeManager {
   }
 
   acquireSlot(runtimeId, { signal = null, requestClass = 'standard' } = {}) {
+    if (runtimeId && this.standby === true) this.assertNotStandby('runtime request slot');
     requestClass = normalizeRequestClass(requestClass);
     if (requestClass === 'foreground') requestClass = 'interactive';
     if (maintenanceBlocksRouting(this.config, runtimeId)) throw maintenanceError(runtimeId);
@@ -1623,6 +1650,7 @@ export class RuntimeManager {
   }
 
   releaseSlot(runtimeId, requestClass = 'standard') {
+    if (runtimeId && this.standby === true) this.assertNotStandby('runtime request slot');
     const state = this.stateFor(runtimeId);
     state.activeRequests = Math.max(0, state.activeRequests - 1);
     if (requestClass === 'interactive')
@@ -1640,6 +1668,7 @@ export class RuntimeManager {
   }
 
   resumeRuntime(runtimeId) {
+    this.assertNotStandby('runtime pause/resume');
     this.pausedRuntimes.delete(runtimeId);
     const state = this.stateFor(runtimeId);
     if (state.status === 'draining') this.setStatus(runtimeId, 'idle', 'resumed');
@@ -1647,6 +1676,7 @@ export class RuntimeManager {
   }
 
   async drainRuntime(runtimeId, { timeoutMs = 300000, requestedBy, reason = 'eviction' } = {}) {
+    this.assertNotStandby('runtime drain');
     const requesterNode = this.assertRuntimeControl(runtimeId, requestedBy);
     this.pauseRuntime(runtimeId, reason, { requestedBy: requesterNode });
     const deadline = Date.now() + timeoutMs;
@@ -1658,12 +1688,21 @@ export class RuntimeManager {
   }
 
   pauseRuntime(runtimeId, reason = 'capacity-reallocation', { requestedBy } = {}) {
+    this.assertNotStandby('runtime pause/resume');
     this.assertRuntimeControl(runtimeId, requestedBy);
     this.pausedRuntimes.add(runtimeId);
     this.setStatus(runtimeId, 'draining', reason);
   }
 
   async reconfigure(nextConfig, { drainTimeoutMs = 300000 } = {}) {
+    const nextRole = nextConfig?.server?.role ?? 'primary';
+    if (nextRole !== this.processRole) {
+      const error = new Error('server role is frozen for the process lifetime; restart the gateway to change role');
+      error.code = 'standby_read_only';
+      error.statusCode = 403;
+      throw error;
+    }
+    this.assertNotStandby('reconfigure');
     const previousConfig = this.config;
     const nodeId = this.clusterCoordinator?.nodeId ?? currentNodeId(nextConfig);
     const leaderNode = nextConfig.cluster?.leaderNode ?? previousConfig.cluster?.leaderNode ?? nodeId;
@@ -1811,6 +1850,7 @@ export class RuntimeManager {
   }
 
   async ensure(runtimeId) {
+    this.assertNotStandby('runtime ensure');
     return this.start(runtimeId, {
       force: false,
       warmup: true,
@@ -1832,6 +1872,7 @@ export class RuntimeManager {
       preferredWarmIdleMs = 0
     } = {}
   ) {
+    if (this.standby === true) this.assertNotStandby('admission');
     assertMaintenanceStartAllowed(this.config, runtimeId);
     const { applyRuntimePolicyPlan } = await import('./runtime-policy.mjs');
     const requesterNode = this.assertRuntimeControl(runtimeId, requestedBy);
@@ -1851,6 +1892,7 @@ export class RuntimeManager {
   }
 
   async start(runtimeId, { force = false, warmup = true, reason = 'manual-start', requestedBy } = {}) {
+    if (this.standby === true) this.assertNotStandby('runtime start');
     assertMaintenanceStartAllowed(this.config, runtimeId);
     const requesterNode = runtimeId
       ? this.assertRuntimeControl(runtimeId, requestedBy)
@@ -1867,6 +1909,7 @@ export class RuntimeManager {
   }
 
   async startUnlocked(runtimeId, { force = false, warmup = true, reason = 'manual-start', requestedBy, signal } = {}) {
+    if (this.standby === true) this.assertNotStandby('runtime start');
     if (this.shuttingDown) {
       const error = new Error('Runtime manager is shutting down');
       error.code = 'runtime_manager_shutdown';
@@ -2015,6 +2058,7 @@ export class RuntimeManager {
   }
 
   async startLocalWithMemorySafety(runtimeId, runtime, { force, warmup, reason, signal }) {
+    this.assertNotStandby('runtime start');
     const policy = memorySafetyPolicy(this.config);
     const previousFailure = this.memorySafetyFailures.get(runtimeId);
     const manualRetry = ['manual-start', 'admin-start', 'admin-admit', 'cli-start', 'cli-admit'].includes(reason);
@@ -2088,6 +2132,7 @@ export class RuntimeManager {
   }
 
   async startLocalUnlocked(runtimeId, runtime, { force, warmup, reason, signal, owned, guard, policy }) {
+    this.assertNotStandby('runtime start');
     const state = this.stateFor(runtimeId);
     if (runtimeAdapter(runtime) === 'docker') {
       if (runtimeManagement(runtime) !== 'managed') {
@@ -2304,6 +2349,7 @@ export class RuntimeManager {
   }
 
   async warmupById(runtimeId) {
+    this.assertNotStandby('runtime warmup');
     const runtime = this.getRuntime(runtimeId);
     if (!runtime) return { runtimeId, warmed: false, reason: 'unknown-runtime' };
     const placement = runtimePlacement(runtime, this.config);
@@ -2323,6 +2369,7 @@ export class RuntimeManager {
   }
 
   async warmup(runtimeId, runtime, { signal } = {}) {
+    this.assertNotStandby('runtime warmup');
     const state = this.stateFor(runtimeId);
     const warmup = runtime.warmup;
     if (!warmup?.url) return { runtimeId, warmed: false, reason: 'no-warmup' };
@@ -2370,6 +2417,7 @@ export class RuntimeManager {
   }
 
   async startKeepWarm() {
+    this.assertNotStandby('keep-warm residency');
     const results = [];
     // Keep-warm is the runtime residency pin. The normal admission policy
     // protects every pinned runtime, including those started earlier in this
@@ -2406,6 +2454,7 @@ export class RuntimeManager {
   }
 
   async startResidencyRuntime(runtimeId, { admissionConfig, reason, allowEviction = true } = {}) {
+    this.assertNotStandby('keep-warm residency');
     try {
       const runtime = this.getRuntime(runtimeId);
       if (!runtime) {
@@ -2456,6 +2505,7 @@ export class RuntimeManager {
   }
 
   async stop(runtimeId, { requestedBy } = {}) {
+    this.assertNotStandby('runtime stop');
     const requesterNode = this.assertRuntimeControl(runtimeId, requestedBy);
     await this.assertDistributedControl(this.getRuntime(runtimeId));
     this.abortRuntimeTree(runtimeId, `runtime ${runtimeId} stop requested`);
@@ -2463,6 +2513,7 @@ export class RuntimeManager {
   }
 
   async stopAll() {
+    this.assertNotStandby('runtime stop');
     const distributedMembers = new Set(
       Object.values(this.config.runtimes ?? {}).flatMap((runtime) =>
         runtime?.placement?.mode === 'distributed'
@@ -2486,6 +2537,7 @@ export class RuntimeManager {
   }
 
   async stopUnlocked(runtimeId, { requestedBy } = {}) {
+    this.assertNotStandby('runtime stop');
     const requesterNode = this.assertRuntimeControl(runtimeId, requestedBy);
     const runtime = this.getRuntime(runtimeId);
     const state = this.stateFor(runtimeId);

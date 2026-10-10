@@ -166,6 +166,19 @@ export function authorizeRequest(req, config, { method, pathname } = {}) {
     return { ok: true, routeKind };
   }
 
+  // A standby is an explicitly shared failover endpoint. Its inference
+  // surface must remain authenticated even on a loopback bind, regardless of
+  // the local-development allowMissingAuth default.
+  if (config.server?.role === 'standby' && routeKind === 'inference' && !validInferenceKey && !validAdminKey) {
+    return {
+      ok: false,
+      status: 401,
+      code: 'unauthorized',
+      routeKind,
+      message: 'missing or invalid authorization token'
+    };
+  }
+
   if (allowMissing || validInferenceKey || validAdminKey) {
     return { ok: true, routeKind };
   }

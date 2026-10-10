@@ -9,6 +9,15 @@
   "provenance": {
     "generatedBy": "lloom"
   },
+  "gateway": {
+    "role": "primary",
+    "lifecycleAuthority": "primary",
+    "failover": {
+      "mode": "ordered-authenticated-gateway-endpoints",
+      "retry": "new-requests-only",
+      "streamMigration": false
+    }
+  },
   "provider": {
     "id": "local-llm",
     "name": "LLooM Local",

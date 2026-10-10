@@ -41,6 +41,9 @@
     "provenance": {
       "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/provenance"
     },
+    "gateway": {
+      "$ref": "#/$defs/gateway"
+    },
     "links": {
       "$ref": "https://lloom.dev/schemas/common.v1.schema.json#/$defs/links"
     },
@@ -65,6 +68,47 @@
     "^x-": true
   },
   "$defs": {
+    "gateway": {
+      "type": "object",
+      "required": ["role", "lifecycleAuthority", "failover"],
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": { "properties": { "role": { "const": "standby" } } },
+          "then": { "properties": { "lifecycleAuthority": { "const": "none" } } }
+        },
+        {
+          "if": { "properties": { "role": { "const": "primary" } } },
+          "then": { "properties": { "lifecycleAuthority": { "const": "primary" } } }
+        }
+      ],
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": ["primary", "standby"]
+        },
+        "lifecycleAuthority": {
+          "type": "string",
+          "enum": ["primary", "none"]
+        },
+        "failover": {
+          "type": "object",
+          "required": ["mode", "retry", "streamMigration"],
+          "additionalProperties": true,
+          "properties": {
+            "mode": {
+              "const": "ordered-authenticated-gateway-endpoints"
+            },
+            "retry": {
+              "const": "new-requests-only"
+            },
+            "streamMigration": {
+              "const": false
+            }
+          }
+        }
+      }
+    },
     "provider": {
       "type": "object",
       "required": ["id", "name", "baseUrl", "defaultModel"],

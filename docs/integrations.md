@@ -14,6 +14,17 @@ curl -sS http://127.0.0.1:8100/gateway/integrations/status
 
 Both routes return the versioned `client-integrations.v1` interchange document with media type `application/vnd.lloom.client-integrations+json;version=1`. It includes the provider ID, gateway origin, OpenAI `/v1` base URL, Anthropic origin, auth style, supported protocols, concrete endpoint URLs, exact model IDs, modalities, and client artifact hints.
 
+An inference-only standby advertises `gateway.role: "standby"` and
+`gateway.lifecycleAuthority: "none"`. Clients may keep an ordered list of
+authenticated primary and standby gateway URLs, retrying only a new request
+when the prior attempt is known to have been rejected before inference was
+accepted: a pre-connect failure before request transmission, or a `503`
+received before inference response/stream bytes were accepted. A connection
+close after request transmission, or any response whose upstream acceptance
+is ambiguous, must not be retried. An accepted or ambiguous stream remains
+owned by its original gateway; the standby contract does not migrate active
+streams or transfer lifecycle authority.
+
 Generated copies are written to `clients/generated/lloom-integrations.json` and `~/.lloom/integrations/lloom-integrations.json`. Committed examples can be refreshed with `npm run generate:clients -- --examples`.
 
 `/gateway/integrations/status` and `lloom integrations <client>` return an install-status report for generated/native files. Each artifact is marked `current`, `missing`, `drifted`, or `unavailable`, with target/generated file paths and a summary count. Use this before rewriting client files from a UI or installer:
