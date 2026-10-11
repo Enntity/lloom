@@ -52,7 +52,7 @@ def main(base_path, lora_path, out_path):
         keys = list(f.keys())
         quantized = {k[:-len(".comfy_quant")] for k in keys if k.endswith(".comfy_quant")}
         for key in keys:
-            module, leaf = key.rsplit(".", 1)
+            module, _, leaf = key.rpartition(".")
             if module in quantized and leaf != "weight":
                 continue  # comfy_quant and weight_scale are rebuilt with the weight
             if leaf != "weight" or module not in targets:
