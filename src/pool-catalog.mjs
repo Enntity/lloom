@@ -172,6 +172,23 @@ function measuredMemoryGb(nodeStatuses, nodes, runtimeIds) {
   return largest ? round(largest) : null;
 }
 
+// A memory-safety abort is evidence the estimate is too low: the load had
+// taken `consumedGb` when the guard stopped it. The runtime stays latched (no
+// automatic restarts) until someone starts it by hand.
+function memorySafetyEvidence(nodeStatuses, nodes, runtimeIds) {
+  let abortGb = 0;
+  const latched = [];
+  for (const nodeId of nodes) {
+    const runtimes = object(nodeStatuses?.[nodeId]?.runtimeManager?.runtimes);
+    for (const runtimeId of runtimeIds) {
+      const status = object(runtimes[runtimeId]);
+      abortGb = Math.max(abortGb, num(status.memorySafetyAbort?.consumedGb) ?? 0);
+      if (status.memorySafetyLatched === true && !latched.includes(nodeId)) latched.push(nodeId);
+    }
+  }
+  return { abortGb: abortGb ? round(abortGb) : null, latched };
+}
+
 function memberRuntimeIds(runtime, runtimeId) {
   const members = runtime?.placement?.mode === 'distributed' ? (runtime.placement.members ?? []) : [];
   return members.length ? members.map((member) => member.runtime).filter(Boolean) : [runtimeId];
@@ -210,7 +227,9 @@ function configVariants(config, { nodeStatuses, env }) {
       const nodes = Object.keys(resources).sort();
       if (!nodes.length) continue;
       const configuredGb = Math.max(0, ...nodes.map((nodeId) => resources[nodeId].memoryGb));
-      const measuredGb = measuredMemoryGb(nodeStatuses, nodes, memberRuntimeIds(runtime, model.runtime));
+      const runtimeIds = memberRuntimeIds(runtime, model.runtime);
+      const measuredGb = measuredMemoryGb(nodeStatuses, nodes, runtimeIds);
+      const safety = memorySafetyEvidence(nodeStatuses, nodes, runtimeIds);
       variants.push({
         ...base,
         id: `${model.id}@${nodes.join('+')}`,
@@ -219,13 +238,16 @@ function configVariants(config, { nodeStatuses, env }) {
         nodes,
         requirements: compact({
           nodeCount: nodes.length,
-          memoryGbPerNode: Math.max(configuredGb, measuredGb ?? 0) || null,
+          memoryGbPerNode: Math.max(configuredGb, measuredGb ?? 0, safety.abortGb ?? 0) || null,
           contextWindow: num(model.contextWindow ?? runtime.contextWindow),
           maxSequences: num(runtime.maxActiveRequests),
           recipeId: runtime.recipe?.id ?? null,
           images: runtime.bootstrap?.image ? [runtime.bootstrap.image] : null
         }),
-        ...(measuredGb ? { measured: { memoryGbPerNode: measuredGb, source: 'live-rss' } } : {})
+        ...(measuredGb ? { measured: { memoryGbPerNode: measuredGb, source: 'live-rss' } } : {}),
+        ...(safety.latched.length
+          ? { excludeNodes: safety.latched, excludeReason: 'memory safety abort; start it by hand to retry' }
+          : {})
       });
       continue;
     }

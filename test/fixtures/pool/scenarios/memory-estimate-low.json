@@ -1,13 +1,34 @@
 {
   "base": "spark-fleet-base.json",
   "name": "memory-estimate-low",
-  "description": "The video lane's configured memory estimate (48 GB) is well below what it really uses (74 GB). Video requests arrive while spark-node-03 also holds its resident set. The memory guard must abort the load before the node runs out of unified memory; nothing may hang.",
+  "description": "The video lane's configured memory estimate (48 GB) is well below what it really uses (74 GB). Video requests arrive while spark-node-03 also holds its resident set. The memory guard must abort the load before the node runs out of unified memory, nothing may hang, and the lane must not be retried automatically: LLooM latches it until a manual start, and the pool planner learns the aborted load's lower-bound footprint and plans video as unavailable.",
   "durationHours": 6,
   "variants": [
-    { "id": "Wan-AI/Wan2.2-TI2V-5B-Diffusers@spark-node-03", "sim": { "memoryGbPerNode": 74, "loadSeconds": 180 } }
+    {
+      "id": "Wan-AI/Wan2.2-TI2V-5B-Diffusers@spark-node-03",
+      "sim": {
+        "memoryGbPerNode": 74,
+        "loadSeconds": 180
+      }
+    }
   ],
-  "workloads": [{ "id": "video", "demand": { "perHour": 2, "diurnal": null } }],
+  "workloads": [
+    {
+      "id": "video",
+      "demand": {
+        "perHour": 2,
+        "diurnal": null
+      }
+    }
+  ],
   "expect": {
-    "all": { "safety.memoryViolations.length": { "max": 0 } }
+    "all": {
+      "safety.memoryViolations.length": {
+        "max": 0
+      },
+      "lanes.guardAborts": {
+        "max": 1
+      }
+    }
   }
 }

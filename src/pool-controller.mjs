@@ -125,13 +125,22 @@ export function decide({ plan, stay, reconcile, state, policy, now }) {
 }
 
 /**
+ * timer(ms): optional promise-returning delay for step timeouts (a simulated
+ *   clock passes its own).
  * observe(): Promise<{ nodes, variants, workloads, pins, policy, current }>
  *   current = { routes, residency, running: [placement keys],
  *               placements: [{ key, models, runtime, nodes, memoryGbPerNode, managed, state }],
  *               missingWeights: { placementKey: true } }
  * actuator: see executeReconcile().
  */
-export function createPoolController({ observe, actuator, policy = {}, now = Date.now, onEvent = () => {} } = {}) {
+export function createPoolController({
+  observe,
+  actuator,
+  policy = {},
+  now = Date.now,
+  timer,
+  onEvent = () => {}
+} = {}) {
   const controllerPolicy = normalizeControllerPolicy(policy);
   const state = {
     signature: null,
@@ -190,6 +199,7 @@ export function createPoolController({ observe, actuator, policy = {}, now = Dat
     state.loads = state.loads.filter((load) => at - load.at < 3600000);
     state.executing = executeReconcile(reconcile.steps, actuator, {
       concurrency: controllerPolicy.concurrency,
+      ...(timer ? { timer } : {}),
       onStep: ({ step, status, error }) => {
         onEvent({ at: now(), action: 'step', step: step.id, status, ...(error ? { error } : {}) });
         if (status === 'failed' && (step.type === 'start' || step.type === 'manual-start')) {

@@ -197,3 +197,12 @@ test('mac joins: weights are prefetched, cognition moves without dropping a requ
   assert.equal(auto.requests.failed, 0);
   assert.ok(!auto.final.lanes.includes('qwen38-27b-nvfp4@spark-node-03'));
 });
+
+test('admission that keeps the memory guard margin free ends the abort-and-latch cycle', async () => {
+  const scenario = await loadPoolScenario(`${SCENARIOS}pair-crash.json`);
+  const legacy = await runPoolSimulation({ ...scenario, legacyAdmission: true }, { mode: 'off' });
+  const fixed = await runPoolSimulation(scenario, { mode: 'off' });
+  assert.ok(legacy.lanes.guardAborts > 0, 'legacy admission lets in loads the guard then aborts');
+  assert.equal(fixed.lanes.guardAborts, 0);
+  assert.ok(fixed.requests.failed < legacy.requests.failed);
+});

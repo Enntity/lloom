@@ -21,6 +21,7 @@
 
 import { createPoolController } from './pool-controller.mjs';
 import { memoryBudgetGb } from './resource-fit.mjs';
+import { memorySafetyCeiling } from './runtime-memory-safety.mjs';
 
 export const POOL_SIM_VERSION = 1;
 
@@ -155,7 +156,11 @@ export async function runPoolSimulation(scenario, { mode = 'auto', controller: c
   const demandWindowMs = (num(scenario.demandWindowHours) ?? 24) * HOUR;
   const operator = scenario.operator ?? {};
   const memoryGuard = scenario.memoryGuard ?? {};
-  const guardUtilization = num(memoryGuard.maxMemoryUtilization) ?? 0.9;
+  const guardUtilization =
+    memorySafetyCeiling({
+      maxMemoryUtilization: num(policy.maxMemoryUtilization) ?? undefined,
+      memorySafety: { maxMemoryUtilization: num(memoryGuard.maxMemoryUtilization) ?? undefined }
+    }) ?? 1;
   const osGb = num(scenario.osMemoryGb) ?? 4;
   let now = 0;
 
@@ -177,7 +182,8 @@ export async function runPoolSimulation(scenario, { mode = 'auto', controller: c
       stepFailures: 0,
       interruptions: 0,
       firstProposal: null,
-      decisions: []
+      decisions: [],
+      holds: []
     },
     timeline: []
   };
@@ -214,6 +220,7 @@ export async function runPoolSimulation(scenario, { mode = 'auto', controller: c
   const served = new Map();
   const arrivals = new Map(workloads.map((workload) => [workload.id, []]));
   const flexiblePlacements = new Map();
+  const latched = new Set();
 
   const truth = (variant) => variant.sim ?? {};
   const memoryTruth = (variant) =>
@@ -234,6 +241,15 @@ export async function runPoolSimulation(scenario, { mode = 'auto', controller: c
       maxMemoryUtilization: num(nodes.get(id)?.spec.maxMemoryUtilization) ?? num(policy.maxMemoryUtilization),
       reserveMemoryGb: num(policy.reserveGb) ?? 8
     });
+  // Admission's host check keeps this much free after a load. Legacy admission
+  // kept only the reserve, below the guard's margin, so it could admit loads
+  // the guard was certain to abort.
+  const hostReserve = (id) => {
+    const reserve = num(policy.reserveGb) ?? 8;
+    if (scenario.legacyAdmission === true || memoryGuard.enabled === false) return reserve;
+    return Math.max(reserve, capacity(id) * (1 - guardUtilization));
+  };
+  const admissionLimit = (id) => Math.min(budget(id), capacity(id) - osGb - hostReserve(id));
   const lanesOn = (id) => [...lanes.values()].filter((lane) => lane.nodes.includes(id));
   const usedTruth = (id) => lanesOn(id).reduce((sum, lane) => sum + lane.memoryGb, 0);
   const laneModels = (variant, laneNodes) =>
@@ -314,8 +330,9 @@ export async function runPoolSimulation(scenario, { mode = 'auto', controller: c
   }
 
   function removeLane(lane, reason) {
-    if (!lanes.has(lane.key) || lanes.get(lane.key) !== lane) return;
-    lanes.delete(lane.key);
+    if (lane.removed) return;
+    lane.removed = true;
+    if (lanes.get(lane.key) === lane) lanes.delete(lane.key);
     report.lanes.stops += reason === 'evicted' || reason === 'drained' || reason === 'stopped' ? 1 : 0;
     timeline('lane-stop', { lane: lane.key, reason });
     for (const resolve of lane.onRemoved.splice(0)) resolve();
@@ -343,7 +360,7 @@ export async function runPoolSimulation(scenario, { mode = 'auto', controller: c
     for (const id of laneNodes) {
       let used =
         usedTruth(id) - evictions.filter((lane) => lane.nodes.includes(id)).reduce((s, l) => s + l.memoryGb, 0);
-      if (used + need <= budget(id)) continue;
+      if (used + need <= admissionLimit(id)) continue;
       if (!evict) return null;
       const idle = lanesOn(id)
         .filter(
@@ -352,11 +369,11 @@ export async function runPoolSimulation(scenario, { mode = 'auto', controller: c
         .filter((lane) => RESIDENCY_RANK[tierOf(lane)] <= protect)
         .sort((a, b) => RESIDENCY_RANK[tierOf(a)] - RESIDENCY_RANK[tierOf(b)] || a.lastUsedAt - b.lastUsedAt);
       for (const lane of idle) {
-        if (used + need <= budget(id)) break;
+        if (used + need <= admissionLimit(id)) break;
         evictions.push(lane);
         used -= lane.memoryGb;
       }
-      if (used + need > budget(id)) return null;
+      if (used + need > admissionLimit(id)) return null;
     }
     return evictions;
   }
@@ -364,8 +381,14 @@ export async function runPoolSimulation(scenario, { mode = 'auto', controller: c
   function startLane(variant, laneNodes, { reason, protect = 1, fetch = true, background = false } = {}) {
     const key = placementKey(variant, laneNodes);
     const existing = lanes.get(key);
-    if (existing && existing.state !== 'draining') return existing;
+    // A lane being retired is not restarted under it; requests go elsewhere.
+    if (existing) return existing.state === 'draining' ? null : existing;
     if (!laneNodes.every(nodeUsable)) return null;
+    // After a memory-safety abort LLooM refuses automatic restarts until a
+    // manual start (runtime-manager memorySafetyFailures).
+    const manual = reason === 'operator';
+    if (latched.has(variant.id) && !manual) return null;
+    latched.delete(variant.id);
     const evictions = admit(variant, laneNodes, { protect });
     if (!evictions) {
       // The residency reconciler retries every 30 s; only count refusals someone waits on.
@@ -402,10 +425,15 @@ export async function runPoolSimulation(scenario, { mode = 'auto', controller: c
     const guarded = variant.managed !== false && memoryGuard.enabled !== false;
     const overGuard = laneNodes.find((id) => usedTruth(id) + osGb > capacity(id) * guardUtilization);
     if (guarded && overGuard) {
+      // The load had taken this much when host use crossed the ceiling: a
+      // lower bound on its footprint, which the catalog learns.
+      const consumedGb = Math.max(0, capacity(overGuard) * guardUtilization - (usedTruth(overGuard) - memoryGb + osGb));
       queue.push(now + seconds * 500, () => {
         if (lanes.get(key) !== lane || lane.state !== 'loading') return;
         report.lanes.guardAborts += 1;
         report.lanes.startFailures += 1;
+        latched.add(variant.id);
+        learnedMemory.set(variant.id, Math.max(learnedMemory.get(variant.id) ?? 0, round(consumedGb, 1)));
         timeline('memory-guard-abort', { lane: key, node: overGuard, usedGb: round(usedTruth(overGuard) + osGb, 1) });
         killLane(lane, 'memory safety abort');
       });
@@ -608,6 +636,13 @@ export async function runPoolSimulation(scenario, { mode = 'auto', controller: c
         const mean = samples.reduce((sum, value) => sum + value, 0) / samples.length;
         next = { ...next, performance: { ...next.performance, ttftMs: Math.round(mean), source: 'observed' } };
       }
+      if (latched.has(variant.id)) {
+        next = {
+          ...next,
+          excludeNodes: knownPlacement(variant) ?? [],
+          excludeReason: 'memory safety abort; start it by hand to retry'
+        };
+      }
       const { sim: _sim, ...plannerVariant } = next;
       return plannerVariant;
     });
@@ -759,12 +794,21 @@ export async function runPoolSimulation(scenario, { mode = 'auto', controller: c
           observe: async () => observe(),
           actuator,
           now: () => now,
+          timer: (ms) => new Promise((resolve) => queue.push(now + ms, resolve)),
           policy: {
             ...(scenario.controller ?? {}),
             ...controllerOverrides,
             mode: mode === 'advise' ? 'advise' : 'auto'
           },
           onEvent: (entry) => {
+            // Each change in why the controller is holding, so a run explains itself.
+            if ((entry.action === 'hold' && entry.reason !== 'no changes') || entry.action === 'busy') {
+              const reason = (entry.reason ?? 'still applying the last change').replace(/\(\d+\/\d+\)|[\d.]+%/g, '#');
+              const holds = report.controller.holds;
+              if (holds.at(-1)?.reason !== reason && holds.length < 200) {
+                holds.push({ atMinutes: round(entry.at / MINUTE, 2), reason });
+              }
+            }
             if (entry.action === 'apply' || entry.action === 'propose') {
               if (entry.action === 'propose') report.controller.proposals += 1;
               else report.controller.applies += 1;

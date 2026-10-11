@@ -328,9 +328,32 @@ export function planReconcile({ plan, current = {}, workloads = [], variants = [
  * actuator: { prefetch(step), start(step), stop(step), route(step), residency(step), manual(step) }
  * Every method returns a promise that settles when the step is done (a start
  * when the lane is ready, a stop when it has drained). Manual steps resolve
- * when the actuator observes the operator's change or rejects on timeout.
+ * when the actuator observes the operator's change. A step that does not
+ * settle within its timeout fails, so one stuck step cannot hold the
+ * controller forever; `timer(ms)` is injectable for simulated clocks.
  */
-export async function executeReconcile(steps, actuator, { concurrency = 4, onStep = () => {} } = {}) {
+export const DEFAULT_STEP_TIMEOUTS_MS = Object.freeze({
+  prefetch: 4 * 60 * 60 * 1000,
+  start: 45 * 60 * 1000,
+  stop: 20 * 60 * 1000,
+  route: 60 * 1000,
+  'interim-route': 60 * 1000,
+  residency: 60 * 1000,
+  'manual-start': 2 * 60 * 60 * 1000,
+  'manual-stop': 2 * 60 * 60 * 1000
+});
+
+const defaultTimer = (ms) =>
+  new Promise((resolve) => {
+    const handle = setTimeout(resolve, ms);
+    handle.unref?.();
+  });
+
+export async function executeReconcile(
+  steps,
+  actuator,
+  { concurrency = 4, onStep = () => {}, timeoutsMs = {}, timer = defaultTimer } = {}
+) {
   const status = new Map(steps.map((step) => [step.id, 'pending']));
   const errors = {};
   const byId = new Map(steps.map((step) => [step.id, step]));
@@ -368,8 +391,12 @@ export async function executeReconcile(steps, actuator, { concurrency = 4, onSte
         status.set(step.id, 'running');
         running.add(step.id);
         onStep({ step, status: 'running' });
-        Promise.resolve()
-          .then(() => actuator[method(step.type)](step))
+        const limitMs = timeoutsMs[step.type] ?? DEFAULT_STEP_TIMEOUTS_MS[step.type];
+        const timedOut = timer(limitMs).then(() => {
+          throw new Error(`${step.type} timed out after ${Math.round(limitMs / 1000)} s`);
+        });
+        timedOut.catch(() => {});
+        Promise.race([Promise.resolve().then(() => actuator[method(step.type)](step)), timedOut])
           .then(
             () => {
               status.set(step.id, 'done');

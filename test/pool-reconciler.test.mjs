@@ -258,3 +258,30 @@ test('make-before-break: a start that fits runs before the old lane stops', asyn
   assert.ok(at('route') < at('manual-stop'));
   assert.equal(order.length, steps.length);
 });
+
+test('a step that never settles times out, fails, and skips its dependents', async () => {
+  const { steps } = swap({ candidates: ['B', 'A', 'cloud'] });
+  const pending = [];
+  const timer = (ms) => new Promise((resolve) => pending.push({ ms, resolve }));
+  const done = async () => {};
+  const actuator = {
+    prefetch: done,
+    start: () => new Promise(() => {}),
+    stop: done,
+    route: done,
+    residency: done,
+    manual: done
+  };
+  const running = executeReconcile(steps, actuator, { timer, timeoutsMs: { start: 5000 } });
+  // Fire timers until the run settles; only the hung start's timer matters.
+  let result;
+  running.then((value) => (result = value));
+  for (let round = 0; round < 50 && !result; round += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+    for (const entry of pending.splice(0)) if (entry.ms === 5000) entry.resolve();
+  }
+  const start = steps.find((step) => step.type === 'start');
+  assert.equal(result.status[start.id], 'failed');
+  assert.match(result.errors[start.id], /start timed out after 5 s/);
+  assert.equal(result.status[steps.find((step) => step.type === 'route').id], 'skipped');
+});

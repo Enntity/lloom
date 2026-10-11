@@ -144,7 +144,7 @@ function variantMemoryGb(variant) {
 function nodeIneligibility(variant, node) {
   if (node.cordoned) return 'cordoned';
   if (node.available === false) return 'unavailable';
-  if (list(variant.excludeNodes).includes(node.id)) return 'excluded after a failed start';
+  if (list(variant.excludeNodes).includes(node.id)) return variant.excludeReason ?? 'excluded after a failed start';
   const requirements = variant.requirements ?? {};
   const platforms = list(requirements.platforms);
   if (platforms.length && !platforms.includes(node.platformId)) return `needs platform ${platforms.join('|')}`;

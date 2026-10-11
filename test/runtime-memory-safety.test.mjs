@@ -324,6 +324,14 @@ default: process.exit(4);
   );
   await assert.rejects(manager.start('demo'), (e) => e.code === 'runtime_memory_safety_abort');
   assert.equal(await fs.readFile(killed, 'utf8'), 'killed');
+  // The abort is recorded with how much host memory the load had taken, a
+  // lower bound on its real footprint that pool planning uses, and the
+  // runtime stays latched until a manual start.
+  const status = (await manager.status()).runtimes.demo;
+  assert.equal(status.memorySafetyLatched, true);
+  assert.equal(status.memorySafetyAbort.consumedGb, 57);
+  assert.equal(status.memorySafetyAbort.usedGb, 93);
+  assert.ok(Date.parse(status.memorySafetyAbort.at));
 });
 
 test('supervisor preflight rejection cannot race an immediate health success', async (t) => {

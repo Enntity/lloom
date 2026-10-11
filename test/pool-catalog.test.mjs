@@ -236,6 +236,39 @@ test('the catalog groups installed lanes, recipes and evidence by model', () => 
   );
 });
 
+test('a memory-safety abort raises the footprint to its lower bound and latches the lane out of the plan', () => {
+  const statuses = fleetStatuses();
+  statuses['spark-node-03'].runtimeManager.runtimes['qwen38-27b-nvfp4'] = {
+    status: 'failed',
+    memorySafetyLatched: true,
+    memorySafetyAbort: { at: '2026-10-11T00:00:00.000Z', usedGb: 115, consumedGb: 61 }
+  };
+  const catalog = buildPoolCatalog({
+    config: fleetConfig(),
+    recipes: [],
+    benchmarks: [],
+    metrics,
+    nodeStatuses: statuses
+  });
+  const q27 = catalog.variants.find((variant) => variant.id === 'qwen38-27b-nvfp4@spark-node-03');
+  assert.equal(q27.requirements.memoryGbPerNode, 61, 'the aborted load needed at least 61 GB');
+  assert.deepEqual(q27.excludeNodes, ['spark-node-03']);
+  assert.match(q27.excludeReason, /memory safety abort/);
+
+  // Once someone retries it by hand the latch clears, but the evidence stays.
+  statuses['spark-node-03'].runtimeManager.runtimes['qwen38-27b-nvfp4'].memorySafetyLatched = false;
+  const retried = buildPoolCatalog({
+    config: fleetConfig(),
+    recipes: [],
+    benchmarks: [],
+    metrics,
+    nodeStatuses: statuses
+  });
+  const after = retried.variants.find((variant) => variant.id === 'qwen38-27b-nvfp4@spark-node-03');
+  assert.equal(after.requirements.memoryGbPerNode, 61);
+  assert.equal(after.excludeNodes, undefined);
+});
+
 test('workloads come from alias routes, pool overrides and observed demand', () => {
   const workloads = Object.fromEntries(
     poolWorkloadsFromConfig(fleetConfig(), { metrics }).map((workload) => [workload.id, workload])
