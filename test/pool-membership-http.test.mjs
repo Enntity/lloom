@@ -21,13 +21,13 @@ async function tempDir(t) {
   return dir;
 }
 
-async function startHead(t, { dir, pool, serverOptions = {} } = {}) {
+async function startHead(t, { dir, pool, clusterNodes, serverOptions = {} } = {}) {
   dir ??= await tempDir(t);
   const configPath = path.join(dir, 'config.json');
   const raw = {
     server: { host: '127.0.0.1', port: 0 },
     security: { adminApiKeys: [ADMIN], apiKeys: [INFERENCE] },
-    cluster: { nodeId: 'head' },
+    cluster: { nodeId: 'head', ...(clusterNodes ? { nodes: clusterNodes } : {}) },
     ...(pool ? { pool } : {}),
     backends: {},
     models: []
@@ -210,16 +210,74 @@ test('enrollment attempts are rate limited per client', async (t) => {
   assert.equal(statuses.at(-1), 429);
 });
 
+const SECRET_SHAPED = 'lps_' + 'A'.repeat(43);
+
 test('oversized and malformed pool bodies are rejected', async (t) => {
   const head = await startHead(t);
   const huge = await fetch(head.base + '/gateway/pool/heartbeat', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${SECRET_SHAPED}` },
     body: JSON.stringify({ nodeId: 'x', inventory: { padding: 'x'.repeat(2 * 1024 * 1024) } })
   });
   assert.equal(huge.status, 413);
-  const malformed = await fetch(head.base + '/gateway/pool/heartbeat', { method: 'POST', body: '{' });
+  const malformed = await fetch(head.base + '/gateway/pool/heartbeat', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${SECRET_SHAPED}` },
+    body: '{'
+  });
   assert.equal(malformed.status, 400);
+});
+
+test('heartbeats without a secret-shaped bearer are refused before the body is read, and are rate limited', async (t) => {
+  const head = await startHead(t);
+  const unauthenticated = await fetch(head.base + '/gateway/pool/heartbeat', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ nodeId: 'x', inventory: { padding: 'x'.repeat(2 * 1024 * 1024) } })
+  });
+  assert.equal(unauthenticated.status, 401, 'no 413: the body was never buffered');
+  const statuses = [];
+  for (let index = 0; index < 70; index += 1) {
+    statuses.push((await head.call('/gateway/pool/heartbeat', { key: SECRET_SHAPED, body: { nodeId: 'x' } })).status);
+  }
+  assert.ok(statuses.slice(0, 30).every((status) => status === 401));
+  assert.equal(statuses.at(-1), 429);
+});
+
+test('configured node ids and enrolled nodes cannot be claimed by an unbound token; leave frees an id', async (t) => {
+  const head = await startHead(t, { pool: {}, clusterNodes: { head: {}, peer: { endpoint: 'http://peer:8100' } } });
+  const configured = await head.call('/gateway/pool/tokens', { key: ADMIN, body: { uses: 2 } });
+  const claimPeer = await head.call('/gateway/pool/enroll', {
+    key: configured.json.token,
+    body: { nodeId: 'peer', endpoint: 'http://x:8100' }
+  });
+  assert.equal(claimPeer.status, 409, 'a configured cluster peer needs a token bound to it');
+  const first = await head.call('/gateway/pool/enroll', {
+    key: configured.json.token,
+    body: { nodeId: 'n1', endpoint: 'http://n1:8100' }
+  });
+  assert.equal(first.status, 200);
+  const other = await head.call('/gateway/pool/tokens', { key: ADMIN, body: {} });
+  const takeover = await head.call('/gateway/pool/enroll', {
+    key: other.json.token,
+    body: { nodeId: 'n1', endpoint: 'http://evil:1' }
+  });
+  assert.equal(takeover.status, 409);
+  assert.equal(takeover.json.error.code, 'pool_node_conflict');
+  const bound = await head.call('/gateway/pool/tokens', { key: ADMIN, body: { nodeId: 'n1' } });
+  assert.equal(bound.json.nodeId, 'n1');
+  const rotated = await head.call('/gateway/pool/enroll', {
+    key: bound.json.token,
+    body: { nodeId: 'n1', endpoint: 'http://n1:8100' }
+  });
+  assert.equal(rotated.status, 200);
+  const left = await head.call('/gateway/pool/nodes/n1/leave', { key: ADMIN, body: {} });
+  assert.equal(left.json.member.state, 'left');
+  const rejoin = await head.call('/gateway/pool/enroll', {
+    key: other.json.token,
+    body: { nodeId: 'n1', endpoint: 'http://n1:8100' }
+  });
+  assert.equal(rejoin.status, 200, 'a node that left may join again with any token');
 });
 
 test('a node with pool.head heartbeats to the head from serve', async (t) => {

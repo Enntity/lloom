@@ -18,9 +18,9 @@ import { loadRecipes } from './recipes.mjs';
 export const POOL_USAGE = [
   'Usage: lloom pool plan [--cordon NODE[,NODE]] [--pin ALIAS=MODEL] [--profile NAME] [--consider-installs] ' +
     '[--headroom-gb N] [--churn-weight N] [--external fallback|allow|never] [--offline] [--json]',
-  '       lloom pool token create [--ttl DURATION] [--uses N] [--label KEY=VALUE] [--json]',
+  '       lloom pool token create [--node-id ID] [--ttl DURATION] [--uses N] [--label KEY=VALUE] [--json]',
   '       lloom pool members [--json]',
-  '       lloom pool cordon|uncordon|drain <node> [--reason TEXT]',
+  '       lloom pool cordon|uncordon|drain|leave <node> [--reason TEXT]',
   '       lloom pool join <head-url> --token-stdin [--node-id ID] [--endpoint URL] [--apply --yes]',
   '       lloom pool simulate <scenario.json> [--mode off|advise|auto|compare] [--hours N] [--seed N] [--json]'
 ].join('\n');
@@ -39,8 +39,9 @@ export function parseDurationMs(value) {
   return Math.round(ms);
 }
 
-export function poolTokenOptions({ ttl, uses, labels = [] } = {}) {
+export function poolTokenOptions({ ttl, uses, labels = [], nodeId } = {}) {
   const options = {};
+  if (nodeId != null) options.nodeId = String(nodeId);
   if (ttl != null) options.ttlMs = parseDurationMs(ttl);
   if (uses != null) {
     if (!/^\d+$/.test(String(uses))) throw new Error('--uses must be a positive integer');

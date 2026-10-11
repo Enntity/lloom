@@ -171,17 +171,30 @@ test('token labels win over node-supplied labels', () => {
   assert.deepEqual(member(membership, 'a').labels, { role: 'gpu', zone: 'x' });
 });
 
-test('re-enrolling needs a new token and rotates the secret', () => {
+test('re-enrolling a live node needs a token issued for that node, and rotates the secret', () => {
   const { membership, nodeSecret } = enrolled();
   const reuse = membership.issueEnrollmentToken({ uses: 3 });
   const first = membership.enroll({ token: reuse.token, nodeId: 'spark-node-02', endpoint: 'http://b:8100' });
   assert.throws(
     () => membership.enroll({ token: reuse.token, nodeId: 'spark-node-02', endpoint: 'http://b:8100' }),
-    (error) => error.statusCode === 401 && error.code === 'invalid_enrollment_token',
-    'the token that enrolled a node cannot re-enroll it'
+    (error) => error.statusCode === 409 && error.code === 'pool_node_conflict',
+    'an enrolled node cannot be claimed again by an unbound token'
+  );
+  // Another node's (unbound) token cannot take over spark-node-01.
+  const other = membership.issueEnrollmentToken({ labels: { role: 'mac' } });
+  assert.throws(
+    () => membership.enroll({ token: other.token, nodeId: 'spark-node-01', endpoint: 'http://evil:1' }),
+    (error) => error.statusCode === 409 && error.code === 'pool_node_conflict'
+  );
+  assert.equal(membership.heartbeat({ nodeId: 'spark-node-01', nodeSecret }).ok, true, 'the real node is untouched');
+  // A token bound to another id cannot enroll this one.
+  const boundElsewhere = membership.issueEnrollmentToken({ nodeId: 'spark-node-09' });
+  assert.throws(
+    () => membership.enroll({ token: boundElsewhere.token, nodeId: 'spark-node-03', endpoint: 'http://c:8100' }),
+    (error) => error.statusCode === 401 && error.code === 'invalid_enrollment_token'
   );
   membership.cordon('spark-node-01', { reason: 'maintenance' });
-  const { token } = membership.issueEnrollmentToken({});
+  const { token } = membership.issueEnrollmentToken({ nodeId: 'spark-node-01' });
   const rotated = membership.enroll({ token, nodeId: 'spark-node-01', endpoint: 'http://10.0.0.9:8100' });
   assert.notEqual(rotated.nodeSecret, nodeSecret);
   assert.throws(() => membership.heartbeat({ nodeId: 'spark-node-01', nodeSecret }), /credential/);
@@ -195,6 +208,50 @@ test('re-enrolling needs a new token and rotates the secret', () => {
     true,
     'other nodes keep their secrets'
   );
+});
+
+test('protected (configured) node ids need a token bound to them; a node that left may re-enroll', () => {
+  const membership = createPoolMembership({ now: clock() });
+  const unbound = membership.issueEnrollmentToken({ uses: 2 });
+  assert.throws(
+    () =>
+      membership.enroll({
+        token: unbound.token,
+        nodeId: 'spark-node-03',
+        endpoint: 'http://x:8100',
+        protectedNodeIds: ['spark-node-03']
+      }),
+    (error) => error.statusCode === 409 && error.code === 'pool_node_conflict'
+  );
+  const bound = membership.issueEnrollmentToken({ nodeId: 'spark-node-03' });
+  assert.equal(
+    membership.enroll({
+      token: bound.token,
+      nodeId: 'spark-node-03',
+      endpoint: 'http://x:8100',
+      protectedNodeIds: ['spark-node-03']
+    }).nodeId,
+    'spark-node-03'
+  );
+  membership.enroll({ token: unbound.token, nodeId: 'mac', endpoint: 'http://mac:8100' });
+  membership.leave('mac');
+  const again = membership.issueEnrollmentToken({});
+  assert.equal(membership.enroll({ token: again.token, nodeId: 'mac', endpoint: 'http://mac:8100' }).nodeId, 'mac');
+});
+
+test('node-reported text with control characters is dropped', () => {
+  const membership = createPoolMembership({ now: clock() });
+  const { token } = membership.issueEnrollmentToken({});
+  const { nodeSecret } = membership.enroll({ token, nodeId: 'n', endpoint: 'http://n:8100' });
+  membership.heartbeat({
+    nodeId: 'n',
+    nodeSecret,
+    running: ['ok-lane', 'bad\u001b[2Jlane'],
+    inventory: { computeArchs: ['sm_121', '\u001b]0;pwned\u0007'] }
+  });
+  const entry = membership.members()[0];
+  assert.deepEqual(entry.running, ['ok-lane']);
+  assert.deepEqual(entry.inventory.computeArchs, ['sm_121']);
 });
 
 test('cordon, drain, uncordon and leave', () => {

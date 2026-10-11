@@ -91,12 +91,20 @@ lloom pool members                               # state, lease age, inventory, 
 lloom pool cordon spark-node-02 --reason "disk swap"
 lloom pool drain spark-node-02 --reason rebalance
 lloom pool uncordon spark-node-02
+lloom pool leave spark-node-02                   # decommission; the id may enroll again
+lloom pool token create --node-id spark-node-02  # re-enroll a node that is still a member
 
 # on the joining node (token on stdin, never in argv)
 lloom pool join http://head-private:8100 --token-stdin --endpoint http://10.10.10.2:8100 --apply --yes
 ```
 
-**Enrollment.** `POST /gateway/pool/enroll` takes the token as a bearer credential and the node's `nodeId`, `endpoint` and optional `labels`. It returns a node secret and the lease length. A token expires (default one hour) and has a use count (default one). Labels set on the token override labels the node sends. Enrolling an existing node id again needs a different token, and rotates the node's secret. It keeps any cordon or drain, so a node cannot re-enroll its way out of one. A node cannot enroll with the head's own node id. Attempts are rate limited per client address.
+**Enrollment.** `POST /gateway/pool/enroll` takes the token as a bearer credential and the node's `nodeId`, `endpoint` and optional `labels`. It returns a node secret and the lease length. A token expires (default one hour) and has a use count (default one). Labels set on the token override labels the node sends. A token issued with `--node-id` enrolls only that node.
+
+A token can claim an id that is a current member, or a node configured in `cluster.nodes`, only if it was issued for that id. Otherwise the head answers 409. This means no other node's token can take over a node's liveness, endpoint or reported capacity.
+
+Re-enrolling rotates the node's secret and keeps any cordon or drain, so a node cannot re-enroll its way out of one. After `lloom pool leave`, the id is free again. A node cannot enroll with the head's own node id.
+
+Enrollment attempts are rate limited per client address. Heartbeats are rate limited per address too, and are refused before the body is read unless the bearer has the node-secret format. Node-reported text that contains control characters is dropped. `join` warns when the head URL is plain HTTP and the host is neither loopback nor a tailnet address.
 
 `lloom pool join` stores the secret in `pool-node-secret` (mode 0600) next to the node's config and sets:
 

@@ -376,5 +376,15 @@ test('the CLI issues tokens, joins a node, lists members and cordons', async (t)
 
   const usage = await runCli(['pool', 'cordon', ...head], env);
   assert.notEqual(usage.code, 0);
-  assert.match(usage.stderr, /lloom pool cordon\|uncordon\|drain <node>/);
+  assert.match(usage.stderr, /lloom pool cordon\|uncordon\|drain\|leave <node>/);
+});
+
+test('token options bind a node id; joins warn about cleartext credentials off loopback and tailnets', async () => {
+  assert.deepEqual(poolTokenOptions({ nodeId: 'spark-node-01' }), { nodeId: 'spark-node-01' });
+  const { cleartextWarning } = await import('../src/pool-node.mjs');
+  assert.equal(cleartextWarning('http://127.0.0.1:8100'), null);
+  assert.equal(cleartextWarning('http://100.119.155.43:8100'), null, 'tailnet CGNAT range');
+  assert.equal(cleartextWarning('http://head.example.ts.net:8100'), null);
+  assert.equal(cleartextWarning('https://head.example.com'), null);
+  assert.match(cleartextWarning('http://192.168.1.20:8100'), /plain HTTP/);
 });

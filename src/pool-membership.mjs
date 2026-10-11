@@ -76,17 +76,18 @@ function normalizeLabels(labels) {
 
 const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
 const finite = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
-const strings = (value) =>
-  (Array.isArray(value) ? value : [])
-    .filter((item) => typeof item === 'string' && item && item.length <= MAX_TEXT)
-    .slice(0, MAX_LIST);
+// Node-reported text reaches admin terminals; control characters (escape
+// sequences) are dropped rather than printed.
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+const cleanText = (item) => typeof item === 'string' && item && item.length <= MAX_TEXT && !CONTROL.test(item);
+const strings = (value) => (Array.isArray(value) ? value : []).filter(cleanText).slice(0, MAX_LIST);
 const objects = (value, map) =>
   (Array.isArray(value) ? value : [])
     .slice(0, MAX_LIST)
     .map((item) => (isObject(item) || typeof item === 'string' ? map(item) : null))
     .filter(Boolean);
 const compact = (value) => Object.fromEntries(Object.entries(value).filter(([, entry]) => entry != null));
-const pickText = (value) => (typeof value === 'string' && value.length <= MAX_TEXT ? value : null);
+const pickText = (value) => (cleanText(value) ? value : null);
 
 // A node reports its own inventory, so keep only the fields the planner reads,
 // with the types it expects (see collectNodeInventory in pool-inventory.mjs).
@@ -255,9 +256,12 @@ export function createPoolMembership({ leaseMs = 30000, lostAfterMs = 3 * leaseM
     leaseMs,
     lostAfterMs,
 
-    issueEnrollmentToken({ ttlMs = 3600000, uses = 1, labels = {} } = {}) {
+    // A token bound to `nodeId` enrolls only that node, and is the only way to
+    // re-enroll a node that is enrolled (or configured on the head).
+    issueEnrollmentToken({ ttlMs = 3600000, uses = 1, labels = {}, nodeId = null } = {}) {
       positiveInteger(ttlMs, 'ttlMs', MAX_TOKEN_TTL_MS);
       positiveInteger(uses, 'uses', MAX_TOKEN_USES);
+      if (nodeId != null && !validNodeId(nodeId)) throw invalid('Invalid node identity');
       const tokenLabels = normalizeLabels(labels);
       const at = now();
       for (const [id, token] of tokens) if (!liveToken(token, at)) tokens.delete(id);
@@ -266,21 +270,42 @@ export function createPoolMembership({ leaseMs = 30000, lostAfterMs = 3 * leaseM
       while (tokens.has(id));
       const token = `lpt_${id}_${randomBytes(32).toString('base64url')}`;
       const expiresAt = iso(at + ttlMs);
-      tokens.set(id, { id, hash: sha256(token), createdAt: iso(at), expiresAt, uses, used: 0, labels: tokenLabels });
-      return { token, id, expiresAt };
+      tokens.set(id, {
+        id,
+        hash: sha256(token),
+        createdAt: iso(at),
+        expiresAt,
+        uses,
+        used: 0,
+        labels: tokenLabels,
+        ...(nodeId ? { nodeId } : {})
+      });
+      return { token, id, expiresAt, ...(nodeId ? { nodeId } : {}) };
     },
 
-    enroll({ token, nodeId, endpoint, inventory, labels } = {}) {
+    enroll({ token, nodeId, endpoint, inventory, labels, protectedNodeIds = [] } = {}) {
       const at = now();
       const match = typeof token === 'string' ? token.match(TOKEN_PATTERN) : null;
       const record = match ? tokens.get(match[1]) : null;
       // One generic failure: an attacker learns nothing about which check failed.
-      const tokenOk = hashMatches(token ?? '', record?.hash) && liveToken(record, at);
-      const existing = validNodeId(nodeId) ? nodes.get(nodeId) : null;
-      if (!tokenOk || existing?.tokenId === record.id) {
+      const tokenOk =
+        hashMatches(token ?? '', record?.hash) && liveToken(record, at) && (!record.nodeId || record.nodeId === nodeId);
+      if (!tokenOk) {
         throw membershipError(401, 'invalid_enrollment_token', 'enrollment token is invalid, expired, or used up');
       }
       if (!validNodeId(nodeId)) throw invalid('Invalid node identity');
+      const existing = nodes.get(nodeId) ?? null;
+      // Claiming a live or configured identity would hand its liveness,
+      // endpoint and reported capacity to whoever holds any token.
+      const claimed =
+        (existing && !existing.left) || (Array.isArray(protectedNodeIds) && protectedNodeIds.includes(nodeId));
+      if (claimed && record.nodeId !== nodeId) {
+        throw membershipError(
+          409,
+          'pool_node_conflict',
+          `node ${nodeId} is already in the pool; re-enroll it with a token issued for it (lloom pool token create --node-id ${nodeId})`
+        );
+      }
       const normalizedEndpoint = normalizeNodeEndpoint(endpoint);
       const nodeLabels = { ...normalizeLabels(labels), ...record.labels };
       const nodeSecret = newSecret();

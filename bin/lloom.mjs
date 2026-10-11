@@ -245,9 +245,9 @@ Backends and runtimes:
   lloom down
   lloom cluster [status|doctor|discover] [--apply] [--id NAME] [--api-key-env NAME] [--json]
   lloom pool plan [--cordon NODE[,NODE]] [--pin ALIAS=MODEL] [--profile NAME] [--consider-installs] [--headroom-gb N] [--churn-weight N] [--external fallback|allow|never] [--offline] [--json]
-  lloom pool token create [--ttl DURATION] [--uses N] [--label KEY=VALUE] [--json]
+  lloom pool token create [--node-id ID] [--ttl DURATION] [--uses N] [--label KEY=VALUE] [--json]
   lloom pool members [--json]
-  lloom pool cordon|uncordon|drain <node> [--reason TEXT]
+  lloom pool cordon|uncordon|drain|leave <node> [--reason TEXT]
   lloom pool join <head-url> --token-stdin [--node-id ID] [--endpoint URL] [--apply --yes]
   lloom pool simulate <scenario.json> [--mode off|advise|auto|compare] [--hours N] [--seed N] [--json]
   lloom deployment plan --plan FILE [--json]
@@ -2530,7 +2530,8 @@ async function main() {
           body: poolTokenOptions({
             ttl: argValue(args, '--ttl'),
             uses: argValue(args, '--uses'),
-            labels: argValues(args, '--label')
+            labels: argValues(args, '--label'),
+            nodeId: argValue(args, '--node-id') ?? undefined
           }),
           timeoutMs: 10000
         });
@@ -2552,7 +2553,7 @@ async function main() {
         console.log(json ? JSON.stringify(result, null, 2) : formatPoolMembers(result));
         return;
       }
-      if (['cordon', 'uncordon', 'drain'].includes(action)) {
+      if (['cordon', 'uncordon', 'drain', 'leave'].includes(action)) {
         const nodeId = positional(args)[2];
         if (!nodeId) throw new Error(POOL_USAGE);
         const reason = argValue(args, '--reason');

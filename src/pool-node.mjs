@@ -22,6 +22,19 @@ function headBaseUrl(url) {
   }
 }
 
+// The enrollment token and the node secret are bearer credentials. Plain HTTP
+// is fine on loopback or a tailnet (WireGuard encrypts it), not across a LAN.
+export function cleartextWarning(head) {
+  const url = new URL(head);
+  if (url.protocol !== 'http:') return null;
+  const host = url.hostname.replace(/^\[|\]$/g, '');
+  const loopback = host === 'localhost' || host === '::1' || /^127\./.test(host);
+  const tailnet = /\.ts\.net$/i.test(host) || /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(host);
+  return loopback || tailnet
+    ? null
+    : `pool head ${head} is plain HTTP: the enrollment token and node secret cross the network unencrypted; use HTTPS or a tailnet address`;
+}
+
 const configDir = (configPath) => path.dirname(path.resolve(String(configPath)));
 
 // `pool.head.secretEnv` names an environment variable; `pool.head.secretFile`
@@ -108,11 +121,26 @@ export async function joinPool(
     throw new Error('Pool head returned an invalid enrollment response');
   }
   await writePrivateFile(secretPath, `${result.nodeSecret}\n`);
-  const { changed } = await mutateConfigSource(config, (raw) => {
-    raw.pool ??= {};
-    raw.pool.head = { url: head, nodeId, secretFile: POOL_NODE_SECRET_FILE };
-  });
-  return { ...summary, applied: true, changed, leaseMs: result.leaseMs ?? null };
+  let changed;
+  try {
+    ({ changed } = await mutateConfigSource(config, (raw) => {
+      raw.pool ??= {};
+      raw.pool.head = { url: head, nodeId, secretFile: POOL_NODE_SECRET_FILE };
+    }));
+  } catch (error) {
+    // The token is spent and the secret saved; say how to finish by hand.
+    throw new Error(
+      `Enrolled as ${nodeId}, and the node secret is saved in ${secretPath}, but the config update failed ` +
+        `(${error.message}). Set pool.head to ${JSON.stringify({ url: head, nodeId, secretFile: POOL_NODE_SECRET_FILE })} by hand.`
+    );
+  }
+  return {
+    ...summary,
+    applied: true,
+    changed,
+    leaseMs: result.leaseMs ?? null,
+    ...(cleartextWarning(head) ? { warning: cleartextWarning(head) } : {})
+  };
 }
 
 // One heartbeat per interval, with exponential backoff (and +/-10% jitter)

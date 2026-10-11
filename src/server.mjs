@@ -954,7 +954,10 @@ const POOL_BODY_LIMIT_BYTES = 1024 * 1024;
 const POOL_BODY_DRAIN_BYTES = 16 * 1024 * 1024;
 // Per client: ten enrollment attempts at once, then one every six seconds.
 const POOL_ENROLL_RATE = { rateMs: 6000, burst: 9 };
-const POOL_ENROLL_CLIENTS_MAX = 4096;
+// Heartbeats arrive every ~10 s per node; several nodes may share an address.
+const POOL_HEARTBEAT_RATE = { rateMs: 500, burst: 59 };
+const POOL_RATE_CLIENTS_MAX = 4096;
+const POOL_NODE_SECRET_SHAPE = /^lps_[A-Za-z0-9_-]{43}$/;
 
 function poolRequestError(statusCode, code, message) {
   return Object.assign(new Error(message), { statusCode, code });
@@ -2423,6 +2426,7 @@ export function createLloomServer(
     options: poolMembershipOptions(config)
   });
   const poolEnrollLimiters = new Map();
+  const poolHeartbeatLimiters = new Map();
   // A node with `pool.head` keeps its lease from `serve`.
   const poolHeartbeat = createPoolHeartbeatLoop({
     getHead: () => (isStandby(config) ? null : config.pool?.head),
@@ -2628,30 +2632,42 @@ export function createLloomServer(
     if (config.pool?.head && !isStandby(config)) poolHeartbeat.start();
   }
 
-  function poolEnrollRetryMs(req) {
+  // Per-client limiters, least recently used first: a flood of new source
+  // addresses evicts only the oldest entries, never every client's budget.
+  function poolRetryMs(limiters, rate, req) {
     const client = req.socket?.remoteAddress ?? 'unknown';
-    if (!poolEnrollLimiters.has(client) && poolEnrollLimiters.size >= POOL_ENROLL_CLIENTS_MAX)
-      poolEnrollLimiters.clear();
-    if (!poolEnrollLimiters.has(client)) poolEnrollLimiters.set(client, createGcra(POOL_ENROLL_RATE));
-    const admission = poolEnrollLimiters.get(client).tryAcquire(Date.now());
+    let limiter = limiters.get(client);
+    if (limiter) limiters.delete(client);
+    else {
+      if (limiters.size >= POOL_RATE_CLIENTS_MAX) limiters.delete(limiters.keys().next().value);
+      limiter = createGcra(rate);
+    }
+    limiters.set(client, limiter);
+    const admission = limiter.tryAcquire(Date.now());
     return admission.allowed ? 0 : admission.retryAfterMs;
   }
 
+  function sendPoolRateLimited(res, retryAfterMs, message, code) {
+    sendJson(
+      res,
+      429,
+      errorBody(message, { type: 'rate_limit_error', code }),
+      { 'retry-after': String(Math.max(1, Math.ceil(retryAfterMs / 1000))) },
+      config
+    );
+  }
+
   async function handlePoolMembership(req, res, url) {
-    const action = url.pathname.match(/^\/gateway\/pool\/nodes\/([^/]+)\/(cordon|uncordon|drain)$/);
+    const action = url.pathname.match(/^\/gateway\/pool\/nodes\/([^/]+)\/(cordon|uncordon|drain|leave)$/);
     try {
       if (req.method === 'POST' && url.pathname === '/gateway/pool/enroll') {
-        const retryAfterMs = poolEnrollRetryMs(req);
+        const retryAfterMs = poolRetryMs(poolEnrollLimiters, POOL_ENROLL_RATE, req);
         if (retryAfterMs) {
-          sendJson(
+          sendPoolRateLimited(
             res,
-            429,
-            errorBody('too many enrollment attempts; retry later', {
-              type: 'rate_limit_error',
-              code: 'pool_enroll_rate_limited'
-            }),
-            { 'retry-after': String(Math.max(1, Math.ceil(retryAfterMs / 1000))) },
-            config
+            retryAfterMs,
+            'too many enrollment attempts; retry later',
+            'pool_enroll_rate_limited'
           );
           return;
         }
@@ -2665,7 +2681,9 @@ export function createLloomServer(
             nodeId: body.nodeId,
             endpoint: body.endpoint,
             inventory: body.inventory,
-            labels: body.labels
+            labels: body.labels,
+            // Configured peers keep their identity unless the token names them.
+            protectedNodeIds: Object.keys(config.cluster?.nodes ?? {})
           })
         );
         logger.info?.(`pool node ${enrolled.nodeId} enrolled`);
@@ -2673,11 +2691,21 @@ export function createLloomServer(
         return;
       }
       if (req.method === 'POST' && url.pathname === '/gateway/pool/heartbeat') {
+        // Refuse anything that cannot be a node secret before buffering a body.
+        const nodeSecret = extractApiKey(req);
+        if (!POOL_NODE_SECRET_SHAPE.test(nodeSecret ?? '')) {
+          throw poolRequestError(401, 'invalid_node_credential', 'pool node credential is invalid');
+        }
+        const retryAfterMs = poolRetryMs(poolHeartbeatLimiters, POOL_HEARTBEAT_RATE, req);
+        if (retryAfterMs) {
+          sendPoolRateLimited(res, retryAfterMs, 'too many heartbeats; retry later', 'pool_heartbeat_rate_limited');
+          return;
+        }
         const body = await readPoolJson(req);
         const membership = await poolMembership.load();
         const lease = membership.heartbeat({
           nodeId: body.nodeId,
-          nodeSecret: extractApiKey(req),
+          nodeSecret,
           inventory: body.inventory,
           running: body.running,
           telemetry: body.telemetry
@@ -2699,7 +2727,12 @@ export function createLloomServer(
       if (req.method === 'POST' && url.pathname === '/gateway/pool/tokens') {
         const body = await readPoolJson(req);
         const issued = await poolMembership.mutate((membership) =>
-          membership.issueEnrollmentToken({ ttlMs: body.ttlMs, uses: body.uses, labels: body.labels })
+          membership.issueEnrollmentToken({
+            ttlMs: body.ttlMs,
+            uses: body.uses,
+            labels: body.labels,
+            nodeId: body.nodeId ?? null
+          })
         );
         sendJson(res, 200, { ok: true, ...issued }, {}, config);
         return;
