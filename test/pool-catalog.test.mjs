@@ -7,6 +7,7 @@ import {
   buildPoolCatalog,
   buildPoolPlanInputs,
   currentPoolState,
+  mergeMembershipNodes,
   plannerNodesFromStatus,
   poolPinsFromConfig,
   poolWorkloadsFromConfig,
@@ -364,4 +365,85 @@ test('planner inputs from config produce a coherent plan', () => {
     plan.diff.manual.map((entry) => entry.action),
     ['manual-stop']
   );
+});
+
+// Shape of GET /gateway/pool/members entries.
+function poolMember(id, overrides = {}) {
+  return {
+    id,
+    endpoint: `http://${id}:8100`,
+    labels: {},
+    state: 'ready',
+    cordoned: false,
+    draining: false,
+    reason: null,
+    enrolledAt: '2026-10-11T12:00:00.000Z',
+    lastSeenAt: '2026-10-11T12:00:00.000Z',
+    leaseExpiresAt: '2026-10-11T12:00:30.000Z',
+    inventory: {
+      complete: true,
+      platformId: 'linux-arm64',
+      accelerators: ['cuda', 'gb10'],
+      computeArchs: ['sm_121'],
+      memoryDomains: [{ id: 'unified:0', kind: 'unified', capacityGb: 128 }],
+      links: [],
+      weights: [{ recipeId: 'spark-27b', complete: true }]
+    },
+    running: [],
+    ...overrides
+  };
+}
+
+test('enrolled members add liveness, cordon and inventory; configured nodes keep identity', () => {
+  const config = fleetConfig();
+  delete config.pool.cordon;
+  const statuses = { ...fleetStatuses(), 'spark-node-02': { reachable: true, profile: null } };
+  const members = [
+    poolMember('spark-node-01', { state: 'lost' }),
+    poolMember('spark-node-02', {
+      draining: true,
+      reason: 'disk swap',
+      inventory: { ...poolMember('x').inventory, links: [{ peerNodeId: 'spark-node-01' }] }
+    }),
+    poolMember('spark-node-04'),
+    poolMember('spark-node-05', { state: 'left' })
+  ];
+  const inputs = buildPoolPlanInputs({ config, nodeStatuses: statuses, metrics, members });
+  const nodes = Object.fromEntries(inputs.nodes.map((node) => [node.id, node]));
+  assert.equal(nodes['spark-node-01'].available, false, 'a lost lease makes a configured node unavailable');
+  assert.equal(nodes['spark-node-01'].membership, 'lost');
+  assert.equal(nodes['spark-node-01'].maxMemoryUtilization, 0.9, 'configured resources are kept');
+  assert.equal(nodes['spark-node-02'].available, true);
+  assert.equal(nodes['spark-node-02'].cordoned, true, 'draining comes from membership');
+  assert.equal(nodes['spark-node-02'].inventory, 'reported', 'the member inventory beats config-only facts');
+  assert.deepEqual(nodes['spark-node-02'].weights, ['spark-27b']);
+  assert.deepEqual(nodes['spark-node-02'].links, ['spark-node-01']);
+  assert.equal(nodes['spark-node-03'].membership, undefined, 'configured-only nodes are unchanged');
+  assert.equal(nodes['spark-node-04'].routable, false);
+  assert.equal(nodes['spark-node-04'].available, true);
+  assert.equal(nodes['spark-node-05'].available, false);
+  assert.equal(inputs.warnings.length, 1);
+  assert.match(
+    inputs.warnings[0],
+    /spark-node-04 .*lloom cluster add-node spark-node-04 http:\/\/spark-node-04:8100 --apply --yes/
+  );
+
+  const plan = planPool(inputs);
+  assert.equal(plan.routes['chat-capable'].model, 'qwen38-27b-nvfp4', 'the pair is lost and draining');
+  assert.equal(plan.nodes['spark-node-02'].status, 'cordoned');
+});
+
+test('without live state only cordons and departures apply from saved membership', () => {
+  const configured = plannerNodesFromStatus(fleetConfig(), {});
+  const { nodes, warnings } = mergeMembershipNodes(
+    configured,
+    [poolMember('spark-node-01', { state: 'lost', cordoned: true }), poolMember('spark-node-09', { state: 'lost' })],
+    { liveness: false }
+  );
+  const byId = Object.fromEntries(nodes.map((node) => [node.id, node]));
+  assert.equal(byId['spark-node-01'].available, true, 'a stale lease is not evidence offline');
+  assert.equal(byId['spark-node-01'].cordoned, true);
+  assert.equal(byId['spark-node-09'].available, true);
+  assert.equal(warnings.length, 1);
+  assert.deepEqual(mergeMembershipNodes(configured, []).nodes, configured, 'no members, no change');
 });
