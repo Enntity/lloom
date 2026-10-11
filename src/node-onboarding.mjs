@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { mutateConfigSource } from './config-mutation.mjs';
 import { currentNodeId, federatedNodeConfigFromSnapshot } from './cluster.mjs';
+import { normalizeNodeEndpoint, validNodeId } from './pool-membership.mjs';
 
 export async function readBoundedStdinCredential(stream, { maxBytes = 16384 } = {}) {
   const chunks = [];
@@ -35,18 +36,10 @@ export async function addAuthenticatedNode(
     fetchFn = fetch
   } = {}
 ) {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(nodeId ?? '')) throw new Error('Invalid node identity');
+  if (!validNodeId(nodeId)) throw new Error('Invalid node identity');
   if (nodeId === currentNodeId(config)) throw new Error('Cannot replace the local node with a federation peer');
-  let url;
-  try {
-    url = new URL(endpoint);
-  } catch {
-    throw new Error('Invalid node endpoint');
-  }
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash)
-    throw new Error('Node endpoint must be an HTTP(S) URL without credentials, query, or fragment');
+  const base = normalizeNodeEndpoint(endpoint);
   if (apply && !yes) throw new Error('Adding this node requires --apply --yes');
-  const base = url.toString().replace(/\/+$/, '');
   let response;
   try {
     response = await fetchFn(base + '/gateway/node', {

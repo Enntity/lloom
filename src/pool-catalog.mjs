@@ -7,6 +7,7 @@ import { benchmarkRankingEligible, benchmarkScore } from './benchmarks.mjs';
 import { clusterNodes, modelTargets, runtimeResourcesByNode } from './cluster.mjs';
 import { resolveRouteTarget } from './config-profiles.mjs';
 import { inventoryFromProfile } from './pool-inventory.mjs';
+import { memberPlannerNode } from './pool-membership.mjs';
 import { residencyPolicy } from './runtime-preferences.mjs';
 
 export const POOL_CATALOG_VERSION = 1;
@@ -14,6 +15,7 @@ const LIVE_METRIC_MIN_REQUESTS = 5;
 const PERIOD_HOURS = { today: 24, '7d': 168, '30d': 720 };
 const RESIDENCY_RANK = { auto: 0, preferred: 1, always: 2 };
 const ARCH_BY_ACCELERATOR = { gb10: 'sm_121', 'dgx-spark': 'sm_121' };
+const INVENTORY_RANK = { none: 0, config: 0, profile: 1, reported: 2 };
 
 function object(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
@@ -506,6 +508,64 @@ export function plannerNodesFromStatus(config = {}, nodeStatuses = {}, { env = p
     .sort((left, right) => left.id.localeCompare(right.id));
 }
 
+function preferred(value, fallback) {
+  return (Array.isArray(value) ? value.length : value != null) ? value : fallback;
+}
+
+// Nodes that joined through pool membership (see pool-membership.mjs). A
+// configured cluster node keeps its endpoint, credentials and resources;
+// membership adds liveness, cordon/drain and its inventory when that is more
+// complete than what the head already knows. The head has no credential or
+// model catalog for an enrolled-only node, so it is planned but not routable
+// until `lloom cluster add-node`. With `liveness: false` (saved state, no live
+// gateway) lease ages are not evidence; only cordons and departures apply.
+export function mergeMembershipNodes(nodes = [], members = [], { liveness = true } = {}) {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const warnings = [];
+  for (const member of members) {
+    const joined = memberPlannerNode(member);
+    const available = liveness ? joined.available : member.state !== 'left';
+    const configured = byId.get(member.id);
+    if (!configured) {
+      byId.set(member.id, { ...joined, available, routable: false });
+      if (member.state !== 'left') {
+        warnings.push(
+          `${member.id} joined the pool by enrollment only; placements there need ` +
+            `\`lloom cluster add-node ${member.id} ${member.endpoint} --apply --yes\` before the head can route to it`
+        );
+      }
+      continue;
+    }
+    let inventory = {};
+    if (INVENTORY_RANK[joined.inventory] > INVENTORY_RANK[configured.inventory]) {
+      const budgetGb = configured.memoryDomains?.length === 1 ? configured.memoryDomains[0].budgetGb : undefined;
+      const memoryDomains = preferred(joined.memoryDomains, configured.memoryDomains);
+      inventory = {
+        platformId: preferred(joined.platformId, configured.platformId),
+        computeArchs: preferred(joined.computeArchs, configured.computeArchs),
+        accelerators: preferred(joined.accelerators, configured.accelerators),
+        memoryDomains:
+          budgetGb != null && memoryDomains.length === 1 ? [{ ...memoryDomains[0], budgetGb }] : memoryDomains,
+        weights: joined.weights,
+        images: joined.images,
+        inventory: joined.inventory
+      };
+    }
+    byId.set(
+      member.id,
+      compact({
+        ...configured,
+        ...inventory,
+        links: unique([...(configured.links ?? []), ...joined.links]).sort(),
+        available: configured.available !== false && available,
+        cordoned: configured.cordoned === true || joined.cordoned || null,
+        membership: member.state
+      })
+    );
+  }
+  return { nodes: [...byId.values()].sort((left, right) => left.id.localeCompare(right.id)), warnings };
+}
+
 export function buildPoolPlanInputs({
   config = {},
   nodeStatuses = {},
@@ -517,12 +577,18 @@ export function buildPoolPlanInputs({
   routes = {},
   considerInstalls = false,
   policy = {},
+  members = [],
+  membershipLiveness = true,
   env = process.env
 } = {}) {
   const catalog = buildPoolCatalog({ config, recipes, benchmarks, metrics, nodeStatuses, env });
   const variants = considerInstalls ? catalog.variants : catalog.variants.filter((v) => v.source !== 'recipe');
+  const { nodes, warnings } = mergeMembershipNodes(plannerNodesFromStatus(config, nodeStatuses, { env }), members, {
+    liveness: membershipLiveness
+  });
   return {
-    nodes: plannerNodesFromStatus(config, nodeStatuses, { env }),
+    nodes,
+    warnings,
     variants,
     workloads: poolWorkloadsFromConfig(config, { metrics }),
     pins: poolPinsFromConfig(config, { profile, cordon, routes }),

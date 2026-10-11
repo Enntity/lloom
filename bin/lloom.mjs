@@ -36,7 +36,15 @@ import {
   selectedRecipeIdFromCommunityPlan
 } from '../src/community-client.mjs';
 import { loadConfig } from '../src/config.mjs';
-import { POOL_USAGE, createPoolPlanReport, formatPoolPlanReport, poolPlanOptions } from '../src/pool-cli.mjs';
+import {
+  POOL_USAGE,
+  createPoolPlanReport,
+  formatPoolMembers,
+  formatPoolPlanReport,
+  poolPlanOptions,
+  poolTokenOptions
+} from '../src/pool-cli.mjs';
+import { joinPool } from '../src/pool-node.mjs';
 import { mutateConfigSource } from '../src/config-mutation.mjs';
 import { runtimeControlTimeoutMs } from '../src/control-timeout.mjs';
 import { createDoctorReport } from '../src/doctor.mjs';
@@ -231,6 +239,10 @@ Backends and runtimes:
   lloom down
   lloom cluster [status|doctor|discover] [--apply] [--id NAME] [--api-key-env NAME] [--json]
   lloom pool plan [--cordon NODE[,NODE]] [--pin ALIAS=MODEL] [--profile NAME] [--consider-installs] [--headroom-gb N] [--churn-weight N] [--external fallback|allow|never] [--offline] [--json]
+  lloom pool token create [--ttl DURATION] [--uses N] [--label KEY=VALUE] [--json]
+  lloom pool members [--json]
+  lloom pool cordon|uncordon|drain <node> [--reason TEXT]
+  lloom pool join <head-url> --token-stdin [--node-id ID] [--endpoint URL] [--apply --yes]
   lloom deployment plan --plan FILE [--json]
   lloom deployment apply --plan FILE --nodes FILE [--operation-id ID] --apply --yes [--journal FILE] [--json]
   lloom deployment status --operation-id ID [--journal FILE] [--json]
@@ -2502,6 +2514,66 @@ async function main() {
     },
     pool: async ({ args, config }) => {
       const action = positional(args)[1] ?? 'plan';
+      const json = hasFlag(args, '--json');
+      if (action === 'token') {
+        if (positional(args)[2] !== 'create') throw new Error(POOL_USAGE);
+        const result = await gatewayRequest(config, '/gateway/pool/tokens', {
+          args,
+          method: 'POST',
+          body: poolTokenOptions({
+            ttl: argValue(args, '--ttl'),
+            uses: argValue(args, '--uses'),
+            labels: argValues(args, '--label')
+          }),
+          timeoutMs: 10000
+        });
+        console.log(
+          json
+            ? JSON.stringify(result, null, 2)
+            : [
+                `Enrollment token ${result.id} (shown once; expires ${result.expiresAt}):`,
+                result.token,
+                '',
+                'On the joining node:',
+                `  lloom pool join <this-head-url> --token-stdin --endpoint <node-gateway-url> --apply --yes`
+              ].join('\n')
+        );
+        return;
+      }
+      if (action === 'members') {
+        const result = await gatewayRequest(config, '/gateway/pool/members', { args, timeoutMs: 10000 });
+        console.log(json ? JSON.stringify(result, null, 2) : formatPoolMembers(result));
+        return;
+      }
+      if (['cordon', 'uncordon', 'drain'].includes(action)) {
+        const nodeId = positional(args)[2];
+        if (!nodeId) throw new Error(POOL_USAGE);
+        const reason = argValue(args, '--reason');
+        const result = await gatewayRequest(config, `/gateway/pool/nodes/${encodeURIComponent(nodeId)}/${action}`, {
+          args,
+          method: 'POST',
+          body: reason == null ? {} : { reason },
+          timeoutMs: 10000
+        });
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      if (action === 'join') {
+        const headUrl = positional(args)[2];
+        if (!headUrl || !hasFlag(args, '--token-stdin')) throw new Error(POOL_USAGE);
+        const apply = hasFlag(args, '--apply');
+        const result = await joinPool(config, {
+          headUrl,
+          // The token is read only when it will be used.
+          token: apply && hasFlag(args, '--yes') ? await readBoundedStdinCredential(process.stdin) : null,
+          nodeId: argValue(args, '--node-id') ?? undefined,
+          endpoint: argValue(args, '--endpoint'),
+          apply,
+          yes: hasFlag(args, '--yes')
+        });
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
       if (action !== 'plan') throw new Error(POOL_USAGE);
       const options = poolPlanOptions({
         cordon: argValues(args, '--cordon'),

@@ -48,6 +48,8 @@ export function inventoryFromProfile(profile = {}) {
   return {
     version: NODE_INVENTORY_VERSION,
     complete: false,
+    ...(profile.platformId ? { platformId: profile.platformId } : {}),
+    accelerators: Array.isArray(profile.accelerators) ? [...profile.accelerators] : [],
     computeArchs: computeArchsForProfile(profile),
     memoryDomains: capacityDomains(profile),
     links: profileLinks(profile)

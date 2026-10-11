@@ -73,6 +73,47 @@ Override any of this per alias in config:
 
 The currently active routes are not pins; they are what the diff is measured against. To keep a hand-chosen route, pin it.
 
+## Membership
+
+Nodes can also join a head themselves and keep a lease, so the planner always knows who is in the pool. Membership is optional and inert until used: the head writes nothing and accepts no enrollment until an operator issues a token. Static `cluster.nodes` config, `lloom cluster add-node` and on-demand polling keep working unchanged.
+
+```bash
+# on the head
+lloom pool token create --ttl 1h --uses 1        # prints a one-time enrollment token
+lloom pool members                               # state, lease age, inventory, running lanes
+lloom pool cordon spark-node-02 --reason "disk swap"
+lloom pool drain spark-node-02 --reason rebalance
+lloom pool uncordon spark-node-02
+
+# on the joining node (token on stdin, never in argv)
+lloom pool join http://head-private:8100 --token-stdin --endpoint http://10.10.10.2:8100 --apply --yes
+```
+
+**Enrollment.** `POST /gateway/pool/enroll` takes the token as a bearer credential and the node's `nodeId`, `endpoint` and optional `labels`. It returns a node secret and the lease length. A token expires (default one hour) and has a use count (default one). Labels set on the token override labels the node sends. Enrolling an existing node id again needs a different token, and rotates the node's secret. It keeps any cordon or drain, so a node cannot re-enroll its way out of one. A node cannot enroll with the head's own node id. Attempts are rate limited per client address.
+
+`lloom pool join` stores the secret in `pool-node-secret` (mode 0600) next to the node's config and sets:
+
+```json
+"pool": { "head": { "url": "http://head-private:8100", "nodeId": "spark-node-02", "secretFile": "pool-node-secret" } }
+```
+
+`secretEnv: "NAME"` reads the secret from an environment variable instead. A relative `secretFile` resolves against the config directory, and must be a private regular file. `intervalMs` sets the heartbeat interval (default 10 s). Without `--apply --yes`, `join` only shows what it would do and does not read the token.
+
+**Leases.** With `pool.head` set, `serve` sends `POST /gateway/pool/heartbeat` with the cached pool inventory, the running runtimes and host telemetry, authenticated with the node secret. It backs off exponentially, up to five minutes, while the head is unreachable. The head's lease is 30 s by default. A member is `ready` while its lease is current and `suspect` once it expires. It is `lost` 90 s after its last heartbeat (`pool.membership.leaseMs` and `lostAfterMs` on the head). `left` means the node left the pool. The head keeps only the inventory fields the planner reads.
+
+**State.** The head keeps membership in `pool-membership.json` next to its config file (mode 0600, atomic writes). The file is written when a token is issued, a node enrolls, or a node is cordoned, drained or uncordoned. Heartbeats are not written: after a head restart, members show their last heartbeat time until they next check in. The file holds SHA-256 hashes of tokens and node secrets, never the values. Both are 256-bit random strings.
+
+**Planning.** `lloom pool plan` reads `GET /gateway/pool/members` and merges members with configured nodes:
+
+- A configured node keeps its endpoint, credentials and resources.
+- Membership adds liveness (a `lost` or `left` member is unavailable) and cordon or drain (the node hosts no placements).
+- Membership adds inventory when it is more complete than what the head already has.
+- An offline plan reads the saved file. It applies cordons, drains and departures there, but not lease ages.
+
+A node that only enrolled is planned on, but it is not routable. The head has no credential for that node's gateway and no model catalog for it, and enrollment does not create either. So the plan warns that the node needs `lloom cluster add-node <id> <endpoint> --apply --yes` before the head can route there, and marks it `enrolled only`. Enrollment does not grant routing: the endpoint a node reports is not used for traffic, and a configured endpoint always wins.
+
+**Auth.** Enrollment accepts only an enrollment token, and heartbeats only a node secret. Admin and inference keys are rejected on both routes, and neither route returns or grants an API key. A node secret is not accepted on any other route. `GET /gateway/pool/members` is admin-read. Token creation and cordon, drain and uncordon are admin writes, so remote use needs `security.allowRemoteAdmin` and an admin key. As with cluster keys, put the head on a private network or behind TLS: plain HTTP carries tokens and secrets in the clear.
+
 ## Constraints and objective
 
 - **Memory per domain.** Unified memory on Spark and Apple Silicon. Device memory, plus system memory for host-side state, on discrete GPUs.
@@ -98,7 +139,7 @@ The search places workloads greedily, pinned and hot ones first, sharing a place
 
 The text output lists:
 
-- each node's memory budget and resident set;
+- each node's memory budget and resident set, and its membership state;
 - every placement by tier, with the aliases it serves;
 - the changes from now:
   - route changes;

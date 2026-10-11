@@ -60,6 +60,8 @@ import { applyRecipePack, createRecipePackPlan } from './recipe-pack.mjs';
 import { buildRecipeIndexReport } from './recipe-index.mjs';
 import { loadRecipes } from './recipes.mjs';
 import { collectNodeInventory, createNodeInventoryCache } from './pool-inventory.mjs';
+import { createPoolMembershipStore, poolMembershipOptions, poolMembershipPath } from './pool-membership-store.mjs';
+import { createPoolHeartbeatLoop } from './pool-node.mjs';
 import { modelRootCandidates } from './model-files.mjs';
 import { createRegistry, UnknownModelError } from './registry.mjs';
 import { routeProfileStatus, writeRouteMemberSuspension, writeRouteProfile } from './route-control.mjs';
@@ -68,6 +70,7 @@ import { createModelMaintenanceController } from './model-maintenance-control.mj
 import {
   acquireRateLimitSlot,
   awaitRateBudget,
+  createGcra,
   createRateLimitRegistry,
   RATE_LIMIT_QUEUE_CAPACITY,
   RateQueueFullError
@@ -133,6 +136,7 @@ import {
   assertBindAllowed,
   authorizeRequest,
   corsHeaders,
+  extractApiKey,
   hasValidApiKey,
   securityPublicStatus
 } from './security.mjs';
@@ -944,6 +948,52 @@ async function readJson(req) {
   const raw = await readBody(req);
   if (!raw.trim()) return {};
   return JSON.parse(raw);
+}
+
+const POOL_BODY_LIMIT_BYTES = 1024 * 1024;
+const POOL_BODY_DRAIN_BYTES = 16 * 1024 * 1024;
+// Per client: ten enrollment attempts at once, then one every six seconds.
+const POOL_ENROLL_RATE = { rateMs: 6000, burst: 9 };
+const POOL_ENROLL_CLIENTS_MAX = 4096;
+
+function poolRequestError(statusCode, code, message) {
+  return Object.assign(new Error(message), { statusCode, code });
+}
+
+// Pool node routes accept bodies from not-yet-authenticated callers: bound
+// them and report malformed input as a client error. An oversized body is
+// drained (up to a hard cap) so the client reads the 413 instead of a reset.
+function readPoolBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let total = 0;
+    const tooLarge = () =>
+      poolRequestError(413, 'payload_too_large', `pool request body exceeds ${POOL_BODY_LIMIT_BYTES} bytes`);
+    req.on('data', (chunk) => {
+      total += chunk.length;
+      if (total <= POOL_BODY_LIMIT_BYTES) chunks.push(chunk);
+      else if (total > POOL_BODY_DRAIN_BYTES) req.destroy();
+    });
+    req.once('end', () =>
+      total > POOL_BODY_LIMIT_BYTES ? reject(tooLarge()) : resolve(Buffer.concat(chunks).toString('utf8'))
+    );
+    req.once('close', () => reject(tooLarge()));
+    req.once('error', reject);
+  });
+}
+
+async function readPoolJson(req) {
+  const raw = await readPoolBody(req);
+  let value;
+  try {
+    value = raw.trim() ? JSON.parse(raw) : {};
+  } catch {
+    value = null;
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw poolRequestError(400, 'invalid_request', 'pool request body must be a JSON object');
+  }
+  return value;
 }
 
 function upstreamUrl(backend, path) {
@@ -2330,7 +2380,9 @@ export function createLloomServer(
     upstreamDispatcher = null,
     // Tests may point identity verification at a disposable atomic release;
     // production leaves this unset and uses the installed package root.
-    deploymentPackageRoot = null
+    deploymentPackageRoot = null,
+    // Tests may supply a fixed pool inventory instead of probing this machine.
+    nodeInventory: injectedNodeInventory = null
   } = {}
 ) {
   assertStandbyConfig(config);
@@ -2352,16 +2404,39 @@ export function createLloomServer(
   });
   // Pool inventory is collected on request only and cached; it scans model
   // roots and lists container images, which is too slow for the status path.
-  const nodeInventory = createNodeInventoryCache({
-    collect: async () =>
-      collectNodeInventory({
-        nodeId: clusterCoordinator.nodeId,
-        profile: (await machineProfile) ?? {},
-        recipes: await loadRecipes().catch(() => []),
-        modelRoots: await modelRootCandidates({ config: clusterCoordinator.config })
-      })
-  });
+  const nodeInventory =
+    injectedNodeInventory ??
+    createNodeInventoryCache({
+      collect: async () =>
+        collectNodeInventory({
+          nodeId: clusterCoordinator.nodeId,
+          profile: (await machineProfile) ?? {},
+          recipes: await loadRecipes().catch(() => []),
+          modelRoots: await modelRootCandidates({ config: clusterCoordinator.config })
+        })
+    });
   clusterCoordinator.inventory ??= () => nodeInventory.get();
+  // Pool membership is inert until used: the head loads its state on the first
+  // pool request and writes it only when a token is issued or a node enrolls.
+  const poolMembership = createPoolMembershipStore({
+    filePath: poolMembershipPath(config),
+    options: poolMembershipOptions(config)
+  });
+  const poolEnrollLimiters = new Map();
+  // A node with `pool.head` keeps its lease from `serve`.
+  const poolHeartbeat = createPoolHeartbeatLoop({
+    getHead: () => (isStandby(config) ? null : config.pool?.head),
+    configPath: config.sourcePath,
+    logger,
+    collect: async () => ({
+      inventory: await nodeInventory.get().catch(() => null),
+      running: Object.entries((await runtimeManager.status({ localOnly: true }))?.runtimes ?? {})
+        .filter(([, runtime]) => ['running', 'external'].includes(runtime?.status))
+        .map(([id]) => id)
+        .sort(),
+      telemetry: await hostTelemetry.snapshot().catch(() => null)
+    })
+  });
   runtimeManager ??= new RuntimeManager(config, { logger, clusterCoordinator });
   if (!runtimeManager.clusterCoordinator) {
     runtimeManager.clusterCoordinator = clusterCoordinator;
@@ -2549,6 +2624,111 @@ export function createLloomServer(
     }));
   }
 
+  function startPoolHeartbeat() {
+    if (config.pool?.head && !isStandby(config)) poolHeartbeat.start();
+  }
+
+  function poolEnrollRetryMs(req) {
+    const client = req.socket?.remoteAddress ?? 'unknown';
+    if (!poolEnrollLimiters.has(client) && poolEnrollLimiters.size >= POOL_ENROLL_CLIENTS_MAX)
+      poolEnrollLimiters.clear();
+    if (!poolEnrollLimiters.has(client)) poolEnrollLimiters.set(client, createGcra(POOL_ENROLL_RATE));
+    const admission = poolEnrollLimiters.get(client).tryAcquire(Date.now());
+    return admission.allowed ? 0 : admission.retryAfterMs;
+  }
+
+  async function handlePoolMembership(req, res, url) {
+    const action = url.pathname.match(/^\/gateway\/pool\/nodes\/([^/]+)\/(cordon|uncordon|drain)$/);
+    try {
+      if (req.method === 'POST' && url.pathname === '/gateway/pool/enroll') {
+        const retryAfterMs = poolEnrollRetryMs(req);
+        if (retryAfterMs) {
+          sendJson(
+            res,
+            429,
+            errorBody('too many enrollment attempts; retry later', {
+              type: 'rate_limit_error',
+              code: 'pool_enroll_rate_limited'
+            }),
+            { 'retry-after': String(Math.max(1, Math.ceil(retryAfterMs / 1000))) },
+            config
+          );
+          return;
+        }
+        const body = await readPoolJson(req);
+        if (body.nodeId === clusterCoordinator.nodeId) {
+          throw poolRequestError(409, 'pool_node_conflict', "a node cannot enroll with the head's own node id");
+        }
+        const enrolled = await poolMembership.mutate((membership) =>
+          membership.enroll({
+            token: extractApiKey(req),
+            nodeId: body.nodeId,
+            endpoint: body.endpoint,
+            inventory: body.inventory,
+            labels: body.labels
+          })
+        );
+        logger.info?.(`pool node ${enrolled.nodeId} enrolled`);
+        sendJson(res, 200, { ok: true, ...enrolled }, {}, config);
+        return;
+      }
+      if (req.method === 'POST' && url.pathname === '/gateway/pool/heartbeat') {
+        const body = await readPoolJson(req);
+        const membership = await poolMembership.load();
+        const lease = membership.heartbeat({
+          nodeId: body.nodeId,
+          nodeSecret: extractApiKey(req),
+          inventory: body.inventory,
+          running: body.running,
+          telemetry: body.telemetry
+        });
+        sendJson(res, 200, lease, {}, config);
+        return;
+      }
+      if (req.method === 'GET' && url.pathname === '/gateway/pool/members') {
+        const membership = await poolMembership.load();
+        sendJson(
+          res,
+          200,
+          { ok: true, leaseMs: membership.leaseMs, lostAfterMs: membership.lostAfterMs, members: membership.members() },
+          {},
+          config
+        );
+        return;
+      }
+      if (req.method === 'POST' && url.pathname === '/gateway/pool/tokens') {
+        const body = await readPoolJson(req);
+        const issued = await poolMembership.mutate((membership) =>
+          membership.issueEnrollmentToken({ ttlMs: body.ttlMs, uses: body.uses, labels: body.labels })
+        );
+        sendJson(res, 200, { ok: true, ...issued }, {}, config);
+        return;
+      }
+      if (req.method === 'POST' && action) {
+        const body = await readPoolJson(req);
+        let nodeId;
+        try {
+          nodeId = decodeURIComponent(action[1]);
+        } catch {
+          throw poolRequestError(400, 'invalid_request', 'invalid pool node id');
+        }
+        const member = await poolMembership.mutate((membership) =>
+          membership[action[2]](nodeId, { reason: body.reason })
+        );
+        logger.info?.(`pool node ${nodeId}: ${action[2]}`);
+        sendJson(res, 200, { ok: true, member }, {}, config);
+        return;
+      }
+      sendJson(res, 404, errorBody(`unknown route: ${url.pathname}`, { code: 'not_found' }), {}, config);
+    } catch (error) {
+      const status = errorStatusCode(error);
+      // Expected rejections (bad token, unknown node) are answered, not logged.
+      if (!status || status >= 500) throw error;
+      const type = status === 401 ? 'authentication_error' : status === 403 ? 'permission_error' : undefined;
+      sendJson(res, status, errorBody(error.message, { type, code: error.code ?? 'invalid_request' }), {}, config);
+    }
+  }
+
   function reloadConfig() {
     if (!configPath) return;
     if (runtimeManager.shuttingDown) return Promise.resolve({ skipped: 'gateway-closing' });
@@ -2604,6 +2784,7 @@ export function createLloomServer(
             // admission queues synchronously, so policy must already match.
             requestScheduler.refresh(config.server?.requestScheduling?.mode, { notify: false });
             rateLimitRegistry.sync(rateLimitSettingsFor(config));
+            if (server.listening) startPoolHeartbeat();
             logger.info?.(`reloaded LLooM config; changed runtimes: ${result.changed.join(', ') || 'none'}`);
           } catch (error) {
             registry = previousRegistry;
@@ -5124,6 +5305,11 @@ export function createLloomServer(
         return;
       }
 
+      if (url.pathname.startsWith('/gateway/pool/')) {
+        await handlePoolMembership(req, res, url);
+        return;
+      }
+
       if (req.method === 'GET' && url.pathname === '/gateway/cluster/readiness') {
         const runtimeId = firstQueryParam(url.searchParams, ['runtime', 'runtime_id', 'runtime-id']);
         if (!runtimeId) {
@@ -5968,6 +6154,7 @@ export function createLloomServer(
                   })
                   .catch((error) => logger.error?.(error));
           if (configPath && !isStandby(config)) watchFile(configPath, { interval: 500 }, reloadConfig);
+          startPoolHeartbeat();
           resolve(server);
         });
       });
@@ -5975,6 +6162,7 @@ export function createLloomServer(
     async close({ stopRuntimes = true, httpGraceMs = 5000 } = {}) {
       runtimeManager.shuttingDown = true;
       if (configPath && !isStandby(config)) unwatchFile(configPath, reloadConfig);
+      await poolHeartbeat.stop();
       const closingError = Object.assign(new Error('gateway is closing'), {
         statusCode: 503,
         code: 'REQUEST_SCHEDULER_CLOSED'

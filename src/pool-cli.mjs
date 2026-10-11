@@ -1,6 +1,8 @@
 // `lloom pool plan`: a read-only pool placement plan for the installed config.
-// Live node status, inventory and 7-day metrics come from the running gateway;
-// without one, the plan uses the config plus this machine's own inventory.
+// Live node status, inventory, membership and 7-day metrics come from the
+// running gateway; without one, the plan uses the config, the saved pool
+// membership and this machine's own inventory. Also the report helpers for
+// `lloom pool token|members|cordon|uncordon|drain|join`.
 import { loadBenchmarkEvidence } from './benchmarks.mjs';
 import { currentNodeId } from './cluster.mjs';
 import { readProfile } from './config-profiles.mjs';
@@ -8,12 +10,93 @@ import { profileMachine } from './machine-profile.mjs';
 import { modelRootCandidates } from './model-files.mjs';
 import { buildPoolPlanInputs } from './pool-catalog.mjs';
 import { collectNodeInventory } from './pool-inventory.mjs';
+import { createPoolMembership } from './pool-membership.mjs';
+import { poolMembershipOptions, poolMembershipPath, readPoolMembershipState } from './pool-membership-store.mjs';
 import { planPool } from './pool-planner.mjs';
 import { loadRecipes } from './recipes.mjs';
 
-export const POOL_USAGE =
+export const POOL_USAGE = [
   'Usage: lloom pool plan [--cordon NODE[,NODE]] [--pin ALIAS=MODEL] [--profile NAME] [--consider-installs] ' +
-  '[--headroom-gb N] [--churn-weight N] [--external fallback|allow|never] [--offline] [--json]';
+    '[--headroom-gb N] [--churn-weight N] [--external fallback|allow|never] [--offline] [--json]',
+  '       lloom pool token create [--ttl DURATION] [--uses N] [--label KEY=VALUE] [--json]',
+  '       lloom pool members [--json]',
+  '       lloom pool cordon|uncordon|drain <node> [--reason TEXT]',
+  '       lloom pool join <head-url> --token-stdin [--node-id ID] [--endpoint URL] [--apply --yes]'
+].join('\n');
+
+const DURATION_UNITS = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
+
+// `90` is seconds; `30m`, `2h` and `7d` carry a unit.
+export function parseDurationMs(value) {
+  const match = String(value ?? '')
+    .trim()
+    .match(/^(\d+(?:\.\d+)?)([smhd]?)$/);
+  const ms = match ? Number(match[1]) * DURATION_UNITS[match[2] || 's'] : NaN;
+  if (!Number.isSafeInteger(Math.round(ms)) || ms < 1000) {
+    throw new Error(`Expected a duration such as 90, 30m, 2h or 7d; got ${value}`);
+  }
+  return Math.round(ms);
+}
+
+export function poolTokenOptions({ ttl, uses, labels = [] } = {}) {
+  const options = {};
+  if (ttl != null) options.ttlMs = parseDurationMs(ttl);
+  if (uses != null) {
+    if (!/^\d+$/.test(String(uses))) throw new Error('--uses must be a positive integer');
+    options.uses = Number(uses);
+  }
+  if (labels.length) {
+    options.labels = Object.fromEntries(
+      labels.map((label) => {
+        const index = String(label).indexOf('=');
+        if (index < 1) throw new Error(`--label expects KEY=VALUE, got ${label}`);
+        return [label.slice(0, index), label.slice(index + 1)];
+      })
+    );
+  }
+  return options;
+}
+
+function ago(iso, now) {
+  const seconds = Math.max(0, Math.round((now() - Date.parse(iso)) / 1000));
+  return seconds < 120
+    ? `${seconds}s ago`
+    : seconds < 7200
+      ? `${Math.round(seconds / 60)}m ago`
+      : `${Math.round(seconds / 3600)}h ago`;
+}
+
+export function formatPoolMembers(result, { now = Date.now } = {}) {
+  const members = result?.members ?? [];
+  if (!members.length) return 'No pool members. Issue a token with `lloom pool token create`.';
+  const rows = members.map((member) => {
+    const flags = [member.cordoned && 'cordoned', member.draining && 'draining'].filter(Boolean);
+    const state = [member.state, ...flags].join(', ') + (flags.length && member.reason ? ` (${member.reason})` : '');
+    const inventory = member.inventory;
+    const memoryGb = (inventory?.memoryDomains ?? []).reduce((sum, domain) => sum + (domain.capacityGb ?? 0), 0);
+    const facts = inventory
+      ? [...(inventory.computeArchs ?? []), memoryGb ? `${Math.round(memoryGb)} GB` : null].filter(Boolean).join(', ')
+      : 'no inventory yet';
+    return [
+      member.id,
+      state,
+      member.endpoint,
+      ago(member.lastSeenAt, now),
+      facts || '-',
+      (member.running ?? []).join(', ') || '-'
+    ];
+  });
+  const header = ['NODE', 'STATE', 'ENDPOINT', 'LAST SEEN', 'INVENTORY', 'RUNNING'];
+  const widths = header.map((title, column) => Math.max(title.length, ...rows.map((row) => row[column].length)));
+  return [header, ...rows]
+    .map((row) =>
+      row
+        .map((cell, column) => cell.padEnd(widths[column]))
+        .join('  ')
+        .trimEnd()
+    )
+    .join('\n');
+}
 
 const METRICS_PERIOD = '7d';
 
@@ -69,10 +152,19 @@ export function poolPlanOptions({
 async function liveState(config, gatewayRequest) {
   const cluster = await gatewayRequest(config, '/gateway/cluster?inventory=1');
   const metrics = await gatewayRequest(config, `/gateway/metrics?period=${METRICS_PERIOD}`).catch(() => null);
+  // A gateway that predates pool membership has no members route.
+  const membership = await gatewayRequest(config, '/gateway/pool/members').catch(() => null);
   return {
     nodeStatuses: cluster?.cluster?.nodes ?? {},
-    metrics: metrics ? { ...metrics, period: METRICS_PERIOD } : null
+    metrics: metrics ? { ...metrics, period: METRICS_PERIOD } : null,
+    members: membership?.members ?? [],
+    membershipLiveness: true
   };
+}
+
+async function savedMembers(config, deps) {
+  const state = await deps.readPoolMembership(config);
+  return state ? createPoolMembership({ ...poolMembershipOptions(config), state }).members() : [];
 }
 
 async function localState(config, deps) {
@@ -83,7 +175,12 @@ async function localState(config, deps) {
     recipes: await deps.loadRecipes(),
     modelRoots: await deps.modelRootCandidates({ config })
   });
-  return { nodeStatuses: { [currentNodeId(config)]: { reachable: true, profile, inventory } }, metrics: null };
+  return {
+    nodeStatuses: { [currentNodeId(config)]: { reachable: true, profile, inventory } },
+    metrics: null,
+    members: await savedMembers(config, deps),
+    membershipLiveness: false
+  };
 }
 
 export async function createPoolPlanReport(config, options = {}, overrides = {}) {
@@ -96,6 +193,7 @@ export async function createPoolPlanReport(config, options = {}, overrides = {})
     loadBenchmarkEvidence,
     modelRootCandidates,
     readProfile,
+    readPoolMembership: (target) => readPoolMembershipState(poolMembershipPath(target)),
     ...overrides
   };
   let state = null;
@@ -123,9 +221,12 @@ export async function createPoolPlanReport(config, options = {}, overrides = {})
     cordon: options.cordon ?? [],
     routes: options.routes ?? {},
     considerInstalls: options.considerInstalls === true,
-    policy: options.policy ?? {}
+    policy: options.policy ?? {},
+    members: state.members,
+    membershipLiveness: state.membershipLiveness
   });
-  const plan = planPool(inputs);
+  const planned = planPool(inputs);
+  const plan = { ...planned, warnings: [...inputs.warnings, ...planned.warnings] };
   return {
     ok: plan.ok,
     dryRun: true,
@@ -133,9 +234,11 @@ export async function createPoolPlanReport(config, options = {}, overrides = {})
     nodes: inputs.nodes.map((node) => ({
       id: node.id,
       available: node.available,
-      cordoned: inputs.pins.cordon.includes(node.id),
+      cordoned: node.cordoned === true || inputs.pins.cordon.includes(node.id),
       inventory: node.inventory,
-      computeArchs: node.computeArchs
+      computeArchs: node.computeArchs,
+      membership: node.membership ?? null,
+      routable: node.routable !== false
     })),
     counts: { workloads: inputs.workloads.length, variants: inputs.variants.length },
     pins: inputs.pins,
@@ -173,8 +276,9 @@ export function formatPoolPlanReport(report) {
           `${domain.id} ${gb(domain.residentGb)} resident of ${gb(domain.budgetGb)} (${gb(domain.freeGb)} free)`
       )
       .join('; ');
+    const member = node.membership ? ` [member ${node.membership}${node.routable ? '' : ', enrolled only'}]` : '';
     lines.push(
-      `  ${node.id.padEnd(16)} ${summary?.status ?? 'unknown'}${memory ? `  ${memory}` : ''}  [inventory: ${node.inventory}]`
+      `  ${node.id.padEnd(16)} ${summary?.status ?? 'unknown'}${memory ? `  ${memory}` : ''}  [inventory: ${node.inventory}]${member}`
     );
   }
 

@@ -6,6 +6,8 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Added
 
+- Pool membership: nodes join a head with a one-time enrollment token (`lloom pool token create`, `lloom pool join`) and keep a lease with heartbeats from `serve`. The head lists members (`lloom pool members`), cordons, drains and uncordons them, and `lloom pool plan` uses their liveness, cordons and inventory. Membership is inert until a token is issued, keeps only hashed secrets, and does not grant routing: an enrolled-only node still needs `lloom cluster add-node`. See `docs/pool-planning.md`.
+
 - `lloom pool plan`: a dry-run placement plan across every cluster node. It proposes which lanes run where, which residency they get and how each alias routes, and diffs that against what runs now. It covers every required alias first, then minimises demand-weighted latency and the load cost of changes, within per-domain memory headroom, direct-link tensor parallelism, compute architecture and pins. Nodes report a pool inventory through `/gateway/node?inventory=1`. Recipes may declare `requirements.computeArchs`, `requirements.tensorParallel` and `settings.maxSequences`. `/gateway/metrics` adds `requested` buckets, which give per-alias demand. See `docs/pool-planning.md`.
 
 - LLooM Hear CPU audio analysis, with structured estimates, optional dashboard images, and opt-in upstream interpretation. File and URL inputs require operator configuration.
