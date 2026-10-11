@@ -15,7 +15,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parent
 
-SOURCE_FILES = ('Dockerfile', 'requirements.txt', 'server.py', 'pipelines.py', 'upstream-uv.lock', 'a2v.py', 'UPSTREAM-LICENSE', 'LICENSE-2_x')
+SOURCE_FILES = ('Dockerfile', 'requirements.txt', 'server.py', 'pipelines.py', 'upstream-uv.lock', 'a2v.py', 'patch_ltx_kernels.py', 'UPSTREAM-LICENSE', 'LICENSE-2_x')
 
 
 def source_digest(root=ROOT):

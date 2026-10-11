@@ -223,7 +223,7 @@
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/ltx-pipelines:source-25ea6e66be0dd892d9fda0e96e01faeb256e52c63075f52c2e2c632646a4cfa8",
+            "image": "lloom/ltx-pipelines:source-88c9d4493b4db8092bf69eb7e28626316dee4e36f8d9359797f2751b4c56c5b7",
             "pull": false,
             "createArgs": [
               "--restart",
@@ -284,7 +284,7 @@
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/ltx-pipelines:source-25ea6e66be0dd892d9fda0e96e01faeb256e52c63075f52c2e2c632646a4cfa8",
+            "image": "lloom/ltx-pipelines:source-88c9d4493b4db8092bf69eb7e28626316dee4e36f8d9359797f2751b4c56c5b7",
             "pull": false,
             "createArgs": [
               "--restart",

@@ -53,6 +53,17 @@ request is admitted. There is no warm pool and no residency claim.
   status (400 validation, 404 unknown model, 409 runtime busy, 413 over a
   ceiling, 502 upstream failure, 504 timeout, 499 client disconnect).
 
+## NVFP4 on GB10
+
+`quantization: "nvfp4-prequant"` on `Lightricks/LTX-2.5-Distilled` `generate`
+serves the official pre-quantized NVFP4 transformer through upstream's
+`ltx-kernels` extension (NVFP4 quantize + cuBLASLt block-scaled FP4 GEMM).
+Upstream builds that extension only for `sm_100a`, `sm_110a` and `sm_120a`, and
+arch-specific cubins do not load on another SM, so the image compiles it in a
+throwaway CUDA 13.2 stage with `patch_ltx_kernels.py` adding `sm_121a` (DGX
+Spark / GB10). On ennspark03 a 4 s 1024x576 image-to-video shot took 85–97 s
+in NVFP4 against 107–133 s in BF16, with no visible quality difference.
+
 ## Request schema
 
 | Field                                                             | Meaning                                                                                                                                                                                                                     |
