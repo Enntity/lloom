@@ -288,3 +288,18 @@ test('HTTP discovery and proxy preserve native workflow, references and default 
   assert.equal((await post({ model: 'Lightricks/LTX-2.5', prompt: { action: 'Turn slowly' } })).status, 200);
   assert.equal(calls.at(-1).prompt, 'action: Turn slowly');
 });
+
+test('chunked long-video mode passes only where the native backend supports it', () => {
+  const full = 'Lightricks/LTX-2.5-Full';
+  const distilled = 'Lightricks/LTX-2.5-Distilled';
+  assert.equal(prepareVideoRequest(full, { prompt: 'x', chunked: true }).chunked, true);
+  assert.equal(prepareVideoRequest(distilled, { prompt: 'x', chunked: true }).chunked, true);
+  assert.ok(videoContractForModel(full, 'audio-to-video').fields.includes('chunked'));
+  for (const [id, workflow] of [
+    [full, 'generate-hq'],
+    [full, 'keyframes'],
+    [distilled, 'refine']
+  ])
+    assert.throws(() => prepareVideoRequest(id, { prompt: 'x', workflow, chunked: true }), /does not support 'chunked'/);
+  assert.throws(() => prepareVideoRequest(full, { prompt: 'x', chunked: 'yes' }), /chunked must be true or false/);
+});

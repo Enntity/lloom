@@ -44,7 +44,7 @@ const nativeBase = [
   ...guidance
 ];
 const sharedTiming = { frameGrid: '8k+1', minFrames: 9, maxFrames: 481, defaultFrames: 121, defaultFps: 24 };
-function nativeWorkflow(name, { guided = false, generatedKeyframes = false, steps = null } = {}) {
+function nativeWorkflow(name, { guided = false, generatedKeyframes = false, steps = null, chunked = false } = {}) {
   const editing = name === 'retake';
   const audio = name === 'audio-to-video';
   const fields = editing
@@ -60,7 +60,7 @@ function nativeWorkflow(name, { guided = false, generatedKeyframes = false, step
         'max_batch_size',
         'response_format'
       ]
-    : nativeBase.filter((field) => {
+    : [...nativeBase, ...(chunked ? ['chunked'] : [])].filter((field) => {
         if (['audio', 'audio_start_time', 'sampler'].includes(field)) return audio;
         if (['temporal_upscalings', 'spatial_upscalings'].includes(field)) return name === 'refine';
         if (field === 'generated_keyframes') return generatedKeyframes;
@@ -105,16 +105,16 @@ const nativeModels = {
   'Lightricks/LTX-2.5-Full': {
     defaultWorkflow: 'generate',
     workflows: {
-      generate: nativeWorkflow('generate', { guided: true, generatedKeyframes: true, steps: 30 }),
+      generate: nativeWorkflow('generate', { guided: true, generatedKeyframes: true, steps: 30, chunked: true }),
       'generate-hq': nativeWorkflow('generate-hq', { guided: true, generatedKeyframes: true, steps: 15 }),
-      'audio-to-video': nativeWorkflow('audio-to-video', { guided: true, steps: 30 }),
+      'audio-to-video': nativeWorkflow('audio-to-video', { guided: true, steps: 30, chunked: true }),
       keyframes: nativeWorkflow('keyframes', { guided: true, steps: 30 })
     }
   },
   'Lightricks/LTX-2.5-Distilled': {
     defaultWorkflow: 'generate',
     workflows: {
-      generate: nativeWorkflow('generate', { generatedKeyframes: true }),
+      generate: nativeWorkflow('generate', { generatedKeyframes: true, chunked: true }),
       retake: nativeWorkflow('retake'),
       refine: nativeWorkflow('refine')
     }
@@ -291,6 +291,7 @@ export function prepareVideoRequest(id, body) {
   if (contract.family === 'ltx-native' && contract.workflow === 'audio-to-video' && 'sampler' in p) {
     if (!['euler', 'euler_ancestral'].includes(p.sampler)) reject('sampler must be euler or euler_ancestral');
   }
+  if ('chunked' in p && typeof p.chunked !== 'boolean') reject('chunked must be true or false');
   if ('size' in p && ('width' in p || 'height' in p)) reject('Provide size or width/height, not both');
   if ('fps' in p && 'frame_rate' in p) reject('Provide fps or frame_rate, not both');
   const fps = p.fps ?? p.frame_rate;

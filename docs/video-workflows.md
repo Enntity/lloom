@@ -188,6 +188,7 @@ audio, since its audio is fixed. Comfy LTX's
 fields. Unsupported fields and conflicting aliases return HTTP 400 rather than
 being silently dropped.
 
+Native LTX `generate` (Full and Distilled) and Full `audio-to-video` accept `chunked: true`, upstream's long-video mode: the clip is generated in overlapping 97-frame windows with a 25-frame carry and crossfaded seams, so memory follows the window rather than the clip. Frame limits are unchanged.
 Native LTX also accepts `image_strength` with `image` (0–1, default 0.7 for `audio-to-video` and 1 for other workflows).
 This adjusts the first-frame guide only; `last_frame` remains at strength 1.
 Comfy LTX defaults its first-stage image strength to 0.7. Specify strength
