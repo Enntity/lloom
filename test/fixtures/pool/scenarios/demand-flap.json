@@ -1,0 +1,120 @@
+{
+  "base": "spark-fleet-base.json",
+  "name": "demand-flap",
+  "description": "Image and music demand swings hard every 30 minutes around the residency thresholds, with a 1-hour demand window. The controller must not chase it: residency-only changes are limited to one an hour and must not cause extra lane loads.",
+  "durationHours": 12,
+  "demandWindowHours": 1,
+  "workloads": [
+    {
+      "id": "image-quality",
+      "residency": "demand",
+      "demand": {
+        "perHour": 0.1,
+        "diurnal": null,
+        "bursts": [
+          {
+            "atHours": 1,
+            "hours": 0.5,
+            "multiplier": 40
+          },
+          {
+            "atHours": 2,
+            "hours": 0.5,
+            "multiplier": 40
+          },
+          {
+            "atHours": 3,
+            "hours": 0.5,
+            "multiplier": 40
+          },
+          {
+            "atHours": 4,
+            "hours": 0.5,
+            "multiplier": 40
+          },
+          {
+            "atHours": 5,
+            "hours": 0.5,
+            "multiplier": 40
+          },
+          {
+            "atHours": 6,
+            "hours": 0.5,
+            "multiplier": 40
+          },
+          {
+            "atHours": 7,
+            "hours": 0.5,
+            "multiplier": 40
+          },
+          {
+            "atHours": 8,
+            "hours": 0.5,
+            "multiplier": 40
+          }
+        ]
+      }
+    },
+    {
+      "id": "music",
+      "residency": "demand",
+      "demand": {
+        "perHour": 0.1,
+        "diurnal": null,
+        "bursts": [
+          {
+            "atHours": 1.5,
+            "hours": 0.5,
+            "multiplier": 40
+          },
+          {
+            "atHours": 2.5,
+            "hours": 0.5,
+            "multiplier": 40
+          },
+          {
+            "atHours": 3.5,
+            "hours": 0.5,
+            "multiplier": 40
+          },
+          {
+            "atHours": 4.5,
+            "hours": 0.5,
+            "multiplier": 40
+          },
+          {
+            "atHours": 5.5,
+            "hours": 0.5,
+            "multiplier": 40
+          },
+          {
+            "atHours": 6.5,
+            "hours": 0.5,
+            "multiplier": 40
+          },
+          {
+            "atHours": 7.5,
+            "hours": 0.5,
+            "multiplier": 40
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "auto": {
+      "safety.memoryViolations.length": {
+        "max": 0
+      },
+      "controller.applies": {
+        "max": 12
+      },
+      "lanes.loads": {
+        "max": 6
+      },
+      "controller.stepFailures": {
+        "max": 0
+      }
+    }
+  }
+}

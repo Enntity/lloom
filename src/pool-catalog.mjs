@@ -530,6 +530,11 @@ export function buildPoolPlanInputs({
     policy: compact({
       maxMemoryUtilization: num(config.runtimePolicy?.maxMemoryUtilization),
       reserveGb: num(config.runtimePolicy?.reserveMemoryGb),
+      // "yolo" turns the load guard off, so it no longer caps the budget.
+      memorySafetyUtilization:
+        config.runtimePolicy?.memorySafety?.mode === 'yolo'
+          ? 1
+          : num(config.runtimePolicy?.memorySafety?.maxMemoryUtilization),
       ...object(config.pool?.policy),
       ...policy
     }),

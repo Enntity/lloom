@@ -18,6 +18,7 @@ export const POOL_PLAN_VERSION = 1;
 
 export const DEFAULT_POOL_POLICY = Object.freeze({
   maxMemoryUtilization: null,
+  memorySafetyUtilization: 0.9,
   reserveGb: 8,
   headroomGb: 4,
   horizonHours: 24,
@@ -77,16 +78,29 @@ export function normalizePoolPolicy(policy = {}) {
   return merged;
 }
 
+// The runtime memory safety guard aborts a load once host memory use reaches
+// min(memorySafety.maxMemoryUtilization, runtimePolicy.maxMemoryUtilization),
+// 0.9 by default (runtime-memory-safety.mjs). Admission may allow more, so a
+// plan that only fits under the admission budget would be aborted mid-load.
+function memorySafetyCeiling(node, policy) {
+  const safety = num(policy.memorySafetyUtilization);
+  if (safety == null) return null;
+  const utilization = num(node.maxMemoryUtilization) ?? num(policy.maxMemoryUtilization) ?? safety;
+  return Math.min(safety, utilization);
+}
+
 function domainBudgets(node, policy) {
   const headroomGb = num(node.headroomGb) ?? num(policy.headroomGb) ?? 0;
+  const ceiling = memorySafetyCeiling(node, policy);
   return list(node.memoryDomains).map((domain) => {
     const capacityGb = num(domain.capacityGb) ?? 0;
-    const budgetGb = memoryBudgetGb({
+    let budgetGb = memoryBudgetGb({
       totalMemoryGb: capacityGb,
       memoryBudgetGb: domain.budgetGb,
       maxMemoryUtilization: num(node.maxMemoryUtilization) ?? num(policy.maxMemoryUtilization),
       reserveMemoryGb: num(node.reserveGb) ?? num(policy.reserveGb) ?? 0
     });
+    if (ceiling != null && domain.kind !== 'device') budgetGb = Math.min(budgetGb, capacityGb * ceiling);
     return {
       id: String(domain.id ?? domain.kind ?? 'memory'),
       kind: String(domain.kind ?? 'system'),
@@ -130,6 +144,7 @@ function variantMemoryGb(variant) {
 function nodeIneligibility(variant, node) {
   if (node.cordoned) return 'cordoned';
   if (node.available === false) return 'unavailable';
+  if (list(variant.excludeNodes).includes(node.id)) return 'excluded after a failed start';
   const requirements = variant.requirements ?? {};
   const platforms = list(requirements.platforms);
   if (platforms.length && !platforms.includes(node.platformId)) return `needs platform ${platforms.join('|')}`;

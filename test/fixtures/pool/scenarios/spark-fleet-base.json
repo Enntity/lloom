@@ -1,0 +1,535 @@
+{
+  "description": "Simulation base for the three-Spark fleet (spark-fleet.json): spark-node-03 serves embeddings, media and voice; the 01/02 pair serves SparkQwen RC16 as an unmanaged TP2 lane. Starts in the sparkqwen-pair-rc16 profile. Load times and concurrency are representative, not measured claims.",
+  "seed": 7,
+  "durationHours": 12,
+  "tickMinutes": 1,
+  "policy": {
+    "maxMemoryUtilization": 0.95,
+    "headroomGb": 4
+  },
+  "controller": {
+    "confirmTicks": 2,
+    "cooldownMs": 900000,
+    "minGain": 0.1
+  },
+  "nodes": [
+    {
+      "id": "spark-node-03",
+      "platformId": "linux-arm64",
+      "computeArchs": ["sm_121"],
+      "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"],
+      "memoryDomains": [
+        {
+          "id": "unified:0",
+          "kind": "unified",
+          "capacityGb": 128
+        }
+      ],
+      "links": []
+    },
+    {
+      "id": "spark-node-01",
+      "platformId": "linux-arm64",
+      "computeArchs": ["sm_121"],
+      "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"],
+      "memoryDomains": [
+        {
+          "id": "unified:0",
+          "kind": "unified",
+          "capacityGb": 128
+        }
+      ],
+      "links": ["spark-node-02"]
+    },
+    {
+      "id": "spark-node-02",
+      "platformId": "linux-arm64",
+      "computeArchs": ["sm_121"],
+      "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"],
+      "memoryDomains": [
+        {
+          "id": "unified:0",
+          "kind": "unified",
+          "capacityGb": 128
+        }
+      ],
+      "links": ["spark-node-01"]
+    }
+  ],
+  "variants": [
+    {
+      "id": "qwen3.8-flash-next-atlas@spark-node-01+spark-node-02",
+      "gatewayModel": "qwen3.8-flash-next-atlas",
+      "model": "nvidia/Qwen3.8-Flash-Next-NVFP4",
+      "kind": "chat",
+      "managed": false,
+      "nodes": ["spark-node-01", "spark-node-02"],
+      "requirements": {
+        "nodeCount": 2,
+        "tensorParallel": 2,
+        "computeArchs": ["sm_121"],
+        "memoryGbPerNode": 110,
+        "contextWindow": 262144
+      },
+      "performance": {
+        "ttftMs": 450,
+        "decodeTps": 75,
+        "source": "fixture"
+      },
+      "sim": {
+        "loadSeconds": 420,
+        "maxSequences": 8
+      }
+    },
+    {
+      "id": "qwen38-27b-nvfp4@spark-node-03",
+      "gatewayModel": "qwen38-27b-nvfp4",
+      "model": "unsloth/Qwen3.8-27B-NVFP4",
+      "kind": "chat",
+      "runtime": "qwen38-27b-nvfp4",
+      "nodes": ["spark-node-03"],
+      "requirements": {
+        "nodeCount": 1,
+        "computeArchs": ["sm_121"],
+        "memoryGbPerNode": 46,
+        "contextWindow": 262144
+      },
+      "performance": {
+        "ttftMs": 900,
+        "decodeTps": 28,
+        "source": "fixture"
+      },
+      "sim": {
+        "loadSeconds": 150,
+        "maxSequences": 2
+      }
+    },
+    {
+      "id": "Qwen/Qwen3-Embedding-4B@spark-node-03",
+      "gatewayModel": "Qwen/Qwen3-Embedding-4B",
+      "kind": "embedding",
+      "runtime": "qwen3-embedding-4b",
+      "nodes": ["spark-node-03"],
+      "requirements": {
+        "memoryGbPerNode": 16
+      },
+      "performance": {
+        "durationMs": 60,
+        "source": "fixture"
+      },
+      "sim": {
+        "maxSequences": 32,
+        "loadSeconds": 40
+      }
+    },
+    {
+      "id": "hear@spark-node-03",
+      "gatewayModel": "hear",
+      "kind": "audio",
+      "runtime": "hear",
+      "nodes": ["spark-node-03"],
+      "requirements": {
+        "memoryGbPerNode": 2
+      },
+      "performance": {
+        "durationMs": 400,
+        "source": "fixture"
+      },
+      "sim": {
+        "maxSequences": 4,
+        "loadSeconds": 20
+      }
+    },
+    {
+      "id": "BennyDaBall/Qwen-Image-2.1-Turbo-NVFP4@spark-node-03",
+      "gatewayModel": "BennyDaBall/Qwen-Image-2.1-Turbo-NVFP4",
+      "kind": "image",
+      "runtime": "spark03-qwen-image-21-turbo-nvfp4",
+      "nodes": ["spark-node-03"],
+      "requirements": {
+        "memoryGbPerNode": 24
+      },
+      "performance": {
+        "durationMs": 18500,
+        "source": "fixture"
+      },
+      "sim": {
+        "loadSeconds": 90
+      }
+    },
+    {
+      "id": "BennyDaBall/Qwen-Image-2.1-NVFP4@spark-node-03",
+      "gatewayModel": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "kind": "image",
+      "runtime": "spark03-qwen-image-21-nvfp4",
+      "nodes": ["spark-node-03"],
+      "requirements": {
+        "memoryGbPerNode": 32
+      },
+      "performance": {
+        "durationMs": 110000,
+        "source": "fixture"
+      },
+      "sim": {
+        "loadSeconds": 110
+      }
+    },
+    {
+      "id": "Qwen/Qwen3-TTS-12Hz-1.7B-Base@spark-node-03",
+      "gatewayModel": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+      "kind": "audio",
+      "runtime": "spark03-tts-clone",
+      "nodes": ["spark-node-03"],
+      "requirements": {
+        "memoryGbPerNode": 10
+      },
+      "performance": {
+        "durationMs": 1500,
+        "source": "fixture"
+      },
+      "sim": {
+        "maxSequences": 2,
+        "loadSeconds": 45
+      }
+    },
+    {
+      "id": "openai/whisper-large-v3-turbo@spark-node-03",
+      "gatewayModel": "openai/whisper-large-v3-turbo",
+      "kind": "transcription",
+      "runtime": "spark03-stt",
+      "nodes": ["spark-node-03"],
+      "requirements": {
+        "memoryGbPerNode": 6
+      },
+      "performance": {
+        "durationMs": 2000,
+        "source": "fixture"
+      },
+      "sim": {
+        "maxSequences": 2,
+        "loadSeconds": 30
+      }
+    },
+    {
+      "id": "Wan-AI/Wan2.2-TI2V-5B-Diffusers@spark-node-03",
+      "gatewayModel": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+      "kind": "video",
+      "runtime": "spark03-video",
+      "nodes": ["spark-node-03"],
+      "requirements": {
+        "memoryGbPerNode": 48
+      },
+      "performance": {
+        "durationMs": 240000,
+        "source": "fixture"
+      },
+      "sim": {
+        "loadSeconds": 180
+      }
+    },
+    {
+      "id": "Comfy-Org/YuE2-3B@spark-node-03",
+      "gatewayModel": "Comfy-Org/YuE2-3B",
+      "kind": "audio",
+      "runtime": "spark03-yue2",
+      "nodes": ["spark-node-03"],
+      "requirements": {
+        "memoryGbPerNode": 16
+      },
+      "performance": {
+        "durationMs": 90000,
+        "source": "fixture"
+      },
+      "sim": {
+        "loadSeconds": 90
+      }
+    },
+    {
+      "id": "cloud/openrouter/q38fn",
+      "gatewayModel": "cloud/openrouter/q38fn",
+      "kind": "chat",
+      "external": true,
+      "performance": {
+        "ttftMs": 700,
+        "decodeTps": 120,
+        "source": "fixture"
+      }
+    }
+  ],
+  "workloads": [
+    {
+      "id": "chat-capable",
+      "residency": "always",
+      "candidates": ["qwen3.8-flash-next-atlas", "qwen38-27b-nvfp4", "cloud/openrouter/q38fn"],
+      "demandPerHour": 30,
+      "demand": {
+        "perHour": 30,
+        "diurnal": {
+          "amplitude": 0.5,
+          "peakHour": 15
+        }
+      },
+      "slo": {
+        "ttftMs": 3000
+      }
+    },
+    {
+      "id": "chat-fast",
+      "residency": "always",
+      "candidates": ["qwen3.8-flash-next-atlas", "qwen38-27b-nvfp4", "cloud/openrouter/q38fn"],
+      "demandPerHour": 20,
+      "demand": {
+        "perHour": 20,
+        "diurnal": {
+          "amplitude": 0.5,
+          "peakHour": 15
+        }
+      },
+      "slo": {
+        "ttftMs": 3000
+      }
+    },
+    {
+      "id": "chat-classifier",
+      "residency": "always",
+      "candidates": ["qwen3.8-flash-next-atlas", "qwen38-27b-nvfp4", "cloud/openrouter/q38fn"],
+      "demandPerHour": 40,
+      "demand": {
+        "perHour": 40,
+        "diurnal": {
+          "amplitude": 0.5,
+          "peakHour": 15
+        }
+      },
+      "slo": {
+        "ttftMs": 3000
+      }
+    },
+    {
+      "id": "multimodal",
+      "residency": "always",
+      "candidates": ["qwen3.8-flash-next-atlas", "qwen38-27b-nvfp4", "cloud/openrouter/q38fn"],
+      "demandPerHour": 5,
+      "demand": {
+        "perHour": 5,
+        "diurnal": {
+          "amplitude": 0.5,
+          "peakHour": 15
+        }
+      },
+      "slo": {
+        "ttftMs": 3000
+      }
+    },
+    {
+      "id": "enntity-presence",
+      "residency": "always",
+      "candidates": ["qwen3.8-flash-next-atlas", "qwen38-27b-nvfp4", "cloud/openrouter/q38fn"],
+      "demandPerHour": 10,
+      "demand": {
+        "perHour": 10,
+        "diurnal": {
+          "amplitude": 0.5,
+          "peakHour": 15
+        }
+      },
+      "slo": {
+        "ttftMs": 3000
+      }
+    },
+    {
+      "id": "omp",
+      "residency": "always",
+      "candidates": ["qwen3.8-flash-next-atlas", "qwen38-27b-nvfp4", "cloud/openrouter/q38fn"],
+      "demandPerHour": 8,
+      "demand": {
+        "perHour": 8,
+        "diurnal": {
+          "amplitude": 0.5,
+          "peakHour": 15
+        }
+      },
+      "slo": {
+        "ttftMs": 3000
+      }
+    },
+    {
+      "id": "ds4f",
+      "residency": "always",
+      "candidates": ["qwen3.8-flash-next-atlas", "qwen38-27b-nvfp4", "cloud/openrouter/q38fn"],
+      "demandPerHour": 2,
+      "demand": {
+        "perHour": 2,
+        "diurnal": {
+          "amplitude": 0.5,
+          "peakHour": 15
+        }
+      },
+      "slo": {
+        "ttftMs": 3000
+      }
+    },
+    {
+      "id": "embeddings",
+      "candidates": ["Qwen/Qwen3-Embedding-4B"],
+      "residency": "always",
+      "demandPerHour": 200,
+      "demand": {
+        "perHour": 200,
+        "diurnal": {
+          "amplitude": 0.5,
+          "peakHour": 15
+        }
+      },
+      "slo": {
+        "ttftMs": 500
+      }
+    },
+    {
+      "id": "hear",
+      "candidates": ["hear"],
+      "residency": "always",
+      "demandPerHour": 20,
+      "demand": {
+        "perHour": 20,
+        "diurnal": {
+          "amplitude": 0.5,
+          "peakHour": 15
+        }
+      },
+      "slo": {
+        "ttftMs": 2000
+      }
+    },
+    {
+      "id": "image-fast",
+      "candidates": ["BennyDaBall/Qwen-Image-2.1-Turbo-NVFP4", "BennyDaBall/Qwen-Image-2.1-NVFP4"],
+      "residency": "preferred",
+      "demandPerHour": 2,
+      "demand": {
+        "perHour": 2,
+        "diurnal": {
+          "amplitude": 0.5,
+          "peakHour": 15
+        }
+      },
+      "slo": {
+        "ttftMs": 60000
+      }
+    },
+    {
+      "id": "image-quality",
+      "candidates": ["BennyDaBall/Qwen-Image-2.1-NVFP4"],
+      "residency": "auto",
+      "demandPerHour": 0.2,
+      "demand": {
+        "perHour": 0.2,
+        "diurnal": {
+          "amplitude": 0.5,
+          "peakHour": 15
+        }
+      }
+    },
+    {
+      "id": "tts-clone",
+      "candidates": ["Qwen/Qwen3-TTS-12Hz-1.7B-Base"],
+      "residency": "preferred",
+      "demandPerHour": 3,
+      "demand": {
+        "perHour": 3,
+        "diurnal": {
+          "amplitude": 0.5,
+          "peakHour": 15
+        }
+      },
+      "slo": {
+        "ttftMs": 5000
+      }
+    },
+    {
+      "id": "stt",
+      "candidates": ["openai/whisper-large-v3-turbo"],
+      "residency": "auto",
+      "demandPerHour": 1,
+      "demand": {
+        "perHour": 1,
+        "diurnal": {
+          "amplitude": 0.5,
+          "peakHour": 15
+        }
+      },
+      "slo": {
+        "ttftMs": 10000
+      }
+    },
+    {
+      "id": "video",
+      "candidates": ["Wan-AI/Wan2.2-TI2V-5B-Diffusers"],
+      "residency": "auto",
+      "demandPerHour": 0.1,
+      "demand": {
+        "perHour": 0.1,
+        "diurnal": {
+          "amplitude": 0.5,
+          "peakHour": 15
+        }
+      }
+    },
+    {
+      "id": "music",
+      "candidates": ["Comfy-Org/YuE2-3B"],
+      "residency": "auto",
+      "demandPerHour": 0.1,
+      "demand": {
+        "perHour": 0.1,
+        "diurnal": {
+          "amplitude": 0.5,
+          "peakHour": 15
+        }
+      }
+    }
+  ],
+  "pins": {
+    "residency": {
+      "qwen3-embedding-4b": "always",
+      "hear": "always"
+    }
+  },
+  "initial": {
+    "running": [
+      "qwen3.8-flash-next-atlas@spark-node-01+spark-node-02",
+      "Qwen/Qwen3-Embedding-4B@spark-node-03",
+      "hear@spark-node-03",
+      "BennyDaBall/Qwen-Image-2.1-Turbo-NVFP4@spark-node-03",
+      "Qwen/Qwen3-TTS-12Hz-1.7B-Base@spark-node-03"
+    ],
+    "routes": {
+      "chat-capable": "qwen3.8-flash-next-atlas",
+      "chat-fast": "qwen3.8-flash-next-atlas",
+      "chat-classifier": "qwen3.8-flash-next-atlas",
+      "multimodal": "qwen3.8-flash-next-atlas",
+      "enntity-presence": "qwen3.8-flash-next-atlas",
+      "omp": "qwen3.8-flash-next-atlas",
+      "ds4f": "qwen3.8-flash-next-atlas",
+      "embeddings": "Qwen/Qwen3-Embedding-4B",
+      "hear": "hear",
+      "image-fast": "BennyDaBall/Qwen-Image-2.1-Turbo-NVFP4",
+      "image-quality": "BennyDaBall/Qwen-Image-2.1-NVFP4",
+      "tts-clone": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+      "stt": "openai/whisper-large-v3-turbo",
+      "video": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+      "music": "Comfy-Org/YuE2-3B"
+    },
+    "residency": {
+      "qwen3-embedding-4b": "always",
+      "hear": "always",
+      "spark03-tts-clone": "preferred",
+      "spark03-qwen-image-21-turbo-nvfp4": "preferred",
+      "qwen38-27b-nvfp4": "auto",
+      "spark03-qwen-image-21-nvfp4": "auto",
+      "spark03-stt": "auto",
+      "spark03-video": "auto",
+      "spark03-yue2": "auto"
+    }
+  }
+}

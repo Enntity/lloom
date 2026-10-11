@@ -33,6 +33,9 @@ const STANDALONE_RUNNING = [
   'Qwen/Qwen3-TTS-12Hz-1.7B-Base@spark-node-03'
 ];
 
+// The hand-written profiles were sized against the admission budget alone, so
+// profile reproduction turns the memory-guard ceiling off; the guard has its
+// own test below.
 function planFleet({ cordon = [], current, pins = {}, nodes = fleet.nodes, policy = {} } = {}) {
   return planPool({
     nodes,
@@ -40,7 +43,7 @@ function planFleet({ cordon = [], current, pins = {}, nodes = fleet.nodes, polic
     workloads: fleetWorkloads(),
     pins: { ...fleet.pins, ...pins, cordon },
     current,
-    policy: { ...fleet.policy, ...policy }
+    policy: { ...fleet.policy, memorySafetyUtilization: null, ...policy }
   });
 }
 
@@ -112,6 +115,22 @@ test('a free pair moves cognition back to SparkQwen as a manual start', () => {
   );
   assert.deepEqual(plan.diff.release, [{ action: 'release', placement: 'qwen38-27b-nvfp4@spark-node-03' }]);
   assert.deepEqual(plan.diff.residencyChanges, [{ runtime: 'qwen38-27b-nvfp4', from: 'always', to: 'auto' }]);
+});
+
+test('the memory guard ceiling shows standalone cannot load video next to a keep-warm 27B', () => {
+  const plan = planFleet({
+    cordon: ['spark-node-01', 'spark-node-02'],
+    current: currentFromProfile('sparkqwen-pair-rc16', RC16_RUNNING),
+    policy: { memorySafetyUtilization: 0.9 }
+  });
+  // 128 GB x 0.9 guard ceiling - 4 GB headroom = 111.2 GB; keep-warm 27B,
+  // embeddings and hear hold 64 GB, and the 48 GB video lane needs 112.
+  assert.equal(plan.nodes['spark-node-03'].domains[0].budgetGb, 111.2);
+  assert.deepEqual(
+    plan.uncovered.map((entry) => entry.workload),
+    ['video']
+  );
+  assert.equal(plan.routes['chat-capable'].model, 'qwen38-27b-nvfp4');
 });
 
 test('a high churn weight keeps the running lane when the gain is small', () => {
@@ -205,20 +224,35 @@ test('memory headroom is conservative', () => {
     nodes: [spark('s')],
     variants: [large],
     workloads: one(),
-    policy: { maxMemoryUtilization: 0.95, headroomGb: 4 }
+    policy: { maxMemoryUtilization: 0.95, headroomGb: 4, memorySafetyUtilization: null }
   });
   assert.equal(fits.ok, true);
   const tight = planPool({
     nodes: [spark('s')],
     variants: [large],
     workloads: one(),
-    policy: { maxMemoryUtilization: 0.95, headroomGb: 8 }
+    policy: { maxMemoryUtilization: 0.95, headroomGb: 8, memorySafetyUtilization: null }
   });
   assert.equal(tight.ok, false);
   assert.ok(tight.uncovered[0].reasons.some((reason) => reason.includes('does not fit as always')));
-  const defaults = planPool({ nodes: [spark('s')], variants: [large], workloads: one() });
-  assert.equal(defaults.ok, false, 'default budget is capacity minus reserve minus headroom');
-  assert.equal(defaults.nodes.s.domains[0].budgetGb, 116);
+  const admissionOnly = planPool({
+    nodes: [spark('s')],
+    variants: [large],
+    workloads: one(),
+    policy: { memorySafetyUtilization: null }
+  });
+  assert.equal(admissionOnly.ok, false, 'admission budget is capacity minus reserve minus headroom');
+  assert.equal(admissionOnly.nodes.s.domains[0].budgetGb, 116);
+  // By default the runtime memory guard's 90% ceiling caps unified memory too.
+  const guarded = planPool({ nodes: [spark('s')], variants: [large], workloads: one() });
+  assert.equal(guarded.nodes.s.domains[0].budgetGb, 111.2);
+  const guardedAt95 = planPool({
+    nodes: [spark('s')],
+    variants: [large],
+    workloads: one(),
+    policy: { maxMemoryUtilization: 0.95, headroomGb: 4 }
+  });
+  assert.equal(guardedAt95.ok, false, 'the guard aborts a load the 95% admission budget would allow');
 });
 
 test('memory is accounted per domain on discrete GPUs', () => {

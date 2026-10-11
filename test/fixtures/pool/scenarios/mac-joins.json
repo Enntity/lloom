@@ -1,0 +1,86 @@
+{
+  "base": "spark-fleet-base.json",
+  "name": "mac-joins",
+  "description": "Only spark-node-03 is in the pool, serving cognition from the 27B (the standalone profile). A Mac Studio with no model weights joins at hour 1. The pool has an MLX build of Qwen3.8 Flash Next for Apple Silicon. The controller should prefetch the weights, start the lane on the Mac, move cognition, and release the 27B on 03, without dropping requests.",
+  "durationHours": 6,
+  "nodes": [
+    { "id": "spark-node-01", "remove": true },
+    { "id": "spark-node-02", "remove": true },
+    {
+      "id": "mac-studio",
+      "platformId": "darwin-arm64",
+      "computeArchs": ["apple-metal"],
+      "accelerators": ["metal", "apple-gpu"],
+      "memoryDomains": [{ "id": "unified:0", "kind": "unified", "capacityGb": 128 }],
+      "links": [],
+      "weights": [],
+      "fetchMBps": 120,
+      "joinAtHours": 1
+    }
+  ],
+  "variants": [
+    { "id": "qwen3.8-flash-next-atlas@spark-node-01+spark-node-02", "remove": true },
+    {
+      "id": "qwen3.8-flash-next-mlx",
+      "gatewayModel": "qwen3.8-flash-next-mlx",
+      "model": "mlx-community/Qwen3.8-Flash-Next-4bit",
+      "kind": "chat",
+      "runtime": "qwen38fn-mlx",
+      "requirements": {
+        "nodeCount": 1,
+        "platforms": ["darwin-arm64"],
+        "computeArchs": ["apple-metal"],
+        "memoryGbPerNode": 58,
+        "diskGb": 52,
+        "contextWindow": 262144,
+        "recipeId": "macos-qwen38fn-mlx"
+      },
+      "performance": { "ttftMs": 600, "decodeTps": 45, "source": "fixture" },
+      "sim": { "loadSeconds": 60, "maxSequences": 4 }
+    }
+  ],
+  "workloads": [
+    { "id": "chat-capable", "candidates": ["qwen3.8-flash-next-mlx", "qwen38-27b-nvfp4", "cloud/openrouter/q38fn"] },
+    { "id": "chat-fast", "candidates": ["qwen3.8-flash-next-mlx", "qwen38-27b-nvfp4", "cloud/openrouter/q38fn"] },
+    { "id": "chat-classifier", "candidates": ["qwen3.8-flash-next-mlx", "qwen38-27b-nvfp4", "cloud/openrouter/q38fn"] },
+    { "id": "multimodal", "candidates": ["qwen3.8-flash-next-mlx", "qwen38-27b-nvfp4", "cloud/openrouter/q38fn"] },
+    {
+      "id": "enntity-presence",
+      "candidates": ["qwen3.8-flash-next-mlx", "qwen38-27b-nvfp4", "cloud/openrouter/q38fn"]
+    },
+    { "id": "omp", "candidates": ["qwen3.8-flash-next-mlx", "qwen38-27b-nvfp4", "cloud/openrouter/q38fn"] },
+    { "id": "ds4f", "candidates": ["qwen3.8-flash-next-mlx", "qwen38-27b-nvfp4", "cloud/openrouter/q38fn"] }
+  ],
+  "initial": {
+    "running": [
+      "qwen38-27b-nvfp4@spark-node-03",
+      "Qwen/Qwen3-Embedding-4B@spark-node-03",
+      "hear@spark-node-03",
+      "BennyDaBall/Qwen-Image-2.1-Turbo-NVFP4@spark-node-03",
+      "Qwen/Qwen3-TTS-12Hz-1.7B-Base@spark-node-03"
+    ],
+    "routes": {
+      "chat-capable": "qwen38-27b-nvfp4",
+      "chat-fast": "qwen38-27b-nvfp4",
+      "chat-classifier": "qwen38-27b-nvfp4",
+      "multimodal": "qwen38-27b-nvfp4",
+      "enntity-presence": "qwen38-27b-nvfp4",
+      "omp": "qwen38-27b-nvfp4",
+      "ds4f": "qwen38-27b-nvfp4"
+    },
+    "residency": { "qwen38-27b-nvfp4": "always" }
+  },
+  "expect": {
+    "auto": {
+      "safety.memoryViolations.length": { "max": 0 },
+      "final.routes.chat-capable": { "equals": "qwen3.8-flash-next-mlx" },
+      "final.lanes": { "includes": "qwen3.8-flash-next-mlx@mac-studio" },
+      "final.residency.qwen38-27b-nvfp4": { "equals": "auto" },
+      "requests.failed": { "max": 0 },
+      "controller.stepFailures": { "max": 0 }
+    },
+    "off": {
+      "final.routes.chat-capable": { "equals": "qwen38-27b-nvfp4" }
+    }
+  }
+}
