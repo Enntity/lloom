@@ -352,7 +352,18 @@ test('planner inputs from config produce a coherent plan', () => {
     recipes: [tp2Recipe]
   });
   assert.equal(inputs.policy.maxMemoryUtilization, 0.95);
+  assert.equal(inputs.policy.memorySafetyUtilization, 0.9, 'the guard ceiling, not the admission utilization');
   assert.ok(!inputs.variants.some((variant) => variant.source === 'recipe'), 'installs are opt-in');
+  const looser = buildPoolPlanInputs({
+    config: { ...fleetConfig(), runtimePolicy: { memorySafety: { maxMemoryUtilization: 0.95 } } },
+    nodeStatuses: fleetStatuses()
+  });
+  assert.equal(looser.policy.memorySafetyUtilization, 0.9, 'runtimePolicy.maxMemoryUtilization defaults to 0.9');
+  const yolo = buildPoolPlanInputs({
+    config: { ...fleetConfig(), runtimePolicy: { memorySafety: { mode: 'yolo' } } },
+    nodeStatuses: fleetStatuses()
+  });
+  assert.equal(yolo.policy.memorySafetyUtilization, 1);
   const plan = planPool(inputs);
   // spark-node-02 is cordoned and unreachable, so the pair lane cannot serve.
   assert.equal(plan.routes['chat-capable'].model, 'qwen38-27b-nvfp4');

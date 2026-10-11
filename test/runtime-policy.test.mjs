@@ -668,4 +668,33 @@ const guardLooser = await createRuntimePolicyPlan(
 assert.equal(guardLooser.policy.hostReserveGb, 8, 'a 0.95 ceiling leaves 6.4 GB, so the 8 GB reserve governs');
 assert.equal(guardLooser.admission.allowed, true);
 
+// A cluster node with unknown capacity has a zero budget, not a negative one
+// that would block planning on the nodes that are known.
+const unknownCapacity = await createRuntimePolicyPlan(
+  {
+    cluster: { nodeId: 'a', leaderNode: 'a', nodes: { a: { resources: { memoryGb: 128 } }, b: {} } },
+    runtimePolicy: { autoEvict: true },
+    runtimes: { r: { enabled: true, node: 'a', memoryGb: 16 } }
+  },
+  {
+    status: {
+      runtimes: {},
+      cluster: {
+        nodes: {
+          a: {
+            local: true,
+            reachable: true,
+            telemetry: { memory: { totalBytes: 128 * 1024 ** 3, availableBytes: 100 * 1024 ** 3 } }
+          },
+          b: { reachable: true }
+        }
+      }
+    },
+    profile: { totalMemoryGb: 128, availableMemoryGb: 100 }
+  }
+);
+assert.equal(unknownCapacity.admission.nodes.b.memoryBudgetGb, 0);
+assert.equal(unknownCapacity.admission.overBudgetGb, 0);
+assert.equal(unknownCapacity.admission.allowed, true);
+
 console.log('runtime-policy tests passed');

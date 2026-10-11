@@ -192,6 +192,14 @@ test('explicit YOLO is the only guard bypass', async (t) => {
   assert(alive((await f.ids()).backend));
 });
 
+test('a successful start clears earlier memory-safety abort evidence', async (t) => {
+  const f = await fixture(t, { yolo: true });
+  f.manager.stateFor('demo').memorySafetyAbort = { at: '2026-10-11T00:00:00.000Z', usedGb: 90, consumedGb: 40 };
+  const result = await f.manager.start('demo');
+  assert.equal(result.healthy, true);
+  assert.equal((await f.manager.status()).runtimes.demo.memorySafetyAbort, null);
+});
+
 test('a stale sample cannot abort a completed operation', async () => {
   let release;
   let aborts = 0;

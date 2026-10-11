@@ -70,10 +70,10 @@ export function planReconcile({ plan, current = {}, workloads = [], variants = [
     return unique;
   };
 
+  // Lanes already stopping (a drain from an earlier, preempted change) still
+  // hold their memory; they get an idempotent stop that later starts wait on.
   const running = new Map(
-    list(current.placements)
-      .filter((placement) => placement.state !== 'stopping')
-      .map((placement) => [placement.key, { ...placement, models: list(placement.models) }])
+    list(current.placements).map((placement) => [placement.key, { ...placement, models: list(placement.models) }])
   );
   const planned = list(plan.placements).filter((placement) => !placement.external);
   const plannedKeys = new Set(planned.map((placement) => placement.placement));
@@ -186,7 +186,8 @@ export function planReconcile({ plan, current = {}, workloads = [], variants = [
 
   const routeTo = (alias, to, type = 'route') => {
     const target = plannedByModel.get(to);
-    const after = [readyStep.get(to), ...downgradeSteps];
+    // Flips of one alias stay in order (an interim member, then back).
+    const after = [readyStep.get(to), routeStep.get(alias), ...downgradeSteps];
     const id = add(
       { type, alias, from: routes[alias] ?? null, to, ...(target ? { placement: target.placement } : {}) },
       after
@@ -195,6 +196,20 @@ export function planReconcile({ plan, current = {}, workloads = [], variants = [
     routeStep.set(alias, id);
     return id;
   };
+
+  // Another planned lane that serves `model`: { after: stepId|null } once it
+  // is ready or has a start step, undefined while it is neither.
+  const replacementFor = (model, excludeKey) => {
+    for (const placement of planned) {
+      if (placement.placement === excludeKey || !placement.models.includes(model)) continue;
+      if (startStep.has(placement.placement)) return { after: startStep.get(placement.placement) };
+      const lane = running.get(placement.placement);
+      if (lane && (lane.state === 'ready' || lane.state == null)) return { after: null };
+    }
+    return undefined;
+  };
+
+  for (const placement of [...running.values()].filter((entry) => entry.state === 'stopping')) release(placement);
 
   for (let guard = 0; guard < 1000; guard += 1) {
     let progress = false;
@@ -209,14 +224,18 @@ export function planReconcile({ plan, current = {}, workloads = [], variants = [
       return false;
     });
 
-    // Retire lanes that are not planned and no longer routed to.
+    // Retire lanes that are not planned once nothing needs them: no alias is
+    // routed to their models, or every such model is (about to be) served by
+    // another planned lane, as when a model moves between nodes.
     for (const placement of [...running.values()].sort((a, b) => a.key.localeCompare(b.key))) {
-      if (plannedKeys.has(placement.key) || aliasesOn(placement).length) continue;
+      if (plannedKeys.has(placement.key)) continue;
+      const replacements = aliasesOn(placement).map((alias) => replacementFor(routes[alias], placement.key));
+      if (replacements.some((replacement) => replacement === undefined)) continue;
       const after = Object.entries(routes)
         .filter(([alias]) => routeStep.has(alias))
         .filter(([alias]) => placement.models.includes(current.routes?.[alias]))
         .map(([alias]) => routeStep.get(alias));
-      release(placement, after);
+      release(placement, [...after, ...replacements.map((replacement) => replacement.after)]);
       progress = true;
     }
 
@@ -231,7 +250,8 @@ export function planReconcile({ plan, current = {}, workloads = [], variants = [
           nodes: placement.nodes,
           runtime: placement.runtime,
           residency: placement.residency,
-          memoryGbPerNode: placement.memoryGbPerNode
+          memoryGbPerNode: placement.memoryGbPerNode,
+          ...(counted ? { resume: true } : {})
         },
         startAfter(placement)
       );
@@ -307,8 +327,14 @@ export function planReconcile({ plan, current = {}, workloads = [], variants = [
                   placement.models.includes(model)
               ))
         );
-        if (interim) interimAfter.push(routeTo(alias, interim, 'interim-route'));
-        else interruptions.push({ alias, placement: victim.key, until: blockedStart.placement });
+        if (interim) {
+          interimAfter.push(routeTo(alias, interim, 'interim-route'));
+          // The interim member is temporary: queue the flip back to the plan.
+          const target = plan.routes?.[alias]?.model;
+          if (target && target !== interim && !pendingRoutes.some((change) => change.alias === alias)) {
+            pendingRoutes.push({ alias, from: interim, to: target });
+          }
+        } else interruptions.push({ alias, placement: victim.key, until: blockedStart.placement });
       }
       release(victim, interimAfter);
     }
@@ -364,6 +390,7 @@ export async function executeReconcile(
   const status = new Map(steps.map((step) => [step.id, 'pending']));
   const errors = {};
   const running = new Set();
+  concurrency = Math.max(1, Math.floor(Number(concurrency) || 1));
   const method = (type) =>
     ({
       prefetch: 'prefetch',
@@ -398,10 +425,18 @@ export async function executeReconcile(
         errors
       });
     };
+    // A throwing observer must not wedge the run.
+    const notify = (event) => {
+      try {
+        onStep(event);
+      } catch {
+        // ignored
+      }
+    };
     const settle = (step, value, error) => {
       status.set(step.id, value);
       if (error) errors[step.id] = error;
-      onStep({ step, status: value, ...(error ? { error } : {}) });
+      notify({ step, status: value, ...(error ? { error } : {}) });
     };
     const pump = () => {
       for (const step of steps) {
@@ -419,7 +454,7 @@ export async function executeReconcile(
         if (running.size >= concurrency) break;
         status.set(step.id, 'running');
         running.add(step.id);
-        onStep({ step, status: 'running' });
+        notify({ step, status: 'running' });
         const limitMs = timeoutsMs[step.type] ?? DEFAULT_STEP_TIMEOUTS_MS[step.type];
         const timedOut = timer(limitMs).then(() => {
           throw new Error(`${step.type} timed out after ${Math.round(limitMs / 1000)} s`);

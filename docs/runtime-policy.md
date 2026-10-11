@@ -55,7 +55,8 @@ check keeps whichever is larger free after the load: the reserve, or the margin
 below the guard's ceiling. The ceiling is
 `min(memorySafety.maxMemoryUtilization, maxMemoryUtilization)`, which defaults
 to 0.9, so on a 128 GB host the margin is 12.8 GB, more than the default 8 GB
-reserve. For the same reason, cluster node budgets are capped at the ceiling.
+reserve. For the same reason, cluster node budgets are capped at the ceiling,
+including an explicit per-node `memoryBudgetGb` set above it.
 When the guard does abort a load, the runtime stays latched until a manual
 start. Its status then reports `memorySafetyLatched` and `memorySafetyAbort`:
 `usedGb`, and `consumedGb`, the memory the load had taken when it was stopped.

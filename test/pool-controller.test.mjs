@@ -226,3 +226,60 @@ test('an urgent new target cancels a change stuck in progress; the same target n
   await controller.executing;
   assert.equal(state.routes['chat-capable'], 'cloud/openrouter/q38fn');
 });
+
+test('ticks do not overlap, throwing observers do not wedge it, and one large move fits an empty hour', async () => {
+  const { observe, actuator, state } = fakeFleet({ cordon: ['spark-node-01', 'spark-node-02'] });
+  let release;
+  const gate = new Promise((resolve) => (release = resolve));
+  const controller = createPoolController({
+    observe: async () => {
+      await gate;
+      return observe();
+    },
+    actuator,
+    onEvent: () => {
+      throw new Error('observer bug');
+    },
+    policy: { mode: 'auto', concurrency: 0 }
+  });
+  assert.equal(controller.policy.concurrency, 1);
+  const first = controller.tick();
+  const second = await controller.tick();
+  assert.equal(second.action, 'busy');
+  release();
+  assert.equal((await first).action, 'apply');
+  const result = await controller.executing;
+  assert.equal(result.ok, true);
+  assert.equal(state.routes['chat-capable'], 'qwen38-27b-nvfp4');
+
+  const policy = normalizeControllerPolicy({ maxLoadGbPerHour: 10 });
+  const big = { empty: false, steps: [{ type: 'start', memoryGbPerNode: 110, nodes: ['a', 'b'] }, { type: 'route' }] };
+  const score = { uncovered: 0, external: 0, sloMisses: 0 };
+  const quiet = { stableTicks: 5, lastActionAt: null, loads: [] };
+  const decision = decide({
+    plan: { score: { ...score, cost: 10 } },
+    stay: { score: { ...score, cost: 100 } },
+    reconcile: big,
+    state: quiet,
+    policy,
+    now: 0
+  });
+  assert.equal(decision.act, true, 'a 220 GB move is not impossible under a 10 GB budget');
+  const resumed = {
+    empty: false,
+    steps: [{ type: 'start', resume: true, memoryGbPerNode: 110, nodes: ['a'] }, { type: 'route' }]
+  };
+  const busyHour = { ...quiet, loads: [{ at: 0, gb: 5 }] };
+  assert.equal(
+    decide({
+      plan: { score: { ...score, cost: 10 } },
+      stay: { score: { ...score, cost: 100 } },
+      reconcile: resumed,
+      state: busyHour,
+      policy,
+      now: 1
+    }).act,
+    true,
+    'a lane already loading is not counted again'
+  );
+});

@@ -179,7 +179,7 @@ With the memory guard ceiling applied, the same fixture shows a conflict the han
 2. **Downgrade residency** for lanes leaving keep-warm, so LLooM does not restart them while they drain.
 3. **Start** new lanes that fit next to everything still running (make before break).
 4. **Flip routes** once their target is ready.
-5. **Drain and stop** lanes no route uses any more.
+5. **Drain and stop** lanes no route uses any more. This includes a lane whose model moved to another node: it stops once the new lane is up. A lane already draining from an earlier change counts as holding its memory until the drain ends.
 6. **Upgrade residency** for lanes that just started.
 
 When a new lane only fits after an old one is gone, the move is a swap. The old lane's aliases go to an interim member that is already serving, such as another running lane or an external fallback. Then the old lane drains and stops, the new lane starts, and the aliases flip to it. If there is no interim member, the plan reports an interruption instead of hiding it. Unmanaged lanes (for example a hand-run TP2 server) become `manual-start` and `manual-stop` steps for an operator.
@@ -196,10 +196,16 @@ Steps run with dependencies. When a step fails, everything that depends on it is
 
 Moving a model costs minutes of load time, so the controller only acts on a plan worth moving for:
 
-- **Urgent changes act at once.** A change is urgent when the plan covers a required workload that keeping today's routes would leave uncovered: a node went away, a lane died, or memory was freed. An urgent plan for a _different_ target can cancel a change still in progress. For example, it cancels a manual restart that is waiting on a node which has just died. The same target never preempts itself.
-- **Other changes are held back.** The steps must be the same for `confirmTicks` (2) ticks in a row. They must also either cut the latency cost by at least `minGain` (10%) or improve SLOs or local coverage. After that come a `cooldownMs` (15 min) cooldown and a `maxLoadGbPerHour` (400 GB) budget for new loads.
+- **Urgent changes act at once.** A change is urgent in two cases:
+  - The plan covers a required workload that keeping today's routes would leave uncovered: a node went away, a lane died, or memory was freed.
+  - The plan vacates a cordoned or draining node.
+
+  An urgent plan with _different routes_ can cancel a change still in progress. For example, it cancels a manual restart that is waiting on a node which has just died. The same routes never preempt themselves, and residency changes never preempt.
+
+- **Other changes are held back.** The steps must be the same for `confirmTicks` (2) ticks in a row. They must also either cut the latency cost by at least `minGain` (10%) or improve SLOs or local coverage. After that come a `cooldownMs` (15 min) cooldown and a `maxLoadGbPerHour` (400 GB) budget for new loads. A lane already loading does not count against the budget again. A single change larger than the whole budget may still go when nothing else loaded in the past hour.
 - **Residency-only changes follow noisy demand,** so they get a slower signal: `maintenanceConfirmTicks` (10) and `maintenanceCooldownMs` (1 hour).
 - **Failed starts are skipped for a while.** A lane that fails to start is excluded from planning on that node for `failureBackoffMs` (30 min).
+- **One tick at a time.** Ticks never overlap, and an exception thrown by an observer cannot wedge the controller.
 
 ## Simulation
 

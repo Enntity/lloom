@@ -44,15 +44,20 @@ export function normalizeControllerPolicy(policy = {}) {
     if (key === 'mode') merged.mode = POOL_CONTROLLER_MODES.includes(value) ? value : DEFAULT_CONTROLLER_POLICY.mode;
     else merged[key] = num(value) ?? merged[key];
   }
+  merged.concurrency = Math.max(1, Math.floor(merged.concurrency));
   return merged;
+}
+
+function routeSignature(plan) {
+  return Object.entries(plan.routes ?? {})
+    .map(([alias, route]) => `${alias}=${route.model}`)
+    .sort();
 }
 
 // What the plan changes, independent of scores: two plans with the same
 // signature would make the same moves.
 export function planSignature(plan) {
-  const routes = Object.entries(plan.routes ?? {})
-    .map(([alias, route]) => `${alias}=${route.model}`)
-    .sort();
+  const routes = routeSignature(plan);
   const placements = (plan.placements ?? [])
     .filter((placement) => !placement.external && placement.residency !== 'auto')
     .map((placement) => `${placement.placement}:${placement.residency}`)
@@ -82,12 +87,25 @@ function stayPlan(inputs) {
   return planPool({ ...inputs, pins: { ...inputs.pins, routes: { ...viable, ...(inputs.pins?.routes ?? {}) } } });
 }
 
-export function decide({ plan, stay, reconcile, state, policy, now }) {
+// Memory that new loads bring in; a lane already loading (`resume`) is not new.
+function newLoadGb(steps) {
+  return steps
+    .filter((step) => step.type === 'start' && !step.resume)
+    .reduce((sum, step) => sum + (num(step.memoryGbPerNode) ?? 0) * (step.nodes?.length ?? 1), 0);
+}
+
+export function decide({ plan, stay, reconcile, state, policy, now, cordoned = new Set() }) {
   if (reconcile.empty) return { act: false, reason: 'no changes' };
   const restoresCoverage =
     plan.score.uncovered < stay.score.uncovered ||
     (stay.pinViolations?.length ?? 0) > (plan.pinViolations?.length ?? 0);
   if (restoresCoverage) return { act: true, urgent: true, reason: 'restores coverage' };
+  // A cordon or drain is an operator asking for the node back: vacate it now.
+  const vacates = reconcile.steps.some(
+    (step) =>
+      (step.type === 'stop' || step.type === 'manual-stop') && (step.nodes ?? []).some((node) => cordoned.has(node))
+  );
+  if (vacates) return { act: true, urgent: true, reason: 'vacates a cordoned node' };
   if (plan.score.uncovered > stay.score.uncovered) return { act: false, reason: 'plan covers less than today' };
   const quality = plan.score.sloMisses < stay.score.sloMisses || plan.score.external < stay.score.external;
   const gain = stay.score.cost > 0 ? (stay.score.cost - plan.score.cost) / stay.score.cost : 0;
@@ -106,11 +124,11 @@ export function decide({ plan, stay, reconcile, state, policy, now }) {
   if (state.lastActionAt != null && now - state.lastActionAt < cooldownMs) {
     return { act: false, reason: 'cooldown after the last change' };
   }
-  const loadGb = reconcile.steps
-    .filter((step) => step.type === 'start')
-    .reduce((sum, step) => sum + (num(step.memoryGbPerNode) ?? 0) * (step.nodes?.length ?? 1), 0);
+  const loadGb = newLoadGb(reconcile.steps);
   const recentGb = state.loads.filter((entry) => now - entry.at < 3600000).reduce((sum, entry) => sum + entry.gb, 0);
-  if (recentGb + loadGb > policy.maxLoadGbPerHour) {
+  // One change larger than the whole budget may still go when nothing else
+  // loaded within the hour; otherwise it could never happen.
+  if (recentGb > 0 && recentGb + loadGb > policy.maxLoadGbPerHour) {
     return {
       act: false,
       reason: `hourly load budget (${Math.round(recentGb + loadGb)} GB > ${policy.maxLoadGbPerHour} GB)`
@@ -151,14 +169,33 @@ export function createPoolController({
     executing: null,
     history: []
   };
+  const emit = (entry) => {
+    try {
+      onEvent(entry);
+    } catch {
+      // A throwing observer must not wedge the controller.
+    }
+  };
   const record = (entry) => {
     state.history.push(entry);
     if (state.history.length > controllerPolicy.historyLimit) state.history.shift();
-    onEvent(entry);
+    emit(entry);
     return entry;
   };
 
+  // One tick at a time: a tick awaits observation and, when preempting, the
+  // cancelled change, so overlapping timer ticks would otherwise race.
   async function tick() {
+    if (state.ticking) return record({ at: now(), action: 'busy', reason: 'a tick is already running' });
+    state.ticking = true;
+    try {
+      return await tickOnce();
+    } finally {
+      state.ticking = false;
+    }
+  }
+
+  async function tickOnce() {
     const at = now();
     if (controllerPolicy.mode === 'off') return record({ at, action: 'off' });
     const observed = await observe();
@@ -177,7 +214,9 @@ export function createPoolController({
     const signature = `${planSignature(plan)}|${reconcile.steps.map((step) => step.id).join(',')}`;
     state.stableTicks = signature === state.signature ? state.stableTicks + 1 : 1;
     state.signature = signature;
-    const decision = decide({ plan, stay, reconcile, state, policy: controllerPolicy, now: at });
+    const cordoned = new Set((inputs.nodes ?? []).filter((node) => node.cordoned).map((node) => node.id));
+    for (const node of inputs.pins?.cordon ?? []) cordoned.add(node);
+    const decision = decide({ plan, stay, reconcile, state, policy: controllerPolicy, now: at, cordoned });
     if (state.executing) {
       // Only a plan that restores coverage may cancel work in progress (for
       // example a manual start that is waiting on a node which just died).
@@ -186,7 +225,7 @@ export function createPoolController({
         decision.act &&
         decision.urgent &&
         controllerPolicy.mode === 'auto' &&
-        planSignature(plan) !== state.executingTarget;
+        routeSignature(plan).join() !== state.executingTarget;
       if (!preempt) {
         return record({ at, action: 'busy', reason: 'still applying the last change' });
       }
@@ -210,18 +249,19 @@ export function createPoolController({
     record(entry);
     state.lastActionAt = at;
     state.stableTicks = 0;
-    for (const step of reconcile.steps.filter((candidate) => candidate.type === 'start')) {
-      state.loads.push({ at, gb: (num(step.memoryGbPerNode) ?? 0) * (step.nodes?.length ?? 1) });
-    }
+    const loadGb = newLoadGb(reconcile.steps);
+    if (loadGb) state.loads.push({ at, gb: loadGb });
     state.loads = state.loads.filter((load) => at - load.at < 3600000);
     state.abort = new AbortController();
-    state.executingTarget = planSignature(plan);
+    // Only a change of routes counts as a new target for preemption, so
+    // residency that follows demand cannot keep cancelling an urgent move.
+    state.executingTarget = routeSignature(plan).join();
     state.executing = executeReconcile(reconcile.steps, actuator, {
       concurrency: controllerPolicy.concurrency,
       signal: state.abort.signal,
       ...(timer ? { timer } : {}),
       onStep: ({ step, status, error }) => {
-        onEvent({ at: now(), action: 'step', step: step.id, status, ...(error ? { error } : {}) });
+        emit({ at: now(), action: 'step', step: step.id, status, ...(error ? { error } : {}) });
         if (status === 'failed' && (step.type === 'start' || step.type === 'manual-start')) {
           const placement = plan.placements.find((entry) => entry.placement === step.placement);
           state.failures.set(step.placement, {

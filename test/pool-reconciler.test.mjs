@@ -307,3 +307,77 @@ test('routes to a lane that is still loading wait on an idempotent start', () =>
   assert.equal(start.placement, 'qwen38-27b-nvfp4@spark-node-03');
   for (const route of steps.filter((step) => step.type === 'route')) assert.ok(route.after.includes(start.id));
 });
+
+const twoNodes = {
+  a: { domains: [{ kind: 'unified', budgetGb: 100 }] },
+  b: { domains: [{ kind: 'unified', budgetGb: 100 }] }
+};
+
+test('a model that moves between nodes retires its old lane once the new one is up', () => {
+  const { steps } = planReconcile({
+    plan: {
+      nodes: twoNodes,
+      placements: [
+        { placement: 'v@b', variant: 'v', models: ['M'], nodes: ['b'], residency: 'always', memoryGbPerNode: 60 }
+      ],
+      routes: { chat: { model: 'M' } }
+    },
+    current: {
+      placements: [{ key: 'v@a', models: ['M'], nodes: ['a'], memoryGbPerNode: 60, state: 'ready' }],
+      routes: { chat: 'M' }
+    }
+  });
+  const start = steps.find((step) => step.type === 'start');
+  const stop = steps.find((step) => step.type === 'stop');
+  assert.equal(start.placement, 'v@b');
+  assert.equal(stop?.placement, 'v@a', 'the old lane is released');
+  assert.ok(stop.after.includes(start.id), 'only after the new lane is ready');
+});
+
+test('a lane already stopping still holds its memory until its drain finishes', () => {
+  const { steps } = planReconcile({
+    plan: {
+      nodes: twoNodes,
+      placements: [
+        { placement: 'n', variant: 'n', models: ['N'], nodes: ['a'], residency: 'always', memoryGbPerNode: 90 }
+      ],
+      routes: {}
+    },
+    current: {
+      placements: [{ key: 'old', models: ['X'], nodes: ['a'], memoryGbPerNode: 90, state: 'stopping' }],
+      routes: {}
+    }
+  });
+  const wait = steps.find((step) => step.type === 'stop' && step.placement === 'old');
+  const start = steps.find((step) => step.type === 'start');
+  assert.ok(wait, 'an idempotent stop waits for the drain in progress');
+  assert.ok(start.after.includes(wait.id));
+});
+
+test('an alias moved to an interim member during a swap goes back to its planned target', () => {
+  const { steps } = planReconcile({
+    plan: {
+      nodes: twoNodes,
+      placements: [
+        { placement: 'big', variant: 'big', models: ['B'], nodes: ['a'], residency: 'always', memoryGbPerNode: 80 },
+        { placement: 'small', variant: 'small', models: ['S'], nodes: ['a'], residency: 'auto', memoryGbPerNode: 40 },
+        { placement: 'other', variant: 'other', models: ['O'], nodes: ['b'], residency: 'always', memoryGbPerNode: 40 }
+      ],
+      routes: { chat: { model: 'S' }, code: { model: 'B' }, o: { model: 'O' } }
+    },
+    current: {
+      placements: [
+        { key: 'small', models: ['S'], nodes: ['a'], memoryGbPerNode: 40, state: 'ready' },
+        { key: 'other', models: ['O'], nodes: ['b'], memoryGbPerNode: 40, state: 'ready' }
+      ],
+      routes: { chat: 'S', code: 'B', o: 'O' }
+    },
+    workloads: [{ id: 'chat', candidates: ['S', 'O'] }]
+  });
+  const routes = {};
+  for (const step of steps) if (step.type === 'route' || step.type === 'interim-route') routes[step.alias] = step.to;
+  assert.equal(routes.chat, 'S', 'the last word on chat is its planned route');
+  const interim = steps.find((step) => step.type === 'interim-route');
+  const back = steps.filter((step) => step.type === 'route' && step.alias === 'chat').at(-1);
+  assert.ok(back.after.includes(interim.id), 'the flip back runs after the interim flip');
+});

@@ -165,7 +165,8 @@ async function liveMemoryProfile(profile = {}) {
 // admission never allows a load the guard is certain to abort.
 function hostReserveGb(runtimePolicy, totalMemoryGb, reserveMemoryGb) {
   const ceiling = memorySafetyCeiling(runtimePolicy);
-  const guardMarginGb = ceiling == null ? 0 : Math.round(totalMemoryGb * (1 - ceiling) * 10) / 10;
+  // Rounded up to 0.1 GB so the margin never ends up below the guard's.
+  const guardMarginGb = ceiling == null ? 0 : Math.ceil(totalMemoryGb * (1 - ceiling) * 10 - 1e-9) / 10;
   return Math.max(reserveMemoryGb, guardMarginGb);
 }
 
@@ -351,7 +352,10 @@ function clusterRuntimePolicyPlan(
         maxMemoryUtilization,
         reserveMemoryGb
       }),
-      totalMemoryGb - hostReserveGb({ ...policyTemplate, maxMemoryUtilization }, totalMemoryGb, reserveMemoryGb)
+      Math.max(
+        0,
+        totalMemoryGb - hostReserveGb({ ...policyTemplate, maxMemoryUtilization }, totalMemoryGb, reserveMemoryGb)
+      )
     );
     const loadedMemoryGb = rows
       .filter((row) => row.loaded)

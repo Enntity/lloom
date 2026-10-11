@@ -206,3 +206,30 @@ test('admission that keeps the memory guard margin free ends the abort-and-latch
   assert.equal(fixed.lanes.guardAborts, 0);
   assert.ok(fixed.requests.failed < legacy.requests.failed);
 });
+
+test('cordoning a node moves its lanes off promptly and retires the old lane', async () => {
+  const scenario = tiny({
+    durationHours: 3,
+    nodes: [spark('s1'), spark('s2')],
+    variants: [
+      {
+        id: 'recipe:x:m',
+        gatewayModel: 'm',
+        kind: 'chat',
+        runtime: 'm',
+        requirements: { memoryGbPerNode: 40 },
+        performance: { ttftMs: 500, decodeTps: 50 },
+        sim: { loadSeconds: 60 }
+      }
+    ],
+    workloads: [{ id: 'chat', candidates: ['m'], residency: 'always', demand: { perHour: 60 } }],
+    initial: { running: [{ variant: 'recipe:x:m', nodes: ['s1'] }], routes: { chat: 'm' }, residency: { m: 'always' } },
+    events: [{ atHours: 1, type: 'cordon', nodes: ['s1'] }]
+  });
+  const report = await runPoolSimulation(scenario, { mode: 'auto' });
+  assert.deepEqual(report.final.lanes, ['recipe:x:m@s2']);
+  const apply = report.controller.decisions.find((entry) => entry.action === 'apply');
+  assert.ok(apply.atMinutes <= 61, `acted at ${apply.atMinutes} min`);
+  assert.equal(apply.reason, 'vacates a cordoned node');
+  assert.equal(report.requests.failed, 0);
+});

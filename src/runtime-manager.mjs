@@ -2394,6 +2394,8 @@ export class RuntimeManager {
       await guard.check();
       combinedSignal.throwIfAborted();
       if (owned.child?.connected) owned.child.send({ type: 'memory-safety-complete' }, () => {});
+      // A completed load is measured from here on; old abort evidence no longer applies.
+      if (result?.healthy) this.stateFor(runtimeId).memorySafetyAbort = null;
       return result;
     } catch (cause) {
       const error = guard.signal.aborted ? guard.signal.reason : cause;

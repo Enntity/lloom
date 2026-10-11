@@ -8,6 +8,7 @@ import { clusterNodes, modelTargets, runtimeResourcesByNode } from './cluster.mj
 import { resolveRouteTarget } from './config-profiles.mjs';
 import { inventoryFromProfile } from './pool-inventory.mjs';
 import { memberPlannerNode } from './pool-membership.mjs';
+import { memorySafetyCeiling } from './runtime-memory-safety.mjs';
 import { residencyPolicy } from './runtime-preferences.mjs';
 
 export const POOL_CATALOG_VERSION = 1;
@@ -240,7 +241,8 @@ function configVariants(config, { nodeStatuses, env }) {
         nodes,
         requirements: compact({
           nodeCount: nodes.length,
-          memoryGbPerNode: Math.max(configuredGb, measuredGb ?? 0, safety.abortGb ?? 0) || null,
+          // A measured footprint supersedes an abort's lower bound.
+          memoryGbPerNode: Math.max(configuredGb, measuredGb ?? safety.abortGb ?? 0) || null,
           contextWindow: num(model.contextWindow ?? runtime.contextWindow),
           maxSequences: num(runtime.maxActiveRequests),
           recipeId: runtime.recipe?.id ?? null,
@@ -618,11 +620,8 @@ export function buildPoolPlanInputs({
     policy: compact({
       maxMemoryUtilization: num(config.runtimePolicy?.maxMemoryUtilization),
       reserveGb: num(config.runtimePolicy?.reserveMemoryGb),
-      // "yolo" turns the load guard off, so it no longer caps the budget.
-      memorySafetyUtilization:
-        config.runtimePolicy?.memorySafety?.mode === 'yolo'
-          ? 1
-          : num(config.runtimePolicy?.memorySafety?.maxMemoryUtilization),
+      // The guard's own ceiling (1 when "yolo" turns it off).
+      memorySafetyUtilization: memorySafetyCeiling(config.runtimePolicy ?? {}) ?? 1,
       ...object(config.pool?.policy),
       ...policy
     }),

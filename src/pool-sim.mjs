@@ -222,6 +222,7 @@ export async function runPoolSimulation(scenario, { mode = 'auto', controller: c
   const arrivals = new Map(workloads.map((workload) => [workload.id, []]));
   const flexiblePlacements = new Map();
   const latched = new Set();
+  let lastPlan = null;
 
   // With `membership`, nodes enroll with the head and heartbeat; the planner
   // learns that a node is gone only when its lease is lost, as a real head
@@ -712,17 +713,15 @@ export async function runPoolSimulation(scenario, { mode = 'auto', controller: c
         weights: [...node.weights],
         images: [...node.images]
       }));
-    const placements = [...lanes.values()]
-      .filter((lane) => lane.state !== 'draining')
-      .map((lane) => ({
-        key: lane.key,
-        models: [...lane.models],
-        runtime: lane.variant.runtime ?? null,
-        nodes: lane.nodes,
-        memoryGbPerNode: lane.memoryGb,
-        managed: lane.variant.managed !== false,
-        state: lane.state === 'loading' ? 'starting' : 'ready'
-      }));
+    const placements = [...lanes.values()].map((lane) => ({
+      key: lane.key,
+      models: [...lane.models],
+      runtime: lane.variant.runtime ?? null,
+      nodes: lane.nodes,
+      memoryGbPerNode: lane.memoryGb,
+      managed: lane.variant.managed !== false,
+      state: lane.state === 'loading' ? 'starting' : lane.state === 'draining' ? 'stopping' : 'ready'
+    }));
     return {
       nodes: plannerNodes,
       variants: observedVariants(),
@@ -732,7 +731,7 @@ export async function runPoolSimulation(scenario, { mode = 'auto', controller: c
       current: {
         routes: { ...routes },
         residency: { ...residency },
-        running: placements.map((placement) => placement.key),
+        running: placements.filter((placement) => placement.state !== 'stopping').map((placement) => placement.key),
         placements
       }
     };
@@ -837,6 +836,7 @@ export async function runPoolSimulation(scenario, { mode = 'auto', controller: c
             mode: mode === 'advise' ? 'advise' : 'auto'
           },
           onEvent: (entry) => {
+            if (entry.plan) lastPlan = entry.plan;
             // Each change in why the controller is holding, so a run explains itself.
             if ((entry.action === 'hold' && entry.reason !== 'no changes') || entry.action === 'busy') {
               const reason = (entry.reason ?? 'still applying the last change').replace(/\(\d+\/\d+\)|[\d.]+%/g, '#');
@@ -1010,7 +1010,11 @@ export async function runPoolSimulation(scenario, { mode = 'auto', controller: c
   report.final = {
     routes: { ...routes },
     residency: { ...residency },
-    lanes: [...lanes.values()].map((lane) => lane.key).sort()
+    lanes: [...lanes.values()].map((lane) => lane.key).sort(),
+    // The controller's last plan: what it would cover now.
+    plan: lastPlan
+      ? { ok: lastPlan.ok, uncovered: lastPlan.uncovered.map((entry) => entry.workload), score: lastPlan.score }
+      : null
   };
   report.checks = checkExpectations(report, scenario.expect?.[mode] ?? scenario.expect?.all ?? {});
   report.ok = report.checks.every((check) => check.ok);

@@ -27,7 +27,20 @@
         "max": 0
       },
       "lanes.guardAborts": {
+        "min": 1,
         "max": 1
+      }
+    },
+    "auto": {
+      "safety.memoryViolations.length": {
+        "max": 0
+      },
+      "lanes.guardAborts": {
+        "min": 1,
+        "max": 1
+      },
+      "final.plan.uncovered": {
+        "includes": "video"
       }
     }
   }
