@@ -81,7 +81,7 @@ def main(base_path, lora_path, out_path):
             for suffix, tensor in TensorCoreMXFP8Layout.state_dict_tensors(qdata, params).items():
                 # safetensors has no E8M0 dtype; ComfyUI views the uint8 scales back.
                 out[key + suffix] = (tensor.view(torch.uint8) if tensor.dtype == torch.float8_e8m0fnu else tensor).cpu()
-            out[module + ".comfy_quant"] = MXFP8_CONF
+            out[module + ".comfy_quant"] = MXFP8_CONF.clone()  # safetensors refuses shared storage
     if merged != len(targets):
         raise SystemExit(f"merged {merged} of {len(targets)} LoRA modules")
     save_file(out, out_path, metadata={"lloom": "MiniMax-H3 FL2VA pruned + lightx2v Turbo 8-step v1.0 LoRA, MXFP8"})
