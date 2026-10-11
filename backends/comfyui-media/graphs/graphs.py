@@ -329,8 +329,12 @@ def h3(g, p, prompt, seed, image_filename, last_image_filename, turbo, audio_fil
     width, height = geometry(p)
     duration = number(p, "duration", 5, 5, 15, describe=label)
     length = frame_count(p, math.ceil((duration * 24 - 5) / 17) * 17 + 5, 124, 362, 17, 5)
-    steps = number(p, "steps", 8 if turbo else 20, 8 if turbo else 10, 8 if turbo else 50,
+    steps = number(p, "steps", 8 if turbo else 20, 4 if turbo else 10, 8 if turbo else 50,
                    True, describe=label)
+    if turbo and steps not in (4, 8):
+        # lightx2v distilled the Turbo LoRA for 8 steps and validates 4; the
+        # sigma schedules in between were never evaluated.
+        raise ValueError(f"steps for {label} must be 4 or 8")
     if audio_filename is not None or video_filename is not None or p.get("workflow") == "reference":
         if turbo:
             raise ValueError("MiniMax-H3-Turbo does not accept reference audio")
@@ -339,9 +343,13 @@ def h3(g, p, prompt, seed, image_filename, last_image_filename, turbo, audio_fil
         return h3_ref2va(g, p, prompt, seed, image_filename, audio_filename,
                          last_image_filename,
                          width, height, length, steps, video_filename)
-    model = g.add("UNETLoader", unet_name="minimax_h3_fl2va_pruned_int8_convrot.safetensors", weight_dtype="default")
-    if turbo:
-        model = g.add("LoraLoaderModelOnly", model=model, lora_name="minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors", strength_model=1.0)
+    # Turbo is the pruned FL2VA model with lightx2v's 8-step LoRA merged in and
+    # requantized to MXFP8 at install time (build/merge_h3_turbo.py). Attached at
+    # sample time instead, the LoRA forces every linear back to bf16 and patches
+    # it on each step: ~45 s/step for 8 s at 1024x576 on GB10, against ~34 s
+    # merged and ~24 s with the recipe's comfy-kitchen attention.
+    unet = "minimax_h3_fl2va_turbo8_merged_mxfp8.safetensors" if turbo else "minimax_h3_fl2va_pruned_int8_convrot.safetensors"
+    model = g.add("UNETLoader", unet_name=unet, weight_dtype="default")
     clip = g.add("CLIPLoader", clip_name="qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors", type="minimax", device="default")
     vae = g.add("VAELoader", vae_name="minimax_h3_video_vae_fp16.safetensors")
     audio_vae = g.add("VAELoader", vae_name="minimax_h3_audio_vae_fp32.safetensors")

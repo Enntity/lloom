@@ -306,3 +306,10 @@ test('chunked long-video mode passes only where the native backend supports it',
     );
   assert.throws(() => prepareVideoRequest(full, { prompt: 'x', chunked: 'yes' }), /chunked must be true or false/);
 });
+
+test('H3 Turbo accepts 4 or 8 steps and nothing else', () => {
+  const id = 'MiniMaxAI/MiniMax-H3-Turbo';
+  assert.equal(videoContractForModel(id).steps.default, 8);
+  for (const steps of [4, 8]) prepareVideoRequest(id, { prompt: 'x', steps });
+  for (const steps of [2, 6, 20]) assert.throws(() => prepareVideoRequest(id, { prompt: 'x', steps }), /Invalid steps/);
+});

@@ -951,17 +951,25 @@
     {
       "id": "linux-nvidia-comfyui-minimax-h3-turbo",
       "path": "linux-nvidia-comfyui-minimax-h3-turbo.json",
-      "currentVersion": 1,
+      "currentVersion": 2,
       "versions": [
         {
           "version": 1,
+          "path": "archive/linux-nvidia-comfyui-minimax-h3-turbo/v1.json",
+          "status": "archived",
+          "archivedAt": "2026-10-11T23:00:00.000Z",
+          "notes": "Runtime-attached Turbo LoRA on the int8 ConvRot base, PyTorch attention, 8 steps only."
+        },
+        {
+          "version": 2,
           "path": "linux-nvidia-comfyui-minimax-h3-turbo.json",
-          "status": "current"
+          "status": "current",
+          "notes": "Turbo LoRA merged into an MXFP8 checkpoint at install time, comfy-kitchen INT8 attention, 4 or 8 steps."
         }
       ],
       "name": "MiniMaxAI/MiniMax-H3-Turbo (ComfyUI, NVIDIA)",
-      "summary": "Install MiniMaxAI/MiniMax-H3-Turbo in an independent, single-model ComfyUI runtime.",
-      "tags": ["cuda", "fp8", "minimax-h3-turbo", "nvfp4", "nvidia", "single-model"],
+      "summary": "Install MiniMaxAI/MiniMax-H3-Turbo in an independent, single-model ComfyUI runtime, with the Turbo LoRA merged into an MXFP8 checkpoint.",
+      "tags": ["cuda", "fp8", "minimax-h3-turbo", "mxfp8", "nvfp4", "nvidia", "single-model"],
       "capabilities": ["video-generation", "text-to-video"],
       "source": {
         "type": "local",

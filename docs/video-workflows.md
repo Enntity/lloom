@@ -21,7 +21,7 @@ generation, since the first request may still be running.
 | Gateway model                       | Workflow         | Image inputs                  | Audio input               | Video input              | Use                                            |
 | ----------------------------------- | ---------------- | ----------------------------- | ------------------------- | ------------------------ | ---------------------------------------------- |
 | `MiniMaxAI/MiniMax-H3`              | frames/reference | First/last frames or identity | Voice/timbre reference    | Motion/content reference | Speech and motion with an optional endpoint guide |
-| `MiniMaxAI/MiniMax-H3-Turbo`        | turbo            | First/last frames             | None                      | None                     | Eight-step FL2VA generation                    |
+| `MiniMaxAI/MiniMax-H3-Turbo`        | turbo            | First/last frames             | None                      | None                     | Four- or eight-step FL2VA generation           |
 | `Lightricks/LTX-2.5`                | distilled        | First/last frames             | Driving waveform          | None                     | Quantized Comfy two-stage generation           |
 | `Lightricks/LTX-2.5-Comfy-Full`     | full             | First/last frames             | Driving waveform          | None                     | Guided Comfy two-stage generation              |
 | `Lightricks/LTX-2.5-Full`           | `generate`       | First/last/interior keyframes | None                      | None                     | BF16 guided two-stage generation (former Dev)  |

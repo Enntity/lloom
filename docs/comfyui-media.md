@@ -190,6 +190,37 @@ allow headroom for retained workflow tensors in its `memoryGb` estimate.
 Each request uses a unique output-save prefix so cached graphs cannot reuse an
 artifact already deleted by bridge cleanup. Model-loader inputs remain stable.
 
+## Attention kernel
+
+Set `LLOOM_COMFY_ATTENTION=ck` to run ComfyUI with comfy-kitchen's INT8
+attention instead of PyTorch SDPA (`pytorch`, the default). On GB10 at
+MiniMax-H3's ~29k-token sequences it is 1.7x faster per call, with about 1.7%
+relative error, so a recipe opts in only after a visual A/B. Unsupported values
+fail startup.
+
+## MiniMax-H3 Turbo checkpoint
+
+The Turbo recipe does not attach lightx2v's LoRA at sample time. ComfyUI turns
+off quantized matmul for any layer with a runtime patch, so every int8 weight was
+decoded to bf16 and re-patched on each step. The recipe's
+`derive-h3-turbo-mxfp8` step instead merges the rank-384 LoRA into the pinned
+pruned FL2VA weights once, in fp32, and requantizes them to MXFP8 (E4M3 data, a
+power-of-two scale per 32 values). It runs
+`backends/comfyui-media/build/merge_h3_turbo.py` inside the pinned media image,
+needs the GPU for about five minutes, and writes
+`lloom-derived--MiniMax-H3-Turbo/` beside the downloads. Do not run it beside a
+live H3 render.
+
+An eight-second 1024x576 shot on one GB10, measured end to end:
+
+| Path                                       | 8 steps, warm | 4 steps, cold start | 4 steps, warm |
+| ------------------------------------------ | ------------- | ------------------- | ------------- |
+| Runtime LoRA on int8 ConvRot, PyTorch SDPA | 349–353 s     | 237 s               | not measured  |
+| Merged MXFP8, comfy-kitchen INT8 attention | 241 s         | 159 s               | 140 s         |
+
+Turbo accepts `steps` of 4 or 8 (default 8): lightx2v distilled the LoRA for 8
+and validates 4. Text encoding and the two VAEs add about 40 s per shot.
+
 ## Per-model runtimes
 
 The recipes configure independent runtimes by default. Every model is admitted,

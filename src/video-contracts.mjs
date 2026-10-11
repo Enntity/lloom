@@ -183,7 +183,8 @@ export function videoContractForModel(id, workflow) {
         last_frame: true
       },
       timing: { frameGrid: '17k+5', minFrames: 124, maxFrames: 362, defaultFrames: 124, defaultFps: 24, fixedFps: 24 },
-      steps: turbo ? { min: 8, max: 8, default: 8 } : { min: 10, max: 50, default: 20 },
+      // lightx2v distilled Turbo for 8 steps and validates 4; nothing in between.
+      steps: turbo ? { min: 4, max: 8, default: 8, values: [4, 8] } : { min: 10, max: 50, default: 20 },
       notes: [
         'Use <Picture 1>, <Video 1>, and <Audio 1> in reference prompts.',
         'H3 generates speech; transcript adherence must be auditioned.'
@@ -320,7 +321,10 @@ export function prepareVideoRequest(id, body) {
     (!Number.isInteger(p.steps) ||
       p.steps < 1 ||
       p.steps > 100 ||
-      (contract.steps && (p.steps < contract.steps.min || p.steps > contract.steps.max)))
+      (contract.steps &&
+        (p.steps < contract.steps.min ||
+          p.steps > contract.steps.max ||
+          (contract.steps.values && !contract.steps.values.includes(p.steps)))))
   )
     reject(`Invalid steps for ${id}`);
   if (

@@ -33,20 +33,9 @@ def image_name():
     return 'lloom/comfyui-media:source-' + source_digest()
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--install-root', type=Path)
-    parser.add_argument('--shim-dir', type=Path)
-    parser.add_argument('--print-image', action='store_true')
-    args = parser.parse_args()
+def ensure_image():
+    """Build the image for this source tree, or reuse one carrying its digest."""
     image = image_name()
-    if args.print_image:
-        print(image)
-        return
-    if args.install_root is None or args.shim_dir is None:
-        parser.error('--install-root and --shim-dir are required')
-    if sys.platform != 'linux':
-        parser.error('The CUDA backend requires Linux and NVIDIA Container Toolkit')
     found = subprocess.run(['docker', 'image', 'inspect', image], capture_output=True, text=True)
     expected = source_digest()
     if found.returncode == 0:
@@ -57,6 +46,23 @@ def main():
     else:
         subprocess.run(['docker', 'build', '--label', 'dev.lloom.source-sha256=' + expected,
                         '--tag', image, str(ROOT)], check=True)
+    return image
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--install-root', type=Path)
+    parser.add_argument('--shim-dir', type=Path)
+    parser.add_argument('--print-image', action='store_true')
+    args = parser.parse_args()
+    if args.print_image:
+        print(image_name())
+        return
+    if args.install_root is None or args.shim_dir is None:
+        parser.error('--install-root and --shim-dir are required')
+    if sys.platform != 'linux':
+        parser.error('The CUDA backend requires Linux and NVIDIA Container Toolkit')
+    ensure_image()
     if not shutil.which('hf'):
         venv = args.install_root / 'comfyui-media' / 'huggingface'
         if not (venv / 'bin/python').exists():
