@@ -300,6 +300,9 @@ test('chunked long-video mode passes only where the native backend supports it',
     [full, 'keyframes'],
     [distilled, 'refine']
   ])
-    assert.throws(() => prepareVideoRequest(id, { prompt: 'x', workflow, chunked: true }), /does not support 'chunked'/);
+    assert.throws(
+      () => prepareVideoRequest(id, { prompt: 'x', workflow, chunked: true }),
+      /does not support 'chunked'/
+    );
   assert.throws(() => prepareVideoRequest(full, { prompt: 'x', chunked: 'yes' }), /chunked must be true or false/);
 });

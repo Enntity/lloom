@@ -994,7 +994,10 @@ test('chunked long-video generation reaches the CLI only where upstream supports
   assert.equal(value(argvFor(req(FULL, GENERATE, { chunked: true }), root), '--chunked'), true);
   assert.equal(value(argvFor(req(DISTILLED, GENERATE, { chunked: true }), root), '--chunked'), true);
   assert.equal(
-    value(argvFor(req(FULL, A2V, { prompt: 'A person speaks.', audio: wavDataUri(3), chunked: true }), root), '--chunked'),
+    value(
+      argvFor(req(FULL, A2V, { prompt: 'A person speaks.', audio: wavDataUri(3), chunked: true }), root),
+      '--chunked'
+    ),
     true
   );
   assert.equal(value(argvFor(req(FULL, GENERATE), root), '--chunked'), false, 'one-shot stays the default');
