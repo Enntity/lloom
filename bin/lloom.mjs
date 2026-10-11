@@ -45,6 +45,12 @@ import {
   poolTokenOptions
 } from '../src/pool-cli.mjs';
 import { joinPool } from '../src/pool-node.mjs';
+import {
+  POOL_SIMULATE_USAGE,
+  formatPoolSimulation,
+  poolSimulateOptions,
+  runPoolSimulateCommand
+} from '../src/pool-sim-cli.mjs';
 import { mutateConfigSource } from '../src/config-mutation.mjs';
 import { runtimeControlTimeoutMs } from '../src/control-timeout.mjs';
 import { createDoctorReport } from '../src/doctor.mjs';
@@ -243,6 +249,7 @@ Backends and runtimes:
   lloom pool members [--json]
   lloom pool cordon|uncordon|drain <node> [--reason TEXT]
   lloom pool join <head-url> --token-stdin [--node-id ID] [--endpoint URL] [--apply --yes]
+  lloom pool simulate <scenario.json> [--mode off|advise|auto|compare] [--hours N] [--seed N] [--json]
   lloom deployment plan --plan FILE [--json]
   lloom deployment apply --plan FILE --nodes FILE [--operation-id ID] --apply --yes [--journal FILE] [--json]
   lloom deployment status --operation-id ID [--journal FILE] [--json]
@@ -2572,6 +2579,21 @@ async function main() {
           yes: hasFlag(args, '--yes')
         });
         console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      if (action === 'simulate') {
+        const scenario = positional(args)[2];
+        if (!scenario) throw new Error(POOL_SIMULATE_USAGE);
+        const reports = await runPoolSimulateCommand(
+          scenario,
+          poolSimulateOptions({
+            mode: argValue(args, '--mode') ?? undefined,
+            hours: argValue(args, '--hours'),
+            seed: argValue(args, '--seed')
+          })
+        );
+        console.log(json ? JSON.stringify(reports, null, 2) : formatPoolSimulation(reports));
+        if (Object.values(reports).some((report) => !report.ok)) process.exitCode = 1;
         return;
       }
       if (action !== 'plan') throw new Error(POOL_USAGE);

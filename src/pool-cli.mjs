@@ -21,7 +21,8 @@ export const POOL_USAGE = [
   '       lloom pool token create [--ttl DURATION] [--uses N] [--label KEY=VALUE] [--json]',
   '       lloom pool members [--json]',
   '       lloom pool cordon|uncordon|drain <node> [--reason TEXT]',
-  '       lloom pool join <head-url> --token-stdin [--node-id ID] [--endpoint URL] [--apply --yes]'
+  '       lloom pool join <head-url> --token-stdin [--node-id ID] [--endpoint URL] [--apply --yes]',
+  '       lloom pool simulate <scenario.json> [--mode off|advise|auto|compare] [--hours N] [--seed N] [--json]'
 ].join('\n');
 
 const DURATION_UNITS = { s: 1000, m: 60000, h: 3600000, d: 86400000 };

@@ -6,6 +6,8 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Added
 
+- Pool reconciler and controller, tested in simulation. `lloom pool simulate <scenario>` runs a fleet scenario through the real planner, reconciler and controller in a deterministic discrete-event model, and compares today's behaviour with the controller's. The reconciler orders make-before-break steps (prefetch, start, route flip, drain and stop), with swaps through interim members, per-step timeouts, and dependents skipped when a step fails. The controller has `off`, `advise` and `auto` modes, urgency, stability, cooldowns, a load budget, failure backoff, and preemption by an urgent new target. Neither is wired to a live gateway yet. See `docs/pool-planning.md`.
+
 - Pool membership: nodes join a head with a one-time enrollment token (`lloom pool token create`, `lloom pool join`) and keep a lease with heartbeats from `serve`. The head lists members (`lloom pool members`), cordons, drains and uncordons them, and `lloom pool plan` uses their liveness, cordons and inventory. Membership is inert until a token is issued, keeps only hashed secrets, and does not grant routing: an enrolled-only node still needs `lloom cluster add-node`. See `docs/pool-planning.md`.
 
 - `lloom pool plan`: a dry-run placement plan across every cluster node. It proposes which lanes run where, which residency they get and how each alias routes, and diffs that against what runs now. It covers every required alias first, then minimises demand-weighted latency and the load cost of changes, within per-domain memory headroom, direct-link tensor parallelism, compute architecture and pins. Nodes report a pool inventory through `/gateway/node?inventory=1`. Recipes may declare `requirements.computeArchs`, `requirements.tensorParallel` and `settings.maxSequences`. `/gateway/metrics` adds `requested` buckets, which give per-alias demand. See `docs/pool-planning.md`.
@@ -34,6 +36,8 @@ All notable changes to LLooM will be documented in this file. The format follows
 - An optional action view for the live topology alongside the default columnar racks: the loom holds still, requests stay left and models stay right, but cards use weighted force physics and activity sets how far in a model sits — serving models draw in toward the loom while quiet ones drift back out toward the edge. The camera frames the loom plus every live request and serving model, pulling back as more work arrives, and quiet models are left outside the frame. Manual pan or zoom suspends following until the reset control, and the choice persists per browser.
 
 ### Changed
+
+- Admission keeps the memory safety guard's margin free. The host check now reserves the larger of `reserveMemoryGb` and the guard's margin (`total × (1 − ceiling)`, 12.8 GB on a 128 GB host at the default 0.9), and cluster node budgets are capped at the ceiling. Before, admission could approve a load the guard was certain to abort and then latch until a manual start. A guard abort now records `memorySafetyAbort` (`usedGb`, and `consumedGb`, a lower bound on the load's footprint) and `memorySafetyLatched` in runtime status. Pool planning caps host budgets at the same ceiling and learns from aborts.
 
 - LLooM now requires Node.js 22.19 or newer, the minimum for its undici 8 HTTP client. It already failed to start on Node 20 after that upgrade; the engine range and CI matrix now say so.
 

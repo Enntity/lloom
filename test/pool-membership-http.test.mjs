@@ -113,7 +113,9 @@ test('enroll, heartbeat, cordon and restart over HTTP', async (t) => {
   assert.match(issued.json.token, /^lpt_/);
   const stat = await fs.stat(head.membershipPath);
   assert.equal(stat.mode & 0o777, 0o600);
-  assert.ok(!(await fs.readFile(head.membershipPath, 'utf8')).includes(issued.json.token.split('_').at(-1)));
+  assert.ok(
+    !(await fs.readFile(head.membershipPath, 'utf8')).includes(issued.json.token.slice('lpt_000000000000_'.length))
+  );
 
   // An admin key is not an enrollment token, and enrollment never grants one.
   const asAdmin = await head.call('/gateway/pool/enroll', {

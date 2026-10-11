@@ -1,6 +1,8 @@
 # Pool planning
 
-`lloom pool plan` treats every node in the cluster as one pool and proposes which model lanes run where, how each alias routes, and what would change from today. It is a dry run: it never starts, stops or reroutes anything, and there is no apply step yet. Act on a plan with `lloom fleet`, `lloom route`, `lloom keep-warm` and `lloom suspend`/`resume`.
+`lloom pool plan` treats every node in the cluster as one pool and proposes which model lanes run where, how each alias routes, and what would change from today. It is a dry run: it never starts, stops or reroutes anything. Act on a plan with `lloom fleet`, `lloom route`, `lloom keep-warm` and `lloom suspend`/`resume`.
+
+The reconciler and pool controller that would apply plans are built and tested in a fleet simulator (`lloom pool simulate`, below), but they are not wired to a live gateway yet.
 
 ```bash
 lloom pool plan                                   # live status + 7-day demand from the gateway
@@ -33,10 +35,15 @@ A gateway that predates inventory still reports its machine profile, and the pla
 - **Unmanaged lanes:** declared with a `pool` block on the model, for example a hand-run TP2 server on the pair:
 
   ```json
-  { "id": "qwen3.8-flash-next-atlas", "backend": "atlas", "pool": { "nodes": ["spark-node-01", "spark-node-02"], "memoryGbPerNode": 110 } }
+  {
+    "id": "qwen3.8-flash-next-atlas",
+    "backend": "atlas",
+    "pool": { "nodes": ["spark-node-01", "spark-node-02"], "memoryGbPerNode": 110 }
+  }
   ```
 
   LLooM cannot start or stop these, so the plan lists them as manual actions.
+
 - **External models:** cloud and other models with no node.
 
 With `--consider-installs`, bundled recipes add variants that may go on any eligible node set.
@@ -117,9 +124,10 @@ A node that only enrolled is planned on, but it is not routable. The head has no
 ## Constraints and objective
 
 - **Memory per domain.** Unified memory on Spark and Apple Silicon. Device memory, plus system memory for host-side state, on discrete GPUs.
-  - The budget follows admission: `memoryBudgetGb`, else capacity × `maxMemoryUtilization`, else capacity minus `reserveMemoryGb`. Pool planning then subtracts `headroomGb` (default 4 GB), because exhausting unified memory hangs a Spark.
+  - The budget follows admission: `memoryBudgetGb`, else capacity × `maxMemoryUtilization`, else capacity minus `reserveMemoryGb`. Host memory (unified and system) is also capped at the runtime memory guard's ceiling: `min(runtimePolicy.memorySafety.maxMemoryUtilization, runtimePolicy.maxMemoryUtilization)`, 0.9 by default. The guard aborts any load past that, so a plan that only fits under a 0.95 admission budget would be aborted mid-load. Pool planning then subtracts `headroomGb` (default 4 GB), because exhausting unified memory hangs a Spark. On a 128 GB Spark the default budget is 128 × 0.9 − 4 = 111.2 GB.
   - `always` and `preferred` lanes must fit together. Every on-demand lane must fit next to the `always` set.
   - A `preferred` lane that does not fit becomes on demand, with a warning.
+  - A runtime the memory guard aborted counts at least the memory the load had taken when it was stopped (`memorySafetyAbort.consumedGb` in runtime status). While it is latched (no automatic restarts until someone starts it by hand), the planner plans around it.
 - **Tensor parallel only across directly linked nodes.** Every pair in a multi-node set must share a reported fabric link.
 - **Compute architecture, platform and accelerators** must match the node.
 - **Cordoned and unavailable nodes** host nothing.
@@ -152,3 +160,82 @@ The text output lists:
 `--json` returns the full report. It includes the plan's profile-shaped `routes` and `residency`, `placements`, per-node memory, the `diff`, and the `score`.
 
 On a three-Spark fleet, the planner's fixture tests (`test/fixtures/pool/spark-fleet.json`) reproduce the hand-written fleet profiles. With every node present, it gives the `sparkqwen-pair-rc16` routes and residency. With the 01/02 pair cordoned or offline, it gives `standalone`: cognition moves to the 27B on spark-node-03, which becomes `always`, and the SparkQwen lane gets a manual stop.
+
+With the memory guard ceiling applied, the same fixture shows a conflict the hand-written `standalone` profile hides: a keep-warm 27B, embeddings and hear hold 64 GB on spark-node-03, so the 48 GB video lane (112 GB) no longer fits under the 111.2 GB budget, and video is reported uncovered.
+
+## Reconciling a plan
+
+`src/pool-reconciler.mjs` turns a plan and the observed state into ordered steps that never drop a route:
+
+1. **Prefetch** weights for a new placement whose node lacks them.
+2. **Downgrade residency** for lanes leaving keep-warm, so LLooM does not restart them while they drain.
+3. **Start** new lanes that fit next to everything still running (make before break).
+4. **Flip routes** once their target is ready.
+5. **Drain and stop** lanes no route uses any more.
+6. **Upgrade residency** for lanes that just started.
+
+When a new lane only fits after an old one is gone, the move is a swap. The old lane's aliases go to an interim member that is already serving, such as another running lane or an external fallback. Then the old lane drains and stops, the new lane starts, and the aliases flip to it. If there is no interim member, the plan reports an interruption instead of hiding it. Unmanaged lanes (for example a hand-run TP2 server) become `manual-start` and `manual-stop` steps for an operator.
+
+Steps run with dependencies. When a step fails, everything that depends on it is skipped. A lane that fails to start therefore never strands its aliases: their route flips are skipped, and so is the stop of the old lane, which keeps serving. Every step has a timeout (45 minutes for a start, 20 for a drain, 2 hours for a manual step), so one stuck step cannot hold the controller forever.
+
+## Pool controller
+
+`src/pool-controller.mjs` plans, decides and reconciles in a loop:
+
+- **off** never plans.
+- **advise** plans and records proposals that a person applies.
+- **auto** applies proposals itself.
+
+Moving a model costs minutes of load time, so the controller only acts on a plan worth moving for:
+
+- **Urgent changes act at once.** A change is urgent when the plan covers a required workload that keeping today's routes would leave uncovered: a node went away, a lane died, or memory was freed. An urgent plan for a _different_ target can cancel a change still in progress. For example, it cancels a manual restart that is waiting on a node which has just died. The same target never preempts itself.
+- **Other changes are held back.** The steps must be the same for `confirmTicks` (2) ticks in a row. They must also either cut the latency cost by at least `minGain` (10%) or improve SLOs or local coverage. After that come a `cooldownMs` (15 min) cooldown and a `maxLoadGbPerHour` (400 GB) budget for new loads.
+- **Residency-only changes follow noisy demand,** so they get a slower signal: `maintenanceConfirmTicks` (10) and `maintenanceCooldownMs` (1 hour).
+- **Failed starts are skipped for a while.** A lane that fails to start is excluded from planning on that node for `failureBackoffMs` (30 min).
+
+## Simulation
+
+`lloom pool simulate` runs a fleet scenario through the real planner, reconciler and controller. It uses a deterministic discrete-event model of the fleet and reads or changes nothing on the gateway or any node. `--mode compare` (the default) runs the scenario twice:
+
+- `off`: what LLooM does today without a pool controller;
+- `auto`: with the controller.
+
+The command exits non-zero when a scenario's expectations fail.
+
+```bash
+lloom pool simulate test/fixtures/pool/scenarios/pair-crash.json
+lloom pool simulate my-fleet.json --mode auto --hours 48 --seed 3 --json
+```
+
+The simulator owns the truth: real footprints, load times, request service times and failures. The planner sees only what LLooM would see: configured estimates, footprints measured once a lane has run, observed latency and demand, and node liveness. In membership scenarios, liveness comes from leases. The simulator also models what LLooM already does:
+
+- requests go to the alias's routed member, else the first ready candidate, else a cold start that admission allows, else an external member;
+- admission evicts idle on-demand lanes first, then idle preferred lanes, and never evicts keep-warm lanes;
+- keep-warm and preferred lanes are restored;
+- the memory guard aborts a load past its ceiling and latches the runtime.
+
+A lane whose real footprint overflows physical memory is a memory violation: the node hangs for `hangMinutes`. Plans must never cause one.
+
+**Scenarios** are JSON files with these fields:
+
+- `nodes`, `variants` and `workloads`, in planner shapes. Variants add `sim` truth such as `memoryGbPerNode`, `loadSeconds`, `maxSequences`, `failsOn` and `startFailRate`. Workloads add `demand` (`perHour`, `diurnal`, `bursts`, `changes`).
+- `initial` running lanes, routes and residency.
+- `events`: `cordon`, `uncordon`, `fail`, `recover`, `join`, `leave`, `partition`, `start-lane`, `stop-lane` and `apply-profile`. An event may be limited to some modes, for example an operator's manual fleet switch that happens only without a controller.
+- `operator`: how long manual steps take.
+- `membership`: heartbeat, lease and lost-after seconds.
+- `expect`: checks per mode, as `{ "path.in.report": { "min" | "max" | "equals" | "includes": … } }`.
+
+A scenario can extend a `base` file. Objects merge, arrays of objects merge by `id` (`"remove": true` drops one), and anything else replaces the base value. The scenarios in `test/fixtures/pool/scenarios/` start from the three-Spark fleet:
+
+| Scenario              | What happens                                                         | Today (`off`)                                                                        | With the controller (`auto`)                                                                             |
+| --------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `pair-taken`          | Operator takes the 01/02 pair for 6 hours and gives it back          | Operator switches fleet profiles by hand                                             | Cordon and uncordon only; the same moves, one apply each                                                 |
+| `pair-crash`          | spark-node-01 crashes for 4 hours, nobody watching                   | 60 cold waits, 12 requests to the cloud, 1414 GB reloaded, cognition p95 up to 106 s | 26 cold waits, none to the cloud, 1008 GB reloaded, cognition p95 0.9 s, back on the pair after recovery |
+| `lease-loss`          | The same crash, detected only through leases, after a 60 s partition | as above                                                                             | Acts 2 min after the crash (lease lost at 90 s); the partition moves nothing                             |
+| `mac-joins`           | A Mac Studio with no weights joins a one-Spark pool                  | Cognition stays on the 27B                                                           | Prefetches weights, moves cognition to the Mac, releases the 27B, drops no requests                      |
+| `memory-estimate-low` | The video lane needs 74 GB but is configured as 48 GB                | One guard abort, then the lane is latched                                            | One guard abort; the planner learns the lower bound and plans video as unavailable                       |
+| `demand-flap`         | Image and music demand swing hard every 30 minutes                   | n/a                                                                                  | At most one residency change an hour and no extra loads                                                  |
+
+Numbers are from seeded runs of these fixtures. They show behaviour, and are not benchmarks.
+
+**Limits of the model.** Lane capacity is modelled (sequences, decode slowdown with concurrency, queues), but the planner does not use it yet, so an overloaded lane queues rather than gaining a replica. GPU interference between co-located lanes is not modelled. Demand is Poisson with diurnal shape and bursts.

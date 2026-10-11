@@ -302,7 +302,8 @@ test('persisted state has hashes but no secrets or tokens, and restores', () => 
   assert.ok(!text.includes(nodeSecret));
   assert.ok(!text.includes(pending.token));
   assert.ok(!text.includes(nodeSecret.slice(4)), 'not even the secret body');
-  assert.ok(!text.includes(pending.token.split('_').at(-1)));
+  // The body follows the fixed `lpt_<12 hex>_` prefix; base64url may itself contain `_`.
+  assert.ok(!text.includes(pending.token.slice('lpt_000000000000_'.length)));
   assert.ok(!text.includes('"load"'), 'telemetry is live state only');
   assert.equal(state.version, 1);
 

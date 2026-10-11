@@ -50,6 +50,17 @@ numeric options. Unrelated settings, routes and credentials are preserved.
 `runtime-plan` remains read-only. Without numeric options, `runtime-policy`
 retains its historical read-only runtime-plan behavior.
 
+Admission never approves a load the memory guard is certain to abort. Its host
+check keeps whichever is larger free after the load: the reserve, or the margin
+below the guard's ceiling. The ceiling is
+`min(memorySafety.maxMemoryUtilization, maxMemoryUtilization)`, which defaults
+to 0.9, so on a 128 GB host the margin is 12.8 GB, more than the default 8 GB
+reserve. For the same reason, cluster node budgets are capped at the ceiling.
+When the guard does abort a load, the runtime stays latched until a manual
+start. Its status then reports `memorySafetyLatched` and `memorySafetyAbort`:
+`usedGb`, and `consumedGb`, the memory the load had taken when it was stopped.
+Pool planning treats that memory as a lower bound on the runtime's footprint.
+
 ## Idle restoration
 
 The preferred-restore pass starts after all owned, enabled keep-warm pins are
