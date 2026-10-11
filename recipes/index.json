@@ -1256,12 +1256,20 @@
     {
       "id": "linux-nvidia-ltx-2-5-native",
       "path": "linux-nvidia-ltx-2-5-native.json",
-      "currentVersion": 2,
+      "currentVersion": 3,
       "versions": [
         {
           "version": 2,
+          "path": "archive/linux-nvidia-ltx-2-5-native/v2.json",
+          "status": "archived",
+          "archivedAt": "2026-10-11T16:30:00.000Z",
+          "notes": "ltx_pipelines v1.3.0 image retained for reproducibility."
+        },
+        {
+          "version": 3,
           "path": "linux-nvidia-ltx-2-5-native.json",
-          "status": "current"
+          "status": "current",
+          "notes": "ltx_pipelines v1.4.2 with chunked long video and NVFP4 distilled (ltx-kernels built for GB10 sm_121a)."
         }
       ],
       "name": "LTX-2.5 native workflows (NVIDIA)",
