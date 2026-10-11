@@ -161,13 +161,9 @@ export function createPoolController({
   async function tick() {
     const at = now();
     if (controllerPolicy.mode === 'off') return record({ at, action: 'off' });
-    if (state.executing) return record({ at, action: 'busy' });
     const observed = await observe();
     const inputs = { ...observed, variants: excludeFailures(observed.variants ?? [], state.failures, at) };
     const plan = planPool(inputs);
-    const signature = planSignature(plan);
-    state.stableTicks = signature === state.signature ? state.stableTicks + 1 : 1;
-    state.signature = signature;
     const stay = stayPlan(inputs);
     const reconcile = planReconcile({
       plan,
@@ -176,7 +172,28 @@ export function createPoolController({
       variants: inputs.variants,
       nodes: inputs.nodes
     });
+    // Stable means the same moves, not just the same target: a lane that
+    // just vanished changes the moves even when the plan does not.
+    const signature = `${planSignature(plan)}|${reconcile.steps.map((step) => step.id).join(',')}`;
+    state.stableTicks = signature === state.signature ? state.stableTicks + 1 : 1;
+    state.signature = signature;
     const decision = decide({ plan, stay, reconcile, state, policy: controllerPolicy, now: at });
+    if (state.executing) {
+      // Only a plan that restores coverage may cancel work in progress (for
+      // example a manual start that is waiting on a node which just died).
+      // ...and only for a different target, not the same one with fewer steps left.
+      const preempt =
+        decision.act &&
+        decision.urgent &&
+        controllerPolicy.mode === 'auto' &&
+        planSignature(plan) !== state.executingTarget;
+      if (!preempt) {
+        return record({ at, action: 'busy', reason: 'still applying the last change' });
+      }
+      state.abort?.abort();
+      await state.executing;
+      record({ at: now(), action: 'preempted', reason: decision.reason });
+    }
     const entry = {
       at,
       action: decision.act ? (controllerPolicy.mode === 'auto' ? 'apply' : 'propose') : 'hold',
@@ -197,8 +214,11 @@ export function createPoolController({
       state.loads.push({ at, gb: (num(step.memoryGbPerNode) ?? 0) * (step.nodes?.length ?? 1) });
     }
     state.loads = state.loads.filter((load) => at - load.at < 3600000);
+    state.abort = new AbortController();
+    state.executingTarget = planSignature(plan);
     state.executing = executeReconcile(reconcile.steps, actuator, {
       concurrency: controllerPolicy.concurrency,
+      signal: state.abort.signal,
       ...(timer ? { timer } : {}),
       onStep: ({ step, status, error }) => {
         onEvent({ at: now(), action: 'step', step: step.id, status, ...(error ? { error } : {}) });
@@ -213,7 +233,7 @@ export function createPoolController({
       }
     }).then((result) => {
       state.executing = null;
-      record({ at: now(), action: 'applied', ok: result.ok, errors: result.errors });
+      record({ at: now(), action: 'applied', ok: result.ok, cancelled: result.cancelled, errors: result.errors });
       return result;
     });
     return entry;

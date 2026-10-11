@@ -195,3 +195,34 @@ test('a failed start is retried elsewhere after backoff instead of repeating', a
   assert.equal(second.plan.routes['chat-capable'].model, 'cloud/openrouter/q38fn');
   assert.equal(second.action, 'apply');
 });
+
+test('an urgent new target cancels a change stuck in progress; the same target never preempts itself', async () => {
+  const { observe, actuator, state } = fakeFleet({ cordon: ['spark-node-01', 'spark-node-02'] });
+  const hung = [];
+  actuator.start = (step) =>
+    new Promise(() => {
+      hung.push(step.id);
+    });
+  const events = [];
+  let clock = 0;
+  const controller = createPoolController({
+    observe,
+    actuator,
+    now: () => clock,
+    onEvent: (entry) => events.push(entry.action),
+    policy: { mode: 'auto' }
+  });
+  assert.equal((await controller.tick()).action, 'apply');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(hung, ['start:qwen38-27b-nvfp4@spark-node-03']);
+  clock += 60000;
+  assert.equal((await controller.tick()).action, 'busy', 'the same target waits for the start');
+  // Now spark-node-03 goes too: only the cloud member is left for cognition.
+  state.cordon.add('spark-node-03');
+  clock += 60000;
+  const entry = await controller.tick();
+  assert.equal(entry.action, 'apply');
+  assert.ok(events.includes('preempted'));
+  await controller.executing;
+  assert.equal(state.routes['chat-capable'], 'cloud/openrouter/q38fn');
+});

@@ -119,8 +119,11 @@ export function planReconcile({ plan, current = {}, workloads = [], variants = [
     .sort((a, b) => a.runtime.localeCompare(b.runtime))
     .map((change) => add({ type: 'residency', ...change }));
 
+  // A lane still loading gets a start too: starts are idempotent and resolve
+  // when the lane is ready, which is what its route flips must wait for.
+  const loading = (placement) => running.get(placement.placement)?.state === 'starting';
   const pendingStarts = planned
-    .filter((placement) => placement.residency !== 'auto' && !running.has(placement.placement))
+    .filter((placement) => (placement.residency !== 'auto' && !running.has(placement.placement)) || loading(placement))
     .sort(
       (a, b) => RESIDENCY_RANK[b.residency] - RESIDENCY_RANK[a.residency] || a.placement.localeCompare(b.placement)
     );
@@ -219,7 +222,8 @@ export function planReconcile({ plan, current = {}, workloads = [], variants = [
 
     // Start lanes that fit next to everything still running (make before break).
     for (const placement of [...pendingStarts]) {
-      if (startStep.has(placement.placement) || !fits(placement)) continue;
+      const counted = loading(placement);
+      if (startStep.has(placement.placement) || (!counted && !fits(placement))) continue;
       const id = add(
         {
           type: placement.managed === false ? 'manual-start' : 'start',
@@ -232,8 +236,11 @@ export function planReconcile({ plan, current = {}, workloads = [], variants = [
         startAfter(placement)
       );
       startStep.set(placement.placement, id);
-      for (const node of placement.nodes)
-        usage.set(node, (usage.get(node) ?? 0) + (num(placement.memoryGbPerNode) ?? 0));
+      if (!counted) {
+        for (const node of placement.nodes) {
+          usage.set(node, (usage.get(node) ?? 0) + (num(placement.memoryGbPerNode) ?? 0));
+        }
+      }
       for (const model of placement.models) readyStep.set(model, id);
       running.set(placement.placement, { key: placement.placement, ...placement, state: 'starting' });
       pendingStarts.splice(pendingStarts.indexOf(placement), 1);
@@ -352,11 +359,10 @@ const defaultTimer = (ms) =>
 export async function executeReconcile(
   steps,
   actuator,
-  { concurrency = 4, onStep = () => {}, timeoutsMs = {}, timer = defaultTimer } = {}
+  { concurrency = 4, onStep = () => {}, timeoutsMs = {}, timer = defaultTimer, signal } = {}
 ) {
   const status = new Map(steps.map((step) => [step.id, 'pending']));
   const errors = {};
-  const byId = new Map(steps.map((step) => [step.id, step]));
   const running = new Set();
   const method = (type) =>
     ({
@@ -369,21 +375,44 @@ export async function executeReconcile(
       'manual-start': 'manual',
       'manual-stop': 'manual'
     })[type];
+  // Cancelling (a newer, urgent plan) stops new steps at once and abandons
+  // running ones; what they already did stays and the next plan sees it.
+  const cancelled = signal
+    ? new Promise((_, reject) => {
+        const abort = () => reject(new Error('cancelled'));
+        if (signal.aborted) abort();
+        else signal.addEventListener('abort', abort, { once: true });
+      })
+    : null;
+  cancelled?.catch(() => {});
 
   return new Promise((resolve) => {
-    const finish = () =>
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
       resolve({
         ok: [...status.values()].every((value) => value === 'done'),
+        cancelled: signal?.aborted === true,
         status: Object.fromEntries(status),
         errors
       });
+    };
+    const settle = (step, value, error) => {
+      status.set(step.id, value);
+      if (error) errors[step.id] = error;
+      onStep({ step, status: value, ...(error ? { error } : {}) });
+    };
     const pump = () => {
       for (const step of steps) {
         if (status.get(step.id) !== 'pending') continue;
+        if (signal?.aborted) {
+          settle(step, 'cancelled');
+          continue;
+        }
         const deps = step.after.map((id) => status.get(id));
-        if (deps.some((value) => value === 'failed' || value === 'skipped')) {
-          status.set(step.id, 'skipped');
-          onStep({ step, status: 'skipped' });
+        if (deps.some((value) => value === 'failed' || value === 'skipped' || value === 'cancelled')) {
+          settle(step, 'skipped');
           continue;
         }
         if (deps.some((value) => value !== 'done' && value !== undefined)) continue;
@@ -396,38 +425,24 @@ export async function executeReconcile(
           throw new Error(`${step.type} timed out after ${Math.round(limitMs / 1000)} s`);
         });
         timedOut.catch(() => {});
-        Promise.race([Promise.resolve().then(() => actuator[method(step.type)](step)), timedOut])
+        Promise.race(
+          [Promise.resolve().then(() => actuator[method(step.type)](step)), timedOut, cancelled].filter(Boolean)
+        )
           .then(
-            () => {
-              status.set(step.id, 'done');
-              onStep({ step, status: 'done' });
-            },
-            (error) => {
-              status.set(step.id, 'failed');
-              errors[step.id] = String(error?.message ?? error);
-              onStep({ step, status: 'failed', error: errors[step.id] });
-            }
+            () => settle(step, 'done'),
+            (error) =>
+              signal?.aborted ? settle(step, 'cancelled') : settle(step, 'failed', String(error?.message ?? error))
           )
           .finally(() => {
             running.delete(step.id);
             pump();
           });
       }
-      // Skips can cascade without any step running; settle once nothing is left.
-      if (!running.size) {
-        const stillPending = [...status.entries()].some(([id, value]) => value === 'pending' && byId.get(id));
-        if (stillPending) {
-          const progressed = steps.some(
-            (step) =>
-              status.get(step.id) === 'pending' &&
-              step.after.every((id) => ['done', 'failed', 'skipped', undefined].includes(status.get(id)))
-          );
-          if (progressed) return pump();
-          for (const [id, value] of status) if (value === 'pending') status.set(id, 'skipped');
-        }
-        finish();
-      }
+      // Steps are ordered after their dependencies, so one pass settles every
+      // skip; with nothing running, nothing is left to wait for.
+      if (!running.size) finish();
     };
+    signal?.addEventListener('abort', () => pump(), { once: true });
     pump();
   });
 }

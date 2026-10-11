@@ -20,6 +20,7 @@
 // `hangMinutes`. Plans should never cause one.
 
 import { createPoolController } from './pool-controller.mjs';
+import { createPoolMembership } from './pool-membership.mjs';
 import { memoryBudgetGb } from './resource-fit.mjs';
 import { memorySafetyCeiling } from './runtime-memory-safety.mjs';
 
@@ -221,6 +222,38 @@ export async function runPoolSimulation(scenario, { mode = 'auto', controller: c
   const arrivals = new Map(workloads.map((workload) => [workload.id, []]));
   const flexiblePlacements = new Map();
   const latched = new Set();
+
+  // With `membership`, nodes enroll with the head and heartbeat; the planner
+  // learns that a node is gone only when its lease is lost, as a real head
+  // would. Without it, the planner sees node failures immediately.
+  const membershipConfig = scenario.membership ?? null;
+  const SIM_EPOCH = Date.parse('2026-01-01T00:00:00.000Z');
+  const membership = membershipConfig
+    ? createPoolMembership({
+        leaseMs: (num(membershipConfig.leaseSeconds) ?? 30) * 1000,
+        lostAfterMs: (num(membershipConfig.lostAfterSeconds) ?? 90) * 1000,
+        now: () => SIM_EPOCH + now
+      })
+    : null;
+  const heartbeatMs = (num(membershipConfig?.heartbeatSeconds) ?? 10) * 1000;
+  const nodeSecrets = new Map();
+  function enroll(id) {
+    if (!membership) return;
+    const { token } = membership.issueEnrollmentToken();
+    const { nodeSecret } = membership.enroll({ token, nodeId: id, endpoint: `http://${id}.pool.test:8100` });
+    nodeSecrets.set(id, nodeSecret);
+    const beat = () => {
+      const node = nodes.get(id);
+      if (!node.joined || nodeSecrets.get(id) !== nodeSecret) return;
+      // A crashed, hung or partitioned node stops heartbeating but stays enrolled.
+      if (node.available && node.hungUntil <= now && !(node.partitionedUntil > now)) {
+        membership.heartbeat({ nodeId: id, nodeSecret, running: lanesOn(id).map((lane) => lane.key) });
+      }
+      queue.push(now + heartbeatMs, beat);
+    };
+    queue.push(now + heartbeatMs, beat);
+  }
+  const memberById = () => new Map((membership?.members() ?? []).map((member) => [member.id, member]));
 
   const truth = (variant) => variant.sim ?? {};
   const memoryTruth = (variant) =>
@@ -667,12 +700,15 @@ export async function runPoolSimulation(scenario, { mode = 'auto', controller: c
   }
 
   function observe() {
+    const members = memberById();
     const plannerNodes = [...nodes.values()]
-      .filter((node) => node.joined)
+      .filter((node) =>
+        membership ? members.has(node.spec.id) && members.get(node.spec.id).state !== 'left' : node.joined
+      )
       .map((node) => ({
         ...node.spec,
-        available: node.available && node.hungUntil <= now,
-        cordoned: node.cordoned,
+        available: membership ? members.get(node.spec.id).state !== 'lost' : node.available && node.hungUntil <= now,
+        cordoned: membership ? members.get(node.spec.id).cordoned || members.get(node.spec.id).draining : node.cordoned,
         weights: [...node.weights],
         images: [...node.images]
       }));
@@ -865,10 +901,19 @@ export async function runPoolSimulation(scenario, { mode = 'auto', controller: c
     });
     switch (event.type) {
       case 'cordon':
-        for (const id of ids) nodes.get(id).cordoned = true;
+        for (const id of ids) {
+          nodes.get(id).cordoned = true;
+          membership?.cordon(id, { reason: event.note });
+        }
         break;
       case 'uncordon':
-        for (const id of ids) nodes.get(id).cordoned = false;
+        for (const id of ids) {
+          nodes.get(id).cordoned = false;
+          membership?.uncordon(id);
+        }
+        break;
+      case 'partition':
+        for (const id of ids) nodes.get(id).partitionedUntil = now + (num(event.minutes) ?? 1) * MINUTE;
         break;
       case 'fail':
         for (const id of ids) {
@@ -880,11 +925,18 @@ export async function runPoolSimulation(scenario, { mode = 'auto', controller: c
         for (const id of ids) nodes.get(id).available = true;
         break;
       case 'join':
-        for (const id of ids) nodes.get(id).joined = true;
+        for (const id of ids) {
+          nodes.get(id).joined = true;
+          enroll(id);
+        }
         break;
       case 'leave':
         for (const id of ids) {
           nodes.get(id).joined = false;
+          if (membership) {
+            membership.leave(id);
+            nodeSecrets.delete(id);
+          }
           for (const lane of lanesOn(id)) killLane(lane, `node ${id} left`);
         }
         break;
@@ -920,6 +972,7 @@ export async function runPoolSimulation(scenario, { mode = 'auto', controller: c
     queue.push(event.atHours * HOUR, () => applyEvent(event));
   }
   for (const node of nodes.values()) {
+    if (node.joined) enroll(node.spec.id);
     if (node.spec.joinAtHours != null)
       queue.push(node.spec.joinAtHours * HOUR, () => applyEvent({ type: 'join', nodes: [node.spec.id] }));
   }

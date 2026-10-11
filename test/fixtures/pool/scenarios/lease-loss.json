@@ -1,0 +1,59 @@
+{
+  "base": "pair-crash.json",
+  "name": "lease-loss",
+  "description": "The pair crash again, but the head only learns about it from membership leases: nodes heartbeat every 10 s, a lease lasts 30 s and a node is lost 90 s after its last heartbeat. Before the crash, spark-node-02 drops off the network for 60 s and comes back; that is a suspect lease, not a lost node, and must not move anything.",
+  "membership": {
+    "heartbeatSeconds": 10,
+    "leaseSeconds": 30,
+    "lostAfterSeconds": 90
+  },
+  "events": [
+    {
+      "atHours": 1,
+      "type": "partition",
+      "nodes": ["spark-node-02"],
+      "minutes": 1
+    },
+    {
+      "atHours": 3,
+      "type": "fail",
+      "nodes": ["spark-node-01"]
+    },
+    {
+      "atHours": 7,
+      "type": "recover",
+      "nodes": ["spark-node-01"]
+    },
+    {
+      "atHours": 7.5,
+      "type": "start-lane",
+      "modes": ["off"],
+      "placement": "qwen3.8-flash-next-atlas@spark-node-01+spark-node-02"
+    }
+  ],
+  "expect": {
+    "auto": {
+      "safety.memoryViolations.length": {
+        "max": 0
+      },
+      "controller.decisions.0.atMinutes": {
+        "min": 181.5,
+        "max": 183
+      },
+      "controller.decisions.0.urgent": {
+        "equals": true
+      },
+      "final.routes.chat-capable": {
+        "equals": "qwen3.8-flash-next-atlas"
+      },
+      "controller.stepFailures": {
+        "max": 0
+      }
+    },
+    "off": {
+      "safety.memoryViolations.length": {
+        "max": 0
+      }
+    }
+  }
+}

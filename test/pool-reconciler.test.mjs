@@ -285,3 +285,25 @@ test('a step that never settles times out, fails, and skips its dependents', asy
   assert.match(result.errors[start.id], /start timed out after 5 s/);
   assert.equal(result.status[steps.find((step) => step.type === 'route').id], 'skipped');
 });
+
+test('routes to a lane that is still loading wait on an idempotent start', () => {
+  const profile = fleet.profiles['sparkqwen-pair-rc16'];
+  const running = [...RC16_RUNNING, 'qwen38-27b-nvfp4@spark-node-03'];
+  const current = { routes: profile.routes, residency: profile.residency, running };
+  const plan = planPool({
+    nodes: fleet.nodes,
+    variants: fleet.variants,
+    workloads: fleetWorkloads(),
+    pins: { ...fleet.pins, cordon: ['spark-node-01', 'spark-node-02'] },
+    current,
+    policy: { ...fleet.policy, memorySafetyUtilization: null }
+  });
+  const placements = placementsFor(running, fleet.variants).map((placement) =>
+    placement.key === 'qwen38-27b-nvfp4@spark-node-03' ? { ...placement, state: 'starting' } : placement
+  );
+  const { steps, blocked } = planReconcile({ plan, current: { ...current, placements }, workloads: fleetWorkloads() });
+  assert.deepEqual(blocked, []);
+  const start = steps.find((step) => step.type === 'start');
+  assert.equal(start.placement, 'qwen38-27b-nvfp4@spark-node-03');
+  for (const route of steps.filter((step) => step.type === 'route')) assert.ok(route.after.includes(start.id));
+});
