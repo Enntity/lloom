@@ -1024,3 +1024,224 @@ test('nvfp4-prequant serves the official NVFP4 distilled transformer and nothing
   assert.match(parseErr(req(FULL, GENERATE, { quantization: 'nvfp4-prequant' })).message, /nvfp4-prequant/);
   assert.match(parseErr(req(DISTILLED, REFINE, { quantization: 'nvfp4-prequant' })).message, /nvfp4-prequant/);
 });
+
+// --- opt-in warm worker (LLOOM_LTX_WARM=1) -----------------------------------
+// One shim plays both roles: launched as ``warm_worker <module>`` it serves
+// JSON-line requests until stdin closes; otherwise it is the per-request CLI.
+// Every render appends ``<role> <pid> <module> <prompt>`` to a journal.
+function warmShim(dir) {
+  const journal = path.join(dir, 'journal');
+  const runner = writeFakeRunner(
+    dir,
+    `import json, os, sys, time
+JOURNAL = ${JSON.stringify(journal)}
+def render(role, module, argv):
+    prompt = argv[argv.index("--prompt") + 1]
+    with open(JOURNAL, "a") as f:
+        f.write(f"{role} {os.getpid()} {module} {prompt}\\n")
+    if prompt == "slow":
+        time.sleep(60)
+    if prompt == "crash":
+        sys.exit(3)
+    open(argv[argv.index("--output-path") + 1], "wb").write(b"\\x00\\x00\\x00\\x18ftypmp42")
+if sys.argv[1] == "warm_worker":
+    module = sys.argv[2]
+    replies = os.fdopen(os.dup(1), "w", buffering=1)
+    os.dup2(2, 1)
+    print("stray library output must not reach the reply channel")
+    for line in sys.stdin:
+        render("warm", module, json.loads(line)["argv"])
+        replies.write(json.dumps({"ok": True}) + "\\n")
+else:
+    render("subprocess", sys.argv[1], sys.argv[2:])
+`
+  );
+  const entries = () =>
+    existsSync(journal)
+      ? readFileSync(journal, 'utf8')
+          .trim()
+          .split('\n')
+          .map((line) => {
+            const [role, pid, module, prompt] = line.split(' ');
+            return { role, pid: Number(pid), module, prompt };
+          })
+      : [];
+  return { runner, entries };
+}
+
+async function startWarmServer(t, env = {}) {
+  const root = makeModelRoot();
+  const workdir = mkdtempSync(path.join(tmpdir(), 'ltx-warm-'));
+  const shim = warmShim(workdir);
+  const server = await startServer({
+    LLOOM_LTX_MODEL_ROOT: root,
+    LLOOM_LTX_RUNNER: JSON.stringify(['python3', shim.runner]),
+    LLOOM_LTX_WARM: '1',
+    ...env
+  });
+  t.after(() => {
+    server.proc.kill('SIGKILL');
+    for (const { pid } of shim.entries()) if (!pidGone(pid)) process.kill(pid, 'SIGKILL');
+    rmSync(workdir, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  });
+  const base = `http://127.0.0.1:${server.port}`;
+  return {
+    ...shim,
+    health: async () => (await fetch(`${base}/health`)).json(),
+    post: (body, signal) =>
+      fetch(`${base}/v1/videos/generations`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+        signal
+      })
+  };
+}
+
+test('warm mode reuses one worker process across requests and reports it in /health', async (t) => {
+  const warm = await startWarmServer(t);
+  const before = await warm.health();
+  assert.equal(before.mode, 'warm-worker');
+  assert.equal(before.keep_warm, true);
+  assert.equal(before.lazy_load, true);
+  assert.equal(before.warm_worker.state, 'stopped');
+  assert.equal(before.warm_worker.idle_release_seconds, 300);
+
+  for (const prompt of ['first', 'second']) {
+    const response = await warm.post(req(DISTILLED, GENERATE, { prompt, quantization: 'nvfp4-prequant' }));
+    assert.equal(response.status, 200, await response.clone().text());
+    const decoded = Buffer.from((await response.json()).data[0].b64_json, 'base64');
+    assert.equal(decoded.slice(4, 8).toString('ascii'), 'ftyp');
+  }
+  const [first, second] = warm.entries();
+  assert.deepEqual(
+    [first.role, second.role, first.module, second.prompt],
+    ['warm', 'warm', 'ltx_pipelines.distilled', 'second']
+  );
+  assert.equal(second.pid, first.pid, 'the second request must reuse the warm worker');
+  const after = (await warm.health()).warm_worker;
+  assert.equal(after.state, 'idle');
+  assert.equal(after.pid, first.pid);
+  assert.equal(after.requests_served, 2);
+  assert.equal(after.quantization, 'nvfp4-prequant');
+  assert.equal(after.transformer, 'distilled_transformer_nvfp4');
+
+  // Other weights for the same module mean a new worker; the old one is reaped first.
+  assert.equal((await warm.post(req(DISTILLED, GENERATE, { prompt: 'bf16' }))).status, 200);
+  const bf16 = warm.entries()[2];
+  assert.notEqual(bf16.pid, first.pid);
+  assert.ok(pidGone(first.pid), 'a worker holding other weights must be released first');
+});
+
+test('the warm worker is released after its idle timeout and rebuilt on demand', async (t) => {
+  const warm = await startWarmServer(t, { LLOOM_LTX_WARM_IDLE_SECONDS: '1' });
+  assert.equal((await warm.post(req(DISTILLED, GENERATE, { prompt: 'one' }))).status, 200);
+  const [first] = warm.entries();
+  assert.deepEqual([first.role, first.module], ['warm', 'ltx_pipelines.distilled']);
+  await waitFor(() => pidGone(first.pid), 'idle worker must exit');
+  await waitFor(async () => (await warm.health()).warm_worker.state === 'stopped', 'health must report stopped');
+  assert.equal((await warm.post(req(DISTILLED, GENERATE, { prompt: 'two' }))).status, 200);
+  assert.notEqual(warm.entries()[1].pid, first.pid);
+});
+
+for (const trigger of ['timeout', 'disconnect']) {
+  test(`warm ${trigger} kills the worker and the next request rebuilds it`, async (t) => {
+    const warm = await startWarmServer(t, { LLOOM_LTX_TIMEOUT_SECONDS: trigger === 'timeout' ? '1' : '30' });
+    const controller = new AbortController();
+    const pending = warm.post(req(DISTILLED, GENERATE, { prompt: 'slow' }), controller.signal).catch((e) => e);
+    await waitFor(() => warm.entries().length === 1, 'worker must start rendering');
+    const [slow] = warm.entries();
+    assert.equal((await warm.post(req(DISTILLED, GENERATE, { prompt: 'busy' }))).status, 409);
+    assert.equal((await warm.health()).warm_worker.state, 'busy');
+    if (trigger === 'disconnect') controller.abort();
+    const result = await pending;
+    if (trigger === 'timeout') assert.equal(result.status, 504);
+    else assert.equal(result.name, 'AbortError');
+    await waitFor(() => pidGone(slow.pid), 'worker must be reaped');
+    await waitFor(async () => (await warm.health()).warm_worker.state === 'stopped', 'worker must be released');
+    assert.equal((await warm.post(req(DISTILLED, GENERATE, { prompt: 'retry' }))).status, 200);
+    assert.notEqual(warm.entries()[1].pid, slow.pid);
+  });
+}
+
+test('workflows the worker does not serve fall back to a subprocess after releasing it', async (t) => {
+  const warm = await startWarmServer(t);
+  const fallbacks = [
+    [req(FULL, GENERATE, { prompt: 'full' }), 'ltx_pipelines.ti2vid_two_stages'],
+    [req(FULL, A2V, { prompt: 'a2v', audio: wavDataUri(1, 24000) }), 'a2v'],
+    [req(FULL, GENERATE_HQ, { prompt: 'hq' }), 'ltx_pipelines.ti2vid_two_stages_hq'],
+    [req(DISTILLED, REFINE, { prompt: 'refine' }), 'ltx_pipelines.dfr_pipeline'],
+    [req(DISTILLED, GENERATE, { prompt: 'offload', offload: 'cpu' }), 'ltx_pipelines.distilled']
+  ];
+  for (const [body, module] of fallbacks) {
+    assert.equal((await warm.post(req(DISTILLED, GENERATE, { prompt: 'warm' }))).status, 200);
+    const worker = warm.entries().at(-1);
+    assert.equal(worker.role, 'warm');
+    assert.equal((await warm.post(body)).status, 200);
+    const fallback = warm.entries().at(-1);
+    assert.deepEqual([fallback.role, fallback.module], ['subprocess', module]);
+    assert.ok(pidGone(worker.pid), `the warm worker must be gone before ${module} loads weights`);
+    assert.equal((await warm.health()).warm_worker.state, 'stopped');
+  }
+});
+
+test('a warm worker that dies mid-render fails that request and is rebuilt for the next', async (t) => {
+  const warm = await startWarmServer(t);
+  assert.equal((await warm.post(req(DISTILLED, GENERATE, { prompt: 'ok' }))).status, 200);
+  const crashed = await warm.post(req(DISTILLED, GENERATE, { prompt: 'crash' }));
+  assert.equal(crashed.status, 502);
+  assert.equal((await crashed.json()).error.code, 'generation_failed');
+  const [first] = warm.entries();
+  assert.equal((await warm.health()).warm_worker.state, 'stopped');
+  assert.equal((await warm.post(req(DISTILLED, GENERATE, { prompt: 'after' }))).status, 200);
+  assert.notEqual(warm.entries()[2].pid, first.pid);
+});
+
+test('warm_worker.pin builds every Distilled block once and disables its dispose', () => {
+  const result = spawnSync(
+    'python3',
+    [
+      '-c',
+      `import sys, json; sys.path.insert(0, ${JSON.stringify(BACKEND)})
+from types import SimpleNamespace as NS
+import warm_worker
+builds = []
+class Model:
+    def __init__(self, name): self.name, self.disposed = name, False
+    def dispose(self): self.disposed = True
+def builder(name):
+    return NS(build=lambda device=None, dtype=None: builds.append(name) or Model(name))
+def method(name):
+    return lambda *a, **k: builds.append(name) or Model(name)
+p = warm_worker.pin(NS(
+    prompt_encoder=NS(_build_text_encoder=method("gemma"), _build_embeddings_processor=method("emb")),
+    image_conditioner=NS(_build_encoder=method("vae-enc")),
+    upsampler=NS(_encoder_builder=builder("up-enc"), _upsampler_builder=builder("up")),
+    video_decoder=NS(_prepared_builder=lambda: builder("vae-dec")),
+    audio_decoder=NS(_decoder_builder=builder("aud-dec"), _vocoder_builder=builder("voc")),
+    stage=NS(_build_transformer=method("transformer"))))
+def render():
+    out = [p.prompt_encoder._build_text_encoder(), p.prompt_encoder._build_embeddings_processor(),
+           p.image_conditioner._build_encoder(), p.upsampler._encoder_builder.build(dtype="bf16"),
+           p.upsampler._upsampler_builder.build(dtype="bf16"), p.video_decoder._prepared_builder().build(dtype="bf16"),
+           p.audio_decoder._decoder_builder.build(dtype="bf16"), p.audio_decoder._vocoder_builder.build(dtype="bf16"),
+           p.stage._build_transformer(video_tools=object()), p.stage._build_transformer(video_tools=object())]
+    for model in out: model.dispose()
+    return out
+first, second = render(), render()
+print(json.dumps({"same": all(a is b for a, b in zip(first, second)),
+                  "disposed": any(m.disposed for m in first), "builds": sorted(builds)}))`
+    ],
+    { encoding: 'utf8' }
+  );
+  assert.equal(result.status, 0, result.stderr);
+  const outcome = JSON.parse(result.stdout);
+  assert.equal(outcome.same, true, 'both renders must reuse the same models');
+  assert.equal(outcome.disposed, false, 'gpu_model exit must not release a pinned model');
+  assert.deepEqual(
+    outcome.builds,
+    ['aud-dec', 'emb', 'gemma', 'transformer', 'up', 'up-enc', 'vae-dec', 'vae-enc', 'voc'],
+    'each block, including the transformer shared by both stages, builds once across two renders'
+  );
+});

@@ -8,7 +8,7 @@
   },
   "id": "linux-nvidia-ltx-2-5-native",
   "name": "LTX-2.5 native workflows (NVIDIA)",
-  "version": 3,
+  "version": 4,
   "summary": "Full and Distilled native BF16 LTX-2.5 models with explicit generation, audio-driven, keyframe, retake and refinement workflows.",
   "provenance": {
     "createdBy": "lloom",
@@ -223,7 +223,7 @@
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/ltx-pipelines:source-88c9d4493b4db8092bf69eb7e28626316dee4e36f8d9359797f2751b4c56c5b7",
+            "image": "lloom/ltx-pipelines:source-f7e4c8de2ecbda93dc5e7196d99860f7bb79ceb90df815293f97ffa84827fcd0",
             "pull": false,
             "createArgs": [
               "--restart",
@@ -284,7 +284,7 @@
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/ltx-pipelines:source-88c9d4493b4db8092bf69eb7e28626316dee4e36f8d9359797f2751b4c56c5b7",
+            "image": "lloom/ltx-pipelines:source-f7e4c8de2ecbda93dc5e7196d99860f7bb79ceb90df815293f97ffa84827fcd0",
             "pull": false,
             "createArgs": [
               "--restart",

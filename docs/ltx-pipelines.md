@@ -30,17 +30,86 @@ Both models share **one managed runtime** and generate **sequentially** (single
 flight). This is intentional: a Dev run holds a 22B transformer plus the Gemma
 text encoder resident, so two at once would not fit and would risk the host.
 
-## Cost model: lazy, not keep-warm
+## Cost model: lazy by default, opt-in warm worker
 
-`/health` reports `"lazy_load": true` and `"keep_warm": false`. Every request
-spawns one CLI subprocess that loads weights, generates, writes the MP4, and
-exits. That is more expensive per call than a resident server, but the process
-exit is what guarantees unified memory is actually released before the next
-request is admitted. There is no warm pool and no residency claim.
+By default `/health` reports `"mode": "per-request"`, `"lazy_load": true` and
+`"keep_warm": false`. Every request spawns one CLI subprocess that loads
+weights, generates, writes the MP4, and exits. That is more expensive per call
+than a resident server, but the process exit is what guarantees unified memory
+is actually released before the next request is admitted.
+
+### Warm worker (`LLOOM_LTX_WARM=1`)
+
+With `LLOOM_LTX_WARM=1` on the runtime, `server.py` routes Distilled
+`generate` (BF16 or any `quantization`, `offload: none`) to one persistent
+`warm_worker` process. The worker builds upstream's `DistilledPipeline` on its
+first request, parses each request with `ltx_pipelines.distilled`'s own CLI
+parser, and writes the MP4 with upstream's `encode_video`, so it returns what
+the per-request CLI would. Upstream blocks build each model per call and
+dispose it afterwards. The worker memoizes those builds instead, so the Gemma
+text encoder, the transformer (used by both stages), the VAE encoder/decoder,
+the upsampler, and the audio decoder all stay resident until the worker is
+released.
+
+Full workflows are not served by the worker. Full `generate` and
+`audio-to-video` build a second 22B transformer for stage 2 (dev plus the fused
+distilled LoRA), so pinning both stages and Gemma would need about 110 GB.
+Pinning only Gemma and the VAEs was measured and was *slower* than a fresh
+process (see below). The likely cause is that the resident encoder leaves too
+little page cache for the 44 GB dev checkpoint that each stage rebuilds from.
+
+The worker is single-flight like the subprocess path. It is released (its
+process group is killed, so the memory returns to the host):
+
+- after `LLOOM_LTX_WARM_IDLE_SECONDS` (default 300) without a request;
+- on timeout, client disconnect, or any render failure (the next request
+  rebuilds it);
+- when a request needs other weights (BF16 vs NVFP4);
+- before any other workflow or any `offload` other than `none` runs, because
+  those still use the per-request subprocess.
+
+`/health` then reports `"mode": "warm-worker"`, `"keep_warm": true`
+(`"lazy_load"` stays `true` because weights load on first use) and a
+`warm_worker` object with `state` (`stopped`, `idle`, `busy`, `releasing`),
+`pid`, `module`, `transformer`, `quantization`, `requests_served`,
+`idle_for_seconds` and `idle_release_seconds`. The gateway's `memoryGb`
+reservation for the runtime already covers what the worker holds while the
+container runs. If the gateway stops the container to admit another runtime,
+the worker stops with it.
+
+Measured on ennspark03 (GB10), 4 s at 1024x576 from an image, seed 7, through
+the gateway. "First" is the first request after the runtime container starts;
+"second" is the next request with the same weights:
+
+| Shot | Per-request: first / second | Warm worker: first / second |
+| ---- | --------------------------- | --------------------------- |
+| Distilled NVFP4 | 93.8 s / 65.8 s | 89.6–112.0 s / 45.3–48.2 s |
+| Distilled BF16 | 107–133 s (earlier runs) | 108.8 s / 50.2 s |
+| Full `generate` | 300.7 s | 310.5 s (falls back to a subprocess) |
+
+The variant that also routed Full through the worker (Gemma and VAEs pinned,
+stages built per call) took 339–363 s for the first Full shot and 315 s for the
+second, which is why Full now always uses the subprocess. The worker held about
+44 GB with NVFP4 and about 62 GB with BF16 while idle.
+
+Output identity at a fixed seed:
+
+- Distilled BF16: the first and second warm renders are byte-identical MP4s to
+  the per-request render.
+- Full: unchanged path, so the output is byte-identical to the per-request render.
+- Distilled NVFP4: per-request renders are byte-reproducible. Warm renders are
+  byte-reproducible *per position in the worker's life*, but the first and
+  second renders differ from the per-request one (all 97 frames, PSNR ~39 dB,
+  mean absolute error ~1.5/255). The third render is byte-identical to the
+  per-request render again. The NVFP4 quantize and GEMM ops alone give
+  identical results across allocator states and repeated calls, so the source
+  of this history dependence is not identified yet. A warm NVFP4 retake with
+  the same seed is therefore not guaranteed to reproduce a per-request render
+  bit for bit.
 
 ## Endpoints
 
-- `GET /health` — status, upstream version/commit, single-flight busy flag.
+- `GET /health` — status, upstream version/commit, single-flight busy flag, mode and warm-worker state.
 - `GET /v1/models` — the two model IDs above.
 - `POST /v1/videos/generations` — **request body ceiling 64 MiB**. Success
   response matches the existing LLooM contract:
@@ -133,8 +202,10 @@ process starts.
 | Env var                     | Meaning                                                                                           |
 | --------------------------- | ------------------------------------------------------------------------------------------------- |
 | `LLOOM_LTX_MODEL_ROOT`      | Root directory holding the split BF16 components (required at request time).                      |
-| `LLOOM_LTX_RUNNER`          | Optional argv override for the pipeline launcher (used by tests). Default: `python3 -m <module>`. |
+| `LLOOM_LTX_RUNNER`          | Optional argv override for the pipeline launcher (used by tests). Default: `python3 -m <module>`; the warm worker runs as `<prefix> warm_worker <module>`. |
 | `LLOOM_LTX_TIMEOUT_SECONDS` | Per-request wall clock; default 1800 s.                                                           |
+| `LLOOM_LTX_WARM`            | `1` enables the warm worker described above; anything else keeps one subprocess per request.      |
+| `LLOOM_LTX_WARM_IDLE_SECONDS` | Idle seconds before the warm worker is released; default 300.                                   |
 
 Inference is offline (`HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`). The packed
 Gemma BF16 text encoder carries its embedded tokenizer and sidecars

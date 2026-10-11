@@ -31,7 +31,7 @@ COPY --from=kernels /wheels /wheels
 RUN /opt/bootstrap/bin/uv pip install --python /opt/venv/bin/python --no-deps /wheels/*.whl && rm -rf /wheels
 COPY requirements.txt /opt/lloom-ltx/requirements.txt
 RUN /opt/bootstrap/bin/uv pip install --python /opt/venv/bin/python -r /opt/lloom-ltx/requirements.txt && /opt/bootstrap/bin/uv pip freeze --python /opt/venv/bin/python > /opt/package-lock.txt
-COPY pipelines.py server.py a2v.py UPSTREAM-LICENSE LICENSE-2_x /opt/lloom-ltx/
+COPY pipelines.py server.py a2v.py warm_worker.py UPSTREAM-LICENSE LICENSE-2_x /opt/lloom-ltx/
 ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONPATH=/opt/lloom-ltx
 WORKDIR /opt/lloom-ltx
 EXPOSE 8000

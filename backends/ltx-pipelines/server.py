@@ -8,12 +8,19 @@ LLooM OpenAI-compatible video endpoints:
 * ``GET  /v1/models``
 * ``POST /v1/videos/generations``  -> ``{created, data:[{b64_json, mime_type}]}``
 
-Each request is validated up-front by :mod:`pipelines` (no torch import here)
-and then answered by spawning exactly one ``python -m ltx_pipelines.<module>``
-subprocess. The process-per-request design is deliberate: the 22B transformer
-plus Gemma text encoder are loaded per call and released when the process exits,
-so no weights stay resident between requests. We therefore advertise the lane as
-*lazy*, not keep-warm.
+Each request is validated up-front by :mod:`pipelines` (no torch import here).
+By default it is then answered by spawning exactly one
+``python -m ltx_pipelines.<module>`` subprocess: the 22B transformer plus Gemma
+text encoder are loaded per call and released when the process exits, so no
+weights stay resident between requests and the lane is *lazy*, not keep-warm.
+
+``LLOOM_LTX_WARM=1`` opts into a warm worker (:mod:`warm_worker`): one
+persistent process per module + weights key that builds the upstream pipeline
+on its first request and keeps its models resident for the next ones. It is
+released (its process group killed, so memory returns to the host) after
+``LLOOM_LTX_WARM_IDLE_SECONDS`` without a request, on timeout or cancel, on any
+failure, when a request needs other weights, and before any workflow the
+worker does not serve runs as a per-request subprocess.
 
 Concurrency is a single-flight guard: one generation at a time per runtime, so
 two 22B transformers never fight for unified memory. A waiter that is cancelled
@@ -41,14 +48,21 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 import pipelines
+import warm_worker
 from pipelines import ApiError
 
 # The runner argv is overridable so CPU tests can point at a fake shim that
 # writes a deterministic MP4 without importing torch or touching a GPU. In
-# production the default (``python -m <pinned module>``) is used.
+# production the default (``python -m <pinned module>``) is used. The warm
+# worker is launched through the same prefix as ``warm_worker <module>``.
 RUNNER_ENV = "LLOOM_LTX_RUNNER"
 MODEL_ROOT_ENV = "LLOOM_LTX_MODEL_ROOT"
 TIMEOUT_ENV = "LLOOM_LTX_TIMEOUT_SECONDS"
+WARM_ENV = "LLOOM_LTX_WARM"
+WARM_IDLE_ENV = "LLOOM_LTX_WARM_IDLE_SECONDS"
+DEFAULT_WARM_IDLE_SECONDS = 300.0
+LOG_LIMIT = 16 * 1024 * 1024
+OUTPUT_LIMIT = 256 * 1024 * 1024
 
 MANAGED = True
 QUARANTINED = False
@@ -82,15 +96,24 @@ def runner_prefix() -> list[str]:
     return [raw, "-m"]
 
 
-def timeout_seconds() -> float:
-    raw = os.environ.get(TIMEOUT_ENV)
-    if not raw:
-        return pipelines.DEFAULT_TIMEOUT_SECONDS
+def _positive_seconds(name: str, default: float) -> float:
     try:
-        value = float(raw)
+        value = float(os.environ.get(name) or default)
     except ValueError:
-        return pipelines.DEFAULT_TIMEOUT_SECONDS
-    return value if math.isfinite(value) and value > 0 else pipelines.DEFAULT_TIMEOUT_SECONDS
+        return default
+    return value if math.isfinite(value) and value > 0 else default
+
+
+def timeout_seconds() -> float:
+    return _positive_seconds(TIMEOUT_ENV, pipelines.DEFAULT_TIMEOUT_SECONDS)
+
+
+def warm_enabled() -> bool:
+    return os.environ.get(WARM_ENV) == "1"
+
+
+def warm_idle_seconds() -> float:
+    return _positive_seconds(WARM_IDLE_ENV, DEFAULT_WARM_IDLE_SECONDS)
 
 
 def _json_error(exc: ApiError) -> JSONResponse:
@@ -130,6 +153,51 @@ async def _terminate_process_group(proc: asyncio.subprocess.Process) -> None:
     raise ApiError("pipeline did not exit; runtime quarantined and requires restart", "cleanup_failed", 503)
 
 
+async def _finish(coro) -> None:
+    """Run cleanup to completion even when the caller is being cancelled."""
+    task = asyncio.ensure_future(coro)
+    try:
+        await asyncio.shield(task)
+    except asyncio.CancelledError:
+        await task
+        raise
+
+
+async def _supervise(done: asyncio.Future, log, timeout: float, disconnect: asyncio.Event,
+                     output_path: Path) -> None:
+    """Wait for ``done``; raise on disconnect, timeout, or runaway log/output growth.
+
+    The caller owns cleanup: every raise here leaves the process to be reaped.
+    Log growth is measured from the start of this request.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    log_start = os.fstat(log.fileno()).st_size
+    try:
+        while not done.done():
+            if disconnect.is_set():
+                raise ApiError("client disconnected; generation cancelled", "cancelled", 499)
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise ApiError("generation exceeded its time budget", "timeout", 504)
+            if os.fstat(log.fileno()).st_size - log_start > LOG_LIMIT:
+                raise ApiError("pipeline log exceeded its limit", "generation_failed", 502)
+            if output_path.exists() and output_path.stat().st_size > OUTPUT_LIMIT:
+                raise ApiError("pipeline output exceeds 256 MiB", "generation_failed", 502)
+            await asyncio.wait({done}, timeout=min(0.2, remaining))
+    finally:
+        if not done.done():
+            done.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await done
+
+
+def _log_tail(log, what: str) -> None:
+    size = os.fstat(log.fileno()).st_size
+    log.seek(max(0, size - 8192))
+    logging.error("%s: %s", what, log.read().decode("utf-8", "replace"))
+
+
 async def _run_pipeline(argv: list[str], timeout: float, disconnect: asyncio.Event, output_path: Path) -> None:
     """Run one pipeline subprocess; cancel/reap its group on timeout or disconnect."""
     # A file avoids pipe deadlocks and repeated cancellation of communicate().
@@ -139,38 +207,133 @@ async def _run_pipeline(argv: list[str], timeout: float, disconnect: asyncio.Eve
             *argv, stdout=output, stderr=asyncio.subprocess.STDOUT,
             start_new_session=True,
         )
-        waiter = asyncio.create_task(proc.wait())
-        deadline = asyncio.get_running_loop().time() + timeout
         try:
-            while not waiter.done():
-                if disconnect.is_set():
-                    raise ApiError("client disconnected; generation cancelled", "cancelled", 499)
-                remaining = deadline - asyncio.get_running_loop().time()
-                if remaining <= 0:
-                    raise ApiError("generation exceeded its time budget", "timeout", 504)
-                if os.fstat(output.fileno()).st_size > 16 * 1024 * 1024:
-                    raise ApiError("pipeline log exceeded its limit", "generation_failed", 502)
-                if output_path.exists() and output_path.stat().st_size > 256 * 1024 * 1024:
-                    raise ApiError("pipeline output exceeds 256 MiB", "generation_failed", 502)
-                await asyncio.wait({waiter}, timeout=min(0.2, remaining))
+            await _supervise(asyncio.ensure_future(proc.wait()), output, timeout, disconnect, output_path)
             if proc.returncode != 0:
-                size = os.fstat(output.fileno()).st_size
-                output.seek(max(0, size - 8192))
-                logging.error("LTX pipeline failed: %s", output.read().decode("utf-8", "replace"))
+                _log_tail(output, "LTX pipeline failed")
                 raise ApiError(f"LTX pipeline exited with code {proc.returncode}; see backend logs",
                                "generation_failed", 502)
         finally:
-            cleanup = asyncio.create_task(_terminate_process_group(proc))
+            await _finish(_terminate_process_group(proc))
+
+
+class WarmWorker:
+    """At most one persistent :mod:`warm_worker` process, keyed by module + weights.
+
+    Only touched under the app's single-flight lock, except the idle reaper,
+    which never takes that lock (so it cannot turn a new request away with 409);
+    a request that arrives mid-release waits for the old process to be reaped
+    before a new one may load weights.
+    """
+
+    def __init__(self) -> None:
+        self.proc: asyncio.subprocess.Process | None = None
+        self.key: tuple | None = None
+        self.log = None
+        self.served = 0
+        self.last_used: float | None = None
+        self._reaper: asyncio.Task | None = None
+        self._releasing: asyncio.Task | None = None
+
+    def describe(self, busy: bool) -> dict:
+        if self._releasing is not None:
+            state = "releasing"
+        elif self.proc is None:
+            state = "stopped"
+        else:
+            state = "busy" if busy else "idle"
+        module, transformer, quantization = self.key or (None, None, None)
+        idle_for = None
+        if state == "idle" and self.last_used is not None:
+            idle_for = round(asyncio.get_running_loop().time() - self.last_used, 1)
+        return {
+            "state": state,
+            "pid": self.proc.pid if self.proc else None,
+            "module": module,
+            "transformer": transformer,
+            "quantization": quantization,
+            "requests_served": self.served,
+            "idle_for_seconds": idle_for,
+            "idle_release_seconds": warm_idle_seconds(),
+        }
+
+    async def release(self) -> None:
+        """Kill the worker's process group and wait until it is reaped."""
+        if self._reaper is not None and self._reaper is not asyncio.current_task():
+            self._reaper.cancel()
+        self._reaper = None
+        if self._releasing is None:
+            if self.proc is None:
+                return
+            proc, log = self.proc, self.log
+            self.proc, self.log = None, None
+
+            async def terminate():
+                try:
+                    await _terminate_process_group(proc)
+                finally:
+                    log.close()
+            self._releasing = asyncio.ensure_future(terminate())
+        releasing = self._releasing
+        try:
+            await _finish(releasing)
+        finally:
+            if self._releasing is releasing and releasing.done():
+                self._releasing = None
+                self.key = None
+
+    async def _release_when_idle(self, lock: asyncio.Lock) -> None:
+        await asyncio.sleep(warm_idle_seconds())
+        # A running request reschedules this reaper when it finishes.
+        if lock.locked():
+            return
+        logging.info("LTX warm worker idle for %.0fs; releasing it", warm_idle_seconds())
+        try:
+            await self.release()
+        except Exception:  # noqa: BLE001 - quarantine is already recorded
+            logging.exception("LTX warm worker release failed")
+
+    async def render(self, key: tuple, argv: list[str], timeout: float, disconnect: asyncio.Event,
+                     output_path: Path, lock: asyncio.Lock) -> dict:
+        if self._releasing is not None or (self.proc is not None and (self.key != key or self.proc.returncode is not None)):
+            await self.release()
+        if self._reaper is not None:
+            self._reaper.cancel()
+            self._reaper = None
+        if self.proc is None:
+            self.log = tempfile.TemporaryFile()
+            self.proc = await asyncio.create_subprocess_exec(
+                *runner_prefix(), "warm_worker", key[0],
+                stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=self.log,
+                start_new_session=True,
+            )
+            self.key, self.served = key, 0
+        try:
             try:
-                await asyncio.shield(cleanup)
-            except asyncio.CancelledError:
-                await cleanup
-                raise
-            finally:
-                if not waiter.done():
-                    waiter.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await waiter
+                self.proc.stdin.write((json.dumps({"argv": argv}) + "\n").encode())
+                await self.proc.stdin.drain()
+            except (BrokenPipeError, ConnectionResetError) as exc:
+                raise ApiError("LTX warm worker exited; see backend logs", "generation_failed", 502) from exc
+            reply = asyncio.ensure_future(self.proc.stdout.readline())
+            await _supervise(reply, self.log, timeout, disconnect, output_path)
+            line = reply.result()
+            result = json.loads(line) if line.strip() else {"ok": False, "error": "worker exited"}
+            if not result.get("ok"):
+                _log_tail(self.log, "LTX warm worker failed")
+                raise ApiError("LTX warm worker failed: " + str(result.get("error"))[:300],
+                               "generation_failed", 502)
+        except BaseException:
+            await _finish(self.release())
+            raise
+        self.served += 1
+        self.last_used = asyncio.get_running_loop().time()
+        logging.info("LTX warm render %s: %ss (built=%s, served=%d)", key, result.get("seconds"),
+                     result.get("built"), self.served)
+        if os.fstat(self.log.fileno()).st_size > 4 * LOG_LIMIT:
+            await self.release()  # bound the log file; the next request rebuilds
+        else:
+            self._reaper = asyncio.ensure_future(self._release_when_idle(lock))
+        return result
 
 
 def create_app() -> FastAPI:
@@ -178,6 +341,7 @@ def create_app() -> FastAPI:
                   docs_url=None, redoc_url=None, openapi_url=None)
     lock = asyncio.Lock()
     validation_lock = asyncio.Lock()
+    warm = WarmWorker()
 
     @app.get("/health")
     async def health():
@@ -207,8 +371,12 @@ def create_app() -> FastAPI:
             "upstream": pipelines.UPSTREAM_VERSION,
             "upstream_commit": pipelines.UPSTREAM_COMMIT,
             "managed": MANAGED,
+            # Both modes load weights on the first request that needs them.
+            # Warm mode keeps them only until the worker's idle release.
             "lazy_load": True,
-            "keep_warm": False,
+            "keep_warm": warm_enabled(),
+            "mode": "warm-worker" if warm_enabled() else "per-request",
+            "warm_worker": warm.describe(lock.locked()) if warm_enabled() else None,
             "single_flight": True,
             "busy": lock.locked(),
             "quarantined": QUARANTINED,
@@ -323,18 +491,27 @@ def create_app() -> FastAPI:
                     media_paths["video"] = video_path
                 output_path = workdir / "out.mp4"
                 argv = pipelines.build_argv(generation, assets, media_paths, output_path)
-                argv[0:3] = runner_prefix() + [generation["spec"]["module"]]
+                module = generation["spec"]["module"]
 
                 watcher = asyncio.create_task(watch_disconnect())
                 try:
-                    await _run_pipeline(argv, timeout_seconds(), disconnect, output_path)
+                    if (warm_enabled() and module in warm_worker.WARM_MODULES
+                            and generation["offload"] == "none"):
+                        key = (module, generation["spec"]["transformer"], generation["quantization"])
+                        await warm.render(key, [str(arg) for arg in argv[3:]], timeout_seconds(),
+                                          disconnect, output_path, lock)
+                    else:
+                        # Never hold a warm pipeline beside a per-request one.
+                        await warm.release()
+                        argv[0:3] = runner_prefix() + [module]
+                        await _run_pipeline(argv, timeout_seconds(), disconnect, output_path)
                 finally:
                     watcher.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await watcher
                 if not output_path.is_file():
                     raise ApiError("pipeline produced no output file", "generation_failed", 502)
-                if output_path.stat().st_size > 256 * 1024 * 1024:
+                if output_path.stat().st_size > OUTPUT_LIMIT:
                     raise ApiError("pipeline output exceeds 256 MiB", "generation_failed", 502)
                 encoded = base64.b64encode(output_path.read_bytes()).decode("ascii")
             except ApiError as exc:
