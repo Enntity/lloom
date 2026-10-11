@@ -131,7 +131,8 @@ export async function joinPool(
     // The token is spent and the secret saved; say how to finish by hand.
     throw new Error(
       `Enrolled as ${nodeId}, and the node secret is saved in ${secretPath}, but the config update failed ` +
-        `(${error.message}). Set pool.head to ${JSON.stringify({ url: head, nodeId, secretFile: POOL_NODE_SECRET_FILE })} by hand.`
+        `(${error.message}). Set pool.head to ${JSON.stringify({ url: head, nodeId, secretFile: POOL_NODE_SECRET_FILE })} by hand.`,
+      { cause: error }
     );
   }
   return {
