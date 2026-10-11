@@ -1256,7 +1256,7 @@
     {
       "id": "linux-nvidia-ltx-2-5-native",
       "path": "linux-nvidia-ltx-2-5-native.json",
-      "currentVersion": 3,
+      "currentVersion": 4,
       "versions": [
         {
           "version": 2,
@@ -1267,9 +1267,16 @@
         },
         {
           "version": 3,
+          "path": "archive/linux-nvidia-ltx-2-5-native/v3.json",
+          "status": "archived",
+          "archivedAt": "2026-10-11T18:00:00.000Z",
+          "notes": "ltx_pipelines v1.4.2 with chunked long video and NVFP4 distilled (ltx-kernels built for GB10 sm_121a)."
+        },
+        {
+          "version": 4,
           "path": "linux-nvidia-ltx-2-5-native.json",
           "status": "current",
-          "notes": "ltx_pipelines v1.4.2 with chunked long video and NVFP4 distilled (ltx-kernels built for GB10 sm_121a)."
+          "notes": "Adds the opt-in warm worker for Distilled generate (LLOOM_LTX_WARM=1)."
         }
       ],
       "name": "LTX-2.5 native workflows (NVIDIA)",

@@ -8,7 +8,7 @@
   },
   "id": "linux-nvidia-ltx-2-5-native",
   "name": "LTX-2.5 native workflows (NVIDIA)",
-  "version": 3,
+  "version": 4,
   "summary": "Full and Distilled native BF16 LTX-2.5 models with explicit generation, audio-driven, keyframe, retake and refinement workflows.",
   "provenance": {
     "createdBy": "lloom",
