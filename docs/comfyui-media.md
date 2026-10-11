@@ -215,8 +215,8 @@ An eight-second 1024x576 shot on one GB10, measured end to end:
 
 | Path                                       | 8 steps, warm | 4 steps, cold start | 4 steps, warm |
 | ------------------------------------------ | ------------- | ------------------- | ------------- |
-| Runtime LoRA on int8 ConvRot, PyTorch SDPA | 349–353 s     | 237 s               | not measured  |
-| Merged MXFP8, comfy-kitchen INT8 attention | 241 s         | 159 s               | 140 s         |
+| Runtime LoRA on int8 ConvRot, PyTorch SDPA | 349–353 s     | 235–237 s           | 216 s         |
+| Merged MXFP8, comfy-kitchen INT8 attention | 241 s         | 154–159 s           | 140 s         |
 
 Turbo accepts `steps` of 4 or 8 (default 8): lightx2v distilled the LoRA for 8
 and validates 4. Text encoding and the two VAEs add about 40 s per shot.
