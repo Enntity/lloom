@@ -59,6 +59,8 @@ import { applyOnboarding, createOnboardingPlan } from './onboarding.mjs';
 import { applyRecipePack, createRecipePackPlan } from './recipe-pack.mjs';
 import { buildRecipeIndexReport } from './recipe-index.mjs';
 import { loadRecipes } from './recipes.mjs';
+import { collectNodeInventory, createNodeInventoryCache } from './pool-inventory.mjs';
+import { modelRootCandidates } from './model-files.mjs';
 import { createRegistry, UnknownModelError } from './registry.mjs';
 import { routeProfileStatus, writeRouteMemberSuspension, writeRouteProfile } from './route-control.mjs';
 import { mutateConfigSource } from './config-mutation.mjs';
@@ -1287,14 +1289,15 @@ function restoreMetricMap(entries) {
 }
 
 function createMetricGroup(id = 'all') {
-  return { totals: emptyMetricBucket(id), models: new Map(), routes: new Map() };
+  return { totals: emptyMetricBucket(id), models: new Map(), routes: new Map(), requested: new Map() };
 }
 
 function restoreMetricGroup(source, id = 'all') {
   return {
     totals: restoreMetricBucket(emptyMetricBucket(id), source?.totals),
     models: restoreMetricMap(source?.models),
-    routes: restoreMetricMap(source?.routes)
+    routes: restoreMetricMap(source?.routes),
+    requested: restoreMetricMap(source?.requested)
   };
 }
 
@@ -1352,6 +1355,9 @@ function serializeMetricGroup(group) {
       .sort((a, b) => a.id.localeCompare(b.id)),
     routes: [...group.routes.values()]
       .map((bucket) => finalizeMetricBucket(bucket, true))
+      .sort((a, b) => a.id.localeCompare(b.id)),
+    requested: [...(group.requested ?? new Map()).values()]
+      .map((bucket) => finalizeMetricBucket(bucket, true))
       .sort((a, b) => a.id.localeCompare(b.id))
   };
 }
@@ -1363,6 +1369,8 @@ export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } =
   const totals = restoreMetricBucket(emptyMetricBucket('all'), initialSnapshot?.totals);
   const models = restoreMetricMap(initialSnapshot?.models);
   const routes = restoreMetricMap(initialSnapshot?.routes);
+  // Demand per requested id (usually an alias), separate from resolved models.
+  const requested = restoreMetricMap(initialSnapshot?.requested);
   const days = new Map(
     (Array.isArray(initialSnapshot?.history?.days) ? initialSnapshot.history.days : [])
       .filter((entry) => /^\d{4}-\d{2}-\d{2}$/.test(entry?.date || ''))
@@ -1508,17 +1516,19 @@ export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } =
       apply(totals, entry);
       if (entry.model) apply(bucketFor(models, entry.model), entry);
       if (entry.route) apply(bucketFor(routes, entry.route), entry);
+      if (entry.requestedModel) apply(bucketFor(requested, entry.requestedModel), entry);
       const dayId = entry.at.slice(0, 10);
       if (!days.has(dayId)) days.set(dayId, createMetricGroup(dayId));
       const day = days.get(dayId);
       apply(day.totals, entry);
       if (entry.model) apply(bucketFor(day.models, entry.model), entry);
       if (entry.route) apply(bucketFor(day.routes, entry.route), entry);
+      if (entry.requestedModel) apply(bucketFor(day.requested, entry.requestedModel), entry);
       while (days.size > 400) days.delete([...days.keys()].sort()[0]);
     },
     snapshot({ model, period = 'all' } = {}) {
       const normalizedPeriod = ['today', '7d', '30d', 'all'].includes(period) ? period : 'all';
-      let selectedGroup = { totals, models, routes };
+      let selectedGroup = { totals, models, routes, requested };
       if (normalizedPeriod !== 'all') {
         const dayCount = normalizedPeriod === 'today' ? 1 : Number.parseInt(normalizedPeriod, 10);
         const cutoff = new Date();
@@ -1530,6 +1540,7 @@ export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } =
           mergeMetricBucket(selectedGroup.totals, day.totals);
           mergeMetricMaps(selectedGroup.models, day.models);
           mergeMetricMaps(selectedGroup.routes, day.routes);
+          mergeMetricMaps(selectedGroup.requested, day.requested);
         }
       }
       const selectedModel = model ? (selectedGroup.models.get(model) ?? null) : null;
@@ -1550,6 +1561,9 @@ export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } =
             : []
           : [...selectedGroup.models.values()].map(finalizeMetricBucket).sort((a, b) => a.id.localeCompare(b.id)),
         routes: [...selectedGroup.routes.values()].map(finalizeMetricBucket).sort((a, b) => a.id.localeCompare(b.id)),
+        requested: [...selectedGroup.requested.values()]
+          .map(finalizeMetricBucket)
+          .sort((a, b) => a.id.localeCompare(b.id)),
         active: [...active.values()].map((entry) => ({
           ...entry,
           elapsedMs: Math.max(0, Date.now() - Date.parse(entry.startedAt))
@@ -1560,7 +1574,7 @@ export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } =
     },
     persistenceSnapshot() {
       return {
-        ...serializeMetricGroup({ totals, models, routes }),
+        ...serializeMetricGroup({ totals, models, routes, requested }),
         history: {
           days: [...days.entries()]
             .sort(([a], [b]) => a.localeCompare(b))
@@ -1619,6 +1633,7 @@ export function createMetricsPersistence(config, { logger = console } = {}) {
               totals: latestSnapshot.totals,
               models: latestSnapshot.models,
               routes: latestSnapshot.routes,
+              requested: latestSnapshot.requested,
               history: latestSnapshot.history
             }
           },
@@ -2335,6 +2350,18 @@ export function createLloomServer(
     telemetry: hostTelemetry,
     profile: () => machineProfile
   });
+  // Pool inventory is collected on request only and cached; it scans model
+  // roots and lists container images, which is too slow for the status path.
+  const nodeInventory = createNodeInventoryCache({
+    collect: async () =>
+      collectNodeInventory({
+        nodeId: clusterCoordinator.nodeId,
+        profile: (await machineProfile) ?? {},
+        recipes: await loadRecipes().catch(() => []),
+        modelRoots: await modelRootCandidates({ config: clusterCoordinator.config })
+      })
+  });
+  clusterCoordinator.inventory ??= () => nodeInventory.get();
   runtimeManager ??= new RuntimeManager(config, { logger, clusterCoordinator });
   if (!runtimeManager.clusterCoordinator) {
     runtimeManager.clusterCoordinator = clusterCoordinator;
@@ -5082,7 +5109,8 @@ export function createLloomServer(
         sendJson(res, 200, {
           ok: true,
           node: await clusterCoordinator.localNodeStatus({
-            includeMemoryUsage: url.searchParams.get('memoryUsage') === '1'
+            includeMemoryUsage: url.searchParams.get('memoryUsage') === '1',
+            includeInventory: url.searchParams.get('inventory') === '1'
           })
         });
         return;
@@ -5091,7 +5119,7 @@ export function createLloomServer(
       if (req.method === 'GET' && url.pathname === '/gateway/cluster') {
         sendJson(res, 200, {
           ok: true,
-          cluster: await clusterCoordinator.status()
+          cluster: await clusterCoordinator.status({ inventory: url.searchParams.get('inventory') === '1' })
         });
         return;
       }

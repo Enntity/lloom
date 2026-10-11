@@ -84,10 +84,28 @@ export function validateRecipe(recipe, config, { backendIds, checkLocalReference
   }
   if (!asArray(recipe.models).length) errors.push(`recipe ${recipe.id ?? '(missing)'} has no models`);
 
+  const serving = recipe.requirements ?? {};
+  if (
+    serving.computeArchs != null &&
+    (!Array.isArray(serving.computeArchs) ||
+      serving.computeArchs.some((arch) => typeof arch !== 'string' || !/^(sm_[0-9]+[af]?|apple-metal)$/.test(arch)))
+  ) {
+    errors.push(`recipe ${recipe.id} requirements.computeArchs must list sm_<capability> or apple-metal`);
+  }
+  if (serving.tensorParallel != null && !(Number.isInteger(serving.tensorParallel) && serving.tensorParallel >= 1)) {
+    errors.push(`recipe ${recipe.id} requirements.tensorParallel must be a positive integer`);
+  }
+
   const modelIds = checkLocalReferences ? configModelIds(config) : new Set();
   const runtimeIds = checkLocalReferences ? configRuntimeIds(config) : new Set();
   for (const model of asArray(recipe.models)) {
     if (!model.role) errors.push(`recipe ${recipe.id} has model without role`);
+    const maxSequences = model.settings?.maxSequences;
+    if (maxSequences != null && !(Number.isInteger(maxSequences) && maxSequences >= 1)) {
+      errors.push(
+        `recipe ${recipe.id} model ${model.role ?? '(missing)'} settings.maxSequences must be a positive integer`
+      );
+    }
     if (!model.model) errors.push(`recipe ${recipe.id} model ${model.role ?? '(missing)'} is missing model`);
     if (checkLocalReferences && model.gatewayModel && !modelIds.has(model.gatewayModel)) {
       errors.push(`recipe ${recipe.id} references unknown gateway model ${model.gatewayModel}`);

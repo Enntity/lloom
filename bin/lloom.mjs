@@ -36,6 +36,7 @@ import {
   selectedRecipeIdFromCommunityPlan
 } from '../src/community-client.mjs';
 import { loadConfig } from '../src/config.mjs';
+import { POOL_USAGE, createPoolPlanReport, formatPoolPlanReport, poolPlanOptions } from '../src/pool-cli.mjs';
 import { mutateConfigSource } from '../src/config-mutation.mjs';
 import { runtimeControlTimeoutMs } from '../src/control-timeout.mjs';
 import { createDoctorReport } from '../src/doctor.mjs';
@@ -136,6 +137,7 @@ const COMMAND_REGISTRY = [
   { name: 'runtimes', aliases: ['runtime-status'], tier: 'advanced', needsInstalledConfig: true },
   { name: 'service', aliases: [], tier: 'advanced', needsInstalledConfig: true },
   { name: 'cluster', aliases: ['cluster-status'], tier: 'advanced', needsInstalledConfig: true },
+  { name: 'pool', aliases: [], tier: 'advanced', needsInstalledConfig: true },
   { name: 'deployment', aliases: ['rollout'], tier: 'advanced', needsInstalledConfig: false },
   { name: 'node-agent', aliases: [], tier: 'advanced', needsInstalledConfig: false },
   { name: 'runtime-plan', aliases: [], tier: 'advanced', needsInstalledConfig: true },
@@ -228,6 +230,7 @@ Serving and discovery:
 Backends and runtimes:
   lloom down
   lloom cluster [status|doctor|discover] [--apply] [--id NAME] [--api-key-env NAME] [--json]
+  lloom pool plan [--cordon NODE[,NODE]] [--pin ALIAS=MODEL] [--profile NAME] [--consider-installs] [--headroom-gb N] [--churn-weight N] [--external fallback|allow|never] [--offline] [--json]
   lloom deployment plan --plan FILE [--json]
   lloom deployment apply --plan FILE --nodes FILE [--operation-id ID] --apply --yes [--journal FILE] [--json]
   lloom deployment status --operation-id ID [--journal FILE] [--json]
@@ -370,6 +373,7 @@ function commandLine(command, parts = []) {
 
 const INSTALLED_CONFIG_COMMANDS = new Set([
   'add-model',
+  'pool',
   'bootstrap',
   'service',
   'cluster',
@@ -404,6 +408,7 @@ const INSTALLED_CONFIG_COMMANDS = new Set([
 
 const OPERATIONAL_CONFIG_COMMANDS = new Set([
   'add-model',
+  'pool',
   'service',
   'cluster',
   'cluster-status',
@@ -2494,6 +2499,25 @@ async function main() {
       });
       if (!result) throw new Error(`route switch failed through ${gatewayUrlFor(config)}`);
       console.log(JSON.stringify({ ...result, applied: true }, null, 2));
+    },
+    pool: async ({ args, config }) => {
+      const action = positional(args)[1] ?? 'plan';
+      if (action !== 'plan') throw new Error(POOL_USAGE);
+      const options = poolPlanOptions({
+        cordon: argValues(args, '--cordon'),
+        pins: argValues(args, '--pin'),
+        profile: argValue(args, '--profile'),
+        considerInstalls: hasFlag(args, '--consider-installs'),
+        offline: hasFlag(args, '--offline'),
+        headroomGb: argValue(args, '--headroom-gb'),
+        churnWeight: argValue(args, '--churn-weight'),
+        external: argValue(args, '--external')
+      });
+      const report = await createPoolPlanReport(config, options, {
+        gatewayRequest: (target, pathname) => gatewayRequest(target, pathname, { args, timeoutMs: 30000 }),
+        gatewayUrl: gatewayUrlFor(config)
+      });
+      console.log(hasFlag(args, '--json') ? JSON.stringify(report, null, 2) : formatPoolPlanReport(report));
     },
     fleet: async ({ args, config }) => {
       const action = positional(args)[1] ?? 'list';

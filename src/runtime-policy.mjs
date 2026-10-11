@@ -1,6 +1,7 @@
 import { assertMaintenanceStartAllowed } from './model-maintenance.mjs';
 import os from 'node:os';
 import { readHostMemory } from './host-memory.mjs';
+import { memoryBudgetGb as hostMemoryBudgetGb } from './resource-fit.mjs';
 import { RuntimeManager } from './runtime-manager.mjs';
 import { clusterNodes, currentNodeId, runtimeAuthority, runtimeResourcesByNode } from './cluster.mjs';
 
@@ -163,11 +164,12 @@ function policyConfig(config, profile = {}) {
   const totalMemoryGb = numberOrNull(profile.totalMemoryGb) ?? Math.round(os.totalmem() / 1024 / 1024 / 1024);
   const reserveMemoryGb = numberOrNull(policy.reserveMemoryGb) ?? 8;
   const maxMemoryUtilization = numberOrNull(policy.maxMemoryUtilization);
-  const memoryBudgetGb =
-    numberOrNull(policy.memoryBudgetGb) ??
-    (maxMemoryUtilization != null
-      ? Math.max(0, totalMemoryGb * maxMemoryUtilization)
-      : Math.max(0, totalMemoryGb - reserveMemoryGb));
+  const memoryBudgetGb = hostMemoryBudgetGb({
+    totalMemoryGb,
+    memoryBudgetGb: numberOrNull(policy.memoryBudgetGb),
+    maxMemoryUtilization,
+    reserveMemoryGb
+  });
   return {
     enabled: policy.enabled !== false && policy.memorySafety?.mode !== 'yolo',
     autoEvict: policy.autoEvict === true,
@@ -329,12 +331,13 @@ function clusterRuntimePolicyPlan(
     const maxMemoryUtilization = numberOrNull(
       configuredNodes[nodeId].resources?.maxMemoryUtilization ?? policyTemplate.maxMemoryUtilization
     );
-    const memoryBudgetGb =
-      numberOrNull(configuredNodes[nodeId].resources?.memoryBudgetGb) ??
-      numberOrNull(policyTemplate.memoryBudgetGb) ??
-      (maxMemoryUtilization != null
-        ? Math.max(0, totalMemoryGb * maxMemoryUtilization)
-        : Math.max(0, totalMemoryGb - reserveMemoryGb));
+    const memoryBudgetGb = hostMemoryBudgetGb({
+      totalMemoryGb,
+      memoryBudgetGb:
+        numberOrNull(configuredNodes[nodeId].resources?.memoryBudgetGb) ?? numberOrNull(policyTemplate.memoryBudgetGb),
+      maxMemoryUtilization,
+      reserveMemoryGb
+    });
     const loadedMemoryGb = rows
       .filter((row) => row.loaded)
       .reduce((sum, row) => sum + numberOrNull(row.resourcesByNode?.[nodeId]?.memoryGb), 0);

@@ -6,6 +6,8 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Added
 
+- `lloom pool plan`: a dry-run placement plan across every cluster node. It proposes which lanes run where, which residency they get and how each alias routes, and diffs that against what runs now. It covers every required alias first, then minimises demand-weighted latency and the load cost of changes, within per-domain memory headroom, direct-link tensor parallelism, compute architecture and pins. Nodes report a pool inventory through `/gateway/node?inventory=1`. Recipes may declare `requirements.computeArchs`, `requirements.tensorParallel` and `settings.maxSequences`. `/gateway/metrics` adds `requested` buckets, which give per-alias demand. See `docs/pool-planning.md`.
+
 - LLooM Hear CPU audio analysis, with structured estimates, optional dashboard images, and opt-in upstream interpretation. File and URL inputs require operator configuration.
 
 - Four standalone NVIDIA Spark audio recipes (Qwen3-TTS 1.7B CustomVoice, Base voice cloning and VoiceDesign, and Whisper large-v3-turbo). Each runs one pinned, integrity-checked checkpoint in its own container from a locally built `spark-audio` image that replaces a host-local prebuilt image.
