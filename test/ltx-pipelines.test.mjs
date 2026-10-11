@@ -1136,12 +1136,12 @@ test('warm mode reuses one worker process across requests and reports it in /hea
 
 test('the warm worker is released after its idle timeout and rebuilt on demand', async (t) => {
   const warm = await startWarmServer(t, { LLOOM_LTX_WARM_IDLE_SECONDS: '1' });
-  assert.equal((await warm.post(req(FULL, GENERATE, { prompt: 'one' }))).status, 200);
+  assert.equal((await warm.post(req(DISTILLED, GENERATE, { prompt: 'one' }))).status, 200);
   const [first] = warm.entries();
-  assert.equal(first.module, 'ltx_pipelines.ti2vid_two_stages');
+  assert.deepEqual([first.role, first.module], ['warm', 'ltx_pipelines.distilled']);
   await waitFor(() => pidGone(first.pid), 'idle worker must exit');
   await waitFor(async () => (await warm.health()).warm_worker.state === 'stopped', 'health must report stopped');
-  assert.equal((await warm.post(req(FULL, GENERATE, { prompt: 'two' }))).status, 200);
+  assert.equal((await warm.post(req(DISTILLED, GENERATE, { prompt: 'two' }))).status, 200);
   assert.notEqual(warm.entries()[1].pid, first.pid);
 });
 
@@ -1167,23 +1167,23 @@ for (const trigger of ['timeout', 'disconnect']) {
 
 test('workflows the worker does not serve fall back to a subprocess after releasing it', async (t) => {
   const warm = await startWarmServer(t);
-  assert.equal((await warm.post(req(DISTILLED, GENERATE, { prompt: 'warm' }))).status, 200);
-  assert.equal((await warm.post(req(FULL, GENERATE_HQ, { prompt: 'hq' }))).status, 200);
-  assert.equal((await warm.post(req(DISTILLED, REFINE, { prompt: 'refine' }))).status, 200);
-  assert.equal((await warm.post(req(DISTILLED, GENERATE, { prompt: 'offload', offload: 'cpu' }))).status, 200);
-  assert.equal((await warm.post(req(FULL, A2V, { prompt: 'a2v', audio: wavDataUri(1, 24000) }))).status, 200);
-  const [first, hq, refine, offload, a2v] = warm.entries();
-  assert.deepEqual(
-    [hq, refine, offload].map((entry) => [entry.role, entry.module]),
-    [
-      ['subprocess', 'ltx_pipelines.ti2vid_two_stages_hq'],
-      ['subprocess', 'ltx_pipelines.dfr_pipeline'],
-      ['subprocess', 'ltx_pipelines.distilled']
-    ]
-  );
-  assert.ok(pidGone(first.pid), 'the warm worker must be gone before a subprocess loads weights');
-  assert.deepEqual([a2v.role, a2v.module], ['warm', 'a2v']);
-  assert.equal((await warm.health()).warm_worker.module, 'a2v');
+  const fallbacks = [
+    [req(FULL, GENERATE, { prompt: 'full' }), 'ltx_pipelines.ti2vid_two_stages'],
+    [req(FULL, A2V, { prompt: 'a2v', audio: wavDataUri(1, 24000) }), 'a2v'],
+    [req(FULL, GENERATE_HQ, { prompt: 'hq' }), 'ltx_pipelines.ti2vid_two_stages_hq'],
+    [req(DISTILLED, REFINE, { prompt: 'refine' }), 'ltx_pipelines.dfr_pipeline'],
+    [req(DISTILLED, GENERATE, { prompt: 'offload', offload: 'cpu' }), 'ltx_pipelines.distilled']
+  ];
+  for (const [body, module] of fallbacks) {
+    assert.equal((await warm.post(req(DISTILLED, GENERATE, { prompt: 'warm' }))).status, 200);
+    const worker = warm.entries().at(-1);
+    assert.equal(worker.role, 'warm');
+    assert.equal((await warm.post(body)).status, 200);
+    const fallback = warm.entries().at(-1);
+    assert.deepEqual([fallback.role, fallback.module], ['subprocess', module]);
+    assert.ok(pidGone(worker.pid), `the warm worker must be gone before ${module} loads weights`);
+    assert.equal((await warm.health()).warm_worker.state, 'stopped');
+  }
 });
 
 test('a warm worker that dies mid-render fails that request and is rebuilt for the next', async (t) => {
@@ -1198,7 +1198,7 @@ test('a warm worker that dies mid-render fails that request and is rebuilt for t
   assert.notEqual(warm.entries()[2].pid, first.pid);
 });
 
-test('warm_worker.pin keeps single-transformer blocks resident and leaves two-stage transformers per call', () => {
+test('warm_worker.pin builds every Distilled block once and disables its dispose', () => {
   const result = spawnSync(
     'python3',
     [
@@ -1214,35 +1214,34 @@ def builder(name):
     return NS(build=lambda device=None, dtype=None: builds.append(name) or Model(name))
 def method(name):
     return lambda *a, **k: builds.append(name) or Model(name)
-def pipeline(stages):
-    p = NS(prompt_encoder=NS(_build_text_encoder=method("gemma"), _build_embeddings_processor=method("emb")),
-           image_conditioner=NS(_build_encoder=method("vae-enc")),
-           upsampler=NS(_encoder_builder=builder("up-enc"), _upsampler_builder=builder("up")),
-           video_decoder=NS(_prepared_builder=lambda: builder("vae-dec")),
-           audio_decoder=NS(_decoder_builder=builder("aud-dec"), _vocoder_builder=builder("voc")))
-    for stage in stages: setattr(p, stage, NS(_build_transformer=method(stage)))
-    return warm_worker.pin(p)
-def use(p, stages):
+p = warm_worker.pin(NS(
+    prompt_encoder=NS(_build_text_encoder=method("gemma"), _build_embeddings_processor=method("emb")),
+    image_conditioner=NS(_build_encoder=method("vae-enc")),
+    upsampler=NS(_encoder_builder=builder("up-enc"), _upsampler_builder=builder("up")),
+    video_decoder=NS(_prepared_builder=lambda: builder("vae-dec")),
+    audio_decoder=NS(_decoder_builder=builder("aud-dec"), _vocoder_builder=builder("voc")),
+    stage=NS(_build_transformer=method("transformer"))))
+def render():
     out = [p.prompt_encoder._build_text_encoder(), p.prompt_encoder._build_embeddings_processor(),
            p.image_conditioner._build_encoder(), p.upsampler._encoder_builder.build(dtype="bf16"),
            p.upsampler._upsampler_builder.build(dtype="bf16"), p.video_decoder._prepared_builder().build(dtype="bf16"),
-           p.audio_decoder._decoder_builder.build(dtype="bf16"), p.audio_decoder._vocoder_builder.build(dtype="bf16")]
-    out += [getattr(p, s)._build_transformer(video_tools=object()) for s in stages]
+           p.audio_decoder._decoder_builder.build(dtype="bf16"), p.audio_decoder._vocoder_builder.build(dtype="bf16"),
+           p.stage._build_transformer(video_tools=object()), p.stage._build_transformer(video_tools=object())]
     for model in out: model.dispose()
     return out
-d = pipeline(["stage"])
-first, second = use(d, ["stage", "stage"]), use(d, ["stage", "stage"])
-assert all(a is b for a, b in zip(first, second)) and not any(m.disposed for m in first)
-distilled = sorted(builds); builds.clear()
-f = pipeline(["stage_1", "stage_2"])
-use(f, ["stage_1", "stage_2"]); use(f, ["stage_1", "stage_2"])
-print(json.dumps({"distilled": distilled, "full": sorted(builds)}))`
+first, second = render(), render()
+print(json.dumps({"same": all(a is b for a, b in zip(first, second)),
+                  "disposed": any(m.disposed for m in first), "builds": sorted(builds)}))`
     ],
     { encoding: 'utf8' }
   );
   assert.equal(result.status, 0, result.stderr);
-  const { distilled, full } = JSON.parse(result.stdout);
-  const small = ['aud-dec', 'emb', 'gemma', 'up', 'up-enc', 'vae-dec', 'vae-enc', 'voc'];
-  assert.deepEqual(distilled, [...small, 'stage'].sort(), 'every Distilled block builds once across two renders');
-  assert.deepEqual(full, [...small, 'stage_1', 'stage_1', 'stage_2', 'stage_2'].sort());
+  const outcome = JSON.parse(result.stdout);
+  assert.equal(outcome.same, true, 'both renders must reuse the same models');
+  assert.equal(outcome.disposed, false, 'gpu_model exit must not release a pinned model');
+  assert.deepEqual(
+    outcome.builds,
+    ['aud-dec', 'emb', 'gemma', 'transformer', 'up', 'up-enc', 'vae-dec', 'vae-enc', 'voc'],
+    'each block, including the transformer shared by both stages, builds once across two renders'
+  );
 });
