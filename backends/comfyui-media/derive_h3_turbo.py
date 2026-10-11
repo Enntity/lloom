@@ -45,6 +45,7 @@ def main():
         image, "/opt/venv/bin/python", "/opt/lloom-media/build/merge_h3_turbo.py",
         "/in/base.safetensors", "/in/lora.safetensors", f"/out/{partial.name}",
     ], check=True)
+    partial.chmod(0o644)  # safetensors writes 0600; the runtime container reads it
     partial.replace(out)
     stamp.write_text(json.dumps(identity) + "\n")
 
