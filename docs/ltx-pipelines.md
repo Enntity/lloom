@@ -5,8 +5,8 @@
 endpoint. It is additive: nothing else in the repository changes behavior, and
 the backend only activates when a recipe/config points at it.
 
-- Upstream: <https://github.com/Lightricks/LTX-2>, version **1.3.0**, pinned
-  commit `598ab41247a77dbfe29b5186e915bcf4f9040ec7`. A2V is a locally maintained copy of that revision with an explicit sampler selector. Other CLI flags come from that revision's argparse surface
+- Upstream: <https://github.com/Lightricks/LTX-2>, version **1.4.2**, pinned
+  commit `9ec55f9f22798a3198d9c923856824821bc3317e`. A2V is a locally maintained copy of that revision with an explicit sampler selector. Other CLI flags come from that revision's argparse surface
   (`packages/ltx-pipelines/src/ltx_pipelines/utils/args.py` and the per-pipeline
   `main()` parsers).
 - Two public gateway model IDs, `Lightricks/LTX-2.5-Full` and

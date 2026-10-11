@@ -202,7 +202,7 @@ JSON body below the smaller limit of the gateway and selected backend.
 
 See [native LTX installation and controls](ltx-pipelines.md) and
 [Comfy recipe installation](comfyui-media.md). Workflow choices follow the
-[pinned LTX pipeline package](https://github.com/Lightricks/LTX-2/tree/v1.3.0/packages/ltx-pipelines)
+[pinned LTX pipeline package](https://github.com/Lightricks/LTX-2/tree/v1.4.2/packages/ltx-pipelines)
 and [H3 Turbo's published FL2VA workflows](https://github.com/ModelTC/Minimax-H3-Turbo#model-specs).
 
 ### Full LTX through ComfyUI
