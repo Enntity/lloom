@@ -4,8 +4,8 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-comfyui-minimax-h3-turbo",
   "name": "MiniMaxAI/MiniMax-H3-Turbo (ComfyUI, NVIDIA)",
-  "version": 1,
-  "summary": "Install MiniMaxAI/MiniMax-H3-Turbo in an independent, single-model ComfyUI runtime.",
+  "version": 2,
+  "summary": "Install MiniMaxAI/MiniMax-H3-Turbo in an independent, single-model ComfyUI runtime, with the Turbo LoRA merged into an MXFP8 checkpoint.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata only; model weights retain their upstream licenses"
@@ -13,7 +13,7 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "ComfyUI 5ba116a40f1944f64e2e4a8ace826656e6293bf4; immutable provider revisions and per-file SHA-256 below."
+    "source": "ComfyUI 5ba116a40f1944f64e2e4a8ace826656e6293bf4; immutable provider revisions and per-file SHA-256 below. The served checkpoint is derived locally from the two pinned downloads (backends/comfyui-media/build/merge_h3_turbo.py)."
   },
   "links": [
     {
@@ -29,6 +29,7 @@
     "cuda",
     "fp8",
     "minimax-h3-turbo",
+    "mxfp8",
     "nvfp4",
     "nvidia",
     "single-model"
@@ -42,7 +43,8 @@
     "testedMachine": "DGX Spark / GB10 class NVIDIA system",
     "notes": [
       "Independent single-model serving with per-model admission and unloading.",
-      "NVIDIA Container Toolkit with CUDA 13-compatible host driver required."
+      "NVIDIA Container Toolkit with CUDA 13-compatible host driver required.",
+      "The Turbo LoRA is merged into the pruned FL2VA weights and requantized to MXFP8 at install time; the derivation needs the GPU for about five minutes and must not run beside a live H3 render."
     ]
   },
   "requirements": {
@@ -51,7 +53,7 @@
       "linux-arm64"
     ],
     "memoryGb": 95,
-    "diskGb": 61,
+    "diskGb": 83,
     "commands": [
       "docker",
       "python3"
@@ -143,6 +145,24 @@
             }
           ]
         }
+      },
+      {
+        "id": "derive-h3-turbo-mxfp8",
+        "title": "Merge the Turbo LoRA into an MXFP8 MiniMax-H3 checkpoint",
+        "action": "command",
+        "command": "python3",
+        "args": [
+          "${repoRoot}/backends/comfyui-media/derive_h3_turbo.py",
+          "--model-root",
+          "${modelRoot}"
+        ],
+        "inputs": [
+          "Comfy-Org--MiniMax-H3/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+          "lightx2v--Minimax-h3-Turbo/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
+        ],
+        "outputs": [
+          "lloom-derived--MiniMax-H3-Turbo/minimax_h3_fl2va_turbo8_merged_mxfp8.safetensors"
+        ]
       }
     ]
   },
@@ -178,7 +198,7 @@
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/comfyui-media:source-6d8fbbc3e58bef36bb8723cdcb01f53a7f8f5d9bd6f74ab015a3dbf06ca19147",
+            "image": "lloom/comfyui-media:source-f478dab442b7ce625ac98db9968c5c30cc7574c259f2b2515c01530779312ddd",
             "pull": false,
             "createArgs": [
               "--restart",
@@ -190,15 +210,13 @@
               "-p",
               "127.0.0.1:${port}:8000",
               "--mount",
-              "type=bind,src=${modelRoot}/Comfy-Org--MiniMax-H3/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors,dst=/opt/ComfyUI/models/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors,readonly",
-              "--mount",
               "type=bind,src=${modelRoot}/Comfy-Org--MiniMax-H3/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors,dst=/opt/ComfyUI/models/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors,readonly",
               "--mount",
               "type=bind,src=${modelRoot}/Comfy-Org--MiniMax-H3/vae/minimax_h3_audio_vae_fp32.safetensors,dst=/opt/ComfyUI/models/vae/minimax_h3_audio_vae_fp32.safetensors,readonly",
               "--mount",
               "type=bind,src=${modelRoot}/Comfy-Org--MiniMax-H3/vae/minimax_h3_video_vae_fp16.safetensors,dst=/opt/ComfyUI/models/vae/minimax_h3_video_vae_fp16.safetensors,readonly",
               "--mount",
-              "type=bind,src=${modelRoot}/lightx2v--Minimax-h3-Turbo/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors,dst=/opt/ComfyUI/models/loras/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors,readonly",
+              "type=bind,src=${modelRoot}/lloom-derived--MiniMax-H3-Turbo/minimax_h3_fl2va_turbo8_merged_mxfp8.safetensors,dst=/opt/ComfyUI/models/diffusion_models/minimax_h3_fl2va_turbo8_merged_mxfp8.safetensors,readonly",
               "-v",
               "lloom-comfyui-minimax-h3-turbo-data:/data",
               "-e",
@@ -207,6 +225,8 @@
               "LLOOM_MODELS_ROOT=/opt/ComfyUI/models",
               "-e",
               "LLOOM_COMFY_CACHE_MODE=classic",
+              "-e",
+              "LLOOM_COMFY_ATTENTION=ck",
               "-e",
               "LLOOM_MEDIA_MODEL=MiniMaxAI/MiniMax-H3-Turbo"
             ]

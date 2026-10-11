@@ -56,20 +56,37 @@ try {
     assert.ok(!args.some((arg) => arg.includes(':/opt/lloom-models')));
     const fileMounts = args.filter((arg) => arg.startsWith('type=bind,'));
     const downloads = recipe.setup.steps.filter((step) => step.action === 'download-model');
-    assert.equal(
-      fileMounts.length,
-      downloads.reduce((n, step) => n + step.include.length, 0)
-    );
+    // A derive step builds files from pinned downloads at install time. The
+    // runtime mounts its outputs instead of the inputs it consumed.
+    const derives = recipe.setup.steps.filter((step) => step.action === 'command' && step.outputs);
+    const consumed = new Set(derives.flatMap((step) => step.inputs));
+    const mounted = (file) =>
+      fileMounts.some((mount) => mount.includes(`/${file},dst=/opt/ComfyUI/models/`) && mount.endsWith(',readonly'));
+    let expectedMounts = 0;
+    for (const step of derives) {
+      const script = await fs.readFile(step.args[0].replace('${repoRoot}/', ''), 'utf8');
+      for (const file of [...step.inputs, ...step.outputs])
+        assert.ok(script.includes(`"${file}"`), `${step.args[0]} does not derive ${file}`);
+    }
+    for (const step of derives)
+      for (const file of step.outputs) {
+        assert.match(file, /^lloom-derived--[^/]+\/[^/]+$/);
+        assert.ok(mounted(file), `derived ${file} is not mounted`);
+        expectedMounts++;
+      }
     for (const step of downloads)
       for (const file of step.include) {
-        assert.ok(
-          fileMounts.some(
-            (mount) =>
-              mount.includes(`/${step.model.replaceAll('/', '--')}/${file},dst=/opt/ComfyUI/models/`) &&
-              mount.endsWith(',readonly')
-          )
-        );
+        const relative = `${step.model.replaceAll('/', '--')}/${file}`;
+        if (consumed.has(relative)) continue;
+        assert.ok(mounted(relative), `download ${relative} is neither mounted nor consumed`);
+        expectedMounts++;
       }
+    for (const file of consumed)
+      assert.ok(
+        downloads.some((step) => step.include.some((f) => `${step.model.replaceAll('/', '--')}/${f}` === file)),
+        `derive input ${file} is not a pinned download`
+      );
+    assert.equal(fileMounts.length, expectedMounts);
     const model = standalone.models[0];
     assert.equal(
       model.kind,

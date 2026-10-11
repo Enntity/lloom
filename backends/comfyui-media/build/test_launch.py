@@ -13,3 +13,10 @@ def test_launch_refuses_to_serve_without_a_single_model():
         result = subprocess.run([sys.executable, LAUNCH], env=env, capture_output=True, text=True, timeout=30)
         assert result.returncode != 0
         assert "LLOOM_MEDIA_MODEL is required" in result.stderr
+
+
+def test_launch_refuses_an_unknown_attention_kernel():
+    env = {**os.environ, "LLOOM_MEDIA_MODEL": "MiniMaxAI/MiniMax-H3-Turbo", "LLOOM_COMFY_ATTENTION": "sage"}
+    result = subprocess.run([sys.executable, LAUNCH], env=env, capture_output=True, text=True, timeout=30)
+    assert result.returncode != 0
+    assert "LLOOM_COMFY_ATTENTION must be pytorch or ck" in result.stderr

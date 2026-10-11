@@ -64,7 +64,22 @@ def test_h3_turbo_accepts_frame_pinning():
     graph, _, _ = build_graph(H3T, {"prompt": "A calm lake"}, image_filename="lloom-first.png", last_image_filename="lloom-last.png")
     cond = nodes(graph, "MiniMaxH3ImageToVideo")[0]["inputs"]
     assert "first_frame" in cond and "last_frame" in cond
-    assert nodes(graph, "LoraLoaderModelOnly")
+
+
+def test_h3_turbo_loads_the_merged_mxfp8_checkpoint_without_a_runtime_lora():
+    """A LoRA attached at sample time disables ComfyUI's quantized matmul and
+    re-applies the delta every step; Turbo ships with the LoRA merged in."""
+    graph, _, _ = build_graph(H3T, {"prompt": "A calm lake"}, image_filename="lloom-first.png")
+    assert node(graph, "UNETLoader")["inputs"]["unet_name"] == "minimax_h3_fl2va_turbo8_merged_mxfp8.safetensors"
+    assert not nodes(graph, "LoraLoaderModelOnly")
+    full, _, _ = build_graph(H3, {"prompt": "A calm lake"})
+    assert node(full, "UNETLoader")["inputs"]["unet_name"] == "minimax_h3_fl2va_pruned_int8_convrot.safetensors"
+
+
+@pytest.mark.parametrize("steps", [4, 8])
+def test_h3_turbo_samples_four_or_eight_steps(steps):
+    graph, _, _ = build_graph(H3T, {"prompt": "A calm lake", "steps": steps})
+    assert node(graph, "BasicScheduler")["inputs"]["steps"] == steps
 
 
 def test_ltx_audio_and_endpoint_are_wired_through_both_video_stages():
@@ -157,8 +172,10 @@ def test_step_error_names_the_model_and_its_range():
         build_graph(H3, {"prompt": "A calm lake", "steps": 8})
 
 
-def test_turbo_step_error_names_its_only_legal_value():
-    with pytest.raises(ValueError, match=r"Turbo.*exactly 8"):
+def test_turbo_step_error_names_its_legal_values():
+    with pytest.raises(ValueError, match=r"Turbo.*4 or 8"):
+        build_graph(H3T, {"prompt": "A calm lake", "steps": 6})
+    with pytest.raises(ValueError, match=r"Turbo.*between 4 and 8"):
         build_graph(H3T, {"prompt": "A calm lake", "steps": 20})
 
 

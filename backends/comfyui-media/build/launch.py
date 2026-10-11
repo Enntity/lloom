@@ -17,6 +17,12 @@ EXTRA_PATHS_FILE = "/data/extra_model_paths.yaml"
 CACHE_MODE = os.environ.get("LLOOM_COMFY_CACHE_MODE", "none")
 if CACHE_MODE not in ("none", "classic"):
     raise SystemExit("LLOOM_COMFY_CACHE_MODE must be none or classic")
+# "ck" selects comfy-kitchen's INT8 attention kernel, 1.7x PyTorch SDPA at
+# MiniMax-H3's ~29k-token sequences on GB10. It is lossy (about 1.7% relative
+# error per call), so a recipe opts in per model after a visual A/B.
+ATTENTION = os.environ.get("LLOOM_COMFY_ATTENTION", "pytorch")
+if ATTENTION not in ("pytorch", "ck"):
+    raise SystemExit("LLOOM_COMFY_ATTENTION must be pytorch or ck")
 
 children = []
 stopping = False
@@ -49,6 +55,8 @@ comfy_args = [
 ]
 if roots:
     comfy_args += ["--extra-model-paths-config", EXTRA_PATHS_FILE]
+if ATTENTION == "ck":
+    comfy_args.append("--use-ck-attention")
 children.append(subprocess.Popen(comfy_args, cwd="/opt/ComfyUI"))
 
 children.append(subprocess.Popen([
