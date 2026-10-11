@@ -8,17 +8,17 @@
   },
   "id": "linux-nvidia-ltx-2-5-native",
   "name": "LTX-2.5 native workflows (NVIDIA)",
-  "version": 2,
+  "version": 3,
   "summary": "Full and Distilled native BF16 LTX-2.5 models with explicit generation, audio-driven, keyframe, retake and refinement workflows.",
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "Lightricks LTX-2 v1.3.0 commit 598ab41247a77dbfe29b5186e915bcf4f9040ec7; dependency lock and weight revisions/SHA-256 pinned."
+    "source": "Lightricks LTX-2 v1.4.2 commit 9ec55f9f22798a3198d9c923856824821bc3317e; dependency lock and weight revisions/SHA-256 pinned."
   },
   "links": [
     {
       "rel": "source",
-      "href": "https://github.com/Lightricks/LTX-2/tree/598ab41247a77dbfe29b5186e915bcf4f9040ec7"
+      "href": "https://github.com/Lightricks/LTX-2/tree/9ec55f9f22798a3198d9c923856824821bc3317e"
     },
     {
       "rel": "source",
@@ -107,9 +107,10 @@
           "latent_upscale_models/ltx-2.5-latent-temporal-upscaler-x2-bf16-1.0.safetensors",
           "latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors",
           "vae/ltx-2.5-audio-vae-bf16.safetensors",
-          "vae/ltx-2.5-video-vae-bf16.safetensors"
+          "vae/ltx-2.5-video-vae-bf16.safetensors",
+          "diffusion_models/ltx-2.5-22b-distilled-transformer-nvfp4.safetensors"
         ],
-        "downloadSizeBytes": 122294941556,
+        "downloadSizeBytes": 141016489964,
         "integrity": {
           "files": [
             {
@@ -151,6 +152,11 @@
               "path": "vae/ltx-2.5-video-vae-bf16.safetensors",
               "sizeBytes": 1472223346,
               "sha256": "847e14ca7f3355debca0cea4eaa24ac0fbcdf0061da054ac89ca638a869ddba3"
+            },
+            {
+              "path": "diffusion_models/ltx-2.5-22b-distilled-transformer-nvfp4.safetensors",
+              "sizeBytes": 18721548408,
+              "sha256": "4b94231e734c1950f8f6826cb8bd8715d94be5b3e04f8256ee060c5bc3886c30"
             }
           ]
         }
@@ -217,7 +223,7 @@
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/ltx-pipelines:source-2d192754657af91101e5b96021bb8a9c17eb978938dcbd5232b2b11a7dd9dac8",
+            "image": "lloom/ltx-pipelines:source-88c9d4493b4db8092bf69eb7e28626316dee4e36f8d9359797f2751b4c56c5b7",
             "pull": false,
             "createArgs": [
               "--restart",
@@ -278,7 +284,7 @@
           "healthUrl": "http://127.0.0.1:${port}/health",
           "bootstrap": {
             "adapter": "docker",
-            "image": "lloom/ltx-pipelines:source-2d192754657af91101e5b96021bb8a9c17eb978938dcbd5232b2b11a7dd9dac8",
+            "image": "lloom/ltx-pipelines:source-88c9d4493b4db8092bf69eb7e28626316dee4e36f8d9359797f2751b4c56c5b7",
             "pull": false,
             "createArgs": [
               "--restart",

@@ -8,8 +8,8 @@ model ID in a request selects exactly one pinned official ``ltx_pipelines``
 entry point from the table below; callers can never name a module, a script or a
 filesystem path.
 
-Reference: Lightricks LTX-2 v1.3.0, commit
-``598ab41247a77dbfe29b5186e915bcf4f9040ec7``. Every flag emitted here is taken
+Reference: Lightricks LTX-2 v1.4.2, commit
+``9ec55f9f22798a3198d9c923856824821bc3317e``. Every flag emitted here is taken
 from that revision's argparse surface
 (``packages/ltx-pipelines/src/ltx_pipelines/utils/args.py`` and the per-pipeline
 ``main()`` parsers); the split component filenames match the repository README.
@@ -28,8 +28,8 @@ from fractions import Fraction
 from pathlib import Path
 
 UPSTREAM_REPO = "https://github.com/Lightricks/LTX-2.git"
-UPSTREAM_COMMIT = "598ab41247a77dbfe29b5186e915bcf4f9040ec7"
-UPSTREAM_VERSION = "1.3.0"
+UPSTREAM_COMMIT = "9ec55f9f22798a3198d9c923856824821bc3317e"
+UPSTREAM_VERSION = "1.4.2"
 
 # ---------------------------------------------------------------------------
 # Body / media ceilings. Still images and (for A2V) the driving audio are
@@ -87,6 +87,9 @@ RESPONSE_FORMATS = ("b64_json",)
 MODEL_FILES = {
     "dev_transformer": "diffusion_models/ltx-2.5-22b-dev-transformer-bf16.safetensors",
     "distilled_transformer": "diffusion_models/ltx-2.5-22b-distilled-transformer-bf16.safetensors",
+    # Official pre-quantized NVFP4 distilled transformer, served only by
+    # Distilled ``generate`` with ``quantization: "nvfp4-prequant"``.
+    "distilled_transformer_nvfp4": "diffusion_models/ltx-2.5-22b-distilled-transformer-nvfp4.safetensors",
     "text_encoder": "text_encoders/gemma4-12b-with-proj-ltx-2.5-bf16.safetensors",
     "video_vae": "vae/ltx-2.5-video-vae-bf16.safetensors",
     "audio_vae": "vae/ltx-2.5-audio-vae-bf16.safetensors",
@@ -126,6 +129,9 @@ def _pipeline(module, title, transformer, *, assets=(), **flags):
         "accepts_video": False,
         "requires_audio": False,
         "supports_temporal_upscalings": False,
+        # Upstream ``--chunked``: overlapping 97-frame windows with a 25-frame
+        # carry and crossfaded seams, so memory follows the window, not the clip.
+        "supports_chunked": False,
         "default_width": 832,
         "default_height": 512,
         "default_num_frames": 121,
@@ -154,6 +160,7 @@ PIPELINES = {
             supports_guidance=True,
             supports_steps=True,
             supports_generated_keyframes=True,
+            supports_chunked=True,
             default_steps=30,
         ),
         "generate-hq": _pipeline(
@@ -177,6 +184,7 @@ PIPELINES = {
             supports_steps=True,
             accepts_audio=True,
             requires_audio=True,
+            supports_chunked=True,
             default_steps=30,
         ),
         "keyframes": _pipeline(
@@ -196,6 +204,7 @@ PIPELINES = {
             "LTX-2.5 Distilled (native BF16 fast generate)",
             "distilled_transformer",
             supports_generated_keyframes=True,
+            supports_chunked=True,
         ),
         "retake": _pipeline(
             "ltx_pipelines.retake",
@@ -759,6 +768,18 @@ def parse_generation(payload):
     quantization = payload.get("quantization")
     if quantization is not None and quantization not in QUANTIZATION_POLICIES:
         raise ApiError("quantization must be one of " + ", ".join(QUANTIZATION_POLICIES))
+    if quantization == "nvfp4-prequant":
+        # The policy loads an already-quantized checkpoint; only the official
+        # NVFP4 distilled transformer is one, so it selects that file.
+        if model != "Lightricks/LTX-2.5-Distilled" or workflow != "generate":
+            raise ApiError("nvfp4-prequant is supported only by Lightricks/LTX-2.5-Distilled generate")
+        spec = {**spec, "transformer": "distilled_transformer_nvfp4", "title": spec["title"] + " (NVFP4)"}
+
+    chunked = payload.get("chunked", False)
+    if not isinstance(chunked, bool):
+        raise ApiError("chunked must be true or false")
+    if chunked and not spec["supports_chunked"]:
+        raise ApiError(f"{model} {workflow} does not support chunked generation")
     max_batch_size = _integer(payload, "max_batch_size", 1, 8, 1)
 
     if video:
@@ -801,6 +822,7 @@ def parse_generation(payload):
         "offload": offload,
         "quantization": quantization,
         "max_batch_size": max_batch_size,
+        "chunked": chunked,
     }
 
 
@@ -826,7 +848,7 @@ _ALLOWED_FIELDS = {
     "model", "workflow", "prompt", "negative_prompt", "image", "image_strength", "last_frame", "keyframes", "audio",
     "audio_start_time", "width", "height", "size", "duration", "num_frames", "frame_rate",
     "fps", "seed", "steps", "generated_keyframes", "temporal_upscalings", "spatial_upscalings",
-    "offload", "quantization", "max_batch_size", "response_format", "video", "start_time", "end_time", "sampler",
+    "offload", "quantization", "max_batch_size", "response_format", "video", "start_time", "end_time", "sampler", "chunked",
 } | {name for name, _, _, _ in _GUIDANCE_FLAGS}
 
 
@@ -929,6 +951,8 @@ def build_argv(generation, assets, media_paths, output_path, python=None):
         argv += ["--quantization", generation["quantization"]]
     if generation["max_batch_size"] != 1:
         argv += ["--max-batch-size", str(generation["max_batch_size"])]
+    if generation["chunked"]:
+        argv += ["--chunked"]
     return argv
 
 

@@ -188,6 +188,7 @@ audio, since its audio is fixed. Comfy LTX's
 fields. Unsupported fields and conflicting aliases return HTTP 400 rather than
 being silently dropped.
 
+Native LTX `generate` (Full and Distilled) and Full `audio-to-video` accept `chunked: true`, upstream's long-video mode: the clip is generated in overlapping 97-frame windows with a 25-frame carry and crossfaded seams, so memory follows the window rather than the clip. Frame limits are unchanged.
 Native LTX also accepts `image_strength` with `image` (0–1, default 0.7 for `audio-to-video` and 1 for other workflows).
 This adjusts the first-frame guide only; `last_frame` remains at strength 1.
 Comfy LTX defaults its first-stage image strength to 0.7. Specify strength
@@ -202,7 +203,7 @@ JSON body below the smaller limit of the gateway and selected backend.
 
 See [native LTX installation and controls](ltx-pipelines.md) and
 [Comfy recipe installation](comfyui-media.md). Workflow choices follow the
-[pinned LTX pipeline package](https://github.com/Lightricks/LTX-2/tree/v1.3.0/packages/ltx-pipelines)
+[pinned LTX pipeline package](https://github.com/Lightricks/LTX-2/tree/v1.4.2/packages/ltx-pipelines)
 and [H3 Turbo's published FL2VA workflows](https://github.com/ModelTC/Minimax-H3-Turbo#model-specs).
 
 ### Full LTX through ComfyUI

@@ -145,12 +145,12 @@ source details.
 
 `backends/ltx-pipelines/a2v.py` is adapted from Lightricks LTX-2
 `packages/ltx-pipelines/src/ltx_pipelines/a2vid_two_stage.py` at revision
-`598ab41247a77dbfe29b5186e915bcf4f9040ec7`. LLooM adds selection of the
+`9ec55f9f22798a3198d9c923856824821bc3317e`. LLooM adds selection of the
 native Euler ancestral sampler in both stages. This adapted source retains
 the upstream LTX Community License; see the adjacent `UPSTREAM-LICENSE`
 and `LICENSE-2_x`. It is not relicensed under LLooM's MIT license.
 
-Source: <https://github.com/Lightricks/LTX-2/tree/598ab41247a77dbfe29b5186e915bcf4f9040ec7>
+Source: <https://github.com/Lightricks/LTX-2/tree/9ec55f9f22798a3198d9c923856824821bc3317e>
 
 ## Atlas SparkGLM engine image (not included)
 

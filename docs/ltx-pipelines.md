@@ -5,8 +5,8 @@
 endpoint. It is additive: nothing else in the repository changes behavior, and
 the backend only activates when a recipe/config points at it.
 
-- Upstream: <https://github.com/Lightricks/LTX-2>, version **1.3.0**, pinned
-  commit `598ab41247a77dbfe29b5186e915bcf4f9040ec7`. A2V is a locally maintained copy of that revision with an explicit sampler selector. Other CLI flags come from that revision's argparse surface
+- Upstream: <https://github.com/Lightricks/LTX-2>, version **1.4.2**, pinned
+  commit `9ec55f9f22798a3198d9c923856824821bc3317e`. A2V is a locally maintained copy of that revision with an explicit sampler selector. Other CLI flags come from that revision's argparse surface
   (`packages/ltx-pipelines/src/ltx_pipelines/utils/args.py` and the per-pipeline
   `main()` parsers).
 - Two public gateway model IDs, `Lightricks/LTX-2.5-Full` and
@@ -52,6 +52,17 @@ request is admitted. There is no warm pool and no residency claim.
   Errors use `{"error": {"message", "type", "code"}}` with a matching HTTP
   status (400 validation, 404 unknown model, 409 runtime busy, 413 over a
   ceiling, 502 upstream failure, 504 timeout, 499 client disconnect).
+
+## NVFP4 on GB10
+
+`quantization: "nvfp4-prequant"` on `Lightricks/LTX-2.5-Distilled` `generate`
+serves the official pre-quantized NVFP4 transformer through upstream's
+`ltx-kernels` extension (NVFP4 quantize + cuBLASLt block-scaled FP4 GEMM).
+Upstream builds that extension only for `sm_100a`, `sm_110a` and `sm_120a`, and
+arch-specific cubins do not load on another SM, so the image compiles it in a
+throwaway CUDA 13.2 stage with `patch_ltx_kernels.py` adding `sm_121a` (DGX
+Spark / GB10). On ennspark03 a 4 s 1024x576 image-to-video shot took 85–97 s
+in NVFP4 against 107–133 s in BF16, with no visible quality difference.
 
 ## Request schema
 

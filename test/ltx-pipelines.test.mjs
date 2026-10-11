@@ -987,3 +987,40 @@ test('A2V sampler defaults reach native CLI; overrides are gated and preserved',
   for (const [model, workflow] of samplerFree)
     assert.match(parseErr(req(model, workflow, { sampler: 'euler' })).message, /sampler/);
 });
+
+test('chunked long-video generation reaches the CLI only where upstream supports it', () => {
+  const root = makeModelRoot();
+  const value = (args, flag) => args.includes(flag);
+  assert.equal(value(argvFor(req(FULL, GENERATE, { chunked: true }), root), '--chunked'), true);
+  assert.equal(value(argvFor(req(DISTILLED, GENERATE, { chunked: true }), root), '--chunked'), true);
+  assert.equal(
+    value(
+      argvFor(req(FULL, A2V, { prompt: 'A person speaks.', audio: wavDataUri(3), chunked: true }), root),
+      '--chunked'
+    ),
+    true
+  );
+  assert.equal(value(argvFor(req(FULL, GENERATE), root), '--chunked'), false, 'one-shot stays the default');
+  for (const [model, workflow] of [
+    [FULL, GENERATE_HQ],
+    [FULL, KEYFRAMES],
+    [DISTILLED, REFINE]
+  ])
+    assert.match(parseErr(req(model, workflow, { chunked: true })).message, /chunked/);
+  for (const chunked of ['yes', 1, null]) assert.match(parseErr(req(FULL, GENERATE, { chunked })).message, /chunked/);
+});
+
+test('nvfp4-prequant serves the official NVFP4 distilled transformer and nothing else', () => {
+  const root = makeModelRoot();
+  const argv = argvFor(req(DISTILLED, GENERATE, { quantization: 'nvfp4-prequant' }), root);
+  const value = (flag) => argv[argv.indexOf(flag) + 1];
+  assert.match(value('--transformer-path'), /ltx-2\.5-22b-distilled-transformer-nvfp4\.safetensors$/);
+  assert.equal(value('--quantization'), 'nvfp4-prequant');
+  assert.match(
+    argvFor(req(DISTILLED, GENERATE), root)[argvFor(req(DISTILLED, GENERATE), root).indexOf('--transformer-path') + 1],
+    /distilled-transformer-bf16\.safetensors$/,
+    'BF16 stays the default'
+  );
+  assert.match(parseErr(req(FULL, GENERATE, { quantization: 'nvfp4-prequant' })).message, /nvfp4-prequant/);
+  assert.match(parseErr(req(DISTILLED, REFINE, { quantization: 'nvfp4-prequant' })).message, /nvfp4-prequant/);
+});
