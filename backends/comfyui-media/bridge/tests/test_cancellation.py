@@ -17,6 +17,8 @@ def video_builder(model_id, payload, image_filename=None, prefix="lloom"):
 
 async def test_cancelled_request_keeps_slot_until_terminal():
     fake = FakeComfy()
+    # The interrupt has not landed yet: the sampler is mid-step.
+    fake.interrupt_finishes = False
     app, comfy = make_bridge(fake, video_builder)
     runner = app.state.bridge["runner"]
     async with asgi_client(app) as client:
@@ -226,3 +228,88 @@ async def test_cancelled_reaper_cleans_uploaded_and_output_files(tmp_path, monke
         assert not upload_path.exists()
         assert not output_path.exists()
         await comfy.aclose()
+
+
+async def _wait_until_free(runner, budget: float = 4.0) -> None:
+    for _ in range(int(budget / 0.02)):
+        if not runner.busy:
+            return
+        await asyncio.sleep(0.02)
+    raise AssertionError("slot was never released")
+
+
+async def test_cancelled_request_interrupts_its_job():
+    """A dropped request stops its own GPU job instead of letting it finish."""
+    fake = FakeComfy()
+    app, comfy = make_bridge(fake, video_builder)
+    runner = app.state.bridge["runner"]
+    async with asgi_client(app) as client:
+        await comfy.start()
+        task = asyncio.ensure_future(
+            client.post("/v1/videos/generations", json={"model": "video-model", "prompt": "x"})
+        )
+        await asyncio.wait_for(fake.submitted.wait(), timeout=3)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        # No fake.finish(): only the interrupt can end this job.
+        await _wait_until_free(runner)
+        assert fake.interrupts == 1
+        [prompt_id] = fake.prompts
+        assert prompt_id in fake.deleted, "a still-pending job is dropped from the queue too"
+        assert runner.unhealthy is False
+        await comfy.aclose()
+
+
+async def test_client_disconnect_cancels_the_generation():
+    """Starlette does not cancel a plain handler when its client goes away.
+
+    Drive the app over raw ASGI so the client can hang up the way uvicorn
+    reports it: an ``http.disconnect`` message after the body was read.
+    """
+    import json
+
+    fake = FakeComfy()
+    app, comfy = make_bridge(fake, video_builder)
+    runner = app.state.bridge["runner"]
+    await comfy.start()
+    body = json.dumps({"model": "video-model", "prompt": "x"}).encode()
+    hung_up = asyncio.Event()
+    sent_body = False
+
+    async def receive():
+        nonlocal sent_body
+        if not sent_body:
+            sent_body = True
+            return {"type": "http.request", "body": body, "more_body": False}
+        await hung_up.wait()
+        return {"type": "http.disconnect"}
+
+    messages = []
+
+    async def send(message):
+        messages.append(message)
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/v1/videos/generations",
+        "raw_path": b"/v1/videos/generations",
+        "query_string": b"",
+        "root_path": "",
+        "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())],
+        "client": ("127.0.0.1", 1),
+        "server": ("bridge.test", 80),
+    }
+    request = asyncio.ensure_future(app(scope, receive, send))
+    await asyncio.wait_for(fake.submitted.wait(), timeout=3)
+    hung_up.set()
+    await asyncio.wait_for(request, timeout=5)
+    await _wait_until_free(runner)
+    assert fake.interrupts == 1
+    assert len(fake.prompts) == 1
+    await comfy.aclose()

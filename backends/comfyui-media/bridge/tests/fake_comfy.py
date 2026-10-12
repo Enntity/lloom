@@ -28,6 +28,9 @@ class FakeComfy:
         self.running: list[str] = []
         self.deleted: list[str] = []
         self.interrupts = 0
+        # Real ComfyUI notices an interrupt at its next sampler step; a test can
+        # hold the job running past the interrupt to model a slow step.
+        self.interrupt_finishes = True
         self.uploaded: list[tuple[str, bytes, str]] = []
         self.view_requests: list[dict] = []
         self.job_state = "pending"  # pending -> running -> done
@@ -104,6 +107,8 @@ class FakeComfy:
             return httpx.Response(200)
         if path == "/interrupt":
             self.interrupts += 1
+            if not self.interrupt_finishes:
+                return httpx.Response(200, json={})
             self.running.clear()
             self.job_state = "done"
             self.terminal.set()

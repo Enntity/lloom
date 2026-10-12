@@ -68,6 +68,8 @@ MAX_EDIT_SCALAR_CHARS = 64
 # Startup readiness probe against the fixed ComfyUI endpoint.
 READY_ATTEMPTS = 30
 READY_DELAY = 1.0
+# How often a long generation checks whether its caller is still connected.
+DISCONNECT_POLL_SECONDS = 1.0
 
 
 def _load_graphs() -> tuple[dict, object]:
@@ -274,14 +276,17 @@ def create_app(
                     except Exception:
                         pass
                     raise
-        data, mime = await _run_generation(
-            "video",
-            model,
-            payload,
-            image=image,
-            last_frame=last_frame,
-            audio=audio,
-            video=video,
+        data, mime = await _until_disconnect(
+            request,
+            _run_generation(
+                "video",
+                model,
+                payload,
+                image=image,
+                last_frame=last_frame,
+                audio=audio,
+                video=video,
+            ),
         )
         if mime != "video/mp4":
             raise backend_error("The media backend produced an unexpected output type.")
@@ -460,6 +465,32 @@ def create_app(
         return await runner.run(build, kind=expected_kind, upload_ref=upload_ref)
 
     return app
+
+
+async def _until_disconnect(request: Request, work):
+    """Await ``work``, cancelling it if the client hangs up first.
+
+    Starlette does not cancel a plain handler when its client disconnects, so
+    without this a dropped video request kept the GPU busy until the clip was
+    finished and then threw it away. Cancelling the generation lets the runner
+    interrupt its own ComfyUI job.
+    """
+    task = asyncio.ensure_future(work)
+    try:
+        while True:
+            done, _ = await asyncio.wait({task}, timeout=DISCONNECT_POLL_SECONDS)
+            if done:
+                return task.result()
+            if await request.is_disconnected():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                raise BridgeError(499, "client_closed", "The client closed the request.", "client_closed")
+    finally:
+        if not task.done():
+            task.cancel()
 
 
 def _validate_prompt(payload: dict) -> None:
