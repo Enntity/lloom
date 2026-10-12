@@ -374,7 +374,7 @@ the git tree of its `install/` directory, the immutable image manifest
 reference (`image.reference`) with the tag kept as source-build metadata and
 the install-tree contents label, the `nvidia/GLM-5.3-Flash-NVFP4` and drafter
 revisions, and the conversion marker contract. The current source pin is product revision
-`93d220b058921f83c253a3a5544c44f141490989` with install tree
+`3c7d67146929f350ed75fcdfd5e5349db843b483` with install tree
 `246a3a948ab98d19e085bfd39797e554f0ee9261`, so the normal install path
 addresses the immutable digest
 `ghcr.io/enntity/atlas-sparkglm@sha256:e4d313b5e32c47545eab0059eea65a38e65d03fc8e0d5b8c2cfb497c39f0372a`.

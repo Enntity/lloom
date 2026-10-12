@@ -469,7 +469,7 @@ assert.equal(pins.model.revision, '423acf37583782c51c142d145aef733d72943d93');
 assert.equal(pins.model.repo, 'nvidia/GLM-5.3-Flash-NVFP4');
 assert.equal(pins.source.repo, 'Enntity/sparkglm');
 assert.equal(pins.status, 'final');
-assert.equal(pins.source.revision, '93d220b058921f83c253a3a5544c44f141490989');
+assert.equal(pins.source.revision, '3c7d67146929f350ed75fcdfd5e5349db843b483');
 assert.equal(pins.source.installTree, '246a3a948ab98d19e085bfd39797e554f0ee9261');
 assert.equal(pins.source.buildScript, 'install/build.sh');
 // The normal install path addresses the immutable registry digest, not the
