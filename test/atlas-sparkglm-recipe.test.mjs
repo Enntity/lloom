@@ -469,18 +469,18 @@ assert.equal(pins.model.revision, '423acf37583782c51c142d145aef733d72943d93');
 assert.equal(pins.model.repo, 'nvidia/GLM-5.3-Flash-NVFP4');
 assert.equal(pins.source.repo, 'Enntity/sparkglm');
 assert.equal(pins.status, 'final');
-assert.equal(pins.source.revision, '401a5c272648ea78dc8b4cab9039301c41bb9c41');
-assert.equal(pins.source.installTree, 'cfb463a952b517b87baf302b5b3b279a115c5626');
+assert.equal(pins.source.revision, '93d220b058921f83c253a3a5544c44f141490989');
+assert.equal(pins.source.installTree, '246a3a948ab98d19e085bfd39797e554f0ee9261');
 assert.equal(pins.source.buildScript, 'install/build.sh');
 // The normal install path addresses the immutable registry digest, not the
 // mutable tag. The tag stays as source-build metadata only.
 assert.equal(
   pins.image.reference,
-  'ghcr.io/enntity/atlas-sparkglm@sha256:0ddea7cdb372e4407db63dc4f2b5b1a08b4576b8223ded6a4fca3463439ccfb2'
+  'ghcr.io/enntity/atlas-sparkglm@sha256:e4d313b5e32c47545eab0059eea65a38e65d03fc8e0d5b8c2cfb497c39f0372a'
 );
 assert.match(pins.image.reference, IMAGE_REFERENCE_PATTERN);
 assert.equal(pins.image.reference.split('@')[0], IMAGE_REPOSITORY);
-assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkglm:cfb463a952b5');
+assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkglm:246a3a948ab9');
 assert.equal(pins.image.label, 'io.enntity.sparkglm.install-tree');
 assert.equal(pins.image.architecture, 'arm64');
 assert.equal(pins.image.entrypoint, '/opt/atlas/serve.py');
@@ -488,7 +488,7 @@ assert.equal(pins.image.entrypoint, '/opt/atlas/serve.py');
 assert(!Object.hasOwn(pins, 'installer'));
 assert(!Object.hasOwn(pins.image, 'tagPrefix'));
 assert.notEqual(pins.image.reference, pins.image.tag, 'the digest must not be the mutable tag');
-assert(!pins.image.reference.includes(':cfb463a952b5'), 'the tag must never appear as the pulled reference');
+assert(!pins.image.reference.includes(':246a3a948ab9'), 'the tag must never appear as the pulled reference');
 assert(pins.overlay.marker.includes('conversion.complete.json'));
 assert.deepEqual(verifyPins(pins), []);
 
@@ -780,7 +780,7 @@ assert.match(missingImageContract.stderr, /missing the Atlas entrypoint\/profile
 for (const identity of [`arm64 ${'f'.repeat(40)}`, `amd64 ${pins.source.installTree}`, 'arm64 <no value>']) {
   const mismatched = runInstaller({ ...fakeEnv, ATLAS_TEST_IDENTITY: identity }, ['--check-only']);
   assert.notEqual(mismatched.status, 0, `--check-only must reject image identity ${identity}`);
-  assert.match(mismatched.stderr, /expected 'arm64 cfb463a952b517b87baf302b5b3b279a115c5626'/);
+  assert.match(mismatched.stderr, /expected 'arm64 246a3a948ab98d19e085bfd39797e554f0ee9261'/);
 }
 const noImageDir = fs.mkdtempSync(path.join(converterRoot, 'no-image-'));
 const checkedMissingImage = runInstaller({ ...fakeEnv, ATLAS_TEST_IMAGE_DIR: noImageDir }, ['--check-only']);
