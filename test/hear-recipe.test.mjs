@@ -59,4 +59,18 @@ assert.match(next.backends.hear.baseUrl, /^http:\/\/127\.0\.0\.1:\d+\/v1$/);
 assert.deepEqual(next.aliases.hear.members, ['hear']);
 assert.deepEqual(next.aliases.listen.members, ['hear']);
 
+// An additive init from the default recipes must not inherit an earlier init's
+// sources, or `lloom status` resolves the new recipeId in the old recipes root.
+const staleSources = {
+  recipesRoot: '/stale/recipes',
+  benchmarksRoot: '/stale/benchmarks',
+  backendCatalogPath: '/stale/backends.json'
+};
+const restacked = await createInitPlan(
+  { ...config, init: { recipeId: 'spark03-cuda-media', ...staleSources } },
+  { recipeId: 'lloom-hear', additive: true, modelRoot: '/tmp/lloom-models' }
+);
+assert.equal(restacked.config.init.recipeId, 'lloom-hear');
+for (const key of Object.keys(staleSources)) assert.equal(restacked.config.init[key], undefined, key);
+
 console.log('hear-recipe tests passed');
