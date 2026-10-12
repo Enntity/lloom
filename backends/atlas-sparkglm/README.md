@@ -3,7 +3,7 @@
 LLooM-managed two-node Atlas SparkGLM candidate for a directly connected pair
 of NVIDIA DGX Spark systems. This directory is **MIT orchestration only**: no
 Atlas engine source is committed here. The engine image is built from immutable
-revision `35dc1b41c92351d09d47af64e69b44b3393e2334` of `Enntity/sparkglm` by
+revision `401a5c272648ea78dc8b4cab9039301c41bb9c41` of `Enntity/sparkglm` by
 that repository's `install/build.sh`. The engine inside the image is
 AGPL-3.0-only; see [Credits and licenses](#credits-and-licenses). Live hardware
 and full serving qualification remain pending.
@@ -235,7 +235,7 @@ is not part of LLooM:
   `ghcr.io/enntity/atlas-sparkglm`, alongside LLooM (an aggregate); no engine
   source or binary is included in LLooM.
 - **Corresponding source.** [Enntity/sparkglm](https://github.com/Enntity/sparkglm)
-  at the pinned revision (`35dc1b41`) plus the Enntity/atlas commit recorded
+  at the pinned revision (`401a5c27`) plus the Enntity/atlas commit recorded
   in the image's `/opt/atlas/source-manifest.json`
   ([`301479a2`](https://github.com/Enntity/atlas/tree/301479a20612c91243266a3fc7eea3100b99ad59)).
   SparkGLM's `NOTICE` and `docs/LICENSING.md` list everything else it fetches.
