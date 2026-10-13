@@ -14,12 +14,12 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "SparkQwen RC16: Enntity/sparkqwen 85325e5104b2a6864e0cf31ec470a8c3327d4de4 (install tree 656234c336af4d3ba8d274f291d2033c31b998ce), engine Enntity/atlas sparkqwen/atlas-20261010-rc16 @ 1c43247d (AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). The image is ghcr.io/enntity/atlas-sparkqwen:656234c336af, addressed by its GHCR manifest digest in pins.json. The engine argument vector ships inside the image as /opt/atlas/profiles/8x262k.json, selected with SPARKQWEN_PROFILE=8x262k: eight sequences of up to 262144 tokens, BF16 KV (about 3.19M pool tokens at the profile's 0.88 GPU memory utilization), prefix caching, MTP speculation (up to 7 drafts), content-loop steering. Model nvidia/Qwen3.8-Flash-Next-NVFP4 revision fc694b54fb0174e0913e6adf86691ef85a4ead47."
+    "source": "SparkQwen RC16: Enntity/sparkqwen 8b28467324893583838871b6a6b6a28d3059e64f (install tree 4ccd961ecf09d86c9f13087e42592789b5f56182), engine Enntity/atlas sparkqwen/atlas-20261010-rc16 @ 1c43247d (AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). The image is ghcr.io/enntity/atlas-sparkqwen:4ccd961ecf09, addressed by its GHCR manifest digest in pins.json. The engine argument vector ships inside the image as /opt/atlas/profiles/8x262k.json, selected with SPARKQWEN_PROFILE=8x262k: eight sequences of up to 262144 tokens, BF16 KV (about 3.19M pool tokens at the profile's 0.88 GPU memory utilization), prefix caching, MTP speculation (up to 7 drafts), content-loop steering. Model nvidia/Qwen3.8-Flash-Next-NVFP4 revision fc694b54fb0174e0913e6adf86691ef85a4ead47."
   },
   "links": [
     {
       "rel": "upstream",
-      "href": "https://github.com/Enntity/sparkqwen/tree/85325e5104b2a6864e0cf31ec470a8c3327d4de4"
+      "href": "https://github.com/Enntity/sparkqwen/tree/8b28467324893583838871b6a6b6a28d3059e64f"
     },
     {
       "rel": "engine",
@@ -219,7 +219,7 @@
                 "warmup": false,
                 "bootstrap": {
                   "adapter": "docker",
-                  "image": "ghcr.io/enntity/atlas-sparkqwen@sha256:c3ea9f85bab9ff3599000b1e96f594714f3851e0b468da8bf2d10232e237e09e",
+                  "image": "ghcr.io/enntity/atlas-sparkqwen@sha256:9408884dc4bf2c84b7dd097d62effc73f58fffc25a1d67db73d0b4e69516a7c0",
                   "pull": false,
                   "pullTimeoutMs": 3600000,
                   "createArgs": [
@@ -320,7 +320,7 @@
                 },
                 "bootstrap": {
                   "adapter": "docker",
-                  "image": "ghcr.io/enntity/atlas-sparkqwen@sha256:c3ea9f85bab9ff3599000b1e96f594714f3851e0b468da8bf2d10232e237e09e",
+                  "image": "ghcr.io/enntity/atlas-sparkqwen@sha256:9408884dc4bf2c84b7dd097d62effc73f58fffc25a1d67db73d0b4e69516a7c0",
                   "pull": false,
                   "pullTimeoutMs": 3600000,
                   "createArgs": [

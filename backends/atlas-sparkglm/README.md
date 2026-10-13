@@ -3,7 +3,7 @@
 LLooM-managed two-node Atlas SparkGLM candidate for a directly connected pair
 of NVIDIA DGX Spark systems. This directory is **MIT orchestration only**: no
 Atlas engine source is committed here. The engine image is built from immutable
-revision `3c7d67146929f350ed75fcdfd5e5349db843b483` of `Enntity/sparkglm` by
+revision `7a67d9bce4b5f408ad67f2a958ef1a8787136fdd` of `Enntity/sparkglm` by
 that repository's `install/build.sh`. The engine inside the image is
 AGPL-3.0-only; see [Credits and licenses](#credits-and-licenses). Live hardware
 and full serving qualification remain pending.
@@ -26,7 +26,7 @@ and full serving qualification remain pending.
   install-tree label is a contents check, not an artifact identity.
 - `install.sh` — prepares the image. The normal path reuses an already
   verified local image, otherwise pulls the immutable manifest digest
-  `ghcr.io/enntity/atlas-sparkglm@sha256:e4d313b5e32c47545eab0059eea65a38e65d03fc8e0d5b8c2cfb497c39f0372a`
+  `ghcr.io/enntity/atlas-sparkglm@sha256:78420594991e6e7e3914f84a6300ac1cf2f4e18b68e331f8ddc74fd7db905d3c`
   from GHCR. It never pulls the mutable tag, and a failed pinned digest pull is
   a hard failure with no silent source build. The explicit `--source-build`
   option instead clones `Enntity/sparkglm` at the pinned revision, checks that
@@ -235,7 +235,7 @@ is not part of LLooM:
   `ghcr.io/enntity/atlas-sparkglm`, alongside LLooM (an aggregate); no engine
   source or binary is included in LLooM.
 - **Corresponding source.** [Enntity/sparkglm](https://github.com/Enntity/sparkglm)
-  at the pinned revision (`3c7d6714`) plus the Enntity/atlas commit recorded
+  at the pinned revision (`7a67d9bc`) plus the Enntity/atlas commit recorded
   in the image's `/opt/atlas/source-manifest.json`
   ([`dfb9c26a`](https://github.com/Enntity/atlas/tree/dfb9c26a95c96faa9f94c44e23343b0f2b4f9db6)).
   SparkGLM's `NOTICE` and `docs/LICENSING.md` list everything else it fetches.

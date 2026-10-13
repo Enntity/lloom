@@ -5,17 +5,17 @@ of NVIDIA DGX Spark systems, serving `nvidia/Qwen3.8-Flash-Next-NVFP4` as
 published (no overlay conversion, no separate drafter: speculation uses the
 checkpoint's own MTP head). This directory is **MIT orchestration only**: no
 Atlas engine source is committed here. The engine image is built from
-`Enntity/sparkqwen` revision `85325e5104b2a6864e0cf31ec470a8c3327d4de4`
-(install tree `656234c336af`) by that repository's `install/build.sh` and
-published as `ghcr.io/enntity/atlas-sparkqwen:656234c336af`. The engine inside
+`Enntity/sparkqwen` revision `8b28467324893583838871b6a6b6a28d3059e64f`
+(install tree `4ccd961ecf09`) by that repository's `install/build.sh` and
+published as `ghcr.io/enntity/atlas-sparkqwen:4ccd961ecf09`. The engine inside
 the image is AGPL-3.0-only; see [Credits and licenses](#credits-and-licenses).
 SparkQwen qualified RC16 on its own launcher; no live run through LLooM is
 recorded yet.
 
 ## Image digest
 
-`pins.json` addresses `ghcr.io/enntity/atlas-sparkqwen@sha256:c3ea9f85bab9ff3599000b1e96f594714f3851e0b468da8bf2d10232e237e09e`, the GHCR
-manifest digest of tag `656234c336af` (recorded 2026-10-13 with
+`pins.json` addresses `ghcr.io/enntity/atlas-sparkqwen@sha256:9408884dc4bf2c84b7dd097d62effc73f58fffc25a1d67db73d0b4e69516a7c0`, the GHCR
+manifest digest of tag `4ccd961ecf09` (recorded 2026-10-13 with
 `docker buildx imagetools inspect`). Both recipe members use the same
 reference as `bootstrap.image`.
 

@@ -1445,7 +1445,7 @@
           "version": 1,
           "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas.json",
           "status": "current",
-          "notes": "Atlas SparkQwen RC16 two-node candidate over the private fabric, additive only, setDefault false, no aliases. Portable pins live in backends/atlas-sparkqwen/pins.json; the GHCR image digest is still a TODO, so the pin gate fails closed until it is recorded. Default profile 8x262k."
+          "notes": "Atlas SparkQwen RC16 two-node candidate over the private fabric, additive only, setDefault false, no aliases. Portable pins live in backends/atlas-sparkqwen/pins.json; the published image is pinned by its immutable GHCR digest, and invalid or placeholder pins fail closed. Default profile 8x262k."
         }
       ],
       "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 Atlas (SparkQwen RC16)",

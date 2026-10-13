@@ -374,11 +374,11 @@ the git tree of its `install/` directory, the immutable image manifest
 reference (`image.reference`) with the tag kept as source-build metadata and
 the install-tree contents label, the `nvidia/GLM-5.3-Flash-NVFP4` and drafter
 revisions, and the conversion marker contract. The current source pin is product revision
-`3c7d67146929f350ed75fcdfd5e5349db843b483` with install tree
-`246a3a948ab98d19e085bfd39797e554f0ee9261`, so the normal install path
+`7a67d9bce4b5f408ad67f2a958ef1a8787136fdd` with install tree
+`f95a9af14236a781bb13f57dcc9ea0342f339905`, so the normal install path
 addresses the immutable digest
-`ghcr.io/enntity/atlas-sparkglm@sha256:e4d313b5e32c47545eab0059eea65a38e65d03fc8e0d5b8c2cfb497c39f0372a`.
-The tag `ghcr.io/enntity/atlas-sparkglm:246a3a948ab9` is source-build metadata
+`ghcr.io/enntity/atlas-sparkglm@sha256:78420594991e6e7e3914f84a6300ac1cf2f4e18b68e331f8ddc74fd7db905d3c`.
+The tag `ghcr.io/enntity/atlas-sparkglm:f95a9af14236` is source-build metadata
 (first 12 characters of the install tree) and is never pulled; a tag alone is
 not an immutable artifact identity. A later product revision is adopted by
 changing the revision, the install tree, the derived tag and the pinned digest.
@@ -578,7 +578,7 @@ lloom runtime-start qwen38-flash-next-atlas-cluster
 
 The recipe is additive (no default model, no aliases, `keepWarm` false). Pins
 live in `backends/atlas-sparkqwen/pins.json` (source `Enntity/sparkqwen`
-`85325e51`, install tree `656234c336af`). The GHCR manifest digest is pinned in the same manifest.
+`8b284673`, install tree `4ccd961ecf09`). The GHCR manifest digest is pinned in the same manifest.
 `node backends/atlas-sparkqwen/verify-pins.mjs`, setup step
 `verify-atlas-pins` and `install.sh` reject missing or placeholder identities. The
 installer only pulls that digest and verifies the image's arm64 architecture,
