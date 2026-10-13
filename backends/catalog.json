@@ -1736,6 +1736,76 @@
         ],
         "notes": "Reclamation is unverified for the Atlas engine; confirm abort behaviour on the prepared image before advertising it. The LLooM watchdog drains and evicts on repeated 5xx/timeout regardless."
       }
+    },
+    {
+      "id": "docker-atlas-sparkqwen",
+      "name": "Docker Atlas SparkQwen",
+      "kind": "openai-compatible-server",
+      "description": "LLooM-managed Atlas SparkQwen (RC16) containers for Qwen3.8-Flash-Next-NVFP4 on two DGX Sparks. The bundled MIT installer pulls the pinned image from GHCR by its immutable digest, verifies its architecture, install-tree label and in-image contract, and never builds; only the prepared image is started. Tools and reasoning are qualified upstream; structured output is untested with this model and image input is not claimed.",
+      "platforms": [
+        "linux-arm64"
+      ],
+      "features": [
+        "chat",
+        "responses",
+        "streaming",
+        "usage",
+        "tools",
+        "structured-output",
+        "reasoning",
+        "mtp",
+        "speculative-decoding",
+        "moe",
+        "long-context",
+        "cuda",
+        "blackwell",
+        "dgx-spark",
+        "docker",
+        "nccl",
+        "distributed"
+      ],
+      "commands": [
+        "docker",
+        "bash",
+        "node"
+      ],
+      "setup": [
+        {
+          "id": "check-docker",
+          "title": "Check Docker",
+          "action": "check-command",
+          "command": "docker",
+          "args": [
+            "version"
+          ]
+        },
+        {
+          "id": "check-atlas-pins",
+          "title": "Verify Atlas SparkQwen pins are final",
+          "action": "command",
+          "alwaysRun": true,
+          "command": "node",
+          "args": [
+            "${repoRoot}/backends/atlas-sparkqwen/verify-pins.mjs"
+          ]
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health",
+        "chatPath": "/v1/chat/completions"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "unverified",
+        "modes": [
+          "streaming",
+          "buffered",
+          "queued",
+          "generation"
+        ],
+        "notes": "Reclamation is unverified for the Atlas engine; confirm abort behaviour on the prepared image before advertising it. The LLooM watchdog drains and evicts on repeated 5xx/timeout regardless."
+      }
     }
   ]
 }

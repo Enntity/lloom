@@ -1,0 +1,29 @@
+{
+  "manifestVersion": 1,
+  "status": "final",
+  "note": "Single pin manifest for the Atlas SparkQwen RC16 lane. Source, install tree, tag and model identities are final. image.reference is the GHCR manifest digest of ghcr.io/enntity/atlas-sparkqwen:656234c336af, also used as the recipe's bootstrap image. The normal install path addresses image.reference; the tag is source-build metadata (the first 12 characters of the git tree of install/ at the pinned revision) and the install-tree label is a contents check. A tag or label alone is never the artifact identity.",
+  "source": {
+    "repo": "Enntity/sparkqwen",
+    "revision": "85325e5104b2a6864e0cf31ec470a8c3327d4de4",
+    "installTree": "656234c336af4d3ba8d274f291d2033c31b998ce",
+    "cloneUrl": "https://github.com/Enntity/sparkqwen.git",
+    "buildScript": "install/build.sh"
+  },
+  "engine": {
+    "repo": "Enntity/atlas",
+    "branch": "sparkqwen/atlas-20261010-rc16",
+    "commit": "1c43247d93ca050f02cb67b0603e88edfe3d92a5"
+  },
+  "image": {
+    "reference": "ghcr.io/enntity/atlas-sparkqwen@sha256:c3ea9f85bab9ff3599000b1e96f594714f3851e0b468da8bf2d10232e237e09e",
+    "tag": "ghcr.io/enntity/atlas-sparkqwen:656234c336af",
+    "label": "io.enntity.sparkqwen.install-tree",
+    "entrypoint": "/opt/atlas/serve.py",
+    "profilePath": "/opt/atlas/profiles/8x262k.json",
+    "architecture": "arm64"
+  },
+  "model": {
+    "repo": "nvidia/Qwen3.8-Flash-Next-NVFP4",
+    "revision": "fc694b54fb0174e0913e6adf86691ef85a4ead47"
+  }
+}

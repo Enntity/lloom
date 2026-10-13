@@ -68,6 +68,8 @@ Physical membership and model placement are separate. In a three-Spark ring, a m
 
 Use private fabric addresses for node-to-node LLooM and raw backend traffic. `backendHost` is deliberately required when a recipe auto-materializes replicas; LLooM binds the generated backend only to that address, never to every interface.
 
+Distributed recipes can template each member's fabric with `${fabricInterface}` (the node's `fabricInterface`) and `${fabricHca}` (the node's `fabricHca`). Recipes that consume `${fabricHca}` require exact, node-local RDMA device names: LLooM expects `fabricHca` (a comma-separated list of unique device names, no spaces or `:port` suffixes) and `fabricInterface` on every participating node, and stops materialization with the node and field named in the error when either is missing or malformed. It never guesses an HCA from the NIC name, because PCI naming and cabling differ by host.
+
 ```json
 {
   "server": { "host": "${LLOOM_GATEWAY_HOST}", "port": 8100 },

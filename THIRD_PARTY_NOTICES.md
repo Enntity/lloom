@@ -186,3 +186,28 @@ The model `nvidia/GLM-5.3-Flash-NVFP4` (MIT per SparkGLM's licensing notes)
 and the DFlash2 drafter `incoai/GLM-5.3-Flash-DFlash2` (**CC BY-NC-ND 4.0,
 non-commercial**) are downloaded from their publishers under their own terms.
 See the [backend README](backends/atlas-sparkglm/README.md#credits-and-licenses).
+
+## Atlas SparkQwen engine image (not included)
+
+The optional Atlas SparkQwen lane in `backends/atlas-sparkqwen` and
+`recipes/linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas.json` pulls the
+container image `ghcr.io/enntity/atlas-sparkqwen` built from
+[Enntity/sparkqwen](https://github.com/Enntity/sparkqwen) at
+`85325e5104b2a6864e0cf31ec470a8c3327d4de4` (install tree `656234c336af`).
+LLooM starts that image as a separate program; no engine source or binary is
+included in the LLooM npm package, and LLooM's files for the lane remain MIT.
+
+- Engine: [Atlas](https://github.com/Atlas-Inf/atlas) (Atlas-Inf) with
+  SparkGLM's upstream series and SparkQwen's Qwen3.8-Flash-Next work on the
+  [Enntity/atlas](https://github.com/Enntity/atlas) fork, at
+  [`1c43247d93ca050f02cb67b0603e88edfe3d92a5`](https://github.com/Enntity/atlas/tree/1c43247d93ca050f02cb67b0603e88edfe3d92a5)
+  (recorded in the image's `/opt/atlas/source-manifest.json`)
+- License: AGPL-3.0-only. The corresponding source is Enntity/sparkqwen at the
+  revision above plus that Enntity/atlas commit; SparkQwen's `NOTICE` and
+  `docs/LICENSING.md` list what the image build fetches. The image ships
+  CUTLASS's license and the Rust crate notices under `/opt/atlas/notices/`;
+  the engine's license is at `/LICENSE`.
+
+The model `nvidia/Qwen3.8-Flash-Next-NVFP4` (NVIDIA Open Model License per its
+model card) is downloaded from its publisher under its own terms. See the
+[backend README](backends/atlas-sparkqwen/README.md#credits-and-licenses).
