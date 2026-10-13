@@ -164,12 +164,13 @@ for (const member of members) {
     'type=bind,src=${modelRoot}/nvidia--GLM-5.3-Flash-NVFP4,dst=${modelRoot}/nvidia--GLM-5.3-Flash-NVFP4,readonly',
     'type=bind,src=${installRoot}/atlas-overlay,dst=${installRoot}/atlas-overlay,readonly',
     'MODEL_PATH=${installRoot}/atlas-overlay',
-    'FABRIC_HCA=rocep1s0f0',
+    'FABRIC_HCA=${fabricHca}',
+    '-e FABRIC_SIBLINGS=0',
     'NODE_RANK=${nodeRank}',
     'MASTER_ADDR=${leaderAddress}',
     'MASTER_PORT=29510',
     'FABRIC_INTERFACE=${fabricInterface}',
-    '-e FABRIC_HCA=rocep1s0f0',
+    '-e FABRIC_HCA=${fabricHca}',
     'ATLAS_WORLD_SIZE=2',
     'ATLAS_TP_SIZE=2',
     'ATLAS_EP_SIZE=2',
@@ -177,7 +178,7 @@ for (const member of members) {
     'type=bind,src=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2,dst=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2,readonly',
     'DRAFTER_PATH=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2',
     'SERVED_MODEL_NAME=glm-5.3-flash-atlas',
-    'NCCL_IB_HCA=rocep1s0f0',
+    'NCCL_IB_HCA=${fabricHca}',
     'NCCL_IB_ADDR_FAMILY=AF_INET',
     'NCCL_CROSS_NIC=0',
     'NCCL_SOCKET_IFNAME=${fabricInterface}',
@@ -384,8 +385,8 @@ const materialize = (recipeDocument) =>
       cluster: {
         leaderNode: 'spark01',
         nodes: {
-          spark01: { backendHost: '10.0.0.1', fabricInterface: 'eth0' },
-          spark02: { backendHost: '10.0.0.2', fabricInterface: 'eth0', labels: { role: 'worker' } }
+          spark01: { backendHost: '10.0.0.1', fabricInterface: 'eth0', fabricHca: 'mlx5_0' },
+          spark02: { backendHost: '10.0.0.2', fabricInterface: 'eth0', fabricHca: 'mlx5_0', labels: { role: 'worker' } }
         }
       }
     },
@@ -412,8 +413,8 @@ const additiveExisting = deriveUserConfig(
     cluster: {
       leaderNode: 'spark01',
       nodes: {
-        spark01: { backendHost: '10.0.0.1', fabricInterface: 'eth0' },
-        spark02: { backendHost: '10.0.0.2', fabricInterface: 'eth0', labels: { role: 'worker' } }
+        spark01: { backendHost: '10.0.0.1', fabricInterface: 'eth0', fabricHca: 'mlx5_0' },
+        spark02: { backendHost: '10.0.0.2', fabricInterface: 'eth0', fabricHca: 'mlx5_0', labels: { role: 'worker' } }
       }
     }
   },
@@ -454,6 +455,64 @@ for (const runtimeId of ['glm53-flash-atlas-worker', 'glm53-flash-atlas-head']) 
   assert(args.includes('-e SPARKGLM_KV_SHARD=1 '));
   assert(args.includes('-e SPARKGLM_PROFILE=4x1m '));
 }
+// Each host can use unrelated HCA names/ports. Explicit lists stay exact.
+const fabricConfig = {
+  cluster: {
+    leaderNode: 'left',
+    nodes: {
+      left: { backendHost: '192.0.2.1', fabricInterface: 'enp1s0f1np1', fabricHca: 'rocep1s0f1,roceP2p1s0f1' },
+      right: {
+        backendHost: '192.0.2.2',
+        fabricInterface: 'ens7',
+        fabricHca: 'mlx5_7,mlx5_9',
+        labels: { role: 'worker' }
+      }
+    }
+  }
+};
+const deriveFabric = (config, document = recipe) =>
+  deriveUserConfig(config, document, {
+    modelRoot: '/models',
+    additive: true,
+    backendVariables: { repoRoot: root, backendRoot: '/backend', installRoot: '/install' }
+  });
+const beforeFabric = structuredClone(fabricConfig);
+const perNode = deriveFabric(fabricConfig);
+assert.deepEqual(fabricConfig, beforeFabric, 'planning must not mutate input');
+for (const [id, expected, iface] of [
+  ['glm53-flash-atlas-head', 'rocep1s0f1,roceP2p1s0f1', 'enp1s0f1np1'],
+  ['glm53-flash-atlas-worker', 'mlx5_7,mlx5_9', 'ens7']
+]) {
+  const args = perNode.runtimes[id].bootstrap.createArgs;
+  for (const env of [
+    `FABRIC_HCA=${expected}`,
+    `NCCL_IB_HCA=${expected}`,
+    `FABRIC_INTERFACE=${iface}`,
+    'FABRIC_SIBLINGS=0'
+  ]) {
+    const index = args.indexOf(env);
+    assert(index > 0 && args[index - 1] === '-e', `${id}: ${env} must be a Docker environment argument`);
+  }
+  assert(!args.some((arg) => arg.includes('rocep1s0f0')));
+}
+for (const invalid of [undefined, '', 'mlx5_0,', 'mlx5_0,mlx5_0', 'mlx5_0:1', 'mlx5_0;true', ' mlx5_0', ['mlx5_0']]) {
+  const config = structuredClone(fabricConfig);
+  config.cluster.nodes.right.fabricHca = invalid;
+  const snapshot = structuredClone(config);
+  assert.throws(() => deriveFabric(config), /cluster.nodes\[right\].fabricHca/);
+  assert.deepEqual(config, snapshot);
+}
+for (const invalid of [undefined, '', 'eth0;true', ['eth0']]) {
+  const config = structuredClone(fabricConfig);
+  config.cluster.nodes.right.fabricInterface = invalid;
+  assert.throws(() => deriveFabric(config), /cluster.nodes\[right\].fabricInterface/);
+}
+// Recipes that do not consume fabricHca keep their existing configuration contract.
+const legacyRecipe = JSON.parse(JSON.stringify(recipe).replaceAll('${fabricHca}', 'mlx5_0'));
+const legacyConfig = structuredClone(fabricConfig);
+delete legacyConfig.cluster.nodes.right.fabricHca;
+assert.doesNotThrow(() => deriveFabric(legacyConfig, legacyRecipe));
+
 // A size reaches both ranks alike (the mount stays either way).
 const diskCacheRecipe = structuredClone(recipe);
 diskCacheRecipe.models[0].settings.prefixCacheGb = 0;

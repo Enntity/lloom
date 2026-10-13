@@ -230,6 +230,27 @@ function templateValue(value, variables) {
   return value;
 }
 
+// Recipes that consume fabricHca require exact, node-local device names.
+// Do not guess an HCA from a NIC name: PCI naming and cabling differ by host.
+function validateNodeFabric(node, nodeId, member) {
+  if (!JSON.stringify(member.runtimeSettings ?? {}).includes('${fabricHca}')) return;
+  const field = `cluster.nodes[${nodeId}]`;
+  const hcas = typeof node.fabricHca === 'string' ? node.fabricHca.split(',') : [];
+  if (
+    !hcas.length ||
+    hcas.some((name) => !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name)) ||
+    new Set(hcas).size !== hcas.length
+  ) {
+    throw new Error(
+      `${field}.fabricHca must list unique, exact RDMA device names separated by commas ` +
+        '(no spaces or :port suffixes); select only rails connecting this pair'
+    );
+  }
+  if (typeof node.fabricInterface !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(node.fabricInterface)) {
+    throw new Error(`${field}.fabricInterface must name the network interface for this pair`);
+  }
+}
+
 function primitiveSettings(settings) {
   return Object.fromEntries(
     Object.entries(settings).filter(
@@ -667,6 +688,7 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
           const node = configuredNodes[nodeId];
           if (!node) throw new Error(`recipe model ${modelId} references unknown cluster node ${nodeId}`);
           if (!node.backendHost) throw new Error(`cluster node ${nodeId} requires backendHost for distributed recipes`);
+          validateNodeFabric(node, nodeId, member);
           const memberRuntimeId = selectedNodes.length > 1 ? `${member.runtime}-${slug(nodeId)}` : member.runtime;
           if (!memberRuntimeId) throw new Error(`recipe model ${modelId} has a distributed member without runtime`);
           const nodeRank = nodeId === leaderNode ? 0 : selectedWorkerNodes.indexOf(nodeId) + 1;
@@ -682,6 +704,7 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
             nodeRank,
             nodeAddress: node.backendHost,
             fabricInterface: node.fabricInterface ?? '',
+            fabricHca: node.fabricHca ?? '',
             leaderNode,
             leaderAddress: configuredNodes[leaderNode].backendHost,
             clusterNodeCount: selectedNodeIds.length,

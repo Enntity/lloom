@@ -214,6 +214,7 @@ export function clusterNodes(config, env = process.env) {
         endpoint: node?.endpoint ? trimSlash(node.endpoint) : null,
         backendHost: node?.backendHost ?? null,
         fabricInterface: node?.fabricInterface ?? null,
+        fabricHca: node?.fabricHca ?? null,
         sshAlias: node?.sshAlias ?? null,
         apiKeyEnv: node?.apiKeyEnv ?? config.cluster?.apiKeyEnv ?? null,
         labels: asObject(node?.labels),
@@ -344,7 +345,7 @@ function syncPeerMatches(peers, localAddresses, localAddressSet = new Set()) {
             (address) =>
               address.address?.startsWith('10.100.') && sameSubnet(address.address, privateAddress, address.prefixlen)
           )
-          .map((address) => [address.interface ?? address.address, address])
+          .map((address) => [`${address.interface ?? ''}|${address.address}`, address])
       ).values()
     ];
     const candidateAddresses = candidates.map((address) => address.address);
@@ -405,7 +406,11 @@ function nodeRailsForPeers(matches) {
 export function buildNvidiaSyncDiscovery({ peers = [], localAddresses = [], localNodeId, hostname } = {}) {
   const localAddressSet = new Set(localAddresses.map((address) => address.address).filter(Boolean));
   const { matches, ambiguous } = syncPeerMatches(peers, localAddresses, localAddressSet);
-  if (!matches.length) return null;
+  if (!matches.length) {
+    const conflict = ambiguous.find((entry) => entry.reason === 'ambiguous-local-interface');
+    if (conflict) throw new Error(`Ambiguous NVIDIA Sync discovery: ${conflict.message}`);
+    return null;
+  }
   const id = localNodeId || hostname || os.hostname();
   if (matches.some((match) => friendlyNodeId(match.peer.clusterAlias) === id)) {
     throw new Error(`Sync peer alias conflicts with local node id ${id}`);
@@ -557,6 +562,13 @@ export function mergeNvidiaSyncClusterDiscovery({ discovery, cluster = {}, id, a
   if (!discovery?.detected || discovery.provider !== 'nvidia-sync') {
     throw new Error('NVIDIA Sync cluster was not detected');
   }
+  if (discovery.ambiguousPeers?.length) {
+    throw new Error(
+      `Ambiguous NVIDIA Sync discovery; resolve conflicting interfaces before applying: ${discovery.ambiguousPeers
+        .map((entry) => entry.message)
+        .join('; ')}`
+    );
+  }
   const current = asObject(cluster);
   const nodeId = localNodeId ?? current.nodeId ?? discovery.nodeId;
   if (current.nodeId && !String(current.nodeId).includes('${') && current.nodeId !== nodeId) {
@@ -584,6 +596,7 @@ export function mergeNvidiaSyncClusterDiscovery({ discovery, cluster = {}, id, a
     let endpoint = existing.endpoint;
     let backendHost = existing.backendHost ?? observed.backendHost;
     if (
+      !existing.fabricHca &&
       existing.endpoint &&
       /^10\.100\./.test(existing.backendHost ?? '') &&
       endpointHostMatches(existing.endpoint, existing.backendHost)
@@ -604,8 +617,10 @@ export function mergeNvidiaSyncClusterDiscovery({ discovery, cluster = {}, id, a
       name: existing.name ?? targetId,
       ...(endpoint ? { endpoint } : {}),
       backendHost,
-      fabricAddress: observed.backendHost,
-      ...(observed.fabricInterface ? { fabricInterface: observed.fabricInterface } : {}),
+      fabricAddress: existing.fabricHca ? backendHost : observed.backendHost,
+      ...(observed.fabricInterface && !(existing.fabricHca && existing.fabricInterface)
+        ? { fabricInterface: observed.fabricInterface }
+        : {}),
       ...(observed.sshAlias ? { sshAlias: observed.sshAlias } : {}),
       ...(observed.rails ? { rails: observed.rails } : {}),
       labels: {

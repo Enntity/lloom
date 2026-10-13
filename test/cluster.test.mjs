@@ -1172,6 +1172,42 @@ assert.deepEqual(
   [['spark-node-02-lan', 'ambiguous-local-interface']]
 );
 
+assert.throws(
+  () =>
+    buildNvidiaSyncDiscovery({
+      peers: [{ alias: 'peer', createdBySync: true, clusterAlias: 'peer', hostname: '10.100.192.1' }],
+      localAddresses: [
+        { interface: 'same-nic', address: '10.100.192.2', prefixlen: 24 },
+        { interface: 'same-nic', address: '10.100.192.3', prefixlen: 24 }
+      ],
+      localNodeId: 'local'
+    }),
+  /Ambiguous NVIDIA Sync discovery/
+);
+const ambiguousBefore = structuredClone(ambiguousDiscovery);
+assert.throws(
+  () => mergeNvidiaSyncClusterDiscovery({ discovery: ambiguousDiscovery }),
+  /Ambiguous NVIDIA Sync discovery/
+);
+assert.deepEqual(ambiguousDiscovery, ambiguousBefore);
+const explicitFabric = {
+  nodeId: 'spark-node-01',
+  leaderNode: 'spark-node-01',
+  nodes: {
+    'spark-node-01': {
+      backendHost: '10.100.196.1',
+      endpoint: 'http://10.100.196.1:8100',
+      fabricInterface: 'enp1s0f1np1',
+      fabricHca: 'rocep1s0f1,roceP2p1s0f1'
+    }
+  }
+};
+const explicitAfter = mergeNvidiaSyncClusterDiscovery({ discovery: fixtureDiscovery, cluster: explicitFabric });
+assert.equal(explicitAfter.nodes['spark-node-01'].fabricInterface, 'enp1s0f1np1');
+assert.equal(explicitAfter.nodes['spark-node-01'].fabricHca, 'rocep1s0f1,roceP2p1s0f1');
+assert.equal(explicitAfter.nodes['spark-node-01'].backendHost, '10.100.196.1');
+assert.equal(explicitAfter.nodes['spark-node-01'].endpoint, 'http://10.100.196.1:8100');
+
 // ---------------------------------------------------------------------------
 // Merge: preserve every existing node/endpoint/catalog/leader; migrate only the
 // unambiguous old-fabric endpoint; never duplicate the local hostname.
