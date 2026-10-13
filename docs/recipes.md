@@ -576,9 +576,17 @@ lloom setup --recipe linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas --additiv
 lloom runtime-start qwen38-flash-next-atlas-cluster
 ```
 
+For shared hosts, the image accepts `SPARKQWEN_GPU_MEMORY_UTILIZATION=0.70`
+through `0.95` in each physical runtime's Docker environment. Lower settings
+leave room for host services and reduce the shared KV pool; the published
+context/concurrency measurements apply to the default 0.88 allocation. Keep
+the logical runtime, physical runtimes, and each placement member's
+`resources.memoryGb` reservation consistent with the chosen deployment.
+Do not raise the host memory safety limit to make an oversized cache fit.
+
 The recipe is additive (no default model, no aliases, `keepWarm` false). Pins
 live in `backends/atlas-sparkqwen/pins.json` (source `Enntity/sparkqwen`
-`8b284673`, install tree `4ccd961ecf09`). The GHCR manifest digest is pinned in the same manifest.
+`0cf2436d`, install tree `e7268337a5c8`). The GHCR manifest digest is pinned in the same manifest.
 `node backends/atlas-sparkqwen/verify-pins.mjs`, setup step
 `verify-atlas-pins` and `install.sh` reject missing or placeholder identities. The
 installer only pulls that digest and verifies the image's arm64 architecture,
