@@ -448,7 +448,7 @@ vector from `/opt/atlas/profiles/4x512k.json` (its default `SPARKGLM_PROFILE`).
 | `MODEL_PATH`                                           | mounted converted overlay root, `${installRoot}/atlas-overlay`            |
 | `SERVED_MODEL_NAME`                                    | `glm-5.3-flash-atlas`                                                     |
 | `ATLAS_WORLD_SIZE` / `ATLAS_TP_SIZE` / `ATLAS_EP_SIZE` | `2`                                                                       |
-| `NCCL_*`                                               | IB transport with `NCCL_IB_HCA=rocep1s0f0`, `AF_INET`, `NCCL_CROSS_NIC=0` |
+| `NCCL_*`                                               | IB transport with per-node `NCCL_IB_HCA=${fabricHca}`, `AF_INET`, `NCCL_CROSS_NIC=0` |
 
 Listeners are private and loopback-bound per node: leader `127.0.0.1:8893`,
 worker `127.0.0.1:8894`. The worker starts first (`order` 10, rank 1) with
@@ -523,3 +523,39 @@ curl http://127.0.0.1:8100/v1/chat/completions \
 Responses clients can send the same media URLs as `input_image` and
 `input_video` content parts; LLooM converts those parts to the matching Chat
 Completions form before forwarding the request.
+
+### Per-node RDMA ports for Atlas SparkGLM
+
+The Atlas recipe requires `fabricInterface` and `fabricHca` on each participating
+`cluster.nodes` entry. `fabricHca` is a comma-separated list of exact local RDMA
+device names, without spaces or `:port` suffixes. Names and physical port numbers
+can differ between nodes. For example:
+
+```json
+{
+  "cluster": {
+    "leaderNode": "left",
+    "nodes": {
+      "left": { "backendHost": "192.0.2.1", "fabricInterface": "enp1s0f1np1", "fabricHca": "rocep1s0f1,roceP2p1s0f1" },
+      "right": { "backendHost": "192.0.2.2", "fabricInterface": "enp1s0f0np0", "fabricHca": "rocep1s0f0,roceP2p1s0f0", "labels": { "role": "worker" } }
+    }
+  }
+}
+```
+
+Check each host's `/sys/class/infiniband/<device>/device/net` and active RoCE
+IPv4 GIDs against the pair's network interfaces. Include only rails to the other
+participating node; a backchannel to a third node is not a serving rail. NVIDIA
+Sync discovery supplies network inventory, but does not prove which additional
+RDMA rails should participate. Missing or malformed settings stop recipe
+materialization with the node and field named in the error.
+
+The recipe passes each node's exact list as `FABRIC_HCA` and `NCCL_IB_HCA`, and
+sets `FABRIC_SIBLINGS=0` so the image cannot add another device. The pinned image
+sets Atlas's direct RDMA rails from the same list. Existing running containers
+are unchanged; set these fields before reapplying the updated recipe. No image
+rebuild is required for this LLooM configuration change.
+
+Applying NVIDIA Sync discovery refuses ambiguous peer/interface observations.
+An explicit per-node `fabricHca` selection also preserves that node's configured
+interface and backend address when refreshing discovery.
