@@ -1435,6 +1435,53 @@
         "type": "local",
         "url": "recipes/linux-nvidia-dgx-spark-2x-glm53-atlas.json"
       }
+    },
+    {
+      "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas",
+      "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas.json",
+          "status": "current",
+          "notes": "Atlas SparkQwen RC16 two-node candidate over the private fabric, additive only, setDefault false, no aliases. Portable pins live in backends/atlas-sparkqwen/pins.json; the published image is pinned by its immutable GHCR digest, and invalid or placeholder pins fail closed. Default profile 8x262k."
+        }
+      ],
+      "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 Atlas (SparkQwen RC16)",
+      "summary": "Two-node Atlas SparkQwen RC16 candidate serving the unmodified Qwen3.8-Flash-Next-NVFP4 checkpoint (built-in MTP) from a pinned GHCR image: eight requests of up to 262K tokens.",
+      "tags": [
+        "linux",
+        "nvidia",
+        "dgx-spark",
+        "cluster",
+        "qwen3.8",
+        "flash-next",
+        "nvfp4",
+        "atlas",
+        "sparkqwen",
+        "mtp",
+        "candidate"
+      ],
+      "recommendedFor": [
+        "Serving Qwen3.8 Flash Next on the Atlas SparkQwen engine across two directly connected DGX Sparks through LLooM"
+      ],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "tools",
+        "structured-output",
+        "reasoning",
+        "mtp",
+        "speculative-decoding",
+        "long-context"
+      ],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas.json"
+      }
     }
   ]
 }

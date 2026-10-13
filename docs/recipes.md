@@ -374,11 +374,11 @@ the git tree of its `install/` directory, the immutable image manifest
 reference (`image.reference`) with the tag kept as source-build metadata and
 the install-tree contents label, the `nvidia/GLM-5.3-Flash-NVFP4` and drafter
 revisions, and the conversion marker contract. The current source pin is product revision
-`3c7d67146929f350ed75fcdfd5e5349db843b483` with install tree
-`246a3a948ab98d19e085bfd39797e554f0ee9261`, so the normal install path
+`7a67d9bce4b5f408ad67f2a958ef1a8787136fdd` with install tree
+`f95a9af14236a781bb13f57dcc9ea0342f339905`, so the normal install path
 addresses the immutable digest
-`ghcr.io/enntity/atlas-sparkglm@sha256:e4d313b5e32c47545eab0059eea65a38e65d03fc8e0d5b8c2cfb497c39f0372a`.
-The tag `ghcr.io/enntity/atlas-sparkglm:246a3a948ab9` is source-build metadata
+`ghcr.io/enntity/atlas-sparkglm@sha256:78420594991e6e7e3914f84a6300ac1cf2f4e18b68e331f8ddc74fd7db905d3c`.
+The tag `ghcr.io/enntity/atlas-sparkglm:f95a9af14236` is source-build metadata
 (first 12 characters of the install tree) and is never pulled; a tag alone is
 not an immutable artifact identity. A later product revision is adopted by
 changing the revision, the install tree, the derived tag and the pinned digest.
@@ -559,3 +559,42 @@ rebuild is required for this LLooM configuration change.
 Applying NVIDIA Sync discovery refuses ambiguous peer/interface observations.
 An explicit per-node `fabricHca` selection also preserves that node's configured
 interface and backend address when refreshing discovery.
+
+## Atlas SparkQwen RC16
+
+`linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas` runs the Atlas SparkQwen
+RC16 engine (Enntity/atlas `sparkqwen/atlas-20261010-rc16` @ `1c43247d`) on two
+directly connected DGX Sparks, serving the unmodified
+`nvidia/Qwen3.8-Flash-Next-NVFP4` checkpoint at revision
+`fc694b54fb0174e0913e6adf86691ef85a4ead47` as `qwen3.8-flash-next-atlas`. There
+is no overlay conversion and no separate drafter; speculation uses the
+checkpoint's own MTP head. The default profile is `8x262k`: up to eight
+requests of up to 262,144 tokens from one shared BF16 KV pool.
+
+```sh
+lloom setup --recipe linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas --additive --apply --yes
+lloom runtime-start qwen38-flash-next-atlas-cluster
+```
+
+The recipe is additive (no default model, no aliases, `keepWarm` false). Pins
+live in `backends/atlas-sparkqwen/pins.json` (source `Enntity/sparkqwen`
+`8b284673`, install tree `4ccd961ecf09`). The GHCR manifest digest is pinned in the same manifest.
+`node backends/atlas-sparkqwen/verify-pins.mjs`, setup step
+`verify-atlas-pins` and `install.sh` reject missing or placeholder identities. The
+installer only pulls that digest and verifies the image's arm64 architecture,
+`io.enntity.sparkqwen.install-tree` label, entrypoint, profile and engine
+commit; it never builds.
+
+Each member receives `FABRIC_HCA=${fabricHca}` and `FABRIC_SIBLINGS=0`. As with
+the SparkGLM recipe, LLooM requires an explicit per-node `fabricHca` (a
+comma-separated list of exact local RDMA device names) and `fabricInterface` on
+every participating `cluster.nodes` entry; it never guesses an HCA from the NIC
+name, because PCI naming and cabling differ by host. Missing or malformed
+settings stop recipe materialization with the node and field named in the error.
+The image's `serve.py` fixes the API port: rank 0 serves `127.0.0.1:8893` on the
+leader (rank 1 binds `127.0.0.1:8894` on the worker), the same ports as the
+SparkGLM lane, so the two lanes cannot share a pair. Tools and reasoning are
+qualified upstream; structured output is implemented by the engine but untested
+with this model, and image input is not claimed. The engine is
+**AGPL-3.0-only** and the checkpoint is under the NVIDIA Open Model License; see
+the [backend README](../backends/atlas-sparkqwen/README.md#credits-and-licenses).
