@@ -323,10 +323,10 @@ assert.throws(() => materialize(missingFabric), /cluster\.nodes\[ennspark04\]\.f
 
 // ---- pins: final identities, pending digest, fail-closed gate ---------------
 assert.equal(pins.source.repo, 'Enntity/sparkqwen');
-assert.equal(pins.source.revision, '8b28467324893583838871b6a6b6a28d3059e64f');
-assert.equal(pins.source.installTree, '4ccd961ecf09d86c9f13087e42592789b5f56182');
+assert.equal(pins.source.revision, '0cf2436de5211b41edf4d92071180c75cec31dd8');
+assert.equal(pins.source.installTree, 'e7268337a5c8e77c874c7cb7be689f80a79946a5');
 assert.equal(pins.engine.commit, '1c43247d93ca050f02cb67b0603e88edfe3d92a5');
-assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkqwen:4ccd961ecf09');
+assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkqwen:e7268337a5c8');
 assert.equal(pins.image.tag, imageTagFor(pins));
 assert.equal(pins.image.label, 'io.enntity.sparkqwen.install-tree');
 assert.equal(pins.image.profilePath, '/opt/atlas/profiles/8x262k.json');
