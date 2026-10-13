@@ -323,10 +323,10 @@ assert.throws(() => materialize(missingFabric), /cluster\.nodes\[ennspark04\]\.f
 
 // ---- pins: final identities, pending digest, fail-closed gate ---------------
 assert.equal(pins.source.repo, 'Enntity/sparkqwen');
-assert.equal(pins.source.revision, '0cf2436de5211b41edf4d92071180c75cec31dd8');
-assert.equal(pins.source.installTree, 'e7268337a5c8e77c874c7cb7be689f80a79946a5');
-assert.equal(pins.engine.commit, '1c43247d93ca050f02cb67b0603e88edfe3d92a5');
-assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkqwen:e7268337a5c8');
+assert.equal(pins.source.revision, '2e8e6dda78fa12848d9a48722332f6aff39b860f');
+assert.equal(pins.source.installTree, 'b151fbe840a15b735f08026c2bf521edac9ce96e');
+assert.equal(pins.engine.commit, '84e7c734bbb70850bd2f65b0bf9e68ab8f8bac22');
+assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkqwen:b151fbe840a1');
 assert.equal(pins.image.tag, imageTagFor(pins));
 assert.equal(pins.image.label, 'io.enntity.sparkqwen.install-tree');
 assert.equal(pins.image.profilePath, '/opt/atlas/profiles/8x262k.json');
@@ -357,7 +357,7 @@ const variant = (mutate) => {
 for (const [label, mutate] of [
   ['draft status', (m) => (m.status = 'draft')],
   ['branch as revision', (m) => (m.source.revision = 'main')],
-  ['short engine commit', (m) => (m.engine.commit = '1c43247d')],
+  ['short engine commit', (m) => (m.engine.commit = '84e7c734')],
   ['shell in profile path', (m) => (m.image.profilePath = "/opt/atlas/x' ; rm -rf / ; '")],
   ['short install tree', (m) => (m.source.installTree = m.source.installTree.slice(0, 12))],
   ['tag not derived from tree', (m) => (m.image.tag = `${IMAGE_REPOSITORY}:latest`)],
