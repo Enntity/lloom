@@ -1,22 +1,22 @@
 {
   "manifestVersion": 1,
   "status": "final",
-  "note": "Single pin manifest for the Atlas SparkQwen RC16 lane. Source, install tree, tag and model identities are final. image.reference is the GHCR manifest digest of ghcr.io/enntity/atlas-sparkqwen:e7268337a5c8, also used as the recipe's bootstrap image. The normal install path addresses image.reference; the tag is source-build metadata (the first 12 characters of the git tree of install/ at the pinned revision) and the install-tree label is a contents check. A tag or label alone is never the artifact identity.",
+  "note": "Single pin manifest for the Atlas SparkQwen RC16 lane. Source, install tree, tag and model identities are final. image.reference is the GHCR manifest digest of ghcr.io/enntity/atlas-sparkqwen:b151fbe840a1, also used as the recipe's bootstrap image. The normal install path addresses image.reference; the tag is source-build metadata (the first 12 characters of the git tree of install/ at the pinned revision) and the install-tree label is a contents check. A tag or label alone is never the artifact identity.",
   "source": {
     "repo": "Enntity/sparkqwen",
-    "revision": "0cf2436de5211b41edf4d92071180c75cec31dd8",
-    "installTree": "e7268337a5c8e77c874c7cb7be689f80a79946a5",
+    "revision": "2e8e6dda78fa12848d9a48722332f6aff39b860f",
+    "installTree": "b151fbe840a15b735f08026c2bf521edac9ce96e",
     "cloneUrl": "https://github.com/Enntity/sparkqwen.git",
     "buildScript": "install/build.sh"
   },
   "engine": {
     "repo": "Enntity/atlas",
-    "branch": "sparkqwen/atlas-20261010-rc16",
-    "commit": "1c43247d93ca050f02cb67b0603e88edfe3d92a5"
+    "branch": "sparkqwen/atlas-20261013-sidecars",
+    "commit": "84e7c734bbb70850bd2f65b0bf9e68ab8f8bac22"
   },
   "image": {
-    "reference": "ghcr.io/enntity/atlas-sparkqwen@sha256:63fcc9f8f87a3963aba91f0a5dbf2c1cf5efa1d809c4ab1b52bd5853979e73ed",
-    "tag": "ghcr.io/enntity/atlas-sparkqwen:e7268337a5c8",
+    "reference": "ghcr.io/enntity/atlas-sparkqwen@sha256:ea6a2df03adfc8802a1baf6ab1d4b55c69dd76588f36bfd5d189781500e75830",
+    "tag": "ghcr.io/enntity/atlas-sparkqwen:b151fbe840a1",
     "label": "io.enntity.sparkqwen.install-tree",
     "entrypoint": "/opt/atlas/serve.py",
     "profilePath": "/opt/atlas/profiles/8x262k.json",

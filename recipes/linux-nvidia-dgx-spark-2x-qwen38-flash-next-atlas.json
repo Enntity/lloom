@@ -14,16 +14,16 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "SparkQwen RC16: Enntity/sparkqwen 0cf2436de5211b41edf4d92071180c75cec31dd8 (install tree e7268337a5c8e77c874c7cb7be689f80a79946a5), engine Enntity/atlas sparkqwen/atlas-20261010-rc16 @ 1c43247d (AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). The image is ghcr.io/enntity/atlas-sparkqwen:e7268337a5c8, addressed by its GHCR manifest digest in pins.json. The engine argument vector ships inside the image as /opt/atlas/profiles/8x262k.json, selected with SPARKQWEN_PROFILE=8x262k: eight sequences of up to 262144 tokens, BF16 KV (about 3.19M pool tokens at the profile's 0.88 GPU memory utilization), prefix caching, MTP speculation (up to 7 drafts), content-loop steering. Model nvidia/Qwen3.8-Flash-Next-NVFP4 revision fc694b54fb0174e0913e6adf86691ef85a4ead47."
+    "source": "SparkQwen RC16 maintenance: Enntity/sparkqwen 2e8e6dda78fa12848d9a48722332f6aff39b860f (install tree b151fbe840a15b735f08026c2bf521edac9ce96e), engine Enntity/atlas sparkqwen/atlas-20261013-sidecars @ 84e7c734 (AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). The image is ghcr.io/enntity/atlas-sparkqwen:b151fbe840a1, addressed by its GHCR manifest digest in pins.json. The engine argument vector ships inside the image as /opt/atlas/profiles/8x262k.json, selected with SPARKQWEN_PROFILE=8x262k: eight sequences of up to 262144 tokens, BF16 KV (about 3.19M pool tokens at the profile's 0.88 GPU memory utilization), prefix caching, MTP speculation (up to 7 drafts), content-loop steering. Model nvidia/Qwen3.8-Flash-Next-NVFP4 revision fc694b54fb0174e0913e6adf86691ef85a4ead47."
   },
   "links": [
     {
       "rel": "upstream",
-      "href": "https://github.com/Enntity/sparkqwen/tree/0cf2436de5211b41edf4d92071180c75cec31dd8"
+      "href": "https://github.com/Enntity/sparkqwen/tree/2e8e6dda78fa12848d9a48722332f6aff39b860f"
     },
     {
       "rel": "engine",
-      "href": "https://github.com/Enntity/atlas/tree/1c43247d93ca050f02cb67b0603e88edfe3d92a5"
+      "href": "https://github.com/Enntity/atlas/tree/84e7c734bbb70850bd2f65b0bf9e68ab8f8bac22"
     },
     {
       "rel": "engine-upstream",
@@ -219,7 +219,7 @@
                 "warmup": false,
                 "bootstrap": {
                   "adapter": "docker",
-                  "image": "ghcr.io/enntity/atlas-sparkqwen@sha256:63fcc9f8f87a3963aba91f0a5dbf2c1cf5efa1d809c4ab1b52bd5853979e73ed",
+                  "image": "ghcr.io/enntity/atlas-sparkqwen@sha256:ea6a2df03adfc8802a1baf6ab1d4b55c69dd76588f36bfd5d189781500e75830",
                   "pull": false,
                   "pullTimeoutMs": 3600000,
                   "createArgs": [
@@ -320,7 +320,7 @@
                 },
                 "bootstrap": {
                   "adapter": "docker",
-                  "image": "ghcr.io/enntity/atlas-sparkqwen@sha256:63fcc9f8f87a3963aba91f0a5dbf2c1cf5efa1d809c4ab1b52bd5853979e73ed",
+                  "image": "ghcr.io/enntity/atlas-sparkqwen@sha256:ea6a2df03adfc8802a1baf6ab1d4b55c69dd76588f36bfd5d189781500e75830",
                   "pull": false,
                   "pullTimeoutMs": 3600000,
                   "createArgs": [

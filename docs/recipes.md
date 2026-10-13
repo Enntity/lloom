@@ -563,7 +563,7 @@ interface and backend address when refreshing discovery.
 ## Atlas SparkQwen RC16
 
 `linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas` runs the Atlas SparkQwen
-RC16 engine (Enntity/atlas `sparkqwen/atlas-20261010-rc16` @ `1c43247d`) on two
+RC16 engine (Enntity/atlas `sparkqwen/atlas-20261013-sidecars` @ `84e7c734`) on two
 directly connected DGX Sparks, serving the unmodified
 `nvidia/Qwen3.8-Flash-Next-NVFP4` checkpoint at revision
 `fc694b54fb0174e0913e6adf86691ef85a4ead47` as `qwen3.8-flash-next-atlas`. There
@@ -586,7 +586,7 @@ Do not raise the host memory safety limit to make an oversized cache fit.
 
 The recipe is additive (no default model, no aliases, `keepWarm` false). Pins
 live in `backends/atlas-sparkqwen/pins.json` (source `Enntity/sparkqwen`
-`0cf2436d`, install tree `e7268337a5c8`). The GHCR manifest digest is pinned in the same manifest.
+`2e8e6dda`, install tree `b151fbe840a1`). The GHCR manifest digest is pinned in the same manifest.
 `node backends/atlas-sparkqwen/verify-pins.mjs`, setup step
 `verify-atlas-pins` and `install.sh` reject missing or placeholder identities. The
 installer only pulls that digest and verifies the image's arm64 architecture,
