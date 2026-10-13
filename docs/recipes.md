@@ -374,11 +374,11 @@ the git tree of its `install/` directory, the immutable image manifest
 reference (`image.reference`) with the tag kept as source-build metadata and
 the install-tree contents label, the `nvidia/GLM-5.3-Flash-NVFP4` and drafter
 revisions, and the conversion marker contract. The current source pin is product revision
-`7a67d9bce4b5f408ad67f2a958ef1a8787136fdd` with install tree
-`f95a9af14236a781bb13f57dcc9ea0342f339905`, so the normal install path
+`5063c13ea6f196046b76ce6e5c8b4d4200cccc9a` with install tree
+`ed7548dfe442949283b54c7160605429046cd46f`, so the normal install path
 addresses the immutable digest
-`ghcr.io/enntity/atlas-sparkglm@sha256:78420594991e6e7e3914f84a6300ac1cf2f4e18b68e331f8ddc74fd7db905d3c`.
-The tag `ghcr.io/enntity/atlas-sparkglm:f95a9af14236` is source-build metadata
+`ghcr.io/enntity/atlas-sparkglm@sha256:5ec57d5522a95463b600a17471ce60712b315566e04c0a3bb6af1d84a1de0a4a`.
+The tag `ghcr.io/enntity/atlas-sparkglm:ed7548dfe442` is source-build metadata
 (first 12 characters of the install tree) and is never pulled; a tag alone is
 not an immutable artifact identity. A later product revision is adopted by
 changing the revision, the install tree, the derived tag and the pinned digest.
