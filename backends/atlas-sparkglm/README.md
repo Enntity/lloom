@@ -3,12 +3,12 @@
 LLooM-managed two-node Atlas SparkGLM candidate for a directly connected pair
 of NVIDIA DGX Spark systems. This directory is **MIT orchestration only**: no
 Atlas engine source is committed here. The engine image is built from immutable
-revision `5063c13ea6f196046b76ce6e5c8b4d4200cccc9a` of `Enntity/sparkglm` by
+revision `4dee61dcb522d6f3d2246c920ce1a52d87548c71` of `Enntity/sparkglm` by
 that repository's `install/build.sh`. The engine inside the image is
 AGPL-3.0-only; see [Credits and licenses](#credits-and-licenses). Live hardware
-and full serving qualification remain pending. This revision includes the
-issue 172 fix that restores full blocking-refusal content and the existing
-per-node fabric support.
+and full serving qualification remain pending. This revision adds image prompts
+that use the prefix cache (content-keyed vision KV, per-sequence encoding) and
+the display carveout from the driver's scanout heap (no CAP_SYS_ADMIN).
 
 ## Layout
 
@@ -28,7 +28,7 @@ per-node fabric support.
   install-tree label is a contents check, not an artifact identity.
 - `install.sh` — prepares the image. The normal path reuses an already
   verified local image, otherwise pulls the immutable manifest digest
-  `ghcr.io/enntity/atlas-sparkglm@sha256:5ec57d5522a95463b600a17471ce60712b315566e04c0a3bb6af1d84a1de0a4a`
+  `ghcr.io/enntity/atlas-sparkglm@sha256:94b837ef3ea7b3f54c158ce568e611405b1bd167edd56c734d8e90d2d6291cb6`
   from GHCR. It never pulls the mutable tag, and a failed pinned digest pull is
   a hard failure with no silent source build. The explicit `--source-build`
   option instead clones `Enntity/sparkglm` at the pinned revision, checks that
@@ -124,7 +124,7 @@ Inside the image:
   share one physical FP8-latent KV pool, split between the nodes by `SPARKGLM_KV_SHARD=1` (about 2.38M tokens at the recipe's 0.91 GPU memory utilization with the display carveout and the disk prefix cache, up to 1,048,576 per request with `SPARKGLM_PROFILE=4x1m`; it also holds the prefix cache, with 16 recurrent-state snapshot slots); it does not reserve
   four full windows. `disable-tool-grammar` is deliberately **not** set, so
   structured output and tool grammar stay functional. The engine is built from
-  Enntity/atlas `fix/sparkglm-rc4.2-refusal-content` @ `6f27e8fa` (recorded in the
+  Enntity/atlas `sparkglm/atlas-20261014-vpc` @ `289cefbc` (recorded in the
   image's `/opt/atlas/source-manifest.json`); measured results are in
   Enntity/sparkglm `results/2026-09-30-decode-step/` (this engine) and
   `results/2026-09-30-nvme-tier/` (this image).
@@ -186,25 +186,21 @@ cache on disk".
 ## Display memory as KV cache (on)
 
 The recipe sets `SPARKGLM_DISPLAY_CARVEOUT=1` on both members. Each DGX Spark's
-firmware reserves 2 GiB for the display (`DISPLAY_FRM`), which Linux never sees
-and the GB10 driver never allocates from; the engine borrows it for whole
-per-layer latent KV pools, so the pool grows about 19% (about 1.13M to 1.38M
-tokens at 0.91) with system memory unchanged. The GPU does not cache this
-memory in L2, so the sparse-index buffers stay in ordinary memory, where cold
-prefill keeps its speed (Enntity/sparkglm#30). To make that possible the recipe adds, on
-both members:
+firmware reserves 2 GiB for the display (`DISPLAY_FRM`), which Linux never sees;
+the NVIDIA driver manages it as the display's memory pool, and a headless Spark's
+display uses only a few MiB of it. The image starts the engine through
+`spark display-carveout`, which asks the driver for the rest (about 2042 MiB),
+GPU-cacheable, and lends it to whole per-layer latent KV pools, so the pool grows
+with system memory unchanged. Because the driver hands it out, it never overlaps
+the display's own memory and needs no extra container capability. The recipe
+adds, on both members, a bind mount of `${installRoot}/atlas-carveout-lock`
+(created by the prepare step, so it survives reboots) at `/run/lock/sparkglm`:
+one process per host holds the carveout.
 
-- `--cap-add SYS_ADMIN`: exporting the carveout needs it. The image starts the
-  engine through `spark display-carveout`, which exports the memory, takes a
-  host lock, drops `CAP_SYS_ADMIN` from every capability set (bounding set
-  included) and only then starts the server; `no-new-privileges` stays on.
-- a bind mount of `${installRoot}/atlas-carveout-lock` (created by the
-  prepare step, so it survives reboots) at `/run/lock/sparkglm`: one process per
-  host may hold the carveout.
-
-The engine uses the carveout only with validated NVIDIA drivers (580.173.02 and
-580.178.04) and serves without it, logging why, when it cannot export it. To roll
-back, set `SPARKGLM_DISPLAY_CARVEOUT=0` (the capability and mount are then
+Any NVIDIA open kernel module from 580.76.05 on lends it; the engine checks what
+the driver gives rather than its version, and serves without the carveout,
+logging why, when it cannot get it. To roll back, set
+`SPARKGLM_DISPLAY_CARVEOUT=0` (the mount is then
 unused). It is SparkGLM-only (the Enntity/atlas fork's SparkGLM layer); details
 and credits are in Enntity/sparkglm's README under "Display memory as KV cache".
 
@@ -237,9 +233,9 @@ is not part of LLooM:
   `ghcr.io/enntity/atlas-sparkglm`, alongside LLooM (an aggregate); no engine
   source or binary is included in LLooM.
 - **Corresponding source.** [Enntity/sparkglm](https://github.com/Enntity/sparkglm)
-  at the pinned revision (`5063c13e`) plus the Enntity/atlas commit recorded
+  at the pinned revision (`4dee61dc`) plus the Enntity/atlas commit recorded
   in the image's `/opt/atlas/source-manifest.json`
-  ([`6f27e8fa`](https://github.com/Enntity/atlas/tree/6f27e8fa0afe65180a169e54361a77565787ae27)).
+  ([`289cefbc`](https://github.com/Enntity/atlas/tree/289cefbccdd6c13117228863c7237da17e47a92a)).
   SparkGLM's `NOTICE` and `docs/LICENSING.md` list everything else it fetches.
 - **Third-party notices in the image.** FlashKDA (MoonshotAI, MIT), FlashInfer
   including NVIDIA's sparse-MLA prefill source (Apache-2.0) and CUTLASS
