@@ -186,25 +186,21 @@ cache on disk".
 ## Display memory as KV cache (on)
 
 The recipe sets `SPARKGLM_DISPLAY_CARVEOUT=1` on both members. Each DGX Spark's
-firmware reserves 2 GiB for the display (`DISPLAY_FRM`), which Linux never sees
-and the GB10 driver never allocates from; the engine borrows it for whole
-per-layer latent KV pools, so the pool grows about 19% (about 1.13M to 1.38M
-tokens at 0.91) with system memory unchanged. The GPU does not cache this
-memory in L2, so the sparse-index buffers stay in ordinary memory, where cold
-prefill keeps its speed (Enntity/sparkglm#30). To make that possible the recipe adds, on
-both members:
+firmware reserves 2 GiB for the display (`DISPLAY_FRM`), which Linux never sees;
+the NVIDIA driver manages it as the display's memory pool, and a headless Spark's
+display uses only a few MiB of it. The image starts the engine through
+`spark display-carveout`, which asks the driver for the rest (about 2042 MiB),
+GPU-cacheable, and lends it to whole per-layer latent KV pools, so the pool grows
+with system memory unchanged. Because the driver hands it out, it never overlaps
+the display's own memory and needs no extra container capability. The recipe
+adds, on both members, a bind mount of `${installRoot}/atlas-carveout-lock`
+(created by the prepare step, so it survives reboots) at `/run/lock/sparkglm`:
+one process per host holds the carveout.
 
-- `--cap-add SYS_ADMIN`: exporting the carveout needs it. The image starts the
-  engine through `spark display-carveout`, which exports the memory, takes a
-  host lock, drops `CAP_SYS_ADMIN` from every capability set (bounding set
-  included) and only then starts the server; `no-new-privileges` stays on.
-- a bind mount of `${installRoot}/atlas-carveout-lock` (created by the
-  prepare step, so it survives reboots) at `/run/lock/sparkglm`: one process per
-  host may hold the carveout.
-
-The engine uses the carveout only with validated NVIDIA drivers (580.173.02 and
-580.178.04) and serves without it, logging why, when it cannot export it. To roll
-back, set `SPARKGLM_DISPLAY_CARVEOUT=0` (the capability and mount are then
+Any NVIDIA open kernel module from 580.76.05 on lends it; the engine checks what
+the driver gives rather than its version, and serves without the carveout,
+logging why, when it cannot get it. To roll back, set
+`SPARKGLM_DISPLAY_CARVEOUT=0` (the mount is then
 unused). It is SparkGLM-only (the Enntity/atlas fork's SparkGLM layer); details
 and credits are in Enntity/sparkglm's README under "Display memory as KV cache".
 

@@ -146,6 +146,8 @@ for (const member of members) {
   assert.deepEqual(bootstrap.command ?? [], [], 'use the image entrypoint exactly once');
 
   const rendered = bootstrap.createArgs.join(' ');
+  // The carveout comes from the driver's scanout heap; no capability is granted for it.
+  assert(!rendered.includes('SYS_ADMIN'), 'the carveout needs no CAP_SYS_ADMIN');
   for (const expected of [
     '--restart no',
     '--network host',
@@ -154,8 +156,7 @@ for (const member of members) {
     '/dev/infiniband:/dev/infiniband',
     '--cap-add IPC_LOCK',
     '--cap-add SYS_NICE',
-    // The GB10 display carveout: the launcher drops SYS_ADMIN before the server starts.
-    '--cap-add SYS_ADMIN',
+    // The GB10 display carveout's host lock.
     'type=bind,src=${installRoot}/atlas-carveout-lock,dst=/run/lock/sparkglm',
     'SPARKGLM_DISPLAY_CARVEOUT=1',
     '--ulimit memlock=-1:-1',
