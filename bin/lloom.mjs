@@ -36,6 +36,21 @@ import {
   selectedRecipeIdFromCommunityPlan
 } from '../src/community-client.mjs';
 import { loadConfig } from '../src/config.mjs';
+import {
+  POOL_USAGE,
+  createPoolPlanReport,
+  formatPoolMembers,
+  formatPoolPlanReport,
+  poolPlanOptions,
+  poolTokenOptions
+} from '../src/pool-cli.mjs';
+import { joinPool } from '../src/pool-node.mjs';
+import {
+  POOL_SIMULATE_USAGE,
+  formatPoolSimulation,
+  poolSimulateOptions,
+  runPoolSimulateCommand
+} from '../src/pool-sim-cli.mjs';
 import { mutateConfigSource } from '../src/config-mutation.mjs';
 import { runtimeControlTimeoutMs } from '../src/control-timeout.mjs';
 import { createDoctorReport } from '../src/doctor.mjs';
@@ -136,6 +151,7 @@ const COMMAND_REGISTRY = [
   { name: 'runtimes', aliases: ['runtime-status'], tier: 'advanced', needsInstalledConfig: true },
   { name: 'service', aliases: [], tier: 'advanced', needsInstalledConfig: true },
   { name: 'cluster', aliases: ['cluster-status'], tier: 'advanced', needsInstalledConfig: true },
+  { name: 'pool', aliases: [], tier: 'advanced', needsInstalledConfig: true },
   { name: 'deployment', aliases: ['rollout'], tier: 'advanced', needsInstalledConfig: false },
   { name: 'node-agent', aliases: [], tier: 'advanced', needsInstalledConfig: false },
   { name: 'runtime-plan', aliases: [], tier: 'advanced', needsInstalledConfig: true },
@@ -228,6 +244,12 @@ Serving and discovery:
 Backends and runtimes:
   lloom down
   lloom cluster [status|doctor|discover] [--apply] [--id NAME] [--api-key-env NAME] [--json]
+  lloom pool plan [--cordon NODE[,NODE]] [--pin ALIAS=MODEL] [--profile NAME] [--consider-installs] [--headroom-gb N] [--churn-weight N] [--external fallback|allow|never] [--offline] [--json]
+  lloom pool token create [--node-id ID] [--ttl DURATION] [--uses N] [--label KEY=VALUE] [--json]
+  lloom pool members [--json]
+  lloom pool cordon|uncordon|drain|leave <node> [--reason TEXT]
+  lloom pool join <head-url> --token-stdin [--node-id ID] [--endpoint URL] [--apply --yes]
+  lloom pool simulate <scenario.json> [--mode off|advise|auto|compare] [--hours N] [--seed N] [--json]
   lloom deployment plan --plan FILE [--json]
   lloom deployment apply --plan FILE --nodes FILE [--operation-id ID] --apply --yes [--journal FILE] [--json]
   lloom deployment status --operation-id ID [--journal FILE] [--json]
@@ -370,6 +392,7 @@ function commandLine(command, parts = []) {
 
 const INSTALLED_CONFIG_COMMANDS = new Set([
   'add-model',
+  'pool',
   'bootstrap',
   'service',
   'cluster',
@@ -404,6 +427,7 @@ const INSTALLED_CONFIG_COMMANDS = new Set([
 
 const OPERATIONAL_CONFIG_COMMANDS = new Set([
   'add-model',
+  'pool',
   'service',
   'cluster',
   'cluster-status',
@@ -2494,6 +2518,101 @@ async function main() {
       });
       if (!result) throw new Error(`route switch failed through ${gatewayUrlFor(config)}`);
       console.log(JSON.stringify({ ...result, applied: true }, null, 2));
+    },
+    pool: async ({ args, config }) => {
+      const action = positional(args)[1] ?? 'plan';
+      const json = hasFlag(args, '--json');
+      if (action === 'token') {
+        if (positional(args)[2] !== 'create') throw new Error(POOL_USAGE);
+        const result = await gatewayRequest(config, '/gateway/pool/tokens', {
+          args,
+          method: 'POST',
+          body: poolTokenOptions({
+            ttl: argValue(args, '--ttl'),
+            uses: argValue(args, '--uses'),
+            labels: argValues(args, '--label'),
+            nodeId: argValue(args, '--node-id') ?? undefined
+          }),
+          timeoutMs: 10000
+        });
+        console.log(
+          json
+            ? JSON.stringify(result, null, 2)
+            : [
+                `Enrollment token ${result.id} (shown once; expires ${result.expiresAt}):`,
+                result.token,
+                '',
+                'On the joining node:',
+                `  lloom pool join <this-head-url> --token-stdin --endpoint <node-gateway-url> --apply --yes`
+              ].join('\n')
+        );
+        return;
+      }
+      if (action === 'members') {
+        const result = await gatewayRequest(config, '/gateway/pool/members', { args, timeoutMs: 10000 });
+        console.log(json ? JSON.stringify(result, null, 2) : formatPoolMembers(result));
+        return;
+      }
+      if (['cordon', 'uncordon', 'drain', 'leave'].includes(action)) {
+        const nodeId = positional(args)[2];
+        if (!nodeId) throw new Error(POOL_USAGE);
+        const reason = argValue(args, '--reason');
+        const result = await gatewayRequest(config, `/gateway/pool/nodes/${encodeURIComponent(nodeId)}/${action}`, {
+          args,
+          method: 'POST',
+          body: reason == null ? {} : { reason },
+          timeoutMs: 10000
+        });
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      if (action === 'join') {
+        const headUrl = positional(args)[2];
+        if (!headUrl || !hasFlag(args, '--token-stdin')) throw new Error(POOL_USAGE);
+        const apply = hasFlag(args, '--apply');
+        const result = await joinPool(config, {
+          headUrl,
+          // The token is read only when it will be used.
+          token: apply && hasFlag(args, '--yes') ? await readBoundedStdinCredential(process.stdin) : null,
+          nodeId: argValue(args, '--node-id') ?? undefined,
+          endpoint: argValue(args, '--endpoint'),
+          apply,
+          yes: hasFlag(args, '--yes')
+        });
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      if (action === 'simulate') {
+        const scenario = positional(args)[2];
+        if (!scenario) throw new Error(POOL_SIMULATE_USAGE);
+        const reports = await runPoolSimulateCommand(
+          scenario,
+          poolSimulateOptions({
+            mode: argValue(args, '--mode') ?? undefined,
+            hours: argValue(args, '--hours'),
+            seed: argValue(args, '--seed')
+          })
+        );
+        console.log(json ? JSON.stringify(reports, null, 2) : formatPoolSimulation(reports));
+        if (Object.values(reports).some((report) => !report.ok)) process.exitCode = 1;
+        return;
+      }
+      if (action !== 'plan') throw new Error(POOL_USAGE);
+      const options = poolPlanOptions({
+        cordon: argValues(args, '--cordon'),
+        pins: argValues(args, '--pin'),
+        profile: argValue(args, '--profile'),
+        considerInstalls: hasFlag(args, '--consider-installs'),
+        offline: hasFlag(args, '--offline'),
+        headroomGb: argValue(args, '--headroom-gb'),
+        churnWeight: argValue(args, '--churn-weight'),
+        external: argValue(args, '--external')
+      });
+      const report = await createPoolPlanReport(config, options, {
+        gatewayRequest: (target, pathname) => gatewayRequest(target, pathname, { args, timeoutMs: 30000 }),
+        gatewayUrl: gatewayUrlFor(config)
+      });
+      console.log(hasFlag(args, '--json') ? JSON.stringify(report, null, 2) : formatPoolPlanReport(report));
     },
     fleet: async ({ args, config }) => {
       const action = positional(args)[1] ?? 'list';

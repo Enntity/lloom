@@ -125,6 +125,20 @@
             "type": "string"
           },
           "uniqueItems": true
+        },
+        "computeArchs": {
+          "type": "array",
+          "description": "Compute architectures the lane's kernels are built for, such as sm_121 or apple-metal. Pool planning only places the lane on nodes that report one of them; when absent, it is inferred from launch settings or accelerators.",
+          "items": {
+            "type": "string",
+            "pattern": "^(sm_[0-9]+[af]?|apple-metal)$"
+          },
+          "uniqueItems": true
+        },
+        "tensorParallel": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Tensor-parallel degree across the lane's GPUs. Multi-node lanes are only placed on directly linked nodes; when absent, it is inferred from launch arguments or the cluster node count."
         }
       }
     },
@@ -343,6 +357,11 @@
               "draftDepth": {
                 "type": "integer",
                 "minimum": 0
+              },
+              "maxSequences": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Concurrent sequences the backend scheduler is configured for. Pool planning reports it with the lane; when absent, it is inferred from launch arguments or maxActiveRequests."
               },
               "contextWindow": {
                 "type": "integer",

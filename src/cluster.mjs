@@ -993,7 +993,8 @@ export class ClusterCoordinator {
       logger = console,
       telemetry = null,
       profile = null,
-      models = null
+      models = null,
+      inventory = null
     } = {}
   ) {
     this.config = config;
@@ -1003,6 +1004,7 @@ export class ClusterCoordinator {
     this.telemetry = telemetry;
     this.profile = profile;
     this.models = models;
+    this.inventory = inventory;
     this.runtimeManager = null;
     this.targetCursor = new Map();
     this.targetLoads = new Map();
@@ -1077,9 +1079,15 @@ export class ClusterCoordinator {
     }
   }
 
-  async localNodeStatus({ runtimeStatus = null, includeMemoryUsage = false } = {}) {
+  async localNodeStatus({ runtimeStatus = null, includeMemoryUsage = false, includeInventory = false } = {}) {
     const profile = typeof this.profile === 'function' ? await this.profile() : this.profile;
     const models = typeof this.models === 'function' ? await this.models() : this.models;
+    const inventory =
+      includeInventory && this.inventory
+        ? typeof this.inventory === 'function'
+          ? await this.inventory()
+          : this.inventory
+        : undefined;
     return {
       id: this.nodeId,
       name: this.nodes[this.nodeId]?.name ?? this.nodeId,
@@ -1101,20 +1109,22 @@ export class ClusterCoordinator {
         runtimeStatus ??
         (this.runtimeManager
           ? await this.runtimeManager.status({ localOnly: true, includeMemoryUsage })
-          : { runtimes: {} })
+          : { runtimes: {} }),
+      ...(inventory ? { inventory } : {})
     };
   }
 
-  async nodeStatus(nodeId, { refresh = false } = {}) {
-    if (this.isLocalNode(nodeId)) return this.localNodeStatus();
+  async nodeStatus(nodeId, { refresh = false, inventory = false } = {}) {
+    if (this.isLocalNode(nodeId)) return this.localNodeStatus({ includeInventory: inventory });
     const node = this.nodes[nodeId];
     const ttlMs = Math.max(0, Number(this.config.cluster?.statusCacheMs ?? 1000));
-    const cached = this.nodeCache.get(nodeId);
+    const cacheKey = inventory ? `${nodeId}\u0000inventory` : nodeId;
+    const cached = this.nodeCache.get(cacheKey);
     if (!refresh && cached && Date.now() - cached.at < ttlMs) return cached.value;
     if (!refresh && cached?.pending) return cached.pending;
     const pending = (async () => {
       try {
-        const result = await this.requestNode(nodeId, '/gateway/node?memoryUsage=1');
+        const result = await this.requestNode(nodeId, `/gateway/node?memoryUsage=1${inventory ? '&inventory=1' : ''}`);
         const claimedNodeId = result?.node?.id ?? null;
         if (claimedNodeId !== nodeId) {
           return {
@@ -1170,19 +1180,19 @@ export class ClusterCoordinator {
         };
       }
     })();
-    this.nodeCache.set(nodeId, { at: cached?.at ?? 0, value: cached?.value, pending });
+    this.nodeCache.set(cacheKey, { at: cached?.at ?? 0, value: cached?.value, pending });
     const value = await pending;
-    this.nodeCache.set(nodeId, { at: Date.now(), value, pending: null });
+    this.nodeCache.set(cacheKey, { at: Date.now(), value, pending: null });
     return value;
   }
 
-  async status({ localRuntimeStatus = null } = {}) {
+  async status({ localRuntimeStatus = null, inventory = false } = {}) {
     const entries = await Promise.all(
       Object.keys(this.nodes).map(async (id) => [
         id,
         this.isLocalNode(id) && localRuntimeStatus
-          ? await this.localNodeStatus({ runtimeStatus: localRuntimeStatus })
-          : await this.nodeStatus(id)
+          ? await this.localNodeStatus({ runtimeStatus: localRuntimeStatus, includeInventory: inventory })
+          : await this.nodeStatus(id, { inventory })
       ])
     );
     const scopes = Object.keys(this.config.runtimes ?? {})
@@ -1351,6 +1361,7 @@ export class ClusterCoordinator {
       signal
     });
     this.nodeCache.delete(nodeId);
+    this.nodeCache.delete(`${nodeId}\u0000inventory`);
     return result;
   }
 

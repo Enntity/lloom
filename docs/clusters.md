@@ -258,6 +258,8 @@ before contacting any node.
 
 The live dashboard renders node cards between the main LLooM chassis and model cards. Each node card reports architecture, accelerator type, CPU, RAM, GPU compute, GPU memory, temperature, and power when the host can report them. Unsupported fields render as unavailable rather than inventing values; Apple Silicon still reports its profile and shared-memory pressure even when per-GPU utilization is unavailable. Select a node for its complete profile. Replicated models connect to every target node and distributed models connect to every member node.
 
+`GET /gateway/node?inventory=1` and `GET /gateway/cluster?inventory=1` add each node's pool inventory (compute architectures, model-root disk, cached recipe weights, installed images and fabric links). `lloom pool plan` uses it to propose placements across the whole cluster; see [`pool-planning.md`](pool-planning.md). Nodes can also join a head with an enrollment token and keep a lease (`lloom pool join`); membership adds liveness and cordons to planning but does not replace `cluster add-node` for routing.
+
 Before sending model traffic, use `lloom cluster doctor --runtime ID` to verify the required nodes and serving endpoint. Whole-topology doctor reports optional offline nodes and missing memory telemetry as warnings; they do not make unrelated runtimes unavailable. Then start a small replicated lane, verify requests alternate under equal load, and only then canary the distributed engine.
 
 ## A note on example identifiers

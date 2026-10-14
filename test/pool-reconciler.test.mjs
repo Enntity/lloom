@@ -1,0 +1,383 @@
+// Pool reconciler tests: step ordering (make before break, swaps, residency)
+// and the dependency-aware executor. Pure inputs only.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { planPool } from '../src/pool-planner.mjs';
+import { executeReconcile, planReconcile } from '../src/pool-reconciler.mjs';
+
+const fleet = JSON.parse(readFileSync(new URL('./fixtures/pool/spark-fleet.json', import.meta.url), 'utf8'));
+
+function fleetWorkloads() {
+  return fleet.workloads.map(({ cognition, ...workload }) => ({
+    ...workload,
+    candidates: cognition ? fleet.cognitionCandidates : workload.candidates
+  }));
+}
+
+const RC16_RUNNING = [
+  'qwen3.8-flash-next-atlas@spark-node-01+spark-node-02',
+  'Qwen/Qwen3-Embedding-4B@spark-node-03',
+  'hear@spark-node-03',
+  'BennyDaBall/Qwen-Image-2.1-Turbo-NVFP4@spark-node-03',
+  'Qwen/Qwen3-TTS-12Hz-1.7B-Base@spark-node-03'
+];
+
+function placementsFor(keys, variants) {
+  return keys.map((key) => {
+    const variant = variants.find((candidate) => candidate.id === key);
+    return {
+      key,
+      models: [variant.gatewayModel],
+      runtime: variant.runtime ?? null,
+      nodes: variant.nodes,
+      memoryGbPerNode: variant.requirements.memoryGbPerNode,
+      managed: variant.managed !== false,
+      state: 'ready'
+    };
+  });
+}
+
+function index(steps) {
+  return Object.fromEntries(steps.map((step, position) => [step.id, { ...step, position }]));
+}
+
+function dependsOn(steps, id, dependency) {
+  const byId = index(steps);
+  const seen = new Set();
+  const walk = (current) => {
+    for (const parent of byId[current]?.after ?? []) {
+      if (parent === dependency) return true;
+      if (!seen.has(parent)) {
+        seen.add(parent);
+        if (walk(parent)) return true;
+      }
+    }
+    return false;
+  };
+  return walk(id);
+}
+
+test('a pool that already matches the plan needs no steps', () => {
+  const profile = fleet.profiles['sparkqwen-pair-rc16'];
+  const current = { routes: profile.routes, residency: profile.residency, running: RC16_RUNNING };
+  const plan = planPool({
+    nodes: fleet.nodes,
+    variants: fleet.variants,
+    workloads: fleetWorkloads(),
+    pins: fleet.pins,
+    current,
+    policy: fleet.policy
+  });
+  const result = planReconcile({
+    plan,
+    current: { ...current, placements: placementsFor(RC16_RUNNING, fleet.variants) }
+  });
+  assert.equal(result.empty, true, JSON.stringify(result.steps));
+});
+
+test('taking the pair starts the 27B before moving cognition, and stops the pair only after the moves', () => {
+  const profile = fleet.profiles['sparkqwen-pair-rc16'];
+  const current = { routes: profile.routes, residency: profile.residency, running: RC16_RUNNING };
+  const plan = planPool({
+    nodes: fleet.nodes,
+    variants: fleet.variants,
+    workloads: fleetWorkloads(),
+    pins: { ...fleet.pins, cordon: ['spark-node-01', 'spark-node-02'] },
+    current,
+    policy: fleet.policy
+  });
+  const { steps, interruptions, blocked } = planReconcile({
+    plan,
+    current: { ...current, placements: placementsFor(RC16_RUNNING, fleet.variants) },
+    workloads: fleetWorkloads()
+  });
+  assert.deepEqual(interruptions, []);
+  assert.deepEqual(blocked, []);
+  const start = steps.find((step) => step.type === 'start');
+  assert.equal(start.placement, 'qwen38-27b-nvfp4@spark-node-03');
+  const routeSteps = steps.filter((step) => step.type === 'route');
+  assert.equal(routeSteps.length, 7);
+  for (const route of routeSteps) {
+    assert.equal(route.to, 'qwen38-27b-nvfp4');
+    assert.ok(route.after.includes(start.id), `${route.id} waits for the start`);
+  }
+  const stop = steps.find((step) => step.type === 'manual-stop');
+  assert.equal(stop.placement, 'qwen3.8-flash-next-atlas@spark-node-01+spark-node-02');
+  for (const route of routeSteps) assert.ok(dependsOn(steps, stop.id, route.id), `stop waits for ${route.id}`);
+  const upgrade = steps.find((step) => step.type === 'residency' && step.runtime === 'qwen38-27b-nvfp4');
+  assert.deepEqual([upgrade.from, upgrade.to], ['auto', 'always']);
+  assert.ok(upgrade.after.includes(start.id));
+});
+
+// One node with room for one big lane: moving alias `x` from A to B is a swap.
+const SWAP_NODE = {
+  id: 'n1',
+  computeArchs: ['sm_121'],
+  memoryDomains: [{ id: 'u', kind: 'unified', capacityGb: 100 }]
+};
+const swapVariants = [
+  {
+    id: 'A@n1',
+    gatewayModel: 'A',
+    runtime: 'a',
+    nodes: ['n1'],
+    kind: 'chat',
+    requirements: { memoryGbPerNode: 60 },
+    performance: { ttftMs: 2000, decodeTps: 20 }
+  },
+  {
+    id: 'B@n1',
+    gatewayModel: 'B',
+    runtime: 'b',
+    nodes: ['n1'],
+    kind: 'chat',
+    requirements: { memoryGbPerNode: 60 },
+    performance: { ttftMs: 300, decodeTps: 80 }
+  },
+  { id: 'cloud', gatewayModel: 'cloud', external: true, kind: 'chat', performance: { ttftMs: 700, decodeTps: 100 } }
+];
+
+function swap({ candidates }) {
+  const workloads = [{ id: 'x', candidates, residency: 'always', demandPerHour: 50 }];
+  const current = { routes: { x: 'A' }, residency: { a: 'always', b: 'auto' }, running: ['A@n1'] };
+  const plan = planPool({
+    nodes: [SWAP_NODE],
+    variants: swapVariants,
+    workloads,
+    current,
+    policy: { reserveGb: 0, headroomGb: 0, churnWeight: 0 }
+  });
+  assert.equal(plan.routes.x.model, 'B');
+  return planReconcile({
+    plan,
+    current: { ...current, placements: placementsFor(['A@n1'], swapVariants) },
+    workloads,
+    variants: swapVariants
+  });
+}
+
+test('a swap moves the alias to an interim member, drains the old lane, then starts the new one', () => {
+  const { steps, interruptions } = swap({ candidates: ['B', 'A', 'cloud'] });
+  assert.deepEqual(interruptions, []);
+  const byType = (type) => steps.find((step) => step.type === type);
+  const interim = byType('interim-route');
+  assert.deepEqual([interim.alias, interim.to], ['x', 'cloud']);
+  const stop = byType('stop');
+  assert.equal(stop.placement, 'A@n1');
+  assert.ok(stop.after.includes(interim.id));
+  const downgrade = steps.find((step) => step.type === 'residency' && step.runtime === 'a');
+  assert.ok(stop.after.includes(downgrade.id), 'keep-warm is dropped before the stop');
+  const start = byType('start');
+  assert.ok(start.after.includes(stop.id));
+  const route = byType('route');
+  assert.deepEqual([route.to, route.after.includes(start.id)], ['B', true]);
+});
+
+test('a swap with no interim member reports the interruption', () => {
+  const { steps, interruptions } = swap({ candidates: ['B', 'A'] });
+  assert.deepEqual(interruptions, [{ alias: 'x', placement: 'A@n1', until: 'B@n1' }]);
+  assert.ok(steps.some((step) => step.type === 'stop'));
+  assert.ok(!steps.some((step) => step.type === 'interim-route'));
+});
+
+test('a new placement on a node without the weights prefetches first', () => {
+  const node = { ...SWAP_NODE, id: 'mac', computeArchs: ['apple-metal'], weights: [] };
+  const variants = [
+    {
+      id: 'E',
+      gatewayModel: 'E',
+      runtime: 'e',
+      kind: 'embedding',
+      requirements: { memoryGbPerNode: 8, computeArchs: ['apple-metal'], recipeId: 'mlx-e' },
+      performance: { durationMs: 50 }
+    }
+  ];
+  const workloads = [{ id: 'emb', candidates: ['E'], residency: 'always', demandPerHour: 100 }];
+  const plan = planPool({ nodes: [node], variants, workloads, current: {}, policy: { reserveGb: 0 } });
+  const { steps } = planReconcile({
+    plan,
+    current: { placements: [], routes: {} },
+    workloads,
+    variants,
+    nodes: [node]
+  });
+  const prefetch = steps.find((step) => step.type === 'prefetch');
+  const start = steps.find((step) => step.type === 'start');
+  assert.equal(prefetch.placement, 'E@mac');
+  assert.ok(start.after.includes(prefetch.id));
+});
+
+test('a failed start skips the route flip and the old lane stop, so the old lane keeps serving', async () => {
+  const { steps } = swap({ candidates: ['B', 'A', 'cloud'] });
+  const calls = [];
+  const actuator = {
+    prefetch: async () => {},
+    start: async (step) => {
+      calls.push(step.id);
+      throw new Error('admission refused');
+    },
+    stop: async (step) => calls.push(step.id),
+    route: async (step) => calls.push(step.id),
+    residency: async (step) => calls.push(step.id),
+    manual: async () => {}
+  };
+  const result = await executeReconcile(steps, actuator);
+  assert.equal(result.ok, false);
+  const route = steps.find((step) => step.type === 'route');
+  assert.equal(result.status[route.id], 'skipped');
+  assert.match(result.errors[steps.find((step) => step.type === 'start').id], /admission refused/);
+});
+
+test('make-before-break: a start that fits runs before the old lane stops', async () => {
+  const profile = fleet.profiles['sparkqwen-pair-rc16'];
+  const current = { routes: profile.routes, residency: profile.residency, running: RC16_RUNNING };
+  const plan = planPool({
+    nodes: fleet.nodes,
+    variants: fleet.variants,
+    workloads: fleetWorkloads(),
+    pins: { ...fleet.pins, cordon: ['spark-node-01', 'spark-node-02'] },
+    current,
+    policy: fleet.policy
+  });
+  const { steps } = planReconcile({
+    plan,
+    current: { ...current, placements: placementsFor(RC16_RUNNING, fleet.variants) },
+    workloads: fleetWorkloads()
+  });
+  const order = [];
+  const record = async (step) => order.push(step.id);
+  const result = await executeReconcile(
+    steps,
+    { prefetch: record, start: record, stop: record, route: record, residency: record, manual: record },
+    { concurrency: 1 }
+  );
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+  const at = (type) => order.findIndex((id) => id.startsWith(`${type}:`));
+  assert.ok(at('start') < at('route'));
+  assert.ok(at('route') < at('manual-stop'));
+  assert.equal(order.length, steps.length);
+});
+
+test('a step that never settles times out, fails, and skips its dependents', async () => {
+  const { steps } = swap({ candidates: ['B', 'A', 'cloud'] });
+  const pending = [];
+  const timer = (ms) => new Promise((resolve) => pending.push({ ms, resolve }));
+  const done = async () => {};
+  const actuator = {
+    prefetch: done,
+    start: () => new Promise(() => {}),
+    stop: done,
+    route: done,
+    residency: done,
+    manual: done
+  };
+  const running = executeReconcile(steps, actuator, { timer, timeoutsMs: { start: 5000 } });
+  // Fire timers until the run settles; only the hung start's timer matters.
+  let result;
+  running.then((value) => (result = value));
+  for (let round = 0; round < 50 && !result; round += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+    for (const entry of pending.splice(0)) if (entry.ms === 5000) entry.resolve();
+  }
+  const start = steps.find((step) => step.type === 'start');
+  assert.equal(result.status[start.id], 'failed');
+  assert.match(result.errors[start.id], /start timed out after 5 s/);
+  assert.equal(result.status[steps.find((step) => step.type === 'route').id], 'skipped');
+});
+
+test('routes to a lane that is still loading wait on an idempotent start', () => {
+  const profile = fleet.profiles['sparkqwen-pair-rc16'];
+  const running = [...RC16_RUNNING, 'qwen38-27b-nvfp4@spark-node-03'];
+  const current = { routes: profile.routes, residency: profile.residency, running };
+  const plan = planPool({
+    nodes: fleet.nodes,
+    variants: fleet.variants,
+    workloads: fleetWorkloads(),
+    pins: { ...fleet.pins, cordon: ['spark-node-01', 'spark-node-02'] },
+    current,
+    policy: { ...fleet.policy, memorySafetyUtilization: null }
+  });
+  const placements = placementsFor(running, fleet.variants).map((placement) =>
+    placement.key === 'qwen38-27b-nvfp4@spark-node-03' ? { ...placement, state: 'starting' } : placement
+  );
+  const { steps, blocked } = planReconcile({ plan, current: { ...current, placements }, workloads: fleetWorkloads() });
+  assert.deepEqual(blocked, []);
+  const start = steps.find((step) => step.type === 'start');
+  assert.equal(start.placement, 'qwen38-27b-nvfp4@spark-node-03');
+  for (const route of steps.filter((step) => step.type === 'route')) assert.ok(route.after.includes(start.id));
+});
+
+const twoNodes = {
+  a: { domains: [{ kind: 'unified', budgetGb: 100 }] },
+  b: { domains: [{ kind: 'unified', budgetGb: 100 }] }
+};
+
+test('a model that moves between nodes retires its old lane once the new one is up', () => {
+  const { steps } = planReconcile({
+    plan: {
+      nodes: twoNodes,
+      placements: [
+        { placement: 'v@b', variant: 'v', models: ['M'], nodes: ['b'], residency: 'always', memoryGbPerNode: 60 }
+      ],
+      routes: { chat: { model: 'M' } }
+    },
+    current: {
+      placements: [{ key: 'v@a', models: ['M'], nodes: ['a'], memoryGbPerNode: 60, state: 'ready' }],
+      routes: { chat: 'M' }
+    }
+  });
+  const start = steps.find((step) => step.type === 'start');
+  const stop = steps.find((step) => step.type === 'stop');
+  assert.equal(start.placement, 'v@b');
+  assert.equal(stop?.placement, 'v@a', 'the old lane is released');
+  assert.ok(stop.after.includes(start.id), 'only after the new lane is ready');
+});
+
+test('a lane already stopping still holds its memory until its drain finishes', () => {
+  const { steps } = planReconcile({
+    plan: {
+      nodes: twoNodes,
+      placements: [
+        { placement: 'n', variant: 'n', models: ['N'], nodes: ['a'], residency: 'always', memoryGbPerNode: 90 }
+      ],
+      routes: {}
+    },
+    current: {
+      placements: [{ key: 'old', models: ['X'], nodes: ['a'], memoryGbPerNode: 90, state: 'stopping' }],
+      routes: {}
+    }
+  });
+  const wait = steps.find((step) => step.type === 'stop' && step.placement === 'old');
+  const start = steps.find((step) => step.type === 'start');
+  assert.ok(wait, 'an idempotent stop waits for the drain in progress');
+  assert.ok(start.after.includes(wait.id));
+});
+
+test('an alias moved to an interim member during a swap goes back to its planned target', () => {
+  const { steps } = planReconcile({
+    plan: {
+      nodes: twoNodes,
+      placements: [
+        { placement: 'big', variant: 'big', models: ['B'], nodes: ['a'], residency: 'always', memoryGbPerNode: 80 },
+        { placement: 'small', variant: 'small', models: ['S'], nodes: ['a'], residency: 'auto', memoryGbPerNode: 40 },
+        { placement: 'other', variant: 'other', models: ['O'], nodes: ['b'], residency: 'always', memoryGbPerNode: 40 }
+      ],
+      routes: { chat: { model: 'S' }, code: { model: 'B' }, o: { model: 'O' } }
+    },
+    current: {
+      placements: [
+        { key: 'small', models: ['S'], nodes: ['a'], memoryGbPerNode: 40, state: 'ready' },
+        { key: 'other', models: ['O'], nodes: ['b'], memoryGbPerNode: 40, state: 'ready' }
+      ],
+      routes: { chat: 'S', code: 'B', o: 'O' }
+    },
+    workloads: [{ id: 'chat', candidates: ['S', 'O'] }]
+  });
+  const routes = {};
+  for (const step of steps) if (step.type === 'route' || step.type === 'interim-route') routes[step.alias] = step.to;
+  assert.equal(routes.chat, 'S', 'the last word on chat is its planned route');
+  const interim = steps.find((step) => step.type === 'interim-route');
+  const back = steps.filter((step) => step.type === 'route' && step.alias === 'chat').at(-1);
+  assert.ok(back.after.includes(interim.id), 'the flip back runs after the interim flip');
+});
