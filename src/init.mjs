@@ -1440,9 +1440,10 @@ export function deriveUserConfig(
     enabledRuntimes: additive ? [...new Set([...(derived.init?.enabledRuntimes ?? []), ...runtimeIds])] : runtimeIds,
     keepWarmRuntime: additive ? null : keepWarm,
     additive,
-    ...(recipesRoot ? { recipesRoot } : {}),
-    ...(benchmarksRoot ? { benchmarksRoot } : {}),
-    ...(backendCatalogPath ? { backendCatalogPath } : {})
+    // This run's sources replace the previous init's: recipeId is only valid in its own root.
+    recipesRoot: recipesRoot || undefined,
+    benchmarksRoot: benchmarksRoot || undefined,
+    backendCatalogPath: backendCatalogPath || undefined
   };
   return preserveEnvBackedSecrets(derived, sourceTemplate);
 }
