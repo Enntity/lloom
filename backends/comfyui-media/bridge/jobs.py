@@ -101,10 +101,10 @@ class SingleFlightRunner:
         """Submit one job and return (artifact bytes, mime type).
 
         Cancellation semantics: if this coroutine is cancelled (client
-        disconnect) while the backend job is still running, the job is *not*
-        abandoned and the admission slot is *not* released here. A reaper task
-        is kept alive until ComfyUI reports a terminal state; only then is the
-        slot freed. On an unrecoverable reap the runner is marked unhealthy and
+        disconnect) while the backend job is still running, the job is
+        interrupted but the admission slot is *not* released here. A reaper
+        task is kept alive until ComfyUI reports a terminal state; only then is
+        the slot freed. On an unrecoverable reap the runner is marked unhealthy and
         the slot is retained forever rather than risking a second GPU job.
 
         Every failure path is classified by what we can *prove*:
@@ -200,15 +200,9 @@ class SingleFlightRunner:
             if upload_ref:
                 upload_names = list(upload_ref)
             if submitted:
-                # The prompt is on the GPU; hold the slot until it is provably
-                # terminal.
-                self._schedule_reap(
-                    owner,
-                    prompt_id,
-                    output_node=output_node,
-                    upload_names=upload_names,
-                    stop_after_seconds=REAP_BUDGET_SECONDS,
-                )
+                # The prompt is on the GPU. Nobody is waiting for it any more,
+                # so stop it, and hold the slot until it is provably terminal.
+                self._schedule_interrupt(owner, prompt_id, output_node, upload_names)
             elif submit_started:
                 # The shielded submit task may have reached Comfy, so let it
                 # finish and reap based on the outcome rather than guessing.
@@ -303,6 +297,45 @@ class SingleFlightRunner:
         )
         self._reaps.add(task)
         task.add_done_callback(self._reaps.discard)
+
+    def _schedule_interrupt(
+        self,
+        owner: str,
+        prompt_id: str,
+        output_node: str | None,
+        upload_names: list[str] | None,
+    ) -> None:
+        task = asyncio.get_running_loop().create_task(
+            self._interrupt_and_reap(owner, prompt_id, output_node, upload_names)
+        )
+        self._reaps.add(task)
+        task.add_done_callback(self._reaps.discard)
+
+    async def _interrupt_and_reap(
+        self,
+        owner: str,
+        prompt_id: str,
+        output_node: str | None,
+        upload_names: list[str] | None,
+    ) -> None:
+        """Stop an abandoned job, then release the slot once it is terminal.
+
+        The targeted delete/interrupt only touches our own prompt id. Comfy
+        notices an interrupt at its next sampler step, so the slot stays held
+        (busy, not quarantined) by the ordinary reaper until history proves
+        the job ended, exactly as for a job that finishes on its own.
+        """
+        try:
+            await self.comfy.cancel_own_job(prompt_id)
+        except Exception:
+            log.warning("interrupting an abandoned job failed; waiting for it to finish")
+        await self._reap(
+            owner,
+            prompt_id,
+            output_node=output_node,
+            upload_names=upload_names,
+            stop_after_seconds=REAP_BUDGET_SECONDS,
+        )
 
     def _schedule_reap_after_submit(
         self,
