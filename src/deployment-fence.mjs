@@ -295,7 +295,7 @@ function fenceRecordShape(record) {
   return record;
 }
 
-async function writeAtomicJson(filePath, value) {
+export async function writeAtomicJson(filePath, value) {
   const directory = path.dirname(filePath);
   await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   const temporary = `${filePath}.${process.pid}.${randomUUID()}.tmp`;

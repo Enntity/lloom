@@ -32,7 +32,9 @@
     "memoryGb": 48,
     "diskGb": 45,
     "commands": ["mtplx"],
-    "accelerators": ["apple-gpu"]
+    "accelerators": ["apple-gpu"],
+    "computeArchs": ["apple-metal"],
+    "tensorParallel": 1
   },
   "backend": {
     "id": "mtplx",
@@ -66,6 +68,7 @@
         "contextWindow": 262144,
         "maxOutputTokens": 32768,
         "draftDepth": 2,
+        "maxSequences": 8,
         "maxActiveRequests": 8,
         "interactiveReservedSlots": 1,
         "interactiveReservedQueueSlots": 1,

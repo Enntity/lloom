@@ -1,6 +1,8 @@
 import { assertMaintenanceStartAllowed } from './model-maintenance.mjs';
 import os from 'node:os';
 import { readHostMemory } from './host-memory.mjs';
+import { memoryBudgetGb as hostMemoryBudgetGb } from './resource-fit.mjs';
+import { memorySafetyCeiling } from './runtime-memory-safety.mjs';
 import { RuntimeManager } from './runtime-manager.mjs';
 import { clusterNodes, currentNodeId, runtimeAuthority, runtimeResourcesByNode } from './cluster.mjs';
 
@@ -158,21 +160,33 @@ async function liveMemoryProfile(profile = {}) {
   };
 }
 
+// Free memory the host check keeps after a load: the configured reserve, or
+// the margin below the memory safety guard's ceiling if that is larger, so
+// admission never allows a load the guard is certain to abort.
+function hostReserveGb(runtimePolicy, totalMemoryGb, reserveMemoryGb) {
+  const ceiling = memorySafetyCeiling(runtimePolicy);
+  // Rounded up to 0.1 GB so the margin never ends up below the guard's.
+  const guardMarginGb = ceiling == null ? 0 : Math.ceil(totalMemoryGb * (1 - ceiling) * 10 - 1e-9) / 10;
+  return Math.max(reserveMemoryGb, guardMarginGb);
+}
+
 function policyConfig(config, profile = {}) {
   const policy = config.runtimePolicy ?? {};
   const totalMemoryGb = numberOrNull(profile.totalMemoryGb) ?? Math.round(os.totalmem() / 1024 / 1024 / 1024);
   const reserveMemoryGb = numberOrNull(policy.reserveMemoryGb) ?? 8;
   const maxMemoryUtilization = numberOrNull(policy.maxMemoryUtilization);
-  const memoryBudgetGb =
-    numberOrNull(policy.memoryBudgetGb) ??
-    (maxMemoryUtilization != null
-      ? Math.max(0, totalMemoryGb * maxMemoryUtilization)
-      : Math.max(0, totalMemoryGb - reserveMemoryGb));
+  const memoryBudgetGb = hostMemoryBudgetGb({
+    totalMemoryGb,
+    memoryBudgetGb: numberOrNull(policy.memoryBudgetGb),
+    maxMemoryUtilization,
+    reserveMemoryGb
+  });
   return {
     enabled: policy.enabled !== false && policy.memorySafety?.mode !== 'yolo',
     autoEvict: policy.autoEvict === true,
     totalMemoryGb,
     reserveMemoryGb,
+    hostReserveGb: hostReserveGb(policy, totalMemoryGb, reserveMemoryGb),
     memoryBudgetGb,
     maxMemoryUtilization,
     protectActiveRequests: policy.protectActiveRequests !== false
@@ -329,12 +343,20 @@ function clusterRuntimePolicyPlan(
     const maxMemoryUtilization = numberOrNull(
       configuredNodes[nodeId].resources?.maxMemoryUtilization ?? policyTemplate.maxMemoryUtilization
     );
-    const memoryBudgetGb =
-      numberOrNull(configuredNodes[nodeId].resources?.memoryBudgetGb) ??
-      numberOrNull(policyTemplate.memoryBudgetGb) ??
-      (maxMemoryUtilization != null
-        ? Math.max(0, totalMemoryGb * maxMemoryUtilization)
-        : Math.max(0, totalMemoryGb - reserveMemoryGb));
+    const memoryBudgetGb = Math.min(
+      hostMemoryBudgetGb({
+        totalMemoryGb,
+        memoryBudgetGb:
+          numberOrNull(configuredNodes[nodeId].resources?.memoryBudgetGb) ??
+          numberOrNull(policyTemplate.memoryBudgetGb),
+        maxMemoryUtilization,
+        reserveMemoryGb
+      }),
+      Math.max(
+        0,
+        totalMemoryGb - hostReserveGb({ ...policyTemplate, maxMemoryUtilization }, totalMemoryGb, reserveMemoryGb)
+      )
+    );
     const loadedMemoryGb = rows
       .filter((row) => row.loaded)
       .reduce((sum, row) => sum + numberOrNull(row.resourcesByNode?.[nodeId]?.memoryGb), 0);
@@ -530,7 +552,7 @@ export async function createRuntimePolicyPlan(
     .filter((row) => row.loaded && protectedReasons(row, policy).length === 0)
     .reduce((sum, row) => sum + row.memoryGb, 0);
   const hostShortfallGb = predictive
-    ? Math.max(0, policy.reserveMemoryGb - memoryProfile.availableMemoryGb + requestedAddsMemory - evictionFreesGb)
+    ? Math.max(0, policy.hostReserveGb - memoryProfile.availableMemoryGb + requestedAddsMemory - evictionFreesGb)
     : 0;
   overBudgetGb = Math.max(overBudgetGb, hostShortfallGb);
 

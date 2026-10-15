@@ -634,4 +634,67 @@ const applied = await applyRuntimePolicyPlan(unpinnedPolicyConfig, fakePolicyMan
 assert.equal(applied.dryRun, false);
 assert.deepEqual(policyOperations, ['stop:warm', 'start:big:unit-admit']);
 
+// Admission must never allow a load the memory safety guard is certain to
+// abort: the guard trips at min(memorySafety, runtimePolicy) utilization (0.9
+// by default), so the host check keeps that margin free, not just the reserve.
+const guardMarginConfig = {
+  runtimePolicy: { enabled: true, autoEvict: false, maxMemoryUtilization: 0.95 },
+  runtimes: { video: { enabled: true, memoryGb: 20 } }
+};
+const guardMargin = await createRuntimePolicyPlan(guardMarginConfig, {
+  requestedRuntimeId: 'video',
+  status: { runtimes: { video: { healthy: false, status: 'idle' } } },
+  profile: { totalMemoryGb: 128, availableMemoryGb: 30 }
+});
+assert.equal(guardMargin.policy.hostReserveGb, 12.8);
+assert.equal(guardMargin.admission.allowed, false, '10 GB left is under the 12.8 GB the guard needs free');
+const guardMarginFits = await createRuntimePolicyPlan(guardMarginConfig, {
+  requestedRuntimeId: 'video',
+  status: { runtimes: { video: { healthy: false, status: 'idle' } } },
+  profile: { totalMemoryGb: 128, availableMemoryGb: 34 }
+});
+assert.equal(guardMarginFits.admission.allowed, true);
+const guardLooser = await createRuntimePolicyPlan(
+  {
+    ...guardMarginConfig,
+    runtimePolicy: { ...guardMarginConfig.runtimePolicy, memorySafety: { maxMemoryUtilization: 0.97 } }
+  },
+  {
+    requestedRuntimeId: 'video',
+    status: { runtimes: { video: { healthy: false, status: 'idle' } } },
+    profile: { totalMemoryGb: 128, availableMemoryGb: 30 }
+  }
+);
+assert.equal(guardLooser.policy.hostReserveGb, 8, 'a 0.95 ceiling leaves 6.4 GB, so the 8 GB reserve governs');
+assert.equal(guardLooser.admission.allowed, true);
+
+// A cluster node with unknown capacity has a zero budget, not a negative one
+// that would block planning on the nodes that are known.
+const unknownCapacity = await createRuntimePolicyPlan(
+  {
+    cluster: { nodeId: 'a', leaderNode: 'a', nodes: { a: { resources: { memoryGb: 128 } }, b: {} } },
+    runtimePolicy: { autoEvict: true },
+    runtimes: { r: { enabled: true, node: 'a', memoryGb: 16 } }
+  },
+  {
+    status: {
+      runtimes: {},
+      cluster: {
+        nodes: {
+          a: {
+            local: true,
+            reachable: true,
+            telemetry: { memory: { totalBytes: 128 * 1024 ** 3, availableBytes: 100 * 1024 ** 3 } }
+          },
+          b: { reachable: true }
+        }
+      }
+    },
+    profile: { totalMemoryGb: 128, availableMemoryGb: 100 }
+  }
+);
+assert.equal(unknownCapacity.admission.nodes.b.memoryBudgetGb, 0);
+assert.equal(unknownCapacity.admission.overBudgetGb, 0);
+assert.equal(unknownCapacity.admission.allowed, true);
+
 console.log('runtime-policy tests passed');

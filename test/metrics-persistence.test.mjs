@@ -46,6 +46,21 @@ try {
   assert.equal(restored.snapshot({ period: 'today' }).totals.inputTokens, 11);
   assert.equal(restored.snapshot({ period: '7d' }).models[0]?.outputTokens, 7);
 
+  // Requested ids (aliases) aggregate separately from resolved models so pool
+  // planning can see per-alias demand; older history files simply lack them.
+  assert.equal(restoredSnapshot.requested.find((entry) => entry.id === 'test-model')?.requests, 1);
+  restored.record({
+    route: '/v1/chat/completions',
+    model: 'test-model',
+    requestedModel: 'chat-alias',
+    ok: true,
+    durationMs: 50
+  });
+  assert.equal(restored.snapshot().requested.find((entry) => entry.id === 'chat-alias')?.requests, 1);
+  assert.equal(restored.snapshot({ period: '7d' }).requested.find((entry) => entry.id === 'chat-alias')?.requests, 1);
+  assert.equal(restored.snapshot().models.find((entry) => entry.id === 'test-model')?.requests, 2);
+  assert.deepEqual(createMetricsStore({ initialSnapshot: { totals: {} } }).snapshot().requested, []);
+
   // Global throughput is time-weighted and counts concurrent generation once.
   const RealDate = Date;
   let clock = RealDate.parse('2026-09-05T12:00:00Z');

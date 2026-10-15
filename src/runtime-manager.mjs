@@ -18,6 +18,7 @@ import {
 } from './cluster.mjs';
 import { cleanupPortListener, terminateProcessTree } from './process-control.mjs';
 import { memorySafetyPolicy, createMemorySafetyGuard, RuntimeMemorySafetyError } from './runtime-memory-safety.mjs';
+import { readHostMemory } from './host-memory.mjs';
 import { createRuntimeMemoryUsageSampler } from './runtime-memory-usage.mjs';
 
 import {
@@ -46,6 +47,21 @@ const PREFERRED_WARM_DEFAULT_IDLE_MS = 30000;
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+// What a memory-safety abort tells pool planning: host memory in use when the
+// guard tripped, and how much of it this load had taken (a lower bound on its
+// footprint, since the load was cut short).
+function memorySafetyAbortRecord(baseline, snapshot) {
+  const gib = (bytes) => Math.round((bytes / 1024 ** 3) * 10) / 10;
+  const total = numberOrNull(snapshot?.totalBytes);
+  const available = numberOrNull(snapshot?.availableBytes);
+  const before = numberOrNull(baseline?.availableBytes);
+  return {
+    at: nowIso(),
+    usedGb: total != null && available != null ? gib(total - available) : null,
+    consumedGb: before != null && available != null ? gib(Math.max(0, before - available)) : null
+  };
 }
 
 const MTPLX_SESSION_CACHE_FLAGS = new Set([
@@ -1412,6 +1428,8 @@ export class RuntimeManager {
         stoppedAt: state.stoppedAt,
         lastWarmup: state.lastWarmup,
         lastError: state.lastError,
+        memorySafetyLatched: this.memorySafetyFailures.has(runtimeId),
+        memorySafetyAbort: state.memorySafetyAbort ?? null,
         watchdog: {
           ...runtimeWatchdogConfig(runtime),
           ...state.watchdog
@@ -2339,12 +2357,21 @@ export class RuntimeManager {
           });
         }
       })());
+    // The first sample is the host before this load; at an abort, the
+    // difference is a lower bound on what the load really needs.
+    const sampleHost = this.memorySampler ?? (() => readHostMemory({ strict: true }));
+    let baseline = null;
     const guard = createMemorySafetyGuard({
       policy,
       runtimeId,
-      sample: this.memorySampler,
+      sample: async () => {
+        const snapshot = await sampleHost();
+        baseline ??= snapshot;
+        return snapshot;
+      },
       onAbort: (error) => {
         this.memorySafetyFailures.set(runtimeId, error);
+        this.stateFor(runtimeId).memorySafetyAbort = memorySafetyAbortRecord(baseline, error.snapshot);
         this.record({ runtimeId, event: 'memory-safety-abort', message: error.message, snapshot: error.snapshot });
         this.logger.error?.(error.message);
         void cleanup().catch(() => {});
@@ -2367,6 +2394,8 @@ export class RuntimeManager {
       await guard.check();
       combinedSignal.throwIfAborted();
       if (owned.child?.connected) owned.child.send({ type: 'memory-safety-complete' }, () => {});
+      // A completed load is measured from here on; old abort evidence no longer applies.
+      if (result?.healthy) this.stateFor(runtimeId).memorySafetyAbort = null;
       return result;
     } catch (cause) {
       const error = guard.signal.aborted ? guard.signal.reason : cause;
