@@ -48,6 +48,7 @@
     "patches/",
     "recipes/",
     "schemas/",
+    "skills/",
     "scripts/",
     "src/",
     "THIRD_PARTY_NOTICES.md",
