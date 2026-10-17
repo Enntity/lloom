@@ -10,7 +10,9 @@ recipe=${5:-}
 [[ "$recipe" == "-" ]] && recipe=""
 route_catalog=${6:-}
 preserve_routes=${7:-false}
-export PATH="$HOME/.local/bin:$HOME/.local/opt/node-v22.17.0-linux-arm64/bin:$PATH"
+# Use whichever Node the host has under ~/.local/opt (newest last, so first on PATH).
+for node_bin in "$HOME"/.local/opt/node-*/bin; do [[ -d "$node_bin" ]] && PATH="$node_bin:$PATH"; done
+export PATH="$HOME/.local/bin:$PATH"
 export NPM_CONFIG_CACHE="$HOME/.cache/npm-release"
 
 expected=$(node -e 'const fs=require("fs"); console.log(JSON.parse(fs.readFileSync(process.argv[1])).sha256)' "$manifest")
