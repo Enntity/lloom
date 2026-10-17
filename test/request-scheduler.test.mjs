@@ -271,6 +271,11 @@ test('shared limiter scopes prioritize higher demand even across separate comput
   const higher = await gate.admit({ groupId: 'device-b', scopeIds: ['shared-model'], requestClass: 'foreground' });
   assert.equal(gate.readyFor(lower), true, 'its independent compute group is available');
   assert.equal(gate.higherDemandForScopes(lower, ['shared-model']), true, 'its shared budget belongs to higher demand');
+  assert.equal(
+    gate.higherDemandForScopes(lower, ['shared-model'], (_id, requestClass) => requestClass === 'standard'),
+    false,
+    'a standard-only budget does not belong to an exempt higher class in another compute group'
+  );
   assert.equal(gate.higherDemandForScopes(lower, ['independent-model']), false);
   assert.equal(gate.higherDemandForScopes(higher, ['shared-model']), false);
   higher.release();

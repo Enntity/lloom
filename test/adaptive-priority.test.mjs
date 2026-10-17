@@ -309,6 +309,28 @@ test('foreground on local compute does not pause independent cloud work', { time
   assert.equal((await foreground).status, 200);
 });
 
+test(
+  'standard-only pacing leaves a connected waiter queued while interactive and foreground bypass its budget',
+  { timeout: 10000 },
+  async (t) => {
+    const f = await fixture(t, {
+      foregroundIdleMs: 0,
+      backgroundMaxConcurrency: 4,
+      modelRateLimit: { rate: '1/s', burst: 0, queue: true, requestClasses: ['standard'] }
+    });
+    assert.equal((await f.request('initial')).status, 200);
+    const waiting = f.request('paced-standard');
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const chatStarted = Date.now();
+    assert.equal((await f.request('interactive', { requestClass: 'interactive' })).status, 200);
+    assert.equal((await f.request('foreground', { requestClass: 'foreground' })).status, 200);
+    assert.ok(Date.now() - chatStarted < 500, 'chat does not wait for the one-second standard rate interval');
+    assert.deepEqual(f.hits, ['initial', 'interactive', 'foreground']);
+    assert.equal((await waiting).status, 200);
+    assert.deepEqual(f.hits, ['initial', 'interactive', 'foreground', 'paced-standard']);
+  }
+);
+
 test('cancelled queued background never reaches upstream', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   const foreground = f.request('hold-foreground', { requestClass: 'foreground' });

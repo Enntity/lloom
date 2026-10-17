@@ -579,6 +579,8 @@ const QUEUE_BACKPRESSURE_CODES = new Set([
   'RUNTIME_QUEUE_TIMEOUT',
   'RUNTIME_QUEUE_FULL',
   'INTERACTIVE_PRIORITY',
+  'MODEL_RATE_LIMITED',
+  'MODEL_RATE_LIMIT_QUEUE_FULL',
   'REQUEST_QUEUE_FULL',
   'REQUEST_SCHEDULING_TIMEOUT',
   'REQUEST_SCHEDULER_CLOSED'
@@ -606,9 +608,14 @@ function errorStatusCode(error) {
 
 export function shouldFailoverModelRequest(error, res = null) {
   if (
-    ['INTERACTIVE_PRIORITY', 'REQUEST_QUEUE_FULL', 'REQUEST_SCHEDULING_TIMEOUT', 'REQUEST_SCHEDULER_CLOSED'].some(
-      (code) => code === error?.code || code === error?.upstreamCode
-    )
+    [
+      'INTERACTIVE_PRIORITY',
+      'MODEL_RATE_LIMITED',
+      'MODEL_RATE_LIMIT_QUEUE_FULL',
+      'REQUEST_QUEUE_FULL',
+      'REQUEST_SCHEDULING_TIMEOUT',
+      'REQUEST_SCHEDULER_CLOSED'
+    ].some((code) => code === error?.code || code === error?.upstreamCode)
   )
     return false;
   if (res?.headersSent || res?.writableEnded || res?.destroyed) return false;
@@ -3137,9 +3144,13 @@ export function createLloomServer(
    * and rate budget. A single limiter per scope id is shared across aliases so
    * a model reachable through two aliases contributes to one queue.
    */
-  async function admitRateLimited(resolved, scopeIds, { signal = null, started = Date.now() } = {}) {
+  async function admitRateLimited(
+    resolved,
+    scopeIds,
+    { signal = null, started = Date.now(), requestClass = 'standard' } = {}
+  ) {
     if (!scopeIds.length) return () => {};
-    const limited = scopeIds.filter((id) => rateLimitRegistry.limiter(id));
+    const limited = scopeIds.filter((id) => rateLimitRegistry.limiter(id, { requestClass }));
     if (!limited.length) return () => {};
     // FIFO fairness across scopes: acquire semaphore slots first (queued in
     // call order), then rate budget. Failover between candidates happens
@@ -3150,11 +3161,12 @@ export function createLloomServer(
     };
     try {
       for (const id of limited) {
-        const entry = rateLimitRegistry.limiter(id);
+        const entry = rateLimitRegistry.limiter(id, { requestClass });
+        if (!entry) continue;
         if ((entry.semaphore?.queued ?? 0) + entry.rateQueued >= RATE_LIMIT_QUEUE_CAPACITY) {
           throw new ModelRateLimitError(resolved.requestedId, 5, { queueFull: true });
         }
-        releases.push(await acquireRateLimitSlot(rateLimitRegistry, id, { signal, rateBudget: false }));
+        releases.push(await acquireRateLimitSlot(rateLimitRegistry, id, { signal, rateBudget: false, requestClass }));
       }
       // Consume rate budget only once every concurrency slot is held, and
       // atomically, so an inner rejection cannot burn the budget of the outer
@@ -3162,7 +3174,8 @@ export function createLloomServer(
       await awaitRateBudget(rateLimitRegistry, limited, {
         signal,
         started,
-        capacity: RATE_LIMIT_QUEUE_CAPACITY
+        capacity: RATE_LIMIT_QUEUE_CAPACITY,
+        requestClass
       });
       return releaseAll;
     } catch (error) {
@@ -3240,13 +3253,14 @@ export function createLloomServer(
       requestScheduler.readyFor(schedulingLease) &&
       !requestScheduler.higherDemandForScopes(
         schedulingLease,
-        rateLimitScopeIds.filter((id) => rateLimitRegistry.limiter(id))
+        rateLimitScopeIds.filter((id) => rateLimitRegistry.limiter(id, { requestClass })),
+        (id, otherClass) => Boolean(rateLimitRegistry.limiter(id, { requestClass: otherClass }))
       );
     const canAdmit = () => {
       if (!readyForAdmission()) return false;
       if (rateAdmitted) return true;
       try {
-        const release = rateLimitRegistry.tryAcquireChain(rateLimitScopeIds);
+        const release = rateLimitRegistry.tryAcquireChain(rateLimitScopeIds, { requestClass });
         if (!release) return false;
         rateLimitRelease = release;
         rateAdmitted = true;
@@ -3270,7 +3284,8 @@ export function createLloomServer(
       else
         rateLimitRelease = await admitRateLimited(resolved, rateLimitScopeIds, {
           signal: client.signal,
-          started
+          started,
+          requestClass
         });
     } catch (error) {
       // A rejected admission never reaches the request lifecycle that would

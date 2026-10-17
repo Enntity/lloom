@@ -1,4 +1,7 @@
 import { currentNodeId } from './cluster.mjs';
+import { REQUEST_CLASSES, normalizeSchedulingClass } from './request-class.mjs';
+
+export { REQUEST_CLASSES, normalizeSchedulingClass } from './request-class.mjs';
 
 // Priority scheduling for connected gateway inference requests.
 //
@@ -8,12 +11,6 @@ import { currentNodeId } from './cluster.mjs';
 // classes pause while higher work is active plus an idle cooldown, then ramp
 // back without a backlog burst. Nothing here pauses or resumes a GPU: an
 // accepted request keeps its stream and simply waits its turn.
-
-export const REQUEST_CLASSES = ['standard', 'interactive', 'foreground'];
-
-export function normalizeSchedulingClass(value) {
-  return typeof value === 'string' && REQUEST_CLASSES.includes(value) ? value : 'standard';
-}
 
 function classRank(requestClass) {
   return REQUEST_CLASSES.indexOf(normalizeSchedulingClass(requestClass));
@@ -271,14 +268,16 @@ export class RequestScheduler {
     return standard.indexOf(lease) < this.capacity(state);
   }
 
-  higherDemandForScopes(lease, scopeIds) {
+  higherDemandForScopes(lease, scopeIds, appliesToClass = () => true) {
     if (this.mode !== 'adaptive' || !scopeIds.length) return false;
     const scopes = new Set(scopeIds);
     const rank = classRank(lease.requestClass);
     for (const state of this.groups.values()) {
       if (
         [...state.leases, ...state.waiters].some(
-          (entry) => classRank(entry.requestClass) > rank && entry.scopeIds?.some((id) => scopes.has(id))
+          (entry) =>
+            classRank(entry.requestClass) > rank &&
+            entry.scopeIds?.some((id) => scopes.has(id) && appliesToClass(id, entry.requestClass))
         )
       )
         return true;
