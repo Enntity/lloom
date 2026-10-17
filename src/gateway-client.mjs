@@ -114,6 +114,7 @@ export class LLooMGatewayError extends Error {
     if (Number.isInteger(options.status)) this.status = options.status;
     if (options.sslOnly !== undefined) this.sslOnly = options.sslOnly;
     if (options.upstreamCode !== undefined) this.upstreamCode = options.upstreamCode;
+    if (options.schedule) this.schedule = options.schedule;
     if (options.cause !== undefined) this.cause = options.cause;
   }
 }
@@ -275,7 +276,26 @@ export async function gatewayRequest(
         'RUNTIME_ADMISSION_BUSY'
       ]);
       const upstreamCode = allowedCodes.has(detail?.error?.code) ? detail.error.code : undefined;
-      throw new LLooMGatewayError(gatewayErrorMessage({ kind, status }), { kind, code, status, upstreamCode });
+      // Schedule refusals ("pair is held by main") are the answer an agent
+      // needs, so they pass through: redacted (including the key just sent),
+      // without control characters, and bounded.
+      const schedule =
+        detail?.error?.type === 'schedule_error' &&
+        typeof detail.error.message === 'string' &&
+        /^schedule_[a-z_]{1,40}$/.test(String(detail.error.code ?? ''))
+          ? redactDiagnosticValue(
+              {
+                code: detail.error.code,
+                message: printable(detail.error.message, 500),
+                ...(plainDetails(detail.error.details) ? { details: detail.error.details } : {})
+              },
+              { config, env, extraValues: [adminKey] }
+            )
+          : null;
+      throw new LLooMGatewayError(
+        schedule ? `${schedule.message} (HTTP ${status})` : gatewayErrorMessage({ kind, status }),
+        { kind, code, status, upstreamCode: upstreamCode ?? schedule?.code, schedule }
+      );
     }
     return await response.json();
   } catch (error) {
@@ -294,6 +314,15 @@ export async function gatewayRequest(
     clearTimeout(timer);
     await dispatcher.close().catch(() => undefined);
   }
+}
+
+function printable(text, max) {
+  const clean = text.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ');
+  return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
+}
+
+function plainDetails(details) {
+  return details && typeof details === 'object' && JSON.stringify(details).length <= 16384;
 }
 
 /** Gateway base URL resolved exactly the way CLI diagnostics expect. */
