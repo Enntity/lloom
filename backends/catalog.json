@@ -1670,7 +1670,7 @@
       "id": "docker-atlas-sparkglm",
       "name": "Docker Atlas SparkGLM",
       "kind": "openai-compatible-server",
-      "description": "LLooM-managed Atlas SparkGLM candidate containers. The bundled MIT installer pulls the pinned image from GHCR or builds it from an immutable Enntity/sparkglm revision with the same tag, verifies its install-tree label, and only the prepared image is started: no build runs on the serving path. The candidate includes structured output and image/video input; live qualification remains pending.",
+      "description": "LLooM-managed Atlas SparkGLM containers serving GLM-5.3-Flash-FP4-Local as published (no conversion step). The bundled MIT installer pulls the pinned image from GHCR by its immutable digest, or builds it from an immutable Enntity/sparkglm revision only with an explicit --source-build, verifies its architecture, install-tree label and engine commit, and only the prepared image is started: no build runs on the serving path. The release includes structured output, tools and image/video input, and its image qualified on a DGX Spark pair.",
       "platforms": [
         "linux-arm64"
       ],

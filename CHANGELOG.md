@@ -33,6 +33,8 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Changed
 
+- The Atlas SparkGLM recipe (`linux-nvidia-dgx-spark-2x-glm53-atlas`) now pins the 2026-10-17 FP4-Local release: Enntity/sparkglm `c28da418`, engine `b3b016ab`, image `ghcr.io/enntity/atlas-sparkglm@sha256:0b91fd79…`, and `nvidia/GLM-5.3-Flash-FP4-Local` at `76348ddb`, served as published. The overlay conversion step, `convert-overlay.sh` and its GPU headroom helper are removed; the installer also checks the pinned engine commit in the image.
+
 - LLooM now requires Node.js 22.19 or newer, the minimum for its undici 8 HTTP client. It already failed to start on Node 20 after that upgrade; the engine range and CI matrix now say so.
 
 - The action view frames only models serving traffic and their live requests. Active cards cluster near the loom; idle models and machine racks no longer pull the camera outward. Manual zoom holds independently of the automatic fit until Reset view restores it.

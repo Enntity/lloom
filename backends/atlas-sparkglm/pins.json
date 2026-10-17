@@ -1,33 +1,30 @@
 {
   "manifestVersion": 1,
   "status": "final",
-  "note": "Single pin manifest for the Atlas SparkGLM candidate. Portable source, image, model and converter identities are final for this candidate; live hardware and serving qualification remains pending. The normal install path addresses image.reference, the immutable GHCR manifest digest. The tag is retained as source-build metadata (it derives from the git tree of install/ at the pinned revision) and as the local tag produced by an explicit --source-build; the install-tree label is a contents check. A tag or label alone is never the artifact identity.",
+  "note": "Single pin manifest for the Atlas SparkGLM FP4-Local release (2026-10-17). Source, install tree, engine, image and model identities are final. The release image qualified on a DGX Spark pair (Enntity/sparkglm results/2026-10-17-fp4local: prompt-logprob hash 25bc828eea3f, tools 21/21, ToolEvalBench 91) and serves in production with SPARKGLM_PROFILE=4x1m. nvidia/GLM-5.3-Flash-FP4-Local ships its MTP layer quantized, so the checkpoint is served as published: no converter and no overlay. The normal install path addresses image.reference, the immutable GHCR manifest digest. The tag is retained as source-build metadata (the first 12 characters of the git tree of install/ at the pinned revision) and as the local tag produced by an explicit --source-build; the install-tree label is a contents check. A tag or label alone is never the artifact identity.",
   "source": {
     "repo": "Enntity/sparkglm",
-    "revision": "4dee61dcb522d6f3d2246c920ce1a52d87548c71",
-    "installTree": "2b2970c2f05d346fa934da8df8f7d3ba551e07c3",
+    "revision": "c28da418444e954323ee885ffc3954965794a679",
+    "installTree": "c8ced64316bf0b9b2b116d6a0bcdfca52064545b",
     "cloneUrl": "https://github.com/Enntity/sparkglm.git",
     "buildScript": "install/build.sh"
   },
+  "engine": {
+    "repo": "Enntity/atlas",
+    "branch": "sparkglm/atlas-20261017-fp4local",
+    "commit": "b3b016ab7e91b73bea220b7280c9e9aa1a2cfb13"
+  },
   "image": {
-    "reference": "ghcr.io/enntity/atlas-sparkglm@sha256:94b837ef3ea7b3f54c158ce568e611405b1bd167edd56c734d8e90d2d6291cb6",
-    "tag": "ghcr.io/enntity/atlas-sparkglm:2b2970c2f05d",
+    "reference": "ghcr.io/enntity/atlas-sparkglm@sha256:0b91fd790afb2ee3aa5a7f39a0bc5a90db05751436ae7810e00f129c36ebbb7b",
+    "tag": "ghcr.io/enntity/atlas-sparkglm:c8ced64316bf",
     "label": "io.enntity.sparkglm.install-tree",
     "entrypoint": "/opt/atlas/serve.py",
     "profilePath": "/opt/atlas/profiles/4x1m.json",
     "architecture": "arm64"
   },
-  "converter": {
-    "inImagePath": "/opt/atlas/converter/convert.py",
-    "library": "/opt/atlas/converter/libatlas_mtp_quantize.so",
-    "expectedMatrices": 864
-  },
   "model": {
-    "repo": "nvidia/GLM-5.3-Flash-NVFP4",
-    "revision": "423acf37583782c51c142d145aef733d72943d93"
-  },
-  "overlay": {
-    "marker": "conversion.complete.json"
+    "repo": "nvidia/GLM-5.3-Flash-FP4-Local",
+    "revision": "76348ddb2be2e35e39ecfc00e75dc07703f4f3d5"
   },
   "drafter": {
     "repo": "incoai/GLM-5.3-Flash-DFlash2",
