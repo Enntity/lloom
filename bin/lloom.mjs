@@ -93,6 +93,7 @@ import {
 import { createLloomServer } from '../src/server.mjs';
 import { deploymentFailureReport, formatDeploymentReport, runDeploymentCli } from '../src/cluster-deployment-cli.mjs';
 import { runNodeAgentCli } from '../src/node-agent-cli.mjs';
+import { runScheduleCli, SCHEDULE_COMMANDS, scheduleUsage } from '../src/schedule-cli.mjs';
 import { applySetup, createSetupPlan, syncClusterSetupMembers } from '../src/setup.mjs';
 import { createSetupStatus } from '../src/setup-status.mjs';
 import {
@@ -117,6 +118,11 @@ const COMMAND_REGISTRY = [
   { name: 'suspend', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'resume', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'route', aliases: ['routing'], tier: 'primary', needsInstalledConfig: true },
+  { name: 'schedule', aliases: [], tier: 'primary', needsInstalledConfig: false },
+  { name: 'reserve', aliases: [], tier: 'primary', needsInstalledConfig: false },
+  { name: 'renew', aliases: [], tier: 'primary', needsInstalledConfig: false },
+  { name: 'release', aliases: [], tier: 'primary', needsInstalledConfig: false },
+  { name: 'job', aliases: ['jobs'], tier: 'primary', needsInstalledConfig: false },
   { name: 'fleet', aliases: ['profiles'], tier: 'primary', needsInstalledConfig: true },
   { name: 'integrate', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'integrations', aliases: [], tier: 'primary', needsInstalledConfig: true },
@@ -194,6 +200,9 @@ Primary commands:
   lloom models                     List gateway model IDs
   lloom suspend <model> --apply --yes  Drain, unload, and suspend a model
   lloom resume <model> --apply --yes   Load, verify health, and restore routing
+  lloom schedule                   Who holds shared hardware, queues, and agent jobs
+  lloom reserve <resource>         Lease shared hardware (preview; add --apply --yes)
+  lloom job start <title>          Report a long-running job; returns its id
   lloom integrate <client|all>     Write client configs (omp, opencode, codex, …)
   lloom add-model <ref>            Import an ad hoc model (dry-run; add --apply --yes)
   lloom remove-model <model-id>    Remove a model and its dedicated config resources
@@ -205,7 +214,9 @@ Also useful:
   lloom help advanced              Full command catalog
 
 Environment:
-  LLOOM_CONFIG  Path to config JSON
+  LLOOM_CONFIG    Path to config JSON
+  LLOOM_HEAD_URL  Gateway that owns the schedule (key in LLOOM_HEAD_API_KEY)
+  LLOOM_OWNER     Your name on reservations and jobs
 `;
 }
 
@@ -255,6 +266,8 @@ Backends and runtimes:
   lloom runtime-admit <runtime-id> [--apply --yes]
   lloom runtime-start|runtime-warmup|runtime-stop <runtime-id>
   lloom keep-warm
+
+${scheduleUsage()}
 
 Models and clients:
   lloom route [alias [profile]] [--suspend-member model|--resume-member model] [--apply --yes]
@@ -399,7 +412,8 @@ const INSTALLED_CONFIG_COMMANDS = new Set([
   'setup',
   'setup-status',
   'status',
-  'up'
+  'up',
+  ...SCHEDULE_COMMANDS
 ]);
 
 const OPERATIONAL_CONFIG_COMMANDS = new Set([
@@ -3074,6 +3088,11 @@ async function main() {
   handlers['pack-export'] = handlers['recipe-export'];
   handlers['recipe-pack'] = handlers['recipe-import'];
   handlers['pack-submit'] = handlers['recipe-submit'];
+  for (const name of SCHEDULE_COMMANDS) {
+    handlers[name] = async ({ args, config, command: scheduleCommand }) => {
+      process.exitCode = (await runScheduleCli(scheduleCommand, args, { config })) || process.exitCode;
+    };
+  }
   handlers['profiles'] = handlers['fleet'];
   handlers['routing'] = handlers['route'];
   handlers['runtime-status'] = handlers['runtimes'];
@@ -3117,10 +3136,15 @@ async function main() {
 
 // Redact any configured credential value from arbitrary text (including stacks)
 // before it can reach a log, error, or receipt.
+// Keys the CLI may have sent: an explicitly selected one, and a remote head's.
+function sentKeyValues() {
+  return [cliAdminKeyEnvName ? process.env[cliAdminKeyEnvName] : null, process.env.LLOOM_HEAD_API_KEY];
+}
+
 function safeErrorText(text, config = null) {
   return redactGatewaySecrets(text, {
     config: config ?? currentCliConfig ?? undefined,
-    extraValues: cliAdminKeyEnvName ? [process.env[cliAdminKeyEnvName]] : []
+    extraValues: sentKeyValues()
   });
 }
 
@@ -3136,7 +3160,7 @@ function formatCliError(error, config = currentCliConfig) {
 function formatCliErrorJson(error) {
   const options = {
     config: currentCliConfig,
-    extraValues: cliAdminKeyEnvName ? [process.env[cliAdminKeyEnvName]] : []
+    extraValues: sentKeyValues()
   };
   // Receipts describe partial service mutations; retain them while redacting
   // every string value before serializing the envelope.

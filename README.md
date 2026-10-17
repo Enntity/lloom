@@ -587,6 +587,22 @@ candidates. Resume restores eligibility after guarded loading and health checks.
 Omit `--apply --yes` to preview. See [model maintenance](docs/model-maintenance.md)
 for alias setup, distributed ownership, timeouts, and recovery.
 
+### Share hardware between agents
+
+```sh
+lloom schedule                                         # holders, queues, jobs
+lloom reserve pair --purpose "decode A/B" --wait --apply --yes
+job=$(lloom job start "decode A/B" --on pair)
+lloom job progress $job 2/6 --unit arms
+lloom job done $job "flat vs baseline"
+lloom release pair --apply --yes
+```
+
+A reservation is an expiring lease on a configured resource. Taking it routes
+aliases away and suspends that resource's models, and releasing it restores them
+after a health check. Jobs report progress to one board instead of each agent's
+window. See [reservations and jobs](docs/reservations.md).
+
 For authentication, transport failures, and machine-readable CLI errors, see
 [Gateway diagnostics](docs/cli-diagnostics.md).
 
