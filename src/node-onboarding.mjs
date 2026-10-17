@@ -1,7 +1,20 @@
 import { promises as fs } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { mutateConfigSource } from './config-mutation.mjs';
-import { currentNodeId, federatedNodeConfigFromSnapshot } from './cluster.mjs';
+import { currentNodeId, federatedNodeConfigFromSnapshot, updateFederatedBackendTimeout } from './cluster.mjs';
+
+export function parsePositiveTimeoutMs(value) {
+  if (value == null || value === '') return undefined;
+  const text = String(value);
+  if (!/^[1-9][0-9]*$/.test(text)) throw new Error('--timeout-ms must be a positive integer');
+  const timeoutMs = Number(text);
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) throw new Error('--timeout-ms must be a positive integer');
+  return timeoutMs;
+}
+
+function objectRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
 
 export async function readBoundedStdinCredential(stream, { maxBytes = 16384 } = {}) {
   const chunks = [];
@@ -32,9 +45,11 @@ export async function addAuthenticatedNode(
     includeExternal = false,
     apply = false,
     yes = false,
+    timeoutMs: requestedTimeoutMs,
     fetchFn = fetch
   } = {}
 ) {
+  const timeoutMs = parsePositiveTimeoutMs(requestedTimeoutMs);
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(nodeId ?? '')) throw new Error('Invalid node identity');
   if (nodeId === currentNodeId(config)) throw new Error('Cannot replace the local node with a federation peer');
   let url;
@@ -79,13 +94,15 @@ export async function addAuthenticatedNode(
     node.apiKey = apiKey;
   }
   if (telemetryOnly) node.proxy = { enabled: false, models: [] };
+  if (timeoutMs !== undefined) node.proxy.timeoutMs = timeoutMs;
   const summary = {
     ok: true,
     applied: false,
     nodeId,
     endpoint: base,
     telemetryOnly,
-    importedModels: node.proxy.models.length
+    importedModels: node.proxy.models.length,
+    ...(timeoutMs === undefined ? {} : { timeoutMs })
   };
   if (!apply) return summary;
   const before = await fs.readFile(config.sourcePath, 'utf8');
@@ -94,6 +111,8 @@ export async function addAuthenticatedNode(
   const backupPath = config.sourcePath + '.lloom-before-' + randomUUID();
   await fs.writeFile(backupPath, before, { flag: 'wx', mode: 0o600 });
   await fs.chmod(backupPath, 0o600);
+  let backendId;
+  let backendTimeoutUpdated = false;
   const { changed } = await mutateConfigSource(config, (raw) => {
     if (JSON.stringify(raw) !== JSON.stringify(JSON.parse(before)))
       throw new Error('Configuration changed after the reviewed snapshot');
@@ -102,7 +121,51 @@ export async function addAuthenticatedNode(
     raw.cluster.nodeId ??= local;
     raw.cluster.leaderNode ??= local;
     raw.cluster.nodes ??= { [local]: { name: local } };
-    raw.cluster.nodes[nodeId] = node;
+    const existingNode = objectRecord(raw.cluster.nodes[nodeId]);
+    const existingProxy = objectRecord(existingNode.proxy);
+    const nextNode = {
+      ...existingNode,
+      ...node,
+      labels: {
+        ...objectRecord(existingNode.labels),
+        ...objectRecord(node.labels)
+      },
+      resources: {
+        ...objectRecord(existingNode.resources),
+        ...objectRecord(node.resources)
+      },
+      proxy: {
+        ...existingProxy,
+        ...objectRecord(node.proxy)
+      }
+    };
+    if (!telemetryOnly && !Object.hasOwn(node.proxy, 'enabled') && existingProxy.enabled === false) {
+      delete nextNode.proxy.enabled;
+    }
+    if (apiKeyEnv == null && apiKey) {
+      delete nextNode.apiKeyEnv;
+      nextNode.apiKey = apiKey;
+    } else if (apiKeyEnv) {
+      delete nextNode.apiKey;
+      nextNode.apiKeyEnv = apiKeyEnv;
+    }
+    if (timeoutMs !== undefined) {
+      const update = updateFederatedBackendTimeout(raw, { nodeId, node: nextNode, timeoutMs });
+      if (update.sharedNodeIds.length) {
+        throw new Error(
+          `Cannot set --timeout-ms for ${nodeId}: federation backend ${update.backendId} is shared by ${update.sharedNodeIds.join(', ')}`
+        );
+      }
+      backendId = update.backendId;
+      backendTimeoutUpdated = update.updated;
+    }
+    raw.cluster.nodes[nodeId] = nextNode;
   });
-  return { ...summary, applied: true, changed, backupPath };
+  return {
+    ...summary,
+    applied: true,
+    changed,
+    backupPath,
+    ...(timeoutMs === undefined ? {} : { backendId, backendTimeoutUpdated })
+  };
 }

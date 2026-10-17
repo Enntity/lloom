@@ -70,7 +70,7 @@ import {
   stopGatewayService,
   uninstallGatewayService
 } from '../src/service-install.mjs';
-import { addAuthenticatedNode, readBoundedStdinCredential } from '../src/node-onboarding.mjs';
+import { addAuthenticatedNode, parsePositiveTimeoutMs, readBoundedStdinCredential } from '../src/node-onboarding.mjs';
 import { retargetGatewayRelay } from '../src/gateway-relay.mjs';
 import { retargetClientFile } from '../src/client-retarget.mjs';
 import { applyModelImport, applyModelImportGo } from '../src/model-intake.mjs';
@@ -246,7 +246,7 @@ Backends and runtimes:
   lloom deployment rollback --plan FILE --nodes FILE --operation-id ID --apply --yes [--generation N] [--journal FILE] [--json]
   deployment plans require the reviewed archive and manifest at exact absolute paths on every target
   lloom node-agent <phase> --json   # authenticated remote gateway release phase; request JSON on stdin
-  lloom cluster add-node <id> <url> [--namespace NAME|--merge] [--include-external] [--api-key-env NAME|--api-key-stdin] [--telemetry-only] [--apply --yes]
+  lloom cluster add-node <id> <url> [--namespace NAME|--merge] [--include-external] [--api-key-env NAME|--api-key-stdin] [--timeout-ms N] [--telemetry-only] [--apply --yes]
   lloom service install [--enable-linger] [--apply --yes] [--json]
   lloom service doctor [--json]
   lloom service stop [--apply --yes] [--json]
@@ -1720,6 +1720,7 @@ async function main() {
     },
     init: async ({ args, config, command: _command }) => {
       const recipeId = argValue(args, '--recipe');
+      const recipesRoot = argValue(args, '--recipes-root');
       const home = argValue(args, '--home') ?? process.env.HOME;
       const configOut = argValue(args, '--config-out') ?? defaultUserConfigPath(home);
       const modelRoot = argValue(args, '--model-root');
@@ -1748,6 +1749,7 @@ async function main() {
             integrate,
             additive,
             backendVariables: backendVariablesForCli(args),
+            ...(recipesRoot ? { recipesRoot } : {}),
             backendCatalogPath: argValue(args, '--backend-catalog')
           }),
           null,
@@ -1758,6 +1760,7 @@ async function main() {
     bootstrap: async ({ args, config, command: _command }) => {
       const recipeId = argValue(args, '--recipe');
       const modelRoot = argValue(args, '--model-root');
+      const recipesRoot = argValue(args, '--recipes-root');
       const clientId = argValue(args, '--client') ?? 'all';
       const statePath = argValue(args, '--state');
       const apply = hasFlag(args, '--apply');
@@ -1770,6 +1773,7 @@ async function main() {
               modelRoot,
               clientId,
               backendVariables: backendVariablesForCli(args),
+              ...(recipesRoot ? { recipesRoot } : {}),
               benchmarksRoot: argValue(args, '--benchmarks-root'),
               backendCatalogPath: argValue(args, '--backend-catalog')
             }),
@@ -1785,6 +1789,7 @@ async function main() {
             recipeId,
             modelRoot,
             clientId,
+            ...(recipesRoot ? { recipesRoot } : {}),
             dryRun: false,
             yes,
             ...(statePath ? { statePath } : {}),
@@ -2343,7 +2348,7 @@ async function main() {
         process.exitCode = 2;
         return;
       }
-      const recipe = await loadRecipeById(recipeId);
+      const recipe = await loadRecipeById(recipeId, argValue(args, '--recipes-root'));
       const catalog = await loadBackendCatalog(argValue(args, '--backend-catalog'));
       const modelRoot = argValue(args, '--model-root') ?? '${LLOOM_MODEL_ROOT}';
       const {
@@ -2374,7 +2379,7 @@ async function main() {
         process.exitCode = 2;
         return;
       }
-      const recipe = await loadRecipeById(recipeId);
+      const recipe = await loadRecipeById(recipeId, argValue(args, '--recipes-root'));
       const modelRoot = argValue(args, '--model-root') ?? process.env.LLOOM_MODEL_ROOT;
       const statePath = argValue(args, '--state');
       const onlyStep = argValue(args, '--step');
@@ -2715,11 +2720,15 @@ async function main() {
         const endpoint = positional(args)[3];
         if (!nodeId || !endpoint) {
           throw new Error(
-            'Usage: lloom cluster add-node <id> <url> [--namespace NAME|--merge] [--include-external] [--api-key-env NAME|--api-key-stdin] [--telemetry-only] [--apply --yes]'
+            'Usage: lloom cluster add-node <id> <url> [--namespace NAME|--merge] [--include-external] [--api-key-env NAME|--api-key-stdin] [--timeout-ms N] [--telemetry-only] [--apply --yes]'
           );
         }
         if (hasFlag(args, '--api-key-stdin') && argValue(args, '--api-key-env'))
           throw new Error('Choose --api-key-stdin or --api-key-env');
+        const timeoutArg = argValue(args, '--timeout-ms');
+        if (hasFlag(args, '--timeout-ms') && timeoutArg === undefined)
+          throw new Error('--timeout-ms requires a positive integer');
+        const timeoutMs = parsePositiveTimeoutMs(timeoutArg);
         const apiKeyEnv = hasFlag(args, '--api-key-stdin')
           ? null
           : (argValue(args, '--api-key-env') ?? config.cluster?.apiKeyEnv ?? 'LLOOM_CLUSTER_KEY');
@@ -2737,6 +2746,7 @@ async function main() {
               namespace: argValue(args, '--namespace') ?? nodeId,
               merge: hasFlag(args, '--merge'),
               includeExternal: hasFlag(args, '--include-external'),
+              timeoutMs,
               apply: hasFlag(args, '--apply'),
               yes: hasFlag(args, '--yes')
             }),

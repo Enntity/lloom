@@ -4,6 +4,7 @@ import {
   buildNvidiaSyncDiscovery,
   ClusterCoordinator,
   clusterNodes,
+  federatedBackendId,
   federatedNodeConfigFromSnapshot,
   materializeFederatedNodes,
   mergeNvidiaSyncClusterDiscovery,
@@ -14,6 +15,7 @@ import {
   runtimeAuthority,
   runtimeControlAllowed,
   runtimePlacement,
+  updateFederatedBackendTimeout,
   validateClusterConfig
 } from '../src/cluster.mjs';
 import {
@@ -106,6 +108,7 @@ materializeFederatedNodes(heterogeneous);
 assert.equal(heterogeneous.backends['lloom-node-macbook'].baseUrl, 'http://macbook:8100/v1');
 assert.equal(heterogeneous.backends['lloom-node-macbook'].apiKeyEnv, 'LAB_KEY');
 assert.equal(heterogeneous.models.find((model) => model.id === 'macbook/local/embed').kind, 'embedding');
+assert.equal(federatedBackendId('macbook', heterogeneous.cluster.nodes.macbook), 'lloom-node-macbook');
 const replicated = heterogeneous.models.find((model) => model.id === 'lab/qwen');
 assert.deepEqual(
   modelTargets(replicated).map((target) => [target.node, target.upstreamModel, target.remoteRuntime, target.weight]),
@@ -115,6 +118,45 @@ assert.deepEqual(
   ]
 );
 assert.deepEqual(validateClusterConfig(heterogeneous, { LLOOM_NODE_ID: 'spark' }), []);
+
+const federationTimeoutConfig = {
+  cluster: {
+    nodeId: 'head',
+    nodes: {
+      head: {},
+      peer: { proxy: { backend: 'peer-federation', models: [{ id: 'remote' }] } }
+    }
+  },
+  backends: {
+    'peer-federation': {
+      type: 'openai',
+      baseUrl: 'http://peer.test:8100/v1',
+      apiKeyEnv: 'PEER_KEY',
+      timeoutMs: 1_800_000
+    }
+  }
+};
+const timeoutUpdate = updateFederatedBackendTimeout(federationTimeoutConfig, {
+  nodeId: 'peer',
+  node: federationTimeoutConfig.cluster.nodes.peer,
+  timeoutMs: 3_600_000
+});
+assert.deepEqual(timeoutUpdate, { backendId: 'peer-federation', updated: true, sharedNodeIds: [] });
+assert.equal(federationTimeoutConfig.backends['peer-federation'].baseUrl, 'http://peer.test:8100/v1');
+assert.equal(federationTimeoutConfig.backends['peer-federation'].apiKeyEnv, 'PEER_KEY');
+assert.equal(federationTimeoutConfig.backends['peer-federation'].timeoutMs, 3_600_000);
+federationTimeoutConfig.cluster.nodes.other = { proxy: { backend: 'peer-federation', models: [] } };
+const sharedTimeoutUpdate = updateFederatedBackendTimeout(federationTimeoutConfig, {
+  nodeId: 'peer',
+  node: federationTimeoutConfig.cluster.nodes.peer,
+  timeoutMs: 7_200_000
+});
+assert.deepEqual(sharedTimeoutUpdate, {
+  backendId: 'peer-federation',
+  updated: false,
+  sharedNodeIds: ['other']
+});
+assert.equal(federationTimeoutConfig.backends['peer-federation'].timeoutMs, 3_600_000);
 
 assert.deepEqual(
   runtimePlacement(

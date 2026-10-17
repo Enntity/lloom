@@ -45,6 +45,30 @@ function slug(value) {
   );
 }
 
+export function federatedBackendId(nodeId, node = {}) {
+  return asObject(node?.proxy).backend ?? `lloom-node-${slug(nodeId)}`;
+}
+
+function sharedFederatedBackendNodeIds(config, nodeId, backendId) {
+  return Object.entries(asObject(config.cluster?.nodes))
+    .filter(
+      ([candidateId, candidate]) => candidateId !== nodeId && federatedBackendId(candidateId, candidate) === backendId
+    )
+    .map(([candidateId]) => candidateId);
+}
+
+export function updateFederatedBackendTimeout(config, { nodeId, node, timeoutMs } = {}) {
+  const backendId = federatedBackendId(nodeId, node);
+  const sharedNodeIds = sharedFederatedBackendNodeIds(config, nodeId, backendId);
+  if (sharedNodeIds.length) return { backendId, updated: false, sharedNodeIds };
+  const backend = config.backends?.[backendId];
+  if (!backend || typeof backend !== 'object' || Array.isArray(backend)) {
+    return { backendId, updated: false, sharedNodeIds: [] };
+  }
+  backend.timeoutMs = timeoutMs;
+  return { backendId, updated: true, sharedNodeIds: [] };
+}
+
 function proxyModels(node = {}) {
   const proxy = asObject(node.proxy);
   return (Array.isArray(proxy.models) ? proxy.models : []).map((entry) =>
@@ -61,7 +85,7 @@ export function isFederatedGatewayBackend(config, backendId) {
       proxy.enabled !== false &&
       proxyModels(node).length > 0 &&
       Boolean(node.endpoint || proxy.baseUrl) &&
-      backendId === (proxy.backend ?? `lloom-node-${slug(nodeId)}`)
+      backendId === federatedBackendId(nodeId, node)
     );
   });
 }
@@ -74,7 +98,7 @@ export function materializeFederatedNodes(config) {
     const advertised = proxyModels(node);
     if (proxy.enabled === false || !advertised.length) continue;
     if (!node.endpoint && !proxy.baseUrl) continue;
-    const backendId = proxy.backend ?? `lloom-node-${slug(nodeId)}`;
+    const backendId = federatedBackendId(nodeId, node);
     config.backends[backendId] ??= {
       type: 'openai',
       baseUrl: proxy.baseUrl ?? `${trimSlash(node.endpoint)}/v1`,

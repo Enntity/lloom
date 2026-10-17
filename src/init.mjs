@@ -142,6 +142,24 @@ function urlWithPort(port, suffix = '/v1') {
   return `http://127.0.0.1:${port}${suffix}`;
 }
 
+// An explicit backend port range is the operator's allocation boundary for
+// this init run.  Use it while materializing new recipe runtimes, before the
+// later retarget pass rewrites the generated config.  Without this, a config
+// whose old range is exhausted fails before --backend-port-range can take
+// effect.
+function nextInitBackendPort(config, backendPortRange) {
+  if (!backendPortRange) return nextBackendPort(config);
+  const range = normalizeBackendPortRange(backendPortRange);
+  const allocationConfig = {
+    ...config,
+    ports: {
+      ...(config.ports ?? {}),
+      backends: range
+    }
+  };
+  return nextBackendPort(allocationConfig);
+}
+
 function isPathLike(value) {
   return typeof value === 'string' && (value.startsWith('/') || value.startsWith('.'));
 }
@@ -608,7 +626,11 @@ function buildRecipeRuntime({
   return null;
 }
 
-function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot, backendVariables } = {}) {
+function ensureRecipeConfigEntries(
+  config,
+  recipe,
+  { modelRoot, sessionCacheRoot, backendVariables, backendPortRange } = {}
+) {
   const backendId = recipe.backend?.id;
   if (!backendId) return;
   config.backends ??= {};
@@ -839,7 +861,8 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
         const runtimeId = `${recipeModel.runtime ?? `${backendId}-${modelSlug}`}-${suffix}`;
         const backendConfigId = `${recipeModel.backendConfig ?? `${backendId}-${modelSlug}`}-${suffix}`;
         const port =
-          Number(config.runtimes?.[runtimeId]?.port) || positiveInteger(settings.port, nextBackendPort(config));
+          Number(config.runtimes?.[runtimeId]?.port) ||
+          positiveInteger(settings.port, nextInitBackendPort(config, backendPortRange));
         const backendOrigin = clusterNodeBackendOrigin(node);
         const baseUrlPath = asObject(settings.runtime).baseUrlPath ?? settings.baseUrlPath ?? '/v1';
         config.backends[backendConfigId] = {
@@ -913,7 +936,7 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
     const retired = leavingSharedMedia ? { runtime: existingModel.runtime, backend: existingModel.backend } : null;
     const runtimeId = inherited?.runtime ?? recipeModel.runtime ?? `${backendId}-${modelSlug}`;
     const backendConfigId = inherited?.backend ?? recipeModel.backendConfig ?? `${backendId}-${modelSlug}`;
-    const port = Number(config.runtimes?.[runtimeId]?.port) || nextBackendPort(config);
+    const port = Number(config.runtimes?.[runtimeId]?.port) || nextInitBackendPort(config, backendPortRange);
     const modelPath = modelPathForRecipeModel(recipeModel, backendId, modelRoot);
 
     if (!config.backends[backendConfigId]) {
@@ -927,6 +950,15 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
     }
 
     const existingRuntime = config.runtimes[runtimeId];
+    const requestedTimeoutMs = explicitBackendTimeoutMs(settings);
+    if (
+      config.backends[backendConfigId] &&
+      requestedTimeoutMs !== null &&
+      existingRuntime?.recipe?.id === recipe.id &&
+      !hasUnrelatedBackendReferences(config, backendConfigId, { modelId, runtimeId })
+    ) {
+      config.backends[backendConfigId].timeoutMs = requestedTimeoutMs;
+    }
     if (!existingRuntime || existingRuntime.recipe?.id === recipe.id) {
       const runtime = buildRecipeRuntime({
         recipe,
@@ -937,7 +969,8 @@ function ensureRecipeConfigEntries(config, recipe, { modelRoot, sessionCacheRoot
         modelRoot,
         modelId,
         port,
-        sessionCacheRoot
+        sessionCacheRoot,
+        backendVariables
       });
       if (runtime) config.runtimes[runtimeId] = runtime;
     }
@@ -996,6 +1029,32 @@ function materializedRecipeModel(recipe, recipeModel, modelId, placement) {
 function isSharedMediaRuntime(config, runtimeId) {
   const createArgs = config.runtimes?.[runtimeId]?.bootstrap?.createArgs;
   return Array.isArray(createArgs) && !createArgs.some((arg) => String(arg).startsWith('LLOOM_MEDIA_MODEL='));
+}
+
+// A recipe may reuse a backend entry that was materialized by an earlier init.
+// Refreshing only the timeout is safe when this recipe owns the runtime and no
+// other model/runtime depends on that backend. Shared routes may carry a
+// different operator contract, so leave them untouched.
+function hasUnrelatedBackendReferences(config, backendId, { modelId, runtimeId } = {}) {
+  for (const model of config.models ?? []) {
+    if (model?.backend === backendId && !(model.id === modelId && model.runtime === runtimeId)) return true;
+    for (const target of asArray(model?.targets)) {
+      if (target?.backend !== backendId) continue;
+      if (!(model.id === modelId && target.runtime === runtimeId)) return true;
+    }
+  }
+
+  for (const [candidateRuntimeId, runtime] of Object.entries(config.runtimes ?? {})) {
+    const runtimeBackends = [runtime?.backend, runtime?.upstreamBackend, ...asArray(runtime?.backends)].filter(Boolean);
+    if (runtimeBackends.includes(backendId) && candidateRuntimeId !== runtimeId) return true;
+  }
+  return false;
+}
+
+function explicitBackendTimeoutMs(settings) {
+  if (!Object.hasOwn(settings, 'timeoutMs')) return null;
+  const timeoutMs = Number(settings.timeoutMs);
+  return Number.isInteger(timeoutMs) && timeoutMs > 0 ? timeoutMs : null;
 }
 
 function dropUnreferencedRoute(config, { runtime, backend }) {
@@ -1316,18 +1375,24 @@ function initCommand({
   gatewayPort,
   backendPortRange,
   recipeId,
+  recipesRoot,
+  backendCatalogPath,
   clientId,
   home,
   generatedRoot,
   apply = false,
-  integrate = false
+  integrate = false,
+  additive = false
 } = {}) {
   const args = ['lloom', 'init'];
   if (recipeId) args.push('--recipe', shellArg(recipeId));
+  if (additive) args.push('--additive');
   args.push(...customHomeArg(home));
   if (generatedRoot) args.push('--generated-root', shellArg(generatedRoot));
   if (configPath) args.push('--config-out', shellArg(configPath));
   if (modelRoot) args.push('--model-root', shellArg(modelRoot));
+  if (recipesRoot) args.push('--recipes-root', shellArg(recipesRoot));
+  if (backendCatalogPath) args.push('--backend-catalog', shellArg(backendCatalogPath));
   if (gatewayPort) args.push('--port', shellArg(gatewayPort));
   if (backendPortRange) args.push('--backend-port-range', shellArg(backendPortRange));
   if (clientId && clientId !== 'all') args.push('--client', shellArg(clientId));
@@ -1370,7 +1435,8 @@ export function deriveUserConfig(
   ensureRecipeConfigEntries(derived, recipe, {
     modelRoot,
     sessionCacheRoot,
-    backendVariables
+    backendVariables,
+    backendPortRange
   });
   const materializedRuntimeIds = Object.entries(derived.runtimes ?? {})
     .filter(([, runtime]) => runtime.recipe?.id === recipe.id)
@@ -1563,16 +1629,8 @@ export async function createInitPlan(
     next: {
       review: initCommand({
         recipeId: recipe.id,
-        configPath: effectiveConfigPath,
-        modelRoot: effectiveModelRoot,
-        gatewayPort,
-        backendPortRange,
-        clientId,
-        home,
-        generatedRoot
-      }),
-      apply: initCommand({
-        recipeId: recipe.id,
+        recipesRoot,
+        backendCatalogPath,
         configPath: effectiveConfigPath,
         modelRoot: effectiveModelRoot,
         gatewayPort,
@@ -1580,10 +1638,12 @@ export async function createInitPlan(
         clientId,
         home,
         generatedRoot,
-        apply: true
+        additive
       }),
-      integrate: initCommand({
+      apply: initCommand({
         recipeId: recipe.id,
+        recipesRoot,
+        backendCatalogPath,
         configPath: effectiveConfigPath,
         modelRoot: effectiveModelRoot,
         gatewayPort,
@@ -1592,9 +1652,32 @@ export async function createInitPlan(
         home,
         generatedRoot,
         apply: true,
-        integrate: true
+        additive
       }),
-      bootstrap: `lloom bootstrap --config ${shellArg(effectiveConfigPath)} --apply --yes`,
+      integrate: initCommand({
+        recipeId: recipe.id,
+        recipesRoot,
+        backendCatalogPath,
+        configPath: effectiveConfigPath,
+        modelRoot: effectiveModelRoot,
+        gatewayPort,
+        backendPortRange,
+        clientId,
+        home,
+        generatedRoot,
+        apply: true,
+        integrate: true,
+        additive
+      }),
+      bootstrap: [
+        'lloom bootstrap',
+        '--config',
+        shellArg(effectiveConfigPath),
+        ...(recipesRoot ? ['--recipe', shellArg(recipe.id), '--recipes-root', shellArg(recipesRoot)] : []),
+        ...(backendCatalogPath ? ['--backend-catalog', shellArg(backendCatalogPath)] : []),
+        '--apply',
+        '--yes'
+      ].join(' '),
       serve: `lloom serve --config ${shellArg(effectiveConfigPath)}`,
       pathHint: `export PATH="${backendVariables.shimDir}:$PATH"`
     },

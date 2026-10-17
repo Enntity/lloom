@@ -496,3 +496,56 @@ test('service doctor loads explicit environment file before templated config and
   assert.deepEqual(seen, ['Bearer custom-file-secret', 'Bearer custom-file-secret']);
   assert.doesNotMatch(child.stdout + child.stderr, /custom-file-secret/);
 });
+
+test('advanced help documents the federation proxy timeout option', async () => {
+  const result = await runCli(['help', 'advanced']);
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /cluster add-node .*--timeout-ms N/);
+});
+
+test('cluster add-node applies timeout-ms through the CLI', async (t) => {
+  const seen = [];
+  const server = http.createServer((request, response) => {
+    seen.push({ url: request.url, authorization: request.headers.authorization });
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(
+      JSON.stringify({
+        node: {
+          id: 'peer',
+          profile: { platformId: 'darwin-arm64', totalMemoryGb: 96, accelerators: ['metal'] },
+          models: [{ id: 'qwen', runtime: 'qwen-runtime' }]
+        }
+      })
+    );
+  });
+  const port = await listen(server);
+  const home = await writeConfigFixture({
+    server: { host: '127.0.0.1', port: 8100 },
+    cluster: { nodeId: 'head', leaderNode: 'head', nodes: { head: {} } },
+    backends: {},
+    models: [],
+    security: { apiKeys: [] }
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  const result = await runCli(
+    [
+      'cluster',
+      'add-node',
+      'peer',
+      `http://127.0.0.1:${port}`,
+      '--timeout-ms',
+      '3600000',
+      '--apply',
+      '--yes',
+      '--json'
+    ],
+    { home, env: { LLOOM_CLUSTER_KEY: 'fixture-cluster-key' } }
+  );
+  assert.equal(result.code, 0, result.stderr);
+  const receipt = JSON.parse(result.stdout);
+  assert.equal(receipt.timeoutMs, 3_600_000);
+  const current = JSON.parse(await fs.readFile(path.join(home, '.lloom', 'config.json'), 'utf8'));
+  assert.equal(current.cluster.nodes.peer.proxy.timeoutMs, 3_600_000);
+  assert.deepEqual(seen, [{ url: '/gateway/node', authorization: 'Bearer fixture-cluster-key' }]);
+});
