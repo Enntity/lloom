@@ -18,7 +18,10 @@ async function listen(server) {
   return `http://127.0.0.1:${server.address().port}`;
 }
 
-async function fixture(t, { holdStream = false, providerStatus = 200, rawFallback = false, mode = 'interrupt' } = {}) {
+async function fixture(
+  t,
+  { holdStream = false, providerStatus = 200, rawFallback = false, mode = 'interrupt', modelRateLimit } = {}
+) {
   const hits = [];
   const fallbackHits = [];
   const streamResponses = [];
@@ -91,7 +94,13 @@ async function fixture(t, { holdStream = false, providerStatus = 200, rawFallbac
       { id: 'chat', kind: 'chat' },
       { id: 'speech', kind: 'audio_speech' },
       { id: 'transcription', kind: 'audio_transcription' }
-    ].map((model) => ({ ...model, backend: 'provider', runtime: 'limited', upstreamModel: model.id })),
+    ].map((model) => ({
+      ...model,
+      backend: 'provider',
+      runtime: 'limited',
+      upstreamModel: model.id,
+      ...(model.id === 'chat' && modelRateLimit ? { rateLimit: modelRateLimit } : {})
+    })),
     runtimes: { limited: { enabled: true, maxConcurrency: 2, interactiveReservedSlots: 1 } }
   };
   const manager = new RuntimeManager(config, { logger });
@@ -185,6 +194,48 @@ async function fixture(t, { holdStream = false, providerStatus = 200, rawFallbac
     }
   };
 }
+
+test(
+  'serving-node standard-only model limits preserve the forwarded class and keep raw providers private',
+  { timeout: 10000 },
+  async (t) => {
+    const f = await fixture(t, {
+      mode: 'adaptive',
+      modelRateLimit: {
+        rate: '1/h',
+        burst: 0,
+        queue: false,
+        requestClasses: ['standard']
+      }
+    });
+    const chat = (requestClass, stream = false) =>
+      f.request({
+        route: '/v1/chat/completions',
+        model: 'chat',
+        requestClass,
+        body: { stream, messages: [{ role: 'user', content: 'Synthetic request' }] }
+      }).response;
+    assert.equal((await chat('standard')).status, 200);
+    assert.equal((await chat('standard')).status, 429);
+    const routing = await fetch(`http://127.0.0.1:${f.front.server.address().port}/gateway/routing`, {
+      headers: { authorization: 'Bearer front-fixture-key' }
+    }).then((response) => response.json());
+    assert.deepEqual(routing.targetBackoffs, [], 'a remote class limit does not mark the model target unhealthy');
+    assert.equal((await chat('interactive')).status, 200);
+    const foreground = await chat('foreground', true);
+    assert.equal(foreground.status, 200);
+    assert.match(await foreground.text(), /\[DONE\]/);
+    assert.equal(f.hits.length, 3);
+    assert.ok(f.hits.every((hit) => hit.headers['x-lloom-request-class'] === undefined));
+    assert.deepEqual(
+      f.serving.metrics
+        .snapshot()
+        .recent.filter((entry) => entry.ok)
+        .map((entry) => entry.requestClass),
+      ['standard', 'interactive', 'foreground']
+    );
+  }
+);
 
 const pathways = [
   ['embeddings', {}],

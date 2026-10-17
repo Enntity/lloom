@@ -557,6 +557,29 @@ cap concurrency, request rate, or both:
   arrival instead of failing (NGINX `limit_req` without `nodelay`). Waits share
   the 256-request queue bound and the five-minute maximum; a request whose wait
   would exceed it still fails fast with `429` and `retry-after`.
+- `requestClasses`: optional non-empty array of `standard`, `interactive`, or
+  `foreground`. Only those classes use this limiter's rate budget, concurrency
+  slots, and waiting room; omitted means all classes. Selected classes share
+  one bucket. Other applicable model/alias limits and normal runtime capacity
+  still apply.
+
+For example, bind a cloud model's cost throttle to background work while chat
+keeps its normal priority and capacity:
+
+```json
+"rateLimit": {
+  "rate": "4.5/m",
+  "burst": 0,
+  "queue": true,
+  "requestClasses": ["standard"]
+}
+```
+
+Set this on the concrete cloud model to cover every alias that resolves to it.
+The limit follows the resolved model when routes change. A caller marked
+`standard`, including asynchronous inbox work, remains paced. Foreground and
+interactive requests bypass this particular limit without spending its budget.
+The rate counts model requests, not tokens or dollars.
 
 The limiter is the standard token-bucket used by NGINX `limit_req` and Envoy's
 local rate limiter: tokens refill continuously at one per `rateMs`, requests
@@ -571,7 +594,7 @@ same limited model draw from the same budget, and a direct model ID request is
 limited identically. Rate-limit rejections never poison target failure backoff
 or trigger model failover; the 429 surfaces directly with `retry-after`.
 
-Live state (active, queued, next-allowed time per limiter) is exposed as
+Live state (selected request classes, active, queued, next-allowed time per limiter) is exposed as
 `rateLimits` in `GET /gateway/routing`. Config reloads keep existing buckets
 for unchanged ids and prune removed ones.
 

@@ -62,6 +62,12 @@ async function chatGateway(fixture) {
     });
   return {
     chat,
+    reload: async () =>
+      fetch(`http://127.0.0.1:${port}/gateway/runtimes/keep-warm`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ reloadConfig: true })
+      }),
     routing: () => fetch(`http://127.0.0.1:${port}/gateway/routing`).then((r) => r.json()),
     async close() {
       upstream.closeAllConnections();
@@ -155,6 +161,200 @@ test('the token bucket admits exactly n requests back-to-back then spaces by int
   assert.ok(count >= ceiling - 1, `2/m must keep admitting at the steady rate over 120s, saw ${count}`);
 });
 
+test('class-scoped limits validate and retain their selection after normalization', () => {
+  const settings = normalizeRateLimit({ rate: '4.5/m', burst: 0, queue: true, requestClasses: ['standard'] });
+  assert.deepEqual(settings.requestClasses, ['standard']);
+  assert.equal(settings.rateMs, 60_000 / 4.5);
+  assert.deepEqual(normalizeRateLimit(settings), settings);
+  assert.deepEqual(
+    normalizeRateLimit({ maxConcurrent: 1, requestClasses: ['foreground', 'standard', 'foreground'] }).requestClasses,
+    ['standard', 'foreground']
+  );
+  for (const requestClasses of [null, [], 'standard', ['background'], ['standard', 1]]) {
+    assert.throws(() => normalizeRateLimit({ rate: '1/m', requestClasses }), /requestClasses/);
+  }
+});
+
+test('exempt classes neither wait for nor consume standard-only slots and rate budget', async () => {
+  const registry = createRateLimitRegistry({
+    cloud: { maxConcurrent: 1, rate: '1/h', burst: 0, requestClasses: ['standard'] }
+  });
+  const standard = registry.tryAcquireChain(['cloud'], { requestClass: 'standard' });
+  assert.equal(typeof standard, 'function');
+  assert.equal(registry.tryAcquireChain(['cloud'], { requestClass: 'standard' }), null);
+  const deadline = registry.limiter('cloud').gcra.nextAllowedInMs();
+  for (const requestClass of ['foreground', 'interactive']) {
+    const release = registry.tryAcquireChain(['cloud'], { requestClass });
+    assert.equal(typeof release, 'function');
+    release();
+    const legacy = await acquireRateLimitSlot(registry, 'cloud', { requestClass });
+    legacy();
+    await awaitRateBudget(registry, ['cloud'], { requestClass });
+  }
+  assert.equal(registry.status()[0].active, 1);
+  assert.ok(registry.limiter('cloud').gcra.nextAllowedInMs() <= deadline);
+  assert.deepEqual(registry.status()[0].requestClasses, ['standard']);
+  standard();
+  registry.close();
+});
+
+test('class selection reload preserves spent budget and still composes with global limits', () => {
+  const registry = createRateLimitRegistry({
+    outer: { rate: '1/h', burst: 0 },
+    cloud: { rate: '1/h', burst: 0, requestClasses: ['standard'] }
+  });
+  registry.tryAcquireChain(['cloud'], { requestClass: 'standard' })();
+  const bucket = registry.limiter('cloud').gcra;
+  registry.sync({
+    cloud: { rate: '1/h', burst: 0, requestClasses: ['interactive'] },
+    outer: { rate: '1/h', burst: 0 }
+  });
+  assert.equal(registry.limiter('cloud').gcra, bucket);
+  registry.tryAcquireChain(['outer', 'cloud'], { requestClass: 'foreground' })();
+  assert.equal(registry.tryAcquireChain(['outer', 'cloud'], { requestClass: 'foreground' }), null);
+  assert.equal(registry.tryAcquireChain(['cloud'], { requestClass: 'interactive' }), null);
+  registry.tryAcquireChain(['cloud'], { requestClass: 'standard' })();
+  registry.close();
+});
+
+test(
+  'reloading a class selection promptly releases legacy rate and semaphore waiters that become exempt',
+  { timeout: 3000 },
+  async () => {
+    const registry = createRateLimitRegistry({
+      rate: { rate: '1/m', burst: 0, queue: true, requestClasses: ['standard'] },
+      slot: { maxConcurrent: 1, requestClasses: ['standard'] }
+    });
+    const abort = new AbortController();
+    const occupied = await acquireRateLimitSlot(registry, 'slot');
+    const first = await acquireRateLimitSlot(registry, 'rate');
+    first();
+    const rateWait = awaitRateBudget(registry, ['rate'], { signal: abort.signal });
+    const slotWait = acquireRateLimitSlot(registry, 'slot', { signal: abort.signal });
+    assert.equal(registry.limiter('rate').rateQueued, 1);
+    assert.equal(registry.limiter('slot').semaphore.queued, 1);
+    try {
+      registry.sync({
+        rate: { rate: '1/m', burst: 0, queue: true, requestClasses: ['foreground'] },
+        slot: { maxConcurrent: 1, requestClasses: ['foreground'] }
+      });
+      await rateWait;
+      (await slotWait)();
+      assert.equal(registry.limiter('rate').rateQueued, 0);
+      assert.equal(registry.limiter('slot').semaphore.active, 1, 'the originally admitted request is preserved');
+      assert.equal(registry.limiter('slot').semaphore.queued, 0);
+    } finally {
+      abort.abort();
+      occupied();
+      await Promise.allSettled([rateWait, slotWait]);
+      registry.close();
+    }
+  }
+);
+
+test(
+  'adaptive config reload releases a paced standard request without resetting its model bucket',
+  { timeout: 5000 },
+  async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'lloom-class-reload-'));
+    const fixture = await chatFixture(
+      { alias: { members: ['model-a'] } },
+      {
+        models: [
+          {
+            id: 'model-a',
+            backend: 'fixture',
+            upstreamModel: 'fixture',
+            rateLimit: {
+              rate: '1/h',
+              burst: 0,
+              queue: true,
+              requestClasses: ['standard']
+            }
+          }
+        ]
+      }
+    );
+    fixture.config.server.requestScheduling.mode = 'adaptive';
+    fixture.config.server.foregroundIdleMs = 0;
+    fixture.config.sourcePath = path.join(directory, 'config.json');
+    await fs.writeFile(fixture.config.sourcePath, JSON.stringify(fixture.config));
+    const gateway = await chatGateway(fixture);
+    const abort = new AbortController();
+    let waiting;
+    try {
+      assert.equal((await gateway.chat('alias')).status, 200);
+      let settled = false;
+      waiting = gateway.chat('alias', { signal: abort.signal }).then((response) => {
+        settled = true;
+        return response;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      assert.equal(settled, false);
+      fixture.config.models[0].rateLimit.requestClasses = ['foreground'];
+      await fs.writeFile(fixture.config.sourcePath, JSON.stringify(fixture.config));
+      assert.equal((await gateway.reload()).status, 200);
+      assert.equal((await waiting).status, 200);
+      assert.deepEqual((await gateway.routing()).rateLimits[0].requestClasses, ['foreground']);
+      assert.equal(
+        (await gateway.routing()).rateLimits[0].rateLimited,
+        true,
+        'the original standard request spent this bucket'
+      );
+    } finally {
+      abort.abort();
+      if (waiting) await Promise.allSettled([waiting]);
+      await gateway.close();
+      await fs.rm(directory, { recursive: true, force: true });
+    }
+  }
+);
+
+for (const mode of ['off', 'interrupt', 'adaptive']) {
+  test(
+    `${mode} gateway enforces a standard-only model budget across aliases and bypasses it for chat`,
+    { timeout: 5000 },
+    async () => {
+      const fixture = await chatFixture(
+        { first: { members: ['model-a'] }, second: { members: ['model-a'] } },
+        {
+          models: [
+            {
+              id: 'model-a',
+              backend: 'fixture',
+              upstreamModel: 'fixture',
+              rateLimit: {
+                rate: '1/h',
+                burst: 0,
+                queue: false,
+                requestClasses: ['standard']
+              }
+            }
+          ]
+        }
+      );
+      fixture.config.server.requestScheduling.mode = mode;
+      fixture.config.server.foregroundIdleMs = 0;
+      const gateway = await chatGateway(fixture);
+      const options = (requestClass) => ({
+        headers: { 'content-type': 'application/json', 'x-lloom-request-class': requestClass }
+      });
+      try {
+        assert.equal((await gateway.chat('first', options('standard'))).status, 200);
+        assert.equal((await gateway.chat('second', options('standard'))).status, 429);
+        assert.equal((await gateway.chat('model-a', options('standard'))).status, 429);
+        for (const requestClass of ['interactive', 'foreground']) {
+          assert.equal((await gateway.chat('second', options(requestClass))).status, 200);
+          assert.equal((await gateway.chat('model-a', options(requestClass))).status, 200);
+        }
+        assert.deepEqual((await gateway.routing()).rateLimits[0].requestClasses, ['standard']);
+      } finally {
+        await gateway.close();
+      }
+    }
+  );
+}
+
 test('the concurrency semaphore queues FIFO, respects aborts, and releases idempotently', async () => {
   const semaphore = createSemaphore(1);
   const first = await semaphore.acquire();
@@ -221,6 +421,9 @@ test('config validation rejects malformed rateLimit metadata and normalizes vali
   const loaded = await loadConfig(configPath);
   assert.deepEqual(loaded.models[0].rateLimit, { maxConcurrent: 2, burst: 0, rateMs: null });
   assert.deepEqual(loaded.aliases.fast.rateLimit, { maxConcurrent: null, burst: 4, rateMs: 12_000 });
+  base.models[0].rateLimit.requestClasses = ['standard'];
+  await fs.writeFile(configPath, JSON.stringify(base));
+  assert.deepEqual((await loadConfig(configPath)).models[0].rateLimit.requestClasses, ['standard']);
 
   for (const mutation of [
     () => (base.aliases.fast.rateLimit = '5/x'),

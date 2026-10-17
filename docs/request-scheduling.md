@@ -106,6 +106,16 @@ the next token. Completed requests still consume their budget. Set an individual
 is exhausted. Limits and scheduling settings can be hot-reloaded without
 canceling active requests.
 
+An optional `rateLimit.requestClasses` array scopes a model or alias limit to
+specific existing priorities. For example, `requestClasses: ["standard"]` with
+`rate: "4.5/m"`, `burst: 0`, and `queue: true` spaces background calls without
+making foreground or interactive callers wait for that budget. The selected
+classes share the limiter; omitted means all three classes. Exempt requests
+neither reserve its concurrency slots nor spend its rate tokens. Every other
+applicable limit and runtime-capacity rule still applies, and priority within
+each compute group is unchanged. Config reloads preserve the spent bucket while
+updating which classes use it, including already waiting requests.
+
 Adaptive requests also wait through a needed cold start instead of receiving
 the earlier startup retry response. Model-loading admission checks priority
 before changing residency and yields before its next mutation when higher

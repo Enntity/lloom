@@ -21,6 +21,8 @@
 // the next conforming arrival instead (nginx `limit_req` with a burst queue
 // and no `nodelay`), bounded by the same maximum wait.
 
+import { REQUEST_CLASSES, normalizeSchedulingClass } from './request-class.mjs';
+
 const MAX_WAIT_MS = 5 * 60 * 1000;
 
 export const RATE_LIMIT_QUEUE_CAPACITY = 256;
@@ -54,6 +56,17 @@ export function normalizeRateLimit(value) {
     throw new Error('rateLimit must be a string like "20/m" or an object');
   }
   const settings = value.rateLimit ?? value;
+  const selection = {};
+  if (Object.hasOwn(settings, 'requestClasses')) {
+    if (
+      !Array.isArray(settings.requestClasses) ||
+      !settings.requestClasses.length ||
+      settings.requestClasses.some((requestClass) => !REQUEST_CLASSES.includes(requestClass))
+    ) {
+      throw new Error('rateLimit.requestClasses must be a non-empty array of standard, interactive, or foreground');
+    }
+    selection.requestClasses = REQUEST_CLASSES.filter((requestClass) => settings.requestClasses.includes(requestClass));
+  }
   if (settings.queue != null && typeof settings.queue !== 'boolean') {
     throw new Error(`rateLimit.queue must be a boolean: ${JSON.stringify(settings.queue)}`);
   }
@@ -77,7 +90,7 @@ export function normalizeRateLimit(value) {
       throw new Error('rateLimit.burst must be a non-negative integer');
     }
     burst = settings.burst ?? 0;
-    return { maxConcurrent, burst, rateMs, ...queue };
+    return { maxConcurrent, burst, rateMs, ...queue, ...selection };
   }
   const rate = settings.rate ?? settings.requestsPerMinute ?? settings.requests;
   let rateCount = null;
@@ -132,7 +145,8 @@ export function normalizeRateLimit(value) {
     // An explicit burst overrides this.
     burst: rateMs == null ? 0 : (burst ?? Math.max(0, Math.floor(rateCount) - 1)),
     rateMs,
-    ...queue
+    ...queue,
+    ...selection
   };
 }
 
@@ -308,6 +322,13 @@ export function createGcra({ rateMs, burst }) {
  */
 export function createRateLimitRegistry(limits = {}) {
   const limiters = new Map();
+  const matchingLimiter = (id, requestClass) => {
+    const entry = limiters.get(id);
+    return entry &&
+      (!entry.settings.requestClasses || entry.settings.requestClasses.includes(normalizeSchedulingClass(requestClass)))
+      ? entry
+      : null;
+  };
   const listeners = new Set();
   let wakeTimer = null;
   let wakeAt = Infinity;
@@ -370,7 +391,8 @@ export function createRateLimitRegistry(limits = {}) {
         entry.settings.maxConcurrent === settings.maxConcurrent &&
         entry.settings.rateMs === settings.rateMs &&
         entry.settings.burst === settings.burst &&
-        entry.settings.queue === settings.queue
+        entry.settings.queue === settings.queue &&
+        JSON.stringify(entry.settings.requestClasses) === JSON.stringify(settings.requestClasses)
       ) {
         continue;
       }
@@ -402,8 +424,10 @@ export function createRateLimitRegistry(limits = {}) {
       clearTimeout(wakeTimer);
       listeners.clear();
     },
-    tryAcquireChain(ids) {
-      const entries = [...new Set(ids)].map((id) => [id, limiters.get(id)]).filter(([, entry]) => entry);
+    tryAcquireChain(ids, { requestClass = 'standard' } = {}) {
+      const entries = [...new Set(ids)]
+        .map((id) => [id, matchingLimiter(id, requestClass)])
+        .filter(([, entry]) => entry);
       let waitMs = 0;
       for (const [id, entry] of entries) {
         const delay = entry.gcra?.nextAllowedInMs() ?? 0;
@@ -435,7 +459,7 @@ export function createRateLimitRegistry(limits = {}) {
         releases.push(release);
       }
       try {
-        consumeRateBudget({ limiter: (id) => limiters.get(id) }, ids);
+        consumeRateBudget({ limiter: (id) => matchingLimiter(id, requestClass) }, ids, { requestClass });
       } catch (error) {
         releases.forEach((fn) => fn());
         if (error.name !== 'RateBudgetExhaustedError') throw error;
@@ -450,8 +474,8 @@ export function createRateLimitRegistry(limits = {}) {
         notify();
       };
     },
-    limiter(id) {
-      return limiters.get(id) ?? null;
+    limiter(id, { requestClass } = {}) {
+      return requestClass === undefined ? (limiters.get(id) ?? null) : matchingLimiter(id, requestClass);
     },
     get size() {
       return limiters.size;
@@ -463,6 +487,7 @@ export function createRateLimitRegistry(limits = {}) {
         rateMs: entry.settings.rateMs ?? null,
         burst: entry.settings.burst ?? null,
         queue: entry.settings.queue === true,
+        requestClasses: entry.settings.requestClasses ?? [...REQUEST_CLASSES],
         active: entry.semaphore?.active ?? 0,
         queued: (entry.semaphore?.queued ?? 0) + entry.rateQueued,
         rateLimited: entry.gcra ? entry.gcra.nextAllowedInMs(now) > 0 : false,
@@ -476,13 +501,37 @@ export function createRateLimitRegistry(limits = {}) {
 export async function acquireRateLimitSlot(
   registry,
   id,
-  { signal = null, timeoutMs = MAX_WAIT_MS, rateBudget = true } = {}
+  { signal = null, timeoutMs = MAX_WAIT_MS, rateBudget = true, requestClass = 'standard' } = {}
 ) {
-  const entry = registry.limiter(id);
+  const entry = registry.limiter(id, { requestClass });
   if (!entry) return () => {};
   // Concurrency waits in a bounded FIFO queue, exactly like runtime slots.
   signal?.throwIfAborted?.();
-  const releaseSemaphore = entry.semaphore ? await entry.semaphore.acquire(signal, { timeoutMs }) : () => {};
+  let releaseSemaphore = () => {};
+  if (entry.semaphore) {
+    // A class-selection reload can exempt a request already in the legacy
+    // semaphore queue. Remove that waiter without interrupting admitted work.
+    const exemption = new AbortController();
+    const unsubscribe = registry.subscribe?.(() => {
+      if (!registry.limiter(id, { requestClass })) exemption.abort();
+    });
+    try {
+      releaseSemaphore = await entry.semaphore.acquire(
+        signal ? AbortSignal.any([signal, exemption.signal]) : exemption.signal,
+        { timeoutMs }
+      );
+    } catch (error) {
+      signal?.throwIfAborted?.();
+      if (!exemption.signal.aborted) throw error;
+      return () => {};
+    } finally {
+      unsubscribe?.();
+    }
+    if (!registry.limiter(id, { requestClass })) {
+      releaseSemaphore();
+      return () => {};
+    }
+  }
   try {
     signal?.throwIfAborted?.();
     if (rateBudget && entry.gcra) {
@@ -516,10 +565,10 @@ export async function acquireRateLimitSlot(
  * atomic: if any limiter rejects, every token already taken is refunded, so a
  * request that never reached a model costs no budget on the scopes it passed.
  */
-export function consumeRateBudget(registry, ids) {
+export function consumeRateBudget(registry, ids, { requestClass = 'standard' } = {}) {
   const consumed = [];
   for (const id of ids) {
-    const gcra = registry.limiter(id)?.gcra;
+    const gcra = registry.limiter(id, { requestClass })?.gcra;
     if (!gcra) continue;
     const decision = gcra.tryAcquire();
     if (decision.allowed) {
@@ -546,15 +595,16 @@ export function consumeRateBudget(registry, ids) {
 export async function awaitRateBudget(
   registry,
   ids,
-  { signal = null, started = Date.now(), capacity = RATE_LIMIT_QUEUE_CAPACITY } = {}
+  { signal = null, started = Date.now(), capacity = RATE_LIMIT_QUEUE_CAPACITY, requestClass = 'standard' } = {}
 ) {
   const maxQueued = Number.isSafeInteger(capacity) && capacity >= 0 ? capacity : RATE_LIMIT_QUEUE_CAPACITY;
   for (;;) {
     signal?.throwIfAborted?.();
     try {
-      return consumeRateBudget(registry, ids);
+      return consumeRateBudget(registry, ids, { requestClass });
     } catch (error) {
-      const entry = error?.name === 'RateBudgetExhaustedError' ? registry.limiter(error.limiterId) : null;
+      const entry =
+        error?.name === 'RateBudgetExhaustedError' ? registry.limiter(error.limiterId, { requestClass }) : null;
       if (!entry?.settings.queue || Date.now() + error.retryAfterMs - started > MAX_WAIT_MS) throw error;
       // Reserve before yielding: a concurrent caller can have passed the
       // server's precheck while this caller was acquiring semaphore slots.
@@ -563,7 +613,7 @@ export async function awaitRateBudget(
       }
       entry.rateQueued += 1;
       try {
-        await delay(error.retryAfterMs, signal);
+        await delay(error.retryAfterMs, signal, registry);
       } finally {
         entry.rateQueued -= 1;
       }
@@ -571,16 +621,25 @@ export async function awaitRateBudget(
   }
 }
 
-function delay(ms, signal) {
+function delay(ms, signal, registry) {
   return new Promise((resolve, reject) => {
-    const onAbort = () => {
+    let timer;
+    let unsubscribe;
+    const cleanup = () => {
       clearTimeout(timer);
+      unsubscribe?.();
+      signal?.removeEventListener?.('abort', onAbort);
+    };
+    const onAbort = () => {
+      cleanup();
       reject(signal.reason ?? abortError());
     };
-    const timer = setTimeout(() => {
-      signal?.removeEventListener?.('abort', onAbort);
+    const finish = () => {
+      cleanup();
       resolve();
-    }, ms);
+    };
+    timer = setTimeout(finish, ms);
+    unsubscribe = registry?.subscribe?.(finish);
     signal?.addEventListener?.('abort', onAbort, { once: true });
   });
 }
