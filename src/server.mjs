@@ -63,6 +63,7 @@ import { createRegistry, UnknownModelError } from './registry.mjs';
 import { routeProfileStatus, writeRouteMemberSuspension, writeRouteProfile } from './route-control.mjs';
 import { mutateConfigSource } from './config-mutation.mjs';
 import { createModelMaintenanceController } from './model-maintenance-control.mjs';
+import { createSchedule, ScheduleError, schedulePaths } from './schedule.mjs';
 import {
   acquireRateLimitSlot,
   awaitRateBudget,
@@ -486,13 +487,14 @@ function numberOrNull(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-function errorBody(message, { type = 'invalid_request_error', code = 'error', model } = {}) {
+function errorBody(message, { type = 'invalid_request_error', code = 'error', model, details } = {}) {
   return {
     error: {
       message,
       type,
       code,
-      model
+      model,
+      ...(details === undefined ? {} : { details })
     }
   };
 }
@@ -2610,6 +2612,73 @@ export function createLloomServer(
   });
   const dashboardInstallation = createDashboardInstallation({ getConfig: () => config, reload: reloadConfig });
   const fleetProfiles = createFleetProfileController({ getConfig: () => config, reload: reloadConfig });
+  let scheduleUnavailable = 'this gateway does not keep a schedule (needs a file-backed primary config)';
+  const schedule = createGatewaySchedule();
+
+  // Reservation take/undo steps. A step names the node whose gateway owns the
+  // model or route; other nodes are driven through their admin API.
+  function createGatewaySchedule() {
+    const { statePath, eventsPath } = schedulePaths(config);
+    if (!statePath || processRole !== 'primary' || isStandby(config)) return null;
+    async function maintenance(model, action, node, drainTimeoutMs = 300000, apply = true) {
+      const body = { apply, yes: apply, drainTimeoutMs };
+      const result = clusterCoordinator.isLocalNode(node)
+        ? await modelMaintenance.run(model, action, { ...body, requestedBy: currentNodeId(config) })
+        : await clusterCoordinator.requestNode(node, `/gateway/models/${encodeURIComponent(model)}/${action}`, {
+            method: 'POST',
+            body,
+            timeoutMs: 4 * 60 * 60 * 1000
+          });
+      if (!apply) return result;
+      const expected = action === 'suspend' ? 'suspended' : 'ready';
+      if (result?.status !== expected) throw new Error(`${action} ${model} returned ${result?.status ?? 'no status'}`);
+      return result;
+    }
+    try {
+      return createSchedule({
+        getConfig: () => config,
+        statePath,
+        eventsPath,
+        logger,
+        isPaused: () => deploymentFence.isFenced(),
+        actions: {
+          // The dry-run plan reports each runtime's maintenance record.
+          async isSuspended({ model, node }) {
+            const plan = await maintenance(model, 'suspend', node, undefined, false);
+            return Object.values(plan?.state ?? {}).some(Boolean);
+          },
+          async activeRoute({ alias, node }) {
+            const routes = clusterCoordinator.isLocalNode(node)
+              ? routeProfileStatus(config, alias)
+              : (await clusterCoordinator.requestNode(node, '/gateway/routing', { timeoutMs: 10000 })).routes;
+            return routes?.find((route) => route.alias === alias)?.activeRoute ?? null;
+          },
+          async setRoute({ alias, profile, node }) {
+            if (!clusterCoordinator.isLocalNode(node)) {
+              return clusterCoordinator.requestNode(node, `/gateway/routes/${encodeURIComponent(alias)}/profile`, {
+                method: 'POST',
+                body: { profile },
+                timeoutMs: 30000
+              });
+            }
+            const result = await writeRouteProfile(config, alias, profile);
+            if (result.changed) {
+              reloadConfig();
+              await reloadInFlight;
+            }
+            return result;
+          },
+          suspend: ({ model, node, drainTimeoutMs }) => maintenance(model, 'suspend', node, drainTimeoutMs),
+          resume: ({ model, node }) => maintenance(model, 'resume', node)
+        }
+      });
+    } catch (error) {
+      // A damaged or newer schedule file must not take inference down with it.
+      scheduleUnavailable = `schedule unavailable: ${error?.message ?? error}`;
+      logger.error?.(scheduleUnavailable);
+      return null;
+    }
+  }
 
   async function routingStatus() {
     const cacheMs = Math.max(0, Number(config.cluster?.routingStatusCacheMs ?? 250));
@@ -4692,6 +4761,42 @@ export function createLloomServer(
     );
   }
 
+  async function handleSchedule(req, res, url) {
+    if (!schedule) throw new ScheduleError(scheduleUnavailable, { code: 'schedule_unavailable', statusCode: 503 });
+    let parts;
+    try {
+      parts = url.pathname.replace(/\/+$/, '').split('/').slice(3).map(decodeURIComponent);
+    } catch {
+      throw new ScheduleError('malformed schedule path', { code: 'schedule_invalid_request' });
+    }
+    const [collection, id, verb] = parts;
+    const body = req.method === 'POST' ? await readJson(req) : {};
+    let result;
+    if (req.method === 'GET' && parts.length === 0) {
+      result = schedule.board({ since: url.searchParams.get('since') });
+    } else if (collection === 'reservations' && req.method === 'POST' && !id) {
+      result = await schedule.take(body);
+    } else if (collection === 'reservations' && id && req.method === 'GET' && !verb) {
+      result = schedule.reservation(id);
+    } else if (collection === 'reservations' && id && req.method === 'POST' && verb === 'renew') {
+      result = await schedule.renew(id, body);
+    } else if (collection === 'reservations' && id && req.method === 'POST' && verb === 'release') {
+      result = await schedule.release(id, body);
+    } else if (collection === 'jobs' && req.method === 'POST' && !id) {
+      result = await schedule.startJob(body);
+    } else if (collection === 'jobs' && id && !verb && req.method === 'GET') {
+      result = schedule.job(id);
+    } else if (collection === 'jobs' && id && !verb && req.method === 'POST') {
+      result = await schedule.updateJob(id, body);
+    } else {
+      throw new ScheduleError(`no schedule route for ${req.method} ${url.pathname}`, {
+        code: 'not_found',
+        statusCode: 404
+      });
+    }
+    sendJson(res, 200, result);
+  }
+
   async function handleRequest(req, res) {
     setCors(res, config);
     if (req.method === 'OPTIONS') {
@@ -4946,6 +5051,11 @@ export function createLloomServer(
           rateLimits: rateLimitRegistry.status(),
           requestScheduling: requestScheduler.status()
         });
+        return;
+      }
+
+      if (url.pathname === '/gateway/schedule' || url.pathname.startsWith('/gateway/schedule/')) {
+        await handleSchedule(req, res, url);
         return;
       }
 
@@ -5833,6 +5943,14 @@ export function createLloomServer(
         );
         return;
       }
+      if (error instanceof ScheduleError && !res.headersSent) {
+        sendJson(
+          res,
+          error.statusCode,
+          errorBody(error.message, { type: error.type, code: error.code, details: error.details })
+        );
+        return;
+      }
       if (error instanceof DeploymentFenceError) {
         if (res.headersSent) {
           endResponseWithError(res, error, {
@@ -5940,6 +6058,7 @@ export function createLloomServer(
                   })
                   .catch((error) => logger.error?.(error));
           if (configPath && !isStandby(config)) watchFile(configPath, { interval: 500 }, reloadConfig);
+          schedule?.start();
           resolve(server);
         });
       });
@@ -5956,6 +6075,7 @@ export function createLloomServer(
       runtimeManager.cancelQueuedRequests?.(closingError);
       runtimeManager.cancelAdmissionOperations?.(closingError);
       rateLimitRegistry.close();
+      await schedule?.stop();
       unsubscribeScheduling();
       unsubscribeLimits();
       await reloadInFlight;
