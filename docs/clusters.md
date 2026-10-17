@@ -17,10 +17,12 @@ Expose the joining LLooM only on a trusted private network, require authenticati
 
 ```bash
 export LLOOM_CLUSTER_KEY='the key accepted by the joining LLooM'
-lloom cluster add-node macbook-local http://macbook-private:8100 --apply --yes
+lloom cluster add-node macbook-local http://macbook-private:8100 --timeout-ms 3600000 --apply --yes
 ```
 
 The command reads the joining node's `/gateway/node` snapshot, records its architecture, accelerators, memory, and directly hosted model catalog, and creates deterministic gateway names such as `macbook-local/local/qwen`. Imported targets retain the joining gateway's runtime ID as observational metadata, so the central topology and replica selection can reflect remote lifecycle and load without taking ownership of that process. It never copies credentials into config: the node and generated backend retain only `apiKeyEnv`. Config reload activates the node without restarting the central gateway.
+
+`--timeout-ms` sets the positive-integer request deadline for the joining node's federation proxy and updates its existing dedicated backend timeout while preserving the backend URL and authentication fields. If another node shares that backend ID, the apply is refused rather than changing a shared deadline. Omitting the option preserves an existing timeout.
 
 The declarative form is useful for review or hand editing:
 
