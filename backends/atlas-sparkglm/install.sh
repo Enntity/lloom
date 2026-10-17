@@ -17,8 +17,9 @@
 # installer never silently falls back to a mutable tag or to a source build.
 # The pinned source is checked out and built only with the explicit
 # --source-build option, and that build produces a LOCAL tag (see --help). Every
-# path ends with the contents/contract check plus the in-image serving and
-# conversion contract.
+# path ends with the contents check plus the in-image serving contract: the
+# entrypoint, the profile the recipe selects and the pinned engine commit in
+# /opt/atlas/source-manifest.json.
 #
 # --check-only only VERIFIES the local image identity and in-image contract.
 # A missing image or incomplete contract fails verification.
@@ -48,7 +49,7 @@ while [[ $# -gt 0 ]]; do
     --install-root=*) INSTALL_ROOT="${1#*=}"; shift ;;
     --check-only) CHECK_ONLY=1; shift ;;
     --source-build) SOURCE_BUILD=1; shift ;;
-    -h|--help) sed -n '2,30p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h|--help) sed -n '2,31p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "install.sh: unexpected argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -71,10 +72,9 @@ IMAGE_LABEL="$(pin image.label)"
 IMAGE_ARCHITECTURE="$(pin image.architecture)"
 ENTRYPOINT_PATH="$(pin image.entrypoint)"
 PROFILE_PATH="$(pin image.profilePath)"
+ENGINE_COMMIT="$(pin engine.commit)"
 MODEL_REPO="$(pin model.repo)"
 MODEL_REVISION="$(pin model.revision)"
-CONVERTER_PATH="$(pin converter.inImagePath)"
-CONVERTER_LIBRARY="$(pin converter.library)"
 
 fail() { echo "atlas-sparkglm install: $*" >&2; exit 1; }
 note() { echo "atlas-sparkglm install: $*"; }
@@ -95,25 +95,15 @@ verify_image_identity() {
   note "image ${target} verified: arch=${IMAGE_ARCHITECTURE} ${IMAGE_LABEL}=${INSTALL_TREE}"
 }
 
-run_in_image() { docker run --rm --entrypoint bash "${1}" -lc "${2}"; }
-
 verify_image_contract() {
   local target="${1:-${IMAGE_TAG}}"
   # Run on every path, including re-entry: a matching label alone does not
-  # prove the image still ships its serving and conversion artifacts.
-  run_in_image "${target}" "test -f '${ENTRYPOINT_PATH}' && test -f '${PROFILE_PATH}'" \
-    || fail "image ${target} is missing the Atlas entrypoint/profile contract (${ENTRYPOINT_PATH}, ${PROFILE_PATH})"
-  run_in_image "${target}" "test -f '${CONVERTER_PATH}'" \
-    || fail "image ${target} is missing the converter ${CONVERTER_PATH}; the parent engine build must ship it at that exact path"
-  run_in_image "${target}" "test -f '${CONVERTER_LIBRARY}'" \
-    || fail "image ${target} is missing the converter library ${CONVERTER_LIBRARY}"
-  if ! run_in_image "${target}" "python3 '${CONVERTER_PATH}' --help" >/dev/null 2>&1; then
-    fail "converter ${CONVERTER_PATH} in ${target} does not accept the documented --help surface"
-  fi
-  if ! run_in_image "${target}" "python3 '${CONVERTER_PATH}' --help 2>&1 | grep -q -- '--verify-overlay'"; then
-    fail "converter ${CONVERTER_PATH} in ${target} does not implement --verify-overlay; full verification is required for this lane"
-  fi
-  note "image ${target} ships ${CONVERTER_PATH} with --verify-overlay and ${CONVERTER_LIBRARY}"
+  # prove the image ships the serving entrypoint, the selected profile and the
+  # pinned engine.
+  docker run --rm --entrypoint bash "${target}" -lc \
+    "test -f '${ENTRYPOINT_PATH}' && test -f '${PROFILE_PATH}' && grep -q '\"${ENGINE_COMMIT}\"' /opt/atlas/source-manifest.json" \
+    || fail "image ${target} is missing ${ENTRYPOINT_PATH}, ${PROFILE_PATH} or engine commit ${ENGINE_COMMIT} in /opt/atlas/source-manifest.json"
+  note "image ${target} ships ${ENTRYPOINT_PATH}, ${PROFILE_PATH} and engine ${ENGINE_COMMIT}"
 }
 
 verify_existing_source_checkout() {
@@ -152,7 +142,7 @@ fi
 PINS_DIGEST="$(node -e 'const fs=require("fs"),c=require("crypto");process.stdout.write(c.createHash("sha256").update(fs.readFileSync(process.argv[1])).digest("hex"))' "${MANIFEST}")"
 note "pins ${MANIFEST} status=${STATUS} digest=sha256:${PINS_DIGEST}"
 note "image reference ${IMAGE_REFERENCE}"
-note "source-build metadata tag ${IMAGE_TAG} (source ${SOURCE_REPO}@${SOURCE_REVISION} install tree ${INSTALL_TREE})"
+note "source-build metadata tag ${IMAGE_TAG} (source ${SOURCE_REPO}@${SOURCE_REVISION} install tree ${INSTALL_TREE}, engine ${ENGINE_COMMIT})"
 note "model ${MODEL_REPO}@${MODEL_REVISION}"
 note "backend-root ${BACKEND_ROOT} install-root ${INSTALL_ROOT}"
 
@@ -160,7 +150,6 @@ prepared() {
   local target="$1"
   verify_image_contract "${target}"
   note "image prepared. LLooM starts runtimes from this prepared image only; no build runs on the serving path."
-  note "next required gate is the per-node overlay conversion (backends/atlas-sparkglm/convert-overlay.sh)."
   exit 0
 }
 

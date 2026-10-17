@@ -1398,11 +1398,11 @@
           "version": 1,
           "path": "linux-nvidia-dgx-spark-2x-glm53-atlas.json",
           "status": "current",
-          "notes": "Atlas SparkGLM two-node candidate over the private fabric, additive only, setDefault false, no aliases. Portable pins live in backends/atlas-sparkglm/pins.json and are final for the current product revision; invalid or placeholder manifests fail closed. Image identity is verified per host by the pinned install-tree label, whether the image was pulled from GHCR or built from source. Live hardware and full serving qualification remain pending."
+          "notes": "Atlas SparkGLM FP4-Local release (2026-10-17) over the private fabric, additive only, setDefault false, no aliases. Portable pins live in backends/atlas-sparkglm/pins.json and are final; invalid or placeholder manifests fail closed. The checkpoint is served as published, with no conversion step. Image identity is verified per host by the pinned install-tree label and engine commit, whether the image was pulled from GHCR by digest or built from source. The release image qualified on a DGX Spark pair and serves in production."
         }
       ],
-      "name": "2x DGX Spark GLM-5.3 Flash NVFP4 Atlas",
-      "summary": "Two-node Atlas SparkGLM candidate serving GLM-5.3-Flash-NVFP4 from a pinned image (GHCR pull or source build) and a once-per-node overlay conversion.",
+      "name": "2x DGX Spark GLM-5.3 Flash FP4-Local Atlas",
+      "summary": "Two-node Atlas SparkGLM serving GLM-5.3-Flash-FP4-Local as published from a pinned GHCR image: four requests of up to 1M tokens with DFlash2 speculative decoding.",
       "tags": [
         "linux",
         "nvidia",
@@ -1411,14 +1411,14 @@
         "glm-5.3",
         "flash",
         "nvfp4",
+        "fp4-local",
         "atlas",
         "sparkglm",
         "source-build",
-        "mtp",
-        "candidate"
+        "mtp"
       ],
       "recommendedFor": [
-        "Evaluating the source-built Atlas SparkGLM engine on two directly connected DGX Sparks through LLooM"
+        "Serving GLM-5.3 Flash on the Atlas SparkGLM engine across two directly connected DGX Sparks through LLooM"
       ],
       "capabilities": [
         "chat",

@@ -343,12 +343,13 @@ LLooM intentionally does not use stale model fallback aliases to make an index p
 Per-model image, video and music recipes, each in its own ComfyUI runtime, are documented in [ComfyUI media](comfyui-media.md).
 
 Per-model NVIDIA speech and transcription recipes are documented in [Spark audio](spark-audio.md).
-## Atlas SparkGLM candidate
+## Atlas SparkGLM
 
-`linux-nvidia-dgx-spark-2x-glm53-atlas` is the LLooM-managed candidate lane for
-the Atlas SparkGLM engine on two directly connected DGX Sparks.
-Its portable source and model pins are final for the current candidate, while
-live hardware and full serving qualification remain pending.
+`linux-nvidia-dgx-spark-2x-glm53-atlas` is the LLooM-managed lane for the
+Atlas SparkGLM engine on two directly connected DGX Sparks, pinned to the
+2026-10-17 FP4-Local release. It serves `nvidia/GLM-5.3-Flash-FP4-Local` as
+published. The release image qualified on a DGX Spark pair (Enntity/sparkglm
+`results/2026-10-17-fp4local`) and serves in production.
 
 ```sh
 lloom setup --recipe linux-nvidia-dgx-spark-2x-glm53-atlas --additive --apply --yes
@@ -372,16 +373,18 @@ All portable identities for the lane live in exactly one place,
 `backends/atlas-sparkglm/pins.json`: the `Enntity/sparkglm` source revision and
 the git tree of its `install/` directory, the immutable image manifest
 reference (`image.reference`) with the tag kept as source-build metadata and
-the install-tree contents label, the `nvidia/GLM-5.3-Flash-NVFP4` and drafter
-revisions, and the conversion marker contract. The current source pin is product revision
-`4dee61dcb522d6f3d2246c920ce1a52d87548c71` with install tree
-`2b2970c2f05d346fa934da8df8f7d3ba551e07c3`, so the normal install path
-addresses the immutable digest
-`ghcr.io/enntity/atlas-sparkglm@sha256:94b837ef3ea7b3f54c158ce568e611405b1bd167edd56c734d8e90d2d6291cb6`.
-The tag `ghcr.io/enntity/atlas-sparkglm:2b2970c2f05d` is source-build metadata
+the install-tree contents label, the Enntity/atlas engine commit the image
+records, and the `nvidia/GLM-5.3-Flash-FP4-Local` and drafter revisions. The
+current source pin is product revision
+`c28da418444e954323ee885ffc3954965794a679` with install tree
+`c8ced64316bf0b9b2b116d6a0bcdfca52064545b` and engine `b3b016ab`, so the normal
+install path addresses the immutable digest
+`ghcr.io/enntity/atlas-sparkglm@sha256:0b91fd790afb2ee3aa5a7f39a0bc5a90db05751436ae7810e00f129c36ebbb7b`.
+The tag `ghcr.io/enntity/atlas-sparkglm:c8ced64316bf` is source-build metadata
 (first 12 characters of the install tree) and is never pulled; a tag alone is
 not an immutable artifact identity. A later product revision is adopted by
-changing the revision, the install tree, the derived tag and the pinned digest.
+changing the revision, the install tree, the engine commit, the derived tag
+and the pinned digest.
 
 While any required value is missing, malformed, or a placeholder, the gate
 fails closed:
@@ -391,10 +394,11 @@ node backends/atlas-sparkglm/verify-pins.mjs
 ```
 
 The same check runs as backend setup step `check-atlas-pins`, and again inside
-`install.sh` and `convert-overlay.sh`, so an invalid manifest cannot build,
-convert, or start anything. The recipe test uses an explicit temporary
-placeholder manifest to cover that refusal path. The checker also rejects a
-revision or install tree that is not a 40-character git object id, an image tag
+`install.sh`, so an invalid manifest cannot pull, build, or start anything. The
+recipe test uses an explicit temporary placeholder manifest to cover that
+refusal path. The checker also rejects a revision, install tree, engine commit
+or drafter revision that is not a 40-character lowercase git object id, a model
+other than the pinned FP4-Local revision, an image tag
 not derived from the install tree, and an `image.reference` that is not
 `ghcr.io/enntity/atlas-sparkglm@sha256:` followed by 64 lowercase hex
 characters. Image IDs are never pinned; the installer checks the local image's
@@ -417,27 +421,27 @@ produces a **LOCAL tag** for an explicitly overridden local recipe only; it does
 `--check-only` combined with `--source-build` deliberately verifies the local
 source-build tag instead of the digest. On every path the selected image must be
 arm64 and carry `io.enntity.sparkglm.install-tree` equal to the pinned tree, and
-it must ship the entrypoint, profile and converter with `--verify-overlay`. A
-mismatch is a hard failure.
+it must ship the entrypoint, the selected profile and the pinned engine commit
+in `/opt/atlas/source-manifest.json`. A mismatch is a hard failure.
 
 **No build runs on the serving path.** Only a prepared image is started.
 
-### Overlay conversion gate
+### Checkpoint served as published
 
-The NVFP4 checkpoint needs a once-per-node overlay conversion before it can be
-served. Setup step `convert-atlas-overlay` runs
-`backends/atlas-sparkglm/convert-overlay.sh`, which is idempotent per node and
-never infers completion from directory existence: it requires
-`conversion.complete.json` with `converted_matrices` equal to 864, nonempty
-`shards`, absolute `source` and `output` paths, and a numeric `finished` value.
-The converter's full CPU `--verify-overlay` pass must succeed. A directory
-without that marker or without successful CPU verification remains incomplete.
+`nvidia/GLM-5.3-Flash-FP4-Local` ships its MTP layer quantized, so there is no
+conversion step: setup step `download-atlas-model` acquires the pinned revision
+into `${modelRoot}/nvidia--GLM-5.3-Flash-FP4-Local`, and both members mount that
+directory read-only as `MODEL_PATH`. The image's `serve.py` refuses to start
+unless the checkpoint is complete and its MTP layer is quantized. The earlier
+`nvidia/GLM-5.3-Flash-NVFP4` checkpoint needs an MTP overlay this recipe does
+not prepare; Enntity/sparkglm's own `start.sh` still serves it.
 
 ### Container contract
 
 The engine profile ships inside the image, not in the recipe. LLooM passes
 environment and mounts; the image's `/opt/atlas/serve.py` selects the argument
-vector from `/opt/atlas/profiles/4x512k.json` (its default `SPARKGLM_PROFILE`).
+vector from `/opt/atlas/profiles/4x1m.json` (the recipe's `SPARKGLM_PROFILE=4x1m`;
+`serve.py` defaults to `4x512k`).
 
 | Variable                                               | Meaning                                                                   |
 | ------------------------------------------------------ | ------------------------------------------------------------------------- |
@@ -445,7 +449,7 @@ vector from `/opt/atlas/profiles/4x512k.json` (its default `SPARKGLM_PROFILE`).
 | `MASTER_ADDR`                                          | discovered direct-fabric address of the leader                            |
 | `MASTER_PORT`                                          | `29510`                                                                   |
 | `FABRIC_INTERFACE`                                     | discovered direct-fabric NIC, also `NCCL_SOCKET_IFNAME`                   |
-| `MODEL_PATH`                                           | mounted converted overlay root, `${installRoot}/atlas-overlay`            |
+| `MODEL_PATH`                                           | mounted checkpoint, `${modelRoot}/nvidia--GLM-5.3-Flash-FP4-Local`        |
 | `SERVED_MODEL_NAME`                                    | `glm-5.3-flash-atlas`                                                     |
 | `ATLAS_WORLD_SIZE` / `ATLAS_TP_SIZE` / `ATLAS_EP_SIZE` | `2`                                                                       |
 | `NCCL_*`                                               | IB transport with per-node `NCCL_IB_HCA=${fabricHca}`, `AF_INET`, `NCCL_CROSS_NIC=0` |
@@ -458,19 +462,20 @@ health-checks `/health`, runs a POST warmup, and then owns routing.
 
 ### Baseline envelope
 
-The candidate profile (4x1m) serves 1048576-token contexts to four concurrent sequences
-from one shared FP8-latent KV pool, split between the two nodes (about 2.38M tokens at the recipe's 0.91 GPU memory utilization with the display carveout and the disk prefix cache; it also holds the prefix cache, with 16 recurrent-state snapshot slots), with FP32 SSM state,
+The 4x1m profile serves 1048576-token contexts to four concurrent sequences
+from one shared FP8-latent KV pool, split between the two nodes (about 2.6M tokens at the recipe's 0.91 GPU memory utilization with the display carveout and the disk prefix cache; it also holds the prefix cache, with 16 recurrent-state snapshot slots), with FP32 SSM state,
 DFlash2 speculation (gamma 8) on the head rank, GPU memory utilization 0.91
 (the recipe's `SPARKGLM_GPU_MEMORY_UTILIZATION`, overriding the profile
 default of 0.88), and `--memory=114g` with a 4096 MiB OOM guard. `disable-tool-grammar` is **not**
 set, so structured output and tool calling stay functional. The image includes
-image and video input support; gateway and two-node serving canaries remain
-required for qualification.
+image and video input support. Release qualification with this image: prompt
+logprob hash `25bc828eea3f`, tools 21/21, ToolEvalBench 91.
 
-Both nodes must carry the same portable source, model and converter pins and an
+Both nodes must carry the same portable source, engine, model and drafter pins and an
 identical `backends/atlas-sparkglm` directory. The normal path has both hosts
 pull the same immutable digest, so they run the same artifact; each host then
-verifies the pulled image's install-tree contents label and arm64 architecture.
+verifies the pulled image's install-tree contents label, arm64 architecture and
+engine commit.
 An explicit `--source-build` produces a **LOCAL tag** for an explicitly
 overridden local recipe only, does not satisfy the normal immutable recipe, and
 can produce different image IDs across hosts.

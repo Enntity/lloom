@@ -158,14 +158,14 @@ The optional Atlas SparkGLM lane in `backends/atlas-sparkglm` and
 `recipes/linux-nvidia-dgx-spark-2x-glm53-atlas.json` pulls or builds the
 container image `ghcr.io/enntity/atlas-sparkglm` from
 [Enntity/sparkglm](https://github.com/Enntity/sparkglm) at
-`4dee61dcb522d6f3d2246c920ce1a52d87548c71`. LLooM starts that image as a
+`c28da418444e954323ee885ffc3954965794a679`. LLooM starts that image as a
 separate program; no engine source or binary is included in the LLooM npm
 package, and LLooM's files for the lane remain MIT.
 
 - Engine: [Atlas](https://github.com/Atlas-Inf/atlas) (Atlas-Inf) with
   SparkGLM's GLM-5.3 Flash work on the
   [Enntity/atlas](https://github.com/Enntity/atlas) fork, at
-  [`289cefbccdd6c13117228863c7237da17e47a92a`](https://github.com/Enntity/atlas/tree/289cefbccdd6c13117228863c7237da17e47a92a)
+  [`b3b016ab7e91b73bea220b7280c9e9aa1a2cfb13`](https://github.com/Enntity/atlas/tree/b3b016ab7e91b73bea220b7280c9e9aa1a2cfb13)
   (recorded in the image's `/opt/atlas/source-manifest.json`)
 - License: AGPL-3.0-only. The corresponding source is Enntity/sparkglm at the
   revision above plus that Enntity/atlas commit; SparkGLM's `NOTICE` and
@@ -173,17 +173,19 @@ package, and LLooM's files for the lane remain MIT.
 - In-image notices: FlashKDA (MoonshotAI, MIT), FlashInfer including NVIDIA's
   sparse-MLA prefill source (Apache-2.0) and CUTLASS (BSD-3-Clause) ship under
   `/opt/atlas/notices/`; the engine's license is at `/LICENSE`.
-- Converter: the NVFP4 quantization kernel that setup step
-  `convert-atlas-overlay` runs is copied unchanged from
-  [Mango-kid/atlas](https://github.com/Mango-kid/atlas) (AGPL-3.0-only).
+- Converter: the image still ships SparkGLM's overlay converter for the older
+  NVFP4 checkpoint, whose NVFP4 quantization kernel is copied unchanged from
+  [Mango-kid/atlas](https://github.com/Mango-kid/atlas) (AGPL-3.0-only). The
+  LLooM recipe serves FP4-Local as published and never runs it.
 - Transport tuning: the recipe's RoCE/NCCL tuning values (IB timeout/retry,
   Ring/Simple, 1-2 channels, 32 MiB buffers, DMA-BUF off) follow Atlas
   upstream's GB10 launch scripts `scripts/start-ep2.sh` and
   `scripts/start-deepseek-ep2.sh`. Only parameter values are used; no Atlas
   code is included.
 
-The model `nvidia/GLM-5.3-Flash-NVFP4` (MIT per SparkGLM's licensing notes)
-and the DFlash2 drafter `incoai/GLM-5.3-Flash-DFlash2` (**CC BY-NC-ND 4.0,
+The model `nvidia/GLM-5.3-Flash-FP4-Local` (NVIDIA Open Model Agreement; the
+GLM-5.3-Flash base model is MIT, per SparkGLM's licensing notes) and the
+DFlash2 drafter `incoai/GLM-5.3-Flash-DFlash2` (**CC BY-NC-ND 4.0,
 non-commercial**) are downloaded from their publishers under their own terms.
 See the [backend README](backends/atlas-sparkglm/README.md#credits-and-licenses).
 

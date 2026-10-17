@@ -15,13 +15,15 @@ import {
   loadPins,
   verifyPins
 } from '../backends/atlas-sparkglm/verify-pins.mjs';
-import { conversionHeadroomMiB } from '../backends/atlas-sparkglm/conversion-headroom.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const backendDir = path.join(root, 'backends', 'atlas-sparkglm');
 const recipe = await loadRecipeById('linux-nvidia-dgx-spark-2x-glm53-atlas');
 const catalog = await loadBackendCatalog();
 const pins = loadPins();
+// FP4-Local ships its MTP layer quantized, so it is served directly from the
+// acquired checkpoint: no converter, no overlay.
+const checkpointDir = 'nvidia--GLM-5.3-Flash-FP4-Local';
 
 // ---- backend catalog entry ------------------------------------------------
 const backend = getBackend(catalog, 'docker-atlas-sparkglm');
@@ -60,11 +62,10 @@ assert.deepEqual(
     'download-atlas-model',
     'download-atlas-drafter',
     'build-atlas-image',
-    'convert-atlas-overlay',
     'prepare-atlas-prefix-cache'
   ]
 );
-const gatedSteps = ['verify-atlas-pins', 'build-atlas-image', 'convert-atlas-overlay', 'prepare-atlas-prefix-cache'];
+const gatedSteps = ['verify-atlas-pins', 'build-atlas-image', 'prepare-atlas-prefix-cache'];
 assert.deepEqual(
   recipe.setup.steps
     .filter((step) => step.action !== 'check-command' && step.action !== 'download-model')
@@ -82,7 +83,7 @@ assert.equal(backend.setup.find((step) => step.id === 'check-atlas-pins').always
 
 const model = recipe.models[0];
 assert.equal(model.role, 'default');
-assert.equal(model.model, 'nvidia/GLM-5.3-Flash-NVFP4');
+assert.equal(model.model, 'nvidia/GLM-5.3-Flash-FP4-Local');
 assert.equal(model.settings.port, 8893);
 assert.equal(model.settings.baseUrl, 'http://127.0.0.1:8893/v1');
 assert.equal(model.settings.healthUrl, 'http://127.0.0.1:8893/health');
@@ -101,8 +102,10 @@ assert.equal(model.settings.prefixCacheGb, 48);
 assert(model.capabilities.includes('vision'));
 assert(model.capabilities.includes('structured-output'));
 const downloadStep = recipe.setup.steps.find((step) => step.id === 'download-atlas-model');
-assert.equal(downloadStep.model, 'nvidia/GLM-5.3-Flash-NVFP4');
-assert.equal(downloadStep.revision, '423acf37583782c51c142d145aef733d72943d93');
+assert.equal(downloadStep.model, 'nvidia/GLM-5.3-Flash-FP4-Local');
+assert.equal(downloadStep.revision, '76348ddb2be2e35e39ecfc00e75dc07703f4f3d5');
+assert.equal(downloadStep.model, pins.model.repo);
+assert.equal(downloadStep.revision, pins.model.revision);
 const drafterStep = recipe.setup.steps.find((step) => step.id === 'download-atlas-drafter');
 assert.equal(drafterStep.action, 'download-model');
 assert.equal(drafterStep.model, pins.drafter.repo);
@@ -162,9 +165,8 @@ for (const member of members) {
     '--ulimit memlock=-1:-1',
     '--security-opt no-new-privileges=true',
     '--stop-timeout 60',
-    'type=bind,src=${modelRoot}/nvidia--GLM-5.3-Flash-NVFP4,dst=${modelRoot}/nvidia--GLM-5.3-Flash-NVFP4,readonly',
-    'type=bind,src=${installRoot}/atlas-overlay,dst=${installRoot}/atlas-overlay,readonly',
-    'MODEL_PATH=${installRoot}/atlas-overlay',
+    `type=bind,src=\${modelRoot}/${checkpointDir},dst=\${modelRoot}/${checkpointDir},readonly`,
+    `MODEL_PATH=\${modelRoot}/${checkpointDir}`,
     'FABRIC_HCA=${fabricHca}',
     '-e FABRIC_SIBLINGS=0',
     'NODE_RANK=${nodeRank}',
@@ -190,6 +192,9 @@ for (const member of members) {
   ]) {
     assert(rendered.includes(expected), `missing Atlas launch control: ${expected}`);
   }
+  // The checkpoint is served as published: no overlay and no NVFP4 source.
+  assert(!rendered.includes('atlas-overlay'), 'FP4-Local is served without an overlay');
+  assert(!rendered.includes('GLM-5.3-Flash-NVFP4'), 'the NVFP4 checkpoint is not mounted');
   // Tier settings come only from serve.py, identical on both ranks.
   assert(!/ATLAS_(KV_NVME|SSM_TIER|GLM_NVME)/.test(rendered));
   // The baseline launched with the tool grammar disabled; functionality wins.
@@ -253,7 +258,6 @@ assert.deepEqual(
     'download-atlas-model',
     'download-atlas-drafter',
     'build-atlas-image',
-    'convert-atlas-overlay',
     'prepare-atlas-prefix-cache'
   ]
 );
@@ -272,10 +276,8 @@ assert.equal(
 for (const step of plan.steps.filter((entry) => entry.action === 'command')) {
   assert(!step.command.join(' ').includes('${'), `unresolved recipe template in ${step.id}`);
 }
-assert.equal(
-  plan.steps.find((step) => step.id === 'download-atlas-model').destination,
-  '/models/nvidia--GLM-5.3-Flash-NVFP4'
-);
+// The checkpoint lands exactly where both members mount it as MODEL_PATH.
+assert.equal(plan.steps.find((step) => step.id === 'download-atlas-model').destination, `/models/${checkpointDir}`);
 assert.deepEqual(plan.steps.find((step) => step.id === 'build-atlas-image').command, [
   'bash',
   `${root}/backends/atlas-sparkglm/install.sh`,
@@ -284,19 +286,9 @@ assert.deepEqual(plan.steps.find((step) => step.id === 'build-atlas-image').comm
   '--install-root',
   '/install'
 ]);
-assert.deepEqual(plan.steps.find((step) => step.id === 'convert-atlas-overlay').command, [
-  'bash',
-  `${root}/backends/atlas-sparkglm/convert-overlay.sh`,
-  '--backend-root',
-  '/backend',
-  '--install-root',
-  '/install',
-  '--model-root',
-  '/models'
-]);
 
 // Recorded completion cannot make an always-run revalidation gate ready. This
-// guards the setup-status view against advertising a stale image or overlay
+// guards the setup-status view against advertising a stale image
 // after the recipe pins or host artifacts change.
 const statusRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-status-'));
 const statusStatePath = path.join(statusRoot, 'install-state.json');
@@ -314,10 +306,7 @@ await fs.promises.writeFile(
       recipes: {
         [recipe.id]: {
           steps: Object.fromEntries(
-            ['verify-atlas-pins', 'build-atlas-image', 'convert-atlas-overlay'].map((id) => [
-              id,
-              { status: 'completed' }
-            ])
+            ['verify-atlas-pins', 'build-atlas-image'].map((id) => [id, { status: 'completed' }])
           )
         }
       }
@@ -356,7 +345,7 @@ const status = await createSetupStatus(
     }
   }
 );
-for (const stepId of ['verify-atlas-pins', 'build-atlas-image', 'convert-atlas-overlay']) {
+for (const stepId of ['verify-atlas-pins', 'build-atlas-image']) {
   const step = status.recipe.steps.find((candidate) => candidate.id === stepId);
   assert.equal(step.status, 'revalidation-required', `${stepId} status must require a fresh run`);
   assert.equal(step.ready, true, 'recorded completion remains ready for status display');
@@ -370,8 +359,6 @@ assert.equal(backendPinStatus.reason, 'always-run-next-apply');
 fs.rmSync(statusRoot, { recursive: true, force: true });
 
 // Runtime materialization must resolve the same managed paths used by setup.
-// Absolute source/output mounts are required because the converter can emit
-// absolute symlinks into the overlay.
 const materialize = (recipeDocument) =>
   deriveUserConfig(
     {
@@ -448,9 +435,9 @@ for (const runtimeId of ['glm53-flash-atlas-worker', 'glm53-flash-atlas-head']) 
   assert(runtime);
   assert(!JSON.stringify(runtime).includes('${'), `${runtimeId} has an unresolved runtime template`);
   const args = runtime.bootstrap.createArgs.join(' ');
-  assert(args.includes('src=/models/nvidia--GLM-5.3-Flash-NVFP4,dst=/models/nvidia--GLM-5.3-Flash-NVFP4'));
-  assert(args.includes('src=/install/atlas-overlay,dst=/install/atlas-overlay'));
-  assert(args.includes('MODEL_PATH=/install/atlas-overlay'));
+  assert(args.includes(`src=/models/${checkpointDir},dst=/models/${checkpointDir},readonly`));
+  assert(args.includes(`-e MODEL_PATH=/models/${checkpointDir} `));
+  assert(!args.includes('atlas-overlay'));
   assert(args.includes('src=/install/atlas-prefix-cache,dst=/prefix-cache'));
   assert(args.includes('-e SPARKGLM_PREFIX_CACHE_GB=48 '));
   assert(args.includes('-e SPARKGLM_KV_SHARD=1 '));
@@ -525,22 +512,29 @@ for (const runtimeId of ['glm53-flash-atlas-worker', 'glm53-flash-atlas-head']) 
 }
 
 // ---- final portable pins and explicit invalid-manifest fixture -------------
-assert.equal(pins.model.revision, '423acf37583782c51c142d145aef733d72943d93');
-assert.equal(pins.model.repo, 'nvidia/GLM-5.3-Flash-NVFP4');
+assert.equal(pins.model.revision, '76348ddb2be2e35e39ecfc00e75dc07703f4f3d5');
+assert.equal(pins.model.repo, 'nvidia/GLM-5.3-Flash-FP4-Local');
+assert.equal(pins.model.repo.replace('/', '--'), checkpointDir);
 assert.equal(pins.source.repo, 'Enntity/sparkglm');
 assert.equal(pins.status, 'final');
-assert.equal(pins.source.revision, '4dee61dcb522d6f3d2246c920ce1a52d87548c71');
-assert.equal(pins.source.installTree, '2b2970c2f05d346fa934da8df8f7d3ba551e07c3');
+assert.equal(pins.source.revision, 'c28da418444e954323ee885ffc3954965794a679');
+assert.equal(pins.source.installTree, 'c8ced64316bf0b9b2b116d6a0bcdfca52064545b');
+// The engine commit the image records in /opt/atlas/source-manifest.json.
+assert.deepEqual(pins.engine, {
+  repo: 'Enntity/atlas',
+  branch: 'sparkglm/atlas-20261017-fp4local',
+  commit: 'b3b016ab7e91b73bea220b7280c9e9aa1a2cfb13'
+});
 assert.equal(pins.source.buildScript, 'install/build.sh');
 // The normal install path addresses the immutable registry digest, not the
 // mutable tag. The tag stays as source-build metadata only.
 assert.equal(
   pins.image.reference,
-  'ghcr.io/enntity/atlas-sparkglm@sha256:94b837ef3ea7b3f54c158ce568e611405b1bd167edd56c734d8e90d2d6291cb6'
+  'ghcr.io/enntity/atlas-sparkglm@sha256:0b91fd790afb2ee3aa5a7f39a0bc5a90db05751436ae7810e00f129c36ebbb7b'
 );
 assert.match(pins.image.reference, IMAGE_REFERENCE_PATTERN);
 assert.equal(pins.image.reference.split('@')[0], IMAGE_REPOSITORY);
-assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkglm:2b2970c2f05d');
+assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkglm:c8ced64316bf');
 assert.equal(pins.image.label, 'io.enntity.sparkglm.install-tree');
 assert.equal(pins.image.architecture, 'arm64');
 assert.equal(pins.image.entrypoint, '/opt/atlas/serve.py');
@@ -548,8 +542,12 @@ assert.equal(pins.image.entrypoint, '/opt/atlas/serve.py');
 assert(!Object.hasOwn(pins, 'installer'));
 assert(!Object.hasOwn(pins.image, 'tagPrefix'));
 assert.notEqual(pins.image.reference, pins.image.tag, 'the digest must not be the mutable tag');
-assert(!pins.image.reference.includes(':2b2970c2f05d'), 'the tag must never appear as the pulled reference');
-assert(pins.overlay.marker.includes('conversion.complete.json'));
+assert(!pins.image.reference.includes(':c8ced64316bf'), 'the tag must never appear as the pulled reference');
+// No conversion step remains.
+assert(!Object.hasOwn(pins, 'overlay'));
+assert(!Object.hasOwn(pins, 'converter'));
+assert(!fs.existsSync(path.join(backendDir, 'convert-overlay.sh')));
+assert(!fs.existsSync(path.join(backendDir, 'conversion-headroom.mjs')));
 assert.deepEqual(verifyPins(pins), []);
 
 const verifyRun = spawnSync('node', [path.join(backendDir, 'verify-pins.mjs')], { encoding: 'utf8' });
@@ -561,8 +559,7 @@ const finalManifest = {
   ...pins,
   status: 'final',
   source: { ...pins.source, revision: 'a'.repeat(40), installTree: 'b'.repeat(40) },
-  image: { ...pins.image },
-  overlay: { ...pins.overlay }
+  image: { ...pins.image }
 };
 finalManifest.image.tag = imageTagFor(finalManifest);
 assert.deepEqual(verifyPins(finalManifest), []);
@@ -636,9 +633,32 @@ assert(
   verifyPins({ ...finalManifest, model: { ...finalManifest.model, revision: 'main' } }).length > 0,
   'the model revision must stay pinned'
 );
+assert(
+  verifyPins({
+    ...finalManifest,
+    model: { repo: 'nvidia/GLM-5.3-Flash-NVFP4', revision: '423acf37583782c51c142d145aef733d72943d93' }
+  }).length > 0,
+  'the default recipe serves FP4-Local; the NVFP4 checkpoint needs an overlay this recipe no longer prepares'
+);
+for (const commit of [undefined, 'b3b016ab', 'B'.repeat(40), 'DRAFT_ENGINE_COMMIT']) {
+  assert(
+    verifyPins({ ...finalManifest, engine: { ...finalManifest.engine, commit } }).length > 0,
+    `engine.commit ${commit} must be rejected`
+  );
+}
+// install.sh interpolates these into an in-image check command.
+for (const [name, value] of [
+  ['entrypoint', "/opt/atlas/serve.py' ; true '"],
+  ['profilePath', '/etc/passwd']
+]) {
+  assert(
+    verifyPins({ ...finalManifest, image: { ...finalManifest.image, [name]: value } }).length > 0,
+    `image.${name} ${value} must be rejected`
+  );
+}
 
-// The installers must refuse a temporary invalid manifest before touching
-// Docker, source checkouts, or model/overlay state.
+// The installer must refuse a temporary invalid manifest before touching
+// Docker or source checkouts.
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-pins-'));
 const invalidManifestPath = path.join(tmpRoot, 'invalid-pins.json');
 const invalidManifest = JSON.parse(JSON.stringify(pins));
@@ -660,75 +680,19 @@ const installRun = spawnSync(
 assert.notEqual(installRun.status, 0, 'install.sh must fail closed while DRAFT');
 assert.match(`${installRun.stdout}${installRun.stderr}`, /DRAFT|draft/i);
 
-const convertRun = spawnSync(
-  'bash',
-  [
-    path.join(backendDir, 'convert-overlay.sh'),
-    '--backend-root',
-    tmpRoot,
-    '--install-root',
-    tmpRoot,
-    '--model-root',
-    path.join(tmpRoot, 'models'),
-    '--manifest',
-    invalidManifestPath
-  ],
-  { encoding: 'utf8' }
-);
-assert.notEqual(convertRun.status, 0, 'convert-overlay.sh must fail closed while DRAFT');
-assert.match(`${convertRun.stdout}${convertRun.stderr}`, /DRAFT|draft/i);
-
-// A directory alone never counts as a converted overlay.
-const overlayRoot = path.join(tmpRoot, 'atlas-overlay');
-fs.mkdirSync(overlayRoot, { recursive: true });
-const verifyOverlay = spawnSync(
-  'bash',
-  [
-    path.join(backendDir, 'convert-overlay.sh'),
-    '--backend-root',
-    tmpRoot,
-    '--install-root',
-    tmpRoot,
-    '--overlay-root',
-    overlayRoot,
-    '--verify-only'
-  ],
-  { encoding: 'utf8' }
-);
-assert.notEqual(verifyOverlay.status, 0, 'an empty overlay directory must not verify');
-for (const unsafeOverlay of ['/', tmpRoot]) {
-  const rejected = spawnSync(
-    'bash',
-    [
-      path.join(backendDir, 'convert-overlay.sh'),
-      '--backend-root',
-      tmpRoot,
-      '--model-root',
-      path.join(tmpRoot, 'models'),
-      '--overlay-root',
-      unsafeOverlay,
-      '--force'
-    ],
-    { encoding: 'utf8' }
-  );
-  assert.notEqual(rejected.status, 0);
-  assert.match(rejected.stderr, /overlay must be separate/);
-}
 fs.rmSync(tmpRoot, { recursive: true, force: true });
 
-// ---- shell scripts and installers must parse -------------------------------
-for (const script of ['install.sh', 'convert-overlay.sh']) {
-  const check = spawnSync('bash', ['-n', path.join(backendDir, script)], { encoding: 'utf8' });
-  assert.equal(check.status, 0, `${script}: ${check.stderr}`);
-}
+// ---- the installer must parse ---------------------------------------------
+const installSyntax = spawnSync('bash', ['-n', path.join(backendDir, 'install.sh')], { encoding: 'utf8' });
+assert.equal(installSyntax.status, 0, installSyntax.stderr);
 
-// ---- image identity, installer re-entry and converter compatibility --------
+// ---- image identity and installer re-entry ---------------------------------
 // A fake Docker CLI keeps this test CPU-only while exercising the real shell
 // control flow and pin checks. The image "exists" unless ATLAS_TEST_IMAGE_DIR
 // is set, in which case only `docker pull` creates it. ATLAS_TEST_IDENTITY
 // overrides the inspected "<architecture> <install-tree label>".
-const converterRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-converter-'));
-const fakeBin = path.join(converterRoot, 'bin');
+const installerRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-installer-'));
+const fakeBin = path.join(installerRoot, 'bin');
 const fakeDocker = path.join(fakeBin, 'docker');
 fs.mkdirSync(fakeBin, { recursive: true });
 fs.writeFileSync(
@@ -755,15 +719,14 @@ if [[ "\${1:-}" == "pull" ]]; then
   [[ -n "\${ATLAS_TEST_IMAGE_DIR:-}" ]] && touch "\${ATLAS_TEST_IMAGE_DIR}/present"
   exit 0
 fi
-if [[ "\${1:-}" == "ps" ]]; then exit 0; fi
 if [[ "\${1:-}" == "run" ]]; then
   joined="$*"
   [[ "\${joined}" == *"\${ATLAS_TEST_REFERENCE:-${pins.image.reference}}"* || "\${ATLAS_TEST_ALLOW_LOCAL:-0}" == "1" ]] || { echo "run must use immutable image reference" >&2; exit 2; }
+  # The in-image contract checks the entrypoint, the profile and the engine commit.
+  for expected in '${pins.image.entrypoint}' '${pins.image.profilePath}' '"${pins.engine.commit}"' /opt/atlas/source-manifest.json; do
+    [[ "\${joined}" == *"\${expected}"* ]] || { echo "contract check misses \${expected}" >&2; exit 2; }
+  done
   if [[ "\${ATLAS_TEST_MISSING_CONTRACT:-0}" == "1" ]]; then exit 1; fi
-  if [[ "\${joined}" == *sha256sum* ]]; then
-    echo "${'c'.repeat(64)}  ${pins.converter.inImagePath}"
-    echo "${'d'.repeat(64)}  ${pins.converter.library}"
-  fi
   exit 0
 fi
 echo "unexpected fake docker invocation: $*" >&2
@@ -772,50 +735,8 @@ exit 2
   { mode: 0o755 }
 );
 
-const converterInstallRoot = path.join(converterRoot, 'install');
-const converterModelRoot = path.join(converterRoot, 'models');
-const converterBackendRoot = path.join(converterRoot, 'backend');
-const converterOverlayRoot = path.join(converterRoot, 'overlay');
-const modelPath = path.join(converterModelRoot, 'nvidia--GLM-5.3-Flash-NVFP4');
-fs.mkdirSync(modelPath, { recursive: true });
-fs.writeFileSync(path.join(modelPath, 'config.json'), '{}\n');
-fs.writeFileSync(
-  path.join(modelPath, '.lloom-acquisition.json'),
-  `${JSON.stringify({ revision: pins.model.revision })}\n`
-);
-
-const converterScriptSha = 'c'.repeat(64);
-const converterLibrarySha = 'd'.repeat(64);
-const writeConversionIdentity = (manifest, overlayPath = converterOverlayRoot) =>
-  fs.writeFileSync(
-    path.join(overlayPath, `${manifest.overlay.marker}.identity.json`),
-    `${JSON.stringify({
-      version: 1,
-      model: { repo: manifest.model.repo, revision: manifest.model.revision },
-      converter: {
-        path: manifest.converter.inImagePath,
-        sha256: converterScriptSha,
-        library: manifest.converter.library,
-        librarySha256: converterLibrarySha
-      }
-    })}\n`
-  );
-const writeConversionFixture = (manifest, overlayPath = converterOverlayRoot) => {
-  fs.mkdirSync(overlayPath, { recursive: true });
-  fs.writeFileSync(
-    path.join(overlayPath, manifest.overlay.marker),
-    `${JSON.stringify({
-      converted_matrices: manifest.converter.expectedMatrices,
-      shards: { fixture: {} },
-      source: modelPath,
-      output: overlayPath,
-      finished: 1
-    })}\n`
-  );
-  writeConversionIdentity(manifest, overlayPath);
-};
-
-writeConversionFixture(pins);
+const installerInstallRoot = path.join(installerRoot, 'install');
+const installerBackendRoot = path.join(installerRoot, 'backend');
 const fakeEnv = { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` };
 const wrongTreeEnv = { ...fakeEnv, ATLAS_TEST_IDENTITY: `arm64 ${'f'.repeat(40)}` };
 const runInstaller = (env = fakeEnv, extra = []) =>
@@ -824,9 +745,9 @@ const runInstaller = (env = fakeEnv, extra = []) =>
     [
       path.join(backendDir, 'install.sh'),
       '--backend-root',
-      converterBackendRoot,
+      installerBackendRoot,
       '--install-root',
-      converterInstallRoot,
+      installerInstallRoot,
       ...extra
     ],
     { encoding: 'utf8', env }
@@ -836,13 +757,13 @@ assert.equal(checkedImage.status, 0, `${checkedImage.stdout}\n${checkedImage.std
 assert.match(checkedImage.stdout, new RegExp(`${pins.image.label}=${pins.source.installTree}`));
 const missingImageContract = runInstaller({ ...fakeEnv, ATLAS_TEST_MISSING_CONTRACT: '1' }, ['--check-only']);
 assert.notEqual(missingImageContract.status, 0, 'a matching label must not hide missing image artifacts');
-assert.match(missingImageContract.stderr, /missing the Atlas entrypoint\/profile contract/);
+assert.match(missingImageContract.stderr, new RegExp(`engine commit ${pins.engine.commit}`));
 for (const identity of [`arm64 ${'f'.repeat(40)}`, `amd64 ${pins.source.installTree}`, 'arm64 <no value>']) {
   const mismatched = runInstaller({ ...fakeEnv, ATLAS_TEST_IDENTITY: identity }, ['--check-only']);
   assert.notEqual(mismatched.status, 0, `--check-only must reject image identity ${identity}`);
-  assert.match(mismatched.stderr, /expected 'arm64 2b2970c2f05d346fa934da8df8f7d3ba551e07c3'/);
+  assert.match(mismatched.stderr, /expected 'arm64 c8ced64316bf0b9b2b116d6a0bcdfca52064545b'/);
 }
-const noImageDir = fs.mkdtempSync(path.join(converterRoot, 'no-image-'));
+const noImageDir = fs.mkdtempSync(path.join(installerRoot, 'no-image-'));
 const checkedMissingImage = runInstaller({ ...fakeEnv, ATLAS_TEST_IMAGE_DIR: noImageDir }, ['--check-only']);
 assert.notEqual(checkedMissingImage.status, 0, '--check-only must not pull a missing image');
 assert.match(checkedMissingImage.stderr, /not present locally/);
@@ -853,13 +774,13 @@ const reentered = runInstaller();
 assert.equal(reentered.status, 0, `${reentered.stdout}\n${reentered.stderr}`);
 assert.match(reentered.stdout, /existing image .* verified; skipping pull/);
 // A missing image is pulled from GHCR and then verified.
-const pullImageDir = fs.mkdtempSync(path.join(converterRoot, 'pull-'));
+const pullImageDir = fs.mkdtempSync(path.join(installerRoot, 'pull-'));
 const pulled = runInstaller({ ...fakeEnv, ATLAS_TEST_IMAGE_DIR: pullImageDir });
 assert.equal(pulled.status, 0, `${pulled.stdout}\n${pulled.stderr}`);
 assert.match(pulled.stdout, /pulling ghcr\.io\/enntity\/atlas-sparkglm@sha256:/);
 assert.match(pulled.stdout, /image prepared/);
 // A digest failure must never fall through to source checkout/build.
-const blockedSource = path.join(converterInstallRoot, 'sources', `atlas-sparkglm-${pins.source.revision}`);
+const blockedSource = path.join(installerInstallRoot, 'sources', `atlas-sparkglm-${pins.source.revision}`);
 const wrongContents = runInstaller(wrongTreeEnv);
 assert.notEqual(wrongContents.status, 0);
 assert.match(wrongContents.stderr, /refusing to build from source silently/);
@@ -906,92 +827,7 @@ const localBuild = runInstaller({ ...fakeEnv, ATLAS_TEST_ALLOW_LOCAL: '1' }, ['-
 assert.equal(localBuild.status, 0, `${localBuild.stdout}\n${localBuild.stderr}`);
 assert.match(localBuild.stdout, /source build produced LOCAL tag/);
 assert.match(localBuild.stdout, /does not satisfy the normal immutable recipe/);
-fs.rmSync(path.join(converterInstallRoot, 'sources'), { recursive: true, force: true });
-
-const runConverter = (manifestPath = path.join(backendDir, 'pins.json'), env = fakeEnv, extra = []) =>
-  spawnSync(
-    'bash',
-    [
-      path.join(backendDir, 'convert-overlay.sh'),
-      '--backend-root',
-      converterBackendRoot,
-      '--install-root',
-      converterInstallRoot,
-      '--model-root',
-      converterModelRoot,
-      '--overlay-root',
-      converterOverlayRoot,
-      '--manifest',
-      manifestPath,
-      ...extra
-    ],
-    { encoding: 'utf8', env }
-  );
-
-const reused = runConverter();
-assert.equal(reused.status, 0, `${reused.stdout}\n${reused.stderr}`);
-assert.match(reused.stdout, /already carries.*skipping/);
-assert(fs.existsSync(path.join(converterOverlayRoot, pins.overlay.marker)));
-
-const tagOnlyConverter = runConverter(undefined, { ...fakeEnv, ATLAS_TEST_TAG_ONLY: '1' });
-assert.notEqual(tagOnlyConverter.status, 0, 'conversion requires the digest in normal mode');
-const localConverter = runConverter(undefined, { ...fakeEnv, ATLAS_TEST_TAG_ONLY: '1', ATLAS_TEST_ALLOW_LOCAL: '1' }, [
-  '--source-build'
-]);
-assert.equal(localConverter.status, 0, `${localConverter.stdout}\n${localConverter.stderr}`);
-
-const wrongImage = runConverter(undefined, wrongTreeEnv);
-assert.notEqual(wrongImage.status, 0, 'conversion must refuse an image without the pinned install tree');
-assert.match(wrongImage.stderr, /Rerun install\.sh/);
-const missingImage = runConverter(undefined, { ...fakeEnv, ATLAS_TEST_IMAGE_DIR: noImageDir });
-assert.notEqual(missingImage.status, 0);
-assert.match(missingImage.stderr, /is not present; run backends\/atlas-sparkglm\/install\.sh/);
-
-fs.writeFileSync(
-  path.join(modelPath, '.lloom-acquisition.json'),
-  `${JSON.stringify({ revision: 'wrong-acquisition' })}\n`
-);
-const staleModel = runConverter();
-assert.notEqual(staleModel.status, 0);
-assert.match(`${staleModel.stdout}${staleModel.stderr}`, /not pinned|acquisition revision/);
-assert(
-  fs.existsSync(path.join(converterOverlayRoot, pins.overlay.marker)),
-  'stale acquisition must not remove the overlay'
-);
-fs.writeFileSync(
-  path.join(modelPath, '.lloom-acquisition.json'),
-  `${JSON.stringify({ revision: pins.model.revision })}\n`
-);
-
-const identityPath = path.join(converterOverlayRoot, `${pins.overlay.marker}.identity.json`);
-const incompatibleIdentity = JSON.parse(fs.readFileSync(identityPath, 'utf8'));
-incompatibleIdentity.converter.sha256 = 'e'.repeat(64);
-fs.writeFileSync(identityPath, `${JSON.stringify(incompatibleIdentity)}\n`);
-const staleConverter = runConverter();
-assert.notEqual(staleConverter.status, 0);
-assert.match(`${staleConverter.stdout}${staleConverter.stderr}`, /incompatible|--force/);
-assert(fs.existsSync(identityPath), 'incompatible conversion must be preserved for explicit recovery');
-
-// Change only the source revision and install tree (and so the image). The
-// same model revision and converter content still make the completed overlay
-// reusable.
-const movedPins = JSON.parse(JSON.stringify(pins));
-movedPins.source.revision = 'a'.repeat(40);
-movedPins.source.installTree = 'b'.repeat(40);
-movedPins.image.tag = imageTagFor(movedPins);
-movedPins.image.reference = `${IMAGE_REPOSITORY}@sha256:${'e'.repeat(64)}`;
-const movedManifestPath = path.join(converterRoot, 'moved-pins.json');
-fs.writeFileSync(movedManifestPath, `${JSON.stringify(movedPins, null, 2)}\n`);
-// Restore a compatible identity for this independent source revision case.
-writeConversionIdentity(pins);
-const reusedAfterSourceMove = runConverter(movedManifestPath, {
-  ...fakeEnv,
-  ATLAS_TEST_IDENTITY: `arm64 ${movedPins.source.installTree}`,
-  ATLAS_TEST_REFERENCE: movedPins.image.reference
-});
-assert.equal(reusedAfterSourceMove.status, 0, `${reusedAfterSourceMove.stdout}\n${reusedAfterSourceMove.stderr}`);
-assert.match(reusedAfterSourceMove.stdout, /already carries.*skipping/);
-fs.rmSync(converterRoot, { recursive: true, force: true });
+fs.rmSync(installerRoot, { recursive: true, force: true });
 
 // ---- the recipe must be indexed -------------------------------------------
 const index = JSON.parse(await fs.promises.readFile(path.join(root, 'recipes', 'index.json'), 'utf8'));
@@ -1001,10 +837,7 @@ assert.equal(entry.path, 'linux-nvidia-dgx-spark-2x-glm53-atlas.json');
 assert.equal(entry.currentVersion, recipe.version);
 assert.equal(entry.versions.filter((version) => version.status === 'current').length, 1);
 assert.equal(entry.versions.find((version) => version.status === 'current').path, entry.path);
+assert.match(entry.summary, /FP4-Local/);
+assert.doesNotMatch(`${entry.summary} ${entry.versions[0].notes}`, /overlay/i);
 
 console.log('Atlas SparkGLM recipe/backend integration checks passed');
-
-assert.equal(conversionHeadroomMiB('9000\n8500\n', 'NVIDIA A100\nNVIDIA A100', ''), 8500);
-assert.equal(conversionHeadroomMiB('[N/A]\n', 'NVIDIA GB10\n', 'MemAvailable: 9437184 kB\n'), 9216);
-assert.throws(() => conversionHeadroomMiB('[N/A]', 'NVIDIA A100', 'MemAvailable: 9437184 kB'), /not GB10/);
-assert.throws(() => conversionHeadroomMiB('[N/A]', 'NVIDIA GB10', ''), /MemAvailable/);

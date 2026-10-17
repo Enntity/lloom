@@ -3,10 +3,10 @@
   "schemaVersion": 1,
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-2x-glm53-atlas",
-  "name": "2x DGX Spark GLM-5.3 Flash NVFP4 Atlas",
+  "name": "2x DGX Spark GLM-5.3 Flash FP4-Local Atlas",
   "version": 1,
-  "summary": "Candidate lane for two directly connected Sparks running Atlas SparkGLM over the private fabric, serving GLM-5.3-Flash-NVFP4 from a once-per-node overlay conversion with 1048576-token contexts for four concurrent requests and DFlash2 speculative decoding. Additive only: no default model, no aliases overwritten.",
-  "description": "This recipe installs the Atlas SparkGLM candidate at the immutable product revision recorded in backends/atlas-sparkglm/pins.json. LLooM owns orchestration, admission, worker-first startup, readiness, routing and telemetry. The Atlas engine image is built from Enntity/sparkglm by that repository's install/build.sh; LLooM commits no engine source. The engine (Atlas-Inf/atlas with SparkGLM's work on the Enntity/atlas fork) is AGPL-3.0-only and runs from its own container image, and the DFlash2 drafter weights are CC BY-NC-ND 4.0 (non-commercial). Setup acquires the pinned model, pulls the pinned image from GHCR by its immutable manifest digest (image.reference in the pin manifest; the mutable tag is never pulled), performs the overlay conversion, and the serving path only ever starts the prepared image. Each node verifies the pulled image by the io.enntity.sparkglm.install-tree contents label and arm64 architecture; the label is a contents check, not the artifact identity. Explicit --source-build is only for users who want a local build from the pinned source, and it produces a LOCAL tag for an explicitly overridden local recipe, not the immutable recipe. The candidate includes structured output and tool calls plus image/video input; live hardware and full serving qualification remain pending.",
+  "summary": "Two directly connected Sparks running Atlas SparkGLM over the private fabric, serving nvidia/GLM-5.3-Flash-FP4-Local as published with 1048576-token contexts for four concurrent requests and DFlash2 speculative decoding. Additive only: no default model, no aliases overwritten.",
+  "description": "This recipe installs the Atlas SparkGLM FP4-Local release at the immutable product revision recorded in backends/atlas-sparkglm/pins.json. LLooM owns orchestration, admission, worker-first startup, readiness, routing and telemetry. The Atlas engine image is built from Enntity/sparkglm by that repository's install/build.sh; LLooM commits no engine source. The engine (Atlas-Inf/atlas with SparkGLM's work on the Enntity/atlas fork) is AGPL-3.0-only and runs from its own container image, and the DFlash2 drafter weights are CC BY-NC-ND 4.0 (non-commercial). Setup acquires the pinned checkpoint and drafter and pulls the pinned image from GHCR by its immutable manifest digest (image.reference in the pin manifest; the mutable tag is never pulled); the serving path only ever starts the prepared image. nvidia/GLM-5.3-Flash-FP4-Local ships its MTP layer quantized, so the image serves the acquired checkpoint directly: there is no conversion step and no overlay. Each node verifies the pulled image by the io.enntity.sparkglm.install-tree contents label, arm64 architecture and the pinned engine commit; the label is a contents check, not the artifact identity. Explicit --source-build is only for users who want a local build from the pinned source, and it produces a LOCAL tag for an explicitly overridden local recipe, not the immutable recipe. The release includes structured output and tool calls plus image/video input; the release image qualified on a DGX Spark pair (Enntity/sparkglm results/2026-10-17-fp4local) and serves in production with this profile.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata, launcher and orchestration"
@@ -14,7 +14,7 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "Atlas SparkGLM candidate at product revision 4dee61dcb522d6f3d2246c920ce1a52d87548c71 (engine Enntity/atlas sparkglm/atlas-20261014-vpc @ 289cefbc, AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json; corresponding source is Enntity/sparkglm at that revision plus that Enntity/atlas commit). The normal install path pulls the immutable GHCR manifest digest ghcr.io/enntity/atlas-sparkglm@sha256:94b837ef3ea7b3f54c158ce568e611405b1bd167edd56c734d8e90d2d6291cb6; the tag ghcr.io/enntity/atlas-sparkglm:2b2970c2f05d is source-build metadata and is never pulled. Each host verifies the pulled image's io.enntity.sparkglm.install-tree contents label equals install tree 2b2970c2f05d346fa934da8df8f7d3ba551e07c3 and the image is arm64; the label is a contents check, not an artifact identity. An explicit --source-build builds from Enntity/sparkglm install/ at that revision and produces a LOCAL tag for an explicitly overridden local recipe only, and does not satisfy the normal immutable recipe. Model nvidia/GLM-5.3-Flash-NVFP4 revision 423acf37583782c51c142d145aef733d72943d93 requires a once-per-node overlay conversion gated on conversion.complete.json plus verification; the DFlash2 drafter incoai/GLM-5.3-Flash-DFlash2 revision 7d74cdd881ed7e32c31175984a67823127b66cfe (CC BY-NC-ND 4.0, non-commercial) is served from its checkpoint. The engine argument vector ships inside the image as /opt/atlas/profiles/4x1m.json, selected with SPARKGLM_PROFILE=4x1m, not in this recipe. The profile carries 1048576-token contexts, four sequences sharing one physical KV pool (GLM latent in FP8 with per-128 scales, split between the two nodes by SPARKGLM_KV_SHARD=1, qualified at about 2.38M tokens at the recipe's 0.91 GPU memory utilization with the display carveout, which overrides the profile default of 0.88, and shared with the disk prefix cache; the 48 GiB disk prefix-cache tier is enabled beside the shard, split into 24 GiB KV and 24 GiB SSM tiers per node), FP32 SSM state with KDA record rollback, and DFlash2 (gamma 8) on the head rank; disable-tool-grammar is deliberately not set so structured output and tools stay functional."
+    "source": "Atlas SparkGLM FP4-Local release at product revision c28da418444e954323ee885ffc3954965794a679 (engine Enntity/atlas sparkglm/atlas-20261017-fp4local @ b3b016ab7e91b73bea220b7280c9e9aa1a2cfb13, AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json; corresponding source is Enntity/sparkglm at that revision plus that Enntity/atlas commit). The normal install path pulls the immutable GHCR manifest digest ghcr.io/enntity/atlas-sparkglm@sha256:0b91fd790afb2ee3aa5a7f39a0bc5a90db05751436ae7810e00f129c36ebbb7b; the tag ghcr.io/enntity/atlas-sparkglm:c8ced64316bf is source-build metadata and is never pulled. Each host verifies the pulled image's io.enntity.sparkglm.install-tree contents label equals install tree c8ced64316bf0b9b2b116d6a0bcdfca52064545b, the image is arm64 and its source manifest names the pinned engine commit; the label is a contents check, not an artifact identity. An explicit --source-build builds from Enntity/sparkglm install/ at that revision and produces a LOCAL tag for an explicitly overridden local recipe only, and does not satisfy the normal immutable recipe. Model nvidia/GLM-5.3-Flash-FP4-Local revision 76348ddb2be2e35e39ecfc00e75dc07703f4f3d5 (NVIDIA Open Model Agreement; base model MIT) is served as published, with no overlay; the DFlash2 drafter incoai/GLM-5.3-Flash-DFlash2 revision 7d74cdd881ed7e32c31175984a67823127b66cfe (CC BY-NC-ND 4.0, non-commercial) is served from its checkpoint. The engine argument vector ships inside the image as /opt/atlas/profiles/4x1m.json, selected with SPARKGLM_PROFILE=4x1m, not in this recipe. The profile carries 1048576-token contexts, four sequences sharing one physical KV pool (GLM latent in FP8 with per-128 scales, split between the two nodes by SPARKGLM_KV_SHARD=1, about 2.6M tokens at the recipe's 0.91 GPU memory utilization with the display carveout, which overrides the profile default of 0.88, and shared with the disk prefix cache; the 48 GiB disk prefix-cache tier is enabled beside the shard, split into 24 GiB KV and 24 GiB SSM tiers per node), FP32 SSM state with KDA record rollback, and DFlash2 (gamma 8) on the head rank; disable-tool-grammar is deliberately not set so structured output and tools stay functional. Release qualification on a DGX Spark pair with this image (Enntity/sparkglm results/2026-10-17-fp4local): prompt-logprob hash 25bc828eea3f, tools 21/21, ToolEvalBench 91."
   },
   "links": [
     {
@@ -23,7 +23,7 @@
     },
     {
       "rel": "engine",
-      "href": "https://github.com/Enntity/atlas/tree/289cefbccdd6c13117228863c7237da17e47a92a"
+      "href": "https://github.com/Enntity/atlas/tree/b3b016ab7e91b73bea220b7280c9e9aa1a2cfb13"
     },
     {
       "rel": "engine-upstream",
@@ -31,7 +31,7 @@
     },
     {
       "rel": "model",
-      "href": "https://huggingface.co/nvidia/GLM-5.3-Flash-NVFP4/tree/423acf37583782c51c142d145aef733d72943d93"
+      "href": "https://huggingface.co/nvidia/GLM-5.3-Flash-FP4-Local/tree/76348ddb2be2e35e39ecfc00e75dc07703f4f3d5"
     },
     {
       "rel": "draft-model",
@@ -46,11 +46,11 @@
     "glm-5.3",
     "flash",
     "nvfp4",
+    "fp4-local",
     "atlas",
     "sparkglm",
     "source-build",
-    "dflash",
-    "candidate"
+    "dflash"
   ],
   "capabilities": [
     "chat",
@@ -69,13 +69,13 @@
     "family": "NVIDIA DGX Spark / GB10",
     "testedMachine": "Two directly connected DGX Spark systems",
     "notes": [
-      "Candidate lane: no live hardware qualification has been recorded through LLooM yet. The profile and capability claims below come from the source build and focused checks; gateway and two-node serving canaries remain required before treating this recipe as qualified.",
+      "The release image qualified on a DGX Spark pair (Enntity/sparkglm results/2026-10-17-fp4local: prompt-logprob hash 25bc828eea3f, tools 21/21, ToolEvalBench 91) and serves in production through LLooM with this profile.",
       "TP2 with expert parallelism 2 across the private ConnectX RoCE fabric. The direct-fabric address and NIC are discovered per node and passed as MASTER_ADDR and FABRIC_INTERFACE; the RoCE HCA is declared explicitly per node as cluster.nodes[ID].fabricHca (a comma-separated list of exact device names, no :port syntax) and passed as FABRIC_HCA and NCCL_IB_HCA with FABRIC_SIBLINGS=0, so the engine never silently adds a backchannel. No host-specific addresses or port names are pinned.",
       "The worker is admitted first (rank 1) and readiness-checked through its container state, because the Atlas engine has no separate worker HTTP surface. The leader starts second (rank 0) and owns routing.",
-      "The NVFP4 checkpoint requires a per-node overlay conversion before it can be served. LLooM treats the conversion as incomplete unless conversion.complete.json plus its recorded verification are present.",
-      "Licenses: the Atlas engine in the image is AGPL-3.0-only (Atlas-Inf/atlas with SparkGLM's work on Enntity/atlas; not included in LLooM). The default DFlash2 drafter incoai/GLM-5.3-Flash-DFlash2 is CC BY-NC-ND 4.0 (non-commercial); nvidia/GLM-5.3-Flash-NVFP4 is MIT per SparkGLM docs/LICENSING.md. Read each model card before use.",
-      "Both nodes must carry the same portable source, model and converter pins plus the same backend directory. The normal path addresses the pinned immutable digest (image.reference), so both hosts run the same artifact; each host verifies the pulled image's install-tree contents label and arm64 architecture. An explicit --source-build produces a LOCAL tag for an explicitly overridden local recipe only and does not satisfy the normal immutable recipe; image IDs may differ across such source builds.",
-      "Peak container memory is capped at 114 GiB with a 4096 MiB OOM guard. The profile's default GPU memory utilization is 0.88 and the recipe raises it to 0.91 through SPARKGLM_GPU_MEMORY_UTILIZATION (0.93 left rank 0 under 1 GiB free under real traffic). The KV budget counts weights, workspaces, SSM verify pools and the DFlash drafter; at 0.88, measured host headroom stayed above 8 GiB with four concurrent 190K-token requests. The 4x1m profile serves 1048576-token contexts to four sequences from one shared FP8-latent KV pool that SPARKGLM_KV_SHARD=1 splits between the ranks: about 2.38M tokens at 0.91 (with the GB10 display carveout lent to the KV cache and the disk prefix cache on; a four-session 204K fill left rank 0 at 4.8 GB free at worst), shared with the prefix cache; both ranks agree on the smaller pool. The disk prefix-cache tier (prefixCacheGb 48) runs beside the shard: each node spills and restores only the latents it owns. Configure explicit LLooM utilization 0.97 and reserve 4 GiB on both nodes while keeping enforcement active."
+      "nvidia/GLM-5.3-Flash-FP4-Local ships its MTP layer quantized, so it is served directly from the acquired checkpoint: no conversion step and no overlay. The earlier nvidia/GLM-5.3-Flash-NVFP4 checkpoint needs an MTP overlay that this recipe does not prepare; Enntity/sparkglm's own start.sh still serves it.",
+      "Licenses: the Atlas engine in the image is AGPL-3.0-only (Atlas-Inf/atlas with SparkGLM's work on Enntity/atlas; not included in LLooM). The default DFlash2 drafter incoai/GLM-5.3-Flash-DFlash2 is CC BY-NC-ND 4.0 (non-commercial); nvidia/GLM-5.3-Flash-FP4-Local is under the NVIDIA Open Model Agreement (base model MIT) per SparkGLM docs/LICENSING.md. Read each model card before use.",
+      "Both nodes must carry the same portable source, engine, model and drafter pins plus the same backend directory. The normal path addresses the pinned immutable digest (image.reference), so both hosts run the same artifact; each host verifies the pulled image's install-tree contents label and arm64 architecture. An explicit --source-build produces a LOCAL tag for an explicitly overridden local recipe only and does not satisfy the normal immutable recipe; image IDs may differ across such source builds.",
+      "Peak container memory is capped at 114 GiB with a 4096 MiB OOM guard. The profile's default GPU memory utilization is 0.88 and the recipe raises it to 0.91 through SPARKGLM_GPU_MEMORY_UTILIZATION (0.93 left rank 0 under 1 GiB free under real traffic). The KV budget counts weights, workspaces, SSM verify pools and the DFlash drafter; at 0.88, measured host headroom stayed above 8 GiB with four concurrent 190K-token requests. The 4x1m profile serves 1048576-token contexts to four sequences from one shared FP8-latent KV pool that SPARKGLM_KV_SHARD=1 splits between the ranks: about 2.6M tokens at 0.91 (with the GB10 display carveout lent to the KV cache and the disk prefix cache on; four concurrent ~204K-token sessions retrieved 12/12 in the release receipts), shared with the prefix cache; both ranks agree on the smaller pool. The disk prefix-cache tier (prefixCacheGb 48) runs beside the shard: each node spills and restores only the latents it owns. Configure explicit LLooM utilization 0.97 and reserve 4 GiB on both nodes while keeping enforcement active."
     ]
   },
   "requirements": {
@@ -128,11 +128,11 @@
       },
       {
         "id": "download-atlas-model",
-        "title": "Acquire the pinned GLM-5.3 Flash NVFP4 checkpoint",
+        "title": "Acquire the pinned GLM-5.3 Flash FP4-Local checkpoint",
         "action": "download-model",
         "provider": "huggingface",
-        "model": "nvidia/GLM-5.3-Flash-NVFP4",
-        "revision": "423acf37583782c51c142d145aef733d72943d93"
+        "model": "nvidia/GLM-5.3-Flash-FP4-Local",
+        "revision": "76348ddb2be2e35e39ecfc00e75dc07703f4f3d5"
       },
       {
         "id": "download-atlas-drafter",
@@ -157,22 +157,6 @@
         ]
       },
       {
-        "id": "convert-atlas-overlay",
-        "title": "Convert the GLM-5.3 Flash NVFP4 overlay for this node (once)",
-        "action": "command",
-        "alwaysRun": true,
-        "command": "bash",
-        "args": [
-          "${repoRoot}/backends/atlas-sparkglm/convert-overlay.sh",
-          "--backend-root",
-          "${backendRoot}",
-          "--install-root",
-          "${installRoot}",
-          "--model-root",
-          "${modelRoot}"
-        ]
-      },
-      {
         "id": "prepare-atlas-prefix-cache",
         "title": "Create the directories for the optional prefix cache on disk and the display-carveout lock",
         "action": "command",
@@ -190,8 +174,8 @@
   "models": [
     {
       "role": "default",
-      "name": "GLM-5.3 Flash NVFP4 on Atlas SparkGLM",
-      "model": "nvidia/GLM-5.3-Flash-NVFP4",
+      "name": "GLM-5.3 Flash FP4-Local on Atlas SparkGLM",
+      "model": "nvidia/GLM-5.3-Flash-FP4-Local",
       "gatewayModel": "glm-5.3-flash-atlas",
       "upstreamModel": "glm-5.3-flash-atlas",
       "runtime": "glm53-flash-atlas-cluster",
@@ -284,7 +268,7 @@
                 "warmup": false,
                 "bootstrap": {
                   "adapter": "docker",
-                  "image": "ghcr.io/enntity/atlas-sparkglm@sha256:94b837ef3ea7b3f54c158ce568e611405b1bd167edd56c734d8e90d2d6291cb6",
+                  "image": "ghcr.io/enntity/atlas-sparkglm@sha256:0b91fd790afb2ee3aa5a7f39a0bc5a90db05751436ae7810e00f129c36ebbb7b",
                   "pull": false,
                   "pullTimeoutMs": 3600000,
                   "createArgs": [
@@ -313,9 +297,7 @@
                     "--stop-timeout",
                     "60",
                     "--mount",
-                    "type=bind,src=${modelRoot}/nvidia--GLM-5.3-Flash-NVFP4,dst=${modelRoot}/nvidia--GLM-5.3-Flash-NVFP4,readonly",
-                    "--mount",
-                    "type=bind,src=${installRoot}/atlas-overlay,dst=${installRoot}/atlas-overlay,readonly",
+                    "type=bind,src=${modelRoot}/nvidia--GLM-5.3-Flash-FP4-Local,dst=${modelRoot}/nvidia--GLM-5.3-Flash-FP4-Local,readonly",
                     "--mount",
                     "type=bind,src=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2,dst=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2,readonly",
                     "--mount",
@@ -339,7 +321,7 @@
                     "-e",
                     "CLUSTER_NODE_COUNT=${clusterNodeCount}",
                     "-e",
-                    "MODEL_PATH=${installRoot}/atlas-overlay",
+                    "MODEL_PATH=${modelRoot}/nvidia--GLM-5.3-Flash-FP4-Local",
                     "-e",
                     "DRAFTER_PATH=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2",
                     "-e",
@@ -441,7 +423,7 @@
                 },
                 "bootstrap": {
                   "adapter": "docker",
-                  "image": "ghcr.io/enntity/atlas-sparkglm@sha256:94b837ef3ea7b3f54c158ce568e611405b1bd167edd56c734d8e90d2d6291cb6",
+                  "image": "ghcr.io/enntity/atlas-sparkglm@sha256:0b91fd790afb2ee3aa5a7f39a0bc5a90db05751436ae7810e00f129c36ebbb7b",
                   "pull": false,
                   "pullTimeoutMs": 3600000,
                   "createArgs": [
@@ -470,9 +452,7 @@
                     "--stop-timeout",
                     "60",
                     "--mount",
-                    "type=bind,src=${modelRoot}/nvidia--GLM-5.3-Flash-NVFP4,dst=${modelRoot}/nvidia--GLM-5.3-Flash-NVFP4,readonly",
-                    "--mount",
-                    "type=bind,src=${installRoot}/atlas-overlay,dst=${installRoot}/atlas-overlay,readonly",
+                    "type=bind,src=${modelRoot}/nvidia--GLM-5.3-Flash-FP4-Local,dst=${modelRoot}/nvidia--GLM-5.3-Flash-FP4-Local,readonly",
                     "--mount",
                     "type=bind,src=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2,dst=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2,readonly",
                     "--mount",
@@ -496,7 +476,7 @@
                     "-e",
                     "CLUSTER_NODE_COUNT=${clusterNodeCount}",
                     "-e",
-                    "MODEL_PATH=${installRoot}/atlas-overlay",
+                    "MODEL_PATH=${modelRoot}/nvidia--GLM-5.3-Flash-FP4-Local",
                     "-e",
                     "DRAFTER_PATH=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2",
                     "-e",
