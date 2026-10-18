@@ -1437,6 +1437,54 @@
       }
     },
     {
+      "id": "linux-nvidia-dgx-spark-4x-glm53-atlas-tp4",
+      "path": "linux-nvidia-dgx-spark-4x-glm53-atlas-tp4.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-dgx-spark-4x-glm53-atlas-tp4.json",
+          "status": "current",
+          "notes": "Atlas SparkGLM TP-4 over a four-Spark daisy chain, additive only, setDefault false, no aliases, a separate gateway model beside the pair lane. DRAFT pins: backends/atlas-sparkglm/pins-tp4.json carries TODO-TP4-RC placeholders until a TP-4 release image exists, and the fail-closed pin gate refuses them, so nothing installs or starts. Ranks, per-side RDMA rails and the rendezvous address come from each node's cluster.nodes[ID].fabricChain; the workers start from the far end of the chain."
+        }
+      ],
+      "name": "4x DGX Spark GLM-5.3 Flash FP4-Local Atlas TP-4 chain",
+      "summary": "Four-node Atlas SparkGLM TP-4 over a switchless daisy chain serving GLM-5.3-Flash-FP4-Local as published: four requests of up to 1M tokens with DFlash2 speculative decoding. Pins are drafts until a TP-4 release image exists.",
+      "tags": [
+        "linux",
+        "nvidia",
+        "dgx-spark",
+        "cluster",
+        "daisy-chain",
+        "tp4",
+        "glm-5.3",
+        "flash",
+        "nvfp4",
+        "fp4-local",
+        "atlas",
+        "sparkglm",
+        "dflash"
+      ],
+      "recommendedFor": [
+        "Serving GLM-5.3 Flash on the Atlas SparkGLM engine across four DGX Sparks cabled as a chain, once a TP-4 release image is pinned"
+      ],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "tools",
+        "structured-output",
+        "reasoning",
+        "vision",
+        "speculative-decoding"
+      ],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-dgx-spark-4x-glm53-atlas-tp4.json"
+      }
+    },
+    {
       "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas",
       "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas.json",
       "currentVersion": 1,
