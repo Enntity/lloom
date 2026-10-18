@@ -87,11 +87,69 @@ See [OpenRouter provider routing](https://openrouter.ai/docs/guides/routing/prov
 | `security.allowWildcardCors`    | `false`                                | Non-loopback CORS origin is `null` unless enabled                                                 |
 | `security.apiKeys`              | `["sk-lloom-local"]` in default config | Inference Bearer / `x-api-key` values                                                             |
 | `security.adminApiKeys`         | `[]`                                   | When non-empty, admin routes require these keys even on loopback                                  |
+| `security.redactEgress`         | `false`                                | Scrub credentials from request text sent to external backends (see below)                         |
 | `logging.requestLog`            | `false`                                | Append NDJSON request lines to `~/.lloom/logs/requests.ndjson` (or `LLOOM_REQUEST_LOG=1`)         |
 | `logging.metricsPersistence`    | `true`                                 | Persist aggregate gateway metrics across restarts (or disable with `LLOOM_METRICS_PERSISTENCE=0`) |
 | `logging.metricsPath`           | `null`                                 | Override `~/.lloom/metrics-history.json` (or set `LLOOM_METRICS_PATH`)                            |
 
 Prefer binding `server.host` to `127.0.0.1`. If you expose the gateway on a LAN or public interface, set `allowNonLoopbackBind`, strong API keys, keep `allowRemoteAdmin` false unless you intentionally operate remote admin, and treat install/start endpoints as privileged. `GET /gateway/security` returns public auth metadata (no secrets) for dashboards.
+
+### Egress redaction
+
+With `security.redactEgress: true`, the gateway replaces credentials in a
+request's text with `[secret]` before forwarding it to an external backend,
+such as DeepSeek or OpenRouter. It is off by default.
+
+```json
+{
+  "security": { "redactEgress": true },
+  "backends": {
+    "deepseek": { "type": "openai", "baseUrl": "https://api.deepseek.com/v1", "apiKeyEnv": "DEEPSEEK_API_KEY" },
+    "lab-proxy": { "type": "openai", "baseUrl": "https://llm.lab.example/v1", "redact": false }
+  }
+}
+```
+
+**Which backends.** A backend is external unless its `baseUrl` host is
+loopback (`127.0.0.0/8`, `::1`, `localhost`), RFC 1918 (`10/8`, `172.16/12`,
+`192.168/16`), link-local, CGNAT/tailnet (`100.64.0.0/10`), IPv6 ULA
+(`fc00::/7`), a name ending in `.ts.net`, `.local`, `.internal` or
+`.localhost`, or an unqualified single-label name such as `ennspark03`. The
+host is not resolved, so a public name that points at a private address still
+counts as external. Backends with `audioProvider` or `videoProvider` are
+always external, because those adapters call OpenRouter or Replicate directly.
+A federated LLooM gateway (`lloom-node-*`) is internal: the downstream gateway
+applies its own policy when it egresses. `backends.<id>.redact: true | false`
+overrides the automatic decision in either direction, and `true` applies even
+when `security.redactEgress` is off.
+
+**What is scrubbed.** The outgoing JSON body after protocol translation, so
+Chat Completions, Responses and Anthropic Messages (both bridged to Chat
+Completions), streaming or not, share one code path. The scrubbed fields are
+message `content` (strings and text parts), assistant `tool_calls` arguments,
+`role: tool` results, replayed `reasoning_content`, and `prompt`, `input`,
+`instructions` and `system`, which also covers JSON image, video, speech and
+audio-generation prompts. Image, audio and file parts are left as they are.
+Embeddings are never rewritten, because changing their input changes the
+vectors, and neither are transcriptions, whose payload is audio. Multipart
+uploads (image edits and voice-clone speech) and web search queries are not
+scrubbed.
+
+**Patterns.** PEM private keys; `sk-` keys, including Anthropic, OpenAI
+project and OpenRouter `sk-or-v1-` keys; `lloom_*` keys; GitHub, Slack, AWS
+access key, Google API, Replicate, Hugging Face, Jina and xAI tokens; JWTs;
+the password in `scheme://user:password@host` URLs such as `mongodb+srv://`,
+`postgres://` and `redis://`; and labelled values such as `Bearer …`,
+`API_KEY=…`, `password: …` or `"client_secret": "…"`, where the label is kept.
+A labelled value needs at least six characters, so `token budget: 500` stays
+intact. Unquoted values that read as code, such as `getToken()`,
+`process.env.API_KEY`, `$TOKEN` or a word without digits or symbols, are left
+alone. This catches common credential formats and is not a guarantee: a
+letters-only password after an unquoted label passes through.
+
+The caller's request is never modified. Matched values are never logged; when
+anything is replaced, the gateway logs one line per request with the number of
+replacements and the backend ID.
 
 ## API Surface
 
