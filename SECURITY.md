@@ -24,6 +24,7 @@ The maintainers will acknowledge reports as soon as practical, validate the issu
 - A signature proves which key signed a recipe pack. Trusting keys served by the same community host is equivalent to trusting that host and its TLS connection; use explicit local trusted keys for stronger publisher pinning.
 - Development keys and the checked-in public seed key are not production trust roots.
 - Model weights and external runtimes have their own licenses and security posture. LLooM does not make untrusted model code safe.
+- Requests routed to cloud providers carry whatever text the client sent. Set `security.redactEgress` to scrub common credential formats from prompts before they leave the local network. It is a pattern-based safety net, not a guarantee; see [egress redaction](docs/architecture.md#egress-redaction).
 - Browser management requests must come from the gateway's own origin. First-run setup additionally requires a local session token and applies only reviewed plans. Keep the setup terminal and tokens private. See [the browser security boundary](docs/browser-experience.md#local-security).
 - The public community MVP is read-only by design. Proposals arrive through reviewed pull requests; anonymous recipe and benchmark uploads are disabled in production.
 - Remote community feeds must use HTTPS and a locally pinned public signing key. Do not treat a signing key downloaded from the same remote host as an independent trust root.

@@ -6,6 +6,8 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Added
 
+- Opt-in egress redaction (`security.redactEgress`, per-backend `redact`). Credentials such as API keys, tokens, PEM private keys, JWTs, URL passwords and labelled secrets in request text are replaced with `[secret]` before the gateway forwards a Chat Completions, Responses, Anthropic Messages or JSON media request to a backend outside the local network. Local, private, tailnet and federated LLooM backends are left alone, and embeddings are never rewritten. See [egress redaction](docs/architecture.md#egress-redaction).
+
 - Built-in reservations and a job log (`lloom schedule`, `reserve`, `renew`, `release`, `job`; `/gateway/schedule`). Expiring leases on configured resources run route and suspend actions, possibly on other cluster nodes, and undo them in reverse with health-gated restore. There are queues, renewal and heartbeat-extended leases, stalled-job detection, and an event feed for boards such as Tessera. Schedule refusals now reach the CLI as redacted messages.
 
 - Atlas SparkQwen RC16 two-Spark recipe (`linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas`, profile `8x262k`) with a fail-closed pin gate and a digest-only image installer, and explicit per-node `${fabricHca}` settings for distributed recipes. Both Atlas recipes pin the published images with exact rail selection; missing settings and ambiguous discovery fail clearly.

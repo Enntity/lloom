@@ -199,6 +199,14 @@ function validateConfig(config, sourcePath, env) {
     errors.push('server.foregroundIdleMs must be an integer between 0 and 3600000');
   }
   errors.push(...validateRequestScheduling(config.server?.requestScheduling));
+  if (config.security?.redactEgress != null && typeof config.security.redactEgress !== 'boolean') {
+    errors.push('security.redactEgress must be a boolean');
+  }
+  for (const [backendId, backend] of Object.entries(config.backends ?? {})) {
+    if (backend?.redact != null && typeof backend.redact !== 'boolean') {
+      errors.push(`backends.${backendId}.redact must be a boolean`);
+    }
+  }
 
   for (const [index, model] of (config.models ?? []).entries()) {
     if (!model?.id) errors.push(`models[${index}] is missing id`);
@@ -614,6 +622,7 @@ export async function loadConfig(
       allowWildcardCors: false,
       allowNonLoopbackBind: false,
       publicTelemetry: false,
+      redactEgress: false,
       apiKeys: [],
       adminApiKeys: [],
       ...asObject(expanded.security)

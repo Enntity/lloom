@@ -136,9 +136,11 @@ import {
   securityPublicStatus
 } from './security.mjs';
 import { ClusterCoordinator, currentNodeId, isFederatedGatewayBackend, runtimePlacement } from './cluster.mjs';
+import { redactEgressBody, shouldRedactEgress } from './egress-redaction.mjs';
 import { createDeploymentFence, DeploymentFenceError, isDeploymentFencePath } from './deployment-fence.mjs';
 
 const JSON_TYPE = 'application/json; charset=utf-8';
+const UNREDACTED_EGRESS_PATHS = new Set(['/v1/embeddings', '/v1/audio/transcriptions']);
 const SSE_TYPE = 'text/event-stream; charset=utf-8';
 const execFileAsync = promisify(execFile);
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -3758,6 +3760,31 @@ export function createLloomServer(
     return { 'x-lloom-request-class': requestClass };
   }
 
+  // The single egress policy for model requests. It runs after protocol
+  // translation, so Chat, Responses, Anthropic and media routes, streaming or
+  // not, share it. Embeddings and transcriptions are never rewritten: changing
+  // their input changes the vectors, and a transcription payload is audio.
+  function egressBody(resolved, path, body) {
+    if (UNREDACTED_EGRESS_PATHS.has(path) || !shouldRedactEgress(config, resolved.model.backend, resolved.backend)) {
+      return body;
+    }
+    const result = redactEgressBody(body);
+    if (result.count) {
+      logger.info?.(`egress redaction: replaced ${result.count} secret(s) for backend ${resolved.model.backend}`);
+    }
+    return result.body;
+  }
+
+  function fetchModelUpstream(req, resolved, { path, body, ...options }) {
+    return fetchUpstream({
+      ...options,
+      headers: inferenceGatewayHeaders(req, resolved),
+      backend: resolved.backend,
+      path,
+      body: egressBody(resolved, path, body)
+    });
+  }
+
   async function handleOpenAIChat(req, res, { bodyOverride = null } = {}) {
     const body = bodyOverride ?? (await readJson(req));
     return recordModelRequestWithFailover(
@@ -3789,9 +3816,7 @@ export function createLloomServer(
           const timeout = setTimeout(() => timeoutController.abort(), DEPLOYMENT_CANARY_TIMEOUT_MS);
           const canarySignal = AbortSignal.any([signal, timeoutController.signal]);
           try {
-            const upstream = await fetchUpstream({
-              headers: inferenceGatewayHeaders(req, resolved),
-              backend: resolved.backend,
+            const upstream = await fetchModelUpstream(req, resolved, {
               path: '/v1/chat/completions',
               signal: canarySignal,
               body: {
@@ -3849,9 +3874,7 @@ export function createLloomServer(
             clearTimeout(timeout);
           }
         }
-        const upstream = await fetchUpstream({
-          headers: inferenceGatewayHeaders(req, resolved),
-          backend: resolved.backend,
+        const upstream = await fetchModelUpstream(req, resolved, {
           path: '/v1/chat/completions',
           signal,
           body: {
@@ -3901,9 +3924,7 @@ export function createLloomServer(
       },
       async ({ signal, timing, watchdog }) => {
         watchdog.arm();
-        const upstream = await fetchUpstream({
-          headers: inferenceGatewayHeaders(req, resolved),
-          backend: resolved.backend,
+        const upstream = await fetchModelUpstream(req, resolved, {
           path: '/v1/images/generations',
           signal,
           dispatcher: longRunningMediaDispatcher,
@@ -4029,15 +4050,13 @@ export function createLloomServer(
         if (resolved.backend.videoProvider) {
           const upstream = await generateProviderVideo({
             backend: resolved.backend,
-            body: { ...body, model: resolved.model.upstreamModel },
+            body: egressBody(resolved, '/v1/videos/generations', { ...body, model: resolved.model.upstreamModel }),
             signal,
             timeoutMs: resolved.backend.timeoutMs ?? 600000
           });
           return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
         }
-        const upstream = await fetchUpstream({
-          headers: inferenceGatewayHeaders(req, resolved),
-          backend: resolved.backend,
+        const upstream = await fetchModelUpstream(req, resolved, {
           path: '/v1/videos/generations',
           signal,
           dispatcher: longRunningMediaDispatcher,
@@ -4085,7 +4104,7 @@ export function createLloomServer(
             backend: resolved.backend,
             fetchFn: undiciFetch,
             dispatcher: upstreamDispatcher ?? longRunningMediaDispatcher,
-            body: { ...body, model: resolved.model.upstreamModel },
+            body: egressBody(resolved, '/v1/audio/generations', { ...body, model: resolved.model.upstreamModel }),
             signal,
             timeoutMs: resolved.backend.timeoutMs ?? 600000
           });
@@ -4093,9 +4112,7 @@ export function createLloomServer(
           // assembled artifact is written as a buffered binary response.
           return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
         }
-        const upstream = await fetchUpstream({
-          headers: inferenceGatewayHeaders(req, resolved),
-          backend: resolved.backend,
+        const upstream = await fetchModelUpstream(req, resolved, {
           path: '/v1/audio/generations',
           signal,
           dispatcher: longRunningMediaDispatcher,
@@ -4136,9 +4153,7 @@ export function createLloomServer(
       },
       async (resolved, { signal, timing, watchdog, hasNext }) => {
         watchdog.arm();
-        const upstream = await fetchUpstream({
-          headers: inferenceGatewayHeaders(req, resolved),
-          backend: resolved.backend,
+        const upstream = await fetchModelUpstream(req, resolved, {
           path: '/v1/embeddings',
           signal,
           body: {
@@ -4198,9 +4213,7 @@ export function createLloomServer(
       },
       async (resolved, { signal, timing, watchdog, hasNext }) => {
         watchdog.arm();
-        const upstream = await fetchUpstream({
-          headers: inferenceGatewayHeaders(req, resolved),
-          backend: resolved.backend,
+        const upstream = await fetchModelUpstream(req, resolved, {
           // Absolute URL: `fetchUpstream` passes it through untouched, which is
           // what keeps the request off the backend's `/v1` base path.
           path: tokenizeUpstreamUrl(resolved.backend),
@@ -4296,9 +4309,7 @@ export function createLloomServer(
       },
       async ({ signal, timing, progress, watchdog }) => {
         watchdog.arm();
-        const upstream = await fetchUpstream({
-          headers: inferenceGatewayHeaders(req, resolved),
-          backend: resolved.backend,
+        const upstream = await fetchModelUpstream(req, resolved, {
           path: '/v1/audio/speech',
           signal,
           body: normalized
@@ -4580,9 +4591,7 @@ export function createLloomServer(
         },
         async ({ signal, timing, watchdog }) => {
           watchdog.arm();
-          const upstream = await fetchUpstream({
-            headers: inferenceGatewayHeaders(req, resolved),
-            backend: resolved.backend,
+          const upstream = await fetchModelUpstream(req, resolved, {
             path: '/v1/audio/transcriptions',
             signal,
             body: {
@@ -4666,9 +4675,7 @@ export function createLloomServer(
       async (resolved, { signal, timing, watchdog, progress, hasNext }) => {
         watchdog.arm();
         const normalizedRequest = prepareStructuredOutputForBackend(responsesToOpenAIChat(body, resolved), resolved);
-        const upstream = await fetchUpstream({
-          headers: inferenceGatewayHeaders(req, resolved),
-          backend: resolved.backend,
+        const upstream = await fetchModelUpstream(req, resolved, {
           path: '/v1/chat/completions',
           signal,
           body: normalizedRequest.body
@@ -4728,9 +4735,7 @@ export function createLloomServer(
       },
       async (resolved, { signal, timing, watchdog, progress, hasNext }) => {
         watchdog.arm();
-        const upstream = await fetchUpstream({
-          headers: inferenceGatewayHeaders(req, resolved),
-          backend: resolved.backend,
+        const upstream = await fetchModelUpstream(req, resolved, {
           path: '/v1/chat/completions',
           signal,
           body: anthropicMessagesToOpenAI(body, resolved)
