@@ -565,6 +565,72 @@ Applying NVIDIA Sync discovery refuses ambiguous peer/interface observations.
 An explicit per-node `fabricHca` selection also preserves that node's configured
 interface and backend address when refreshing discovery.
 
+## Atlas SparkGLM TP-4 chain
+
+`linux-nvidia-dgx-spark-4x-glm53-atlas-tp4` serves the same
+`nvidia/GLM-5.3-Flash-FP4-Local` checkpoint and DFlash2 drafter as the pair
+lane on four DGX Sparks cabled as a daisy chain (no switch, no cable between
+the ends), at tensor and expert parallelism 4. It is a separate lane,
+`glm-5.3-flash-atlas-tp4`, with its own runtimes
+(`glm53-flash-atlas-tp4-cluster`, `-head`, `-worker-<node>`) and containers
+(`lloom-atlas-sparkglm-tp4-<node>`), so it can be configured beside
+`glm-5.3-flash-atlas`. Both lanes use 127.0.0.1:8893 on rank 0's Spark and
+114 GiB on every Spark they share, so admission runs one at a time.
+
+**The pins are drafts.** No TP-4 release image exists yet:
+`backends/atlas-sparkglm/pins-tp4.json` has status `draft` and `TODO-TP4-RC`
+placeholders for the Enntity/sparkglm revision and install tree, the engine
+branch and commit, and the GHCR digest and tag, and the recipe's
+`bootstrap.image` is the matching placeholder digest. The setup steps
+`verify-atlas-pins` and `build-atlas-image` run `verify-pins.mjs` and
+`install.sh --manifest` against that manifest on every apply and refuse it, so
+nothing is downloaded, pulled or started. To adopt a release candidate:
+
+1. Fill `source.revision`, `source.installTree`, `engine.branch`,
+   `engine.commit` and `image.reference` from the RC (the image must ship
+   `/opt/atlas/profiles/4x1m-tp4.json`), set `image.tag` to
+   `ghcr.io/enntity/atlas-sparkglm:` plus the first 12 characters of the
+   install tree and `status` to `final`, and update the manifest's `note`;
+   `node backends/atlas-sparkglm/verify-pins.mjs backends/atlas-sparkglm/pins-tp4.json`
+   must pass.
+2. Put the same `image.reference` in both members' `bootstrap.image`, replace
+   the draft wording in the recipe's description, provenance, hardware notes
+   and index entry with the RC's identities and qualification receipts, and
+   run `node test/atlas-sparkglm-tp4-recipe.test.mjs` (update its draft-status
+   assertions).
+3. On each of the four Sparks, with the chain declared as below, preview and
+   then apply `lloom setup --recipe linux-nvidia-dgx-spark-4x-glm53-atlas-tp4
+   --additive`, and start it with `lloom runtime-start
+   glm53-flash-atlas-tp4-cluster` from the leader.
+
+The chain is declared per node with `cluster.nodes[ID].fabricChain` (see
+[chain topology](clusters.md#chain-topology)): rank, the interface every rank
+reaches the others on, rank 0's address on it, and the exact RDMA devices
+toward each neighbour. Each ConnectX-7 port shows two RDMA devices, one per
+PCIe half, so each side lists both. Rank 0 must be the cluster leader in every
+node's LLooM config.
+
+| Variable | Source | Meaning |
+| --- | --- | --- |
+| `NODE_RANK` | `fabricChain.rank` | position along the chain |
+| `MASTER_ADDR` | rank 0's `fabricChain.address` | rendezvous; every rank must reach it |
+| `FABRIC_INTERFACE`, `NCCL_SOCKET_IFNAME`, `GLOO_SOCKET_IFNAME` | `fabricChain.interface` | startup traffic |
+| `FABRIC_LEFT_HCA`, `FABRIC_RIGHT_HCA` | `fabricChain.leftHca`, `rightHca` | the engine's per-link RDMA rails (empty at the ends) |
+| `FABRIC_SIBLINGS` | `0` | use exactly the listed devices |
+| `SPARKGLM_PROFILE` | `4x1m-tp4` | world/TP/EP 4, 1048576-token contexts, four sequences |
+| `SPARKGLM_GPU_MEMORY_UTILIZATION` | `0.88` | the profile's default |
+| `SPARKGLM_KV_SHARD`, `SPARKGLM_DISPLAY_CARVEOUT` | `0` | off: refused beyond two ranks / not qualified at four |
+| `SPARKGLM_PREFIX_CACHE_GB` | `${prefixCacheGb}` (`0`) | disk prefix cache, off until qualified at four ranks |
+
+The recipe passes no `ATLAS_*` and no `NCCL_*` transport variable: the
+image's `serve.py` drops `ATLAS_*` from the container environment, and the
+4x1m-tp4 profile carries every engine switch plus NCCL's transport (sockets,
+IB off, since NCCL cannot reach a Spark that is not cabled to it; the engine
+runs the all-reduce over the rails above). Container hardening, limits and
+mounts are the pair lane's. The workers start from the far end (ranks 3, 2, 1;
+`rankOrder: "descending"`) with container health, then the leader (rank 0)
+with `/health` and a POST warmup.
+
 ## Atlas SparkQwen RC16
 
 `linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas` runs the Atlas SparkQwen
