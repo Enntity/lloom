@@ -72,6 +72,34 @@ Use private fabric addresses for node-to-node LLooM and raw backend traffic. `ba
 
 Distributed recipes can template each member's fabric with `${fabricInterface}` (the node's `fabricInterface`) and `${fabricHca}` (the node's `fabricHca`). Recipes that consume `${fabricHca}` require exact, node-local RDMA device names: LLooM expects `fabricHca` (a comma-separated list of unique device names, no spaces or `:port` suffixes) and `fabricInterface` on every participating node, and stops materialization with the node and field named in the error when either is missing or malformed. It never guesses an HCA from the NIC name, because PCI naming and cabling differ by host.
 
+A distributed recipe that declares `requirements.cluster.nodes` must select exactly that many nodes. Without `labels.role: "worker"` on its intended workers, a two-node recipe in a larger cluster would otherwise select every non-leader node; materialization refuses that and names the selection.
+
+### Chain topology
+
+Sparks cabled as a daisy chain without a switch (rank 0-1-2-3 along the cables) reach only their neighbours over RDMA. A recipe declares that with `requirements.cluster.topology: "chain"`, and each chain node declares its own position and wiring as `fabricChain`:
+
+```json
+{
+  "cluster": {
+    "leaderNode": "spark-1",
+    "nodes": {
+      "spark-1": { "backendHost": "10.10.10.1", "fabricChain": { "rank": 0, "interface": "eth-b", "address": "10.10.20.1", "rightHca": "mlx5_0,mlx5_1" } },
+      "spark-2": { "backendHost": "10.10.10.2", "fabricChain": { "rank": 1, "interface": "eth-b", "leftHca": "mlx5_0,mlx5_1", "rightHca": "mlx5_2,mlx5_3" } },
+      "spark-3": { "backendHost": "10.10.10.3", "fabricChain": { "rank": 2, "interface": "eth-c", "leftHca": "mlx5_0,mlx5_1", "rightHca": "mlx5_2,mlx5_3" } },
+      "spark-4": { "backendHost": "10.10.10.4", "fabricChain": { "rank": 3, "interface": "eth-c", "leftHca": "mlx5_2,mlx5_3" } }
+    }
+  }
+}
+```
+
+- `rank` is the node's position along the cables; ranks are unique and contiguous from 0, rank 0 is the cluster leader, and exactly `requirements.cluster.nodes` nodes declare one. Nodes without `fabricChain` are not on the chain, and labels do not change chain membership.
+- `interface` is the network interface every rank reaches the others on (for startup traffic such as NCCL and Gloo sockets); `address` is rank 0's IP on it, the rendezvous. Middle nodes must forward between their links for this to reach the far end.
+- `leftHca` lists the exact RDMA devices cabled toward rank - 1 and `rightHca` those toward rank + 1, in the same format as `fabricHca`. Rank 0 has no `leftHca` and the last rank no `rightHca`.
+
+A chain member's `${nodeRank}`, `${fabricInterface}`, `${leaderAddress}`, `${fabricLeftHca}` and `${fabricRightHca}` come from these fields, so the chain's wiring can differ from the same nodes' `fabricInterface`/`fabricHca` used by a pair recipe. A chain recipe cannot consume `${fabricHca}`, and `${fabricLeftHca}`/`${fabricRightHca}` require the chain topology. Re-applying a chain recipe follows the declared ranks, not an earlier materialization.
+
+A member that spans several nodes (such as `nodeRole: "worker"`) starts them one after another from its `order` (order, order + 1, ...). `rankOrder: "ascending"` or `"descending"` sorts them by rank first; a chain whose engine wants its far end up first uses `"descending"`.
+
 ```json
 {
   "server": { "host": "${LLOOM_GATEWAY_HOST}", "port": 8100 },
