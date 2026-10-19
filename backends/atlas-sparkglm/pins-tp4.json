@@ -1,11 +1,11 @@
 {
   "manifestVersion": 1,
   "status": "final",
-  "note": "Pin manifest for the four-Spark TP-4 daisy-chain lane (recipe linux-nvidia-dgx-spark-4x-glm53-atlas-tp4), pinned to the unpublished release candidate rc1. image.source local: the image is the local tag localhost/atlas-sparkglm:tp4-rc1-100e43ffca2b, never pulled; install.sh accepts it only when every node already has it with the pinned install-tree label, /opt/atlas/serve.py, the 4x1m-tp4 profile and engine 100e43ffca2b0b6e382a55055881bcf167c05d92 in /opt/atlas/source-manifest.json. Publishing it means a GHCR digest and image.source registry.",
+  "note": "Pin manifest for the four-Spark TP-4 daisy-chain lane (recipe linux-nvidia-dgx-spark-4x-glm53-atlas-tp4), pinned to the unpublished release candidate rc2. image.source local: the image is the local tag localhost/atlas-sparkglm:tp4-rc2-100e43ffca2b, never pulled; install.sh accepts it only when every node already has it with the pinned install-tree label, /opt/atlas/serve.py, the 4x1m-tp4 profile and engine 100e43ffca2b0b6e382a55055881bcf167c05d92 in /opt/atlas/source-manifest.json. Publishing it means a GHCR digest and image.source registry.",
   "source": {
     "repo": "Enntity/sparkglm",
-    "revision": "1ee3d09986451a7a424d5e8ef65503cd61ee2c6f",
-    "installTree": "17300b00f83fbbb20e96b1ba7069cf09053fe182",
+    "revision": "cfe84f905af2cfe48685a7fbcc7a3adcf5bcfc95",
+    "installTree": "ce45cc0d75206b771486fc4abe1107864cc0481f",
     "cloneUrl": "https://github.com/Enntity/sparkglm.git",
     "buildScript": "install/build.sh"
   },
@@ -15,8 +15,8 @@
     "commit": "100e43ffca2b0b6e382a55055881bcf167c05d92"
   },
   "image": {
-    "reference": "localhost/atlas-sparkglm:tp4-rc1-100e43ffca2b",
-    "tag": "localhost/atlas-sparkglm:tp4-rc1-100e43ffca2b",
+    "reference": "localhost/atlas-sparkglm:tp4-rc2-100e43ffca2b",
+    "tag": "localhost/atlas-sparkglm:tp4-rc2-100e43ffca2b",
     "label": "io.enntity.sparkglm.install-tree",
     "entrypoint": "/opt/atlas/serve.py",
     "profilePath": "/opt/atlas/profiles/4x1m-tp4.json",

@@ -269,7 +269,7 @@
                 "warmup": false,
                 "bootstrap": {
                   "adapter": "docker",
-                  "image": "localhost/atlas-sparkglm:tp4-rc1-100e43ffca2b",
+                  "image": "localhost/atlas-sparkglm:tp4-rc2-100e43ffca2b",
                   "pull": false,
                   "pullTimeoutMs": 3600000,
                   "createArgs": [
@@ -380,7 +380,7 @@
                 },
                 "bootstrap": {
                   "adapter": "docker",
-                  "image": "localhost/atlas-sparkglm:tp4-rc1-100e43ffca2b",
+                  "image": "localhost/atlas-sparkglm:tp4-rc2-100e43ffca2b",
                   "pull": false,
                   "pullTimeoutMs": 3600000,
                   "createArgs": [
