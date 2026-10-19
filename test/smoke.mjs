@@ -4631,6 +4631,8 @@ await assert.rejects(
 const setupCli = await runCommand(process.execPath, [
   path.join(process.cwd(), 'bin', 'lloom.mjs'),
   'setup',
+  '--home',
+  path.join(tempDir, 'setup-cli-home'),
   '--recipe',
   'apple-silicon-qwen36',
   '--config-out',
@@ -4648,6 +4650,8 @@ assert.equal(setupCliJson.phases.bootstrap.recipe.validationErrors.length, 0);
 const onboardCli = await runCommand(process.execPath, [
   path.join(process.cwd(), 'bin', 'lloom.mjs'),
   'onboard',
+  '--home',
+  path.join(tempDir, 'onboard-cli-home'),
   '--json',
   '--recipe',
   'apple-silicon-qwen36',
@@ -4669,6 +4673,8 @@ assert(onboardCliJson.next.apply.includes('lloom onboard'));
 const upCli = await runCommand(process.execPath, [
   path.join(process.cwd(), 'bin', 'lloom.mjs'),
   'up',
+  '--home',
+  path.join(tempDir, 'up-cli-home'),
   '--json',
   '--recipe',
   'apple-silicon-qwen36',
@@ -4752,6 +4758,8 @@ assert(defaultCliJson.next.applyAndStart.includes('--start'));
 const humanOnboardCli = await runCommand(process.execPath, [
   path.join(process.cwd(), 'bin', 'lloom.mjs'),
   'onboard',
+  '--home',
+  path.join(tempDir, 'human-onboard-cli-home'),
   '--recipe',
   'apple-silicon-qwen36',
   '--config-out',
