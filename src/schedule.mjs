@@ -324,6 +324,35 @@ export function createSchedule({
       .sort((a, b) => a.createdAt - b.createdAt);
   }
 
+  // Hosts are exclusion domains across differently named resources. Same-resource
+  // capacity is still honored. Capture hosts on acquisition so later config edits
+  // cannot make a held lease silently stop protecting its original hardware.
+  function overlappingHolders(spec) {
+    if (!spec.hosts.length) return [];
+    return Object.values(state.reservations).filter((entry) => {
+      if (entry.resource === spec.id || !HELD.has(entry.state)) return false;
+      let hosts = entry.hosts;
+      if (!Array.isArray(hosts)) {
+        try {
+          hosts = resource(entry.resource).hosts;
+        } catch {
+          // A legacy held lease whose resource disappeared has unknown coverage.
+          // Release its recorded undo before admitting any new host-scoped work.
+          return true;
+        }
+      }
+      return hosts.some((host) => spec.hosts.includes(host));
+    });
+  }
+
+  function promoteAvailable() {
+    const specs = resources().filter((spec) => !spec.error);
+    // Prefer the oldest queued request when several resources become eligible.
+    const firstQueued = (spec) => reservationsFor(spec.id, new Set(['queued']))[0]?.createdAt ?? Infinity;
+    specs.sort((a, b) => firstQueued(a) - firstQueued(b));
+    for (const spec of specs) promote(spec.id);
+  }
+
   function reservation(id) {
     const found = Object.hasOwn(state.reservations, id) ? state.reservations[id] : null;
     if (!found)
@@ -363,6 +392,7 @@ export function createSchedule({
     if (!entry) return null;
     const time = now();
     const out = { ...entry, steps: entry.steps.map((step) => ({ ...step })) };
+    if (Array.isArray(entry.hosts)) out.hosts = [...entry.hosts];
     if (entry.state === 'active' && entry.expiresAt != null) out.remainingMs = Math.max(0, entry.expiresAt - time);
     if (entry.state === 'queued') {
       out.position = reservationsFor(entry.resource, new Set(['queued'])).findIndex((item) => item.id === entry.id) + 1;
@@ -415,7 +445,7 @@ export function createSchedule({
           reservation: entry
         });
         await persist();
-        if (!undoError) promote(spec.id);
+        if (!undoError) promoteAvailable();
         return view(entry);
       });
     }
@@ -468,8 +498,10 @@ export function createSchedule({
       return;
     }
     if (isPaused()) return;
+    if (overlappingHolders(spec).length) return;
     const free = spec.capacity - reservationsFor(resourceId, HELD).length;
     for (const next of reservationsFor(resourceId, new Set(['queued'])).slice(0, Math.max(0, free))) {
+      next.hosts = [...spec.hosts];
       next.state = 'acquiring';
       next.updatedAt = now();
       delete next.queuedUntil;
@@ -489,7 +521,7 @@ export function createSchedule({
       hosts: spec.hosts,
       ttlMs: ttlFor(spec, body.ttlMs),
       actions: spec.actions,
-      holders: reservationsFor(spec.id, HELD).map(view),
+      holders: [...reservationsFor(spec.id, HELD), ...overlappingHolders(spec)].map(view),
       queue: reservationsFor(spec.id, new Set(['queued'])).map(view)
     };
   }
@@ -511,6 +543,7 @@ export function createSchedule({
       );
       if (mine) return { existing: mine };
       const held = reservationsFor(spec.id, HELD);
+      const overlap = overlappingHolders(spec);
       const queued = reservationsFor(spec.id, new Set(['queued']));
       if (queued.length >= QUEUE_LIMIT) {
         throw new ScheduleError(`${spec.id} already has ${QUEUE_LIMIT} waiting`, {
@@ -518,18 +551,22 @@ export function createSchedule({
           statusCode: 429
         });
       }
-      const free = held.length < spec.capacity && queued.length === 0;
+      const free = held.length < spec.capacity && overlap.length === 0 && queued.length === 0;
       if (!free && body.wait !== true) {
-        throw new ScheduleError(`${spec.id} is held by ${held.map((entry) => entry.owner).join(', ') || 'the queue'}`, {
-          code: 'schedule_busy',
-          statusCode: 409,
-          details: { holders: held.map(view), queue: queued.map(view) }
-        });
+        throw new ScheduleError(
+          `${spec.id} is held by ${[...held, ...overlap].map((entry) => entry.owner).join(', ') || 'the queue'}`,
+          {
+            code: 'schedule_busy',
+            statusCode: 409,
+            details: { holders: [...held, ...overlap].map(view), queue: queued.map(view) }
+          }
+        );
       }
       const time = now();
       const entry = {
         id: newId('r', state.reservations),
         resource: spec.id,
+        hosts: [...spec.hosts],
         owner,
         purpose,
         session,
@@ -645,7 +682,7 @@ export function createSchedule({
               : `${entry.owner} released ${entry.resource}`,
           reservation: entry
         });
-        promote(entry.resource);
+        promoteAvailable();
       }
       await persist();
       return view(entry);
@@ -815,6 +852,7 @@ export function createSchedule({
       resources: resources().map((spec) => ({
         ...spec,
         holders: spec.error ? [] : reservationsFor(spec.id, HELD).map((entry) => entry.id),
+        blockingReservations: spec.error ? [] : overlappingHolders(spec).map((entry) => entry.id),
         queue: spec.error ? [] : reservationsFor(spec.id, new Set(['queued'])).map((entry) => entry.id)
       })),
       reservations: reservations.map(view),
@@ -907,7 +945,7 @@ export function createSchedule({
           changed = true;
         }
       }
-      for (const spec of resources()) if (!spec.error) promote(spec.id);
+      promoteAvailable();
       if (changed) await persist();
       return due;
     });

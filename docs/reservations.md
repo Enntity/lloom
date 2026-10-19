@@ -44,7 +44,8 @@ Resources live in the owning gateway's config:
 
 | Field | Meaning |
 |-------|---------|
-| `description`, `hosts` | Shown on the board. |
+| `description` | Shown on the board. |
+| `hosts` | Exact host IDs reserved by this resource. A held lease blocks differently named resources sharing any host. Use the same canonical IDs in every resource; aliases are not resolved. |
 | `capacity` | Number of concurrent holders. The default is 1. Resources with actions must have capacity 1. |
 | `routes` | Route-profile switches applied on take, in order (`lloom route <alias> <profile>`). The profile active at take time is recorded and restored on release. |
 | `suspend` | Models to drain and unload on take (`lloom suspend`) and resume on release (`lloom resume`). |
@@ -75,6 +76,25 @@ ends as `failed`. A restore that fails leaves the reservation `stuck`: the
 resource stays held and traffic stays away from the unhealthy model until a
 `release` succeeds. A gateway restart during an action also leaves the
 reservation `stuck`. Releasing it re-runs the undo, which is idempotent.
+
+Host exclusion applies while a lease is acquiring, active, releasing, or stuck.
+Same-resource capacity still permits its configured number of holders. A blocked
+four-host request can queue and starts only after every overlapping holder has
+released. New leases save their host list; config edits cannot shrink hardware
+protection beneath an active lease. Legacy leases use their configured resource's
+hosts; if that resource disappeared, new host-scoped work is refused until the
+legacy lease is released. A resource without `hosts` does not reserve hardware.
+
+Host exclusion alone does not suspend a production model when no lease is held.
+For a four-host production lane, use one action-bearing resource covering all
+four hosts, with safe fallback routes and the TP4 model in `suspend`. Retire old
+pair/drafter resources after settling their existing leases through the CLI;
+otherwise taking a no-action subresource could permit work beside production.
+The `pair` name may be retained for this expanded four-host resource so old pair
+commands remain safe; `drafter-0304` commands then fail as unknown resources.
+Never edit recorded lease steps to change their undo. Configure resources in the
+head's normal configuration file, under the reviewed configuration/deployment
+workflow, and verify `lloom reserve pair` before allowing new GPU jobs.
 
 ## Use it from an agent
 

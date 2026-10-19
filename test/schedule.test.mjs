@@ -373,3 +373,137 @@ test('a deployment fence holds expiry and gives the time back', async (t) => {
   await schedule.sweep();
   assert.equal(schedule.reservation(held.id).remainingMs, 20 * MINUTE);
 });
+
+// Different resource names cannot grant the same physical hosts concurrently.
+test('host overlap blocks take and appears in preview and board, even for the same owner', async (t) => {
+  const resources = { pair: { hosts: ['a', 'b'] }, tp4: { hosts: ['a', 'b', 'c', 'd'] } };
+  const { schedule, actions } = await fixture(t, { resources });
+  const held = await take(schedule, { resource: 'pair', owner: 'main' });
+  await assert.rejects(take(schedule, { resource: 'tp4', owner: 'main' }), (error) => {
+    assert.equal(error.code, 'schedule_busy');
+    assert.deepEqual(
+      error.details.holders.map((entry) => entry.id),
+      [held.id]
+    );
+    return true;
+  });
+  assert.deepEqual(
+    (await schedule.take({ resource: 'tp4' })).holders.map((entry) => entry.id),
+    [held.id]
+  );
+  assert.deepEqual(schedule.board().resources.find((entry) => entry.id === 'tp4').blockingReservations, [held.id]);
+  assert.equal(actions.calls.length, 0);
+});
+
+test('four-host queued resource promotes only after both disjoint leases release', async (t) => {
+  const resources = {
+    pair: { hosts: ['a', 'b'] },
+    drafter: { hosts: ['c', 'd'] },
+    tp4: { hosts: ['a', 'b', 'c', 'd'] }
+  };
+  const { schedule } = await fixture(t, { resources });
+  const a = await take(schedule, { resource: 'pair', owner: 'a' });
+  const b = await take(schedule, { resource: 'drafter', owner: 'b' });
+  const queued = await take(schedule, { resource: 'tp4', owner: 'c', wait: true });
+  assert.equal(queued.state, 'queued');
+  await release(schedule, a.id, { owner: 'a' });
+  assert.equal(schedule.reservation(queued.id).state, 'queued');
+  await release(schedule, b.id, { owner: 'b' });
+  await schedule.stop();
+  assert.equal(schedule.reservation(queued.id).state, 'active');
+});
+
+test('simultaneous overlapping acquisitions grant exactly one lease', async (t) => {
+  const { schedule } = await fixture(t, {
+    resources: { pair: { hosts: ['a', 'b'] }, tp4: { hosts: ['a', 'b', 'c', 'd'] } }
+  });
+  const results = await Promise.allSettled([
+    take(schedule, { resource: 'pair', owner: 'one' }),
+    take(schedule, { resource: 'tp4', owner: 'two' })
+  ]);
+  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+  assert.equal(results.find((result) => result.status === 'rejected').reason.code, 'schedule_busy');
+});
+
+test('held host snapshot survives resource edits/removal and returned-view mutation', async (t) => {
+  const { schedule, config } = await fixture(t, {
+    resources: { pair: { hosts: ['a', 'b'] }, other: { hosts: ['a'] } }
+  });
+  const held = await take(schedule, { resource: 'pair', owner: 'one' });
+  held.hosts.length = 0;
+  config.reservations.resources.pair.hosts = ['z'];
+  await assert.rejects(take(schedule, { resource: 'other', owner: 'two' }), { code: 'schedule_busy' });
+  delete config.reservations.resources.pair;
+  await assert.rejects(take(schedule, { resource: 'other', owner: 'two' }), { code: 'schedule_busy' });
+  await release(schedule, held.id, { owner: 'one' });
+  assert.equal((await take(schedule, { resource: 'other', owner: 'two' })).state, 'active');
+});
+
+test('a stuck restore blocks overlapping hosts until successful retry', async (t) => {
+  const actions = fakeActions({ failResume: 1 });
+  const { schedule } = await fixture(t, {
+    actions,
+    resources: { pair: { hosts: ['a'], suspend: ['model'] }, tp4: { hosts: ['a', 'b'] } }
+  });
+  const held = await take(schedule, { resource: 'pair', owner: 'one' });
+  assert.equal((await release(schedule, held.id, { owner: 'one' })).state, 'stuck');
+  await assert.rejects(take(schedule, { resource: 'tp4', owner: 'two' }), { code: 'schedule_busy' });
+  await release(schedule, held.id, { owner: 'one' });
+  assert.equal((await take(schedule, { resource: 'tp4', owner: 'two' })).state, 'active');
+});
+
+test('same-resource capacity remains valid while different host-sharing resource waits', async (t) => {
+  const { schedule } = await fixture(t, {
+    resources: { builds: { hosts: ['a'], capacity: 2 }, exclusive: { hosts: ['a'] } }
+  });
+  await take(schedule, { resource: 'builds', owner: 'one' });
+  await take(schedule, { resource: 'builds', owner: 'two' });
+  await assert.rejects(take(schedule, { resource: 'exclusive', owner: 'three' }), { code: 'schedule_busy' });
+});
+
+test('legacy leases derive hosts and fail closed if their resource disappears', async (t) => {
+  const f = await fixture(t, {
+    resources: { pair: { hosts: ['a'] }, overlap: { hosts: ['a'] }, disjoint: { hosts: ['z'] } }
+  });
+  const held = await take(f.schedule, { resource: 'pair', owner: 'one' });
+  await f.schedule.stop();
+  // Construct a persisted pre-upgrade fixture; this is not a live state migration.
+  const state = JSON.parse(await fs.readFile(f.options.statePath, 'utf8'));
+  delete state.reservations[held.id].hosts;
+  await fs.writeFile(f.options.statePath, JSON.stringify(state));
+  const recovered = createSchedule(f.options);
+  t.after(() => recovered.stop());
+  await assert.rejects(take(recovered, { resource: 'overlap', owner: 'two' }), { code: 'schedule_busy' });
+  delete f.config.reservations.resources.pair;
+  await assert.rejects(take(recovered, { resource: 'disjoint', owner: 'two' }), { code: 'schedule_busy' });
+  await release(recovered, held.id, { owner: 'one' });
+  assert.equal((await take(recovered, { resource: 'disjoint', owner: 'two' })).state, 'active');
+});
+
+test('acquiring and releasing actions retain cross-resource host exclusion', async (t) => {
+  let finishSuspend;
+  let finishResume;
+  const actions = fakeActions();
+  actions.suspend = () =>
+    new Promise((resolve) => {
+      finishSuspend = resolve;
+    });
+  actions.resume = () =>
+    new Promise((resolve) => {
+      finishResume = resolve;
+    });
+  const { schedule } = await fixture(t, {
+    actions,
+    resources: { pair: { hosts: ['a'], suspend: ['model'] }, tp4: { hosts: ['a', 'b'] } }
+  });
+  const acquiring = take(schedule, { resource: 'pair', owner: 'one' });
+  while (!finishSuspend) await new Promise(setImmediate);
+  await assert.rejects(take(schedule, { resource: 'tp4', owner: 'two' }), { code: 'schedule_busy' });
+  finishSuspend();
+  const held = await acquiring;
+  const releasing = release(schedule, held.id, { owner: 'one' });
+  while (!finishResume) await new Promise(setImmediate);
+  await assert.rejects(take(schedule, { resource: 'tp4', owner: 'two' }), { code: 'schedule_busy' });
+  finishResume();
+  await releasing;
+});
