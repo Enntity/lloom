@@ -92,7 +92,8 @@ Sparks cabled as a daisy chain without a switch (rank 0-1-2-3 along the cables) 
 }
 ```
 
-- `rank` is the node's position along the cables; ranks are unique and contiguous from 0, rank 0 is the cluster leader, and exactly `requirements.cluster.nodes` nodes declare one. Nodes without `fabricChain` are not on the chain, and labels do not change chain membership.
+- `rank` is the node's position along the cables; ranks are unique and contiguous from 0, and exactly `requirements.cluster.nodes` nodes declare one. Nodes without `fabricChain` are not on the chain, and labels do not change chain membership.
+- Rank 0 leads the chain: setup records it as the distributed runtime's `placement.leaderNode`, and it alone starts, stops and syncs setup to the chain's members. It need not be `cluster.leaderNode`, so a node that leads its own cluster (a federation head, say) can be a middle rank of a chain that another node leads while keeping its own routing and proxies. Declare the same `fabricChain` entries on every chain node's config.
 - `interface` is the network interface every rank reaches the others on (for startup traffic such as NCCL and Gloo sockets); `address` is rank 0's IP on it, the rendezvous. Middle nodes must forward between their links for this to reach the far end.
 - `leftHca` lists the exact RDMA devices cabled toward rank - 1 and `rightHca` those toward rank + 1, in the same format as `fabricHca`. Rank 0 has no `leftHca` and the last rank no `rightHca`.
 

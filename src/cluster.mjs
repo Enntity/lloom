@@ -735,7 +735,12 @@ export function runtimePlacement(runtime, config, env = process.env) {
           resources: asObject(member?.resources)
         }))
       : [];
-    return { mode, nodes: [...new Set(members.map((member) => member.node).filter(Boolean))], members };
+    return {
+      mode,
+      nodes: [...new Set(members.map((member) => member.node).filter(Boolean))],
+      members,
+      leaderNode: typeof placement.leaderNode === 'string' && placement.leaderNode ? placement.leaderNode : null
+    };
   }
   const node = runtime?.node ?? placement.node ?? currentNodeId(config, env);
   return { mode, node, nodes: node ? [node] : [], members: [] };
@@ -827,8 +832,10 @@ export function runtimeReadinessScope(runtimeId, config, env = process.env) {
  * Return the effective lifecycle authority for a runtime.
  *
  * Ordinary runtimes are owned by the node where they run. A distributed
- * logical runtime is owned by the cluster leader, and every physical member
- * delegates its lifecycle to that same owner. The explicit config block is
+ * logical runtime is owned by its placement.leaderNode when it names one (a
+ * chain's rank 0, which need not lead this node's cluster), else by the
+ * cluster leader, and every physical member delegates its lifecycle to that
+ * same owner. The explicit config block is
  * persisted for auditability, while the derived form keeps older configs safe
  * until they are rewritten by setup.
  */
@@ -840,7 +847,7 @@ export function runtimeAuthority(config, runtimeId, env = process.env) {
   const leaderNode = config.cluster?.leaderNode ?? localNode;
 
   if (placement.mode === 'distributed') {
-    const owner = leaderNode;
+    const owner = placement.leaderNode ?? leaderNode;
     return {
       owner,
       scope: 'distributed-model',
@@ -854,7 +861,7 @@ export function runtimeAuthority(config, runtimeId, env = process.env) {
     const groupPlacement = runtimePlacement(groupRuntime, config, env);
     if (groupPlacement.mode !== 'distributed') continue;
     if (!groupPlacement.members.some((member) => member.runtime === runtimeId)) continue;
-    const owner = leaderNode;
+    const owner = groupPlacement.leaderNode ?? leaderNode;
     const node = placement.node ?? localNode;
     return {
       owner,

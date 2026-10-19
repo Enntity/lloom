@@ -212,7 +212,7 @@ export function reconfigureRuntimeIds(previousConfig, nextConfig, { nodeId, lead
   return [...changed].filter((runtimeId) => {
     const runtime = nextConfig.runtimes?.[runtimeId] ?? previousConfig.runtimes?.[runtimeId];
     const placement = runtimePlacement(runtime, nextConfig);
-    if (placement.mode === 'distributed') return selectedNodeId === selectedLeaderNode;
+    if (placement.mode === 'distributed') return selectedNodeId === (placement.leaderNode ?? selectedLeaderNode);
     return !placement.node || placement.node === selectedNodeId;
   });
 }
@@ -232,9 +232,10 @@ function liveAdmissionRuntimeIds(previousConfig, nextConfig) {
 }
 
 export function ownsDistributedRuntime(config, runtime, { nodeId, leaderNode } = {}) {
-  if (runtimePlacement(runtime, config).mode !== 'distributed') return true;
+  const placement = runtimePlacement(runtime, config);
+  if (placement.mode !== 'distributed') return true;
   const selectedNodeId = nodeId ?? currentNodeId(config);
-  const selectedLeaderNode = leaderNode ?? config.cluster?.leaderNode ?? selectedNodeId;
+  const selectedLeaderNode = placement.leaderNode ?? leaderNode ?? config.cluster?.leaderNode ?? selectedNodeId;
   return selectedNodeId === selectedLeaderNode;
 }
 
@@ -250,7 +251,7 @@ export function keepWarmOwnership(config, runtimeId, { nodeId, leaderNode } = {}
     return { owned: false, reason: 'distributed-runtime-owned' };
   }
   const placement = runtimePlacement(runtime, config);
-  if (placement.mode === 'distributed' && selectedNodeId !== selectedLeaderNode) {
+  if (placement.mode === 'distributed' && selectedNodeId !== (placement.leaderNode ?? selectedLeaderNode)) {
     return { owned: false, reason: 'leader-owned' };
   }
   if (placement.mode !== 'distributed' && placement.node && placement.node !== selectedNodeId) {
