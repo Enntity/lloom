@@ -502,7 +502,11 @@ function validateConfig(config, sourcePath, env) {
   for (const [runtimeId, runtime] of Object.entries(config.runtimes ?? {})) {
     if (runtime?.placement?.mode !== 'distributed') continue;
     const authority = runtimeAuthority(config, runtimeId, env);
-    const leader = config.cluster?.leaderNode;
+    const groupLeader = runtime.placement.leaderNode;
+    if (groupLeader != null && (typeof groupLeader !== 'string' || !config.cluster?.nodes?.[groupLeader])) {
+      errors.push(`distributed runtime ${runtimeId} placement.leaderNode must name a node in cluster.nodes`);
+    }
+    const leader = groupLeader ?? config.cluster?.leaderNode;
     if (runtime.authority?.owner != null && runtime.authority.owner !== authority?.owner) {
       errors.push(`distributed runtime ${runtimeId} authority owner must be cluster leader ${authority?.owner}`);
     }

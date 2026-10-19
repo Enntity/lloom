@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
+import { runtimeAuthority, runtimeControlAllowed } from '../src/cluster.mjs';
+import { loadConfig } from '../src/config.mjs';
 import { deriveUserConfig } from '../src/init.mjs';
+import { keepWarmOwnership, ownsDistributedRuntime, reconfigureRuntimeIds } from '../src/runtime-manager.mjs';
+import { syncClusterSetupMembers } from '../src/setup.mjs';
 
 // A distributed recipe over a daisy chain: each rank is cabled only to its
 // neighbours, so ranks and per-side rails come from cluster.nodes[ID].fabricChain.
@@ -198,9 +205,6 @@ test('chain wiring is validated before anything materializes', () => {
     mutate(config.cluster.nodes);
     assert.throws(() => derive(config), message);
   }
-  const notLeader = chainConfig();
-  notLeader.cluster.leaderNode = 'b';
-  assert.throws(() => derive(notLeader), /cluster\.nodes\[d\]\.fabricChain\.rank 0 must be the cluster leader b/);
   assert.throws(() => derive(chainConfig(), chainRecipe({ nodes: 3 })), /exactly 3 nodes; 4 declare one/);
 });
 
@@ -215,4 +219,86 @@ test('chain and pair fabric templates cannot be mixed', () => {
   const config = chainConfig();
   config.cluster.nodes = { d: config.cluster.nodes.d, e: config.cluster.nodes.e };
   assert.throws(() => derive(config, pair), /need requirements\.cluster\.topology "chain"/);
+});
+
+// A federation head (b leads its own cluster) can be a middle rank of a chain
+// that d, the chain's rank 0, leads: the group records d as its leader, and
+// every node's config agrees that only d controls the chain's runtimes.
+test('a chain is led by its rank 0 even where another node leads the cluster', async () => {
+  const headConfig = chainConfig();
+  headConfig.cluster.leaderNode = 'b';
+  headConfig.cluster.nodeId = 'b';
+  const onHead = derive(headConfig);
+  const group = onHead.runtimes['chain-cluster'];
+  assert.equal(group.placement.leaderNode, 'd');
+  assert.equal(group.authority.owner, 'd');
+  for (const entry of group.placement.members) assert.equal(onHead.runtimes[entry.runtime].authority.owner, 'd');
+  assert.equal(env(onHead.runtimes['chain-worker-b']).NODE_RANK, '1');
+  assert.equal(env(onHead.runtimes['chain-worker-b']).MASTER_ADDR, '198.51.100.1');
+
+  for (const runtimeId of ['chain-cluster', 'chain-worker-b', 'chain-head']) {
+    assert.equal(runtimeAuthority(onHead, runtimeId).owner, 'd', runtimeId);
+    assert.equal(runtimeControlAllowed(onHead, runtimeId, 'd'), true, runtimeId);
+    assert.equal(runtimeControlAllowed(onHead, runtimeId, 'b'), false, runtimeId);
+  }
+  assert.equal(runtimeAuthority(onHead, 'chain-worker-b').delegated, true);
+  assert.equal(ownsDistributedRuntime(onHead, group, { nodeId: 'b', leaderNode: 'b' }), false);
+  assert.equal(ownsDistributedRuntime(onHead, group, { nodeId: 'd', leaderNode: 'b' }), true);
+  assert.equal(keepWarmOwnership(onHead, 'chain-cluster', { nodeId: 'b', leaderNode: 'b' }).reason, 'leader-owned');
+  assert.equal(keepWarmOwnership(onHead, 'chain-cluster', { nodeId: 'd', leaderNode: 'b' }).owned, true);
+  const changed = structuredClone(onHead);
+  changed.runtimes['chain-worker-b'].bootstrap.createArgs.push('EXTRA=1');
+  assert(!reconfigureRuntimeIds(onHead, changed, { nodeId: 'b', leaderNode: 'b' }).includes('chain-cluster'));
+  assert(reconfigureRuntimeIds(onHead, changed, { nodeId: 'd', leaderNode: 'b' }).includes('chain-cluster'));
+
+  // The persisted config validates on the head, and a leader outside the cluster does not.
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lloom-chain-leader-'));
+  try {
+    const file = path.join(dir, 'config.json');
+    for (const [id, node] of Object.entries(onHead.cluster.nodes)) node.endpoint = `http://${id}.example:8100`;
+    await fs.writeFile(file, JSON.stringify(onHead));
+    const loaded = await loadConfig(file, { env: {} });
+    assert.equal(runtimeAuthority(loaded, 'chain-cluster').owner, 'd');
+    const stray = structuredClone(onHead);
+    stray.runtimes['chain-cluster'].placement.leaderNode = 'z';
+    await fs.writeFile(file, JSON.stringify(stray));
+    await assert.rejects(loadConfig(file, { env: {} }), /placement\.leaderNode must name a node in cluster\.nodes/);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+
+  // Setup sync: only the chain's leader pushes setup to its members.
+  const recipeRuntime = { ...group, recipe: { id: 'test-chain', version: 1 } };
+  const synced = [];
+  const coordinator = (nodeId) => ({
+    nodeId,
+    nodes: Object.fromEntries(Object.keys(headConfig.cluster.nodes).map((id) => [id, {}])),
+    isLocalNode: (id) => id === nodeId,
+    async requestNode(id) {
+      synced.push([nodeId, id]);
+      return { ok: true, status: 'applied' };
+    }
+  });
+  const syncConfig = { cluster: headConfig.cluster, runtimes: { 'chain-cluster': recipeRuntime } };
+  assert.deepEqual(await syncClusterSetupMembers(syncConfig, { coordinator: coordinator('b'), recipeId: 'test-chain' }), {
+    synced: [],
+    skipped: true
+  });
+  const fromLeader = await syncClusterSetupMembers(syncConfig, { coordinator: coordinator('d'), recipeId: 'test-chain' });
+  assert.equal(fromLeader.skipped, false);
+  assert.deepEqual(synced.map(([from, to]) => `${from}>${to}`).sort(), ['d>a', 'd>b', 'd>c']);
+});
+
+test('a pair placement keeps the cluster leader and records no group leader', () => {
+  const config = chainConfig();
+  config.cluster.nodes = {
+    d: config.cluster.nodes.d,
+    e: { ...config.cluster.nodes.e, fabricInterface: 'pair0', fabricHca: 'mlx5_9' }
+  };
+  const pair = chainRecipe({ createArgs: ['FABRIC_HCA=${fabricHca}'] });
+  delete pair.requirements.cluster.topology;
+  pair.requirements.cluster.nodes = 2;
+  const derived = derive(config, pair);
+  assert.equal(derived.runtimes['chain-cluster'].placement.leaderNode, undefined);
+  assert.equal(derived.runtimes['chain-cluster'].authority.owner, 'd');
 });

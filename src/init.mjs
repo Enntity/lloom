@@ -292,9 +292,9 @@ function validateNodeFabric(node, nodeId, member, chain) {
 // nor per-side rails can come from map order or NIC names. Each chain node
 // declares cluster.nodes[ID].fabricChain: its rank, the interface every rank
 // reaches the others on, the rendezvous address (rank 0 only), and the RDMA
-// devices cabled toward rank - 1 (leftHca) and rank + 1 (rightHca). Rank 0 is
-// the cluster leader. Returns the chain's node IDs in rank order.
-function resolveFabricChain(recipe, configuredNodes, leaderNode) {
+// devices cabled toward rank - 1 (leftHca) and rank + 1 (rightHca). Rank 0
+// leads the chain's runtimes. Returns the chain's node IDs in rank order.
+function resolveFabricChain(recipe, configuredNodes) {
   const cluster = asObject(recipe.requirements?.cluster);
   if (cluster.topology !== 'chain') return null;
   const entries = Object.entries(configuredNodes).filter(([, node]) => node?.fabricChain != null);
@@ -317,9 +317,6 @@ function resolveFabricChain(recipe, configuredNodes, leaderNode) {
     const field = `cluster.nodes[${nodeId}].fabricChain`;
     if (!networkInterfaceName(link.interface)) {
       throw new Error(`${field}.interface must name the network interface every chain rank reaches the others on`);
-    }
-    if (rank === 0 && nodeId !== leaderNode) {
-      throw new Error(`${field}.rank 0 must be the cluster leader ${leaderNode}`);
     }
     if (rank === 0 && !net.isIP(String(link.address ?? ''))) {
       throw new Error(`${field}.address must be rank 0's IP address on its chain interface (the rendezvous)`);
@@ -732,10 +729,14 @@ function ensureRecipeConfigEntries(
           `recipe model ${modelId} requests distributed placement but fewer than two cluster nodes are configured`
         );
       }
-      const leaderNode = config.cluster?.leaderNode ?? nodeIds[0];
-      if (!configuredNodes[leaderNode])
-        throw new Error(`cluster leader ${leaderNode} is not declared in cluster.nodes`);
-      const chain = resolveFabricChain(recipe, configuredNodes, leaderNode);
+      const clusterLeader = config.cluster?.leaderNode ?? nodeIds[0];
+      if (!configuredNodes[clusterLeader])
+        throw new Error(`cluster leader ${clusterLeader} is not declared in cluster.nodes`);
+      // A chain's rank 0 leads its group (placement.leaderNode), so a node that
+      // leads its own cluster, such as a federation head, can still be a member
+      // of a chain that another node leads.
+      const chain = resolveFabricChain(recipe, configuredNodes);
+      const leaderNode = chain ? chain[0] : clusterLeader;
       const nonLeaderNodes = nodeIds.filter((nodeId) => nodeId !== leaderNode);
       const labeledWorkerNodes = nonLeaderNodes.filter((nodeId) => configuredNodes[nodeId]?.labels?.role === 'worker');
       const workerNodes = chain ? chain.slice(1) : labeledWorkerNodes.length ? labeledWorkerNodes : nonLeaderNodes;
@@ -922,7 +923,7 @@ function ensureRecipeConfigEntries(
           scope: 'distributed-model',
           group: runtimeId
         },
-        placement: { mode: 'distributed', members }
+        placement: { mode: 'distributed', ...(chain ? { leaderNode } : {}), members }
       };
       const materializedModel = materializedRecipeModel(recipe, recipeModel, modelId, {
         backend: backendConfigId,

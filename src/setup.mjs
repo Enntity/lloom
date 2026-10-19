@@ -263,11 +263,19 @@ export async function syncClusterSetupMembers(
     timeoutMs = 1_800_000
   } = {}
 ) {
-  if (!coordinator || coordinator.nodeId !== config.cluster?.leaderNode) return { synced: [], skipped: true };
+  // Only the node that leads the recipe's distributed runtimes syncs its
+  // members: a chain's rank 0 may lead them without leading the cluster.
+  const distributed = Object.values(config.runtimes ?? {}).filter(
+    (runtime) => runtime?.recipe?.id === recipeId && runtime?.placement?.mode === 'distributed'
+  );
+  const leads = (runtime) => (runtime.placement.leaderNode ?? config.cluster?.leaderNode) === coordinator?.nodeId;
+  const led = distributed.filter(leads);
+  if (!coordinator || (distributed.length ? !led.length : coordinator.nodeId !== config.cluster?.leaderNode)) {
+    return { synced: [], skipped: true };
+  }
   const remoteNodeIds = [
     ...new Set(
-      Object.values(config.runtimes ?? {})
-        .filter((runtime) => runtime?.recipe?.id === recipeId && runtime?.placement?.mode === 'distributed')
+      led
         .flatMap((runtime) => runtime.placement.members ?? [])
         .map((member) => member?.node)
         .filter((nodeId) => nodeId && !coordinator.isLocalNode(nodeId))
