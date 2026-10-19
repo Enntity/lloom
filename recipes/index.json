@@ -1445,11 +1445,11 @@
           "version": 1,
           "path": "linux-nvidia-dgx-spark-4x-glm53-atlas-tp4.json",
           "status": "current",
-          "notes": "Atlas SparkGLM TP-4 over a four-Spark daisy chain, additive only, setDefault false, no aliases, a separate gateway model beside the pair lane. DRAFT pins: backends/atlas-sparkglm/pins-tp4.json carries TODO-TP4-RC placeholders until a TP-4 release image exists, and the fail-closed pin gate refuses them, so nothing installs or starts. Ranks, per-side RDMA rails and the rendezvous address come from each node's cluster.nodes[ID].fabricChain; the workers start from the far end of the chain."
+          "notes": "Atlas SparkGLM TP-4 over a four-Spark daisy chain, additive only, setDefault false, no aliases, a separate gateway model beside the pair lane. Pins in backends/atlas-sparkglm/pins-tp4.json name the release candidate; an unpublished one is a localhost/atlas-sparkglm tag (image.source local) that is never pulled and must be on every node. The chain's rank 0 leads its runtimes, so a federation head can be a middle rank. Ranks, per-side RDMA rails and the rendezvous address come from each node's cluster.nodes[ID].fabricChain; the workers start from the far end of the chain."
         }
       ],
       "name": "4x DGX Spark GLM-5.3 Flash FP4-Local Atlas TP-4 chain",
-      "summary": "Four-node Atlas SparkGLM TP-4 over a switchless daisy chain serving GLM-5.3-Flash-FP4-Local as published: four requests of up to 1M tokens with DFlash2 speculative decoding. Pins are drafts until a TP-4 release image exists.",
+      "summary": "Four-node Atlas SparkGLM TP-4 over a switchless daisy chain serving GLM-5.3-Flash-FP4-Local as published: four requests of up to 1M tokens with DFlash2 speculative decoding. Pinned to a TP-4 release candidate, which may be a local, unpublished image.",
       "tags": [
         "linux",
         "nvidia",

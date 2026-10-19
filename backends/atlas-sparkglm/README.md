@@ -22,8 +22,11 @@ ToolEvalBench 91) and serves in production with `SPARKGLM_PROFILE=4x1m`.
   drafter revisions.
 - `pins-tp4.json` — the pin manifest of the four-Spark TP-4 chain lane
   (recipe `linux-nvidia-dgx-spark-4x-glm53-atlas-tp4`), in the same format.
-  It is a **draft** until a TP-4 release image exists; see
-  [Four-Spark TP-4 chain](#four-spark-tp-4-chain-draft).
+  It may pin an unpublished release candidate by a local tag
+  (`image.source: "local"`); see [Four-Spark TP-4 chain](#four-spark-tp-4-chain).
+- `pin-tp4-local.mjs` — pins the TP-4 lane to a local release candidate in one
+  command (`--rc`, `--engine`, `--engine-branch`, `--sparkglm <checkout>`):
+  writes `pins-tp4.json`, mirrors its image into the recipe and runs the gate.
 - `verify-pins.mjs` — fail-closed pin gate. Exits non-zero while the manifest
   is not final, the source revision, install tree, engine commit or drafter
   revision is not a 40-character lowercase git object id, the model is not the
@@ -205,7 +208,7 @@ receipts cover four concurrent ~204K-token sessions (12/12 retrieved); four
 concurrent full 1048576-token windows and 128K generated-output endurance have
 not been measured on this lane.
 
-## Four-Spark TP-4 chain (draft)
+## Four-Spark TP-4 chain
 
 `recipes/linux-nvidia-dgx-spark-4x-glm53-atlas-tp4.json` runs this image's
 `4x1m-tp4` profile on four Sparks cabled as a daisy chain, as the separate
@@ -216,9 +219,14 @@ environment is what `serve.py` reads at four ranks: `NODE_RANK`,
 `MASTER_ADDR`, `FABRIC_INTERFACE`, `FABRIC_LEFT_HCA` and `FABRIC_RIGHT_HCA`
 from each node's `cluster.nodes[ID].fabricChain`, `FABRIC_SIBLINGS=0`,
 `SPARKGLM_PROFILE=4x1m-tp4`, and no KV shard, display carveout or disk prefix
-cache. `pins-tp4.json` carries `TODO-TP4-RC` placeholders with status `draft`,
-which the gate refuses, so the lane cannot install until a TP-4 release image
-is pinned; the steps to adopt one are in
+cache, at the profile's 0.72 GPU memory utilization (admitted as 96 GiB per
+Spark). An unpublished release candidate is pinned with `image.source:
+"local"` and the tag `localhost/atlas-sparkglm:tp4-<rc>-<engine12>`:
+`install.sh` never pulls it and prepares the lane only on a node that already
+has that tag with the pinned install-tree label, `/opt/atlas/serve.py`, the
+`4x1m-tp4` profile and the engine commit in `/opt/atlas/source-manifest.json`.
+Publishing the candidate later means its GHCR digest with `image.source`
+`registry` (the default). The steps are in
 [docs/recipes.md](../../docs/recipes.md#atlas-sparkglm-tp-4-chain).
 
 ## Credits and licenses

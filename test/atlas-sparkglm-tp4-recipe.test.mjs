@@ -8,6 +8,7 @@ import { deriveUserConfig } from '../src/init.mjs';
 import { loadRecipeById, planRecipe } from '../src/recipes.mjs';
 import { dockerCreateArgs } from '../src/runtime-manager.mjs';
 import { imageTagFor, loadPins, verifyPins } from '../backends/atlas-sparkglm/verify-pins.mjs';
+import { mirrorRecipeImage, pinLocalCandidate } from '../backends/atlas-sparkglm/pin-tp4-local.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const backendDir = path.join(root, 'backends', 'atlas-sparkglm');
@@ -63,7 +64,7 @@ assert.equal(model.settings.healthUrl, 'http://127.0.0.1:8893/health');
 assert.equal(model.settings.warmup.body.model, gatewayModel);
 assert.equal(model.settings.contextWindow, 1048576);
 assert.equal(model.settings.maxActiveRequests, 4);
-assert.equal(model.settings.memoryGb, 114);
+assert.equal(model.settings.memoryGb, 96, 'the 0.72 profile: 87.6 GiB engine budget plus the host share');
 assert.equal(model.settings.keepWarm, false);
 // Not qualified at four ranks yet: the disk tier is off (the mount stays).
 assert.equal(model.settings.prefixCacheGb, 0);
@@ -101,7 +102,7 @@ const expectedEnv = [
   'DRAFTER_PATH=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2',
   `SERVED_MODEL_NAME=${gatewayModel}`,
   'SPARKGLM_PROFILE=4x1m-tp4',
-  'SPARKGLM_GPU_MEMORY_UTILIZATION=0.88',
+  'SPARKGLM_GPU_MEMORY_UTILIZATION=0.72',
   'SPARKGLM_KV_SHARD=0',
   'SPARKGLM_DISPLAY_CARVEOUT=0',
   'SPARKGLM_PREFIX_CACHE_GB=${prefixCacheGb}',
@@ -137,52 +138,93 @@ for (const member of members) {
   assert(!/roce|mlx5|enp|enP/.test(rendered), 'no host device names');
 }
 
-// ---- pins: draft until a TP-4 release image exists --------------------------
-assert.equal(pins.status, 'draft');
+// ---- pins: a local, unpublished release candidate ---------------------------
+assert.equal(pins.status, 'final');
+assert.equal(pins.image.source, 'local');
+assert.match(pins.image.reference, /^localhost\/atlas-sparkglm:tp4-[a-z0-9]+-[a-f0-9]{12}$/);
+assert.equal(pins.image.tag, pins.image.reference);
+assert(pins.image.reference.endsWith(pins.engine.commit.slice(0, 12)), 'the local tag names its engine');
 assert.equal(pins.image.profilePath, '/opt/atlas/profiles/4x1m-tp4.json');
 assert.deepEqual(pins.model, pairPins.model);
 assert.deepEqual(pins.drafter, pairPins.drafter);
 for (const key of ['label', 'entrypoint', 'architecture']) assert.equal(pins.image[key], pairPins.image[key]);
-assert.deepEqual(
-  verifyPins(pins)
-    .map((failure) => failure.split(' ')[0])
-    .filter((name, index, all) => all.indexOf(name) === index)
-    .sort(),
-  ['engine.commit', 'image.reference', 'image.tag', 'source.installTree', 'source.revision', 'status'],
-  'only the release identities remain to fill in'
-);
-// Filling those identities is the only step left before the lane can install.
-const filled = structuredClone(pins);
-filled.status = 'final';
-filled.source.revision = 'a'.repeat(40);
-filled.source.installTree = 'b'.repeat(40);
-filled.engine = { ...filled.engine, branch: 'sparkglm/atlas-tp4', commit: 'c'.repeat(40) };
-filled.image.reference = `ghcr.io/enntity/atlas-sparkglm@sha256:${'d'.repeat(64)}`;
-filled.image.tag = imageTagFor(filled);
-assert.deepEqual(verifyPins(filled), []);
-assert(!JSON.stringify({ ...filled, note: '' }).includes('TODO'));
+assert.deepEqual(verifyPins(pins), []);
+assert(!JSON.stringify(pins).includes('TODO'));
 for (const step of ['verify-atlas-pins', 'build-atlas-image']) {
   assert(recipe.setup.steps.find((entry) => entry.id === step).alwaysRun, `${step} gates every apply`);
 }
+// A local reference must say it is local, and a registry one must be a digest.
+for (const [image, message] of [
+  [
+    { reference: `ghcr.io/enntity/atlas-sparkglm@sha256:${'d'.repeat(64)}` },
+    /a local image\.reference must be localhost\/atlas-sparkglm/
+  ],
+  [{ tag: 'localhost/atlas-sparkglm:other' }, /a local image\.tag must equal image\.reference/],
+  [{ source: 'registry' }, /image\.tag must be ghcr\.io|image\.reference must be ghcr\.io/],
+  [{ source: 'mirror' }, /image\.source must be registry or local/]
+]) {
+  const broken = structuredClone(pins);
+  Object.assign(broken.image, image);
+  assert.match(verifyPins(broken).join('\n'), message);
+}
+// Publishing it later is the registry form of the same pins.
+const published = structuredClone(pins);
+delete published.image.source;
+published.image.reference = `ghcr.io/enntity/atlas-sparkglm@sha256:${'d'.repeat(64)}`;
+published.image.tag = imageTagFor(published);
+assert.deepEqual(verifyPins(published), []);
+// Pinning another candidate is one command; it fills exactly these fields.
+const next = pinLocalCandidate(pins, {
+  rc: 'rc9',
+  engine: 'c'.repeat(40),
+  engineBranch: 'sparkglm/tp4-next',
+  revision: 'a'.repeat(40),
+  installTree: 'b'.repeat(40)
+});
+assert.deepEqual(verifyPins(next), []);
+assert.equal(next.image.reference, `localhost/atlas-sparkglm:tp4-rc9-${'c'.repeat(12)}`);
+assert.deepEqual(next.model, pins.model);
+const nextRecipe = mirrorRecipeImage(recipe, next.image.reference);
+for (const member of nextRecipe.models[0].settings.placement.members) {
+  assert.equal(member.runtimeSettings.bootstrap.image, next.image.reference);
+}
 
 const verifyRun = spawnSync('node', [path.join(backendDir, 'verify-pins.mjs'), tp4PinsPath], { encoding: 'utf8' });
-assert.equal(verifyRun.status, 1, 'the draft manifest must fail closed');
-assert.match(verifyRun.stderr, /TODO-TP4-RC/);
-// The installer refuses the draft manifest before touching Docker.
+assert.equal(verifyRun.status, 0, verifyRun.stderr);
+// install.sh never pulls a local image: present with the pinned identity it is
+// prepared after the contract check, absent it fails without a pull.
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-tp4-'));
 const fakeBin = path.join(tmpRoot, 'bin');
 fs.mkdirSync(fakeBin);
-fs.writeFileSync(path.join(fakeBin, 'docker'), `#!/bin/sh\ntouch '${tmpRoot}/docker-called'\nexit 1\n`, {
-  mode: 0o755
-});
-const installRun = spawnSync(
-  'bash',
-  [path.join(backendDir, 'install.sh'), '--manifest', tp4PinsPath, '--backend-root', tmpRoot],
-  { encoding: 'utf8', env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` } }
+fs.writeFileSync(
+  path.join(fakeBin, 'docker'),
+  [
+    '#!/bin/sh',
+    `echo "$*" >> '${tmpRoot}/docker-calls'`,
+    'case "$1 $2" in',
+    `  "image inspect") [ -f '${tmpRoot}/present' ] || exit 1; echo "arm64 ${pins.source.installTree}" ;;`,
+    '  "run --rm") exit 0 ;;',
+    '  *) exit 1 ;;',
+    'esac',
+    ''
+  ].join('\n'),
+  { mode: 0o755 }
 );
-assert.notEqual(installRun.status, 0);
-assert.match(installRun.stderr, /not a final immutable install manifest/);
-assert(!fs.existsSync(path.join(tmpRoot, 'docker-called')), 'Docker must not run for a draft manifest');
+const install = () =>
+  spawnSync('bash', [path.join(backendDir, 'install.sh'), '--manifest', tp4PinsPath, '--backend-root', tmpRoot], {
+    encoding: 'utf8',
+    env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` }
+  });
+const absent = install();
+assert.notEqual(absent.status, 0);
+assert.match(absent.stderr, /is never pulled or built here/);
+fs.writeFileSync(path.join(tmpRoot, 'present'), '');
+const present = install();
+assert.equal(present.status, 0, present.stderr);
+assert.match(present.stdout, /local image localhost\/atlas-sparkglm:tp4-.* prepared \(unpublished; never pulled\)/);
+const calls = fs.readFileSync(path.join(tmpRoot, 'docker-calls'), 'utf8');
+assert(!/^pull /m.test(calls), 'a local image is never pulled');
+assert.match(calls, new RegExp(`grep -q '"${pins.engine.commit}"' /opt/atlas/source-manifest\\.json`));
 fs.rmSync(tmpRoot, { recursive: true, force: true });
 
 // ---- plan validity ---------------------------------------------------------
@@ -323,6 +365,7 @@ assert(entry, 'the TP-4 recipe must be listed in recipes/index.json');
 assert.equal(entry.path, 'linux-nvidia-dgx-spark-4x-glm53-atlas-tp4.json');
 assert.equal(entry.currentVersion, recipe.version);
 assert.equal(entry.versions.filter((version) => version.status === 'current').length, 1);
-assert.match(`${entry.summary} ${entry.versions[0].notes}`, /draft|DRAFT/);
+assert.match(`${entry.summary} ${entry.versions[0].notes}`, /release candidate/);
+assert(!/DRAFT|TODO/.test(JSON.stringify(entry)));
 
 console.log('Atlas SparkGLM TP-4 recipe checks passed');

@@ -24,6 +24,11 @@
 # --check-only only VERIFIES the local image identity and in-image contract.
 # A missing image or incomplete contract fails verification.
 #
+# A manifest with image.source "local" pins an unpublished release candidate by
+# a localhost/atlas-sparkglm tag. It is never pulled or built here: the tag
+# must already be on this node, and it passes only the same identity and
+# contract checks as a pulled image.
+#
 # --source-build deliberately verifies a local source build from the pinned
 # revision; it does not satisfy the normal immutable recipe, which addresses
 # image.reference.
@@ -49,7 +54,7 @@ while [[ $# -gt 0 ]]; do
     --install-root=*) INSTALL_ROOT="${1#*=}"; shift ;;
     --check-only) CHECK_ONLY=1; shift ;;
     --source-build) SOURCE_BUILD=1; shift ;;
-    -h|--help) sed -n '2,31p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h|--help) sed -n '2,36p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "install.sh: unexpected argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -67,6 +72,8 @@ SOURCE_REPO="$(pin source.repo)"
 CLONE_URL="$(pin source.cloneUrl)"
 BUILD_SCRIPT="$(pin source.buildScript)"
 IMAGE_REFERENCE="$(pin image.reference)"
+IMAGE_SOURCE="$(pin image.source)"
+[[ -n "${IMAGE_SOURCE}" ]] || IMAGE_SOURCE=registry
 IMAGE_TAG="$(pin image.tag)"
 IMAGE_LABEL="$(pin image.label)"
 IMAGE_ARCHITECTURE="$(pin image.architecture)"
@@ -129,6 +136,15 @@ if [[ "${CHECK_ONLY}" == "1" && "${SOURCE_BUILD}" == "1" ]]; then
   note "--check-only with --source-build verifies the local source-build tag ${IMAGE_TAG} from the pinned revision (this does not satisfy the normal immutable recipe, which addresses ${IMAGE_REFERENCE})"
   verify_image_identity "${IMAGE_TAG}" || fail "local source-build image ${IMAGE_TAG} failed verification; build it with --source-build"
   verify_image_contract "${IMAGE_TAG}"
+  exit 0
+fi
+
+if [[ "${IMAGE_SOURCE}" == "local" ]]; then
+  [[ "${SOURCE_BUILD}" == "0" ]] || fail "--source-build does not apply to the local image ${IMAGE_REFERENCE}"
+  verify_image_identity "${IMAGE_REFERENCE}" \
+    || fail "local image ${IMAGE_REFERENCE} is not on this node with the pinned install tree; it is never pulled or built here. Tag the release candidate's image as ${IMAGE_REFERENCE} on every node first."
+  verify_image_contract "${IMAGE_REFERENCE}"
+  note "local image ${IMAGE_REFERENCE} prepared (unpublished; never pulled)"
   exit 0
 fi
 

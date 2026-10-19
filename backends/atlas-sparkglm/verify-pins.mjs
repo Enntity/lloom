@@ -14,6 +14,13 @@
 // io.enntity.sparkglm.install-tree label is a contents check, not an artifact
 // identity. Image IDs are deliberately NOT pinned: install.sh verifies the
 // local image by its install-tree label and architecture.
+//
+// A release candidate that is not published (image.source "local") is named
+// by a local tag under localhost/atlas-sparkglm. Docker reads "localhost" as a
+// registry host, so even a stray pull can never fetch a same-named public
+// image from Docker Hub; install.sh never pulls it, and refuses to prepare the
+// lane until that tag is present on the node with the pinned install-tree
+// label, entrypoint, profile and engine commit. Every other pin is unchanged.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,6 +30,8 @@ export const REQUIRED_IMAGE_ARCHITECTURE = 'arm64';
 export const IMAGE_REPOSITORY = 'ghcr.io/enntity/atlas-sparkglm';
 export const IMAGE_LABEL = 'io.enntity.sparkglm.install-tree';
 export const IMAGE_REFERENCE_PATTERN = /^ghcr\.io\/enntity\/atlas-sparkglm@sha256:[a-f0-9]{64}$/;
+export const LOCAL_IMAGE_REPOSITORY = 'localhost/atlas-sparkglm';
+export const LOCAL_IMAGE_PATTERN = /^localhost\/atlas-sparkglm:[a-z0-9][a-z0-9._-]{0,127}$/;
 // Served as published. The earlier nvidia/GLM-5.3-Flash-NVFP4 checkpoint needs
 // an MTP overlay this recipe does not prepare, so it is not a valid pin here.
 export const MODEL_REPO = 'nvidia/GLM-5.3-Flash-FP4-Local';
@@ -69,14 +78,27 @@ export function verifyPins(manifest) {
       failures.push(`${name} must be a 40-character lowercase git object id, got ${value}`);
     }
   }
-  // The tag is the first 12 characters of the install tree, as printed by the
-  // pinned source's install/build.sh.
-  if (typeof manifest.image?.tag === 'string' && manifest.image.tag !== imageTagFor(manifest)) {
-    failures.push(`image.tag must be ${imageTagFor(manifest)}, got ${manifest.image.tag}`);
-  }
   const reference = manifest.image?.reference;
-  if (typeof reference === 'string' && !IMAGE_REFERENCE_PATTERN.test(reference)) {
-    failures.push(`image.reference must be ${IMAGE_REPOSITORY}@sha256:<64 lowercase hex>, got ${reference}`);
+  const source = manifest.image?.source ?? 'registry';
+  if (source === 'local') {
+    // An unpublished candidate: one local tag is both the reference and the tag.
+    if (typeof reference === 'string' && !LOCAL_IMAGE_PATTERN.test(reference)) {
+      failures.push(`a local image.reference must be ${LOCAL_IMAGE_REPOSITORY}:<tag>, got ${reference}`);
+    }
+    if (typeof manifest.image?.tag === 'string' && manifest.image.tag !== reference) {
+      failures.push(`a local image.tag must equal image.reference ${reference}, got ${manifest.image.tag}`);
+    }
+  } else if (source !== 'registry') {
+    failures.push(`image.source must be registry or local, got ${source}`);
+  } else {
+    // The tag is the first 12 characters of the install tree, as printed by the
+    // pinned source's install/build.sh.
+    if (typeof manifest.image?.tag === 'string' && manifest.image.tag !== imageTagFor(manifest)) {
+      failures.push(`image.tag must be ${imageTagFor(manifest)}, got ${manifest.image.tag}`);
+    }
+    if (typeof reference === 'string' && !IMAGE_REFERENCE_PATTERN.test(reference)) {
+      failures.push(`image.reference must be ${IMAGE_REPOSITORY}@sha256:<64 lowercase hex>, got ${reference}`);
+    }
   }
   if (manifest.image?.label !== IMAGE_LABEL) {
     failures.push(`image.label must be ${IMAGE_LABEL}, got ${manifest.image?.label}`);

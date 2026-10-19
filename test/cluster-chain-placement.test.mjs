@@ -280,11 +280,17 @@ test('a chain is led by its rank 0 even where another node leads the cluster', a
     }
   });
   const syncConfig = { cluster: headConfig.cluster, runtimes: { 'chain-cluster': recipeRuntime } };
-  assert.deepEqual(await syncClusterSetupMembers(syncConfig, { coordinator: coordinator('b'), recipeId: 'test-chain' }), {
-    synced: [],
-    skipped: true
+  assert.deepEqual(
+    await syncClusterSetupMembers(syncConfig, { coordinator: coordinator('b'), recipeId: 'test-chain' }),
+    {
+      synced: [],
+      skipped: true
+    }
+  );
+  const fromLeader = await syncClusterSetupMembers(syncConfig, {
+    coordinator: coordinator('d'),
+    recipeId: 'test-chain'
   });
-  const fromLeader = await syncClusterSetupMembers(syncConfig, { coordinator: coordinator('d'), recipeId: 'test-chain' });
   assert.equal(fromLeader.skipped, false);
   assert.deepEqual(synced.map(([from, to]) => `${from}>${to}`).sort(), ['d>a', 'd>b', 'd>c']);
 });
