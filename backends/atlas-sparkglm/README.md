@@ -20,6 +20,10 @@ ToolEvalBench 91) and serves in production with `SPARKGLM_PROFILE=4x1m`.
   immutable image manifest reference (`image.reference`) with the tag kept as
   source-build metadata and the install-tree contents label, and the model and
   drafter revisions.
+- `pins-tp4.json` — the pin manifest of the four-Spark TP-4 chain lane
+  (recipe `linux-nvidia-dgx-spark-4x-glm53-atlas-tp4`), in the same format.
+  It is a **draft** until a TP-4 release image exists; see
+  [Four-Spark TP-4 chain](#four-spark-tp-4-chain-draft).
 - `verify-pins.mjs` — fail-closed pin gate. Exits non-zero while the manifest
   is not final, the source revision, install tree, engine commit or drafter
   revision is not a 40-character lowercase git object id, the model is not the
@@ -200,6 +204,22 @@ node overrides; review its output before starting the model. The release
 receipts cover four concurrent ~204K-token sessions (12/12 retrieved); four
 concurrent full 1048576-token windows and 128K generated-output endurance have
 not been measured on this lane.
+
+## Four-Spark TP-4 chain (draft)
+
+`recipes/linux-nvidia-dgx-spark-4x-glm53-atlas-tp4.json` runs this image's
+`4x1m-tp4` profile on four Sparks cabled as a daisy chain, as the separate
+gateway model `glm-5.3-flash-atlas-tp4`. It reuses this directory's
+`install.sh` and `verify-pins.mjs` with `--manifest pins-tp4.json`, and the
+pair lane's model, drafter, container hardening, limits and mounts. Its
+environment is what `serve.py` reads at four ranks: `NODE_RANK`,
+`MASTER_ADDR`, `FABRIC_INTERFACE`, `FABRIC_LEFT_HCA` and `FABRIC_RIGHT_HCA`
+from each node's `cluster.nodes[ID].fabricChain`, `FABRIC_SIBLINGS=0`,
+`SPARKGLM_PROFILE=4x1m-tp4`, and no KV shard, display carveout or disk prefix
+cache. `pins-tp4.json` carries `TODO-TP4-RC` placeholders with status `draft`,
+which the gate refuses, so the lane cannot install until a TP-4 release image
+is pinned; the steps to adopt one are in
+[docs/recipes.md](../../docs/recipes.md#atlas-sparkglm-tp-4-chain).
 
 ## Credits and licenses
 

@@ -155,7 +155,9 @@ Source: <https://github.com/Lightricks/LTX-2/tree/9ec55f9f22798a3198d9c923856824
 ## Atlas SparkGLM engine image (not included)
 
 The optional Atlas SparkGLM lane in `backends/atlas-sparkglm` and
-`recipes/linux-nvidia-dgx-spark-2x-glm53-atlas.json` pulls or builds the
+`recipes/linux-nvidia-dgx-spark-2x-glm53-atlas.json` (and its four-Spark TP-4
+lane, `recipes/linux-nvidia-dgx-spark-4x-glm53-atlas-tp4.json`, whose image
+pins in `pins-tp4.json` are drafts until a TP-4 release) pulls or builds the
 container image `ghcr.io/enntity/atlas-sparkglm` from
 [Enntity/sparkglm](https://github.com/Enntity/sparkglm) at
 `c28da418444e954323ee885ffc3954965794a679`. LLooM starts that image as a

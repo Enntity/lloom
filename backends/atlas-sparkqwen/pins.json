@@ -1,29 +1,29 @@
 {
   "manifestVersion": 1,
   "status": "final",
-  "note": "Single pin manifest for the Atlas SparkQwen RC16 lane. Source, install tree, tag and model identities are final. image.reference is the GHCR manifest digest of ghcr.io/enntity/atlas-sparkqwen:b151fbe840a1, also used as the recipe's bootstrap image. The normal install path addresses image.reference; the tag is source-build metadata (the first 12 characters of the git tree of install/ at the pinned revision) and the install-tree label is a contents check. A tag or label alone is never the artifact identity.",
+  "note": "Maintenance release accepted with disclosed limits; full_quality_pass=false. Recipe integration and guarded production canaries are approved; persistent activation remains pending live evidence. Exact source, install tree, engine and immutable registry manifest are finalized, not a declaration that the full quality gate passed. Engine source reference `sparkqwen/fidelity-rc-20261019` is an annotated tag, not a new branch. Maintenance review: https://github.com/Enntity/sparkqwen/blob/050743206a7fd921eaa5acf1cbe50653b9f155cc/results/2026-10-20-fidelity-review/qualification.json (SHA256 d591b033b0c396a2b0222b6c63136bc323e1bb5b69a206eac3c7df942b24be8b). Publication acceptance SHA256 7e2e699de3e8d06cb4a6eb3a3df5add15c8aaf18172f0f299aa1a0628ea91de0; separate production disposition SHA256 7b626caea8a546f868854d5c07eeaed103f5bf0c4ba3048b0e2d16fa85ede346. Embedded source manifest SHA256 bf0995cd9964ee2e09e6983eefefde40bf9208b0d65174256e77cd0c061bb308; 8x262k profile SHA256 225c23340d96e44bd1246e096b04ec49158c3e738ed30231a915183e60b1bd04. LLooM deployment, gateway attribution and reservation drain/resume require separate live receipts. Limitations: Full quality gate remains failed. This release does not establish numerical parity, universal speculative equivalence, a lossless recipe, or an all-quality-pass result. Canonical prompt NLL is 1.0659923317039264, a residual of +0.0404426398902944 against the observed A4 reference. The earlier native baseline was higher at 1.1216532930400633. These comparisons do not establish a cause. Needle recall is 59/60 versus the retained historical 60/60 result. One lookup failed at 163,290 prompt tokens. Speculative ON and OFF at concurrency 1 returned the same wrong decoded fields; the original concurrency-4 run and different cache histories limit this comparison. Automatic tool selection combined with strict JSON can choose an unrelated tool. The explicit tool_choice: none control returned the correct JSON. Performance is mixed, including slower Rig medians and concurrency-2/4/8 cells. The matrix has one invocation per cell; its concurrency-1 32K cell is slower. Four warm-conversation request bodies differ because earlier responses generate later history. Logit bias on the first prefill token remains an inherited unsupported contract. The oversized PNG probe establishes header admission only; it does not prove full pixel decoding.",
   "source": {
     "repo": "Enntity/sparkqwen",
-    "revision": "2e8e6dda78fa12848d9a48722332f6aff39b860f",
-    "installTree": "b151fbe840a15b735f08026c2bf521edac9ce96e",
+    "revision": "050743206a7fd921eaa5acf1cbe50653b9f155cc",
+    "installTree": "70890529ba64dede889814f99f21b3c9a981d9bc",
     "cloneUrl": "https://github.com/Enntity/sparkqwen.git",
     "buildScript": "install/build.sh"
   },
   "engine": {
     "repo": "Enntity/atlas",
-    "branch": "sparkqwen/atlas-20261013-sidecars",
-    "commit": "84e7c734bbb70850bd2f65b0bf9e68ab8f8bac22"
+    "branch": "sparkqwen/fidelity-rc-20261019",
+    "commit": "63bebfa60d5086de9fc8cc07c21e5fbe38f3b742"
   },
   "image": {
-    "reference": "ghcr.io/enntity/atlas-sparkqwen@sha256:ea6a2df03adfc8802a1baf6ab1d4b55c69dd76588f36bfd5d189781500e75830",
-    "tag": "ghcr.io/enntity/atlas-sparkqwen:b151fbe840a1",
+    "reference": "ghcr.io/enntity/atlas-sparkqwen@sha256:a0cebe89737898692964d3923477bef293a4ebde9dd32e27202697c54f763c9d",
+    "tag": "ghcr.io/enntity/atlas-sparkqwen:70890529ba64",
     "label": "io.enntity.sparkqwen.install-tree",
     "entrypoint": "/opt/atlas/serve.py",
     "profilePath": "/opt/atlas/profiles/8x262k.json",
     "architecture": "arm64"
   },
   "model": {
-    "repo": "nvidia/Qwen3.8-Flash-Next-NVFP4",
-    "revision": "fc694b54fb0174e0913e6adf86691ef85a4ead47"
+    "repo": "nvidia/Qwen3.8-Flash-Next-FP4-Local",
+    "revision": "b9ce18a6887e18c089fdea8509a33e63429a3300"
   }
 }

@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import net from 'node:net';
 import path from 'node:path';
 import {
   applyIntegrationArtifacts,
@@ -248,25 +249,92 @@ function templateValue(value, variables) {
   return value;
 }
 
+function rdmaDeviceList(value) {
+  const hcas = typeof value === 'string' ? value.split(',') : [];
+  return (
+    hcas.length > 0 &&
+    hcas.every((name) => /^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name)) &&
+    new Set(hcas).size === hcas.length
+  );
+}
+
+function networkInterfaceName(value) {
+  return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(value);
+}
+
+const RDMA_LIST_RULE = 'unique, exact RDMA device names separated by commas (no spaces or :port suffixes)';
+
 // Recipes that consume fabricHca require exact, node-local device names.
 // Do not guess an HCA from a NIC name: PCI naming and cabling differ by host.
-function validateNodeFabric(node, nodeId, member) {
-  if (!JSON.stringify(member.runtimeSettings ?? {}).includes('${fabricHca}')) return;
-  const field = `cluster.nodes[${nodeId}]`;
-  const hcas = typeof node.fabricHca === 'string' ? node.fabricHca.split(',') : [];
-  if (
-    !hcas.length ||
-    hcas.some((name) => !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name)) ||
-    new Set(hcas).size !== hcas.length
-  ) {
-    throw new Error(
-      `${field}.fabricHca must list unique, exact RDMA device names separated by commas ` +
-        '(no spaces or :port suffixes); select only rails connecting this pair'
-    );
+// A chain member takes its rails per side instead (fabricChain below).
+function validateNodeFabric(node, nodeId, member, chain) {
+  const template = JSON.stringify(member.runtimeSettings ?? {});
+  if (chain) {
+    if (template.includes('${fabricHca}')) {
+      throw new Error('a chain placement takes ${fabricLeftHca} and ${fabricRightHca}, not ${fabricHca}');
+    }
+    return;
   }
-  if (typeof node.fabricInterface !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(node.fabricInterface)) {
+  if (/\$\{fabric(Left|Right)Hca\}/.test(template)) {
+    throw new Error('${fabricLeftHca} and ${fabricRightHca} need requirements.cluster.topology "chain"');
+  }
+  if (!template.includes('${fabricHca}')) return;
+  const field = `cluster.nodes[${nodeId}]`;
+  if (!rdmaDeviceList(node.fabricHca)) {
+    throw new Error(`${field}.fabricHca must list ${RDMA_LIST_RULE}; select only rails connecting this pair`);
+  }
+  if (!networkInterfaceName(node.fabricInterface)) {
     throw new Error(`${field}.fabricInterface must name the network interface for this pair`);
   }
+}
+
+// A chain topology cables each rank only to its neighbours, so neither ranks
+// nor per-side rails can come from map order or NIC names. Each chain node
+// declares cluster.nodes[ID].fabricChain: its rank, the interface every rank
+// reaches the others on, the rendezvous address (rank 0 only), and the RDMA
+// devices cabled toward rank - 1 (leftHca) and rank + 1 (rightHca). Rank 0
+// leads the chain's runtimes. Returns the chain's node IDs in rank order.
+function resolveFabricChain(recipe, configuredNodes) {
+  const cluster = asObject(recipe.requirements?.cluster);
+  if (cluster.topology !== 'chain') return null;
+  const entries = Object.entries(configuredNodes).filter(([, node]) => node?.fabricChain != null);
+  const size = Number(cluster.nodes ?? entries.length);
+  if (entries.length !== size || size < 2) {
+    throw new Error(
+      `recipe ${recipe.id} needs cluster.nodes[ID].fabricChain on exactly ${size} nodes; ${entries.length} declare one`
+    );
+  }
+  const chain = [];
+  for (const [nodeId, node] of entries) {
+    const rank = node.fabricChain.rank;
+    if (!Number.isInteger(rank) || rank < 0 || rank >= size || chain[rank]) {
+      throw new Error(`cluster.nodes[${nodeId}].fabricChain.rank must be a unique integer from 0 to ${size - 1}`);
+    }
+    chain[rank] = nodeId;
+  }
+  for (const [rank, nodeId] of chain.entries()) {
+    const link = configuredNodes[nodeId].fabricChain;
+    const field = `cluster.nodes[${nodeId}].fabricChain`;
+    if (!networkInterfaceName(link.interface)) {
+      throw new Error(`${field}.interface must name the network interface every chain rank reaches the others on`);
+    }
+    if (rank === 0 && !net.isIP(String(link.address ?? ''))) {
+      throw new Error(`${field}.address must be rank 0's IP address on its chain interface (the rendezvous)`);
+    }
+    for (const [side, neighbour] of [
+      ['leftHca', rank - 1],
+      ['rightHca', rank + 1]
+    ]) {
+      const linked = neighbour >= 0 && neighbour < size;
+      if (linked && !rdmaDeviceList(link[side])) {
+        throw new Error(`${field}.${side} must list ${RDMA_LIST_RULE} cabled to rank ${neighbour}`);
+      }
+      if (!linked && link[side] != null && link[side] !== '') {
+        throw new Error(`${field}.${side} must be empty: rank ${rank} has no neighbour on that side`);
+      }
+    }
+  }
+  return chain;
 }
 
 function primitiveSettings(settings) {
@@ -661,12 +729,17 @@ function ensureRecipeConfigEntries(
           `recipe model ${modelId} requests distributed placement but fewer than two cluster nodes are configured`
         );
       }
-      const leaderNode = config.cluster?.leaderNode ?? nodeIds[0];
-      if (!configuredNodes[leaderNode])
-        throw new Error(`cluster leader ${leaderNode} is not declared in cluster.nodes`);
+      const clusterLeader = config.cluster?.leaderNode ?? nodeIds[0];
+      if (!configuredNodes[clusterLeader])
+        throw new Error(`cluster leader ${clusterLeader} is not declared in cluster.nodes`);
+      // A chain's rank 0 leads its group (placement.leaderNode), so a node that
+      // leads its own cluster, such as a federation head, can still be a member
+      // of a chain that another node leads.
+      const chain = resolveFabricChain(recipe, configuredNodes);
+      const leaderNode = chain ? chain[0] : clusterLeader;
       const nonLeaderNodes = nodeIds.filter((nodeId) => nodeId !== leaderNode);
       const labeledWorkerNodes = nonLeaderNodes.filter((nodeId) => configuredNodes[nodeId]?.labels?.role === 'worker');
-      const workerNodes = labeledWorkerNodes.length ? labeledWorkerNodes : nonLeaderNodes;
+      const workerNodes = chain ? chain.slice(1) : labeledWorkerNodes.length ? labeledWorkerNodes : nonLeaderNodes;
       const members = [];
       const modelPath = modelPathForRecipeModel(recipeModel, backendId, modelRoot);
       const resolvedPlacementMembers = asArray(placement.members).map((member, memberIndex) => {
@@ -686,10 +759,11 @@ function ensureRecipeConfigEntries(
               .map((existingMember) => existingMember.node)
               .filter(Boolean)
           : [];
+        // A chain's declared ranks, not an earlier materialization, choose its nodes.
         const selectedNodes =
-          existingRuntimeNodes.length > 0
+          !chain && existingRuntimeNodes.length > 0
             ? existingRuntimeNodes
-            : existingRoleNodes.length > 0
+            : !chain && existingRoleNodes.length > 0
               ? existingRoleNodes
               : selector === 'leader'
                 ? [leaderNode]
@@ -704,16 +778,48 @@ function ensureRecipeConfigEntries(
           .flatMap(({ selectedNodes }) => selectedNodes)
           .filter((nodeId) => nodeId !== leaderNode)
       ].filter((nodeId, index, all) => all.indexOf(nodeId) === index);
+      const requiredNodes = Number(recipe.requirements?.cluster?.nodes);
+      if (Number.isInteger(requiredNodes) && requiredNodes > 0 && selectedNodeIds.length !== requiredNodes) {
+        throw new Error(
+          `recipe model ${modelId} needs ${requiredNodes} cluster nodes but selects ${selectedNodeIds.length} ` +
+            `(${selectedNodeIds.join(', ')}); give its workers labels.role "worker"`
+        );
+      }
       const selectedWorkerNodes = selectedNodeIds.filter((nodeId) => nodeId !== leaderNode);
+      const rankOf = (nodeId) =>
+        chain ? chain.indexOf(nodeId) : nodeId === leaderNode ? 0 : selectedWorkerNodes.indexOf(nodeId) + 1;
       for (const { member, memberIndex, selectedNodes } of resolvedPlacementMembers) {
-        for (const [selectedIndex, nodeId] of selectedNodes.filter(Boolean).entries()) {
+        if (![undefined, 'ascending', 'descending'].includes(member.rankOrder)) {
+          throw new Error(`recipe model ${modelId} member ${member.runtime} rankOrder must be ascending or descending`);
+        }
+        // rankOrder starts a member that spans several nodes in rank order,
+        // e.g. a chain's far end first.
+        const orderedNodes = member.rankOrder
+          ? [...selectedNodes].sort(
+              (left, right) => (rankOf(left) - rankOf(right)) * (member.rankOrder === 'descending' ? -1 : 1)
+            )
+          : selectedNodes;
+        for (const [selectedIndex, nodeId] of orderedNodes.entries()) {
           const node = configuredNodes[nodeId];
           if (!node) throw new Error(`recipe model ${modelId} references unknown cluster node ${nodeId}`);
           if (!node.backendHost) throw new Error(`cluster node ${nodeId} requires backendHost for distributed recipes`);
-          validateNodeFabric(node, nodeId, member);
+          if (chain && !chain.includes(nodeId)) throw new Error(`cluster node ${nodeId} is not on the fabric chain`);
+          validateNodeFabric(node, nodeId, member, chain);
           const memberRuntimeId = selectedNodes.length > 1 ? `${member.runtime}-${slug(nodeId)}` : member.runtime;
           if (!memberRuntimeId) throw new Error(`recipe model ${modelId} has a distributed member without runtime`);
-          const nodeRank = nodeId === leaderNode ? 0 : selectedWorkerNodes.indexOf(nodeId) + 1;
+          const nodeRank = rankOf(nodeId);
+          const fabric = chain
+            ? {
+                fabricInterface: node.fabricChain.interface,
+                fabricLeftHca: node.fabricChain.leftHca ?? '',
+                fabricRightHca: node.fabricChain.rightHca ?? '',
+                leaderAddress: configuredNodes[leaderNode].fabricChain.address
+              }
+            : {
+                fabricInterface: node.fabricInterface ?? '',
+                fabricHca: node.fabricHca ?? '',
+                leaderAddress: configuredNodes[leaderNode].backendHost
+              };
           const memberSettings = {
             ...settings,
             placement: undefined,
@@ -725,10 +831,8 @@ function ensureRecipeConfigEntries(
             nodeId,
             nodeRank,
             nodeAddress: node.backendHost,
-            fabricInterface: node.fabricInterface ?? '',
-            fabricHca: node.fabricHca ?? '',
+            ...fabric,
             leaderNode,
-            leaderAddress: configuredNodes[leaderNode].backendHost,
             clusterNodeCount: selectedNodeIds.length,
             runtime: asObject(member.runtimeSettings)
           };
@@ -759,7 +863,9 @@ function ensureRecipeConfigEntries(
             node: nodeId,
             runtime: memberRuntimeId,
             role: member.role ?? (nodeId === leaderNode ? 'head' : 'worker'),
-            order: Number.isFinite(Number(member.order)) ? Number(member.order) : memberIndex * 10 + selectedIndex,
+            order: Number.isFinite(Number(member.order))
+              ? Number(member.order) + selectedIndex
+              : memberIndex * 10 + selectedIndex,
             resources: asObject(member.resources)
           });
         }
@@ -817,7 +923,7 @@ function ensureRecipeConfigEntries(
           scope: 'distributed-model',
           group: runtimeId
         },
-        placement: { mode: 'distributed', members }
+        placement: { mode: 'distributed', ...(chain ? { leaderNode } : {}), members }
       };
       const materializedModel = materializedRecipeModel(recipe, recipeModel, modelId, {
         backend: backendConfigId,
