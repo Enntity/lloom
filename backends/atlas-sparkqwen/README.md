@@ -1,23 +1,20 @@
 # Atlas SparkQwen under LLooM
 
-LLooM-managed two-node Atlas SparkQwen RC16 lane for a directly connected pair
-of NVIDIA DGX Spark systems, serving `nvidia/Qwen3.8-Flash-Next-NVFP4` as
-published (no overlay conversion, no separate drafter: speculation uses the
-checkpoint's own MTP head). This directory is **MIT orchestration only**: no
-Atlas engine source is committed here. The engine image is built from
-`Enntity/sparkqwen` revision `0cf2436de5211b41edf4d92071180c75cec31dd8`
-(install tree `e7268337a5c8`) by that repository's `install/build.sh` and
-published as `ghcr.io/enntity/atlas-sparkqwen:e7268337a5c8`. The engine inside
-the image is AGPL-3.0-only; see [Credits and licenses](#credits-and-licenses).
-SparkQwen qualified RC16 on its own launcher; no live run through LLooM is
-recorded yet.
+Maintenance release accepted with disclosed limits; full_quality_pass=false. Recipe integration and guarded production canaries are approved; persistent activation remains pending live evidence. Product `050743206a7fd921eaa5acf1cbe50653b9f155cc`, install tree `70890529ba64dede889814f99f21b3c9a981d9bc`, engine `63bebfa60d5086de9fc8cc07c21e5fbe38f3b742`. Immutable image `ghcr.io/enntity/atlas-sparkqwen@sha256:a0cebe89737898692964d3923477bef293a4ebde9dd32e27202697c54f763c9d`. Engine source reference `sparkqwen/fidelity-rc-20261019` is an annotated tag, not a new branch. Maintenance review: https://github.com/Enntity/sparkqwen/blob/050743206a7fd921eaa5acf1cbe50653b9f155cc/results/2026-10-20-fidelity-review/qualification.json (SHA256 d591b033b0c396a2b0222b6c63136bc323e1bb5b69a206eac3c7df942b24be8b). Publication acceptance SHA256 7e2e699de3e8d06cb4a6eb3a3df5add15c8aaf18172f0f299aa1a0628ea91de0; separate production disposition SHA256 7b626caea8a546f868854d5c07eeaed103f5bf0c4ba3048b0e2d16fa85ede346.
 
-## Image digest
+## Release limitations
 
-`pins.json` addresses `ghcr.io/enntity/atlas-sparkqwen@sha256:63fcc9f8f87a3963aba91f0a5dbf2c1cf5efa1d809c4ab1b52bd5853979e73ed`, the GHCR
-manifest digest of tag `e7268337a5c8` (recorded 2026-10-13 with
-`docker buildx imagetools inspect`). Both recipe members use the same
-reference as `bootstrap.image`.
+- Full quality gate remains failed. This release does not establish numerical parity, universal speculative equivalence, a lossless recipe, or an all-quality-pass result.
+- Canonical prompt NLL is 1.0659923317039264, a residual of +0.0404426398902944 against the observed A4 reference. The earlier native baseline was higher at 1.1216532930400633. These comparisons do not establish a cause.
+- Needle recall is 59/60 versus the retained historical 60/60 result. One lookup failed at 163,290 prompt tokens. Speculative ON and OFF at concurrency 1 returned the same wrong decoded fields; the original concurrency-4 run and different cache histories limit this comparison.
+- Automatic tool selection combined with strict JSON can choose an unrelated tool. The explicit tool_choice: none control returned the correct JSON.
+- Performance is mixed, including slower Rig medians and concurrency-2/4/8 cells. The matrix has one invocation per cell; its concurrency-1 32K cell is slower. Four warm-conversation request bodies differ because earlier responses generate later history.
+- Logit bias on the first prefill token remains an inherited unsupported contract.
+- The oversized PNG probe establishes header admission only; it does not prove full pixel decoding.
+
+LLooM materialization, direct/gateway canaries and reservation drain/resume are separate operational requirements. A gateway can retain its own cluster leader and routes while participating in another group's temporary TP4 chain. Keep the Qwen owner gateway active; worker-only deployment disables inference. This directory is MIT orchestration; the image's Atlas engine is AGPL-3.0-only.
+
+The recipe mounts an image- and checkpoint-specific persistent packed PLE cache at `/atlas-ple` on each rank. The first start packs the table once; normal container recreation retains it. Existing research caches are left untouched.
 
 ## Layout
 
@@ -31,7 +28,7 @@ reference as `bootstrap.image`.
   `ghcr.io/enntity/atlas-sparkqwen:` plus the first 12 characters of the install
   tree, `image.reference` is not `ghcr.io/enntity/atlas-sparkqwen@sha256:` plus
   64 lowercase hex characters, an image ID is pinned, or the model leaves
-  `nvidia/Qwen3.8-Flash-Next-NVFP4@fc694b54fb0174e0913e6adf86691ef85a4ead47`.
+  `nvidia/Qwen3.8-Flash-Next-FP4-Local@b9ce18a6887e18c089fdea8509a33e63429a3300`.
 - `install.sh` — prepares the image: reuses an already verified local image,
   otherwise pulls the immutable digest. It never pulls the mutable tag and
   never builds; a failed pull or check is a hard failure. The image must be
@@ -51,8 +48,8 @@ lloom runtime-start qwen38-flash-next-atlas-cluster
 
 The recipe is additive: it sets no default model and adds no aliases. Setup
 steps, in order: `check-docker`, `verify-atlas-pins`, `download-atlas-model`
-(the pinned checkpoint, about 124 GiB, into
-`${modelRoot}/nvidia--Qwen3.8-Flash-Next-NVFP4`), `pull-atlas-image`
+(the pinned checkpoint into
+`${modelRoot}/nvidia--Qwen3.8-Flash-Next-FP4-Local`), `pull-atlas-image`
 (`install.sh`), and `prepare-atlas-cuda-cache` (creates
 `${installRoot}/atlas-sparkqwen-cuda-cache`, mounted at `/atlas-cuda-cache` so
 compiled CUDA kernels survive container recreation). Run setup on both nodes.
@@ -73,7 +70,7 @@ CUDA JIT cache.
 | `MASTER_PORT`       | `29510`                                         | distributed rendezvous port                                                                                                                                                                                                  |
 | `FABRIC_INTERFACE`  | `${fabricInterface}`                            | the node's direct-fabric NIC, also `NCCL_SOCKET_IFNAME`/`GLOO_SOCKET_IFNAME`                                                                                                                                                 |
 | `FABRIC_HCA`        | `${fabricHca}`                                  | the node's RoCE device (below); `serve.py` adds the device behind the port's other PCIe half and sets `NCCL_IB_HCA` and `ATLAS_RDMA_RAILS` from both                                                                         |
-| `MODEL_PATH`        | `${modelRoot}/nvidia--Qwen3.8-Flash-Next-NVFP4` | the checkpoint                                                                                                                                                                                                               |
+| `MODEL_PATH`        | `${modelRoot}/nvidia--Qwen3.8-Flash-Next-FP4-Local` | the checkpoint                                                                                                                                                                                                               |
 | `SERVED_MODEL_NAME` | `qwen3.8-flash-next-atlas`                      | gateway model ID                                                                                                                                                                                                             |
 | `SPARKQWEN_PROFILE` | `8x262k`                                        | `/opt/atlas/profiles/8x262k.json`: up to eight requests of up to 262,144 tokens from one shared BF16 KV pool (about 3.19M tokens at the profile's GPU memory utilization of 0.88); the image also ships `8x32k` and `4x262k` |
 | `SPARKQWEN_FP8_GDN` | `0`                                             | the lossy FP8 Gated DeltaNet opt-in stays off                                                                                                                                                                                |
@@ -127,6 +124,6 @@ is not part of LLooM:
   fetches; the image ships CUTLASS's license and the Rust crate notices under
   `/opt/atlas/notices/` and the engine's license at `/LICENSE`.
 - **Model.** Weights are downloaded from their publisher, not distributed by
-  LLooM. `nvidia/Qwen3.8-Flash-Next-NVFP4` is under the **NVIDIA Open Model
+  LLooM. `nvidia/Qwen3.8-Flash-Next-FP4-Local` is under the **NVIDIA Open Model
   License** per its model card (SparkQwen `docs/LICENSING.md`); read the model
   card before use and before redistributing anything derived from it.

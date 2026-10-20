@@ -1371,19 +1371,8 @@
       ],
       "name": "BennyDaBall/Qwen-Image-2.1-NVFP4 (ComfyUI, NVIDIA)",
       "summary": "Install BennyDaBall/Qwen-Image-2.1-NVFP4, one NVFP4 DiT for generation and reference editing, with the shared ComfyUI media backend.",
-      "tags": [
-        "cuda",
-        "nvfp4",
-        "nvidia",
-        "qwen-image-2.1",
-        "image-editing",
-        "transparency",
-        "single-model"
-      ],
-      "capabilities": [
-        "image-generation",
-        "image-editing"
-      ],
+      "tags": ["cuda", "nvfp4", "nvidia", "qwen-image-2.1", "image-editing", "transparency", "single-model"],
+      "capabilities": ["image-generation", "image-editing"],
       "source": {
         "type": "local",
         "url": "recipes/linux-nvidia-comfyui-qwen-image-2-1-nvfp4.json"
@@ -1487,17 +1476,23 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas",
       "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas.json",
-      "currentVersion": 1,
+      "currentVersion": 2,
       "versions": [
         {
           "version": 1,
+          "path": "archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas/v1.json",
+          "status": "archived",
+          "notes": "Atlas SparkQwen RC16 two-node candidate over the private fabric, additive only, setDefault false, no aliases. Portable pins live in backends/atlas-sparkqwen/pins.json; the published image is pinned by its immutable GHCR digest, and invalid or placeholder pins fail closed. Default profile 8x262k."
+        },
+        {
+          "version": 2,
           "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas.json",
           "status": "current",
-          "notes": "Atlas SparkQwen RC16 two-node candidate over the private fabric, additive only, setDefault false, no aliases. Portable pins live in backends/atlas-sparkqwen/pins.json; the published image is pinned by its immutable GHCR digest, and invalid or placeholder pins fail closed. Default profile 8x262k."
+          "notes": "Product Enntity/sparkqwen@050743206a7fd921eaa5acf1cbe50653b9f155cc; install tree 70890529ba64dede889814f99f21b3c9a981d9bc; engine Enntity/atlas sparkqwen/fidelity-rc-20261019@63bebfa60d5086de9fc8cc07c21e5fbe38f3b742; image ghcr.io/enntity/atlas-sparkqwen@sha256:a0cebe89737898692964d3923477bef293a4ebde9dd32e27202697c54f763c9d; checkpoint nvidia/Qwen3.8-Flash-Next-FP4-Local@b9ce18a6887e18c089fdea8509a33e63429a3300; profile 8x262k SHA256 225c23340d96e44bd1246e096b04ec49158c3e738ed30231a915183e60b1bd04; source manifest SHA256 bf0995cd9964ee2e09e6983eefefde40bf9208b0d65174256e77cd0c061bb308. Maintenance release review https://github.com/Enntity/sparkqwen/blob/050743206a7fd921eaa5acf1cbe50653b9f155cc/results/2026-10-20-fidelity-review/qualification.json receipt SHA256 d591b033b0c396a2b0222b6c63136bc323e1bb5b69a206eac3c7df942b24be8b. Full quality gate remains failed. Publication acceptance 7e2e699de3e8d06cb4a6eb3a3df5add15c8aaf18172f0f299aa1a0628ea91de0; production disposition 7b626caea8a546f868854d5c07eeaed103f5bf0c4ba3048b0e2d16fa85ede346."
         }
       ],
-      "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 Atlas (SparkQwen RC16)",
-      "summary": "Two-node Atlas SparkQwen RC16 candidate serving the unmodified Qwen3.8-Flash-Next-NVFP4 checkpoint (built-in MTP) from a pinned GHCR image: eight requests of up to 262K tokens.",
+      "name": "2x DGX Spark Qwen3.8 Flash Next FP4-Local Atlas (maintenance release)",
+      "summary": "Qwen TP2 maintenance release with disclosed limits, 2026-10-19; full quality gate remains failed. Additive only: no default model and no aliases overwritten.",
       "tags": [
         "linux",
         "nvidia",
@@ -1509,7 +1504,7 @@
         "atlas",
         "sparkqwen",
         "mtp",
-        "candidate"
+        "fp4-local"
       ],
       "recommendedFor": [
         "Serving Qwen3.8 Flash Next on the Atlas SparkQwen engine across two directly connected DGX Sparks through LLooM"

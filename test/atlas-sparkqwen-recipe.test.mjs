@@ -21,7 +21,7 @@ const recipeId = 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas';
 const recipe = await loadRecipeById(recipeId);
 const catalog = await loadBackendCatalog();
 const pins = loadPins();
-const checkpoint = 'nvidia--Qwen3.8-Flash-Next-NVFP4';
+const checkpoint = 'nvidia--Qwen3.8-Flash-Next-FP4-Local';
 
 // ---- backend catalog entry --------------------------------------------------
 const backend = getBackend(catalog, 'docker-atlas-sparkqwen');
@@ -35,13 +35,13 @@ assert.deepEqual(
   ['check-docker', 'check-atlas-pins']
 );
 assert.equal(backend.setup.find((step) => step.id === 'check-atlas-pins').alwaysRun, true);
-assert(!backend.features.includes('vision'), 'image input is untested and must not be claimed');
+assert(backend.features.includes('vision'), 'bounded image evidence is exposed');
 const plannedBackend = await planBackend(backend, { checkCommands: false });
 assert(plannedBackend.steps.every((step) => !step.command.join(' ').includes('${')));
 
 // ---- recipe shape -----------------------------------------------------------
 assert.equal(recipe.id, recipeId);
-assert.equal(recipe.version, 1);
+assert.equal(recipe.version, 2);
 assert.equal(recipe.backend.id, 'docker-atlas-sparkqwen');
 assert.equal(recipe.license.id, 'MIT');
 assert.deepEqual(recipe.requirements.cluster, { nodes: 2, provider: 'nvidia-sync', topology: 'direct' });
@@ -51,24 +51,25 @@ const stepIds = [
   'verify-atlas-pins',
   'download-atlas-model',
   'pull-atlas-image',
-  'prepare-atlas-cuda-cache'
+  'prepare-atlas-cuda-cache',
+  'prepare-atlas-ple-cache'
 ];
 assert.deepEqual(
   recipe.setup.steps.map((step) => step.id),
   stepIds
 );
-for (const stepId of ['verify-atlas-pins', 'pull-atlas-image', 'prepare-atlas-cuda-cache']) {
+for (const stepId of ['verify-atlas-pins', 'pull-atlas-image', 'prepare-atlas-cuda-cache', 'prepare-atlas-ple-cache']) {
   assert.equal(recipe.setup.steps.find((step) => step.id === stepId).alwaysRun, true, `${stepId} must always run`);
 }
 const downloadStep = recipe.setup.steps.find((step) => step.id === 'download-atlas-model');
 assert.equal(downloadStep.provider, 'huggingface');
 assert.equal(downloadStep.model, pins.model.repo);
 assert.equal(downloadStep.revision, pins.model.revision);
-assert.equal(pins.model.revision, 'fc694b54fb0174e0913e6adf86691ef85a4ead47');
+assert.equal(pins.model.revision, 'b9ce18a6887e18c089fdea8509a33e63429a3300');
 
 const model = recipe.models[0];
 assert.equal(recipe.models.length, 1);
-assert.equal(model.model, 'nvidia/Qwen3.8-Flash-Next-NVFP4');
+assert.equal(model.model, 'nvidia/Qwen3.8-Flash-Next-FP4-Local');
 assert.equal(model.gatewayModel, 'qwen3.8-flash-next-atlas');
 assert.equal(model.upstreamModel, 'qwen3.8-flash-next-atlas');
 assert.equal(model.runtime, 'qwen38-flash-next-atlas-cluster');
@@ -76,11 +77,13 @@ assert.equal(model.runtime, 'qwen38-flash-next-atlas-cluster');
 assert.equal(model.setDefault, false);
 assert(!Object.hasOwn(model, 'aliases'));
 assert.equal(model.settings.keepWarm, false);
-assert.deepEqual(model.input, ['text']);
+assert.deepEqual(model.input, ['text', 'image']);
 for (const capability of ['tools', 'reasoning', 'streaming', 'structured-output']) {
   assert(model.capabilities.includes(capability), `missing capability ${capability}`);
 }
-assert(!model.capabilities.includes('vision'), 'image input is untested and must not be claimed');
+assert(model.capabilities.includes('vision'));
+assert(recipe.capabilities.includes('vision'));
+assert(recipe.hardware.notes.some((n) => n.includes('header admission only')));
 // serve.py binds rank 0 to 127.0.0.1:8893; the port is not configurable.
 assert.equal(model.settings.port, 8893);
 assert.equal(model.settings.baseUrl, 'http://127.0.0.1:8893/v1');
@@ -121,6 +124,7 @@ const expectedCreateArgs = [
   '--stop-timeout 60',
   `--mount type=bind,src=\${modelRoot}/${checkpoint},dst=\${modelRoot}/${checkpoint},readonly`,
   '--mount type=bind,src=${installRoot}/atlas-sparkqwen-cuda-cache,dst=/atlas-cuda-cache',
+  '--mount type=bind,src=${installRoot}/atlas-sparkqwen-ple/a0cebe89737898692964d3923477bef293a4ebde9dd32e27202697c54f763c9d/b9ce18a6887e18c089fdea8509a33e63429a3300,dst=/atlas-ple',
   '-e NODE_RANK=${nodeRank}',
   '-e MASTER_ADDR=${leaderAddress}',
   '-e MASTER_PORT=29510',
@@ -323,10 +327,10 @@ assert.throws(() => materialize(missingFabric), /cluster\.nodes\[ennspark04\]\.f
 
 // ---- pins: final identities, pending digest, fail-closed gate ---------------
 assert.equal(pins.source.repo, 'Enntity/sparkqwen');
-assert.equal(pins.source.revision, '2e8e6dda78fa12848d9a48722332f6aff39b860f');
-assert.equal(pins.source.installTree, 'b151fbe840a15b735f08026c2bf521edac9ce96e');
-assert.equal(pins.engine.commit, '84e7c734bbb70850bd2f65b0bf9e68ab8f8bac22');
-assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkqwen:b151fbe840a1');
+assert.equal(pins.source.revision, '050743206a7fd921eaa5acf1cbe50653b9f155cc');
+assert.equal(pins.source.installTree, '70890529ba64dede889814f99f21b3c9a981d9bc');
+assert.equal(pins.engine.commit, '63bebfa60d5086de9fc8cc07c21e5fbe38f3b742');
+assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkqwen:70890529ba64');
 assert.equal(pins.image.tag, imageTagFor(pins));
 assert.equal(pins.image.label, 'io.enntity.sparkqwen.install-tree');
 assert.equal(pins.image.profilePath, '/opt/atlas/profiles/8x262k.json');
@@ -478,3 +482,13 @@ assert.equal(entry.currentVersion, recipe.version);
 assert.equal(entry.versions.find((version) => version.status === 'current').path, entry.path);
 
 console.log('Atlas SparkQwen recipe/backend checks passed');
+
+const pleStep = recipe.setup.steps.find((s) => s.id === 'prepare-atlas-ple-cache');
+assert.deepEqual(pleStep.args, [
+  '-p',
+  '${installRoot}/atlas-sparkqwen-ple/a0cebe89737898692964d3923477bef293a4ebde9dd32e27202697c54f763c9d/b9ce18a6887e18c089fdea8509a33e63429a3300'
+]);
+for (const member of members) {
+  const args = member.runtimeSettings.bootstrap.createArgs;
+  assert.equal(args.filter((x) => x.includes('dst=/atlas-ple')).length, 1);
+}

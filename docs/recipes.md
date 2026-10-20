@@ -631,16 +631,17 @@ mounts are the pair lane's. The workers start from the far end (ranks 3, 2, 1;
 `rankOrder: "descending"`) with container health, then the leader (rank 0)
 with `/health` and a POST warmup.
 
-## Atlas SparkQwen RC16
+## Atlas SparkQwen FP4-Local
 
-`linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas` runs the Atlas SparkQwen
-RC16 engine (Enntity/atlas `sparkqwen/atlas-20261013-sidecars` @ `84e7c734`) on two
-directly connected DGX Sparks, serving the unmodified
-`nvidia/Qwen3.8-Flash-Next-NVFP4` checkpoint at revision
-`fc694b54fb0174e0913e6adf86691ef85a4ead47` as `qwen3.8-flash-next-atlas`. There
-is no overlay conversion and no separate drafter; speculation uses the
-checkpoint's own MTP head. The default profile is `8x262k`: up to eight
-requests of up to 262,144 tokens from one shared BF16 KV pool.
+Maintenance release accepted with disclosed limits; full_quality_pass=false. Recipe integration and guarded production canaries are approved; persistent activation remains pending live evidence. `linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas` serves the unchanged FP4-Local checkpoint with native MTP and the 8x262k profile. Product `050743206a7fd921eaa5acf1cbe50653b9f155cc`, install tree `70890529ba64dede889814f99f21b3c9a981d9bc`, engine `63bebfa60d5086de9fc8cc07c21e5fbe38f3b742`. Engine source reference `sparkqwen/fidelity-rc-20261019` is an annotated tag, not a new branch. Maintenance review: https://github.com/Enntity/sparkqwen/blob/050743206a7fd921eaa5acf1cbe50653b9f155cc/results/2026-10-20-fidelity-review/qualification.json (SHA256 d591b033b0c396a2b0222b6c63136bc323e1bb5b69a206eac3c7df942b24be8b). Publication acceptance SHA256 7e2e699de3e8d06cb4a6eb3a3df5add15c8aaf18172f0f299aa1a0628ea91de0; separate production disposition SHA256 7b626caea8a546f868854d5c07eeaed103f5bf0c4ba3048b0e2d16fa85ede346.
+
+- Full quality gate remains failed. This release does not establish numerical parity, universal speculative equivalence, a lossless recipe, or an all-quality-pass result.
+- Canonical prompt NLL is 1.0659923317039264, a residual of +0.0404426398902944 against the observed A4 reference. The earlier native baseline was higher at 1.1216532930400633. These comparisons do not establish a cause.
+- Needle recall is 59/60 versus the retained historical 60/60 result. One lookup failed at 163,290 prompt tokens. Speculative ON and OFF at concurrency 1 returned the same wrong decoded fields; the original concurrency-4 run and different cache histories limit this comparison.
+- Automatic tool selection combined with strict JSON can choose an unrelated tool. The explicit tool_choice: none control returned the correct JSON.
+- Performance is mixed, including slower Rig medians and concurrency-2/4/8 cells. The matrix has one invocation per cell; its concurrency-1 32K cell is slower. Four warm-conversation request bodies differ because earlier responses generate later history.
+- Logit bias on the first prefill token remains an inherited unsupported contract.
+- The oversized PNG probe establishes header admission only; it does not prove full pixel decoding.
 
 ```sh
 lloom setup --recipe linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas --additive --apply --yes
@@ -657,7 +658,7 @@ Do not raise the host memory safety limit to make an oversized cache fit.
 
 The recipe is additive (no default model, no aliases, `keepWarm` false). Pins
 live in `backends/atlas-sparkqwen/pins.json` (source `Enntity/sparkqwen`
-`2e8e6dda`, install tree `b151fbe840a1`). The GHCR manifest digest is pinned in the same manifest.
+`05074320`, install tree `70890529ba64`). The GHCR manifest digest is pinned in the same manifest.
 `node backends/atlas-sparkqwen/verify-pins.mjs`, setup step
 `verify-atlas-pins` and `install.sh` reject missing or placeholder identities. The
 installer only pulls that digest and verifies the image's arm64 architecture,
@@ -672,8 +673,8 @@ name, because PCI naming and cabling differ by host. Missing or malformed
 settings stop recipe materialization with the node and field named in the error.
 The image's `serve.py` fixes the API port: rank 0 serves `127.0.0.1:8893` on the
 leader (rank 1 binds `127.0.0.1:8894` on the worker), the same ports as the
-SparkGLM lane, so the two lanes cannot share a pair. Tools and reasoning are
-qualified upstream; structured output is implemented by the engine but untested
-with this model, and image input is not claimed. The engine is
+SparkGLM lane, so the two lanes cannot share a pair. The bounded tools and vision checks are recorded in the release evidence.
+Automatic tools combined with strict JSON retain the failure disclosed above;
+these checks do not establish a full quality pass. The engine is
 **AGPL-3.0-only** and the checkpoint is under the NVIDIA Open Model License; see
 the [backend README](../backends/atlas-sparkqwen/README.md#credits-and-licenses).
