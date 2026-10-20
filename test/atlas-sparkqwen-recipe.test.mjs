@@ -90,7 +90,7 @@ assert.equal(model.settings.baseUrl, 'http://127.0.0.1:8893/v1');
 assert.equal(model.settings.healthUrl, 'http://127.0.0.1:8893/health');
 assert.equal(model.settings.contextWindow, 262144);
 assert.equal(model.settings.maxActiveRequests, 8);
-assert.equal(model.settings.memoryGb, 114);
+assert.equal(model.settings.memoryGb, 104);
 
 // ---- distributed placement --------------------------------------------------
 const members = model.settings.placement.members;
@@ -114,7 +114,7 @@ const expectedCreateArgs = [
   '--network host',
   '--ipc host',
   '--shm-size 32g',
-  '--memory 114g',
+  '--memory 104g',
   '--gpus all',
   '--device /dev/infiniband:/dev/infiniband',
   '--cap-add IPC_LOCK',
@@ -134,6 +134,7 @@ const expectedCreateArgs = [
   `-e MODEL_PATH=\${modelRoot}/${checkpoint}`,
   '-e SERVED_MODEL_NAME=qwen3.8-flash-next-atlas',
   '-e SPARKQWEN_PROFILE=8x262k',
+  '-e SPARKQWEN_GPU_MEMORY_UTILIZATION=0.80',
   '-e SPARKQWEN_FP8_GDN=0',
   '-e NCCL_SOCKET_IFNAME=${fabricInterface}',
   '-e GLOO_SOCKET_IFNAME=${fabricInterface}',
@@ -143,6 +144,7 @@ const expectedCreateArgs = [
 ];
 for (const member of members) {
   const settings = member.runtimeSettings;
+  assert.equal(member.resources.memoryGb, 104);
   assert.equal(settings.adapter, 'docker');
   assert.equal(settings.management, 'managed');
   assert.equal(settings.containerName, 'lloom-atlas-sparkqwen-${nodeId}');

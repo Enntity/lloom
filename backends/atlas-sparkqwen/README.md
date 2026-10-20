@@ -1,6 +1,6 @@
 # Atlas SparkQwen under LLooM
 
-Maintenance release accepted with disclosed limits; full_quality_pass=false. Recipe integration and guarded production canaries are approved; persistent activation remains pending live evidence. Product `050743206a7fd921eaa5acf1cbe50653b9f155cc`, install tree `70890529ba64dede889814f99f21b3c9a981d9bc`, engine `63bebfa60d5086de9fc8cc07c21e5fbe38f3b742`. Immutable image `ghcr.io/enntity/atlas-sparkqwen@sha256:a0cebe89737898692964d3923477bef293a4ebde9dd32e27202697c54f763c9d`. Engine source reference `sparkqwen/fidelity-rc-20261019` is an annotated tag, not a new branch. Maintenance review: https://github.com/Enntity/sparkqwen/blob/050743206a7fd921eaa5acf1cbe50653b9f155cc/results/2026-10-20-fidelity-review/qualification.json (SHA256 d591b033b0c396a2b0222b6c63136bc323e1bb5b69a206eac3c7df942b24be8b). Publication acceptance SHA256 7e2e699de3e8d06cb4a6eb3a3df5add15c8aaf18172f0f299aa1a0628ea91de0; separate production disposition SHA256 7b626caea8a546f868854d5c07eeaed103f5bf0c4ba3048b0e2d16fa85ede346.
+Maintenance release accepted with disclosed limits; full_quality_pass=false. Recipe integration and guarded production canaries are approved; persistent activation remains pending live evidence. Product `050743206a7fd921eaa5acf1cbe50653b9f155cc`, install tree `70890529ba64dede889814f99f21b3c9a981d9bc`, engine `63bebfa60d5086de9fc8cc07c21e5fbe38f3b742`. Immutable image `ghcr.io/enntity/atlas-sparkqwen@sha256:a0cebe89737898692964d3923477bef293a4ebde9dd32e27202697c54f763c9d`. Engine source reference `sparkqwen/fidelity-rc-20261019` is an annotated tag, not a new branch. Maintenance review: https://github.com/Enntity/sparkqwen/blob/050743206a7fd921eaa5acf1cbe50653b9f155cc/results/2026-10-20-fidelity-review/qualification.json (SHA256 d591b033b0c396a2b0222b6c63136bc323e1bb5b69a206eac3c7df942b24be8b). Publication acceptance SHA256 7e2e699de3e8d06cb4a6eb3a3df5add15c8aaf18172f0f299aa1a0628ea91de0; original 0.88 production disposition SHA256 7b626caea8a546f868854d5c07eeaed103f5bf0c4ba3048b0e2d16fa85ede346. The separate bounded 0.80/104 GiB canary disposition is SHA256 ba97c1c2d26d7fc8648c12ee6c36ad8b07b5c64e2ddfd88b94f039166fd66d95; persistent activation remains unapproved.
 
 ## Release limitations
 
@@ -58,7 +58,7 @@ compiled CUDA kernels survive container recreation). Run setup on both nodes.
 
 The image ships its own entrypoint and profiles; LLooM supplies environment and
 mounts only, mirroring SparkQwen's reviewed `install/start-node.sh`: host
-network and IPC, 32 GiB shm, `--memory 114g`, all GPUs, `/dev/infiniband`,
+network and IPC, 32 GiB shm, `--memory 104g`, all GPUs, `/dev/infiniband`,
 `IPC_LOCK` and `SYS_NICE`, unlimited memlock, `no-new-privileges`, a 60 s stop
 timeout, the checkpoint mounted read-only at the same absolute path, and the
 CUDA JIT cache.
@@ -72,13 +72,23 @@ CUDA JIT cache.
 | `FABRIC_HCA`        | `${fabricHca}`                                  | the node's RoCE device (below); `serve.py` adds the device behind the port's other PCIe half and sets `NCCL_IB_HCA` and `ATLAS_RDMA_RAILS` from both                                                                         |
 | `MODEL_PATH`        | `${modelRoot}/nvidia--Qwen3.8-Flash-Next-FP4-Local` | the checkpoint                                                                                                                                                                                                               |
 | `SERVED_MODEL_NAME` | `qwen3.8-flash-next-atlas`                      | gateway model ID                                                                                                                                                                                                             |
-| `SPARKQWEN_PROFILE` | `8x262k`                                        | `/opt/atlas/profiles/8x262k.json`: up to eight requests of up to 262,144 tokens from one shared BF16 KV pool (about 3.19M tokens at the profile's GPU memory utilization of 0.88); the image also ships `8x32k` and `4x262k` |
+| `SPARKQWEN_PROFILE` | `8x262k`                                        | `/opt/atlas/profiles/8x262k.json`: up to eight requests of up to 262,144 tokens from one shared BF16 KV pool; the published profile defaults to 0.88, while this recipe explicitly uses 0.80; the image also ships `8x32k` and `4x262k` |
 | `SPARKQWEN_FP8_GDN` | `0`                                             | the lossy FP8 Gated DeltaNet opt-in stays off                                                                                                                                                                                |
 
 The profile sets every `ATLAS_*` and `NCCL_*` tuning value; `serve.py` drops
-ambient `ATLAS_*` variables so the profile wins. To give the KV pool more of a
-dedicated pair's memory, add `-e SPARKQWEN_GPU_MEMORY_UTILIZATION=0.80-0.95` to
-both members in a local recipe override.
+ambient `ATLAS_*` variables so the profile wins. This recipe passes the supported
+`SPARKQWEN_GPU_MEMORY_UTILIZATION=0.80` override on both ranks. The image and
+8x262k profile bytes remain unchanged; the effective allocator target is about
+97.35 GiB on a 121.69 GiB Spark. The 104 GiB hard container cap is also the
+per-node admission estimate, leaving about 6.65 GiB above that target. LLooM's
+host memory policy remains unchanged and can still reject startup.
+
+This is a separate production operating point from the published benchmarks,
+which used the profile default 0.88 and a 114 GiB container cap. The smaller
+shared KV pool retains the configured eight-request and 262,144-token limits,
+but does not establish simultaneous capacity or equivalent performance. Startup
+host and cgroup memory evidence, long-context and gateway canaries must pass
+before persistent activation; allocator arithmetic alone is not peak-memory proof.
 
 `${fabricHca}` and `${fabricInterface}` are materialized per node by LLooM from
 the node's own config. Because recipes that consume `${fabricHca}` require exact,

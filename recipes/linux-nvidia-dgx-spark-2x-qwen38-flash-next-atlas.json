@@ -6,7 +6,7 @@
   "name": "2x DGX Spark Qwen3.8 Flash Next FP4-Local Atlas (maintenance release)",
   "version": 2,
   "summary": "Qwen TP2 maintenance release with disclosed limits, 2026-10-19; full quality gate remains failed. Additive only: no default model and no aliases overwritten.",
-  "description": "Maintenance release accepted with disclosed limits; full_quality_pass=false. Recipe integration and guarded production canaries are approved; persistent activation remains pending live evidence. LLooM owns orchestration, admission, readiness, routing and telemetry. The image is built by Enntity/sparkqwen install/build.sh and pulled by immutable registry digest. FP4-Local checkpoint, 8x262k profile and native MTP settings remain unchanged. Engine source reference `sparkqwen/fidelity-rc-20261019` is an annotated tag, not a new branch. Maintenance review: https://github.com/Enntity/sparkqwen/blob/050743206a7fd921eaa5acf1cbe50653b9f155cc/results/2026-10-20-fidelity-review/qualification.json (SHA256 d591b033b0c396a2b0222b6c63136bc323e1bb5b69a206eac3c7df942b24be8b). Publication acceptance SHA256 7e2e699de3e8d06cb4a6eb3a3df5add15c8aaf18172f0f299aa1a0628ea91de0; separate production disposition SHA256 7b626caea8a546f868854d5c07eeaed103f5bf0c4ba3048b0e2d16fa85ede346. Automatic tools with strict JSON can choose an unrelated tool; canonical NLL retains a reference residual and needle recall is 59/60. No numerical parity, universal speculative equivalence or lossless claim. Exact limitations are recorded in hardware notes. Live LLooM and gateway verification remain separate.",
+  "description": "Maintenance release accepted with disclosed limits; full_quality_pass=false. Recipe integration and guarded production canaries are approved; persistent activation remains pending live evidence. LLooM owns orchestration, admission, readiness, routing and telemetry. The image is built by Enntity/sparkqwen install/build.sh and pulled by immutable registry digest. FP4-Local checkpoint, 8x262k profile file and native MTP settings remain unchanged. This recipe explicitly overrides GPU memory utilization to 0.80 with a 104 GiB hard container cap and per-node admission estimate; activation requires separate live memory and gateway canaries. Engine source reference `sparkqwen/fidelity-rc-20261019` is an annotated tag, not a new branch. Maintenance review: https://github.com/Enntity/sparkqwen/blob/050743206a7fd921eaa5acf1cbe50653b9f155cc/results/2026-10-20-fidelity-review/qualification.json (SHA256 d591b033b0c396a2b0222b6c63136bc323e1bb5b69a206eac3c7df942b24be8b). Publication acceptance SHA256 7e2e699de3e8d06cb4a6eb3a3df5add15c8aaf18172f0f299aa1a0628ea91de0; original 0.88 production disposition SHA256 7b626caea8a546f868854d5c07eeaed103f5bf0c4ba3048b0e2d16fa85ede346. The separate bounded 0.80/104 GiB canary disposition is SHA256 ba97c1c2d26d7fc8648c12ee6c36ad8b07b5c64e2ddfd88b94f039166fd66d95; persistent activation remains unapproved. Automatic tools with strict JSON can choose an unrelated tool; canonical NLL retains a reference residual and needle recall is 59/60. No numerical parity, universal speculative equivalence or lossless claim. Exact limitations are recorded in hardware notes. Live LLooM and gateway verification remain separate.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata, launcher and orchestration"
@@ -14,7 +14,7 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "Product Enntity/sparkqwen@050743206a7fd921eaa5acf1cbe50653b9f155cc; install tree 70890529ba64dede889814f99f21b3c9a981d9bc; engine Enntity/atlas sparkqwen/fidelity-rc-20261019@63bebfa60d5086de9fc8cc07c21e5fbe38f3b742; image ghcr.io/enntity/atlas-sparkqwen@sha256:a0cebe89737898692964d3923477bef293a4ebde9dd32e27202697c54f763c9d; checkpoint nvidia/Qwen3.8-Flash-Next-FP4-Local@b9ce18a6887e18c089fdea8509a33e63429a3300; profile 8x262k SHA256 225c23340d96e44bd1246e096b04ec49158c3e738ed30231a915183e60b1bd04; source manifest SHA256 bf0995cd9964ee2e09e6983eefefde40bf9208b0d65174256e77cd0c061bb308. Maintenance release review https://github.com/Enntity/sparkqwen/blob/050743206a7fd921eaa5acf1cbe50653b9f155cc/results/2026-10-20-fidelity-review/qualification.json receipt SHA256 d591b033b0c396a2b0222b6c63136bc323e1bb5b69a206eac3c7df942b24be8b. Full quality gate remains failed. Publication acceptance 7e2e699de3e8d06cb4a6eb3a3df5add15c8aaf18172f0f299aa1a0628ea91de0; production disposition 7b626caea8a546f868854d5c07eeaed103f5bf0c4ba3048b0e2d16fa85ede346."
+    "source": "Product Enntity/sparkqwen@050743206a7fd921eaa5acf1cbe50653b9f155cc; install tree 70890529ba64dede889814f99f21b3c9a981d9bc; engine Enntity/atlas sparkqwen/fidelity-rc-20261019@63bebfa60d5086de9fc8cc07c21e5fbe38f3b742; image ghcr.io/enntity/atlas-sparkqwen@sha256:a0cebe89737898692964d3923477bef293a4ebde9dd32e27202697c54f763c9d; checkpoint nvidia/Qwen3.8-Flash-Next-FP4-Local@b9ce18a6887e18c089fdea8509a33e63429a3300; profile 8x262k SHA256 225c23340d96e44bd1246e096b04ec49158c3e738ed30231a915183e60b1bd04; source manifest SHA256 bf0995cd9964ee2e09e6983eefefde40bf9208b0d65174256e77cd0c061bb308. Maintenance release review https://github.com/Enntity/sparkqwen/blob/050743206a7fd921eaa5acf1cbe50653b9f155cc/results/2026-10-20-fidelity-review/qualification.json receipt SHA256 d591b033b0c396a2b0222b6c63136bc323e1bb5b69a206eac3c7df942b24be8b. Full quality gate remains failed. Publication acceptance 7e2e699de3e8d06cb4a6eb3a3df5add15c8aaf18172f0f299aa1a0628ea91de0; original 0.88 production disposition 7b626caea8a546f868854d5c07eeaed103f5bf0c4ba3048b0e2d16fa85ede346. Bounded 0.80/104 GiB canary disposition ba97c1c2d26d7fc8648c12ee6c36ad8b07b5c64e2ddfd88b94f039166fd66d95; persistent activation remains unapproved."
   },
   "links": [
     {
@@ -74,10 +74,10 @@
     "family": "NVIDIA DGX Spark / GB10",
     "testedMachine": "Two directly connected DGX Spark systems",
     "notes": [
-      "Maintenance release accepted with disclosed limits; full_quality_pass=false. Recipe integration and guarded production canaries are approved; persistent activation remains pending live evidence. Engine source reference `sparkqwen/fidelity-rc-20261019` is an annotated tag, not a new branch. Maintenance review: https://github.com/Enntity/sparkqwen/blob/050743206a7fd921eaa5acf1cbe50653b9f155cc/results/2026-10-20-fidelity-review/qualification.json (SHA256 d591b033b0c396a2b0222b6c63136bc323e1bb5b69a206eac3c7df942b24be8b). Publication acceptance SHA256 7e2e699de3e8d06cb4a6eb3a3df5add15c8aaf18172f0f299aa1a0628ea91de0; separate production disposition SHA256 7b626caea8a546f868854d5c07eeaed103f5bf0c4ba3048b0e2d16fa85ede346.",
+      "Maintenance release accepted with disclosed limits; full_quality_pass=false. Recipe integration and guarded production canaries are approved; persistent activation remains pending live evidence. Engine source reference `sparkqwen/fidelity-rc-20261019` is an annotated tag, not a new branch. Maintenance review: https://github.com/Enntity/sparkqwen/blob/050743206a7fd921eaa5acf1cbe50653b9f155cc/results/2026-10-20-fidelity-review/qualification.json (SHA256 d591b033b0c396a2b0222b6c63136bc323e1bb5b69a206eac3c7df942b24be8b). Publication acceptance SHA256 7e2e699de3e8d06cb4a6eb3a3df5add15c8aaf18172f0f299aa1a0628ea91de0; original 0.88 production disposition SHA256 7b626caea8a546f868854d5c07eeaed103f5bf0c4ba3048b0e2d16fa85ede346. The separate bounded 0.80/104 GiB canary disposition is SHA256 ba97c1c2d26d7fc8648c12ee6c36ad8b07b5c64e2ddfd88b94f039166fd66d95; persistent activation remains unapproved.",
       "TP2 with expert parallelism 2 across the private ConnectX RoCE fabric. MASTER_ADDR, FABRIC_INTERFACE and FABRIC_HCA come from the cluster node config. FABRIC_HCA and NCCL_IB_HCA are the node's explicit, node-local cluster.nodes[ID].fabricHca list (exact RDMA device names, no :port syntax); LLooM requires it on every participating node and never guesses an HCA from the NIC name, and FABRIC_SIBLINGS=0 stops the engine from adding a backchannel. Explicit lists may include both verified rails.",
       "The worker is admitted first (rank 1) and readiness-checked through its container state; the leader starts second (rank 0), serves 127.0.0.1:8893 (fixed by the image) and owns routing.",
-      "Peak container memory is capped at 114 GiB per node with the profile's 4096 MiB load-time OOM guard; nothing else should use the pair's GPU memory while it serves.",
+      "The production operating point uses SPARKQWEN_GPU_MEMORY_UTILIZATION=0.80 and a 104 GiB hard container cap and admission estimate per node. The published 8x262k profile file and its 4096 MiB load-time OOM guard are unchanged. Host admission policy is unchanged; startup memory, long-context and gateway canaries are required before activation. Published benchmarks used the profile default 0.88 and do not qualify this smaller KV pool.",
       "Licenses: the Atlas engine in the image is AGPL-3.0-only (not included in LLooM). nvidia/Qwen3.8-Flash-Next-FP4-Local is under the NVIDIA Open Model License per its model card; read it before use.",
       "Full quality gate remains failed. This release does not establish numerical parity, universal speculative equivalence, a lossless recipe, or an all-quality-pass result.",
       "Canonical prompt NLL is 1.0659923317039264, a residual of +0.0404426398902944 against the observed A4 reference. The earlier native baseline was higher at 1.1216532930400633. These comparisons do not establish a cause.",
@@ -90,7 +90,7 @@
   },
   "requirements": {
     "platforms": ["linux-arm64"],
-    "memoryGb": 114,
+    "memoryGb": 104,
     "diskGb": 140,
     "commands": ["docker", "node"],
     "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"],
@@ -214,7 +214,7 @@
         "requestStartupWaitMs": 1000,
         "startupRetryAfterSeconds": 30,
         "healthTimeoutMs": 5000,
-        "memoryGb": 114,
+        "memoryGb": 104,
         "priority": 150,
         "keepWarm": false,
         "startupTimeoutMs": 3600000,
@@ -238,7 +238,7 @@
               "order": 10,
               "healthStrategy": "container",
               "resources": {
-                "memoryGb": 114
+                "memoryGb": 104
               },
               "runtimeSettings": {
                 "adapter": "docker",
@@ -260,7 +260,7 @@
                     "--shm-size",
                     "32g",
                     "--memory",
-                    "114g",
+                    "104g",
                     "--gpus",
                     "all",
                     "--device",
@@ -300,6 +300,8 @@
                     "-e",
                     "SPARKQWEN_PROFILE=8x262k",
                     "-e",
+                    "SPARKQWEN_GPU_MEMORY_UTILIZATION=0.80",
+                    "-e",
                     "SPARKQWEN_FP8_GDN=0",
                     "-e",
                     "NCCL_SOCKET_IFNAME=${fabricInterface}",
@@ -325,7 +327,7 @@
               "role": "head",
               "order": 20,
               "resources": {
-                "memoryGb": 114
+                "memoryGb": 104
               },
               "runtimeSettings": {
                 "adapter": "docker",
@@ -363,7 +365,7 @@
                     "--shm-size",
                     "32g",
                     "--memory",
-                    "114g",
+                    "104g",
                     "--gpus",
                     "all",
                     "--device",
@@ -402,6 +404,8 @@
                     "SERVED_MODEL_NAME=qwen3.8-flash-next-atlas",
                     "-e",
                     "SPARKQWEN_PROFILE=8x262k",
+                    "-e",
+                    "SPARKQWEN_GPU_MEMORY_UTILIZATION=0.80",
                     "-e",
                     "SPARKQWEN_FP8_GDN=0",
                     "-e",
