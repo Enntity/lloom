@@ -1,0 +1,32 @@
+{
+  "at": "2026-11-01T06:45:22.966866+00:00",
+  "status": "migration-qualified",
+  "sources": {
+    "lloom": "30b1e3103464341ea9f7a07a490099b69461284c",
+    "accord": "d041c72",
+    "tessera": "e070c2f099d99d619fdbea658d2c34602e44f568"
+  },
+  "accordTests": 116,
+  "tesseraTests": 272,
+  "lloomRecoveryAndInstallerTests": 8,
+  "checks": {
+    "syntax": "passed",
+    "format": "passed",
+    "lint": "passed with four preexisting warnings",
+    "interchange": "passed",
+    "packageInstall": "passed",
+    "smokeIsolatedHome": "passed",
+    "crossHostSSH": "passed",
+    "localInstalledGateways": "passed"
+  },
+  "knownBaselineFailure": {
+    "test": "a rate-only HTTP burst returns queue-full 429s and disconnects drain every waiter",
+    "baseline": "bcce316",
+    "result": "reproduces unchanged; expected 44 completed responses, observed 1. Full npm test is not green. All other test groups were exercised independently."
+  },
+  "pendingProductionCutover": {
+    "head": "Spark production reservation head",
+    "reason": "active legacy pair lease plus systemd default control-group shutdown; source and packages are qualified, but this head was deliberately left on its current version to preserve live workloads"
+  },
+  "boundary": "Proof covers configured LLooM workloads. Arbitrary SSH jobs or external containers are not fenced by this provider."
+}

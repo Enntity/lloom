@@ -1,0 +1,23 @@
+{
+  "status": "passed",
+  "at": "2026-11-01T06:42:55.974Z",
+  "localPlatform": "darwin",
+  "remotePlatform": "linux-arm64",
+  "transport": "bidirectional SSH loopback forwards",
+  "packageSHA256": "33fb8e645b1f75dbc4da8f2f219cf564d73f111a116e08b3d5c629a447e2b09c",
+  "assertions": {
+    "crossHostDiscovery": true,
+    "bidirectionalMessages": true,
+    "remoteTelemetry": true,
+    "remoteJob": true,
+    "remoteReservation": true,
+    "gatewayCrashLeavesWorkloadAlive": true,
+    "nextAgentBlockedWhileProviderDown": true,
+    "oldProcessStoppedBeforeNextGrant": true,
+    "staleOwnerRejected": true,
+    "releaseConfirmed": true
+  },
+  "limits": [
+    "Disposable authorities and CPU-only workload; production Spark leases and model routes untouched."
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "status": "passed",
+  "at": "2026-11-01T06:44:20.830Z",
+  "gateways": [
+    {
+      "port": 8100,
+      "pid": 21439,
+      "telemetryStale": false,
+      "configUnchanged": true,
+      "runtimeContractsUnchanged": true,
+      "preserved": [],
+      "oldReservationAPI": {
+        "status": 410
+      },
+      "scheduleAuthority": "accord"
+    },
+    {
+      "port": 8101,
+      "pid": 21430,
+      "telemetryStale": false,
+      "configUnchanged": true,
+      "runtimeContractsUnchanged": true,
+      "preserved": [
+        {
+          "runtime": "ollama-qwen3-embedding-4b",
+          "pid": 5542,
+          "stillRunning": true,
+          "healthy": true,
+          "gatewayStatus": "external"
+        }
+      ],
+      "oldReservationAPI": {
+        "status": 403,
+        "code": "remote_admin_disabled"
+      },
+      "scheduleAuthority": "accord"
+    }
+  ],
+  "installedSource": "30b1e3103464341ea9f7a07a490099b69461284c",
+  "limits": [
+    "The existing runtime supervisor remains alive; after restart LLooM observes its healthy endpoint as external rather than retaining the old in-memory child handle. Separate crash tests verify workload stop after gateway restart."
+  ],
+  "sharedExistingAuthority": true
+}
