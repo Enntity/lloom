@@ -1,0 +1,11 @@
+{
+  "status": "passed",
+  "sourceCommit": "289c97c",
+  "installedFilesMatch": 1210,
+  "onlyReservationDefinitionChanged": true,
+  "legacyJournalUnchanged": true,
+  "legacyWritesHTTP": 410,
+  "gatewayPID": 1546526,
+  "gatewayOnlyKillMode": "process",
+  "backup": "/home/enntitysparkadmin/.local/share/accord-cutover/289c97c/lloom-before"
+}

@@ -1,0 +1,30 @@
+{
+  "status": "passed",
+  "at": "2026-11-01T07:19:17.190Z",
+  "authority": "49ef87b9-2ba5-415e-b040-81eeaa8505f3",
+  "managerState": "migrated",
+  "nativeResources": [
+    {
+      "id": "49ef87b9-2ba5-415e-b040-81eeaa8505f3/lloom-drafter-0304-a80fde696b-0",
+      "label": "LLooM drafter-0304",
+      "hosts": [
+        "ennspark03",
+        "ennspark04"
+      ],
+      "state": "unclaimed",
+      "enforcement": "provider-confirmed prepare, workload stop, and restoration; unavailable provider remains held"
+    },
+    {
+      "id": "49ef87b9-2ba5-415e-b040-81eeaa8505f3/lloom-pair-a1e6b8c946-0",
+      "label": "LLooM pair",
+      "hosts": [
+        "ennspark01",
+        "ennspark02"
+      ],
+      "state": "unclaimed",
+      "enforcement": "provider-confirmed prepare, workload stop, and restoration; unavailable provider remains held"
+    }
+  ],
+  "telemetryFresh": true,
+  "jobEndpointAvailable": true
+}

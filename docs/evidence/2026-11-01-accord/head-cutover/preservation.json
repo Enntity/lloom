@@ -1,0 +1,83 @@
+{
+  "status": "passed",
+  "hosts": [
+    {
+      "host": "ennspark01",
+      "containers": [
+        {
+          "name": "lloom-atlas-sparkqwen-ennspark01",
+          "id": "ecb1ded6ff2827fedb0430ee6dff5a01c192a838f2f790efe8b21c19751b21a2",
+          "pid": 589577,
+          "startedAt": "2026-10-26T23:47:47.625592175Z",
+          "restartCount": 0
+        },
+        {
+          "name": "qwen3-embedding-4b",
+          "id": "f2925cb03ae038d10a19ca6d834f7ffae229b7aa6357d1b4aa5016f366ea3cf3",
+          "pid": 2513869,
+          "startedAt": "2026-10-24T14:18:42.208442724Z",
+          "restartCount": 0
+        }
+      ],
+      "routesUnchanged": true,
+      "runtimeContractsUnchanged": true,
+      "fenceState": "open",
+      "gatewayPID": 1233249
+    },
+    {
+      "host": "ennspark02",
+      "containers": [
+        {
+          "name": "lloom-atlas-sparkqwen-ennspark02",
+          "id": "e161b1176802e8ee3e9ed9563d9d05811a1be5e6f8ff8bcdb383ff2e7189a88d",
+          "pid": 196029,
+          "startedAt": "2026-10-26T23:47:47.171314466Z",
+          "restartCount": 0
+        },
+        {
+          "name": "spark02-qwen-image-21-turbo-nvfp4",
+          "id": "ae671489f0e43ed8bc18cbdf50c3877cce81737ea44b9b8202eb3b9137ab1070",
+          "pid": 2411184,
+          "startedAt": "2026-10-24T14:36:54.856426655Z",
+          "restartCount": 0
+        }
+      ],
+      "routesUnchanged": true,
+      "runtimeContractsUnchanged": true,
+      "fenceState": "open",
+      "gatewayPID": 3830331
+    },
+    {
+      "host": "ennspark03",
+      "containers": [
+        {
+          "name": "lloom-atlas-sparkqwen-ennspark03",
+          "id": "ecc4e7c67e08db2fe9577706c927b3b0495060470868ec685df316c20a06dbf5",
+          "pid": 1453767,
+          "startedAt": "2026-11-01T06:19:44.940742449Z",
+          "restartCount": 0
+        }
+      ],
+      "routesUnchanged": true,
+      "runtimeContractsUnchanged": true,
+      "fenceState": "prepared",
+      "gatewayPID": 1546526
+    },
+    {
+      "host": "ennspark04",
+      "containers": [
+        {
+          "name": "lloom-atlas-sparkqwen-ennspark04",
+          "id": "a91f2951e41717da162ed4399536a7d2d50d40a3b6d536cb483bcc7394ad7f8e",
+          "pid": 239929,
+          "startedAt": "2026-11-01T06:19:44.681907608Z",
+          "restartCount": 0
+        }
+      ],
+      "routesUnchanged": true,
+      "runtimeContractsUnchanged": true,
+      "fenceState": "open",
+      "gatewayPID": 19470
+    }
+  ]
+}

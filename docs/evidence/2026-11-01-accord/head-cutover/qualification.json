@@ -1,0 +1,43 @@
+{
+  "status": "passed",
+  "sourceCommit": "289c97c",
+  "packageSHA256": "0c658b253f81c994b26c94b1c1bdf8755ec9369903ba55ba55e3250922b1d345",
+  "owner": {
+    "legacyLease": "r-05cae086",
+    "label": "codex-qwen-overnight",
+    "chat": "01a17979-f0aa-7603-9a3b-a7a4a5f79f2a",
+    "confirmation": "No experiment or future reservation retained; historical production-protection hold. Preserve current workloads and routes; do not replay obsolete restore journal."
+  },
+  "canary": {
+    "model": "qwen3.8-flash-next-atlas",
+    "finishReason": "stop",
+    "promptTokens": 57,
+    "completionTokens": 27,
+    "normalGatewayRequest": true
+  },
+  "fence": {
+    "state": "open",
+    "generation": 5,
+    "activeHandlersBeforeSwap": 0
+  },
+  "checks": {
+    "migrationRecoveryTests": 8,
+    "reconciliationTests": 6,
+    "clusterSuitePassed": true,
+    "authorityValidationPassed": true,
+    "cleanPackageInstallPassed": true,
+    "legacyWritesHTTP": 410
+  },
+  "firstAttempt": {
+    "outcome": "rolled back gateway and reopened admission",
+    "cause": "Installed per-model placement.leaderNode support was missing from source; existing TP4 config rejected at startup",
+    "workloadsStopped": false,
+    "correctiveAction": "Preserved installed support in source, added ownership regression tests, preflighted actual config before retry"
+  },
+  "limits": [
+    "Production GPU resources were not destructively reserved for a test. Real crash recovery used disposable authorities and a CPU workload over SSH.",
+    "Unclaimed reservation means no borrowing agent; production serving remains the LLooM baseline. Embedding/image sidecars are excluded. Arbitrary SSH workloads are not automatically fenced.",
+    "Worker gateway installations were not changed.",
+    "Prior unrelated rate-limit burst test failure remains documented in parent qualification."
+  ]
+}
