@@ -165,9 +165,9 @@ export class Overseer {
       if (old?.state === "open") {
         this.db
           .prepare(
-            "UPDATE overseer_incidents SET evidence=?,updated_at=? WHERE id=?",
+            "UPDATE overseer_incidents SET evidence=? WHERE id=?",
           )
-          .run(JSON.stringify(evidence), now, old.id);
+          .run(JSON.stringify(evidence), old.id);
         return;
       }
       const incidentId = old?.id ?? id();
@@ -193,6 +193,10 @@ export class Overseer {
       });
     });
   }
+  quietEligible(row) {
+    if (this.db.prepare('SELECT 1 FROM sessions WHERE id=? AND closed_at IS NOT NULL').get(row.id)) return false;
+    return row.source !== 'agent' || !this.db.prepare('SELECT 1 FROM session_bindings b JOIN session_views n ON n.source=b.source AND n.external_id=b.external_id WHERE b.actor=? AND n.hidden=0').get(row.id);
+  }
   quiet() {
     const now = this.store.now();
     for (const rule of this.rules().filter(
@@ -200,12 +204,13 @@ export class Overseer {
     ))
       for (const row of this.db
         .prepare(
-          "SELECT v.* FROM session_views v WHERE v.hidden=0 AND NOT EXISTS (SELECT 1 FROM remote_routes r WHERE r.actor=v.id) AND (v.source!='agent' OR NOT EXISTS (SELECT 1 FROM session_bindings b JOIN session_views n ON n.source=b.source AND n.external_id=b.external_id WHERE b.actor=v.id AND n.hidden=0))",
+          "SELECT v.* FROM session_views v WHERE v.hidden=0 AND NOT EXISTS (SELECT 1 FROM remote_routes r WHERE r.actor=v.id)",
         )
         .all()) {
         const quiet = now - row.progress_at,
           eligible =
             !row.private &&
+            this.quietEligible(row) &&
             row.state === "working" &&
             row.snoozed_until <= now &&
             (!row.expected_at || row.expected_at <= now) &&
@@ -328,7 +333,7 @@ export class Overseer {
       const evidence = JSON.parse(row.evidence);
       // Recheck current progress immediately before sending: a report may have
       // arrived since the detector opened this incident.
-      if(rule.kind==='quiet-session' && (session.state!=='working'||now-session.progress_at<rule.quietMs))continue;
+      if(rule.kind==='quiet-session' && (!this.quietEligible(session)||session.state!=='working'||now-session.progress_at<rule.quietMs))continue;
       if (
         rule.kind !== "quiet-session" &&
         now - evidence.observedAt > rule.maxAgeMs

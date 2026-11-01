@@ -22,11 +22,15 @@
   "knownBaselineFailure": {
     "test": "a rate-only HTTP burst returns queue-full 429s and disconnects drain every waiter",
     "baseline": "bcce316",
-    "result": "reproduces unchanged; expected 44 completed responses, observed 1. Full npm test is not green. All other test groups were exercised independently."
+    "result": "reproduces unchanged; expected 44 completed responses, observed 1. Full npm test is not green. All other test groups were exercised independently.",
+    "followup": "2026-11-01 cleanup: macOS resets simultaneous TCP connection bursts above its accept backlog. Test now paces connection establishment while retaining all 300 concurrent requests. Focused rate-limit suite: 35 passed."
   },
   "pendingProductionCutover": {
-    "head": "Spark production reservation head",
-    "reason": "active legacy pair lease plus systemd default control-group shutdown; source and packages are qualified, but this head was deliberately left on its current version to preserve live workloads"
+    "status": "completed-after-this-snapshot",
+    "evidence": "head-cutover/README.md",
+    "correction": "The installed unit had KillMode=process; its effective drop-in, not the systemd default, controls shutdown. Subsequent live Accord claims must be released before another driver restart."
   },
-  "boundary": "Proof covers configured LLooM workloads. Arbitrary SSH jobs or external containers are not fenced by this provider."
+  "boundary": "Proof covers configured LLooM workloads. Arbitrary SSH jobs or external containers are not fenced by this provider.",
+  "historicalSnapshot": true,
+  "supersededBy": "head-cutover/README.md"
 }

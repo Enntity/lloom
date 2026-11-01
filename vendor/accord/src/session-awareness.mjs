@@ -111,7 +111,10 @@ export class SessionAwareness {
     });
   }
   public(row) {
+    const binding = !row.private && row.source === 'agent'
+      ? this.db.prepare('SELECT source,external_id FROM session_bindings WHERE actor=? ORDER BY source,external_id LIMIT 1').get(row.id) : null;
     return {
+      ...(binding ? {nativeSession:{source:binding.source,externalId:binding.external_id}} : {}),
       id: row.id,
       address: `${this.store.authority}/${row.id}`,
       source: row.source,
@@ -136,6 +139,14 @@ export class SessionAwareness {
         this.store.now() - row.heartbeat_at < 120000 ? "recent" : "unknown",
       terminal: terminal.has(row.state),
     };
+  }
+  announce(actor, body) {
+    const previous = this.db.prepare('SELECT state FROM session_views WHERE id=?').get(actor.id);
+    return this.report(actor, {
+      key: hash('report:' + body.key), title: body.label, detail: body.activity,
+      location: body.location,
+      state: body.state ?? previous?.state ?? 'working',
+    });
   }
   report(actor, body) {
     const source = body.source ?? "agent";

@@ -70,10 +70,14 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
     if(rules.length){
       const resources=[...(await host()).resources,...await managers.resources()];
       await Promise.all(rules.map(async rule=>{
-        const resource=resources.find(r=>r.id===rule.resource||r.localId===rule.resource);
+        let resource=resources.find(r=>r.id===rule.resource||r.localId===rule.resource);
+        const authority=rule.resource.includes('/')?rule.resource.split('/')[0]:store.authority;
+        if(!resource&&authority!==store.authority)try{resource=(await collaboration.forward(authority,'resources',{},overseer.actor)).resources.find(r=>r.id===rule.resource);}catch{}
+        const holder=resource?.holder;
+        const localHolder=holder?.originActor?{...holder,actor:holder.originActor}:holder;
         let samples=[];try{samples=await Promise.all((rule.telemetryHosts??[store.authority]).map(h=>h===store.authority?telemetry.telemetry():collaboration.forward(h,'telemetry',{},overseer.actor)));}catch{}
         const known=samples.length===(rule.telemetryHosts?.length??1)&&samples.every(s=>!s.stale&&Number.isFinite(s.host?.gpu?.utilization)&&Number.isSafeInteger(s.sampledAt));
-        overseer.resource(rule,{resource:rule.resource,holder:resource?.holder,utilization:known?Math.max(...samples.map(s=>s.host.gpu.utilization)):null,observedAt:known?Math.min(...samples.map(s=>s.sampledAt)):null,stale:!known});
+        overseer.resource(rule,{resource:rule.resource,holder:localHolder,utilization:known?Math.max(...samples.map(s=>s.host.gpu.utilization)):null,observedAt:known?Math.min(...samples.map(s=>s.sampledAt)):null,stale:!known});
       }));
     }
     overseer.dispatch();
@@ -97,11 +101,12 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
         requireThat(status.instance===instanceFor(resource.id)&&(!status.authority||status.authority===store.authority),'DRIVER_REPLACED','Driver identity mismatch');
       }catch(error){driverError=error.code==='DRIVER_REPLACED'?error.code:'DRIVER_UNAVAILABLE';}
       const holder=board.claims.find(c=>c.resource===resource.id&&c.state!=='closed');
-      const session=holder&&store.db.prepare('SELECT label FROM sessions WHERE id=?').get(holder.actor);
+      const session=holder&&(store.db.prepare('SELECT label FROM participants WHERE actor=?').get(holder.actor)??store.db.prepare('SELECT label FROM sessions WHERE id=?').get(holder.actor));
+      const origin=holder&&store.db.prepare('SELECT authority,session_id FROM remote_routes WHERE actor=?').get(holder.actor);
       const queue=store.db.prepare("SELECT r.id,r.actor,r.queued_until queuedUntil,t.title purpose,t.created_at queuedAt FROM reservations r JOIN tasks t ON t.id=r.task_id WHERE t.resource=? AND t.state='queued' ORDER BY t.created_at,t.rowid LIMIT 100").all(resource.id);
       return {id:`${store.authority}/${resource.id}`,localId:resource.id,plugin:resource.plugin??'artifact',asset:resource.asset??'builtin:artifact',
         label:status?.label??resource.id,hosts:status?.hosts??[],queue,state:!driverError&&!status?.blocked&&!holder&&!status.claim_id?(queue.length?'queued':'unclaimed'):holder?'held':'unknown',enforcement:resource.enforcement??'artifact-API',driver:driverError||'reachable',
-        holder:holder?{claim:holder.id,actor:holder.actor,label:session?.label??holder.actor,generation:holder.generation,state:holder.state,deadline:holder.deadline,task:holder.task_id}:null};
+        holder:holder?{claim:holder.id,actor:holder.actor,address:origin?`${origin.authority}/${origin.session_id}`:`${store.authority}/${holder.actor}`,label:session?.label??holder.actor,generation:holder.generation,state:holder.state,deadline:holder.deadline,task:holder.task_id}:null};
     }));
     store.assertLeader();
     return {protocol:'accord/1',authority:store.authority,name:hostName,epoch:store.epoch,observedAt:store.now(),paused:board.paused,
@@ -158,7 +163,7 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
     if(operation==='overseer')return {rules:overseer.rules(),...overseer.incidents()};
     if(operation==='overseer-rule')return overseer.configure(actor,args);
     if(operation==='overseer-signal')return overseer.signal(actor,args);
-    if(operation==='announce'){const result=collaboration.announce(actor,args);awareness.report(actor,{key:hash('report:'+args.key),title:args.label,detail:args.activity,state:'working',location:args.location});return result;}
+    if(operation==='announce'){const result=collaboration.announce(actor,args);awareness.announce(actor,args);return result;}
     if(operation==='find')return collaboration.find(args.query??'');
     if(operation==='send')return collaboration.send(actor,args);
     if(operation==='inbox')return collaboration.inbox(actor,{all:args.all===true});
@@ -221,7 +226,7 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
       // Observations must not provision proxy actors or write coordination state.
       if(['telemetry','metadata','memory'].includes(body.operation))return {authority:store.authority,value:await telemetry[body.operation]()};
       if(['sessions','session-read','jobs','overseer'].includes(body.operation))return {authority:store.authority,value:await collaborate(null,body.operation,body.args)};
-      const actor=collaboration.remoteActor(peer,body.actor);
+      const actor=collaboration.remoteActor(peer,body.actor,body.identity);
       let value;
       if(body.operation==='directory')value={participants:collaboration.directory(body.args?.query??''),resources:[...(await host()).resources,...await managers.resources()]};
       else if(body.operation==='deliver'){

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Tessera's board/send/inbox conventions, with Messenger's durable delivery store.
 import { dirname, join } from 'node:path';
+import { redact } from './session-awareness.mjs';
 import { MessengerStore } from '../vendor/messenger/store.js';
 import { hash, id, token, text, integer, requireThat, loopbackUrl, request } from './common.mjs';
 
@@ -67,15 +68,30 @@ export class Collaboration {
     requireThat(link,'HOST_UNKNOWN','Host is not linked',404);
     const descriptor=await request(link.url,'','/.well-known/accord',undefined,700);
     requireThat(descriptor.authority===authority,'PEER_IDENTITY_CHANGED','Linked host identity changed');
-    const result=await request(link.url,link.outbound,'/v1/federation',{operation,args,actor:actor.id},['telemetry','metadata'].includes(operation)?3500:undefined);
-    requireThat(result.authority===authority,'PEER_IDENTITY_CHANGED','Linked host identity changed');return result.value;
+    const result=await request(link.url,link.outbound,'/v1/federation',{operation,args,actor:actor.id,identity:this.db.prepare('SELECT label FROM participants WHERE actor=?').get(actor.id)??this.db.prepare('SELECT label FROM sessions WHERE id=?').get(actor.id)},['telemetry','metadata'].includes(operation)?3500:undefined);
+    requireThat(result.authority===authority,'PEER_IDENTITY_CHANGED','Linked host identity changed');
+    if(operation==='resources'&&Array.isArray(result.value?.resources))return {...result.value,resources:result.value.resources.map(r=>({...r,holder:this.localHolder(r.holder)}))};
+    return result.value;
   }
-  remoteActor(peer,actorId) {
+  localHolder(holder) {
+    if(!holder?.actor?.startsWith('remote-'))return holder;
+    // Reverse only our own authenticated origin's deterministic proxy identity.
+    // Works with older peers too; directory text alone never establishes ownership.
+    for(const row of this.db.prepare('SELECT p.actor,p.label FROM participants p WHERE NOT EXISTS (SELECT 1 FROM remote_routes r WHERE r.actor=p.actor)').iterate()) {
+      if(holder.actor===`remote-${hash(this.store.authority+'/'+row.actor)}`)
+        return {...holder,originActor:row.actor,address:`${this.store.authority}/${row.actor}`,label:row.label};
+    }
+    return holder;
+  }
+  remoteActor(peer,actorId,identity) {
     requireThat(typeof actorId==='string'&&/^[a-zA-Z0-9_-]{1,100}$/.test(actorId),'INVALID_INPUT','Invalid remote session',400);
     const actor={id:`remote-${hash(peer.authority+'/'+actorId)}`,role:'worker'};
+    if(identity!==undefined){requireThat(identity&&typeof identity==='object','INVALID_INPUT','Invalid remote identity',400);text(identity.label,'remote label',120);}
     this.store.mutate(()=>{
       if(!this.db.prepare('SELECT id FROM actors WHERE id=?').get(actor.id))this.store.provision(actor.id,token(),'worker');
       this.db.prepare('INSERT OR IGNORE INTO remote_routes VALUES(?,?,?)').run(actor.id,peer.authority,actorId);
+      // The authenticated origin supplies display metadata; it grants no authority.
+      if(identity)this.db.prepare("INSERT INTO participants VALUES(?,?,'[]','','',?) ON CONFLICT(actor) DO UPDATE SET label=excluded.label").run(actor.id,redact(identity.label),this.store.now());
     });
     return actor;
   }

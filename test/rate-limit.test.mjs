@@ -871,16 +871,26 @@ test(
     );
     const abort = new AbortController();
     const completed = [];
-    const pending = Array.from({ length: 300 }, () =>
-      gateway
-        .chat('paced', { signal: abort.signal })
-        .then(async (response) => {
-          const result = { status: response.status, body: await response.json() };
-          completed.push(result);
-          return result;
-        })
-        .catch((error) => ({ error: error.name }))
-    );
+    const transportErrors = [];
+    const pending = [];
+    // Keep all admitted requests in flight, but let macOS accept connections
+    // between batches: its listen backlog can reset a single 300-SYN burst.
+    for (let i = 0; i < 300; i++) {
+      pending.push(
+        gateway
+          .chat('paced', { signal: abort.signal })
+          .then(async (response) => {
+            const result = { status: response.status, body: await response.json() };
+            completed.push(result);
+            return result;
+          })
+          .catch((error) => {
+            if (!abort.signal.aborted) transportErrors.push(error);
+            return { error: error.name };
+          })
+      );
+      if (i % 16 === 15) await new Promise((resolve) => setTimeout(resolve, 20));
+    }
     async function waitFor(check) {
       const deadline = Date.now() + 8000;
       while (Date.now() < deadline) {
@@ -891,6 +901,7 @@ test(
     }
     try {
       await waitFor(() => completed.length === 44);
+      assert.equal(transportErrors.length, 0, 'all requests must reach the gateway');
       assert.equal(completed.filter((r) => r.status === 200).length, 1);
       const rejected = completed.filter((r) => r.status === 429);
       assert.equal(rejected.length, 43);

@@ -52,9 +52,15 @@ acquiring, releasing and stuck entries block the corresponding provider, even if
 their old deadlines have passed. They must be reconciled after the old workload is
 verified stopped; the migration does not interrupt it or guess ownership. Before
 upgrading an existing reservation head, have the holder stop the workload and
-release through the still-running old head, which verifies restoration. Do not
-remove or edit active legacy records to force a cutover. If the upgraded head
-encounters one, it stays blocked; retain the old package for that reconciliation. Queued
+release through the still-running old head, which verifies restoration. When the
+legacy record describes production residency that must remain running, use the
+reviewed reconciliation procedure in [reservations.md](reservations.md), recording
+holder confirmation, exact effects and a deployment fence. Do not remove or edit
+active legacy records to force a cutover. The Spark head completed this procedure;
+see [installed cutover evidence](evidence/2026-11-01-accord/head-cutover/README.md).
+An active Accord grant is a separate upgrade constraint: restarting its driver
+revokes that generation and initiates recovery. Wait for a coordinated release
+before updating that host's coordinator or driver. Queued
 legacy requests must join Accord and requeue. Old job histories are imported into
 Accord's searchable observations with their original owner and timestamps, without
 pretending they are authenticated new sessions.

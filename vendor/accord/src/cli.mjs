@@ -70,7 +70,7 @@ try {
   } else if(['announce','find','send','inbox','read','sent','reserve','reservation','release','extend','workload'].includes(command)){
     process.env.ACCORD_SESSION_FILE=option('session-file',process.env.ACCORD_SESSION_FILE??join(home,'.config','accord','shell-session.json'));
     const c=inheritedClient(),key=option('key',randomUUID()),host=option('host'),id=option('id');let result;
-    if(command==='announce')result=await c.announce({key,label:option('label','agent'),activity:option('activity','available'),location:option('location',process.cwd()),capabilities:option('capabilities','').split(',').filter(Boolean)});
+    if(command==='announce')result=await c.announce({key,label:option('label','agent'),activity:option('activity','available'),state:option('state',undefined),location:option('location',process.cwd()),capabilities:option('capabilities','').split(',').filter(Boolean)});
     if(command==='find')result=await c.find(option('query',''));
     if(command==='send')result=await c.send(option('to'),option('text'),{key,kind:argv.includes('--notify')?'notification':'message'});
     if(command==='inbox')result=await c.waitInbox(Number(option('wait-ms',0)));
