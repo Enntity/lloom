@@ -1,6 +1,7 @@
 // LLooM's only reservation state is an effect journal, never a queue or lease.
 // Accord supplies fenced ownership; this module preserves exact model/route undo.
 import fs from 'node:fs';
+import { reconciledLease } from './accord-migration.mjs';
 import path from 'node:path';
 import { writeAtomicJson } from './deployment-fence.mjs';
 import { normalizeResource, schedulePaths } from './resource-spec.mjs';
@@ -39,7 +40,10 @@ export function createAccordEffects({ getConfig, statePath, actions, isPaused = 
     const old = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (old.schemaVersion !== 1) throw Error('Unknown legacy schedule; resources remain held');
     return Object.values(old.reservations ?? {}).filter(
-      (r) => r.resource === base(id) && ['active', 'acquiring', 'releasing', 'stuck'].includes(r.state)
+      (r) =>
+        r.resource === base(id) &&
+        ['active', 'acquiring', 'releasing', 'stuck'].includes(r.state) &&
+        !reconciledLease(getConfig(), r)
     );
   }
   function check(id, b) {
@@ -79,7 +83,7 @@ export function createAccordEffects({ getConfig, statePath, actions, isPaused = 
   async function handle(id, action, b) {
     if (action === 'availability') {
       spec(id);
-      return { available: !legacy(id).length };
+      return { available: !isPaused() && !legacy(id).length };
     }
     return serialize(`${id}:${action}:${b?.authority}:${b?.generation}:${b?.claimId}:${b?.key ?? ''}`, async () => {
       // Deployment owns model effects while fenced. Accord keeps the grant held

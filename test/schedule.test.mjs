@@ -147,3 +147,51 @@ test('deployment fences hold recovery without applying effects; removed configur
   assert(!f.current.borrowed);
   assert.equal(f.current.route, 'local');
 });
+
+test('verified production baseline reconciliation preserves journal, requires exact lease and drained fence, and never runs undo', async (t) => {
+  const { reconcileLegacyHold, digest, leaseDigest } = await import('../src/accord-migration.mjs');
+  const f = await fixture(t);
+  await fs.writeFile(f.config.sourcePath, JSON.stringify(f.config));
+  const lease = {
+    id: 'old',
+    owner: 'owner',
+    resource: 'gpu',
+    state: 'active',
+    steps: [{ kind: 'suspend', model: 'obsolete' }]
+  };
+  const file = path.join(f.dir, 'schedule.json');
+  const old = JSON.stringify({ schemaVersion: 1, reservations: { old: lease } });
+  await fs.writeFile(file, old);
+  const plan = {
+    leaseId: 'old',
+    owner: 'owner',
+    leaseSHA256: leaseDigest(lease),
+    configSHA256: digest(await fs.readFile(f.config.sourcePath)),
+    ownerConfirmation: 'verified owner chat',
+    baselineEvidence: 'current processes and routes',
+    noBorrowedWorkload: true,
+    opId: 'migration',
+    generation: 4
+  };
+  const fence = { state: 'prepared', activeHandlers: 0, operation: { opId: 'migration' }, generation: 4 };
+  const run = (overrides = {}) => reconcileLegacyHold({ config: f.config, plan, fence, ...overrides });
+  await run();
+  assert.equal(f.effects.legacy('gpu').length, 1);
+  await assert.rejects(run({ fence: { ...fence, activeHandlers: 1 }, apply: true }));
+  await assert.rejects(run({ plan: { ...plan, noBorrowedWorkload: false }, apply: true }));
+  await assert.rejects(run({ plan: { ...plan, leaseSHA256: 'changed' }, apply: true }));
+  const effectsFile = path.join(f.dir, 'schedule-accord-effects.json');
+  await fs.writeFile(effectsFile, JSON.stringify({ schema: 1, resources: { gpu: { phase: 'active' } } }));
+  await assert.rejects(run({ apply: true }), /Existing Accord effects/);
+  await fs.unlink(effectsFile);
+  await run({ apply: true });
+  await run({ apply: true });
+  assert.equal(f.effects.legacy('gpu').length, 0);
+  assert.equal(await fs.readFile(file, 'utf8'), old);
+  assert.deepEqual(f.calls, []);
+  await f.effects.handle('gpu', 'prepare', f.fence);
+  assert(f.calls.includes('stop:resident')); // Future grants still drain current baseline.
+  lease.updatedAt = 42;
+  await fs.writeFile(file, JSON.stringify({ schemaVersion: 1, reservations: { old: lease } }));
+  assert.equal(f.effects.legacy('gpu').length, 1);
+});

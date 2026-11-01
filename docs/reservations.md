@@ -37,3 +37,16 @@ suspended models remain suspended.
 Pre-migration active leases remain held in the original schedule evidence until
 verified recovery. Do not edit an old deadline or delete a schedule file to claim
 hardware is free. See [integration boundaries and cutover](ACCORD.md).
+
+For a historical hold whose owner confirms there is no borrowed workload, an
+operator may adopt the verified current serving configuration as the production
+baseline. Drain the gateway with its deployment fence first. Run
+`node scripts/reconcile-accord-hold.mjs --config FILE --plan PLAN` to inspect,
+then add `--apply --yes`. The plan must identify the exact lease and configuration
+SHA-256, matching fence operation/generation, owner confirmation, live baseline
+evidence, and `noBorrowedWorkload: true`. The original journal remains unchanged;
+a separate exact-record reconciliation prevents replay of obsolete restoration.
+A changed lease blocks again. This does not stop or certify arbitrary containers.
+Future reservations still execute the current resource's drain/restore contract.
+Production serving is LLooM's baseline, not an agent reservation; an unclaimed
+reservation does not mean idle hardware. Only configured workloads are fenced.
