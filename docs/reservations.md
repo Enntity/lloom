@@ -53,21 +53,46 @@ reservation does not mean idle hardware.
 
 ## External containers and supervisors
 
-For agent-created training, evaluation or build work, use Accord's generic external
-workload registration rather than adding a model to LLooM's serving configuration.
-The discovered resource advertises `externalWorkloads.hosts` and `plugins` when
-its operator has installed the connectors. Create fresh stopped containers with
-`--restart=no` and the running grant's authority/claim/generation labels; register
-full container IDs with `accord workload register`, then start the returned binding
-IDs with `accord workload launch`. Put restart watchers in dedicated registered
-systemd user services, not detached SSH loops.
+For training, evaluation or build work, use the ordinary LLooM launcher:
 
-Accord stops all attached supervisors and containers before calling this provider's
-stop/restore operations. LLooM retains all model and route lifecycle logic. A
-missing host, ambiguous launch or changed workload identity keeps the same resource
-held; it never starts a second scheduling authority. See the bundled
-[external workload contract](../vendor/accord/docs/EXTERNAL-WORKLOADS.md) for policy,
-CLI/MCP examples, coordinated adoption and proof limits.
+```sh
+lloom workload run --file workload.json             # preview
+lloom workload run --file workload.json --apply --yes
+```
+
+The [plan example](../examples/workload.json) names a discovered Accord resource,
+its approved host aliases, cached images and argv commands. LLooM joins Accord
+(or uses the inherited session), reserves and waits, creates fresh stopped
+containers with the grant labels, creates any dedicated systemd user supervisors,
+registers the complete set, then launches through Accord. It renews while waiting
+for all containers to finish. Completion or cancellation requests release; the
+command waits for confirmed recovery. Successful runs remove their stopped
+objects. Failed runs retain objects for inspection; an unknown release remains
+held. A killed launcher cannot bypass Accord's lease expiry and recovery gate.
+No separate registration or renewal steps are required.
+
+A plan may include `supervisors` with `name`, `host`, and an absolute argv `command`.
+Use `{container:NAME}` inside an argument to refer to a container on the same host.
+LLooM generates the grant-specific service name and a `KillMode=control-group`
+unit, registers it before launch, and leaves stop ordering to Accord. The command
+must keep its descendants in that group; detached watchers are outside this path.
+Containers use `--restart=no`. Identity/restart overrides are rejected. Images
+must already be cached; the launcher never downloads models or images.
+
+Host aliases default to verified SSH. An optional `hosts` map selects `local:true`
+or `ssh`, `identityFile`, and `knownHostsFile` for an existing trusted connection.
+The discovered resource must approve every workload host and plugin. These are
+operator/user launch specifications, not remotely supplied shell instructions.
+`--profile` selects an existing Accord installation. Normal launches install Accord
+if missing; inherited sessions are never closed by LLooM.
+
+Administrator-configured serving `workloads` retain LLooM's existing provider
+stop/restore contract. The external launcher is for objects LLooM creates for a
+reservation; it never adopts or takes over unrelated running containers.
+Accord stops registered supervisors and containers before calling LLooM's model
+and route restoration. See the bundled
+[external workload contract](../vendor/accord/docs/EXTERNAL-WORKLOADS.md) for the
+host policy and enforcement boundary.
 
 Already-running work must be inventoried with its holder before operator adoption.
 If it cannot be contained safely, let it finish. Neither plugin fences arbitrary

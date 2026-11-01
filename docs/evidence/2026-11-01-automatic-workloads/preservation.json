@@ -1,0 +1,54 @@
+{
+  "earlierNormalPath": {
+    "containersUnchanged": true,
+    "gatewayUnchanged": true
+  },
+  "finalParentSessionProof": {
+    "completedAt": "2026-11-01T18:50:19.789Z",
+    "gatewayPIDUnchanged": true,
+    "gatewayPID": 1546526,
+    "configSHA256": "7782cf0c0068eaa28fb483625dbb0d2f868bd1fed6a57613f35f928ee8ff3822",
+    "routesUnchanged": true,
+    "modelCatalogUnchanged": true,
+    "containersUnchangedAtLaterCheck": false,
+    "hostsUnchanged": [
+      "ennspark01",
+      "ennspark02",
+      "ennspark04"
+    ],
+    "holderContainersExitedAfterProof": [
+      {
+        "name": "spark03-ace15-sft",
+        "finishedAt": "2026-11-01T18:50:25.221190812Z",
+        "exitCode": 0
+      },
+      {
+        "name": "spark03-minimax-music3",
+        "finishedAt": "2026-11-01T18:50:26.474200937Z",
+        "exitCode": 0
+      }
+    ],
+    "note": "Two holder containers on 03 exited after the CPU proof completed; the live reservation was subsequently observed releasing. They are distinct from all proof container IDs. No stop command was issued by the proof for those containers.",
+    "holderReleaseAudit": {
+      "claim": {
+        "id": "19a6950c-05c3-4c0b-ba0e-ce0089908067",
+        "actor": "remote-0eded4af8287d883a4c07021006f242da41541461c523fc80d8229d7619911ec",
+        "task_id": "e2138b5b-44c5-4f1a-b492-bda78255ba26",
+        "state": "closed",
+        "outcome": "released"
+      },
+      "events": [
+        {
+          "at": 1793559038328,
+          "kind": "reservation.release_requested",
+          "data": "{\"id\":\"ede2c585-e1a9-4d41-ab86-3126047c8880\"}"
+        },
+        {
+          "at": 1793559088183,
+          "kind": "claim.released",
+          "data": "{\"claim\":\"19a6950c-05c3-4c0b-ba0e-ce0089908067\",\"generation\":5,\"outcome\":\"released\"}"
+        }
+      ]
+    }
+  }
+}

@@ -116,7 +116,10 @@ export class SessionAwareness {
   public(row) {
     const binding = !row.private && row.source === 'agent'
       ? this.db.prepare('SELECT source,external_id FROM session_bindings WHERE actor=? ORDER BY source,external_id LIMIT 1').get(row.id) : null;
+    const origin=this.db.prepare('SELECT authority,session_id FROM remote_routes WHERE actor=?').get(row.id);
     return {
+      ...(!row.private && row.parent_session ? {parentSession:JSON.parse(row.parent_session)} : {}),
+      ...(!row.private && origin ? {originAddress:origin.authority+'/'+origin.session_id} : {}),
       ...(binding ? {nativeSession:{source:binding.source,externalId:binding.external_id}} : {}),
       id: row.id,
       address: `${this.store.authority}/${row.id}`,
@@ -186,6 +189,13 @@ export class SessionAwareness {
         this.store.now(),
         this.store.now() + 7 * 86400000,
       );
+    if(body.parentSession !== undefined) {
+      requireThat(actor.role === 'admin' && source !== 'agent','FORBIDDEN','Only host observers may report parent relationships',403);
+      if(body.parentSession !== null) {
+        text(body.parentSession.source,'parent source',64); text(body.parentSession.externalId,'parent externalId',200);
+        requireThat(body.parentSession.source !== source || body.parentSession.externalId !== external,'INVALID_INPUT','A session cannot parent itself');
+      }
+    }
     const events = (body.events ?? []).map((e) => ({
       key: text(e.key, "event key", 200),
       kind: text(e.kind ?? "message", "event kind", 40),
@@ -294,6 +304,7 @@ export class SessionAwareness {
           Number(changed),
           Number(changed),
         );
+      if(body.parentSession !== undefined || privacy) this.db.prepare('UPDATE session_views SET parent_session=? WHERE id=?').run(privacy||!body.parentSession?null:JSON.stringify({source:body.parentSession.source,externalId:body.parentSession.externalId}),session);
       if (privacy) {
         this.db
           .prepare("DELETE FROM session_activity WHERE session_id=?")

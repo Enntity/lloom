@@ -636,3 +636,5 @@ For authentication, transport failures, and machine-readable CLI errors, see
 [Gateway diagnostics](docs/cli-diagnostics.md).
 
 Linux gateway persistence: [service installation and diagnostics](docs/service-installation.md).
+
+Run temporary container workloads with `lloom workload run --file plan.json --apply --yes`. LLooM handles Accord reservation, registration, renewal and confirmed release; see [shared resources](docs/reservations.md).

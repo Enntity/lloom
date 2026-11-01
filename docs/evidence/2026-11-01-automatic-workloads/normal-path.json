@@ -1,0 +1,175 @@
+{
+  "status": "passed",
+  "at": "2026-11-01T18:50:19.789Z",
+  "kind": "Packaged LLooM CLI normal automatic launch and release on two real hosts",
+  "cpuOnly": true,
+  "events": [
+    {
+      "state": "preparing",
+      "reservationId": "40fa5d31-fa61-4ed1-b997-749ce4da80b5",
+      "host": "0aedfeff-ef82-4e75-9192-b2e9231d3252"
+    },
+    {
+      "state": "running",
+      "reservationId": "40fa5d31-fa61-4ed1-b997-749ce4da80b5",
+      "host": "0aedfeff-ef82-4e75-9192-b2e9231d3252",
+      "containers": [
+        {
+          "host": "ennspark03",
+          "id": "a26540f690e9de771146123574cdead8762d7d22494f61ca762937c78b5fae6e"
+        },
+        {
+          "host": "ennspark04",
+          "id": "bcb8d5f0a417c3a5c975bc544ff1391da6875e9eaf3bd6e56a9d5cd39fca52b0"
+        }
+      ],
+      "supervisors": [
+        {
+          "host": "ennspark03",
+          "name": "accord-b1a8970689c0cdb95039-watch.service"
+        }
+      ]
+    },
+    {
+      "state": "released",
+      "reservationId": "40fa5d31-fa61-4ed1-b997-749ce4da80b5",
+      "host": "0aedfeff-ef82-4e75-9192-b2e9231d3252",
+      "exitCodes": [
+        0,
+        0
+      ]
+    }
+  ],
+  "effects": [
+    {
+      "kind": "restored-after-stop",
+      "at": 1793559018584
+    }
+  ],
+  "externalAudit": [
+    {
+      "seq": 1,
+      "kind": "workload.registered",
+      "claim": "104122b7-ee8e-437b-bd97-08bf7bac5a06",
+      "binding": "6c670e4ed1e105fa9d1e624433f09a8ece6e7ad8b6da9813c866b9ef82dfd692",
+      "at": 1793559012479
+    },
+    {
+      "seq": 2,
+      "kind": "workload.registered",
+      "claim": "104122b7-ee8e-437b-bd97-08bf7bac5a06",
+      "binding": "4128b406b3da972a4f10d4878bd31f39b29bac1ca9a6e7e43ba2785b5e178fef",
+      "at": 1793559012485
+    },
+    {
+      "seq": 3,
+      "kind": "workload.registered",
+      "claim": "104122b7-ee8e-437b-bd97-08bf7bac5a06",
+      "binding": "b76b4f14948fd0b2a3dfd573767fa72f882a7c738ed765ff542e286fdbf06f57",
+      "at": 1793559012492
+    },
+    {
+      "seq": 4,
+      "kind": "workload.launch_intent",
+      "claim": "104122b7-ee8e-437b-bd97-08bf7bac5a06",
+      "binding": "6c670e4ed1e105fa9d1e624433f09a8ece6e7ad8b6da9813c866b9ef82dfd692",
+      "at": 1793559012504
+    },
+    {
+      "seq": 5,
+      "kind": "workload.launch_intent",
+      "claim": "104122b7-ee8e-437b-bd97-08bf7bac5a06",
+      "binding": "4128b406b3da972a4f10d4878bd31f39b29bac1ca9a6e7e43ba2785b5e178fef",
+      "at": 1793559012699
+    },
+    {
+      "seq": 6,
+      "kind": "workload.launch_intent",
+      "claim": "104122b7-ee8e-437b-bd97-08bf7bac5a06",
+      "binding": "b76b4f14948fd0b2a3dfd573767fa72f882a7c738ed765ff542e286fdbf06f57",
+      "at": 1793559013281
+    },
+    {
+      "seq": 7,
+      "kind": "workload.fenced",
+      "claim": "104122b7-ee8e-437b-bd97-08bf7bac5a06",
+      "binding": null,
+      "at": 1793559017743
+    },
+    {
+      "seq": 8,
+      "kind": "workload.stopped",
+      "claim": "104122b7-ee8e-437b-bd97-08bf7bac5a06",
+      "binding": "b76b4f14948fd0b2a3dfd573767fa72f882a7c738ed765ff542e286fdbf06f57",
+      "at": 1793559017770
+    },
+    {
+      "seq": 9,
+      "kind": "workload.stopped",
+      "claim": "104122b7-ee8e-437b-bd97-08bf7bac5a06",
+      "binding": "4128b406b3da972a4f10d4878bd31f39b29bac1ca9a6e7e43ba2785b5e178fef",
+      "at": 1793559018176
+    },
+    {
+      "seq": 10,
+      "kind": "workload.stopped",
+      "claim": "104122b7-ee8e-437b-bd97-08bf7bac5a06",
+      "binding": "6c670e4ed1e105fa9d1e624433f09a8ece6e7ad8b6da9813c866b9ef82dfd692",
+      "at": 1793559018200
+    },
+    {
+      "seq": 11,
+      "kind": "workload.released",
+      "claim": "104122b7-ee8e-437b-bd97-08bf7bac5a06",
+      "binding": null,
+      "at": 1793559018600
+    }
+  ],
+  "driverAudit": [
+    {
+      "seq": 1,
+      "kind": "grant.active",
+      "generation": 1,
+      "claim_id": "104122b7-ee8e-437b-bd97-08bf7bac5a06",
+      "at": 1793559011240
+    },
+    {
+      "seq": 2,
+      "kind": "workload.stopped",
+      "generation": 1,
+      "claim_id": "104122b7-ee8e-437b-bd97-08bf7bac5a06",
+      "at": 1793559018209
+    },
+    {
+      "seq": 3,
+      "kind": "provider.restored",
+      "generation": 1,
+      "claim_id": "104122b7-ee8e-437b-bd97-08bf7bac5a06",
+      "at": 1793559018585
+    },
+    {
+      "seq": 4,
+      "kind": "grant.revoked",
+      "generation": 1,
+      "claim_id": "104122b7-ee8e-437b-bd97-08bf7bac5a06",
+      "at": 1793559018588
+    },
+    {
+      "seq": 5,
+      "kind": "grant.active",
+      "generation": 2,
+      "claim_id": "f710fce6-893e-43e2-9578-54adaadfc12a",
+      "at": 1793559018675
+    }
+  ],
+  "assertions": [
+    "LLooM created and registered both containers and supervisor automatically",
+    "All registration preceded launch",
+    "Ordinary packaged CLI acquired ownership automatically",
+    "Normal completion released through Accord",
+    "Inherited parent session preserved; workload job completed separately",
+    "Supervisor and containers confirmed stopped before restoration and second agent grant",
+    "Stopped containers cleaned up",
+    "Production authority, models and routes untouched"
+  ]
+}

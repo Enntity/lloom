@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "title": "Evaluation",
+  "resource": "AUTHORITY/RESOURCE",
+  "containers": [
+    {
+      "name": "evaluation",
+      "host": "worker",
+      "image": "ALREADY_CACHED_IMAGE",
+      "command": ["/bin/sh", "-c", "echo evaluation; sleep 5"],
+      "args": ["--cpus", "1", "--memory", "256m"]
+    }
+  ],
+  "supervisors": []
+}

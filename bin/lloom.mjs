@@ -94,6 +94,7 @@ import { createLloomServer } from '../src/server.mjs';
 import { deploymentFailureReport, formatDeploymentReport, runDeploymentCli } from '../src/cluster-deployment-cli.mjs';
 import { runNodeAgentCli } from '../src/node-agent-cli.mjs';
 import { ensureLloomAccord } from '../src/accord-install.mjs';
+import { runWorkloadCli } from '../src/workload-cli.mjs';
 import { runScheduleCli, SCHEDULE_COMMANDS, scheduleUsage } from '../src/schedule-cli.mjs';
 import { applySetup, createSetupPlan, syncClusterSetupMembers } from '../src/setup.mjs';
 import { createSetupStatus } from '../src/setup-status.mjs';
@@ -120,6 +121,7 @@ const COMMAND_REGISTRY = [
   { name: 'resume', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'route', aliases: ['routing'], tier: 'primary', needsInstalledConfig: true },
   { name: 'schedule', aliases: [], tier: 'primary', needsInstalledConfig: false },
+  { name: 'workload', aliases: [], tier: 'primary', needsInstalledConfig: false },
   { name: 'reserve', aliases: [], tier: 'primary', needsInstalledConfig: false },
   { name: 'renew', aliases: [], tier: 'primary', needsInstalledConfig: false },
   { name: 'release', aliases: [], tier: 'primary', needsInstalledConfig: false },
@@ -202,7 +204,7 @@ Primary commands:
   lloom suspend <model> --apply --yes  Drain, unload, and suspend a model
   lloom resume <model> --apply --yes   Load, verify health, and restore routing
   lloom schedule                   Who holds shared hardware, queues, and agent jobs
-  lloom reserve <resource>         Lease shared hardware (preview; add --apply --yes)
+  lloom workload run --file PLAN   Run with automatic Accord registration and release
   lloom job start <title>          Report a long-running job; returns its id
   lloom integrate <client|all>     Write client configs (omp, opencode, codex, …)
   lloom add-model <ref>            Import an ad hoc model (dry-run; add --apply --yes)
@@ -3098,6 +3100,7 @@ async function main() {
   handlers['pack-export'] = handlers['recipe-export'];
   handlers['recipe-pack'] = handlers['recipe-import'];
   handlers['pack-submit'] = handlers['recipe-submit'];
+  handlers['workload'] = async ({ args }) => runWorkloadCli(args.slice(args.indexOf('workload') + 1));
   for (const name of SCHEDULE_COMMANDS) {
     handlers[name] = async ({ args, config, command: scheduleCommand }) => {
       process.exitCode = (await runScheduleCli(scheduleCommand, args, { config })) || process.exitCode;

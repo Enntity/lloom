@@ -22,6 +22,7 @@ export function parseTranscript(
   let state = "unknown",
     progressAt = 0;
   const events = [];
+  let parentSession; const fileId=externalId;
   for (const line of lines) {
     let row;
     try {
@@ -37,6 +38,8 @@ export function parseTranscript(
       if (row.type === "session_meta") {
         externalId = p.id ?? p.session_id ?? externalId;
         location = p.cwd ?? location;
+        const parent=p.source?.subagent?.thread_spawn?.parent_thread_id;
+        if(typeof parent==='string')parentSession={source,externalId:parent};
         if(p.source?.subagent?.other==='guardian')return {source,externalId,excluded:true};
       }
       if (row.type === "turn_context") location = p.cwd ?? location;
@@ -82,11 +85,13 @@ export function parseTranscript(
       }
     } else if (source === "claude") {
       location = row.cwd ?? location;
-      externalId = row.sessionId ?? externalId;
+      if(fileId?.startsWith('agent-') && row.sessionId) {
+        parentSession={source,externalId:row.sessionId};externalId=row.sessionId+'/'+fileId;
+      } else externalId = row.sessionId ?? externalId;
       if (row.type === "custom-title") title = row.customTitle ?? title;
       if (
         ["user", "assistant"].includes(row.type) &&
-        !row.isSidechain &&
+        (!row.isSidechain || parentSession) &&
         !row.isMeta
       ) {
         kind = row.type;
@@ -124,6 +129,7 @@ export function parseTranscript(
   return {
     source,
     externalId,
+    ...(parentSession?{parentSession}:{}),
     title: title ?? `${source} session`,
     location,
     state,
