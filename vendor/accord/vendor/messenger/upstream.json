@@ -1,0 +1,10 @@
+{
+  "repository": "Enntity/enntity-messenger",
+  "commit": "08a788e25a80650f7a0355341852975cbe424d2b",
+  "sha256": {
+    "LICENSE": "318df2193e69d37d01c91e885d4019ccf3781f565bfeab901ea6345cc6d31f25",
+    "auth.js": "cbf6d28d4fb88303a9e3cdbb3fed1d2ee9549cf81050d0b620bdd1e8e9038d92",
+    "store.js": "453835c1b778d33bbf30d0ebd7156096d39dda06e19034425cde516ceddb9000",
+    "errors.js": "131a9b2d5be914d6ff5f1a08b09c3181dcacc64a3ebf2bacec7b1219179481bc"
+  }
+}

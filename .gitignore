@@ -21,3 +21,8 @@ logs/
 tmp/
 community/keys/*private*.pem
 community/submissions/
+
+# Private provider credentials and durable machine effect journals
+**/accord-provider.token
+**/*-accord-effects.json
+**/accord-provider.json

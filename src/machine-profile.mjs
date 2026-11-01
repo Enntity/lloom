@@ -1,4 +1,7 @@
-import os from 'node:os';
+import { accordProfile, accordSample } from './accord-client.mjs';
+import { existsSync } from 'node:fs';
+import { createCollectors } from '../vendor/accord/src/telemetry-collectors.mjs';
+import { lloomMachineInput } from '../vendor/accord/src/telemetry.mjs';
 import { runCommand } from './process-control.mjs';
 import { detectNvidiaSyncCluster } from './cluster.mjs';
 import { evaluateResourceFit, machineTopologyFingerprint, memoryDomainsForProfile } from './resource-fit.mjs';
@@ -11,17 +14,6 @@ export const RECOMMENDATION_RESPONSE_SCHEMA = 'https://lloom.dev/schemas/recomme
 export const RECOMMENDATION_RESPONSE_MEDIA_TYPE = 'application/vnd.lloom.recommendation-response+json;version=1';
 export const INTERCHANGE_PROFILE = 'https://lloom.dev/profiles/interchange/v1';
 
-function round(value, places = 1) {
-  const factor = 10 ** places;
-  return Math.round(value * factor) / factor;
-}
-
-async function commandOutput(command, args) {
-  const result = await runCommand(command, args, { allowFailure: true });
-  if (result.code !== 0) return '';
-  return result.stdout.trim();
-}
-
 function listValues(value) {
   if (value == null) return [];
   const values = Array.isArray(value) ? value : [value];
@@ -33,17 +25,6 @@ function listValues(value) {
         .filter(Boolean)
     )
   ];
-}
-
-async function cpuBrand() {
-  if (process.platform === 'darwin') {
-    return await commandOutput('/usr/sbin/sysctl', ['-n', 'machdep.cpu.brand_string']);
-  }
-  if (process.platform === 'linux') {
-    const lines = await commandOutput('/bin/cat', ['/proc/cpuinfo']);
-    return lines.match(/^model name\s*:\s*(.+)$/m)?.[1] ?? '';
-  }
-  return os.cpus()[0]?.model ?? '';
 }
 
 async function commandExists(command) {
@@ -136,41 +117,6 @@ function mergeAccelerators({ accelerators, devices, isAppleSilicon }) {
     for (const accelerator of deviceAccelerators(device)) merged.add(accelerator);
   }
   return [...merged];
-}
-
-async function detectCudaDevices() {
-  if (!(await commandExists('nvidia-smi'))) return [];
-  const output = await commandOutput('nvidia-smi', [
-    '--query-gpu=index,name,memory.total,compute_cap',
-    '--format=csv,noheader,nounits'
-  ]);
-  if (!output) return [];
-  return output
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [index, name, memoryMiB, computeCapability] = line.split(',').map((value) => value.trim());
-      const memoryGb = numericValue(memoryMiB) == null ? undefined : round(Number(memoryMiB) / 1024, 1);
-      const accelerators = ['cuda', 'nvidia-gpu'];
-      const major = Number(String(computeCapability ?? '').split('.')[0]);
-      if (Number.isFinite(major) && major >= 12) accelerators.push('blackwell');
-      const nameLower = String(name ?? '').toLowerCase();
-      if (/\bgb10\b|\bdgx\s*spark\b|blackwell/.test(nameLower)) {
-        accelerators.push('blackwell', 'dgx-spark', 'gb10');
-      }
-      return normalizeDevice({
-        id: `cuda:${index}`,
-        kind: 'gpu',
-        vendor: 'nvidia',
-        name,
-        backend: 'cuda',
-        memoryGb,
-        computeCapability,
-        accelerators: [...new Set(accelerators)]
-      });
-    })
-    .filter(Boolean);
 }
 
 function profileId(profile) {
@@ -349,19 +295,17 @@ export function validateRecommendationResponse(response) {
 }
 
 export async function profileMachine({ platform = process.platform, arch = process.arch, env = process.env } = {}) {
-  const totalMemoryGb = round(os.totalmem() / 1024 / 1024 / 1024, 1);
-  const logicalCpus = os.cpus().length;
-  const isAppleSilicon = platform === 'darwin' && arch === 'arm64';
-  const devices = [...(isAppleSilicon ? appleSiliconDevices() : []), ...(await detectCudaDevices())];
+  // Read-only setup planning can use Accord's collector before its first installation.
+  const sample = existsSync(accordProfile(env))
+    ? await accordSample('metadata', { env })
+    : { machine: await createCollectors().metadata(), stale: false };
+  const machine = lloomMachineInput(sample);
   const cluster = platform === 'linux' ? await detectNvidiaSyncCluster({ home: env.HOME }) : null;
   return normalizeMachineProfile({
+    ...machine,
     platform,
     arch,
-    cpuBrand: await cpuBrand(),
-    totalMemoryGb,
-    logicalCpus,
-    isAppleSilicon,
-    devices,
+    isAppleSilicon: platform === 'darwin' && arch === 'arm64',
     ...(cluster ? { cluster } : {}),
     modelRoot: env.LLOOM_MODEL_ROOT ?? env.LLOOM_MTPLX_MODEL_ROOT ?? ''
   });

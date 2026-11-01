@@ -93,6 +93,7 @@ import {
 import { createLloomServer } from '../src/server.mjs';
 import { deploymentFailureReport, formatDeploymentReport, runDeploymentCli } from '../src/cluster-deployment-cli.mjs';
 import { runNodeAgentCli } from '../src/node-agent-cli.mjs';
+import { ensureLloomAccord } from '../src/accord-install.mjs';
 import { runScheduleCli, SCHEDULE_COMMANDS, scheduleUsage } from '../src/schedule-cli.mjs';
 import { applySetup, createSetupPlan, syncClusterSetupMembers } from '../src/setup.mjs';
 import { createSetupStatus } from '../src/setup-status.mjs';
@@ -215,8 +216,6 @@ Also useful:
 
 Environment:
   LLOOM_CONFIG    Path to config JSON
-  LLOOM_HEAD_URL  Gateway that owns the schedule (key in LLOOM_HEAD_API_KEY)
-  LLOOM_OWNER     Your name on reservations and jobs
 `;
 }
 
@@ -1447,6 +1446,7 @@ async function main() {
       if (!result.ok) process.exitCode = 1;
     },
     serve: async ({ args, config, command: _command }) => {
+      await ensureLloomAccord();
       applyServeOverrides(config, args);
       const app = createLloomServer(config);
       await app.listen();

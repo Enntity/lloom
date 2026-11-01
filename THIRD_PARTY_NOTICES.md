@@ -213,3 +213,7 @@ included in the LLooM npm package, and LLooM's files for the lane remain MIT.
 The model `nvidia/Qwen3.8-Flash-Next-NVFP4` (NVIDIA Open Model License per its
 model card) is downloaded from its publisher under its own terms. See the
 [backend README](backends/atlas-sparkqwen/README.md#credits-and-licenses).
+
+## Accord
+
+`vendor/accord` is an unmodified, qualified snapshot of the standalone Enntity Accord package (MIT). `vendor/accord-lock.json` records the package and file hashes. Its embedded Messenger and telemetry modules retain their source and license notices. Update with `scripts/vendor-accord.py`; do not patch the snapshot.

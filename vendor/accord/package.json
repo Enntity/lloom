@@ -1,0 +1,34 @@
+{
+  "name": "@enntity/accord",
+  "version": "0.4.0-preview.1",
+  "private": true,
+  "type": "module",
+  "description": "Discover agents, exchange messages, and share resources with safe recovery",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "bin": {
+    "accord": "src/cli.mjs"
+  },
+  "scripts": {
+    "check": "node scripts/check.mjs",
+    "test": "node --test --test-concurrency=1 test/*.test.mjs",
+    "demo": "node demo/recovery.mjs",
+    "verify": "node scripts/verify.mjs",
+    "start": "node src/cli.mjs up",
+    "demo:process": "node demo/process-recovery.mjs",
+    "demo:bootstrap": "node demo/bootstrap.mjs",
+    "build:sensors": "node scripts/build-sensors.mjs"
+  },
+  "files": [
+    "src/",
+    "skills/",
+    "vendor/",
+    "README.md",
+    "LICENSE",
+    "docs/",
+    "native/",
+    "scripts/build-sensors.mjs"
+  ]
+}

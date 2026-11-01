@@ -612,19 +612,25 @@ for alias setup, distributed ownership, timeouts, and recovery.
 
 ### Share hardware between agents
 
+LLooM and Tessera share one standalone Accord host. LLooM installs it on first
+start if needed; an existing pinned host is reused. Agent skills, identity,
+messages, shared jobs, resource queues and leases belong to Accord.
+
 ```sh
-lloom schedule                                         # holders, queues, jobs
-lloom reserve pair --purpose "decode A/B" --wait --apply --yes
-job=$(lloom job start "decode A/B" --on pair)
-lloom job progress $job 2/6 --unit arms
-lloom job done $job "flat vs baseline"
-lloom release pair --apply --yes
+accord session open --label researcher
+accord resource list
+accord reserve --resource HOST/RESOURCE --purpose "decode A/B"
+accord reservation --id RESERVATION_ID       # wait for running
+accord workload start --id RESERVATION_ID   # configured managed workload
+accord release --id RESERVATION_ID          # wait until released
+lloom schedule --json                      # read-only Accord projection
 ```
 
-A reservation is an expiring lease on a configured resource. Taking it routes
-aliases away and suspends that resource's models, and releasing it restores them
-after a health check. Jobs report progress to one board instead of each agent's
-window. See [reservations and jobs](docs/reservations.md).
+LLooM supplies model drain, route changes, supervised workloads and exact
+restoration. Accord will not grant the next lease until stopping and restoration
+are confirmed. Machine sensors come from the Accord host, including a separate
+fast memory sampler for admission. Inference metrics and runtime policy stay in
+LLooM. See [Accord integration](docs/ACCORD.md) and [resources](docs/reservations.md).
 
 For authentication, transport failures, and machine-readable CLI errors, see
 [Gateway diagnostics](docs/cli-diagnostics.md).

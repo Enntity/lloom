@@ -3,6 +3,7 @@ import test from 'node:test';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { RuntimeManager } from '../src/runtime-manager.mjs';
@@ -85,7 +86,7 @@ test('managed stop removes a backend and its TERM-resistant model worker', posix
 for (const loseGatewayLogs of [false, true]) {
   test(`backend exit cleans its worker${loseGatewayLogs ? ' after gateway log pipes close' : ''}`, posix, async (t) => {
     const f = await fixture(t);
-    const wrapper = spawn(process.execPath, [supervisor.pathname, process.execPath, f.backend, f.receipt], {
+    const wrapper = spawn(process.execPath, [fileURLToPath(supervisor), process.execPath, f.backend, f.receipt], {
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe']
     });
@@ -109,6 +110,8 @@ for (const loseGatewayLogs of [false, true]) {
 }
 
 test('a missing backend command fails instead of leaving a supervisor alive', posix, async () => {
-  const wrapper = spawn(process.execPath, [supervisor.pathname, '/nonexistent/lloom-backend'], { stdio: 'ignore' });
+  const wrapper = spawn(process.execPath, [fileURLToPath(supervisor), '/nonexistent/lloom-backend'], {
+    stdio: 'ignore'
+  });
   assert.equal(await new Promise((resolve) => wrapper.once('exit', resolve)), 1);
 });

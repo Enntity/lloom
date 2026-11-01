@@ -1,3 +1,4 @@
+import { createAccordProvider } from './accord-provider.mjs';
 import { runtimeCapabilityModels } from './runtime-capabilities.mjs';
 import runtimeCapabilities from './runtime-capabilities.json' with { type: 'json' };
 import { executeWebFunction, webFunctionStatus } from './web-functions.mjs';
@@ -20,10 +21,7 @@ import {
   writeFileSync
 } from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 // Dispatcher and fetch must come from the same undici copy: the package's
 // v8 Agent speaks a dispatcher contract Node 22's internal undici v6 rejects.
 import { Agent as UndiciAgent, fetch as undiciFetch } from 'undici';
@@ -52,7 +50,7 @@ import {
 import { defaultLloomHome, loadConfig } from './config.mjs';
 import { createFleetProfileController } from './config-profiles.mjs';
 import { createDoctorReport } from './doctor.mjs';
-import { readHostMemory } from './host-memory.mjs';
+import { createHostTelemetry } from './accord-client.mjs';
 import { MACHINE_PROFILE_MEDIA_TYPE, profileMachine, rankRecipes, validateMachineProfile } from './machine-profile.mjs';
 import { applyModelImport, createModelImportPlan } from './model-intake.mjs';
 import { applyOnboarding, createOnboardingPlan } from './onboarding.mjs';
@@ -63,7 +61,9 @@ import { createRegistry, UnknownModelError } from './registry.mjs';
 import { routeProfileStatus, writeRouteMemberSuspension, writeRouteProfile } from './route-control.mjs';
 import { mutateConfigSource } from './config-mutation.mjs';
 import { createModelMaintenanceController } from './model-maintenance-control.mjs';
-import { createSchedule, ScheduleError, schedulePaths } from './schedule.mjs';
+import { ScheduleError, schedulePaths } from './resource-spec.mjs';
+import { createAccordEffects } from './accord-effects.mjs';
+import { registerResources, scheduleView, effectCredential, importScheduleHistory } from './accord-resources.mjs';
 import {
   acquireRateLimitSlot,
   awaitRateBudget,
@@ -142,7 +142,6 @@ import { createDeploymentFence, DeploymentFenceError, isDeploymentFencePath } fr
 const JSON_TYPE = 'application/json; charset=utf-8';
 const UNREDACTED_EGRESS_PATHS = new Set(['/v1/embeddings', '/v1/audio/transcriptions']);
 const SSE_TYPE = 'text/event-stream; charset=utf-8';
-const execFileAsync = promisify(execFile);
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DEPLOYMENT_CANARY_MAX_RESPONSE_BYTES = 1024 * 1024;
 const DEPLOYMENT_CANARY_TIMEOUT_MS = 30_000;
@@ -152,132 +151,6 @@ let longRunningMediaDispatcher = new UndiciAgent({
   headersTimeout: 1800000,
   bodyTimeout: 1800000
 });
-
-function createHostTelemetry({ sampleIntervalMs = 2000 } = {}) {
-  let cached = null;
-  let sampledAt = 0;
-  let pending = null;
-  let previousCpu = null;
-
-  function cpuTimes() {
-    return os.cpus().reduce(
-      (totals, cpu) => {
-        const total = Object.values(cpu.times).reduce((sum, value) => sum + value, 0);
-        return { idle: totals.idle + cpu.times.idle, total: totals.total + total };
-      },
-      { idle: 0, total: 0 }
-    );
-  }
-
-  async function collect() {
-    const currentCpu = cpuTimes();
-    const cpuDelta = previousCpu
-      ? { idle: currentCpu.idle - previousCpu.idle, total: currentCpu.total - previousCpu.total }
-      : null;
-    previousCpu = currentCpu;
-    let gpu = null;
-    try {
-      const { stdout } = await execFileAsync(
-        'nvidia-smi',
-        [
-          '--query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,pstate,clocks.current.sm,clocks.current.memory',
-          '--format=csv,noheader,nounits'
-        ],
-        { timeout: 1500 }
-      );
-      const metric = (value) => {
-        const number = Number(String(value ?? '').trim());
-        return Number.isFinite(number) ? number : null;
-      };
-      const devices = stdout
-        .trim()
-        .split(/\r?\n/)
-        .filter(Boolean)
-        .map((line, fallbackIndex) => {
-          const [
-            index,
-            name,
-            utilization,
-            memoryUsed,
-            memoryTotal,
-            temperature,
-            powerDraw,
-            performanceState,
-            smClock,
-            memoryClock
-          ] = line.split(',').map((value) => value.trim());
-          return {
-            index: metric(index) ?? fallbackIndex,
-            name,
-            utilization: metric(utilization),
-            memoryUsedMb: metric(memoryUsed),
-            memoryTotalMb: metric(memoryTotal),
-            temperatureC: metric(temperature),
-            powerDrawW: metric(powerDraw),
-            performanceState: performanceState || null,
-            smClockMhz: metric(smClock),
-            memoryClockMhz: metric(memoryClock)
-          };
-        });
-      if (devices.length) {
-        const values = (key) => devices.map((device) => device[key]).filter(Number.isFinite);
-        const sum = (items) => (items.length ? items.reduce((total, value) => total + value, 0) : null);
-        const average = (items) => (items.length ? sum(items) / items.length : null);
-        gpu = {
-          vendor: 'nvidia',
-          backend: 'nvidia-smi',
-          devices,
-          utilization: average(values('utilization')),
-          memoryUsedMb: sum(values('memoryUsedMb')),
-          memoryTotalMb: sum(values('memoryTotalMb')),
-          temperatureC: values('temperatureC').length ? Math.max(...values('temperatureC')) : null,
-          powerDrawW: sum(values('powerDrawW'))
-        };
-      }
-    } catch {
-      // NVIDIA telemetry is optional on non-CUDA hosts.
-    }
-    const availableMemory = await readHostMemory();
-    const totalMemory = os.totalmem();
-    const freeMemory = os.freemem();
-    const usedMemory = Math.max(0, totalMemory - freeMemory);
-    return {
-      sampledAt: new Date().toISOString(),
-      cpu: {
-        utilization: cpuDelta?.total > 0 ? (1 - cpuDelta.idle / cpuDelta.total) * 100 : null,
-        logicalCpus: os.cpus().length,
-        model: os.cpus()[0]?.model ?? null
-      },
-      memory: {
-        usedBytes: usedMemory,
-        freeBytes: freeMemory,
-        availableBytes: availableMemory.availableBytes,
-        totalBytes: totalMemory,
-        utilization: totalMemory > 0 ? (usedMemory / totalMemory) * 100 : 0,
-        pressureUtilization: availableMemory.utilization,
-        source: availableMemory.source
-      },
-      gpu
-    };
-  }
-
-  return {
-    async snapshot() {
-      if (cached && Date.now() - sampledAt < sampleIntervalMs) return cached;
-      if (!pending)
-        pending = collect()
-          .then((value) => {
-            cached = value;
-            sampledAt = Date.now();
-            return value;
-          })
-          .finally(() => {
-            pending = null;
-          });
-      return pending;
-    }
-  };
-}
 
 function stripTrailingSlash(value) {
   return String(value ?? '').replace(/\/+$/, '');
@@ -2623,11 +2496,48 @@ export function createLloomServer(
   const fleetProfiles = createFleetProfileController({ getConfig: () => config, reload: reloadConfig });
   let scheduleUnavailable = 'this gateway does not keep a schedule (needs a file-backed primary config)';
   const schedule = createGatewaySchedule();
+  const providerTokenFile =
+    schedule &&
+    (Object.keys(config.reservations?.resources ?? {}).length ||
+      existsSync(schedulePaths(config).statePath.replace(/\.json$/, '') + '-accord-effects.json'))
+      ? effectCredential(config)
+      : null;
+  const provider = providerTokenFile
+    ? createAccordProvider({
+        tokenFile: providerTokenFile,
+        async handle(id, action, body) {
+          const admission = deploymentFence.requestAdmission({
+            routeKind: ['inspect', 'availability'].includes(action) ? 'admin-read' : 'admin-write',
+            method: 'POST',
+            pathname: '/gateway/accord/resources'
+          });
+          try {
+            return await schedule.handle(id, action, body);
+          } finally {
+            admission.release();
+          }
+        }
+      })
+    : null;
+  let accordRegistrationTimer;
+  function registerAccordResources(port) {
+    if (!schedule || runtimeManager.shuttingDown) return;
+    void (provider ? provider.listen() : Promise.resolve(port))
+      .then((providerPort) => registerResources(config, providerPort, providerTokenFile))
+      .then(() => importScheduleHistory(config))
+      .catch((error) => {
+        logger.error?.(`Accord resource registration failed; ownership unavailable: ${error.message}`);
+        if (!runtimeManager.shuttingDown) {
+          accordRegistrationTimer = setTimeout(() => registerAccordResources(port), 10000);
+          accordRegistrationTimer.unref?.();
+        }
+      });
+  }
 
   // Reservation take/undo steps. A step names the node whose gateway owns the
   // model or route; other nodes are driven through their admin API.
   function createGatewaySchedule() {
-    const { statePath, eventsPath } = schedulePaths(config);
+    const { statePath } = schedulePaths(config);
     if (!statePath || processRole !== 'primary' || isStandby(config)) return null;
     async function maintenance(model, action, node, drainTimeoutMs = 300000, apply = true) {
       const body = { apply, yes: apply, drainTimeoutMs };
@@ -2644,11 +2554,9 @@ export function createLloomServer(
       return result;
     }
     try {
-      return createSchedule({
+      return createAccordEffects({
         getConfig: () => config,
-        statePath,
-        eventsPath,
-        logger,
+        statePath: statePath.replace(/\.json$/, '') + '-accord-effects.json',
         isPaused: () => deploymentFence.isFenced(),
         actions: {
           // The dry-run plan reports each runtime's maintenance record.
@@ -4783,38 +4691,12 @@ export function createLloomServer(
 
   async function handleSchedule(req, res, url) {
     if (!schedule) throw new ScheduleError(scheduleUnavailable, { code: 'schedule_unavailable', statusCode: 503 });
-    let parts;
-    try {
-      parts = url.pathname.replace(/\/+$/, '').split('/').slice(3).map(decodeURIComponent);
-    } catch {
-      throw new ScheduleError('malformed schedule path', { code: 'schedule_invalid_request' });
-    }
-    const [collection, id, verb] = parts;
-    const body = req.method === 'POST' ? await readJson(req) : {};
-    let result;
-    if (req.method === 'GET' && parts.length === 0) {
-      result = schedule.board({ since: url.searchParams.get('since') });
-    } else if (collection === 'reservations' && req.method === 'POST' && !id) {
-      result = await schedule.take(body);
-    } else if (collection === 'reservations' && id && req.method === 'GET' && !verb) {
-      result = schedule.reservation(id);
-    } else if (collection === 'reservations' && id && req.method === 'POST' && verb === 'renew') {
-      result = await schedule.renew(id, body);
-    } else if (collection === 'reservations' && id && req.method === 'POST' && verb === 'release') {
-      result = await schedule.release(id, body);
-    } else if (collection === 'jobs' && req.method === 'POST' && !id) {
-      result = await schedule.startJob(body);
-    } else if (collection === 'jobs' && id && !verb && req.method === 'GET') {
-      result = schedule.job(id);
-    } else if (collection === 'jobs' && id && !verb && req.method === 'POST') {
-      result = await schedule.updateJob(id, body);
-    } else {
-      throw new ScheduleError(`no schedule route for ${req.method} ${url.pathname}`, {
-        code: 'not_found',
-        statusCode: 404
+    if (req.method !== 'GET' || url.pathname.replace(/\/+$/, '') !== '/gateway/schedule')
+      throw new ScheduleError('Sessions, reservations and jobs moved to Accord. Use the Accord skill or CLI.', {
+        code: 'use_accord',
+        statusCode: 410
       });
-    }
-    sendJson(res, 200, result);
+    sendJson(res, 200, await scheduleView(config, schedule));
   }
 
   async function handleRequest(req, res) {
@@ -6078,13 +5960,14 @@ export function createLloomServer(
                   })
                   .catch((error) => logger.error?.(error));
           if (configPath && !isStandby(config)) watchFile(configPath, { interval: 500 }, reloadConfig);
-          schedule?.start();
+          registerAccordResources(server.address().port);
           resolve(server);
         });
       });
     },
     async close({ stopRuntimes = true, httpGraceMs = 5000 } = {}) {
       runtimeManager.shuttingDown = true;
+      clearTimeout(accordRegistrationTimer);
       if (configPath && !isStandby(config)) unwatchFile(configPath, reloadConfig);
       const closingError = Object.assign(new Error('gateway is closing'), {
         statusCode: 503,
@@ -6095,7 +5978,8 @@ export function createLloomServer(
       runtimeManager.cancelQueuedRequests?.(closingError);
       runtimeManager.cancelAdmissionOperations?.(closingError);
       rateLimitRegistry.close();
-      await schedule?.stop();
+      await provider?.close();
+      await schedule?.close();
       unsubscribeScheduling();
       unsubscribeLimits();
       await reloadInFlight;
