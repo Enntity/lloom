@@ -148,6 +148,15 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
     if(operation==='manager-schedules'){requireThat(actor.role==='admin','FORBIDDEN','Operator required',403);return managers.schedules();}
     if(operation==='summary-configure')return observationRuntime.configureSummary(actor,args);
     if(operation==='session-bind')return awareness.bind(actor,args);
+    if(operation==='context-inbox') {
+      requireThat(actor.role==='admin','FORBIDDEN','Trusted local hook required',403);
+      requireThat(['codex','claude'].includes(args.source),'INVALID_INPUT','Unsupported hook source',400);text(args.externalId,'externalId',200);
+      if(args.actor)awareness.bind(actor,{key:'hook-bind:'+hash(JSON.stringify([args.source,args.externalId,args.actor])),source:args.source,externalId:args.externalId,actor:args.actor});
+      const binding=store.db.prepare('SELECT actor FROM session_bindings WHERE source=? AND external_id=?').get(args.source,args.externalId);
+      if(!binding)return {messages:[]};
+      const owner={id:binding.actor};return {...collaboration.inbox(owner),inboxPending:collaboration.pendingCount(owner)};
+    }
+
     if(operation==='source-privacy')return awareness.privacy(actor,args);
     if(operation==='question-dismiss')return awareness.dismiss(actor,args);
     if(operation==='session-report')return awareness.report(actor,args);
@@ -190,6 +199,8 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
   }
   const html = readFileSync(new URL('./ui.html', import.meta.url));
   const server = createHttp(async (req, res, url) => {
+    let responseActor;
+    const handle=async()=>{
     if (url.pathname === '/' && req.method === 'GET') {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
@@ -213,12 +224,12 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
       return {...session, expiresAt:current.persistent?null:current.expires_at,persistent:Boolean(current.persistent),credential:sessionToken};
     }
     if (url.pathname === '/v1/host' && req.method === 'GET') {
-      try { store.authenticate(credential); } catch { store.purpose(credential, 'discover'); }
+      try { responseActor=store.authenticate(credential); } catch { store.purpose(credential, 'discover'); }
       return host();
     }
     const telemetryRoute=/^\/v1\/(?:host|hosts\/([^/]+))\/(telemetry|metadata|memory)$/.exec(url.pathname);
     if(telemetryRoute&&req.method==='GET'){
-      let reader;try{reader=store.authenticate(credential);}catch{store.purpose(credential,'discover');reader={id:'telemetry-reader'};}
+      let reader;try{reader=responseActor=store.authenticate(credential);}catch{store.purpose(credential,'discover');reader={id:'telemetry-reader'};}
       const [,target,kind]=telemetryRoute;
       return target&&target!==store.authority?collaboration.forward(target,kind,{},reader):telemetry[kind]();
     }
@@ -240,6 +251,7 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
       store.assertLeader();return {authority:store.authority,value};
     }
     const actor = store.authenticate(credential);
+    responseActor=actor;
     if(url.pathname==='/v1/awareness'&&req.method==='GET')return {authority:store.authority,adapters:observationRuntime.status(),...await sessionsAcrossHosts(actor,{query:url.searchParams.get('query')??''}),...awareness.jobs(),...overseer.incidents(),questions:actor.role==='admin'?store.db.prepare("SELECT id,actor,question,options,created_at FROM human_questions WHERE state='pending'").all():[]};
     if(url.pathname==='/v1/links'&&req.method==='POST')return collaboration.addLink(actor,await readBody(req));
     if(url.pathname==='/v1/links/remove'&&req.method==='POST'){
@@ -338,6 +350,17 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
       void reconcile(); return result;
     }
     requireThat(false, 'NOT_FOUND', 'Unknown route', 404);
+    };
+    const pending=()=>{try{return collaboration.pendingCount(responseActor);}catch{return 'unknown';}};
+    let result;
+    try{result=await handle();}catch(error){if(responseActor?.role==='worker')error.inboxPending=pending();throw error;}
+    // One indexed local count, no extra client request, no body duplication.
+    // Discovery, federation and operator views never inherit another actor's mail.
+    if(responseActor?.role==='worker'&&result&&typeof result==='object') {
+      const inboxPending=pending();
+      if(inboxPending)return {...result,inboxPending};
+    }
+    return result;
   });
   return {
     server, store, reconcile,

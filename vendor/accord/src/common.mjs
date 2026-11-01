@@ -100,7 +100,7 @@ export function createHttp(handler) {
       if (!res.writableEnded) {
         res.statusCode = error.status || 500;
         res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ error: { code: error.code || 'INTERNAL_ERROR', message: error.code ? error.message : 'Internal error; no success acknowledged' } }));
+        res.end(JSON.stringify({ error: { code: error.code || 'INTERNAL_ERROR', message: error.code ? error.message : 'Internal error; no success acknowledged' }, ...(error.inboxPending?{inboxPending:error.inboxPending}:{}) }));
       }
     }
   });
@@ -122,7 +122,7 @@ export async function request(url, credential, path, body, timeout = 2000) {
     signal: AbortSignal.timeout(timeout), redirect: 'error'
   });
   const result = await response.json();
-  if (!response.ok) throw Object.assign(new Error(result.error?.message || 'Request failed'), { code: result.error?.code, status: response.status });
+  if (!response.ok) throw Object.assign(new Error(result.error?.message || 'Request failed'), { code: result.error?.code, status: response.status, ...(result.inboxPending?{inboxPending:result.inboxPending}:{}) });
   return result;
 }
 

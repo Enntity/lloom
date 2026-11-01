@@ -14,11 +14,18 @@ this checkout:
 node src/cli.mjs install
 ```
 
-That installs the command, skill, MCP registrations, and short startup instructions
+That installs the command, skill, MCP registrations, context hooks, and short startup instructions
 for Codex and Claude Code, then starts a user service. Existing instructions and
 settings are preserved with backups. Restart existing agent sessions. New sessions
 are instructed to join Accord, publish their activity, check for collaborators and
 messages, and reserve resources before using them.
+
+Pending mail adds only `inboxPending: N` to ordinary authenticated Accord responses.
+Claude and Codex hooks can also put up to three new messages into the next model
+turn after a tool completes. Empty inboxes stay silent; messages remain pending
+until the agent handles them with `accord_read`. Codex may require review in
+`/hooks` before enabling newly installed definitions. Existing disabled-hook and
+trust settings are preserved. See [message delivery](docs/MESSAGE-DELIVERY.md).
 
 For the standalone archive produced by `npm pack`:
 

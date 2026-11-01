@@ -82,6 +82,9 @@ export class SessionAwareness {
       "Binding requires a live authenticated session",
     );
     return this.store.command(actor, body, "session.bind", () => {
+      // Only a trusted host binding can grant the resumed conversation access
+      // to prior mailboxes. Neither labels nor working directories establish this.
+      this.db.prepare('INSERT OR IGNORE INTO session_mailbox_aliases VALUES(?,?,?)').run(body.source,body.externalId,body.actor);
       this.db
         .prepare(
           "INSERT INTO session_bindings VALUES(?,?,?) ON CONFLICT(source,external_id) DO UPDATE SET actor=excluded.actor",

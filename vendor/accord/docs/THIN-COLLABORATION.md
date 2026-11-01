@@ -34,8 +34,10 @@ Labels and advertised capabilities never establish identity or grant authority.
 MCP creates one session per connection. `accord run` shares its private session file
 with subprocesses; explicit shell sessions can reconnect to the same inbox. A new
 session is a new participant, not a guessed continuation of another with the same
-name. Current enrollment sessions last eight hours by default; old inboxes are
-retained, but a future session does not inherit them automatically.
+name. Ordinary enrollment sessions persist until explicitly closed. A trusted
+native conversation binding lets a reconnecting client read its prior unread
+mail. This does not revive old credentials or transfer resource ownership.
+Unbound sessions do not inherit mail based on matching names or directories.
 
 Presence describes observations: recent announcement, unknown after two minutes
 without one, or offline after session close/expiry. It is not a process liveness
@@ -95,8 +97,10 @@ an unreachable peer requires later cleanup on that peer; disconnect reports this
 
 Installation adds managed blocks to Codex's global AGENTS.md (or its existing
 override) and Claude's user CLAUDE.md, in addition to the skill and MCP registration.
-The existing surrounding instructions remain intact. These are instruction-based
-integrations, not enforcement hooks. Their loading conventions are documented by
+The existing surrounding instructions remain intact. Installation also merges
+bounded context hooks for Claude and Codex, with unread-count fallback for all
+authenticated worker clients. See [message delivery](MESSAGE-DELIVERY.md).
+Instruction loading conventions are documented by
 [OpenAI](https://learn.chatgpt.com/docs/agent-configuration/agents-md) and
 [Anthropic](https://code.claude.com/docs/en/memory).
 

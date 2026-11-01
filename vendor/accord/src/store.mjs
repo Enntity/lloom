@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+import { messageAttentionSchema } from './message-attention.mjs';
 import { managerSchema } from './resource-managers.mjs';
 import { awarenessSchema } from './session-awareness.mjs';
 import { continuitySchema, persistentDeadline, upgradeSessionContinuity } from './session-continuity.mjs';
@@ -46,7 +47,7 @@ CREATE TABLE message_outbox(id TEXT PRIMARY KEY,actor TEXT NOT NULL,envelope TEX
 
 export class Store {
   constructor(file, { now = monotonicWallClock(), leaderMs = 5000 } = {}) {
-    this.db = database(file, [schema, bootstrapSchema, resourceSchema, collaborationSchema, awarenessSchema, managerSchema, continuitySchema, discoveryCleanupSchema, "ALTER TABLE session_views ADD COLUMN summary_details TEXT NOT NULL DEFAULT '{}';"]); this.now = now; this.leaderMs = leaderMs;
+    this.db = database(file, [schema, bootstrapSchema, resourceSchema, collaborationSchema, awarenessSchema, managerSchema, continuitySchema, discoveryCleanupSchema, "ALTER TABLE session_views ADD COLUMN summary_details TEXT NOT NULL DEFAULT '{}';",messageAttentionSchema]); this.now = now; this.leaderMs = leaderMs;
     transaction(this.db, () => {
       this.db.prepare("INSERT OR IGNORE INTO meta VALUES('authority',?)").run(id());
       this.db.prepare("INSERT OR IGNORE INTO meta VALUES('paused','false')").run();

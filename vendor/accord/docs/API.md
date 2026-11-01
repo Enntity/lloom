@@ -6,6 +6,13 @@ coordinator and driver bind only `127.0.0.1`. Host and Origin are checked; no CO
 access is enabled. A JSON request body is limited to 32 KiB. Redirects are never
 followed by the client. Errors are `{error:{code,message}}` with HTTP status.
 
+Authenticated worker responses, including errors after authentication, also carry
+`inboxPending: N` when canonical Messenger deliveries are pending. Zero is omitted.
+A failed count yields `inboxPending: "unknown"`; clients should check their inbox.
+The hint never acknowledges a delivery and adds no client request. Discovery and
+operator responses do not inherit worker mail. Driver-only operations and local
+commands that never contact the coordinator cannot supply this hint.
+
 Every coordinator mutation requires a `key` (1–128 characters). Keys are unique
 per actor across operations. A retry with the same serialized payload returns
 the original response. A different payload or operation with that key returns

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
+import { mergeContextHooks } from './hook-install.mjs';
 import { hash, requireThat } from './common.mjs';
 
 const cli = fileURLToPath(new URL('./cli.mjs', import.meta.url));
@@ -85,6 +86,13 @@ If Accord is unavailable, report that and continue work that needs no shared res
       else add(path,old.includes(oldEnvBlock)?old.replace(oldEnvBlock,block):old.replace(previousBlock,block),{merge:true});
     }else add(path,old+(old.endsWith('\n')?'':'\n')+'\n'+block,{merge:true});
   }
+  for(const [source,path] of [['claude',join(home,'.claude','settings.json')],['codex',join(home,'.codex','hooks.json')]]){
+    if(!clients.includes(source))continue;safePath(path);
+    const config=existsSync(path)?JSON.parse(readFileSync(path,'utf8')):{};
+    const helper=fileURLToPath(new URL('./context-hook.mjs',import.meta.url));
+    const command=`${quote(process.execPath)} ${quote(helper)} --accord-context-hook --source ${source} --profile ${quote(profilePath)}`;
+    add(path,JSON.stringify(mergeContextHooks(config,command,{source}),null,2)+'\n',{merge:true});
+  }
   let devin;
   if(clients.includes('devin')){
     const directories=[join(home,'.local','bin'),...(process.env.PATH??'').split(':')];
@@ -119,6 +127,6 @@ If Accord is unavailable, report that and continue work that needs no shared res
   }
   return {dryRun,profile:profilePath,steps:plan.map(({content,mode,...item})=>item),
     next:['Run accord doctor. If you used --no-start, first run accord up or install a user service.',
-      'Restart agent sessions to load MCP and skill. Shell-only agents: accord run -- COMMAND.',
+      'Restart agent sessions to load MCP, skill and context hooks. Codex may require /hooks review; existing trust and disabled-hook settings are preserved. Shell-only agents: accord run -- COMMAND.',
       'Optional: source the generated login-notice.sh in your interactive shell profile.']};
 }

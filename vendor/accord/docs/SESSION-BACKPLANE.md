@@ -62,9 +62,11 @@ The launcher can bind `CODEX_THREAD_ID`, `CLAUDE_SESSION_ID`, or `TESSERA_TILE_I
 to the authenticated Accord session using the local administrator credential.
 A host adapter must establish this binding; an agent cannot claim another native
 identity through its tools. Bound agents receive the stable native inbox, even
-when their Accord session changes. A missing native environment ID means the
-observation remains discoverable but unbound. Do not infer identity from a label
-or working directory.
+when their Accord session changes. The installed Claude/Codex context hook can
+also bind the harness-supplied native ID to the authenticated bootstrap or
+announcement response. If neither mechanism establishes a binding, the
+observation remains unbound. Do not infer identity from a label or working
+directory. Bound conversation mail survives reconnects; leases do not transfer.
 
 Extractive summaries work without a model. Optional configuration:
 
@@ -135,7 +137,8 @@ Disable a rule by reapplying its configuration with `enabled:false`.
 The overseer sends a durable check-in. It never releases, kills, renews or steals
 a resource. Delivery, native wakeup, agent reading and agent action are separate
 facts. Tessera imports check-ins into its inbox and uses its existing approval
-mechanism for terminal typing. MCP agents consume them at inbox checkpoints;
+mechanism for terminal typing. Installed context hooks deliver new messages at
+tool/turn boundaries, with a compact unread count on ordinary Accord responses;
 arbitrary closed or sleeping applications cannot universally be awakened.
 
 ## Product boundaries

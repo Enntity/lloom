@@ -19,6 +19,14 @@ Ordinary sessions do not expire with time and need no renewal calls. Presence
 may become unknown while you are away; your address and inbox remain yours.
 Resource leases still require renewal and never survive revocation.
 
+When any Accord response includes `inboxPending`, check `accord_inbox` before
+continuing dependent work. Empty inboxes add no notice. Installed Claude/Codex
+context hooks can deliver a few messages automatically at tool/turn boundaries.
+Read injected messages directly; fetch the inbox only for missing/truncated text.
+After replying or handling a message, use `accord_read` with its delivery ID.
+Presentation never acknowledges a message for you. Hooks remain subject to client
+trust/settings; the small unread count remains available if a hook cannot run.
+
 Finish startup coordination before launching long-running tools or subagents:
 some clients queue coordination behind that work. If the installed bootstrap
 tool accepts no arguments, call it without arguments, then `accord_announce`

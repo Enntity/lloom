@@ -107,6 +107,7 @@ export class Collaboration {
     return this.store.command(actor,body,'send',()=>{
       text(body.to,'to',220);text(body.text,'text',4000);
       requireThat(body.to.split('/').length===2,'INVALID_INPUT','Use the recipient address from find',400);
+      requireThat(body.to!==this.address(actor),'SELF_MESSAGE','Send to another participant; self-messages are not supported',400);
       const authority=body.to.split('/')[0];
       requireThat(authority===this.store.authority||this.db.prepare('SELECT 1 FROM links WHERE authority=?').get(authority),'HOST_UNKNOWN','Recipient host is not linked',404);
       requireThat(this.db.prepare("SELECT count(*) n FROM message_outbox WHERE state='queued'").get().n<100000,'CAPACITY_LIMIT','Pending message limit reached');
@@ -142,7 +143,22 @@ export class Collaboration {
       }));
     }finally{this.sending=false;}
   }
-  inboxActors(actor){return [actor.id,...this.db.prepare('SELECT v.id FROM session_bindings b JOIN session_views v ON v.source=b.source AND v.external_id=b.external_id WHERE b.actor=? AND v.private=0').all(actor.id).map(r=>r.id)];}
+  inboxActors(actor){return [...new Set([actor.id,
+    ...this.db.prepare('SELECT v.id FROM session_bindings b JOIN session_views v ON v.source=b.source AND v.external_id=b.external_id WHERE b.actor=? AND v.private=0').all(actor.id).map(r=>r.id),
+    ...this.db.prepare(`SELECT a.actor id FROM session_bindings b JOIN session_mailbox_aliases a USING(source,external_id)
+      LEFT JOIN session_views v ON v.id=a.actor LEFT JOIN source_privacy p ON p.source=a.source
+      WHERE b.actor=? AND COALESCE(v.private,0)=0 AND COALESCE(p.private,0)=0`).all(actor.id).map(r=>r.id)
+  ])];}
+  pendingCount(actor) {
+    // Count canonical Messenger deliveries without fetching bodies or claiming them.
+    const at=new Date().toISOString();let count=0;
+    for(const a of this.inboxActors(actor)) {
+      const principal=this.messages.principalByHandle('a'+hash(this.address({id:a})).slice(0,60));if(!principal)continue;
+      count+=this.messages.db.prepare(`SELECT count(*) n FROM deliveries WHERE recipient_id=?
+        AND (available_at IS NULL OR available_at<=?) AND (state='pending' OR (state IN ('offered','read') AND lease_expires_at<=?))`).get(principal.id,at,at).n;
+    }
+    return count;
+  }
   // Read state lives in Messenger. UI adapters must not acknowledge on receipt or cache it
   // as another mailbox. History is a bounded view of the same canonical deliveries.
   inbox(actor,{all=false}={}) {
@@ -153,7 +169,8 @@ export class Collaboration {
         this.messages.listMessages(principal,c.id,{after:Math.max(0,c.latestSeq-100),limit:100})
           .filter(m=>m.delivery).map(m=>({...m.data,deliveryId:m.delivery.id,text:m.body,at:m.createdAt,read:m.delivery.state==='acknowledged'})));
     });
-    return {messages:messages.sort((a,b)=>Date.parse(b.at)-Date.parse(a.at)).slice(0,100).reverse()};
+    const ordered=messages.sort((a,b)=>Date.parse(a.at)-Date.parse(b.at)||a.id.localeCompare(b.id));
+    return {messages:all?ordered.slice(-100):ordered.slice(0,100)};
   }
   notify(actor,body) {
     // Operator notifications use the existing Messenger inbox, not another notice store.
