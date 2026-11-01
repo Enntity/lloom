@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { ArtifactDriver } from './driver.mjs';
+import { workloadJournalMigration } from './workload-schema.mjs';
 import { transaction, requireThat, text, loopbackUrl, request, equal, hash } from './common.mjs';
 export const managedPlugin = {id:'managed-http',enforcement:'provider-confirmed prepare, workload stop, and restoration; unavailable provider remains held'};
 const migration = `ALTER TABLE state ADD COLUMN phase TEXT NOT NULL DEFAULT 'idle';`;
@@ -16,7 +17,7 @@ export function managedManifest(v) {
 }
 export class ManagedDriver extends ArtifactDriver {
   constructor(file,manifest) {
-    super(file,{recover:false,migrations:[migration]}); this.manifest=managedManifest(manifest); this.tail=Promise.resolve(); this.flights=new Map();
+    super(file,{recover:false,migrations:[migration,workloadJournalMigration]}); this.manifest=managedManifest(manifest); this.tail=Promise.resolve(); this.flights=new Map();
     if(this.status().claim_id) this.db.prepare("UPDATE state SET phase='recovering',token_hash=NULL").run();
   }
   status(){return {...super.status(),...this.db.prepare('SELECT phase FROM state').get()};}

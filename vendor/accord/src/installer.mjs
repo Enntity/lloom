@@ -42,6 +42,9 @@ export function install({home=homedir(),data,dryRun=false,clients=['codex','clau
   const skill=readFileSync(new URL('../skills/accord/SKILL.md',import.meta.url),'utf8');
   add(join(home,'.agents','skills','accord','SKILL.md'),skill,{customBackup:true});
   if(clients.includes('claude'))add(join(home,'.claude','skills','accord','SKILL.md'),skill,{customBackup:true});
+  const workloads=readFileSync(new URL('../docs/EXTERNAL-WORKLOADS.md',import.meta.url),'utf8');
+  add(join(home,'.agents','skills','accord','EXTERNAL-WORKLOADS.md'),workloads,{customBackup:true});
+  if(clients.includes('claude'))add(join(home,'.claude','skills','accord','EXTERNAL-WORKLOADS.md'),workloads,{customBackup:true});
   // Small startup instruction, separate from the on-demand skill. Preserve all surrounding text.
   const startup=`<!-- accord:start -->
 At the start of each agent session, use the Accord skill and call accord_bootstrap.

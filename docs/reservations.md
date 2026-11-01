@@ -25,7 +25,7 @@ model effects and shared workload definitions require capacity one.
 
 1. Join Accord and discover the resource's full address.
 2. Reserve it with a stable request key. Only `running` grants access.
-3. Start the configured workload through Accord, and publish job progress there.
+3. Start the configured workload through Accord, or register external containers and supervisors before launching them (below). Publish job progress there.
 4. Extend before the returned deadline. A progress report is not an implicit renewal.
 5. Release and wait for `released`. Unknown or recovering means it remains held.
 
@@ -49,4 +49,26 @@ a separate exact-record reconciliation prevents replay of obsolete restoration.
 A changed lease blocks again. This does not stop or certify arbitrary containers.
 Future reservations still execute the current resource's drain/restore contract.
 Production serving is LLooM's baseline, not an agent reservation; an unclaimed
-reservation does not mean idle hardware. Only configured workloads are fenced.
+reservation does not mean idle hardware.
+
+## External containers and supervisors
+
+For agent-created training, evaluation or build work, use Accord's generic external
+workload registration rather than adding a model to LLooM's serving configuration.
+The discovered resource advertises `externalWorkloads.hosts` and `plugins` when
+its operator has installed the connectors. Create fresh stopped containers with
+`--restart=no` and the running grant's authority/claim/generation labels; register
+full container IDs with `accord workload register`, then start the returned binding
+IDs with `accord workload launch`. Put restart watchers in dedicated registered
+systemd user services, not detached SSH loops.
+
+Accord stops all attached supervisors and containers before calling this provider's
+stop/restore operations. LLooM retains all model and route lifecycle logic. A
+missing host, ambiguous launch or changed workload identity keeps the same resource
+held; it never starts a second scheduling authority. See the bundled
+[external workload contract](../vendor/accord/docs/EXTERNAL-WORKLOADS.md) for policy,
+CLI/MCP examples, coordinated adoption and proof limits.
+
+Already-running work must be inventoried with its holder before operator adoption.
+If it cannot be contained safely, let it finish. Neither plugin fences arbitrary
+privileged SSH/Docker actions or discovers unregistered supervisors automatically.

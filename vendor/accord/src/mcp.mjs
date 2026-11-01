@@ -26,7 +26,7 @@ export const toolCatalog = [
   ['accord_reservation','Check reservation state; recovering and releasing still hold the resource.',schema({id:string,host:string},['id'])],
   ['accord_release','Release or cancel your reservation. Managed workloads stop before release completes.',schema({key,id:string,host:string},['id'])],
   ['accord_extend','Renew a running reservation, up to five minutes at a time and eight hours total.',schema({key,id:string,host:string,leaseMs:{type:'integer',minimum:500,maximum:300000}},['id'])],
-  ['accord_workload','Start or inspect the registered workload for your running reservation.',schema({key,id:string,host:string,action:{enum:['start','status']}},['id','action'])],
+  ['accord_workload','Start/inspect a managed process, or register, launch and list external containers/services for your running reservation. Register stopped objects before launch.',schema({key,id:string,host:string,action:{enum:['start','status','register','launch','list']},targets:{type:'array',maxItems:32,items:{type:'object',properties:{host:string,plugin:{enum:['docker-container','systemd-user-unit']},id:string},required:['host','plugin','id'],additionalProperties:false}},workload:string},['id','action'])],
   ['accord_bootstrap','Join and announce in one call before starting long-running work. Supply label and activity together; discover participants, messages, resources, and linked hosts.',schema({key,label:string,activity:string,state:{enum:['starting','working','idle','waiting','blocked','done','failed','exited','cancelled','unknown']},location:string,capabilities:{type:'array',items:string,maxItems:20}})],
   ['accord_host','Observe this host. An observation grants no resource rights.',schema()],
   ['accord_board','Inspect durable tasks, claims, and events.',schema({after:{type:'integer',minimum:0}})],
@@ -79,7 +79,7 @@ export function mcpAdapter(profile) {
       if(name==='accord_reservation')return c.reservation(args.id,args.host);
       if(name==='accord_release')return c.release(args.id,args);
       if(name==='accord_extend')return c.collaborate('renew',{id:args.id,key:args.key??randomUUID(),leaseMs:args.leaseMs??300000},args.host);
-      if(name==='accord_workload')return c.collaborate(args.action==='start'?'start':'process',{id:args.id,key:args.key??randomUUID()},args.host);
+      if(name==='accord_workload')return c.collaborate(({start:'start',status:'process',register:'workload-register',launch:'workload-launch',list:'workload-list'})[args.action],{id:args.id,key:args.key??randomUUID(),targets:args.targets,workload:args.workload},args.host);
       if(name==='accord_bootstrap'){
         // Publish before discovery so the returned directory includes this activity.
         // A retained key makes retries safe if discovery fails after publication.

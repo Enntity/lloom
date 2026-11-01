@@ -105,7 +105,7 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
       const origin=holder&&store.db.prepare('SELECT authority,session_id FROM remote_routes WHERE actor=?').get(holder.actor);
       const queue=store.db.prepare("SELECT r.id,r.actor,r.queued_until queuedUntil,t.title purpose,t.created_at queuedAt FROM reservations r JOIN tasks t ON t.id=r.task_id WHERE t.resource=? AND t.state='queued' ORDER BY t.created_at,t.rowid LIMIT 100").all(resource.id);
       return {id:`${store.authority}/${resource.id}`,localId:resource.id,plugin:resource.plugin??'artifact',asset:resource.asset??'builtin:artifact',
-        label:status?.label??resource.id,hosts:status?.hosts??[],queue,state:!driverError&&!status?.blocked&&!holder&&!status.claim_id?(queue.length?'queued':'unclaimed'):holder?'held':'unknown',enforcement:resource.enforcement??'artifact-API',driver:driverError||'reachable',
+        label:status?.label??resource.id,externalWorkloads:status?.externalWorkloads??null,hosts:status?.hosts??[],queue,state:!driverError&&!status?.blocked&&!holder&&!status.claim_id?(queue.length?'queued':'unclaimed'):holder?'held':'unknown',enforcement:resource.enforcement??'artifact-API',driver:driverError||'reachable',
         holder:holder?{claim:holder.id,actor:holder.actor,address:origin?`${origin.authority}/${origin.session_id}`:`${store.authority}/${holder.actor}`,label:session?.label??holder.actor,generation:holder.generation,state:holder.state,deadline:holder.deadline,task:holder.task_id}:null};
     }));
     store.assertLeader();
@@ -177,12 +177,13 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
     if(operation==='reserve'){const r=collaboration.reserve(actor,args);void reconcile();return collaboration.reservation(actor,r.id);}
     if(operation==='reservation')return collaboration.reservation(actor,args.id);
     if(operation==='release'){const r=collaboration.release(actor,args.id,args);void reconcile();return r;}
-    if(['renew','start','process'].includes(operation)){
+    if(['renew','start','process','workload-register','workload-launch','workload-list'].includes(operation)){
       const r=collaboration.reservation(actor,args.id);
       requireThat(r.claimId,'NOT_RUNNING','Reservation has not acquired the resource');
       if(operation==='renew')return store.renew(actor,r.claimId,args);
       const claim=store.owned(actor,r.claimId,true);
       requireThat(claim.resource!=='artifact','WRONG_DRIVER','This is not a process resource');
+      if(operation.startsWith('workload-'))return request(driverUrl,secretFor(claim),driverPath(operation==='workload-launch'?'/v1/workloads/start':'/v1/workloads',claim.resource),operation==='workload-list'?undefined:{key:args.key,targets:args.targets,workload:args.workload},30000);
       return request(driverUrl,secretFor(claim),driverPath('/v1/processes',claim.resource),operation==='start'?{key:args.key}:undefined);
     }
     requireThat(false,'UNKNOWN_OPERATION','Unknown collaboration operation',400);
@@ -233,7 +234,7 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
         requireThat(body.args?.from===`${peer.authority}/${body.actor}`,'FORBIDDEN','Sender does not match linked host',403);
         value=collaboration.deliver(body.args);
       }else{
-        requireThat(['resources','reserve','reservation','release','renew','start','process','telemetry','metadata','sessions','session-read','jobs','job','overseer','session-snooze'].includes(body.operation),'FORBIDDEN','Operation cannot be forwarded',403);
+        requireThat(['resources','reserve','reservation','release','renew','start','process','workload-register','workload-launch','workload-list','telemetry','metadata','sessions','session-read','jobs','job','overseer','session-snooze'].includes(body.operation),'FORBIDDEN','Operation cannot be forwarded',403);
         value=await collaborate(actor,body.operation,body.args);
       }
       store.assertLeader();return {authority:store.authority,value};
@@ -248,7 +249,7 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
     if(url.pathname==='/v1/collaboration'&&req.method==='POST'){
       const body=await readBody(req);
       if(body.host&&body.host!==store.authority){
-        requireThat(['resources','reserve','reservation','release','renew','start','process','telemetry','metadata','sessions','session-read','jobs','job','overseer','session-snooze'].includes(body.operation),'FORBIDDEN','Operation cannot be forwarded',403);
+        requireThat(['resources','reserve','reservation','release','renew','start','process','workload-register','workload-launch','workload-list','telemetry','metadata','sessions','session-read','jobs','job','overseer','session-snooze'].includes(body.operation),'FORBIDDEN','Operation cannot be forwarded',403);
         return collaboration.forward(body.host,body.operation,body.args,actor);
       }
       if(body.operation==='sessions'&&!body.host)return sessionsAcrossHosts(actor,body.args);
@@ -263,6 +264,13 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
     if (url.pathname === '/v1/network' && req.method === 'GET') return {hosts:[{status:'observed',host:await host()},...await network()]};
     if(url.pathname==='/v1/plugins'&&req.method==='GET')return {plugins};
     if(url.pathname==='/v1/resources'&&req.method==='GET')return {resources:[...(await host()).resources,...await managers.resources()]};
+    if(url.pathname==='/v1/workloads/adopt'&&req.method==='POST'){
+      requireThat(actor.role==='admin','FORBIDDEN','Operator adoption requires administrator authority',403);
+      const body=await readBody(req),claim=store.db.prepare('SELECT * FROM claims WHERE id=?').get(body.claimId);
+      requireThat(claim&&['running','revoking'].includes(claim.state)&&body.generation===claim.generation&&body.authority===store.authority,'STALE_GRANT','Name the exact held claim, generation and authority');
+      const result=await request(driverUrl,driverToken,driverPath('/control/workloads',claim.resource),{...grant(claim),key:body.key,targets:body.targets},30000);
+      store.assertLeader();return result;
+    }
     if(url.pathname==='/v1/resources'&&req.method==='POST'){
       requireThat(actor.role==='admin','FORBIDDEN','Administrator required',403);
       const body=await readBody(req);text(body.key,'key',128);validateResource(body.manifest);

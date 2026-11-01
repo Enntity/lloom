@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { database, transaction, equal, readBody } from './common.mjs';
 import { artifactSchema } from './driver.mjs';
 import { processSchema } from './process-schema.mjs';
+import { workloadJournalMigration } from './workload-schema.mjs';
 const [file,runId]=process.argv.slice(2);
 let armed=false,db,child;
 const watchdog=setTimeout(()=>process.exit(0),10000);
@@ -15,7 +16,7 @@ process.once('message',async message=>{
   if(message!=='arm')return;
   clearTimeout(watchdog);
   try {
-    db=database(file,[artifactSchema,processSchema]);
+    db=database(file,[artifactSchema,processSchema,workloadJournalMigration]);
     const recorded=db.prepare('SELECT * FROM runs WHERE id=?').get(runId);
     if(!recorded||recorded.pgid!==process.pid)throw Error('No committed launch');
     const control=http.createServer(async(req,res)=>{

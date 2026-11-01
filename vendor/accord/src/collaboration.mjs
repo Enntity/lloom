@@ -68,7 +68,7 @@ export class Collaboration {
     requireThat(link,'HOST_UNKNOWN','Host is not linked',404);
     const descriptor=await request(link.url,'','/.well-known/accord',undefined,700);
     requireThat(descriptor.authority===authority,'PEER_IDENTITY_CHANGED','Linked host identity changed');
-    const result=await request(link.url,link.outbound,'/v1/federation',{operation,args,actor:actor.id,identity:this.db.prepare('SELECT label FROM participants WHERE actor=?').get(actor.id)??this.db.prepare('SELECT label FROM sessions WHERE id=?').get(actor.id)},['telemetry','metadata'].includes(operation)?3500:undefined);
+    const result=await request(link.url,link.outbound,'/v1/federation',{operation,args,actor:actor.id,identity:this.db.prepare('SELECT label FROM participants WHERE actor=?').get(actor.id)??this.db.prepare('SELECT label FROM sessions WHERE id=?').get(actor.id)},operation.startsWith('workload-')?30000:['telemetry','metadata'].includes(operation)?3500:undefined);
     requireThat(result.authority===authority,'PEER_IDENTITY_CHANGED','Linked host identity changed');
     if(operation==='resources'&&Array.isArray(result.value?.resources))return {...result.value,resources:result.value.resources.map(r=>({...r,holder:this.localHolder(r.holder)}))};
     return result.value;
@@ -196,7 +196,7 @@ export class Collaboration {
     requireThat(row,'NOT_FOUND','Unknown reservation',404);requireThat(row.actor===actor.id,'NOT_OWNER','Reservation belongs to another session',403);
     const claim=this.db.prepare('SELECT * FROM claims WHERE task_id=? ORDER BY created_at DESC LIMIT 1').get(row.task_id);
     return {id:row.id,resource:row.resource,state:claim?.state==='closed'?claim.outcome:claim?.state??row.task_state,
-      claimId:claim?.id??null,deadline:claim?.deadline??null,queuedUntil:row.queued_until,error:claim?.error??null};
+      authority:this.store.authority,generation:claim?.generation??null,workloadUnitPrefix:claim?'accord-'+hash(this.store.authority+'/'+claim.id+'/'+claim.generation).slice(0,20)+'-':null,claimId:claim?.id??null,deadline:claim?.deadline??null,queuedUntil:row.queued_until,error:claim?.error??null};
   }
   release(actor,reservationId,body) {
     return this.store.command(actor,body,`release:${reservationId}`,()=>{

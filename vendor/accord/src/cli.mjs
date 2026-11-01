@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, renameSync, openSync, closeSync, fsyncSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { fork } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +18,7 @@ import { ensureAccord } from './product-install.mjs';
 import { installService } from './service.mjs';
 import { profileAt, discover, notice, runAgent, inheritedClient, enrollProfile } from './bootstrap.mjs';
 import { connectHost } from './connect.mjs';
+import { validateWorkloadConnector } from './workload-transport.mjs';
 import { serveMcp } from './mcp.mjs';
 
 const argv = process.argv.slice(2), requestedCommand = argv.shift() || 'help';
@@ -67,6 +68,26 @@ try {
       requireThat(argv[0]==='close','INVALID_COMMAND','Use session open or session close');
       process.env.ACCORD_SESSION_FILE=path;await inheritedClient().closeSession();rmSync(path);console.log(JSON.stringify({closed:true}));
     }
+  } else if(command==='workload'&&argv[0]==='policy'){
+    const config=configuration(directory),endpoints=JSON.parse(readFileSync(join(directory,'endpoints.json'),'utf8'));
+    const c=new AccordClient(endpoints.coordinator,config.readToken('admin'));const me=await c.me();requireThat(me.role==='admin','FORBIDDEN','Operator required',403);
+    const body=JSON.parse(readFileSync(option('file'),'utf8'));
+    requireThat(body.schema===1&&body.hosts&&body.resources,'WORKLOAD_POLICY','Expected schema 1, hosts and resources');
+    for(const connector of Object.values(body.hosts))validateWorkloadConnector(connector);
+    const catalog=await c.resources();
+    for(const [id,r]of Object.entries(body.resources)){
+      requireThat(catalog.resources.some(x=>x.localId===id&&!x.manager),'WORKLOAD_POLICY','Policy must name a registered local resource');
+      requireThat(Array.isArray(r.hosts)&&r.hosts.length>0&&r.hosts.length<=16&&r.hosts.every(h=>body.hosts[h])&&Array.isArray(r.plugins)&&r.plugins.every(p=>['docker-container','systemd-user-unit'].includes(p)),'WORKLOAD_POLICY','Invalid resource connector policy');
+    }
+    const target=join(directory,'workload-policy.json'),temporary=target+'.'+randomUUID();
+    writeFileSync(temporary,JSON.stringify(body,null,2)+'\n',{mode:0o600,flag:'wx'});
+    const fd=openSync(temporary,'r');try{fsyncSync(fd);}finally{closeSync(fd);}renameSync(temporary,target);
+    const dd=openSync(directory,'r');try{fsyncSync(dd);}finally{closeSync(dd);}
+    console.log(JSON.stringify({installed:true,resources:Object.keys(body.resources),hosts:Object.keys(body.hosts)}));
+  } else if(command==='workload'&&argv[0]==='adopt'){
+    const config=configuration(directory),endpoints=JSON.parse(readFileSync(join(directory,'endpoints.json'),'utf8'));
+    const body=JSON.parse(readFileSync(option('file'),'utf8'));body.key=body.key??option('key',randomUUID());
+    console.log(JSON.stringify(await new AccordClient(endpoints.coordinator,config.readToken('admin')).adoptWorkloads(body),null,2));
   } else if(['announce','find','send','inbox','read','sent','reserve','reservation','release','extend','workload'].includes(command)){
     process.env.ACCORD_SESSION_FILE=option('session-file',process.env.ACCORD_SESSION_FILE??join(home,'.config','accord','shell-session.json'));
     const c=inheritedClient(),key=option('key',randomUUID()),host=option('host'),id=option('id');let result;
@@ -80,7 +101,11 @@ try {
     if(command==='reservation')result=await c.reservation(id,host);
     if(command==='release')result=await c.release(id,{key,host});
     if(command==='extend')result=await c.collaborate('renew',{id,key,leaseMs:Number(option('lease-ms',300000))},host);
-    if(command==='workload')result=await c.collaborate(argv[0]==='start'?'start':'process',{id,key},host);
+    if(command==='workload'){
+      const actions={start:'start',status:'process',register:'workload-register',launch:'workload-launch',list:'workload-list'};
+      requireThat(actions[argv[0]],'INVALID_COMMAND','Use workload start, status, register, launch, list or adopt');
+      result=await c.collaborate(actions[argv[0]],{id,key,...(argv[0]==='register'?{targets:JSON.parse(readFileSync(option('file'),'utf8')).targets}:{}),...(argv[0]==='launch'?{workload:option('workload')}:{})},host);
+    }
     console.log(JSON.stringify(result,null,2));
   } else if(['sessions','session-read','report','jobs','job','ask','question','overseer','snooze'].includes(command)){
     process.env.ACCORD_SESSION_FILE=option('session-file',process.env.ACCORD_SESSION_FILE??join(home,'.config','accord','shell-session.json'));
@@ -210,7 +235,7 @@ try {
     if (command === 'artifact') result = await request(endpoints.driver, config.readToken('driver-control'), `/control/artifacts/${option('receipt')}`);
     console.log(JSON.stringify(result, null, 2));
   } else {
-    console.log(`Accord 0.4 preview — discover, message, share; Node 22.13+\n\n  accord install [--no-start] [--dry-run] [--clients codex,claude]\n  accord connect|disconnect SSH_HOST\n  accord session open --label NAME [--session-file FILE]\n  accord session close [--session-file FILE]\n  accord announce --label NAME --activity TEXT [--capabilities a,b]\n  accord find [--query TEXT]\n  accord send --to ADDRESS --text TEXT [--notify] [--key KEY]\n  accord inbox [--wait-ms 20000]\n  accord read --id DELIVERY_ID\n  accord sent --id MESSAGE_ID\n  accord reserve --resource ADDRESS --purpose TEXT [--key KEY]\n  accord reservation|release|extend --id ID [--host AUTHORITY]\n  accord workload start|status --id ID [--host AUTHORITY]\n  accord resource list|register --file MANIFEST\n  accord plugins\n  accord process-start|process-status --claim ID [--key KEY]\n  accord doctor\n  accord run -- COMMAND [ARGS]\n  accord context\n  accord claim|wait --key KEY [--task ID]\n  accord inspect --claim ID\n  accord checkpoint --claim ID --key KEY --note TEXT\n  accord renew --claim ID --key KEY --lease-ms MS\n  accord write --claim ID --key KEY --input FILE\n  accord finish --claim ID --key KEY --receipt ID\n  accord host [--notice]\n  accord mcp\n  accord service install [--enable]\n  accord join --url LOOPBACK --authority ID --discovery-file FILE\n  accord leave --authority ID\n  accord sessions [--query TEXT] [--host AUTHORITY]\n  accord session-read --id ID\n  accord report|job|ask|snooze --input JSON_FILE\n  accord jobs|overseer\n  accord policy|signal --input JSON_FILE\n  accord privacy --source SOURCE --on|--off\n  accord question --id ID\n  accord telemetry|machine [--host AUTHORITY]\n  accord network\n  accord init --data DIR\n  accord up --data DIR [--port 8787] [--driver-port 8788]\n  accord board --data DIR\n  accord submit --data DIR --input FILE --expected FILE [--title TEXT]\n  accord pause|resume --data DIR\n  accord artifact --data DIR --receipt ID\n\nOutput is JSON except help and --notice; run inherits its child's output. init creates an admin identity; agents enroll their own sessions.\nRun npm run demo for the isolated two-process recovery proof. No model or GPU is required.`);
+    console.log(`Accord 0.4 preview — discover, message, share; Node 22.13+\n\n  accord install [--no-start] [--dry-run] [--clients codex,claude]\n  accord connect|disconnect SSH_HOST\n  accord session open --label NAME [--session-file FILE]\n  accord session close [--session-file FILE]\n  accord announce --label NAME --activity TEXT [--capabilities a,b]\n  accord find [--query TEXT]\n  accord send --to ADDRESS --text TEXT [--notify] [--key KEY]\n  accord inbox [--wait-ms 20000]\n  accord read --id DELIVERY_ID\n  accord sent --id MESSAGE_ID\n  accord reserve --resource ADDRESS --purpose TEXT [--key KEY]\n  accord reservation|release|extend --id ID [--host AUTHORITY]\n  accord workload start|status|list --id ID [--host AUTHORITY]\n  accord workload register --id ID --file TARGETS.json [--host AUTHORITY]\n  accord workload launch --id ID --workload BINDING_ID [--host AUTHORITY]\n  accord workload policy --data DIR --file POLICY.json (operator only)\n  accord workload adopt --data DIR --file ADOPTION.json (operator only)\n  accord resource list|register --file MANIFEST\n  accord plugins\n  accord process-start|process-status --claim ID [--key KEY]\n  accord doctor\n  accord run -- COMMAND [ARGS]\n  accord context\n  accord claim|wait --key KEY [--task ID]\n  accord inspect --claim ID\n  accord checkpoint --claim ID --key KEY --note TEXT\n  accord renew --claim ID --key KEY --lease-ms MS\n  accord write --claim ID --key KEY --input FILE\n  accord finish --claim ID --key KEY --receipt ID\n  accord host [--notice]\n  accord mcp\n  accord service install [--enable]\n  accord join --url LOOPBACK --authority ID --discovery-file FILE\n  accord leave --authority ID\n  accord sessions [--query TEXT] [--host AUTHORITY]\n  accord session-read --id ID\n  accord report|job|ask|snooze --input JSON_FILE\n  accord jobs|overseer\n  accord policy|signal --input JSON_FILE\n  accord privacy --source SOURCE --on|--off\n  accord question --id ID\n  accord telemetry|machine [--host AUTHORITY]\n  accord network\n  accord init --data DIR\n  accord up --data DIR [--port 8787] [--driver-port 8788]\n  accord board --data DIR\n  accord submit --data DIR --input FILE --expected FILE [--title TEXT]\n  accord pause|resume --data DIR\n  accord artifact --data DIR --receipt ID\n\nOutput is JSON except help and --notice; run inherits its child's output. init creates an admin identity; agents enroll their own sessions.\nRun npm run demo for the isolated two-process recovery proof. No model or GPU is required.`);
   }
 } catch (error) {
   console.error(JSON.stringify({ error: { code: error.code || 'STARTUP_FAILED', message: error.message } })); process.exit(1);

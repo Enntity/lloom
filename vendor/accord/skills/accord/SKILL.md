@@ -62,6 +62,15 @@ work that needs no shared resource. Then:
 - `accord_extend`: renew before the returned deadline. Default leases are five
   minutes, with an eight-hour total maximum; release and requeue for longer work.
 - `accord_workload`: start or inspect a resource's administrator-registered process.
+  For external Docker work, create stopped containers (`--restart=no`) labelled
+  `accord.authority`, `accord.claim`, and `accord.generation` from the running
+  reservation. Use `action: register` with exact host/plugin/container IDs, then
+  `action: launch` with each returned binding ID and a stable key. Register any
+  restart watchers as dedicated systemd user services before launching them.
+  Never use an unregistered background loop. `action: list` shows attachments.
+  Running/unlabelled adoption is operator-only and requires holder coordination.
+  See the installed `EXTERNAL-WORKLOADS.md` for the host policy and service
+  naming rules. An unavailable connector means wait; do not bypass registration.
 - `accord_release`: release ownership or cancel a queued request. Poll until
   released; the service confirms the managed workload stopped before regranting.
 

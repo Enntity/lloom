@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { join, dirname, resolve, isAbsolute } from 'node:path';
 import { ArtifactDriver } from './driver.mjs';
 import { processSchema } from './process-schema.mjs';
+import { workloadJournalMigration } from './workload-schema.mjs';
 import { transaction, requireThat, text, integer, hash, equal, id, token } from './common.mjs';
 import * as posix from './plugins/posix-process-group.mjs';
 
@@ -20,7 +21,7 @@ export function validateManifest(value) {
 }
 export class ProcessDriver extends ArtifactDriver {
   constructor(file,manifest){
-    super(file,{recover:false,migrations:[processSchema]});this.file=resolve(file);this.plugin=posix;
+    super(file,{recover:false,migrations:[processSchema,workloadJournalMigration]});this.file=resolve(file);this.plugin=posix;
     this.manifest=validateManifest(manifest);
     transaction(this.db,()=>{
       const prior=this.db.prepare('SELECT manifest FROM process_config').get();

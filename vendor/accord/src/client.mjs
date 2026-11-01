@@ -13,6 +13,7 @@ export class AccordClient {
     const client = new AccordClient(url, result.credential); client.session = result; return client;
   }
   registerResource(manifest,key=randomUUID()){return request(this.url,this.credential,'/v1/resources',{key,manifest});}
+  adoptWorkloads(body){return request(this.url,this.credential,'/v1/workloads/adopt',body,30000);}
   resources(){return request(this.url,this.credential,'/v1/resources');}
   startProcess(claimId,key){return request(this.url,this.credential,`/v1/claims/${claimId}/process`,{key});}
   processStatus(claimId){return request(this.url,this.credential,`/v1/claims/${claimId}/process`);}
@@ -36,7 +37,7 @@ export class AccordClient {
     }
   }
   me() { return request(this.url, this.credential, '/v1/me'); }
-  collaborate(operation,args={},host) { return request(this.url,this.credential,'/v1/collaboration',{operation,args,...(host?{host}:{})},4000); }
+  collaborate(operation,args={},host) { return request(this.url,this.credential,'/v1/collaboration',{operation,args,...(host?{host}:{})},operation.startsWith('workload-')?30000:4000); }
   announce({key=randomUUID(),...args}) {return this.collaborate('announce',{...args,key});}
   find(query=''){return this.collaborate('find',{query});}
   send(to,text,{key=randomUUID(),kind='message',delivery='inbox'}={}){return this.collaborate('send',{to,text,key,kind,delivery});}

@@ -96,8 +96,13 @@ export function driverServer(defaultDriver, controlToken, {resolveDriver,registe
     if(url.pathname==='/v1/processes'&&req.method==='POST') {requireThat(driver.start,'WRONG_DRIVER','Resource has no process operation');return driver.start(credential,await readBody(req));}
     if(url.pathname==='/v1/processes'&&req.method==='GET') {requireThat(driver.inspect,'WRONG_DRIVER','Resource has no process operation');return driver.inspect(credential);}
 
+    if(url.pathname==='/v1/workloads'&&req.method==='POST'){requireThat(driver.registerExternal,'WRONG_DRIVER','External workloads unsupported');return driver.registerExternal(credential,await readBody(req));}
+    if(url.pathname==='/v1/workloads'&&req.method==='GET'){requireThat(driver.externalStatus,'WRONG_DRIVER','External workloads unsupported');return driver.externalStatus(credential);}
+    if(url.pathname==='/v1/workloads/start'&&req.method==='POST'){requireThat(driver.launchExternal,'WRONG_DRIVER','External workloads unsupported');return driver.launchExternal(credential,await readBody(req));}
     if (url.pathname === '/v1/artifacts' && req.method === 'POST') {requireThat(resource==='artifact','WRONG_DRIVER','Use the registered driver operation');return driver.write(credential, await readBody(req));}
     requireThat(equal(hash(credential), hash(controlToken)), 'FORBIDDEN', 'Driver control credential required', 403);
+    if(url.pathname==='/control/workloads/audit'&&req.method==='GET'){requireThat(driver.externalAudit,'WRONG_DRIVER','External workloads unsupported');return driver.externalAudit();}
+    if(url.pathname==='/control/workloads'&&req.method==='POST'){requireThat(driver.adoptExternal,'WRONG_DRIVER','External workloads unsupported');return driver.adoptExternal(await readBody(req));}
     if(url.pathname==='/control/resources'&&req.method==='POST'){requireThat(register,'UNSUPPORTED','Registration unavailable');return register(await readBody(req));}
     if(url.pathname==='/control/resources'&&req.method==='GET')return {resources:list?list():[]};
     if (req.method === 'GET' && url.pathname === '/control/status') return {...driver.status(),...(driver.availability?await driver.availability():{})};

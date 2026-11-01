@@ -113,10 +113,15 @@ executable/argument manifest. See [the process driver](docs/PROCESS-DRIVER.md).
 Managed reservations remain held through expiry, crashes, and recovery until the
 old process group is confirmed absent. No new owner is admitted on a timeout alone.
 
+External Docker containers and systemd supervisors can attach to the same grant;
+see [external workload registration and recovery](docs/EXTERNAL-WORKLOADS.md).
+Accord stops these before LLooM restores its models and routes and before another
+agent gets the resource. An unreachable host keeps ownership held.
+
 Each physical asset must have one authoritative host. Capacity pools, multi-host
-atomic reservations, model drain/restore, GPU isolation, and automatic vendor
-installation are not implemented. Tessera and LLooM remain in charge of their
-existing live functions until compatibility adapters pass their own tests.
+atomic reservations, GPU isolation, and automatic vendor installation are not
+implemented. Tessera consumes Accord sessions and messaging; LLooM retains model
+and route management behind its managed-resource provider.
 
 ## Verify
 
