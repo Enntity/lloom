@@ -1,8 +1,8 @@
 {
   "name": "@enntity/accord",
   "version": "0.4.0-preview.1",
-  "qualifiedAt": "2026-11-01T06:34:31.523Z",
-  "packageSHA256": "197b4fad8e61710f8ca7a7e50db3d5cafb83876a29643fb4bac48e0730c82f04",
+  "qualifiedAt": "2026-11-01T06:42:17.426Z",
+  "packageSHA256": "8b52a1da49c881a49aa1ed14c3756085ea0040b1237af296cc3f2f3f7367f51e",
   "files": {
     "LICENSE": "318df2193e69d37d01c91e885d4019ccf3781f565bfeab901ea6345cc6d31f25",
     "README.md": "16900077b540c9c20a80ea4357d01892783f1e2537e9266e8530031a6e691601",
@@ -38,7 +38,7 @@
     "src/driver.mjs": "ee09c92935d02577e2e6ee68099561cfa97f83c5d38c7fd4f7e6bf24c7ee3ddc",
     "src/installer.mjs": "ace2a3aea6e6f358a68104fc0532d808c9f0e8a42cdbec58de9163519db6e4d2",
     "src/managed-driver.mjs": "eeb7f653bee4cb9223539b88e06b5aa59d790eaf8f26fdcb44b99fc3434f9b39",
-    "src/mcp.mjs": "794842209ae4794991cb809db33f48c0e60466a8d1b7e41debb20effa12b2151",
+    "src/mcp.mjs": "2522134ecf1786ba630b27f7cf23b7d9d0d8ee138aec8f089758646501c7726d",
     "src/native-sensors.mjs": "a1d53433566996fe0055f6f6a552c190340fbabe8dc7a1f4a61bab74f7ad4ea2",
     "src/observers.mjs": "f590d21c8aa5c5c5742b504ed2c68be6300537e1239275319befcfd36cc9b933",
     "src/overseer.mjs": "bba771c8a891a12a03ccc8ca2cb535811f707bed8dca35d6bc6fbf1093883a8f",
@@ -50,7 +50,7 @@
     "src/product-observers.mjs": "dc4001bec569a15855dff47b1c0c548988640148611f7bd1a46d7a83be075498",
     "src/resource-managers.mjs": "93068c856afbbf54915b3abbfc1e2112028f8d0a344caa6510cae494d5159411",
     "src/resource-plugins.mjs": "b46ae56ed0a1eca1f218d186807a44ea51b78199a6aa49266c8290c4fefaea28",
-    "src/server.mjs": "b2aa5a4eae7bf12626e4c6d1253a9eb131a8b7dc2592afdc41368525f776a35c",
+    "src/server.mjs": "52d26e9f3edd91865282a29659041b1a2b37b55c5eab3a99aa0f99aaabcc93c2",
     "src/service.mjs": "50180f323d02c1f4858f2c69e90eecaf4808695318f6bda34604ab29c9fd830f",
     "src/session-awareness.mjs": "16805ba2731ca8f9d9ce8b477e42ea6f3f9fda712d0642f8b0105c1af0865ac2",
     "src/session-continuity.mjs": "6ac098a3fd379ffb7f39c5fc8995128a8ab5eac32a348ef028df067be1b910d0",

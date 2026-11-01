@@ -12,7 +12,7 @@ export const toolCatalog = [
   ['accord_snooze','Snooze monitoring of your session until a Unix millisecond timestamp.',schema({key,id:string,until:{type:'integer'}},['id','until'])],
   ['accord_overseer','Inspect monitoring rules, evidence and check-in incidents.',schema({host:string})],
   ['accord_jobs','Inspect progress and stalled jobs.',schema({host:string})],
-  ['accord_job','Create or update your job progress and completion.',schema({key,id:string,title:string,note:string,state:{enum:['working','waiting','done','failed','cancelled']},progress:{type:'object'},metrics:{type:'object'},reservationId:string})],
+  ['accord_job','Create or update your job progress and completion.',schema({key,id:string,title:string,note:string,state:{enum:['working','waiting','done','failed','cancelled']},progress:{type:'object'},metrics:{type:'object'},reservationId:string,host:string})],
   ['accord_notify','Leave a durable note for the operator in connected UIs.',schema({key,text:string},['text'])],
   ['accord_ask','Ask the operator a question through connected UIs.',schema({key,question:string,options:{type:'array',items:string,maxItems:6}},['question'])],
   ['accord_question','Check your human question for an answer.',schema({id:string},['id'])],

@@ -228,7 +228,7 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
         requireThat(body.args?.from===`${peer.authority}/${body.actor}`,'FORBIDDEN','Sender does not match linked host',403);
         value=collaboration.deliver(body.args);
       }else{
-        requireThat(['resources','reserve','reservation','release','renew','start','process','telemetry','metadata','sessions','session-read','jobs','overseer','session-snooze'].includes(body.operation),'FORBIDDEN','Operation cannot be forwarded',403);
+        requireThat(['resources','reserve','reservation','release','renew','start','process','telemetry','metadata','sessions','session-read','jobs','job','overseer','session-snooze'].includes(body.operation),'FORBIDDEN','Operation cannot be forwarded',403);
         value=await collaborate(actor,body.operation,body.args);
       }
       store.assertLeader();return {authority:store.authority,value};
@@ -243,7 +243,7 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
     if(url.pathname==='/v1/collaboration'&&req.method==='POST'){
       const body=await readBody(req);
       if(body.host&&body.host!==store.authority){
-        requireThat(['resources','reserve','reservation','release','renew','start','process','telemetry','metadata','sessions','session-read','jobs','overseer','session-snooze'].includes(body.operation),'FORBIDDEN','Operation cannot be forwarded',403);
+        requireThat(['resources','reserve','reservation','release','renew','start','process','telemetry','metadata','sessions','session-read','jobs','job','overseer','session-snooze'].includes(body.operation),'FORBIDDEN','Operation cannot be forwarded',403);
         return collaboration.forward(body.host,body.operation,body.args,actor);
       }
       if(body.operation==='sessions'&&!body.host)return sessionsAcrossHosts(actor,body.args);
