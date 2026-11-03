@@ -348,10 +348,12 @@ Per-model NVIDIA speech and transcription recipes are documented in [Spark audio
 ## Atlas SparkGLM
 
 `linux-nvidia-dgx-spark-2x-glm53-atlas` is the LLooM-managed lane for the
-Atlas SparkGLM engine on two directly connected DGX Sparks, pinned to the
-2026-10-17 FP4-Local release. It serves `nvidia/GLM-5.3-Flash-FP4-Local` as
-published. The release image qualified on a DGX Spark pair (Enntity/sparkglm
-`results/2026-10-17-fp4local`) and serves in production.
+Atlas SparkGLM engine on two directly connected DGX Sparks. Its current
+version (4) installs SparkGLM 0.3.1 (engine Enntity/atlas `spark` @ `5f79b46b`,
+Atlas-Inf main `2f9c37083`) with Enntity's v80 drafter, serving
+`nvidia/GLM-5.3-Flash-FP4-Local` as published. It qualified on a DGX Spark pair
+on 2026-11-03 against 0.3.0: identical greedy output and prompt logprobs,
+109/109 live checks, speed level (sparkglm-research `experiments/qual-20261103`).
 
 ```sh
 lloom setup --recipe linux-nvidia-dgx-spark-2x-glm53-atlas --additive --apply --yes
@@ -365,24 +367,26 @@ Licenses: the recipe and LLooM's backend files are MIT. The engine is
 [Atlas](https://github.com/Atlas-Inf/atlas) with SparkGLM's work on the
 [Enntity/atlas](https://github.com/Enntity/atlas) fork, **AGPL-3.0-only**, and
 runs from its own container image; LLooM includes none of its source. The
-DFlash2 drafter `incoai/GLM-5.3-Flash-DFlash2` is **CC BY-NC-ND 4.0
-(non-commercial)**. See the backend README's "Credits and licenses" section and
+pair lane's drafter is Enntity's v80 (`Enntity/GLM-5.3-Flash-DFlash2-enntity-v80`,
+a private repository). The TP-4 lane's DFlash2 drafter
+`incoai/GLM-5.3-Flash-DFlash2` is **CC BY-NC-ND 4.0 (non-commercial)**. See the backend README's "Credits and licenses" section and
 [Third-Party Notices](../THIRD_PARTY_NOTICES.md).
 
 ### Single pin manifest and fail-closed pin gate
 
-All portable identities for the lane live in exactly one place,
-`backends/atlas-sparkglm/pins.json`: the `Enntity/sparkglm` source revision and
+Each recipe version names one pin manifest in its setup steps (the current
+pair lane: `backends/atlas-sparkglm/pins-0.3.1-v80.json`), which holds every
+portable identity: the `Enntity/sparkglm` source revision and
 the git tree of its `install/` directory, the immutable image manifest
 reference (`image.reference`) with the tag kept as source-build metadata and
 the install-tree contents label, the Enntity/atlas engine commit the image
 records, and the `nvidia/GLM-5.3-Flash-FP4-Local` and drafter revisions. The
-current source pin is product revision
-`c28da418444e954323ee885ffc3954965794a679` with install tree
-`c8ced64316bf0b9b2b116d6a0bcdfca52064545b` and engine `b3b016ab`, so the normal
+current pair pin is product revision
+`33fe02f83a9edf96ae38ebe4fc6a8ec8e7603f90` with install tree
+`e7af504a3dfde2652e05de9c32304ffd3de7f2fa` and engine `5f79b46b`, so the normal
 install path addresses the immutable digest
-`ghcr.io/enntity/atlas-sparkglm@sha256:0b91fd790afb2ee3aa5a7f39a0bc5a90db05751436ae7810e00f129c36ebbb7b`.
-The tag `ghcr.io/enntity/atlas-sparkglm:c8ced64316bf` is source-build metadata
+`ghcr.io/enntity/atlas-sparkglm@sha256:8e1e378b61f2633283fc86772b78f3524220255064630cc069d64b70cc5df7e0`.
+The tag `ghcr.io/enntity/atlas-sparkglm:e7af504a3dfd` is source-build metadata
 (first 12 characters of the install tree) and is never pulled; a tag alone is
 not an immutable artifact identity. A later product revision is adopted by
 changing the revision, the install tree, the engine commit, the derived tag
@@ -579,31 +583,18 @@ the ends), at tensor and expert parallelism 4. It is a separate lane,
 `glm-5.3-flash-atlas`. Both lanes use 127.0.0.1:8893 on rank 0's Spark and
 114 GiB on every Spark they share, so admission runs one at a time.
 
-**The pins are drafts.** No TP-4 release image exists yet:
-`backends/atlas-sparkglm/pins-tp4.json` has status `draft` and `TODO-TP4-RC`
-placeholders for the Enntity/sparkglm revision and install tree, the engine
-branch and commit, and the GHCR digest and tag, and the recipe's
-`bootstrap.image` is the matching placeholder digest. The setup steps
-`verify-atlas-pins` and `build-atlas-image` run `verify-pins.mjs` and
-`install.sh --manifest` against that manifest on every apply and refuse it, so
-nothing is downloaded, pulled or started. To adopt a release candidate:
+The current version (2) installs SparkGLM 0.3.0 from
+`backends/atlas-sparkglm/pins-0.3.0-tp4.json`, the same image as the pair
+lane's version 3; it qualified in a four-Spark chain on 2026-11-03. Version 3,
+a candidate installed only with `--recipe-version 3`, installs 0.3.1 and has
+not been qualified at TP-4 yet. The original draft manifest
+`backends/atlas-sparkglm/pins-tp4.json` keeps its `TODO-TP4-RC` placeholders,
+and the pin gate still refuses it.
 
-1. Fill `source.revision`, `source.installTree`, `engine.branch`,
-   `engine.commit` and `image.reference` from the RC (the image must ship
-   `/opt/atlas/profiles/4x1m-tp4.json`), set `image.tag` to
-   `ghcr.io/enntity/atlas-sparkglm:` plus the first 12 characters of the
-   install tree and `status` to `final`, and update the manifest's `note`;
-   `node backends/atlas-sparkglm/verify-pins.mjs backends/atlas-sparkglm/pins-tp4.json`
-   must pass.
-2. Put the same `image.reference` in both members' `bootstrap.image`, replace
-   the draft wording in the recipe's description, provenance, hardware notes
-   and index entry with the RC's identities and qualification receipts, and
-   run `node test/atlas-sparkglm-tp4-recipe.test.mjs` (update its draft-status
-   assertions).
-3. On each of the four Sparks, with the chain declared as below, preview and
-   then apply `lloom setup --recipe linux-nvidia-dgx-spark-4x-glm53-atlas-tp4
-   --additive`, and start it with `lloom runtime-start
-   glm53-flash-atlas-tp4-cluster` from the leader.
+On each of the four Sparks, with the chain declared as below, preview and then
+apply `lloom setup --recipe linux-nvidia-dgx-spark-4x-glm53-atlas-tp4
+--additive`, and start it with `lloom runtime-start
+glm53-flash-atlas-tp4-cluster` from the leader.
 
 The chain is declared per node with `cluster.nodes[ID].fabricChain` (see
 [chain topology](clusters.md#chain-topology)): rank, the interface every rank
@@ -635,8 +626,8 @@ with `/health` and a POST warmup.
 
 ## Atlas SparkQwen
 
-`linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas` runs SparkQwen 0.4.0
-(engine Enntity/atlas `spark-shared` @ `9b25f575`) on two directly connected
+`linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas` runs SparkQwen 0.5.1
+(engine Enntity/atlas `spark` @ `5f79b46b`, Atlas-Inf main `2f9c37083`) on two directly connected
 DGX Sparks, serving `nvidia/Qwen3.8-Flash-Next-FP4-Local` at revision
 `b9ce18a6887e18c089fdea8509a33e63429a3300` as `qwen3.8-flash-next-atlas` in
 SparkQwen's Spark mode. There is no overlay conversion and no separate drafter;
@@ -655,8 +646,8 @@ lloom resume qwen3.8-flash-next-atlas --apply --yes
 ```
 
 The recipe is additive (no default model, no aliases, `keepWarm` false). Pins
-live in `backends/atlas-sparkqwen/pins.json` (source `Enntity/sparkqwen`
-`v0.4.0`, install tree `3e0d9e7e4b29`). The GHCR manifest digest is pinned in the same manifest.
+live in `backends/atlas-sparkqwen/pins-0.5.1.json` (source `Enntity/sparkqwen`
+`v0.5.1`, install tree `01e43f5c2eb2`). The GHCR manifest digest is pinned in the same manifest.
 `node backends/atlas-sparkqwen/verify-pins.mjs`, setup step
 `verify-atlas-pins` and `install.sh` reject missing or placeholder identities. The
 installer only pulls that digest and verifies the image's arm64 architecture,

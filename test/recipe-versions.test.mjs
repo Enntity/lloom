@@ -73,50 +73,54 @@ test('the remote member setup command carries the recipe version', () => {
   assert.doesNotMatch(setupCommand({ recipeId: 'pair-lane', apply: true }), /--recipe-version/);
 });
 
-const promoted = [
-  {
-    id: 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas',
-    version: 4,
-    product: '0.5.0',
-    pins: 'atlas-sparkqwen/pins-0.5.0.json',
-    verify: '../backends/atlas-sparkqwen/verify-pins.mjs'
-  },
-  {
-    id: 'linux-nvidia-dgx-spark-2x-glm53-atlas',
-    version: 3,
-    product: '0.3.0',
-    pins: 'atlas-sparkglm/pins-0.3.0-v80.json',
-    verify: '../backends/atlas-sparkglm/verify-pins.mjs',
-    env: [
-      'SPARKGLM_MODE=spark',
-      'SPARKGLM_TOPOLOGY=pair',
-      'SPARKGLM_PROFILE=4x1m',
-      'SPARKGLM_KV_SHARD=1',
-      'DRAFTER_PATH=${modelRoot}/Enntity--GLM-5.3-Flash-DFlash2-enntity-v80'
-    ],
-    keepWarm: true
-  },
-  {
-    id: 'linux-nvidia-dgx-spark-4x-glm53-atlas-tp4',
-    version: 2,
-    product: '0.3.0',
-    pins: 'atlas-sparkglm/pins-0.3.0-tp4.json',
-    verify: '../backends/atlas-sparkglm/verify-pins.mjs',
-    env: ['SPARKGLM_MODE=spark', 'SPARKGLM_TOPOLOGY=chain', 'SPARKGLM_PROFILE=4x1m-tp4']
-  }
-];
-
 const ENGINE_0_5_0 = '162b4226070fbd3a75a5a0d5910f9290fa96bed2';
 const ENGINE_0_5_1 = '5f79b46ba7b0e8b14f8b2966cca9e2546f18560d';
 
+const sparkqwen = {
+  id: 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas',
+  verify: '../backends/atlas-sparkqwen/verify-pins.mjs'
+};
+const sparkglmPair = {
+  id: 'linux-nvidia-dgx-spark-2x-glm53-atlas',
+  verify: '../backends/atlas-sparkglm/verify-pins.mjs',
+  env: [
+    'SPARKGLM_MODE=spark',
+    'SPARKGLM_TOPOLOGY=pair',
+    'SPARKGLM_PROFILE=4x1m',
+    'SPARKGLM_KV_SHARD=1',
+    'DRAFTER_PATH=${modelRoot}/Enntity--GLM-5.3-Flash-DFlash2-enntity-v80'
+  ],
+  keepWarm: true
+};
+const sparkglmTp4 = {
+  id: 'linux-nvidia-dgx-spark-4x-glm53-atlas-tp4',
+  verify: '../backends/atlas-sparkglm/verify-pins.mjs',
+  env: ['SPARKGLM_MODE=spark', 'SPARKGLM_TOPOLOGY=chain', 'SPARKGLM_PROFILE=4x1m-tp4']
+};
+
+const promoted = [
+  { ...sparkqwen, version: 5, product: '0.5.1', pins: 'atlas-sparkqwen/pins-0.5.1.json', engine: ENGINE_0_5_1 },
+  { ...sparkglmPair, version: 4, product: '0.3.1', pins: 'atlas-sparkglm/pins-0.3.1-v80.json', engine: ENGINE_0_5_1 },
+  { ...sparkglmTp4, version: 2, product: '0.3.0', pins: 'atlas-sparkglm/pins-0.3.0-tp4.json', engine: ENGINE_0_5_0 }
+];
+const archived = [
+  { ...sparkqwen, version: 4, product: '0.5.0', pins: 'atlas-sparkqwen/pins-0.5.0.json', engine: ENGINE_0_5_0 },
+  { ...sparkglmPair, version: 3, product: '0.3.0', pins: 'atlas-sparkglm/pins-0.3.0-v80.json', engine: ENGINE_0_5_0 }
+];
+const candidates = [
+  { ...sparkglmTp4, version: 3, product: '0.3.1', pins: 'atlas-sparkglm/pins-0.3.1-tp4.json', engine: ENGINE_0_5_1 }
+];
+
 // Pins, image, env, drafter and per-image caches agree for one release lane.
-async function assertRelease(recipe, release, engine) {
+async function assertRelease(recipe, release) {
   assert.equal(recipe.version, release.version);
   const { loadPins, verifyPins } = await import(release.verify);
   const manifest = loadPins(fileURLToPath(new URL(`../backends/${release.pins}`, import.meta.url)));
   assert.deepEqual(verifyPins(manifest), []);
   assert.equal(manifest.engine.branch, 'spark');
-  assert.equal(manifest.engine.commit, engine);
+  assert.equal(manifest.engine.commit, release.engine);
+  assert.match(manifest.note, new RegExp(`^Pin manifest for Spark\\w+ ${release.product.replaceAll('.', '\\.')}[ ,]`));
+  assert.match(manifest.note, new RegExp(` version ${release.version}[.,]`));
   if (release.keepWarm !== undefined) assert.equal(recipe.models[0].settings.keepWarm, release.keepWarm);
   const setup = Array.isArray(recipe.setup) ? recipe.setup : recipe.setup.steps;
   const drafter = setup.find((step) => step.id === 'download-atlas-drafter');
@@ -137,27 +141,30 @@ async function assertRelease(recipe, release, engine) {
   )) {
     assert.ok(step.args.includes(`\${repoRoot}/backends/${release.pins}`), `${step.id} must check this release's pins`);
   }
+  return manifest;
 }
 
 for (const release of promoted) {
   test(`${release.id} v${release.version} (${release.product}) is the default`, async () => {
     const recipe = await loadRecipeById(release.id);
     assert.doesNotMatch(recipe.name, /candidate/i);
-    await assertRelease(recipe, release, ENGINE_0_5_0);
+    assert.match(recipe.name, new RegExp(`Spark\\w+ ${release.product.replaceAll('.', '\\.')}[,)]`));
+    const manifest = await assertRelease(recipe, release);
+    assert.doesNotMatch(JSON.stringify(recipe) + manifest.note, /Candidate:|not qualified/);
   });
 }
 
-const candidates = [
-  { ...promoted[0], version: 5, product: '0.5.1', pins: 'atlas-sparkqwen/pins-0.5.1.json' },
-  { ...promoted[1], version: 4, product: '0.3.1', pins: 'atlas-sparkglm/pins-0.3.1-v80.json' },
-  { ...promoted[2], version: 3, product: '0.3.1', pins: 'atlas-sparkglm/pins-0.3.1-tp4.json' }
-];
+for (const release of archived) {
+  test(`${release.id} v${release.version} (${release.product}) stays installable by number`, async () => {
+    await assertRelease(await loadRecipeVersion(release.id, release.version), release);
+  });
+}
 
 for (const release of candidates) {
   test(`${release.id} v${release.version} (${release.product}) installs only by number`, async () => {
     const recipe = await loadRecipeVersion(release.id, release.version);
     assert.match(recipe.name, new RegExp(`${release.product.replaceAll('.', '\\.')} candidate`));
     assert.doesNotMatch(JSON.stringify(recipe), /2026-11-03/, 'a candidate carries no qualification claim');
-    await assertRelease(recipe, release, ENGINE_0_5_1);
+    await assertRelease(recipe, release);
   });
 }

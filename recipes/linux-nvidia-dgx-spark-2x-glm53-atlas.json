@@ -3,10 +3,10 @@
   "schemaVersion": 1,
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-2x-glm53-atlas",
-  "name": "2x DGX Spark GLM-5.3 Flash FP4-Local Atlas (SparkGLM 0.3.0, Enntity v80 drafter)",
-  "version": 3,
+  "name": "2x DGX Spark GLM-5.3 Flash FP4-Local Atlas (SparkGLM 0.3.1, Enntity v80 drafter)",
+  "version": 4,
   "summary": "Two directly connected Sparks running Atlas SparkGLM over the private fabric, serving nvidia/GLM-5.3-Flash-FP4-Local as published with 1048576-token contexts for four concurrent requests and Enntity v80 DFlash2-architecture speculative decoding. Additive only: no default model, no aliases overwritten.",
-  "description": "This recipe installs SparkGLM 0.3.0 at the immutable product revision recorded in backends/atlas-sparkglm/pins-0.3.0-v80.json. LLooM owns orchestration, admission, worker-first startup, readiness, routing and telemetry. The Atlas engine image is built from Enntity/sparkglm by that repository's install/build.sh; LLooM commits no engine source. The engine (Atlas-Inf/atlas plus Enntity's open Atlas-Inf PRs, on the Enntity/atlas spark branch) is AGPL-3.0-only and runs from its own container image; the drafter is Enntity's v80 from a private repository. Setup acquires the pinned checkpoint and drafter and pulls the pinned image from GHCR by its immutable manifest digest (image.reference in the pin manifest; the mutable tag is never pulled); the serving path only ever starts the prepared image. nvidia/GLM-5.3-Flash-FP4-Local ships its MTP layer quantized, so the image serves the acquired checkpoint directly: there is no conversion step and no overlay. Each node verifies the pulled image by the io.enntity.sparkglm.install-tree contents label, arm64 architecture and the pinned engine commit; the label is a contents check, not the artifact identity. Explicit --source-build is only for users who want a local build from the pinned source, and it produces a LOCAL tag for an explicitly overridden local recipe, not the immutable recipe. The release includes structured output and tool calls plus image/video input; the release image qualified on 01/02 on 2026-11-03 against the build it replaces (identical greedy output and prompt logprobs, 109/109 live checks; sparkglm-research experiments/qual-20261103) and serves in production with this profile.",
+  "description": "This recipe installs SparkGLM 0.3.1 at the immutable product revision recorded in backends/atlas-sparkglm/pins-0.3.1-v80.json. LLooM owns orchestration, admission, worker-first startup, readiness, routing and telemetry. The Atlas engine image is built from Enntity/sparkglm by that repository's install/build.sh; LLooM commits no engine source. The engine (Atlas-Inf/atlas plus Enntity's open Atlas-Inf PRs, on the Enntity/atlas spark branch) is AGPL-3.0-only and runs from its own container image; the drafter is Enntity's v80 from a private repository. Setup acquires the pinned checkpoint and drafter and pulls the pinned image from GHCR by its immutable manifest digest (image.reference in the pin manifest; the mutable tag is never pulled); the serving path only ever starts the prepared image. nvidia/GLM-5.3-Flash-FP4-Local ships its MTP layer quantized, so the image serves the acquired checkpoint directly: there is no conversion step and no overlay. Each node verifies the pulled image by the io.enntity.sparkglm.install-tree contents label, arm64 architecture and the pinned engine commit; the label is a contents check, not the artifact identity. Explicit --source-build is only for users who want a local build from the pinned source, and it produces a LOCAL tag for an explicitly overridden local recipe, not the immutable recipe. The release includes structured output and tool calls plus image/video input; the release image qualified on 03/04 on 2026-11-03 against 0.3.0 (identical greedy output and prompt logprobs, 109/109 live checks; sparkglm-research experiments/qual-20261103).",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata, launcher and orchestration"
@@ -14,7 +14,7 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "SparkGLM 0.3.0: Enntity/sparkglm e1eae9e4d982a8f9e45bc2f7f2df72a88a4139b2 (tag v0.3.0, install tree ccc2bd5e09ae2b43a002317a6e30807ff74138d3), engine Enntity/atlas spark @ 162b4226070fbd3a75a5a0d5910f9290fa96bed2 (Atlas-Inf main 9c4519131 plus Enntity's Atlas-Inf PRs #321, #322 and #323; AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). The install pulls ghcr.io/enntity/atlas-sparkglm@sha256:ef36cc1c39a6863f7687c77fc8026a654c765f73498fa2873d4198f597df4ce7 by digest (pins-0.3.0-v80.json; the tag ghcr.io/enntity/atlas-sparkglm:ccc2bd5e09ae is never pulled), and each host verifies the image's io.enntity.sparkglm.install-tree label, arm64 architecture and engine commit. Model nvidia/GLM-5.3-Flash-FP4-Local revision 76348ddb2be2e35e39ecfc00e75dc07703f4f3d5 (NVIDIA Open Model Agreement; base model MIT) is served as published, with no overlay; the Enntity v80 drafter Enntity/GLM-5.3-Flash-DFlash2-enntity-v80 revision 8416cdfbf4cfb302b86a058cb5f5b89f891350c0 (DFlash2 architecture trained by Enntity, model.safetensors sha256 61190f81c66cbd0f; private repository, so each node needs a Hugging Face token with read access) is served from its checkpoint. The engine argument vector ships inside the image as /opt/atlas/profiles/4x1m.json, selected with SPARKGLM_PROFILE=4x1m, not in this recipe. The profile carries 1048576-token contexts, four sequences sharing one physical KV pool (GLM latent in FP8 with per-128 scales, split between the two nodes by SPARKGLM_KV_SHARD=1, about 2.6M tokens at the recipe's 0.91 GPU memory utilization with the display carveout, which overrides the profile default of 0.88, and shared with the disk prefix cache; the 48 GiB disk prefix-cache tier is enabled beside the shard, split into 24 GiB KV and 24 GiB SSM tiers per node), FP32 SSM state with KDA record rollback, and DFlash2 (gamma 8) on the head rank; disable-tool-grammar is deliberately not set so structured output and tools stay functional. Qualified on 01/02 on 2026-11-03: greedy output and prompt logprobs identical to the build it replaces, 109/109 live checks, speed level or up to 2% faster (sparkglm-research experiments/qual-20261103)."
+    "source": "SparkGLM 0.3.1: Enntity/sparkglm 33fe02f83a9edf96ae38ebe4fc6a8ec8e7603f90 (tag v0.3.1, install tree e7af504a3dfde2652e05de9c32304ffd3de7f2fa), engine Enntity/atlas spark @ 5f79b46ba7b0e8b14f8b2966cca9e2546f18560d (Atlas-Inf main 2f9c37083, which carries Enntity's Atlas-Inf PRs #321, #322 and #323 and the maintainers' #319 and #320; AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). The install pulls ghcr.io/enntity/atlas-sparkglm@sha256:8e1e378b61f2633283fc86772b78f3524220255064630cc069d64b70cc5df7e0 by digest (pins-0.3.1-v80.json; the tag ghcr.io/enntity/atlas-sparkglm:e7af504a3dfd is never pulled), and each host verifies the image's io.enntity.sparkglm.install-tree label, arm64 architecture and engine commit. Model nvidia/GLM-5.3-Flash-FP4-Local revision 76348ddb2be2e35e39ecfc00e75dc07703f4f3d5 (NVIDIA Open Model Agreement; base model MIT) is served as published, with no overlay; the Enntity v80 drafter Enntity/GLM-5.3-Flash-DFlash2-enntity-v80 revision 8416cdfbf4cfb302b86a058cb5f5b89f891350c0 (DFlash2 architecture trained by Enntity, model.safetensors sha256 61190f81c66cbd0f; private repository, so each node needs a Hugging Face token with read access) is served from its checkpoint. The engine argument vector ships inside the image as /opt/atlas/profiles/4x1m.json, selected with SPARKGLM_PROFILE=4x1m, not in this recipe. The profile carries 1048576-token contexts, four sequences sharing one physical KV pool (GLM latent in FP8 with per-128 scales, split between the two nodes by SPARKGLM_KV_SHARD=1, about 2.6M tokens at the recipe's 0.91 GPU memory utilization with the display carveout, which overrides the profile default of 0.88, and shared with the disk prefix cache; the 48 GiB disk prefix-cache tier is enabled beside the shard, split into 24 GiB KV and 24 GiB SSM tiers per node), FP32 SSM state with KDA record rollback, and DFlash2 (gamma 8) on the head rank; disable-tool-grammar is deliberately not set so structured output and tools stay functional. Qualified on 03/04 on 2026-11-03: greedy output and prompt logprobs identical to 0.3.0, 109/109 live checks, speed level (sparkglm-research experiments/qual-20261103)."
   },
   "links": [
     {
@@ -23,7 +23,7 @@
     },
     {
       "rel": "engine",
-      "href": "https://github.com/Enntity/atlas/tree/162b4226070fbd3a75a5a0d5910f9290fa96bed2"
+      "href": "https://github.com/Enntity/atlas/tree/5f79b46ba7b0e8b14f8b2966cca9e2546f18560d"
     },
     {
       "rel": "engine-upstream",
@@ -69,7 +69,7 @@
     "family": "NVIDIA DGX Spark / GB10",
     "testedMachine": "Two directly connected DGX Spark systems",
     "notes": [
-      "SparkGLM 0.3.0 qualified on 01/02 on 2026-11-03 against the build it replaces: identical greedy output and prompt logprobs, 109/109 live checks, guard log clean, speed level or up to 2% faster (sparkglm-research experiments/qual-20261103). It serves in production through LLooM with this profile.",
+      "SparkGLM 0.3.1 qualified on 03/04 on 2026-11-03 against 0.3.0: identical greedy output and prompt logprobs, 109/109 live checks, guard log clean, speed level (sparkglm-research experiments/qual-20261103).",
       "TP2 with expert parallelism 2 across the private ConnectX RoCE fabric. The direct-fabric address and NIC are discovered per node and passed as MASTER_ADDR and FABRIC_INTERFACE; the RoCE HCA is declared explicitly per node as cluster.nodes[ID].fabricHca (a comma-separated list of exact device names, no :port syntax) and passed as FABRIC_HCA and NCCL_IB_HCA with FABRIC_SIBLINGS=0, so the engine never silently adds a backchannel. No host-specific addresses or port names are pinned.",
       "The worker is admitted first (rank 1) and readiness-checked through its container state, because the Atlas engine has no separate worker HTTP surface. The leader starts second (rank 0) and owns routing.",
       "nvidia/GLM-5.3-Flash-FP4-Local ships its MTP layer quantized, so it is served directly from the acquired checkpoint: no conversion step and no overlay. The earlier nvidia/GLM-5.3-Flash-NVFP4 checkpoint needs an MTP overlay that this recipe does not prepare; Enntity/sparkglm's own start.sh still serves it.",
@@ -124,7 +124,7 @@
         "command": "node",
         "args": [
           "${repoRoot}/backends/atlas-sparkglm/verify-pins.mjs",
-          "${repoRoot}/backends/atlas-sparkglm/pins-0.3.0-v80.json"
+          "${repoRoot}/backends/atlas-sparkglm/pins-0.3.1-v80.json"
         ]
       },
       {
@@ -152,7 +152,7 @@
         "args": [
           "${repoRoot}/backends/atlas-sparkglm/install.sh",
           "--manifest",
-          "${repoRoot}/backends/atlas-sparkglm/pins-0.3.0-v80.json",
+          "${repoRoot}/backends/atlas-sparkglm/pins-0.3.1-v80.json",
           "--backend-root",
           "${backendRoot}",
           "--install-root",
@@ -271,7 +271,7 @@
                 "warmup": false,
                 "bootstrap": {
                   "adapter": "docker",
-                  "image": "ghcr.io/enntity/atlas-sparkglm@sha256:ef36cc1c39a6863f7687c77fc8026a654c765f73498fa2873d4198f597df4ce7",
+                  "image": "ghcr.io/enntity/atlas-sparkglm@sha256:8e1e378b61f2633283fc86772b78f3524220255064630cc069d64b70cc5df7e0",
                   "pull": false,
                   "pullTimeoutMs": 3600000,
                   "createArgs": [
@@ -444,7 +444,7 @@
                 },
                 "bootstrap": {
                   "adapter": "docker",
-                  "image": "ghcr.io/enntity/atlas-sparkglm@sha256:ef36cc1c39a6863f7687c77fc8026a654c765f73498fa2873d4198f597df4ce7",
+                  "image": "ghcr.io/enntity/atlas-sparkglm@sha256:8e1e378b61f2633283fc86772b78f3524220255064630cc069d64b70cc5df7e0",
                   "pull": false,
                   "pullTimeoutMs": 3600000,
                   "createArgs": [

@@ -51,7 +51,7 @@ assert(
 
 // ---- recipe shape ---------------------------------------------------------
 assert.equal(recipe.id, 'linux-nvidia-dgx-spark-2x-glm53-atlas');
-assert.equal(recipe.version, 3);
+assert.equal(recipe.version, 4);
 assert.equal(recipe.backend.id, 'docker-atlas-sparkglm');
 assert.equal(recipe.license.id, 'MIT');
 assert.deepEqual(recipe.requirements.cluster, {
