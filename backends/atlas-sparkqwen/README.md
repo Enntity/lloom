@@ -3,7 +3,8 @@
 LLooM-managed two-node SparkQwen 0.4.0 lane for a directly connected pair of
 NVIDIA DGX Spark systems, serving `nvidia/Qwen3.8-Flash-Next-FP4-Local` as
 published (no overlay conversion, no separate drafter: speculation uses the
-checkpoint's own MTP head) in SparkQwen's Spark mode. This directory is **MIT
+checkpoint's own MTP head) in SparkQwen's Spark mode, with text, image and
+short-video input. This directory is **MIT
 orchestration only**: no Atlas engine source is committed here. The engine
 image is built from `Enntity/sparkqwen` tag `v0.4.0` (revision
 `70c6c8453724b6541ca027b985229c58271e7a96`, install tree `3e0d9e7e4b29`) by
@@ -63,10 +64,12 @@ The recipe is additive: it sets no default model and adds no aliases. Setup
 keeps the installed mode when it runs again without `--mode`. Setup steps, in
 order: `check-docker`, `verify-atlas-pins`, `download-atlas-model` (the pinned
 checkpoint, about 95 GiB, into `${modelRoot}/nvidia--Qwen3.8-Flash-Next-FP4-Local`),
-`pull-atlas-image` (`install.sh`), and `prepare-atlas-cuda-cache` (creates
-`${installRoot}/atlas-sparkqwen-cuda-cache` and `${installRoot}/atlas-sparkqwen-ple`,
-mounted at `/atlas-cuda-cache` and `/atlas-ple` so compiled CUDA kernels and the
-checkpoint's PLE tables survive container recreation).
+`pull-atlas-image` (`install.sh`), `prepare-atlas-cuda-cache` (creates
+`${installRoot}/atlas-sparkqwen-cuda-cache`, mounted at `/atlas-cuda-cache` so
+compiled CUDA kernels survive container recreation) and `prepare-atlas-ple-cache`
+(creates `${installRoot}/atlas-sparkqwen-ple/<image digest>/<checkpoint revision>`,
+mounted at `/atlas-ple`: the packed PLE tables belong to one image and
+checkpoint, so a new pin starts a fresh cache instead of reusing stale ones).
 
 ## Container contract
 

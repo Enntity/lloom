@@ -1741,7 +1741,7 @@
       "id": "docker-atlas-sparkqwen",
       "name": "Docker Atlas SparkQwen",
       "kind": "openai-compatible-server",
-      "description": "LLooM-managed Atlas SparkQwen (RC16) containers for Qwen3.8-Flash-Next-NVFP4 on two DGX Sparks. The bundled MIT installer pulls the pinned image from GHCR by its immutable digest, verifies its architecture, install-tree label and in-image contract, and never builds; only the prepared image is started. Tools and reasoning are qualified upstream; structured output is untested with this model and image input is not claimed.",
+      "description": "LLooM-managed Atlas SparkQwen maintenance release for Qwen3.8-Flash-Next-FP4-Local on two DGX Sparks. The immutable image has bounded tools, JSON and image evidence; the full quality gate remains failed. Automatic tools combined with strict JSON retain a known failure. Oversized PNG evidence covers header admission only, not full pixel decoding. See the release limitations in backends/atlas-sparkqwen/README.md.",
       "platforms": [
         "linux-arm64"
       ],
@@ -1762,7 +1762,8 @@
         "dgx-spark",
         "docker",
         "nccl",
-        "distributed"
+        "distributed",
+        "vision"
       ],
       "commands": [
         "docker",

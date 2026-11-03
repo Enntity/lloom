@@ -35,13 +35,13 @@ assert.deepEqual(
   ['check-docker', 'check-atlas-pins']
 );
 assert.equal(backend.setup.find((step) => step.id === 'check-atlas-pins').alwaysRun, true);
-assert(!backend.features.includes('vision'), 'image input is untested and must not be claimed');
+assert(backend.features.includes('vision'), 'SparkQwen qualifies image input');
 const plannedBackend = await planBackend(backend, { checkCommands: false });
 assert(plannedBackend.steps.every((step) => !step.command.join(' ').includes('${')));
 
 // ---- recipe shape -----------------------------------------------------------
 assert.equal(recipe.id, recipeId);
-assert.equal(recipe.version, 2);
+assert.equal(recipe.version, 3);
 assert.equal(recipe.backend.id, 'docker-atlas-sparkqwen');
 assert.equal(recipe.license.id, 'MIT');
 assert.deepEqual(recipe.requirements.cluster, { nodes: 2, provider: 'nvidia-sync', topology: 'direct' });
@@ -51,13 +51,14 @@ const stepIds = [
   'verify-atlas-pins',
   'download-atlas-model',
   'pull-atlas-image',
-  'prepare-atlas-cuda-cache'
+  'prepare-atlas-cuda-cache',
+  'prepare-atlas-ple-cache'
 ];
 assert.deepEqual(
   recipe.setup.steps.map((step) => step.id),
   stepIds
 );
-for (const stepId of ['verify-atlas-pins', 'pull-atlas-image', 'prepare-atlas-cuda-cache']) {
+for (const stepId of ['verify-atlas-pins', 'pull-atlas-image', 'prepare-atlas-cuda-cache', 'prepare-atlas-ple-cache']) {
   assert.equal(recipe.setup.steps.find((step) => step.id === stepId).alwaysRun, true, `${stepId} must always run`);
 }
 const downloadStep = recipe.setup.steps.find((step) => step.id === 'download-atlas-model');
@@ -76,11 +77,11 @@ assert.equal(model.runtime, 'qwen38-flash-next-atlas-cluster');
 assert.equal(model.setDefault, false);
 assert(!Object.hasOwn(model, 'aliases'));
 assert.equal(model.settings.keepWarm, false);
-assert.deepEqual(model.input, ['text']);
+assert.deepEqual(model.input, ['text', 'image']);
 for (const capability of ['tools', 'reasoning', 'streaming', 'structured-output']) {
   assert(model.capabilities.includes(capability), `missing capability ${capability}`);
 }
-assert(!model.capabilities.includes('vision'), 'image input is untested and must not be claimed');
+assert(model.capabilities.includes('vision'));
 // serve.py binds rank 0 to 127.0.0.1:8893; the port is not configurable.
 assert.equal(model.settings.port, 8893);
 assert.equal(model.settings.baseUrl, 'http://127.0.0.1:8893/v1');
@@ -132,7 +133,7 @@ const expectedCreateArgs = [
   '--stop-timeout 60',
   `--mount type=bind,src=\${modelRoot}/${checkpoint},dst=\${modelRoot}/${checkpoint},readonly`,
   '--mount type=bind,src=${installRoot}/atlas-sparkqwen-cuda-cache,dst=/atlas-cuda-cache',
-  '--mount type=bind,src=${installRoot}/atlas-sparkqwen-ple,dst=/atlas-ple',
+  `--mount type=bind,src=\${installRoot}/atlas-sparkqwen-ple/${pins.image.reference.split(':')[1]}/${pins.model.revision},dst=/atlas-ple`,
   '--volume /run/lock/sparkglm:/run/lock/sparkglm',
   '-e NODE_RANK=${nodeRank}',
   '-e MASTER_ADDR=${leaderAddress}',
@@ -196,9 +197,11 @@ assert.deepEqual(plan.steps.find((step) => step.id === 'pull-atlas-image').comma
 assert.deepEqual(plan.steps.find((step) => step.id === 'prepare-atlas-cuda-cache').command, [
   'mkdir',
   '-p',
-  '/install/atlas-sparkqwen-cuda-cache',
-  '/install/atlas-sparkqwen-ple'
+  '/install/atlas-sparkqwen-cuda-cache'
 ]);
+// The packed PLE tables are specific to one image and checkpoint, so the cache is keyed by both.
+const pleCache = `/install/atlas-sparkqwen-ple/${pins.image.reference.split(':')[1]}/${pins.model.revision}`;
+assert.deepEqual(plan.steps.find((step) => step.id === 'prepare-atlas-ple-cache').command, ['mkdir', '-p', pleCache]);
 for (const step of plan.steps.filter((entry) => entry.action === 'command')) {
   assert(!step.command.join(' ').includes('${'), `unresolved recipe template in ${step.id}`);
 }
@@ -291,7 +294,7 @@ for (const [runtime, nodeId, rank] of [
   const args = runtime.bootstrap.createArgs.join(' ');
   assert(args.includes(`src=/models/${checkpoint},dst=/models/${checkpoint},readonly`));
   assert(args.includes('src=/install/atlas-sparkqwen-cuda-cache,dst=/atlas-cuda-cache'));
-  assert(args.includes('src=/install/atlas-sparkqwen-ple,dst=/atlas-ple'));
+  assert(args.includes(`src=${pleCache},dst=/atlas-ple`));
 }
 assert.deepEqual(
   cluster.placement.members.map((member) => member.resources.memoryGb),

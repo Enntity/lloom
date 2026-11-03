@@ -4,9 +4,9 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas",
   "name": "2x DGX Spark Qwen3.8 Flash Next FP4-Local Atlas (SparkQwen 0.4.0)",
-  "version": 2,
+  "version": 3,
   "summary": "Two directly connected Sparks running SparkQwen 0.4.0 on the Atlas engine over the private fabric, serving nvidia/Qwen3.8-Flash-Next-FP4-Local with its built-in MTP head: up to eight requests of up to 262144 tokens from one shared BF16 KV pool, in Spark mode. Two modes: dedicated (the pair serves Qwen alone) and sidecars (leaves memory for services such as embedding or image generation on the same Sparks). Additive only: no default model, no aliases.",
-  "description": "This recipe installs SparkQwen 0.4.0 at the immutable product revision recorded in backends/atlas-sparkqwen/pins.json. LLooM owns orchestration, admission, worker-first startup, readiness, routing and telemetry. The Atlas engine image is built from Enntity/sparkqwen by that repository's install/build.sh and published to GHCR; LLooM commits no engine source. The engine (Atlas-Inf/atlas with SparkGLM's upstream series and SparkQwen's Qwen3.8-Flash-Next work on the Enntity/atlas fork) is AGPL-3.0-only and runs from its own container image. Setup acquires the pinned checkpoint, pulls the pinned image by its immutable manifest digest (the mutable tag is never pulled), and verifies the image's arm64 architecture, io.enntity.sparkqwen.install-tree contents label and in-image contract. The checkpoint is served as published: no overlay conversion and no separate drafter (speculation uses the checkpoint's own MTP head). Tools and reasoning are qualified by SparkQwen; structured output is implemented by the engine but untested with this model, and image input is not claimed.",
+  "description": "This recipe installs SparkQwen 0.4.0 at the immutable product revision recorded in backends/atlas-sparkqwen/pins.json. LLooM owns orchestration, admission, worker-first startup, readiness, routing and telemetry. The Atlas engine image is built from Enntity/sparkqwen by that repository's install/build.sh and published to GHCR; LLooM commits no engine source. The engine (Atlas-Inf/atlas with SparkGLM's upstream series and SparkQwen's Qwen3.8-Flash-Next work on the Enntity/atlas fork) is AGPL-3.0-only and runs from its own container image. Setup acquires the pinned checkpoint, pulls the pinned image by its immutable manifest digest (the mutable tag is never pulled), and verifies the image's arm64 architecture, io.enntity.sparkqwen.install-tree contents label and in-image contract. The checkpoint is served as published: no overlay conversion and no separate drafter (speculation uses the checkpoint's own MTP head). Tools and reasoning are qualified by SparkQwen; structured output is implemented by the engine but untested with this model; image and short-video input are qualified by SparkQwen.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata, launcher and orchestration"
@@ -124,11 +124,22 @@
       },
       {
         "id": "prepare-atlas-cuda-cache",
-        "title": "Create the persistent CUDA JIT and PLE cache directories",
+        "title": "Create the persistent CUDA JIT cache directory",
         "action": "command",
         "alwaysRun": true,
         "command": "mkdir",
-        "args": ["-p", "${installRoot}/atlas-sparkqwen-cuda-cache", "${installRoot}/atlas-sparkqwen-ple"]
+        "args": ["-p", "${installRoot}/atlas-sparkqwen-cuda-cache"]
+      },
+      {
+        "id": "prepare-atlas-ple-cache",
+        "title": "Create the persistent packed PLE cache for this image and checkpoint",
+        "action": "command",
+        "alwaysRun": true,
+        "command": "mkdir",
+        "args": [
+          "-p",
+          "${installRoot}/atlas-sparkqwen-ple/939277f01cfc9fd529876d3db8675143d19d781f1b331f8e6fc67f348838bd05/b9ce18a6887e18c089fdea8509a33e63429a3300"
+        ]
       }
     ]
   },
@@ -161,7 +172,7 @@
       "runtime": "qwen38-flash-next-atlas-cluster",
       "backendConfig": "qwen38-flash-next-atlas",
       "setDefault": false,
-      "input": ["text"],
+      "input": ["text", "image"],
       "output": ["text"],
       "capabilities": [
         "chat",
@@ -175,7 +186,8 @@
         "mtp",
         "speculative-decoding",
         "moe",
-        "long-context"
+        "long-context",
+        "vision"
       ],
       "settings": {
         "port": 8893,
@@ -268,7 +280,7 @@
                     "--mount",
                     "type=bind,src=${installRoot}/atlas-sparkqwen-cuda-cache,dst=/atlas-cuda-cache",
                     "--mount",
-                    "type=bind,src=${installRoot}/atlas-sparkqwen-ple,dst=/atlas-ple",
+                    "type=bind,src=${installRoot}/atlas-sparkqwen-ple/939277f01cfc9fd529876d3db8675143d19d781f1b331f8e6fc67f348838bd05/b9ce18a6887e18c089fdea8509a33e63429a3300,dst=/atlas-ple",
                     "--volume",
                     "/run/lock/sparkglm:/run/lock/sparkglm",
                     "-e",
@@ -378,7 +390,7 @@
                     "--mount",
                     "type=bind,src=${installRoot}/atlas-sparkqwen-cuda-cache,dst=/atlas-cuda-cache",
                     "--mount",
-                    "type=bind,src=${installRoot}/atlas-sparkqwen-ple,dst=/atlas-ple",
+                    "type=bind,src=${installRoot}/atlas-sparkqwen-ple/939277f01cfc9fd529876d3db8675143d19d781f1b331f8e6fc67f348838bd05/b9ce18a6887e18c089fdea8509a33e63429a3300,dst=/atlas-ple",
                     "--volume",
                     "/run/lock/sparkglm:/run/lock/sparkglm",
                     "-e",
