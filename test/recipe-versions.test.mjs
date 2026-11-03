@@ -111,36 +111,32 @@ const ENGINE_0_5_1 = '5f79b46ba7b0e8b14f8b2966cca9e2546f18560d';
 
 // Pins, image, env, drafter and per-image caches agree for one release lane.
 async function assertRelease(recipe, release, engine) {
-    assert.equal(recipe.version, release.version);
-    const { loadPins, verifyPins } = await import(release.verify);
-    const manifest = loadPins(fileURLToPath(new URL(`../backends/${release.pins}`, import.meta.url)));
-    assert.deepEqual(verifyPins(manifest), []);
-    assert.equal(manifest.engine.branch, 'spark');
-    assert.equal(manifest.engine.commit, engine);
-    if (release.keepWarm !== undefined) assert.equal(recipe.models[0].settings.keepWarm, release.keepWarm);
-    const setup = Array.isArray(recipe.setup) ? recipe.setup : recipe.setup.steps;
-    const drafter = setup.find((step) => step.id === 'download-atlas-drafter');
-    if (drafter)
-      assert.deepEqual([drafter.model, drafter.revision], [manifest.drafter.repo, manifest.drafter.revision]);
-    const digest = manifest.image.reference.split(':')[1];
-    const boots = recipe.models[0].settings.placement.members.map((member) => member.runtimeSettings.bootstrap);
-    for (const boot of boots) {
-      assert.equal(boot.image, manifest.image.reference);
-      const env = boot.createArgs.filter((_, i) => boot.createArgs[i - 1] === '-e');
-      for (const expected of release.env ?? []) assert.ok(env.includes(expected), `${expected} missing`);
-      assert.ok(boot.createArgs.includes('/run/lock/sparkglm:/run/lock/sparkglm'), 'shared carveout lock');
-      // A per-image cache must be keyed by this image, never a previous one.
-      for (const arg of boot.createArgs.filter((a) => a.includes('atlas-sparkqwen-ple/')))
-        assert.ok(arg.includes(digest), arg);
-    }
-    for (const step of setup.filter((s) =>
-      ['verify-atlas-pins', 'build-atlas-image', 'pull-atlas-image'].includes(s.id)
-    )) {
-      assert.ok(
-        step.args.includes(`\${repoRoot}/backends/${release.pins}`),
-        `${step.id} must check this release's pins`
-      );
-    }
+  assert.equal(recipe.version, release.version);
+  const { loadPins, verifyPins } = await import(release.verify);
+  const manifest = loadPins(fileURLToPath(new URL(`../backends/${release.pins}`, import.meta.url)));
+  assert.deepEqual(verifyPins(manifest), []);
+  assert.equal(manifest.engine.branch, 'spark');
+  assert.equal(manifest.engine.commit, engine);
+  if (release.keepWarm !== undefined) assert.equal(recipe.models[0].settings.keepWarm, release.keepWarm);
+  const setup = Array.isArray(recipe.setup) ? recipe.setup : recipe.setup.steps;
+  const drafter = setup.find((step) => step.id === 'download-atlas-drafter');
+  if (drafter) assert.deepEqual([drafter.model, drafter.revision], [manifest.drafter.repo, manifest.drafter.revision]);
+  const digest = manifest.image.reference.split(':')[1];
+  const boots = recipe.models[0].settings.placement.members.map((member) => member.runtimeSettings.bootstrap);
+  for (const boot of boots) {
+    assert.equal(boot.image, manifest.image.reference);
+    const env = boot.createArgs.filter((_, i) => boot.createArgs[i - 1] === '-e');
+    for (const expected of release.env ?? []) assert.ok(env.includes(expected), `${expected} missing`);
+    assert.ok(boot.createArgs.includes('/run/lock/sparkglm:/run/lock/sparkglm'), 'shared carveout lock');
+    // A per-image cache must be keyed by this image, never a previous one.
+    for (const arg of boot.createArgs.filter((a) => a.includes('atlas-sparkqwen-ple/')))
+      assert.ok(arg.includes(digest), arg);
+  }
+  for (const step of setup.filter((s) =>
+    ['verify-atlas-pins', 'build-atlas-image', 'pull-atlas-image'].includes(s.id)
+  )) {
+    assert.ok(step.args.includes(`\${repoRoot}/backends/${release.pins}`), `${step.id} must check this release's pins`);
+  }
 }
 
 for (const release of promoted) {
