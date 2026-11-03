@@ -23,6 +23,12 @@ are administrator-configured LLooM models, not arbitrary agent commands. Capacit
 slots without shared route/model effects become separate Accord resources. Shared
 model effects and shared workload definitions require capacity one.
 
+Each registration also declares how long one reservation may hold the resource:
+`maxTtlMs` becomes Accord's `maxOwnershipMs` (kept within one minute to 30 days) and
+`allowIndefinite: true` lets a holder keep renewing without a total limit. Leases still
+need renewal every few minutes. Accord 0.4.0 and earlier ignore both fields and keep
+an eight-hour limit.
+
 1. Join Accord and discover the resource's full address.
 2. Reserve it with a stable request key. Only `running` grants access.
 3. Start the configured workload through Accord, or register external containers and supervisors before launching them (below). Publish job progress there.

@@ -35,13 +35,12 @@ export function effectAuthorized(req, file) {
     timingSafeEqual(a, b)
   );
 }
-export async function registerResources(config, port, tokenFile) {
-  const client = accordAdmin();
-  const registered = [];
+export function accordManifests(config, port, tokenFile) {
+  const manifests = [];
   for (const [id, raw] of Object.entries(config.reservations?.resources ?? {})) {
     const spec = normalizeResource(id, raw, config);
-    for (let slot = 0; slot < spec.capacity; slot++) {
-      const manifest = {
+    for (let slot = 0; slot < spec.capacity; slot++)
+      manifests.push({
         schema: 1,
         id: resourceID(config, id, slot),
         asset: `${assetFor(config, id)}:slot:${slot}`,
@@ -49,11 +48,20 @@ export async function registerResources(config, port, tokenFile) {
         label: spec.capacity > 1 ? `LLooM ${id} #${slot + 1}` : `LLooM ${id}`,
         hosts: spec.hosts,
         endpoint: `http://127.0.0.1:${port}/gateway/accord/resources/${encodeURIComponent(id + '#' + slot)}`,
-        tokenFile
-      };
-      await client.registerResource(manifest, `lloom-register:${hash(JSON.stringify(manifest))}`);
-      registered.push(manifest.id);
-    }
+        tokenFile,
+        // Accord ends a reservation's ownership here; it accepts one minute to 30 days.
+        maxOwnershipMs: Math.min(Math.max(spec.maxTtlMs, 60000), 2592000000),
+        allowIndefinite: spec.allowIndefinite
+      });
+  }
+  return manifests;
+}
+export async function registerResources(config, port, tokenFile) {
+  const client = accordAdmin();
+  const registered = [];
+  for (const manifest of accordManifests(config, port, tokenFile)) {
+    await client.registerResource(manifest, `lloom-register:${hash(JSON.stringify(manifest))}`);
+    registered.push(manifest.id);
   }
   return registered;
 }

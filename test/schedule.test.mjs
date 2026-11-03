@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createAccordEffects } from '../src/accord-effects.mjs';
 import { normalizeResource } from '../src/resource-spec.mjs';
+import { accordManifests } from '../src/accord-resources.mjs';
 async function fixture(t) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lloom-effects-'));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
@@ -194,4 +195,32 @@ test('verified production baseline reconciliation preserves journal, requires ex
   lease.updatedAt = 42;
   await fs.writeFile(file, JSON.stringify({ schemaVersion: 1, reservations: { old: lease } }));
   assert.equal(f.effects.legacy('gpu').length, 1);
+});
+
+test("Accord registration declares each resource's hold limit within the range Accord accepts", () => {
+  const day = 86400000;
+  const config = {
+    reservations: {
+      resources: {
+        pair: { maxTtlMs: 43200000 },
+        'drafter-0304': { allowIndefinite: true },
+        plain: {},
+        brief: { maxTtlMs: 1000 },
+        month: { maxTtlMs: 40 * day }
+      }
+    }
+  };
+  const limits = Object.fromEntries(
+    accordManifests(config, 4321, '/tmp/provider.token').map((m) => [
+      m.label.replace('LLooM ', ''),
+      [m.maxOwnershipMs, m.allowIndefinite]
+    ])
+  );
+  assert.deepEqual(limits, {
+    pair: [43200000, false],
+    'drafter-0304': [28800000, true],
+    plain: [28800000, false],
+    brief: [60000, false],
+    month: [30 * day, false]
+  });
 });
