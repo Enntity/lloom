@@ -125,6 +125,17 @@ run('finalize');
 assert.equal(JSON.parse(await fs.readFile(path.join(installed, 'package.json'))).version, 'new');
 await assert.rejects(fs.access(path.join(lloomDir, 'releases', commit.slice(0, 12), 'worker.prepared')));
 
+// A worker that also serves its own runtimes (an image sidecar beside its rank)
+// opts in with an explicit inferenceEnabled: true, and a deploy keeps it.
+await fs.writeFile(path.join(lloomDir, 'config.json'), '{"server":{"inferenceEnabled":true}}\n');
+run('install');
+assert.equal(
+  JSON.parse(await fs.readFile(path.join(lloomDir, 'config.json'))).server.inferenceEnabled,
+  true,
+  'worker deployment must keep an explicit inference opt-in'
+);
+run('finalize');
+
 await fs.rm(home, { recursive: true, force: true });
 console.log('spark deploy tests passed');
 

@@ -64,8 +64,10 @@ case "$action" in
     touch "$prepared"
     trap 'status=$?; if [[ $status -ne 0 ]]; then echo "LLooM worker staging failed; rolling back" >&2; restore_worker; fi; exit $status' EXIT
     npm install --global --prefix "$HOME/.local" "$artifact" --omit=dev --ignore-scripts
+    # Workers refuse direct inference unless the node opted in with an explicit
+    # server.inferenceEnabled: true because it also serves runtimes of its own.
     if [[ -f "$config_path" ]]; then
-      node -e 'const fs=require("fs"); const path=process.argv[1]; const config=JSON.parse(fs.readFileSync(path,"utf8")); config.server={...(config.server||{}),inferenceEnabled:false}; const temporary=`${path}.${process.pid}.worker`; fs.writeFileSync(temporary,`${JSON.stringify(config,null,2)}\n`,{mode:0o600}); fs.renameSync(temporary,path)' "$config_path"
+      node -e 'const fs=require("fs"); const path=process.argv[1]; const config=JSON.parse(fs.readFileSync(path,"utf8")); config.server={...(config.server||{}),inferenceEnabled:config.server?.inferenceEnabled===true}; const temporary=`${path}.${process.pid}.worker`; fs.writeFileSync(temporary,`${JSON.stringify(config,null,2)}\n`,{mode:0o600}); fs.renameSync(temporary,path)' "$config_path"
     fi
     systemctl --user restart lloom.service
     wait_for_gateway
