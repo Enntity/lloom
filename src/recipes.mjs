@@ -33,6 +33,57 @@ function configRuntimeIds(config) {
   return new Set(Object.keys(config.runtimes ?? {}));
 }
 
+function validateRecipeModes(recipe) {
+  if (recipe.modes === undefined) return [];
+  const prefix = `recipe ${recipe.id ?? '(missing)'}`;
+  if (!asArray(recipe.modes).length) return [`${prefix} modes must be a non-empty array`];
+  const errors = [];
+  const seen = new Set();
+  for (const mode of recipe.modes) {
+    if (!mode?.id) {
+      errors.push(`${prefix} has a mode without id`);
+      continue;
+    }
+    if (seen.has(mode.id)) errors.push(`${prefix} mode ${mode.id} is declared twice`);
+    seen.add(mode.id);
+    for (const [key, value] of Object.entries(mode.settings ?? {})) {
+      if (!['string', 'number', 'boolean'].includes(typeof value)) {
+        errors.push(`${prefix} mode ${mode.id} setting ${key} must be a string, number or boolean`);
+      }
+    }
+  }
+  if (recipe.modes.filter((mode) => mode?.default === true).length !== 1) {
+    errors.push(`${prefix} must mark exactly one default mode`);
+  }
+  return errors;
+}
+
+// A mode is a named set of primitive setting overrides that a recipe offers
+// (for example a pair that serves alone or leaves room for sidecars). The
+// selected mode's settings replace each model's, so they also reach every
+// ${name} template; the returned recipe records the mode it was built for.
+export function applyRecipeMode(recipe, modeId) {
+  const modes = asArray(recipe.modes);
+  if (!modes.length) {
+    if (modeId) throw new Error(`recipe ${recipe.id} declares no modes`);
+    return recipe;
+  }
+  const mode = modeId
+    ? modes.find((candidate) => candidate.id === modeId)
+    : modes.find((candidate) => candidate.default);
+  if (!mode) {
+    throw new Error(`recipe ${recipe.id} has no mode ${modeId}; its modes are ${modes.map((m) => m.id).join(', ')}`);
+  }
+  return {
+    ...recipe,
+    mode: mode.id,
+    models: asArray(recipe.models).map((model) => ({
+      ...model,
+      settings: { ...model.settings, ...mode.settings }
+    }))
+  };
+}
+
 export function modelPathSegmentForRecipe(recipe, modelId) {
   if (!modelId || modelId.startsWith('/') || modelId.startsWith('.')) return modelId;
   if (recipe.backend?.id === 'ollama') return modelId;
@@ -83,6 +134,7 @@ export function validateRecipe(recipe, config, { backendIds, checkLocalReference
     errors.push(`recipe ${recipe.id ?? '(missing)'} references unknown backend ${recipe.backend.id}`);
   }
   if (!asArray(recipe.models).length) errors.push(`recipe ${recipe.id ?? '(missing)'} has no models`);
+  errors.push(...validateRecipeModes(recipe));
 
   const modelIds = checkLocalReferences ? configModelIds(config) : new Set();
   const runtimeIds = checkLocalReferences ? configRuntimeIds(config) : new Set();

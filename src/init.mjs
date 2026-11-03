@@ -11,7 +11,7 @@ import { nextBackendPort } from './model-intake.mjs';
 import { detectModelRootForRecipe } from './model-files.mjs';
 import { profileMachine, rankRecipes } from './machine-profile.mjs';
 import { createRegistry } from './registry.mjs';
-import { loadRecipeById, loadRecipes } from './recipes.mjs';
+import { applyRecipeMode, loadRecipeById, loadRecipes } from './recipes.mjs';
 import { repoRoot } from './config.mjs';
 
 function clone(value) {
@@ -269,6 +269,21 @@ function validateNodeFabric(node, nodeId, member) {
   }
 }
 
+function recipeIdentity(recipe) {
+  return {
+    id: recipe.id,
+    version: recipe.version ?? 1,
+    source: recipe.filePath ?? null,
+    ...(recipe.mode ? { mode: recipe.mode } : {})
+  };
+}
+
+// The mode a recipe was last installed in, so rerunning setup keeps it.
+export function installedRecipeMode(config, recipeId) {
+  return Object.values(config.runtimes ?? {}).find((runtime) => runtime?.recipe?.id === recipeId && runtime.recipe.mode)
+    ?.recipe.mode;
+}
+
 function primitiveSettings(settings) {
   return Object.fromEntries(
     Object.entries(settings).filter(
@@ -408,11 +423,7 @@ function buildExplicitRecipeRuntime({
       ? { healthTimeoutMs: positiveInteger(runtimeSettings.healthTimeoutMs, 1500) }
       : {}),
     ...(runtimeSettings.healthModel ? { healthModel: templateString(runtimeSettings.healthModel, variables) } : {}),
-    recipe: {
-      id: recipe.id,
-      version: recipe.version ?? 1,
-      source: recipe.filePath ?? null
-    },
+    recipe: recipeIdentity(recipe),
     ...(sessionCache ? { sessionCache } : {}),
     healthUrl: runtimeSettings.healthUrl
       ? templateString(runtimeSettings.healthUrl, variables)
@@ -476,11 +487,7 @@ function buildRecipeRuntime({
     policy: {
       priority: positiveInteger(settings.priority, 50)
     },
-    recipe: {
-      id: recipe.id,
-      version: recipe.version ?? 1,
-      source: recipe.filePath ?? null
-    },
+    recipe: recipeIdentity(recipe),
     ...(settings.placement?.mode === 'distributed'
       ? { placement: templateValue(asObject(settings.placement), primitiveSettings(settings)) }
       : {})
@@ -760,7 +767,12 @@ function ensureRecipeConfigEntries(
             runtime: memberRuntimeId,
             role: member.role ?? (nodeId === leaderNode ? 'head' : 'worker'),
             order: Number.isFinite(Number(member.order)) ? Number(member.order) : memberIndex * 10 + selectedIndex,
-            resources: asObject(member.resources)
+            resources: {
+              ...asObject(member.resources),
+              ...(member.resources?.memoryGb == null && Number.isFinite(Number(settings.memoryGb))
+                ? { memoryGb: Number(settings.memoryGb) }
+                : {})
+            }
           });
         }
       }
@@ -811,7 +823,7 @@ function ensureRecipeConfigEntries(
           settings.healthUrl ?? `${clusterNodeBackendOrigin(leader)}:${port}${settings.healthPath ?? '/health'}`,
         ...(settings.warmup ? { warmup: structuredClone(asObject(settings.warmup)) } : {}),
         ...(settings.healthModel ? { healthModel: String(settings.healthModel) } : {}),
-        recipe: { id: recipe.id, version: recipe.version ?? 1, source: recipe.filePath ?? null },
+        recipe: recipeIdentity(recipe),
         authority: {
           owner: leaderNode,
           scope: 'distributed-model',
@@ -1566,14 +1578,16 @@ export async function createInitPlan(
     backendCatalogPath,
     autoDetectModelRoot = false,
     additive = false,
-    restoreCatalog = false
+    restoreCatalog = false,
+    mode
   } = {}
 ) {
   const effectiveConfigPath = configPath ?? defaultUserConfigPath(home);
   const effectiveSessionCacheRoot = defaultSessionCacheRoot(home);
   const profile = await profileMachine();
   const recipes = [...recipeDocuments, ...(await loadRecipes(recipesRoot))];
-  const recipe = await selectRecipe({ recipeId, recipes, profile, recipesRoot });
+  const selected = await selectRecipe({ recipeId, recipes, profile, recipesRoot });
+  const recipe = applyRecipeMode(selected, mode ?? installedRecipeMode(config, selected.id));
   const catalog = await loadBackendCatalog(backendCatalogPath);
   const backend = getBackend(catalog, recipe.backend?.id);
   if (!backend) throw new Error(`Recipe ${recipe.id} references unknown backend ${recipe.backend?.id}`);
@@ -1609,7 +1623,8 @@ export async function createInitPlan(
     selectedRecipe: {
       id: recipe.id,
       name: recipe.name,
-      backendId: recipe.backend?.id
+      backendId: recipe.backend?.id,
+      ...(recipe.mode ? { mode: recipe.mode } : {})
     },
     configPath: effectiveConfigPath,
     modelRoot: effectiveModelRoot,

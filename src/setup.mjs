@@ -12,8 +12,9 @@ function customHomeArg(home) {
   return home && home !== process.env.HOME ? ['--home', shellArg(home)] : [];
 }
 
-function setupCommand({
+export function setupCommand({
   recipeId,
+  mode,
   configPath,
   modelRoot,
   gatewayPort,
@@ -32,6 +33,7 @@ function setupCommand({
 } = {}) {
   const args = ['lloom', 'setup'];
   if (recipeId) args.push('--recipe', shellArg(recipeId));
+  if (mode) args.push('--mode', shellArg(mode));
   args.push(...customHomeArg(home));
   if (generatedRoot) args.push('--generated-root', shellArg(generatedRoot));
   if (statePath) args.push('--state', shellArg(statePath));
@@ -77,11 +79,13 @@ export async function createSetupPlan(
     statePath,
     autoDetectModelRoot,
     additive = false,
-    restoreCatalog = false
+    restoreCatalog = false,
+    mode
   } = {}
 ) {
   const init = await createInitPlan(config, {
     recipeId,
+    mode,
     configPath,
     modelRoot,
     gatewayPort,
@@ -129,6 +133,7 @@ export async function createSetupPlan(
     next: {
       apply: setupCommand({
         recipeId: init.selectedRecipe.id,
+        mode: init.selectedRecipe.mode,
         configPath: init.configPath,
         modelRoot: init.modelRoot,
         gatewayPort,
@@ -146,6 +151,7 @@ export async function createSetupPlan(
       }),
       applyAndStart: setupCommand({
         recipeId: init.selectedRecipe.id,
+        mode: init.selectedRecipe.mode,
         configPath: init.configPath,
         modelRoot: init.modelRoot,
         gatewayPort,
@@ -194,6 +200,7 @@ export async function applySetup(
     ...options,
     reviewedPlan: reviewedPlan?.phases?.init,
     recipeId: plan.selectedRecipe.id,
+    mode: plan.selectedRecipe.mode,
     configPath: plan.configPath,
     modelRoot: plan.modelRoot,
     clientId: options.clientId ?? 'all',
@@ -251,6 +258,7 @@ export async function syncClusterSetupMembers(
   {
     coordinator,
     recipeId,
+    mode,
     additive = false,
     restoreCatalog = false,
     clientId = 'all',
@@ -277,6 +285,7 @@ export async function syncClusterSetupMembers(
   for (const nodeId of remoteNodeIds) {
     const body = {
       recipeId,
+      ...(mode ? { mode } : {}),
       additive,
       restoreCatalog,
       clientId,
@@ -294,6 +303,7 @@ export async function syncClusterSetupMembers(
     if (node?.sshAlias) {
       const remoteCommand = `PATH="$HOME/.local/bin:/usr/bin:/bin" ${setupCommand({
         recipeId,
+        mode,
         modelRoot,
         clientId,
         generatedRoot,

@@ -227,7 +227,7 @@ function advancedUsage() {
 First run:
   lloom [--recipe id] [--host url] [--workload id] [--capability id] [--tag id] [--signing-keys-path path] [--no-trust-host-keys] [--no-auto-host] [--home path] [--model-root path] [--port n] [--backend-port-range a-b] [--client id|all] [--backend-catalog path] [--go|--apply --yes] [--start] [--json]
   lloom up|onboard [--recipe id] [--host url] [--workload id] [--capability id] [--tag id] [--signing-keys-path path] [--no-trust-host-keys] [--no-auto-host] [--home path] [--model-root path] [--port n] [--backend-port-range a-b] [--client id|all] [--backend-catalog path] [--go|--apply --yes] [--start] [--json]
-  lloom setup [--recipe id] [--config-out path] [--home path] [--model-root path] [--client id|all] [--backend-catalog path] [--additive] [--restore-catalog] [--apply --yes] [--start]
+  lloom setup [--recipe id [--mode id]] [--config-out path] [--home path] [--model-root path] [--client id|all] [--backend-catalog path] [--additive] [--restore-catalog] [--apply --yes] [--start]
   lloom doctor [--recipe id] [--model-root path] [--client id|all] [--no-runtimes]
 
 Serving and discovery:
@@ -1650,8 +1650,10 @@ async function main() {
       const start = hasFlag(args, '--start');
       const additive = hasFlag(args, '--additive');
       const restoreCatalog = hasFlag(args, '--restore-catalog');
+      const mode = argValue(args, '--mode');
       const options = {
         recipeId,
+        ...(mode ? { mode } : {}),
         configPath: configOut,
         ...(modelRoot ? { modelRoot } : {}),
         ...(gatewayPort ? { gatewayPort } : {}),
@@ -1681,6 +1683,7 @@ async function main() {
                         syncClusterSetupMembers(appliedConfig, {
                           coordinator: new ClusterCoordinator(appliedConfig),
                           recipeId: plan.selectedRecipe.id,
+                          mode: plan.selectedRecipe.mode,
                           additive,
                           restoreCatalog,
                           clientId,
@@ -1734,11 +1737,13 @@ async function main() {
       const yes = hasFlag(args, '--yes');
       const integrate = hasFlag(args, '--integrate');
       const additive = hasFlag(args, '--additive');
+      const mode = argValue(args, '--mode');
       const initConfig = additive ? await loadConfig(configOut) : config;
       console.log(
         JSON.stringify(
           await applyInit(initConfig, {
             recipeId,
+            ...(mode ? { mode } : {}),
             configPath: configOut,
             ...(modelRoot ? { modelRoot } : {}),
             ...(gatewayPort ? { gatewayPort } : {}),

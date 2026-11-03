@@ -1986,6 +1986,7 @@ function doctorOptionsFromQuery(searchParams) {
 function setupOptionsFromBody(config, body = {}) {
   return {
     recipeId: body.recipeId ?? body.recipe_id ?? body.recipe,
+    ...(typeof body.mode === 'string' && body.mode ? { mode: body.mode } : {}),
     ...communityOptionsFromBody(config, body),
     configPath: body.configPath ?? body.config_path ?? body.configOut ?? body.config_out ?? config.sourcePath,
     modelRoot: body.modelRoot ?? body.model_root,

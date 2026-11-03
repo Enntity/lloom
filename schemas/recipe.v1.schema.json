@@ -229,6 +229,25 @@
         }
       }
     },
+    "modes": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Named deployment modes the recipe offers, such as serving alone or beside sidecars. Exactly one is the default; lloom setup --mode ID selects another, and setup keeps the installed mode when it runs again. A mode's settings replace each model's settings of the same name, so they also reach ${name} templates.",
+      "items": {
+        "type": "object",
+        "required": ["id", "summary"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+          "summary": { "type": "string", "minLength": 1 },
+          "default": { "type": "boolean" },
+          "settings": {
+            "type": "object",
+            "additionalProperties": { "type": ["string", "number", "boolean"] }
+          }
+        }
+      }
+    },
     "models": {
       "type": "array",
       "minItems": 1,
