@@ -634,4 +634,30 @@ const applied = await applyRuntimePolicyPlan(unpinnedPolicyConfig, fakePolicyMan
 assert.equal(applied.dryRun, false);
 assert.deepEqual(policyOperations, ['stop:warm', 'start:big:unit-admit']);
 
+// A disabled external runtime is not LLooM's: its stale status neither counts nor gets stopped.
+// A disabled managed runtime that is still up keeps counting until LLooM stops it.
+const retiredPlan = await createRuntimePolicyPlan(
+  {
+    runtimePolicy: { memoryBudgetGb: 40 },
+    runtimes: {
+      retired: { enabled: false, management: 'external', memoryGb: 30 },
+      draining: { enabled: false, memoryGb: 5 },
+      requested: { enabled: true, memoryGb: 30 }
+    }
+  },
+  {
+    requestedRuntimeId: 'requested',
+    status: {
+      runtimes: {
+        retired: { healthy: true, status: 'external' },
+        draining: { healthy: true, status: 'running' },
+        requested: { healthy: false, status: 'idle' }
+      }
+    }
+  }
+);
+assert.equal(retiredPlan.admission.projectedMemoryGb, 35);
+assert.equal(retiredPlan.admission.allowed, true);
+assert(!retiredPlan.actions.some((action) => action.runtimeId === 'retired'));
+
 console.log('runtime-policy tests passed');

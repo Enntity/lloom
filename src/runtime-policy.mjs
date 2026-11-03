@@ -200,7 +200,9 @@ function runtimeRows(config, status, requestedRuntimeId, requesterNode) {
   return Object.entries(config.runtimes ?? {}).map(([runtimeId, runtime]) => {
     const runtimeStatus = status?.runtimes?.[runtimeId] ?? {};
     const requested = runtimeId === requestedRuntimeId;
-    const loaded = isRuntimeLoaded(runtimeStatus);
+    // A disabled external runtime is not LLooM's; its last status says nothing about memory.
+    const retired = runtime.enabled !== true && runtime.management === 'external';
+    const loaded = !retired && isRuntimeLoaded(runtimeStatus);
     const ownedByDistributedGroup = distributedMembers.has(runtimeId);
     const authority = runtimeAuthority(config, runtimeId);
     const memoryGb = ownedByDistributedGroup ? 0 : runtimeMemoryGb(runtime);
