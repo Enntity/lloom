@@ -10,16 +10,19 @@ export function driverHost(directory,controlToken){
   const create=(file,manifest)=>{const driver=createResourceDriver(file,manifest);return ['managed-http','posix-process-group'].includes(manifest.plugin)?new WorkloadGuard(driver,file+'.workloads',join(directory,'workload-policy.json')):driver;};
   const drivers=new Map([['artifact',new ArtifactDriver(join(directory,'driver.sqlite'))]]);
   for(const row of db.prepare('SELECT * FROM registrations').all())drivers.set(row.id,create(join(directory,`process-${row.id}.sqlite`),JSON.parse(row.manifest)));
+  // Ownership policy may change in place; the registration row is its current declaration.
+  const ownership=resource=>{const row=db.prepare('SELECT manifest FROM registrations WHERE id=?').get(resource),{maxOwnershipMs,allowIndefinite}=row?JSON.parse(row.manifest):{};return {maxOwnershipMs,allowIndefinite};};
+  const identity=manifest=>JSON.stringify({...manifest,maxOwnershipMs:undefined,allowIndefinite:undefined});
   const describe=(resource,driver)=>({id:resource,instance:driver.status().instance,plugin:resource==='artifact'?'artifact':driver.manifest.plugin,
-    enforcement:resource==='artifact'?'artifact-API':plugins.find(p=>p.id===driver.manifest.plugin).enforcement,asset:driver.manifest?.asset??'builtin:artifact'});
+    enforcement:resource==='artifact'?'artifact-API':plugins.find(p=>p.id===driver.manifest.plugin).enforcement,asset:driver.manifest?.asset??'builtin:artifact',...ownership(resource)});
   const list=()=>[...drivers].map(([r,d])=>describe(r,d));
   const register=input=>{
     const manifest=validateResource(input),encoded=JSON.stringify(manifest);
     const old=db.prepare('SELECT * FROM registrations WHERE id=? OR asset=?').get(manifest.id,manifest.asset);
-    requireThat(!old||old.manifest===encoded,'RESOURCE_CONFLICT','Resource ID or physical asset already registered differently');
+    requireThat(!old||identity(JSON.parse(old.manifest))===identity(manifest),'RESOURCE_CONFLICT','Resource ID or physical asset already registered differently');
     requireThat(drivers.size<64||drivers.has(manifest.id),'CAPACITY_LIMIT','At most 64 registered resources');
     // Intent is durable before driver creation; retries and restarts finish the same registration.
-    transaction(db,()=>db.prepare('INSERT OR IGNORE INTO registrations VALUES(?,?,?)').run(manifest.id,manifest.asset,encoded));
+    transaction(db,()=>db.prepare('INSERT INTO registrations VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET manifest=excluded.manifest').run(manifest.id,manifest.asset,encoded));
     if(!drivers.has(manifest.id))drivers.set(manifest.id,create(join(directory,`process-${manifest.id}.sqlite`),manifest));
     return describe(manifest.id,drivers.get(manifest.id));
   };

@@ -2,14 +2,14 @@
 
 Accord can attach Docker containers and dedicated systemd user services to an
 existing `managed-http` or `posix-process-group` resource. The resource keeps its
-existing authority and queue. LLooM still owns model preparation, routing and
-restoration; Accord owns the lease, attachment journal and stop-before-regrant gate.
-No Spark, GPU vendor, model name or product-specific launcher is required.
+existing authority and queue. The resource's provider owns preparation and restoration;
+Accord owns the lease, attachment journal and stop-before-regrant gate. No particular
+GPU vendor, model or launcher is required.
 
 ## Install the host connectors
 
 Install the same qualified Accord package on the resource authority and each
-workload host. The helper is `src/workload-host.mjs`, requiring Node 22.13 or newer.
+workload host. The helper is `src/workload-host.mjs`, requiring Node 22.16 or newer.
 It accepts one JSON request on stdin and returns one JSON response. It supports
 only inspect, start and stop for the two installed plugins; it accepts no arbitrary
 command from an agent. The existing host daemon need not restart to use the helper.
@@ -91,7 +91,7 @@ service before starting work. [systemd documents the control-group stop behavior
 
 Finally release and wait for `released`. Accord first fences launches, stops every
 registered supervisor and container, verifies their identities and stopped state,
-then invokes LLooM's existing stop/restore provider. Only after restoration succeeds
+then invokes the resource's stop/restore provider. Only after restoration succeeds
 can the next agent receive a new generation. Unknown SSH, changed identity,
 partial adoption, ambiguous launch or failed restoration keeps the resource held.
 

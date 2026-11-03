@@ -20,8 +20,10 @@ and the native conversation ID are separate identities.
 | Inspect / snooze monitoring | `accord_overseer`, `accord_snooze` | `overseer`, `snooze --input snooze.json` |
 | Reserve / renew / release | `accord_reserve`, `accord_extend`, `accord_release` | `reserve`, `extend`, `release` |
 
-Session search includes directly linked hosts and reports unavailable hosts as
-unknown. Read a remote result with its `id` and the authority from its `address`
+Session search includes directly linked hosts that share with you and reports the rest
+as unknown. A host shares session activity, jobs and monitoring with a link only after
+`accord share-sessions --host AUTHORITY` on that host, and `--off` stops it. Read a remote
+result with its `id` and the authority from its `address`
 as `host`. Jobs and monitor inspection support an explicit `host`. Questions are
 private to their owner and the operator; they are not federated.
 
@@ -32,9 +34,10 @@ Use meaningful transitions. Transport heartbeat updates presence, not progress.
 Activity retains 500 events per session; full-text search indexes the latest 100.
 This is a coordination view, not a complete transcript archive.
 
-Bootstrap is limited to 12 KiB at the HTTP boundary, including for existing MCP
-connections. It previews up to eight recent participants, eight local resources,
-and three abbreviated inbox messages. The complete board and per-host copies of
+Bootstrap is limited to 4 KiB at the HTTP boundary, including for existing MCP
+connections. It previews up to five recent participants, eight local resources,
+and one abbreviated inbox message. HTTP `find` is compact and bounded to 8 KiB;
+`args.detail: true` returns full records. The complete board and per-host copies of
 the directory are omitted. Search includes older/offline participants; read full
 messages through the inbox API before acknowledging them. Preview counts reflect
 the bounded results observed, not a census of every linked host.
@@ -42,10 +45,11 @@ the bounded results observed, not a census of every linked host.
 ## Discovery and summaries
 
 Install writes `awareness.json` beside the coordinator database, with local Codex
-and Claude transcript roots. The daemon scans every ten seconds, reads bounded
+and Claude transcript roots, so transcript scanning is on by default and stays on this
+host. The daemon scans every ten seconds, reads bounded
 head/tail windows, skips symlinks and old files, and imports stable native IDs.
-Current automatic parsers cover Codex and Claude. Tessera publishes other native
-sessions through its adapter. Any other harness can report through MCP or HTTP.
+Current automatic parsers cover Codex and Claude. Any other harness can report through
+MCP or HTTP.
 A scan is bounded to 2,000 candidate files per root and a 36-hour lookback by
 default; configure `lookbackMs` on a root for another horizon.
 
@@ -93,9 +97,8 @@ ownership or authoritative state.
 Redaction runs before persistence, indexing or summarization, but is not a promise
 to recognize every secret format. `accord privacy --source codex --on` stops that
 source's scans and purges its indexed content. `--off` permits fresh publication;
-it does not restore deleted history. Privacy is per source. Tessera's privacy
-switch controls the `tessera` source; independently configured Codex/Claude roots
-have their own gates. Global `private:true` stops adapters and purges known sources;
+it does not restore deleted history. Privacy is per source; independently configured
+roots have their own gates. Global `private:true` stops adapters and purges known sources;
 reopening source gates is explicit.
 
 ## Overseer
@@ -112,7 +115,7 @@ Configure an operator rule with `accord policy --input rule.json`:
 {
   "id":"idle-accelerator",
   "kind":"idle-resource",
-  "resource":"fleet:pair",
+  "resource":"gpu-pair",
   "telemetryHosts":["PINNED-HOST-AUTHORITY-ONE","PINNED-HOST-AUTHORITY-TWO"],
   "quietMs":900000,
   "cooldownMs":900000,
@@ -136,31 +139,26 @@ Disable a rule by reapplying its configuration with `enabled:false`.
 
 The overseer sends a durable check-in. It never releases, kills, renews or steals
 a resource. Delivery, native wakeup, agent reading and agent action are separate
-facts. Tessera imports check-ins into its inbox and uses its existing approval
-mechanism for terminal typing. Installed context hooks deliver new messages at
+facts. Installed context hooks deliver new messages at
 tool/turn boundaries, with a compact unread count on ordinary Accord responses;
 arbitrary closed or sleeping applications cannot universally be awakened.
 
-## Product boundaries
+## Resource managers and product adapters
 
-Tessera publishes native observations and consumes Accord sessions, model summaries,
-questions and messages. Remote sessions appear as view-only tiles; their text is
-never converted to a shell command. Its board briefs, windows, terminals, launch,
-resume, permissions and notifications stay native. Existing local summarization
-is a fallback when no shared model summary exists. Native delivery IDs persist
-before acknowledgment or typing; a failed disk write leaves the Accord message
-pending. A crash between persistence and typing may leave a pending native
-approval rather than replay terminal input automatically.
+Accord can delegate a pool of resources to an external manager, or observe a tool's
+status without owning it. The built-in adapters are for
+[LLooM](https://github.com/Enntity/lloom) and
+[Shrug](https://github.com/Enntity/shrug); neither is required.
 
-LLooM remains the authority for its configured resource pools during migration.
-Configure `managers.json` beside Accord's database before starting the service:
+Configure a manager in `managers.json` beside Accord's database before starting the
+service:
 
 ```json
 {"fleet":{"type":"lloom","url":"http://127.0.0.1:8080","tokenFile":"/home/example/.config/accord/lloom.key"}}
 ```
 
 Accord advertises `fleet:<resource>`, durably records requests, and delegates
-acquisition, renewal and release to LLooM. It creates no competing local claim.
+acquisition, renewal and release to the manager. It creates no competing local claim.
 The manager must advertise `reservation-request-id-v1` and
 `reservation-renew-until-v1`. Lost replies retry the same request; an ended request
 never reacquires. Absolute renewal deadlines prevent retries extending a lease.
@@ -175,16 +173,15 @@ still grows with retained history; safe archival/compaction is not yet implement
 A manager written in any language can implement the same schedule HTTP contract
 using `type:schedule-v1` and `basePath:/v1/schedule`. Required endpoints are the
 board, `POST /reservations`, `GET /reservations/:id`, and POST `renew`/`release`.
-Board shapes and state semantics match the tested LLooM adapter. The manager must
+Board shapes and state semantics match the included `lloom` adapter. The manager must
 persist request IDs across restarts, reject changed replay payloads, preserve
 absolute renewal deadlines and confirm restoration before freeing capacity.
 This adapter does not add missing enforcement to a manager.
 
-Shrug owns catalog resolution, download, container start/stop and serving. Accord
-can observe it without a Shrug dependency:
+Accord can observe a serving tool through a status command:
 
 ```json
-{"products":[{"id":"serving","type":"shrug","command":"/usr/local/bin/shrug","resource":"fleet:pair"}]}
+{"products":[{"id":"serving","type":"shrug","command":"/usr/local/bin/shrug","resource":"fleet:gpu-pair"}]}
 ```
 
 Merge `products` into `awareness.json`. This runs only `shrug --json status`, at
@@ -194,33 +191,18 @@ Generic `type:json` adapters use a configured absolute executable and argument
 array, returning `{title,state,detail}`; these are trusted operator-installed
 programs, never agent-supplied shell strings.
 
-Shrug status is **observation-only**. Persistent Docker workloads cannot be fenced
-by wrapping `shrug up` in a short-lived CLI lease. A container lifecycle driver
-must supervise and confirm the actual containers before a reservation can safely
-cover those effects. That driver and automatic adoption of existing product
-leases are not implemented in this change.
+Product status is **observation-only**: it is not a reservation and fences nothing.
+To cover containers with a reservation, use
+[external workload registration](EXTERNAL-WORKLOADS.md).
 
-## Qualification and activation
+## Upgrades
 
 `npm run verify` exercises the kernel, session adapters, privacy, messaging,
 monitor deduplication, migration and process recovery with isolated fixtures.
-`node scripts/qualify-lloom.mjs /path/to/lloom` additionally uses the real LLooM
-scheduler with simulated drain/restore actions and records
-`evidence/lloom-bridge.json`. No qualification fixture contacts live models/GPUs.
+No qualification fixture contacts live models or GPUs.
 
-Schema migrations 5–8 are additive; prior migration checksums remain unchanged.
-Migration 7 separates durable ordinary sessions from explicitly time-limited
-credentials. Its legacy upgrade verifies enrollment fingerprints, preserves
-explicit closures, and restores communication without restoring resource grants.
-Migration 8 adds internal-session visibility and indexes for active queues.
 Before upgrading a running installation, capture a consistent backup and inspect
 active claims. A coordinator restart triggers normal fenced recovery. Do not
 restart a live workload merely to change observation settings. Older binaries
 refuse an upgraded database; roll back code together with a consistent pre-upgrade
 backup only after accounting for work since that backup.
-
-The current cutover status and remaining deployment gates are recorded in
-[BACKPLANE-MIGRATION.md](BACKPLANE-MIGRATION.md). A configured Tessera bridge sends
-messages and human questions through Accord; it does not silently switch to a
-separate local mailbox during an Accord outage. Tessera without an Accord profile
-retains its standalone behavior.

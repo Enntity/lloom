@@ -37,9 +37,9 @@ export class AccordClient {
     }
   }
   me() { return request(this.url, this.credential, '/v1/me'); }
-  collaborate(operation,args={},host) { return request(this.url,this.credential,'/v1/collaboration',{operation,args,...(host?{host}:{})},operation.startsWith('workload-')?30000:4000); }
+  collaborate(operation,args={},host,timeout=operation.startsWith('workload-')?30000:4000) { return request(this.url,this.credential,'/v1/collaboration',{operation,args,...(host?{host}:{})},timeout); }
   announce({key=randomUUID(),...args}) {return this.collaborate('announce',{...args,key});}
-  find(query=''){return this.collaborate('find',{query});}
+  find(query='',{detail=false}={}){return this.collaborate('find',{query,...(detail?{detail:true}:{})});}
   send(to,text,{key=randomUUID(),kind='message',delivery='inbox'}={}){return this.collaborate('send',{to,text,key,kind,delivery});}
   inbox(){return this.collaborate('inbox');}
   read(deliveryId){return this.collaborate('read',{deliveryId});}
@@ -51,10 +51,13 @@ export class AccordClient {
   reservation(id,host){return this.collaborate('reservation',{id},host);}
   release(id,{host,key=randomUUID()}={}){return this.collaborate('release',{id,key},host);}
   async waitInbox(waitMs=20000){
-    requireThat(Number.isInteger(waitMs)&&waitMs>=0&&waitMs<=20000,'INVALID_INPUT','waitMs must be 0..20000');
-    const until=performance.now()+waitMs;
-    do{const inbox=await this.inbox();if(inbox.messages.length||performance.now()>=until)return inbox;
-      await new Promise(r=>setTimeout(r,250));}while(true);
+    requireThat(Number.isInteger(waitMs)&&waitMs>=0&&waitMs<=3600000,'INVALID_INPUT','waitMs must be 0..3600000');
+    // Fetch gives up on a response with no headers after five minutes, so long waits are segments.
+    for(const until=performance.now()+waitMs;;){
+      const left=Math.max(0,Math.round(until-performance.now())),segment=Math.min(left,240000);
+      const inbox=await this.collaborate('inbox',{waitMs:segment},undefined,segment+4000);
+      if(inbox.messages.length||left<=segment)return inbox;
+    }
   }
   board(after = 0) { return request(this.url, this.credential, `/v1/board?after=${after}`); }
   submit(input, key = randomUUID()) { return request(this.url, this.credential, '/v1/tasks', { ...input, key }); }

@@ -43,7 +43,7 @@ export class ResourceManagers {
       requireThat(
         !u.username &&
           !u.password &&
-          (u.protocol === "https:" || (c.readOnly===true && u.protocol === "http:") ||
+          (u.protocol === "https:" ||
             (u.protocol === "http:" &&
               ["127.0.0.1", "localhost"].includes(u.hostname))),
         "MANAGER_CONFIG",
@@ -311,6 +311,7 @@ export class ResourceManagers {
           row.id,
         ),
     );
+    if (row.state !== "running" && mapState(remote.state) === "running") this.onRunning?.(row);
     return this.status({ id: row.actor }, row.id);
   }
   async reconcile() {

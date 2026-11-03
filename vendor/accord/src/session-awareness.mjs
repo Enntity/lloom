@@ -38,12 +38,22 @@ export function redact(value) {
     /\b(?:r8|hf|jina|xai)_[A-Za-z0-9]{20,}/g,
     /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g,
     /\baccord_[A-Za-z0-9_-]{20,}/g,
+    /\b[sr]k_(?:live|test)_[A-Za-z0-9]{10,}/g,
+    /\bnpm_[A-Za-z0-9]{20,}/g,
+    /\bglpat-[A-Za-z0-9_-]{16,}/g,
+    /\bya29\.[A-Za-z0-9_-]{20,}/g,
   ])
     s = s.replace(re, "[secret]");
-  return s.replace(
-    /\b((?:authorization:\s*)?bearer\s+|(?:[A-Z0-9_]*(?:api[_-]?key|token|secret|password|passwd))\s*[:=]\s*["']?)([^\s"']{6,})/gi,
-    "$1[secret]",
-  );
+  return s
+    .replace(/\b((?:set-)?cookie:\s*)[^\r\n]+/gi, "$1[secret]")
+    .replace(/\b(authorization:\s*(?:basic|bearer|token)?\s*)\S+/gi, "$1[secret]")
+    .replace(/\b([a-z][a-z0-9+.-]*:\/\/[^\s:/@]*:)[^\s@/]+(@)/gi, "$1[secret]$2")
+    .replace(/(\s(?:-u|--user)\s+[^\s:]+:)\S+/g, "$1[secret]")
+    .replace(/\b((?:password|passphrase)\s+is\s+)\S+/gi, "$1[secret]")
+    .replace(
+      /\b(bearer\s+|[A-Z0-9_-]*(?:api[_-]?key|access[_-]?key|private[_-]?key|token|secret|password|passwd|pwd)[A-Z0-9_-]*["']?\s*[:=]\s*["']?)([^\s"',;}]{6,})/gi,
+      "$1[secret]",
+    );
 }
 const terminal = new Set(["done", "failed", "exited", "cancelled"]);
 export const sessionStates = [

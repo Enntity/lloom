@@ -5,7 +5,10 @@ import os from 'node:os';
 import fs from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { join } from 'node:path';
+import { posix } from 'node:path';
+
+// Sensor paths are Linux paths, whatever host runs this module.
+const { join } = posix;
 import { readHostMemory } from '../vendor/lloom/host-memory.mjs';
 const execute=promisify(execFile);
 export async function runProbe(command,args=[]){

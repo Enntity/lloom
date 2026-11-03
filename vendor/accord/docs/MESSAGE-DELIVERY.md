@@ -1,6 +1,6 @@
 # Message delivery
 
-Accord uses two delivery tiers together. Agents need only handle incoming mail and
+Accord uses three delivery tiers together. Agents need only handle incoming mail and
 call `accord_read` with its `deliveryId` after handling it.
 
 ## Every client: unread count
@@ -12,7 +12,7 @@ the existing Messenger store without fetching message bodies or making another
 client request. It remains present until explicit acknowledgment, even when a
 hook has already shown the text.
 
-The installed skill and MCP initialization instructions tell the agent to check
+The MCP initialization instructions and installed skill tell the agent to check
 `accord_inbox` before continuing dependent work when this hint appears. Clients
 without hooks therefore remain usable, but must make an Accord call to see new
 mail. A queued message is never evidence of agreement to a handoff.
@@ -32,23 +32,54 @@ unshown messages, with at most 700
 characters of text each. Longer messages are marked truncated. Peer content is
 labeled untrusted data, never an instruction from the user.
 
-A private presentation cache prevents repetition. A full inbox response counts as
-already shown. Resume and compaction can show still-unacknowledged mail again.
-The cache is not a mailbox: losing it can repeat a message but cannot acknowledge
-or delete one. Empty, unavailable and malformed cases produce no context. Hook
-execution has a 1.5-second ceiling and a 500ms local request timeout. Stop hooks
-respect the harness's recursion guard.
+The service remembers what each conversation was shown, in memory. A full inbox
+response counts as already shown. Resume and compaction can show
+still-unacknowledged mail again. This memory is not a mailbox: losing it can repeat a
+message but cannot acknowledge or delete one. Empty, unavailable and malformed cases
+produce no context. Hook execution has a 1.5-second ceiling and a 500ms local request
+timeout. The Node hook respects the harness's Stop recursion guard. A Codex hold does
+not need it: a hold ends when the wake budget or nine minutes runs out.
 
-These hooks deliver at model boundaries. They cannot interrupt an arbitrary
-running tool or wake a closed application. Future native wake adapters can use
-the same canonical mailbox without changing the fallback or acknowledgment model.
+Routine boundaries go through `src/hook.sh`. The service raises one flag file per
+conversation when mail lands and clears it after presentation, so a boundary with
+nothing waiting costs one file check: no Node start and no request. An unusual session
+ID takes the Node path. Windows has no POSIX entry, so every boundary starts Node there
+and each waiter is a Node process (`src/wait-hook.mjs`) rather than `sh` and `curl`.
+
+## Idle conversations: wakes
+
+Hooks reach a model only at a boundary, and an idle conversation has none.
+
+- **Claude Code:** a background `Stop` hook (`asyncRewake`) long-polls the service and
+  starts a new turn when mail arrives. Confirmed on Claude Code 2.1.316 with a real
+  idle interactive session: the agent read and acknowledged a peer message unprompted.
+- **Codex:** there is no background wake, so a `Stop` hook holds the turn open for up to
+  nine minutes, only after the agent announces `state: waiting`. That state clears on the
+  wake or the next user prompt. Tested against the documented hook contract, not yet on
+  a real Codex session.
+- **Anything else:** `accord inbox --wait-ms` blocks for up to an hour at no token cost.
+
+A wake spends the recipient's tokens, so it is deliberately narrow. Only a direct
+message earns one, never a notification or mail already shown. A burst shares one
+turn. Each conversation gets six per hour (`ACCORD_WAKE_PER_HOUR`, `0` disables),
+which bounds a reply loop between two agents; held mail stays pending. Mail that
+predates a service start waits for the next boundary, so a restart cannot wake every
+idle session. The wake text is fixed: peer content never enters a turn through it.
+
+A reservation that queued for five seconds or more reports its grant as ordinary mail,
+so a waiting holder needs no polling. This covers manager-backed resources too. Any peer
+could send similar text, so the agent confirms with `accord_reservation` before use.
+
+Wakes cannot reach a closed application or a harness without a hook. They never type
+into a terminal. The Windows waiters run in CI; no real harness has been woken on Windows.
 
 ## Identity and reconnects
 
 The trusted host adapter reads the exact conversation ID from the harness hook
 payload. After `accord_bootstrap` or `accord_announce`, it binds that ID to the
 authenticated Accord address in the tool result. Existing launcher bindings via
-`CODEX_THREAD_ID`, `CLAUDE_SESSION_ID` and `TESSERA_TILE_ID` still work. Working
+`CODEX_THREAD_ID`, `CLAUDE_SESSION_ID` and `TESSERA_TILE_ID` still work, each only
+for the client it belongs to; an inherited parent ID is ignored. Working
 directories, labels and the most recently active session never establish identity.
 Hooks carrying a child `agent_id` use the unread-count fallback, so a shared
 parent conversation ID cannot overwrite the parent's binding or expose its mail.
@@ -70,7 +101,7 @@ hooks and unread counts see the same durable state regardless of sender host.
 failure behavior, installer preservation, identity isolation, reconnects and
 resource ownership separation. `test/mcp.test.mjs` checks the fallback over real
 MCP stdio. The normal recovery and cross-host messaging suite remains required.
-Real harness qualification is recorded separately from these deterministic tests.
+Real harness results are in [qualification](QUALIFICATION.md).
 
 Hook contracts: [Claude](https://code.claude.com/docs/en/hooks) and
 [Codex](https://learn.chatgpt.com/docs/hooks).

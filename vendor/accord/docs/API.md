@@ -1,13 +1,15 @@
-# HTTP contract for the first slice
+# HTTP contract
 
 All routes require a bearer credential except the board's static assets and
 the minimal `/.well-known/accord` descriptor. The
-coordinator and driver bind only `127.0.0.1`. Host and Origin are checked; no CORS
+coordinator and driver bind only `127.0.0.1`. On macOS and Linux the coordinator also
+listens on `accord.sock` in the private data directory, and `endpoints.json` names it
+as `local`; local clients use that and never fall back to TCP. Host and Origin are checked; no CORS
 access is enabled. A JSON request body is limited to 32 KiB. Redirects are never
 followed by the client. Errors are `{error:{code,message}}` with HTTP status.
 
 Authenticated worker responses, including errors after authentication, also carry
-`inboxPending: N` when canonical Messenger deliveries are pending. Zero is omitted.
+`inboxPending: N` when inbox deliveries are pending. Zero is omitted.
 A failed count yields `inboxPending: "unknown"`; clients should check their inbox.
 The hint never acknowledges a delivery and adds no client request. Discovery and
 operator responses do not inherit worker mail. Driver-only operations and local
@@ -43,7 +45,7 @@ The task's expectedHash is a lower-case SHA-256 digest. `input` is at most 8,000
 characters; checkpoint notes are at most 4,000. Tasks are immutable after submit
 apart from their lifecycle, checkpoint and result. This release has a 5,000-task
 limit, 100,000 accepted-command limit, and 100,000-artifact limit. History is not
-pruned. It is a bounded preview database, not a long-lived retention service.
+pruned. It is a bounded database, not a long-lived retention service.
 
 ## Driver API
 

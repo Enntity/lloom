@@ -2,8 +2,8 @@
 // Token hashing/equality adapted from enntity-messenger/src/auth.js (08a788e).
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { mkdirSync, chmodSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { mkdirSync, chmodSync, rmSync } from 'node:fs';
+import { dirname, isAbsolute } from 'node:path';
 import http from 'node:http';
 
 export const id = () => randomUUID();
@@ -100,7 +100,7 @@ export function createHttp(handler) {
       if (!res.writableEnded) {
         res.statusCode = error.status || 500;
         res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ error: { code: error.code || 'INTERNAL_ERROR', message: error.code ? error.message : 'Internal error; no success acknowledged' }, ...(error.inboxPending?{inboxPending:error.inboxPending}:{}) }));
+        res.end(JSON.stringify({ error: { code: error.code || 'INTERNAL_ERROR', message: error.code ? error.message : 'Internal error; no success acknowledged' }, ...(error.inboxPending?{inboxPending:error.inboxPending}:{}),...(error.deliveryProblems?{deliveryProblems:error.deliveryProblems}:{}) }));
       }
     }
   });
@@ -114,19 +114,43 @@ export function listen(server, port = 0) {
     server.listen(port, '127.0.0.1', () => resolve(`http://127.0.0.1:${server.address().port}`));
   });
 }
+// A local client talks over a socket in the private data directory. Any user can hold a
+// loopback port while the service is down, so a client must never prove itself to one.
+export async function listenLocal(server, directory) {
+  if (process.platform === 'win32') return null;
+  const path = directory + '/accord.sock';
+  requireThat(Buffer.byteLength(path) < 104, 'DATA_PATH', 'Data directory path is too long for a local socket', 400);
+  chmodSync(directory, 0o700); rmSync(path, { force: true });
+  const local = http.createServer((req, res) => server.emit('request', req, res));
+  await new Promise((resolve, reject) => { local.once('error', reject); local.listen(path, resolve); });
+  chmodSync(path, 0o600);
+  return { url: `unix:${path}`, close() { local.closeAllConnections(); local.close(); rmSync(path, { force: true }); } };
+}
+function overSocket(url, credential, path, body, timeout) {
+  const payload = body === undefined ? undefined : JSON.stringify(body);
+  return new Promise((resolve, reject) => {
+    const outgoing = http.request({ socketPath: url.slice(5), path, method: payload === undefined ? 'GET' : 'POST', signal: AbortSignal.timeout(timeout),
+      headers: { Host: 'localhost:8787', Authorization: `Bearer ${credential}`, ...(payload === undefined ? {} : { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }) } }, response => {
+      const chunks = []; response.on('data', chunk => chunks.push(chunk)); response.on('error', reject);
+      response.on('end', () => resolve({ status: response.statusCode, ok: response.statusCode < 300, json: async () => JSON.parse(Buffer.concat(chunks)) }));
+    });
+    outgoing.on('error', reject); outgoing.end(payload);
+  });
+}
 export async function request(url, credential, path, body, timeout = 2000) {
-  const response = await fetch(url + path, {
+  const response = url.startsWith('unix:') ? await overSocket(url, credential, path, body, timeout) : await fetch(url + path, {
     method: body === undefined ? 'GET' : 'POST',
     headers: { Authorization: `Bearer ${credential}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(timeout), redirect: 'error'
   });
   const result = await response.json();
-  if (!response.ok) throw Object.assign(new Error(result.error?.message || 'Request failed'), { code: result.error?.code, status: response.status, ...(result.inboxPending?{inboxPending:result.inboxPending}:{}) });
+  if (!response.ok) throw Object.assign(new Error(result.error?.message || 'Request failed'), { code: result.error?.code, status: response.status, ...(result.inboxPending?{inboxPending:result.inboxPending}:{}),...(result.deliveryProblems?{deliveryProblems:result.deliveryProblems}:{}) });
   return result;
 }
 
 export function loopbackUrl(value) {
+  if (value.startsWith('unix:') && isAbsolute(value.slice(5))) return value;
   const url = new URL(value);
   requireThat(url.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(url.hostname) &&
     !url.username && !url.password && url.pathname === '/' && !url.search && !url.hash,
