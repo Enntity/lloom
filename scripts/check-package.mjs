@@ -7,6 +7,7 @@ import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { runCommand } from '../src/process-control.mjs';
 import { loadRecipes } from '../src/recipes.mjs';
+import { writeFakeNvidiaSmi } from './fake-nvidia-smi.mjs';
 
 const npmCache = path.join(os.tmpdir(), 'lloom-npm-cache');
 
@@ -424,9 +425,7 @@ try {
     const profileBin = path.join(tempRoot, 'profile-bin');
     const profileShim = path.join(tempRoot, 'profile-shim.cjs');
     await fs.mkdir(profileBin, { recursive: true });
-    await fs.writeFile(path.join(profileBin, 'nvidia-smi'), '#!/bin/sh\nprintf "0, NVIDIA GB10, 131072, 12.1\\n"\n', {
-      mode: 0o755
-    });
+    await writeFakeNvidiaSmi(profileBin);
     await fs.writeFile(profileShim, "const os = require('node:os');\nos.totalmem = () => 128 * 1024 ** 3;\n", 'utf8');
     onboardingProfileEnv.NODE_OPTIONS = [process.env.NODE_OPTIONS, `--require=${profileShim}`]
       .filter(Boolean)
