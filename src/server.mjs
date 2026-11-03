@@ -136,7 +136,7 @@ import {
   securityPublicStatus
 } from './security.mjs';
 import { ClusterCoordinator, currentNodeId, isFederatedGatewayBackend, runtimePlacement } from './cluster.mjs';
-import { redactEgressBody, shouldRedactEgress } from './egress-redaction.mjs';
+import { redactEgressBody, redactSecretValues, shouldRedactEgress } from './egress-redaction.mjs';
 import { createDeploymentFence, DeploymentFenceError, isDeploymentFencePath } from './deployment-fence.mjs';
 
 const JSON_TYPE = 'application/json; charset=utf-8';
@@ -5262,7 +5262,7 @@ export function createLloomServer(
         });
         const community = communityStatusSummary(communityContext);
         if (community) status.community = community;
-        sendJson(res, 200, status);
+        sendJson(res, 200, redactSecretValues(status));
         return;
       }
 
@@ -5280,7 +5280,11 @@ export function createLloomServer(
               false
             )
           });
-          sendJson(res, 200, { ok: readiness.readyForServing && readiness.readyForControl, ...readiness });
+          sendJson(
+            res,
+            200,
+            redactSecretValues({ ok: readiness.readyForServing && readiness.readyForControl, ...readiness })
+          );
           return;
         }
         const options = doctorOptionsFromQuery(url.searchParams);
@@ -5298,7 +5302,7 @@ export function createLloomServer(
         });
         const community = communityStatusSummary(communityContext);
         if (community) report.community = community;
-        sendJson(res, 200, report);
+        sendJson(res, 200, redactSecretValues(report));
         return;
       }
 
@@ -5307,7 +5311,11 @@ export function createLloomServer(
           sendStandbyEndpointUnsupported(res, config);
           return;
         }
-        sendJson(res, 200, await createOnboardingPlan(config, onboardingOptionsFromQuery(config, url.searchParams)));
+        sendJson(
+          res,
+          200,
+          redactSecretValues(await createOnboardingPlan(config, onboardingOptionsFromQuery(config, url.searchParams)))
+        );
         return;
       }
 
@@ -5420,7 +5428,9 @@ export function createLloomServer(
         sendJson(
           res,
           200,
-          await createSetupPlan(config, { ...options, configPath: options.configPath ?? config.sourcePath })
+          redactSecretValues(
+            await createSetupPlan(config, { ...options, configPath: options.configPath ?? config.sourcePath })
+          )
         );
         return;
       }
@@ -5452,11 +5462,13 @@ export function createLloomServer(
           sendJson(
             res,
             200,
-            await applyOnboarding(config, {
-              ...setupOptionsFromBody(config, body),
-              dryRun: false,
-              yes: body.yes === true
-            })
+            redactSecretValues(
+              await applyOnboarding(config, {
+                ...setupOptionsFromBody(config, body),
+                dryRun: false,
+                yes: body.yes === true
+              })
+            )
           );
         } catch (error) {
           sendJson(
@@ -5476,11 +5488,13 @@ export function createLloomServer(
           sendJson(
             res,
             200,
-            await applySetup(config, {
-              ...setupOptionsFromBody(config, body),
-              dryRun: false,
-              yes: body.yes === true
-            })
+            redactSecretValues(
+              await applySetup(config, {
+                ...setupOptionsFromBody(config, body),
+                dryRun: false,
+                yes: body.yes === true
+              })
+            )
           );
         } catch (error) {
           sendJson(

@@ -98,6 +98,7 @@ import { runWorkloadCli } from '../src/workload-cli.mjs';
 import { runScheduleCli, SCHEDULE_COMMANDS, scheduleUsage } from '../src/schedule-cli.mjs';
 import { applySetup, createSetupPlan, syncClusterSetupMembers } from '../src/setup.mjs';
 import { createSetupStatus } from '../src/setup-status.mjs';
+import { redactSecretValues } from '../src/egress-redaction.mjs';
 import {
   defaultVoicesRoot,
   getVoiceProfile,
@@ -317,6 +318,11 @@ function hasFlag(args, name) {
 
 function wantsJson(args) {
   return hasFlag(args, '--json') || argValue(args, '--format') === 'json';
+}
+
+// Setup, doctor and status reports can carry the configured credentials.
+function reportJson(report) {
+  return JSON.stringify(redactSecretValues(report), null, 2);
 }
 
 async function runDeploymentCommand(args, action) {
@@ -1633,7 +1639,7 @@ async function main() {
           report.complete = true;
         }
       }
-      console.log(wantsJson(args) ? JSON.stringify(report, null, 2) : formatOnboardingSummary(report));
+      console.log(wantsJson(args) ? reportJson(report) : formatOnboardingSummary(redactSecretValues(report)));
     },
     setup: async ({ args, config, command: _command }) => {
       const recipeId = argValue(args, '--recipe');
@@ -1672,7 +1678,7 @@ async function main() {
         restoreCatalog
       };
       console.log(
-        JSON.stringify(
+        reportJson(
           apply
             ? await applySetup(config, {
                 ...options,
@@ -1720,9 +1726,7 @@ async function main() {
                     }
                   : {})
               })
-            : await createSetupPlan(config, options),
-          null,
-          2
+            : await createSetupPlan(config, options)
         )
       );
     },
@@ -1744,7 +1748,7 @@ async function main() {
       const recipeVersion = argValue(args, '--recipe-version');
       const initConfig = additive ? await loadConfig(configOut) : config;
       console.log(
-        JSON.stringify(
+        reportJson(
           await applyInit(initConfig, {
             recipeId,
             ...(mode ? { mode } : {}),
@@ -1763,9 +1767,7 @@ async function main() {
             backendVariables: backendVariablesForCli(args),
             ...(recipesRoot ? { recipesRoot } : {}),
             backendCatalogPath: argValue(args, '--backend-catalog')
-          }),
-          null,
-          2
+          })
         )
       );
     },
@@ -1779,7 +1781,7 @@ async function main() {
       const yes = hasFlag(args, '--yes');
       if (!apply) {
         console.log(
-          JSON.stringify(
+          reportJson(
             await createBootstrapPlan(config, {
               recipeId,
               modelRoot,
@@ -1788,15 +1790,13 @@ async function main() {
               ...(recipesRoot ? { recipesRoot } : {}),
               benchmarksRoot: argValue(args, '--benchmarks-root'),
               backendCatalogPath: argValue(args, '--backend-catalog')
-            }),
-            null,
-            2
+            })
           )
         );
         return;
       }
       console.log(
-        JSON.stringify(
+        reportJson(
           await applyBootstrap(config, {
             recipeId,
             modelRoot,
@@ -1807,9 +1807,7 @@ async function main() {
             ...(statePath ? { statePath } : {}),
             backendVariables: backendVariablesForCli(args),
             backendCatalogPath: argValue(args, '--backend-catalog')
-          }),
-          null,
-          2
+          })
         )
       );
     },
@@ -1842,7 +1840,7 @@ async function main() {
           selectedRecipeId: communityContext.recipeId
         };
       }
-      console.log(JSON.stringify(setupStatus, null, 2));
+      console.log(reportJson(setupStatus));
     },
     benchmarks: async ({ args, config: _config, command: _command }) => {
       const recipeId = positional(args)[1] ?? 'all';
@@ -3061,7 +3059,7 @@ async function main() {
             `LLooM gateway at ${gatewayUrlFor(config)} is not reachable; scoped doctor requires a running gateway`
           );
         }
-        console.log(JSON.stringify(readiness, null, 2));
+        console.log(reportJson(readiness));
         if (!readiness.readyForServing || !readiness.readyForControl) process.exitCode = 1;
         return;
       }
@@ -3097,7 +3095,7 @@ async function main() {
         };
       }
       console.log(
-        wantsJson(args) ? JSON.stringify(report, null, 2) : formatStatusReport(report, { title: 'LLooM doctor' })
+        wantsJson(args) ? reportJson(report) : formatStatusReport(redactSecretValues(report), { title: 'LLooM doctor' })
       );
     }
   };
