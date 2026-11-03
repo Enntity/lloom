@@ -5,6 +5,8 @@ import { reconciledLease } from './accord-migration.mjs';
 import path from 'node:path';
 import { writeAtomicJson } from './deployment-fence.mjs';
 import { normalizeResource, schedulePaths } from './resource-spec.mjs';
+// Maintenance's refusals for a model that is no longer configured or enabled.
+const RETIRED = /^(target runtime \S+ is not (configured|enabled)|unknown model or alias: )/;
 const fail = (message, code = 'accord_effects_unconfirmed') => Object.assign(Error(message), { code, statusCode: 409 });
 export function createAccordEffects({ getConfig, statePath, actions, isPaused = () => false }) {
   let state = { schema: 1, resources: {} };
@@ -74,7 +76,15 @@ export function createAccordEffects({ getConfig, statePath, actions, isPaused = 
     for (const step of [...r.steps].reverse()) {
       if (step.status === 'undone') continue;
       if (step.kind === 'suspend') {
-        if (!step.wasSuspended) await actions.resume(step);
+        if (!step.wasSuspended) {
+          try {
+            await actions.resume(step);
+          } catch (error) {
+            // A model disabled or removed after the hold has nothing to resume.
+            if (!RETIRED.test(error?.message ?? '')) throw error;
+            step.retired = true;
+          }
+        }
       } else if (step.previous !== step.profile) await actions.setRoute({ ...step, profile: step.previous });
       step.status = 'undone';
       await save();

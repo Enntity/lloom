@@ -38,7 +38,9 @@ an eight-hour limit.
 The provider stops the old managed workload and restores exact model/route state
 before Accord grants another generation. Coordinator, provider or driver failure,
 health-check failure and ambiguous replies do not free the resource. Previously
-suspended models remain suspended.
+suspended models remain suspended. A suspended model that was disabled or removed
+during the hold has nothing to resume; restoration records it as retired and
+continues with the routes.
 
 Pre-migration active leases remain held in the original schedule evidence until
 verified recovery. Do not edit an old deadline or delete a schedule file to claim

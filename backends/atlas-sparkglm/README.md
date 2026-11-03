@@ -113,6 +113,15 @@ lloom setup --recipe linux-nvidia-dgx-spark-4x-glm53-atlas-tp4 --recipe-version 
 
 Setup without `--recipe-version` keeps installing version 1.
 
+Version 3 of the pair recipe is the same 0.3.0 install with Enntity's v80
+drafter, `Enntity/GLM-5.3-Flash-DFlash2-enntity-v80` at revision `8416cdfb`, in
+its own model folder, and keeps the pair warm. The repository is private, so each
+node needs a Hugging Face token that can read it.
+
+```sh
+lloom setup --recipe linux-nvidia-dgx-spark-2x-glm53-atlas --recipe-version 3 --additive --apply --yes
+```
+
 ## Container contract
 
 The image ships its own engine profile and entrypoint. LLooM supplies
