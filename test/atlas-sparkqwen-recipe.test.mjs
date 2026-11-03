@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getBackend, loadBackendCatalog, planBackend } from '../src/backend-catalog.mjs';
 import { deriveUserConfig } from '../src/init.mjs';
-import { loadRecipeById, planRecipe } from '../src/recipes.mjs';
+import { applyRecipeMode, loadRecipeById, planRecipe, validateRecipe } from '../src/recipes.mjs';
 import {
   IMAGE_REFERENCE_PATTERN,
   IMAGE_REPOSITORY,
@@ -21,7 +21,7 @@ const recipeId = 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas';
 const recipe = await loadRecipeById(recipeId);
 const catalog = await loadBackendCatalog();
 const pins = loadPins();
-const checkpoint = 'nvidia--Qwen3.8-Flash-Next-NVFP4';
+const checkpoint = 'nvidia--Qwen3.8-Flash-Next-FP4-Local';
 
 // ---- backend catalog entry --------------------------------------------------
 const backend = getBackend(catalog, 'docker-atlas-sparkqwen');
@@ -41,7 +41,7 @@ assert(plannedBackend.steps.every((step) => !step.command.join(' ').includes('${
 
 // ---- recipe shape -----------------------------------------------------------
 assert.equal(recipe.id, recipeId);
-assert.equal(recipe.version, 1);
+assert.equal(recipe.version, 2);
 assert.equal(recipe.backend.id, 'docker-atlas-sparkqwen');
 assert.equal(recipe.license.id, 'MIT');
 assert.deepEqual(recipe.requirements.cluster, { nodes: 2, provider: 'nvidia-sync', topology: 'direct' });
@@ -64,11 +64,11 @@ const downloadStep = recipe.setup.steps.find((step) => step.id === 'download-atl
 assert.equal(downloadStep.provider, 'huggingface');
 assert.equal(downloadStep.model, pins.model.repo);
 assert.equal(downloadStep.revision, pins.model.revision);
-assert.equal(pins.model.revision, 'fc694b54fb0174e0913e6adf86691ef85a4ead47');
+assert.equal(pins.model.revision, 'b9ce18a6887e18c089fdea8509a33e63429a3300');
 
 const model = recipe.models[0];
 assert.equal(recipe.models.length, 1);
-assert.equal(model.model, 'nvidia/Qwen3.8-Flash-Next-NVFP4');
+assert.equal(model.model, 'nvidia/Qwen3.8-Flash-Next-FP4-Local');
 assert.equal(model.gatewayModel, 'qwen3.8-flash-next-atlas');
 assert.equal(model.upstreamModel, 'qwen3.8-flash-next-atlas');
 assert.equal(model.runtime, 'qwen38-flash-next-atlas-cluster');
@@ -88,6 +88,17 @@ assert.equal(model.settings.healthUrl, 'http://127.0.0.1:8893/health');
 assert.equal(model.settings.contextWindow, 262144);
 assert.equal(model.settings.maxActiveRequests, 8);
 assert.equal(model.settings.memoryGb, 114);
+assert.equal(model.settings.sparkqwenMode, 'spark');
+
+// ---- modes: SparkQwen's dedicated and sidecar-sharing profiles --------------
+assert.deepEqual(validateRecipe(recipe, {}, { checkLocalReferences: false }), []);
+assert.deepEqual(
+  recipe.modes.map((mode) => [mode.id, mode.default === true, mode.settings]),
+  [
+    ['dedicated', true, { sparkqwenProfile: '8x262k', memoryGb: 114 }],
+    ['sidecars', false, { sparkqwenProfile: 'saver-8x262k', memoryGb: 96 }]
+  ]
+);
 
 // ---- distributed placement --------------------------------------------------
 const members = model.settings.placement.members;
@@ -121,6 +132,8 @@ const expectedCreateArgs = [
   '--stop-timeout 60',
   `--mount type=bind,src=\${modelRoot}/${checkpoint},dst=\${modelRoot}/${checkpoint},readonly`,
   '--mount type=bind,src=${installRoot}/atlas-sparkqwen-cuda-cache,dst=/atlas-cuda-cache',
+  '--mount type=bind,src=${installRoot}/atlas-sparkqwen-ple,dst=/atlas-ple',
+  '--volume /run/lock/sparkglm:/run/lock/sparkglm',
   '-e NODE_RANK=${nodeRank}',
   '-e MASTER_ADDR=${leaderAddress}',
   '-e MASTER_PORT=29510',
@@ -129,8 +142,10 @@ const expectedCreateArgs = [
   '-e FABRIC_SIBLINGS=0',
   `-e MODEL_PATH=\${modelRoot}/${checkpoint}`,
   '-e SERVED_MODEL_NAME=qwen3.8-flash-next-atlas',
-  '-e SPARKQWEN_PROFILE=8x262k',
-  '-e SPARKQWEN_FP8_GDN=0',
+  '-e SPARKQWEN_PROFILE=${sparkqwenProfile}',
+  '-e SPARKQWEN_MODE=${sparkqwenMode}',
+  '-e SPARKQWEN_TOOL_GUARD=on',
+  '-e SPARKQWEN_TOOL_GUARD_MAX_BYTES=1048576',
   '-e NCCL_SOCKET_IFNAME=${fabricInterface}',
   '-e GLOO_SOCKET_IFNAME=${fabricInterface}',
   '-e NCCL_IB_HCA=${fabricHca}',
@@ -149,7 +164,7 @@ for (const member of members) {
   for (const expected of expectedCreateArgs) assert(rendered.includes(expected), `missing ${expected}`);
   // The profile owns every engine tuning value; serve.py drops ambient ATLAS_*.
   // LLooM supplies the exact rails: no guessable default, no hard-coded device.
-  assert(!/\bATLAS_|rocep1s0f0/.test(rendered));
+  assert(!/\bATLAS_|rocep1s0f0|FP8_GDN|GPU_MEMORY_UTILIZATION/.test(rendered));
   assert(!/\b10\.\d+\.\d+\.\d+\b/.test(rendered));
   assert(!/spark0\d/.test(rendered));
 }
@@ -181,7 +196,8 @@ assert.deepEqual(plan.steps.find((step) => step.id === 'pull-atlas-image').comma
 assert.deepEqual(plan.steps.find((step) => step.id === 'prepare-atlas-cuda-cache').command, [
   'mkdir',
   '-p',
-  '/install/atlas-sparkqwen-cuda-cache'
+  '/install/atlas-sparkqwen-cuda-cache',
+  '/install/atlas-sparkqwen-ple'
 ]);
 for (const step of plan.steps.filter((entry) => entry.action === 'command')) {
   assert(!step.command.join(' ').includes('${'), `unresolved recipe template in ${step.id}`);
@@ -200,8 +216,8 @@ const pairConfig = (nodes, extra = {}) => ({
   cluster: { leaderNode: 'ennspark03', nodes },
   ...extra
 });
-const materialize = (config) =>
-  deriveUserConfig(config, recipe, {
+const materialize = (config, mode) =>
+  deriveUserConfig(config, applyRecipeMode(recipe, mode), {
     modelRoot: '/models',
     additive: true,
     backendVariables: { repoRoot: root, backendRoot: '/backend', installRoot: '/install' }
@@ -269,9 +285,43 @@ for (const [runtime, nodeId, rank] of [
   assert.equal(env.FABRIC_SIBLINGS, '0', `${nodeId} must forbid implicit sibling rails`);
   assert.equal(env.NCCL_SOCKET_IFNAME, 'enp1s0f1np1');
   assert.equal(env.MODEL_PATH, `/models/${checkpoint}`);
+  assert.equal(env.SPARKQWEN_PROFILE, '8x262k', 'the default mode is dedicated');
+  assert.equal(env.SPARKQWEN_MODE, 'spark');
+  assert.equal(runtime.recipe.mode, 'dedicated');
   const args = runtime.bootstrap.createArgs.join(' ');
   assert(args.includes(`src=/models/${checkpoint},dst=/models/${checkpoint},readonly`));
   assert(args.includes('src=/install/atlas-sparkqwen-cuda-cache,dst=/atlas-cuda-cache'));
+  assert(args.includes('src=/install/atlas-sparkqwen-ple,dst=/atlas-ple'));
+}
+assert.deepEqual(
+  cluster.placement.members.map((member) => member.resources.memoryGb),
+  [114, 114]
+);
+
+// The sidecars mode selects the saver profile and reserves less memory on both
+// Sparks, so admission can place other runtimes beside it.
+const sidecars = materialize(
+  pairConfig({
+    ennspark03: { backendHost: '10.0.3.1', fabricInterface: 'enp1s0f1np1', fabricHca: 'rocep1s0f1' },
+    ennspark04: {
+      backendHost: '10.0.3.2',
+      fabricInterface: 'enp1s0f1np1',
+      fabricHca: 'rocep1s0f1',
+      labels: { role: 'worker' }
+    }
+  }),
+  'sidecars'
+);
+const sidecarCluster = sidecars.runtimes['qwen38-flash-next-atlas-cluster'];
+assert.equal(sidecarCluster.recipe.mode, 'sidecars');
+assert.equal(sidecarCluster.memoryGb, 96);
+assert.deepEqual(
+  sidecarCluster.placement.members.map((member) => member.resources.memoryGb),
+  [96, 96]
+);
+for (const id of ['qwen38-flash-next-atlas-head', 'qwen38-flash-next-atlas-worker']) {
+  assert.equal(sidecars.runtimes[id].memoryGb, 96);
+  assert.equal(envOf(sidecars.runtimes[id]).SPARKQWEN_PROFILE, 'saver-8x262k');
 }
 
 // LLooM never infers an HCA from the NIC name: each node must declare its own
@@ -323,10 +373,10 @@ assert.throws(() => materialize(missingFabric), /cluster\.nodes\[ennspark04\]\.f
 
 // ---- pins: final identities, pending digest, fail-closed gate ---------------
 assert.equal(pins.source.repo, 'Enntity/sparkqwen');
-assert.equal(pins.source.revision, '2e8e6dda78fa12848d9a48722332f6aff39b860f');
-assert.equal(pins.source.installTree, 'b151fbe840a15b735f08026c2bf521edac9ce96e');
-assert.equal(pins.engine.commit, '84e7c734bbb70850bd2f65b0bf9e68ab8f8bac22');
-assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkqwen:b151fbe840a1');
+assert.equal(pins.source.revision, '70c6c8453724b6541ca027b985229c58271e7a96');
+assert.equal(pins.source.installTree, '3e0d9e7e4b2975e4802ab44beab87e002f9e8c2c');
+assert.equal(pins.engine.commit, '9b25f57596d1ba05b75bdc5c62d22fb75e1736c0');
+assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkqwen:3e0d9e7e4b29');
 assert.equal(pins.image.tag, imageTagFor(pins));
 assert.equal(pins.image.label, 'io.enntity.sparkqwen.install-tree');
 assert.equal(pins.image.profilePath, '/opt/atlas/profiles/8x262k.json');
@@ -467,7 +517,14 @@ fs.rmSync(tmpRoot, { recursive: true, force: true });
 
 // ---- docs and index ---------------------------------------------------------
 const readme = await fs.promises.readFile(path.join(backendDir, 'README.md'), 'utf8');
-for (const needle of ['AGPL-3.0-only', 'NVIDIA Open Model', '127.0.0.1:8893', '127.0.0.1:8894', 'FABRIC_HCA', 'TODO']) {
+for (const needle of [
+  'AGPL-3.0-only',
+  'NVIDIA Open Model',
+  '127.0.0.1:8893',
+  '127.0.0.1:8894',
+  'FABRIC_HCA',
+  'saver-8x262k'
+]) {
   assert(readme.includes(needle), `backend README must mention ${needle}`);
 }
 const index = JSON.parse(await fs.promises.readFile(path.join(root, 'recipes', 'index.json'), 'utf8'));

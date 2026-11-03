@@ -1439,17 +1439,23 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas",
       "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas.json",
-      "currentVersion": 1,
+      "currentVersion": 2,
       "versions": [
         {
           "version": 1,
+          "path": "archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas/v1.json",
+          "status": "archived",
+          "notes": "Atlas SparkQwen RC16 two-node candidate over the private fabric, additive only, setDefault false, no aliases. Portable pins live in backends/atlas-sparkqwen/pins.json; the published image is pinned by its immutable GHCR digest, and invalid or placeholder pins fail closed. Default profile 8x262k."
+        },
+        {
+          "version": 2,
           "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas.json",
           "status": "current",
-          "notes": "Atlas SparkQwen RC16 two-node candidate over the private fabric, additive only, setDefault false, no aliases. Portable pins live in backends/atlas-sparkqwen/pins.json; the published image is pinned by its immutable GHCR digest, and invalid or placeholder pins fail closed. Default profile 8x262k."
+          "notes": "SparkQwen 0.4.0 (FP4-Local checkpoint, Spark mode, tool-call guard) with two deployment modes: dedicated (8x262k, 114 GB per Spark, the default) and sidecars (saver-8x262k, 96 GB per Spark). Additive only, setDefault false, no aliases; pins in backends/atlas-sparkqwen/pins.json."
         }
       ],
-      "name": "2x DGX Spark Qwen3.8 Flash Next NVFP4 Atlas (SparkQwen RC16)",
-      "summary": "Two-node Atlas SparkQwen RC16 candidate serving the unmodified Qwen3.8-Flash-Next-NVFP4 checkpoint (built-in MTP) from a pinned GHCR image: eight requests of up to 262K tokens.",
+      "name": "2x DGX Spark Qwen3.8 Flash Next FP4-Local Atlas (SparkQwen 0.4.0)",
+      "summary": "Two-node SparkQwen 0.4.0 serving Qwen3.8-Flash-Next-FP4-Local (built-in MTP, Spark mode) from a pinned GHCR image: eight requests of up to 262K tokens, in a dedicated or a sidecars mode.",
       "tags": [
         "linux",
         "nvidia",

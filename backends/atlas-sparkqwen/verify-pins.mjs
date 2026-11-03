@@ -20,8 +20,8 @@ export const REQUIRED_IMAGE_ARCHITECTURE = 'arm64';
 export const IMAGE_REPOSITORY = 'ghcr.io/enntity/atlas-sparkqwen';
 export const IMAGE_LABEL = 'io.enntity.sparkqwen.install-tree';
 export const IMAGE_REFERENCE_PATTERN = /^ghcr\.io\/enntity\/atlas-sparkqwen@sha256:[a-f0-9]{64}$/;
-export const MODEL_REPO = 'nvidia/Qwen3.8-Flash-Next-NVFP4';
-export const MODEL_REVISION = 'fc694b54fb0174e0913e6adf86691ef85a4ead47';
+export const MODEL_REPO = 'nvidia/Qwen3.8-Flash-Next-FP4-Local';
+export const MODEL_REVISION = 'b9ce18a6887e18c089fdea8509a33e63429a3300';
 
 const REQUIRED_PINS = [
   ['status', (m) => m.status],

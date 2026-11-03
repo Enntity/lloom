@@ -566,33 +566,30 @@ Applying NVIDIA Sync discovery refuses ambiguous peer/interface observations.
 An explicit per-node `fabricHca` selection also preserves that node's configured
 interface and backend address when refreshing discovery.
 
-## Atlas SparkQwen RC16
+## Atlas SparkQwen
 
-`linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas` runs the Atlas SparkQwen
-RC16 engine (Enntity/atlas `sparkqwen/atlas-20261013-sidecars` @ `84e7c734`) on two
-directly connected DGX Sparks, serving the unmodified
-`nvidia/Qwen3.8-Flash-Next-NVFP4` checkpoint at revision
-`fc694b54fb0174e0913e6adf86691ef85a4ead47` as `qwen3.8-flash-next-atlas`. There
-is no overlay conversion and no separate drafter; speculation uses the
-checkpoint's own MTP head. The default profile is `8x262k`: up to eight
-requests of up to 262,144 tokens from one shared BF16 KV pool.
+`linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas` runs SparkQwen 0.4.0
+(engine Enntity/atlas `spark-shared` @ `9b25f575`) on two directly connected
+DGX Sparks, serving `nvidia/Qwen3.8-Flash-Next-FP4-Local` at revision
+`b9ce18a6887e18c089fdea8509a33e63429a3300` as `qwen3.8-flash-next-atlas` in
+SparkQwen's Spark mode. There is no overlay conversion and no separate drafter;
+speculation uses the checkpoint's own MTP head. Both modes serve up to eight
+requests of up to 262,144 tokens from one shared BF16 KV pool:
+
+- `dedicated` (default): profile `8x262k` at 0.88 GPU memory utilization, 114 GB
+  reserved on each Spark. Nothing else should use the pair's memory.
+- `sidecars`: profile `saver-8x262k` at 0.74 with the display carveout, 96 GB
+  reserved on each Spark, so admission can place embedding, image or other
+  runtimes beside it. The KV pool is smaller.
 
 ```sh
-lloom setup --recipe linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas --additive --apply --yes
-lloom runtime-start qwen38-flash-next-atlas-cluster
+lloom setup --recipe linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas --mode sidecars --additive --apply --yes
+lloom resume qwen3.8-flash-next-atlas --apply --yes
 ```
-
-For shared hosts, the image accepts `SPARKQWEN_GPU_MEMORY_UTILIZATION=0.70`
-through `0.95` in each physical runtime's Docker environment. Lower settings
-leave room for host services and reduce the shared KV pool; the published
-context/concurrency measurements apply to the default 0.88 allocation. Keep
-the logical runtime, physical runtimes, and each placement member's
-`resources.memoryGb` reservation consistent with the chosen deployment.
-Do not raise the host memory safety limit to make an oversized cache fit.
 
 The recipe is additive (no default model, no aliases, `keepWarm` false). Pins
 live in `backends/atlas-sparkqwen/pins.json` (source `Enntity/sparkqwen`
-`2e8e6dda`, install tree `b151fbe840a1`). The GHCR manifest digest is pinned in the same manifest.
+`v0.4.0`, install tree `3e0d9e7e4b29`). The GHCR manifest digest is pinned in the same manifest.
 `node backends/atlas-sparkqwen/verify-pins.mjs`, setup step
 `verify-atlas-pins` and `install.sh` reject missing or placeholder identities. The
 installer only pulls that digest and verifies the image's arm64 architecture,
