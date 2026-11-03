@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { deriveUserConfig } from '../src/init.mjs';
-import { loadRecipeById, planRecipe } from '../src/recipes.mjs';
+import { loadRecipeById, loadRecipeVersion, planRecipe } from '../src/recipes.mjs';
 import { dockerCreateArgs } from '../src/runtime-manager.mjs';
 import { loadPins, verifyPins } from '../backends/atlas-sparkglm/verify-pins.mjs';
 
@@ -14,7 +14,8 @@ const backendDir = path.join(root, 'backends', 'atlas-sparkglm');
 // The draft manifest from before a TP-4 image existed; the installer must still refuse it.
 const draftPinsPath = path.join(backendDir, 'pins-tp4.json');
 const recipe = await loadRecipeById('linux-nvidia-dgx-spark-4x-glm53-atlas-tp4');
-const pairRecipe = await loadRecipeById('linux-nvidia-dgx-spark-2x-glm53-atlas');
+// The pair lane of the same release (SparkGLM 0.3.0); the current pair lane is 0.3.1 until TP-4 is qualified on it.
+const pairRecipe = await loadRecipeVersion('linux-nvidia-dgx-spark-2x-glm53-atlas', 3);
 const manifestFor = (r) =>
   r.setup.steps.find((step) => step.id === 'verify-atlas-pins').args.find((arg) => arg.endsWith('.json'));
 const pins = loadPins(manifestFor(recipe).replace('${repoRoot}', root));

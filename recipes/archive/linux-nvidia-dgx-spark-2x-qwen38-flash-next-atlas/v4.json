@@ -3,10 +3,10 @@
   "schemaVersion": 1,
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas",
-  "name": "2x DGX Spark Qwen3.8 Flash Next FP4-Local Atlas (SparkQwen 0.5.1 candidate)",
-  "version": 5,
-  "summary": "Two directly connected Sparks running SparkQwen 0.5.1 on the Atlas engine over the private fabric, serving nvidia/Qwen3.8-Flash-Next-FP4-Local with its built-in MTP head: up to eight requests of up to 262144 tokens from one shared BF16 KV pool, in Spark mode. Two modes: dedicated (the pair serves Qwen alone) and sidecars (leaves memory for services such as embedding or image generation on the same Sparks). Additive only: no default model, no aliases.",
-  "description": "This recipe installs SparkQwen 0.5.1 at the immutable product revision recorded in backends/atlas-sparkqwen/pins-0.5.1.json. LLooM owns orchestration, admission, worker-first startup, readiness, routing and telemetry. The Atlas engine image is built from Enntity/sparkqwen by that repository's install/build.sh and published to GHCR; LLooM commits no engine source. The engine (Atlas-Inf/atlas plus Enntity's open Atlas-Inf PRs, on the Enntity/atlas spark branch) is AGPL-3.0-only and runs from its own container image. Setup acquires the pinned checkpoint, pulls the pinned image by its immutable manifest digest (the mutable tag is never pulled), and verifies the image's arm64 architecture, io.enntity.sparkqwen.install-tree contents label and in-image contract. The checkpoint is served as published: no overlay conversion and no separate drafter (speculation uses the checkpoint's own MTP head). Tools and reasoning are qualified by SparkQwen; structured output is implemented by the engine but untested with this model; image and short-video input are qualified by SparkQwen.",
+  "name": "2x DGX Spark Qwen3.8 Flash Next FP4-Local Atlas (SparkQwen 0.5.0)",
+  "version": 4,
+  "summary": "Two directly connected Sparks running SparkQwen 0.5.0 on the Atlas engine over the private fabric, serving nvidia/Qwen3.8-Flash-Next-FP4-Local with its built-in MTP head: up to eight requests of up to 262144 tokens from one shared BF16 KV pool, in Spark mode. Two modes: dedicated (the pair serves Qwen alone) and sidecars (leaves memory for services such as embedding or image generation on the same Sparks). Additive only: no default model, no aliases.",
+  "description": "This recipe installs SparkQwen 0.5.0 at the immutable product revision recorded in backends/atlas-sparkqwen/pins-0.5.0.json. LLooM owns orchestration, admission, worker-first startup, readiness, routing and telemetry. The Atlas engine image is built from Enntity/sparkqwen by that repository's install/build.sh and published to GHCR; LLooM commits no engine source. The engine (Atlas-Inf/atlas plus Enntity's open Atlas-Inf PRs, on the Enntity/atlas spark branch) is AGPL-3.0-only and runs from its own container image. Setup acquires the pinned checkpoint, pulls the pinned image by its immutable manifest digest (the mutable tag is never pulled), and verifies the image's arm64 architecture, io.enntity.sparkqwen.install-tree contents label and in-image contract. The checkpoint is served as published: no overlay conversion and no separate drafter (speculation uses the checkpoint's own MTP head). Tools and reasoning are qualified by SparkQwen; structured output is implemented by the engine but untested with this model; image and short-video input are qualified by SparkQwen.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata, launcher and orchestration"
@@ -14,16 +14,16 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "SparkQwen 0.5.1: Enntity/sparkqwen 2e95e17b2f2e12fd10fce454ff5adbb32ce5ae91 (tag v0.5.1, install tree 01e43f5c2eb2d1d2ff35d8e9e4632c2848b00e90), engine Enntity/atlas spark @ 5f79b46ba7b0e8b14f8b2966cca9e2546f18560d (Atlas-Inf main 2f9c37083, which carries Enntity's Atlas-Inf PRs #321, #322 and #323 and the maintainers' #319 and #320; AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). The image is ghcr.io/enntity/atlas-sparkqwen:01e43f5c2eb2 (also :0.5.1), addressed by its GHCR manifest digest in pins-0.5.1.json. The engine argument vectors ship inside the image as /opt/atlas/profiles/*.json and are selected with SPARKQWEN_PROFILE: 8x262k (dedicated: eight sequences of up to 262144 tokens, BF16 KV, 0.88 GPU memory utilization) and saver-8x262k (sidecars: the same slots at 0.74, with the display carveout). Model nvidia/Qwen3.8-Flash-Next-FP4-Local revision b9ce18a6887e18c089fdea8509a33e63429a3300. Candidate: not qualified yet, so it installs only with --recipe-version; the current version stays the default."
+    "source": "SparkQwen 0.5.0: Enntity/sparkqwen 8ea2c7e2eeedf1fd0c39a0d75b8b4191c0fc2513 (tag v0.5.0, install tree c85bd58fcb7cf9e376cad89388316d28e53eecae), engine Enntity/atlas spark @ 162b4226070fbd3a75a5a0d5910f9290fa96bed2 (Atlas-Inf main 9c4519131 plus Enntity's Atlas-Inf PRs #321, #322 and #323; AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). The image is ghcr.io/enntity/atlas-sparkqwen:c85bd58fcb7c (also :0.5.0), addressed by its GHCR manifest digest in pins-0.5.0.json. The engine argument vectors ship inside the image as /opt/atlas/profiles/*.json and are selected with SPARKQWEN_PROFILE: 8x262k (dedicated: eight sequences of up to 262144 tokens, BF16 KV, 0.88 GPU memory utilization) and saver-8x262k (sidecars: the same slots at 0.74, with the display carveout). Model nvidia/Qwen3.8-Flash-Next-FP4-Local revision b9ce18a6887e18c089fdea8509a33e63429a3300."
   },
   "links": [
     {
       "rel": "upstream",
-      "href": "https://github.com/Enntity/sparkqwen/tree/v0.5.1"
+      "href": "https://github.com/Enntity/sparkqwen/tree/v0.5.0"
     },
     {
       "rel": "engine",
-      "href": "https://github.com/Enntity/atlas/tree/5f79b46ba7b0e8b14f8b2966cca9e2546f18560d"
+      "href": "https://github.com/Enntity/atlas/tree/162b4226070fbd3a75a5a0d5910f9290fa96bed2"
     },
     {
       "rel": "engine-upstream",
@@ -64,7 +64,7 @@
     "family": "NVIDIA DGX Spark / GB10",
     "testedMachine": "Two directly connected DGX Spark systems",
     "notes": [
-      "SparkQwen 0.5.1 candidate: the 0.5.0 lane on Enntity/atlas spark 5f79b46b (Atlas-Inf main 2f9c37083, which carries Enntity's Atlas-Inf PRs #321, #322 and #323 and the maintainers' #319 and #320). Candidate: not qualified yet, so it installs only with --recipe-version; the current version stays the default.",
+      "SparkQwen 0.5.0 as released, qualified on 03/04 on 2026-11-03 against 0.4.0: greedy output and prompt logprobs identical, decode and concurrency within 2% (sparkglm-research experiments/qual-20261103); the sidecars mode is the saver-8x262k profile its README documents for shared Sparks.",
       "TP2 with expert parallelism 2 across the private ConnectX RoCE fabric. MASTER_ADDR, FABRIC_INTERFACE and FABRIC_HCA come from the cluster node config. FABRIC_HCA and NCCL_IB_HCA are the node's explicit, node-local cluster.nodes[ID].fabricHca list (exact RDMA device names, no :port syntax); LLooM requires it on every participating node and never guesses an HCA from the NIC name, and FABRIC_SIBLINGS=0 stops the engine from adding a backchannel. Explicit lists may include both verified rails.",
       "The worker is admitted first (rank 1) and readiness-checked through its container state; the leader starts second (rank 0), serves 127.0.0.1:8893 (fixed by the image) and owns routing.",
       "Peak container memory is capped at 114 GiB per node with the profile's 4096 MiB load-time OOM guard. In the dedicated mode nothing else should use the pair's GPU memory; the sidecars mode reserves 96 GB per Spark and leaves the rest to other admitted runtimes.",
@@ -117,7 +117,7 @@
         "command": "node",
         "args": [
           "${repoRoot}/backends/atlas-sparkqwen/verify-pins.mjs",
-          "${repoRoot}/backends/atlas-sparkqwen/pins-0.5.1.json"
+          "${repoRoot}/backends/atlas-sparkqwen/pins-0.5.0.json"
         ]
       },
       {
@@ -137,7 +137,7 @@
         "args": [
           "${repoRoot}/backends/atlas-sparkqwen/install.sh",
           "--manifest",
-          "${repoRoot}/backends/atlas-sparkqwen/pins-0.5.1.json"
+          "${repoRoot}/backends/atlas-sparkqwen/pins-0.5.0.json"
         ]
       },
       {
@@ -159,7 +159,7 @@
         "command": "mkdir",
         "args": [
           "-p",
-          "${installRoot}/atlas-sparkqwen-ple/37272dc6dcb3d1c6d4b8027b8876edf9ba36b1988d85ea6accde22848d5e11e7/b9ce18a6887e18c089fdea8509a33e63429a3300"
+          "${installRoot}/atlas-sparkqwen-ple/038c97fc93fd7229d41aed732a26cf128defb8e8f60a90863ccebbcd3da8811c/b9ce18a6887e18c089fdea8509a33e63429a3300"
         ]
       }
     ]
@@ -277,7 +277,7 @@
                 "warmup": false,
                 "bootstrap": {
                   "adapter": "docker",
-                  "image": "ghcr.io/enntity/atlas-sparkqwen@sha256:37272dc6dcb3d1c6d4b8027b8876edf9ba36b1988d85ea6accde22848d5e11e7",
+                  "image": "ghcr.io/enntity/atlas-sparkqwen@sha256:038c97fc93fd7229d41aed732a26cf128defb8e8f60a90863ccebbcd3da8811c",
                   "pull": false,
                   "pullTimeoutMs": 3600000,
                   "createArgs": [
@@ -310,7 +310,7 @@
                     "--mount",
                     "type=bind,src=${installRoot}/atlas-sparkqwen-cuda-cache,dst=/atlas-cuda-cache",
                     "--mount",
-                    "type=bind,src=${installRoot}/atlas-sparkqwen-ple/37272dc6dcb3d1c6d4b8027b8876edf9ba36b1988d85ea6accde22848d5e11e7/b9ce18a6887e18c089fdea8509a33e63429a3300,dst=/atlas-ple",
+                    "type=bind,src=${installRoot}/atlas-sparkqwen-ple/038c97fc93fd7229d41aed732a26cf128defb8e8f60a90863ccebbcd3da8811c/b9ce18a6887e18c089fdea8509a33e63429a3300,dst=/atlas-ple",
                     "--volume",
                     "/run/lock/sparkglm:/run/lock/sparkglm",
                     "-e",
@@ -387,7 +387,7 @@
                 },
                 "bootstrap": {
                   "adapter": "docker",
-                  "image": "ghcr.io/enntity/atlas-sparkqwen@sha256:37272dc6dcb3d1c6d4b8027b8876edf9ba36b1988d85ea6accde22848d5e11e7",
+                  "image": "ghcr.io/enntity/atlas-sparkqwen@sha256:038c97fc93fd7229d41aed732a26cf128defb8e8f60a90863ccebbcd3da8811c",
                   "pull": false,
                   "pullTimeoutMs": 3600000,
                   "createArgs": [
@@ -420,7 +420,7 @@
                     "--mount",
                     "type=bind,src=${installRoot}/atlas-sparkqwen-cuda-cache,dst=/atlas-cuda-cache",
                     "--mount",
-                    "type=bind,src=${installRoot}/atlas-sparkqwen-ple/37272dc6dcb3d1c6d4b8027b8876edf9ba36b1988d85ea6accde22848d5e11e7/b9ce18a6887e18c089fdea8509a33e63429a3300,dst=/atlas-ple",
+                    "type=bind,src=${installRoot}/atlas-sparkqwen-ple/038c97fc93fd7229d41aed732a26cf128defb8e8f60a90863ccebbcd3da8811c/b9ce18a6887e18c089fdea8509a33e63429a3300,dst=/atlas-ple",
                     "--volume",
                     "/run/lock/sparkglm:/run/lock/sparkglm",
                     "-e",

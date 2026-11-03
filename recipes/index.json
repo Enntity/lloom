@@ -1381,7 +1381,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-glm53-atlas",
       "path": "linux-nvidia-dgx-spark-2x-glm53-atlas.json",
-      "currentVersion": 3,
+      "currentVersion": 4,
       "versions": [
         {
           "version": 1,
@@ -1396,13 +1396,13 @@
         },
         {
           "version": 3,
-          "path": "linux-nvidia-dgx-spark-2x-glm53-atlas.json",
-          "status": "current"
+          "path": "archive/linux-nvidia-dgx-spark-2x-glm53-atlas/v3.json",
+          "status": "archived"
         },
         {
           "version": 4,
-          "path": "candidates/linux-nvidia-dgx-spark-2x-glm53-atlas/v4.json",
-          "status": "candidate"
+          "path": "linux-nvidia-dgx-spark-2x-glm53-atlas.json",
+          "status": "current"
         }
       ],
       "name": "2x DGX Spark GLM-5.3 Flash FP4-Local Atlas",
@@ -1501,7 +1501,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas",
       "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas.json",
-      "currentVersion": 4,
+      "currentVersion": 5,
       "versions": [
         {
           "version": 1,
@@ -1523,17 +1523,17 @@
         },
         {
           "version": 4,
-          "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas.json",
-          "status": "current"
+          "path": "archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas/v4.json",
+          "status": "archived"
         },
         {
           "version": 5,
-          "path": "candidates/linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas/v5.json",
-          "status": "candidate"
+          "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas.json",
+          "status": "current"
         }
       ],
       "name": "2x DGX Spark Qwen3.8 Flash Next FP4-Local Atlas (SparkQwen 0.4.0)",
-      "summary": "Two-node SparkQwen 0.4.0 serving Qwen3.8-Flash-Next-FP4-Local (built-in MTP, Spark mode) from a pinned GHCR image: eight requests of up to 262K tokens, in a dedicated or a sidecars mode.",
+      "summary": "Two-node SparkQwen 0.5.1 serving Qwen3.8-Flash-Next-FP4-Local (built-in MTP, Spark mode) from a pinned GHCR image: eight requests of up to 262K tokens, in a dedicated or a sidecars mode.",
       "tags": [
         "linux",
         "nvidia",
