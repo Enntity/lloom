@@ -1,0 +1,33 @@
+{
+  "manifestVersion": 1,
+  "status": "final",
+  "note": "Pin manifest for SparkGLM 0.3.1 on the pair, recipe linux-nvidia-dgx-spark-2x-glm53-atlas version 4, with Enntity's v80 drafter (private repository). Engine: Enntity/atlas spark, Atlas-Inf main 2f9c37083 (carries #321, #322 and #323; no open Enntity PRs). image.reference is the GHCR manifest digest; the tag is the first 12 characters of the sparkglm install/ tree. Candidate: not qualified yet, so it installs only with --recipe-version; the current version stays the default.",
+  "source": {
+    "repo": "Enntity/sparkglm",
+    "revision": "33fe02f83a9edf96ae38ebe4fc6a8ec8e7603f90",
+    "installTree": "e7af504a3dfde2652e05de9c32304ffd3de7f2fa",
+    "cloneUrl": "https://github.com/Enntity/sparkglm.git",
+    "buildScript": "install/build.sh"
+  },
+  "engine": {
+    "repo": "Enntity/atlas",
+    "branch": "spark",
+    "commit": "5f79b46ba7b0e8b14f8b2966cca9e2546f18560d"
+  },
+  "image": {
+    "reference": "ghcr.io/enntity/atlas-sparkglm@sha256:8e1e378b61f2633283fc86772b78f3524220255064630cc069d64b70cc5df7e0",
+    "tag": "ghcr.io/enntity/atlas-sparkglm:e7af504a3dfd",
+    "label": "io.enntity.sparkglm.install-tree",
+    "entrypoint": "/opt/atlas/serve.py",
+    "profilePath": "/opt/atlas/profiles/4x1m.json",
+    "architecture": "arm64"
+  },
+  "model": {
+    "repo": "nvidia/GLM-5.3-Flash-FP4-Local",
+    "revision": "76348ddb2be2e35e39ecfc00e75dc07703f4f3d5"
+  },
+  "drafter": {
+    "repo": "Enntity/GLM-5.3-Flash-DFlash2-enntity-v80",
+    "revision": "8416cdfbf4cfb302b86a058cb5f5b89f891350c0"
+  }
+}
