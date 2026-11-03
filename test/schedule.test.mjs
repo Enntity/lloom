@@ -86,6 +86,31 @@ test('Accord owns reservations; LLooM records exact routing and model effects, s
   await assert.rejects(e.handle('gpu', 'stop', b));
   assert(f.calls.indexOf('stop:borrowed') < f.calls.indexOf('start:resident'));
 });
+test('restoring a hold skips a suspended model that has since been disabled or removed', async (t) => {
+  for (const message of [
+    'target runtime resident-cluster is not enabled',
+    'target runtime resident-cluster is not configured',
+    'unknown model or alias: resident'
+  ]) {
+    const f = await fixture(t);
+    await f.effects.handle('gpu', 'prepare', f.fence);
+    await f.effects.handle('gpu', 'stop', f.fence);
+    f.options.actions.resume = async () => {
+      throw Error(message);
+    };
+    await f.effects.handle('gpu', 'restore', f.fence);
+    assert.equal(f.current.route, 'local');
+    const step = f.effects.status().resources.gpu.steps.find((s) => s.kind === 'suspend');
+    assert.equal(step.status, 'undone');
+    assert.equal(step.retired, true);
+  }
+  const f = await fixture(t);
+  await f.effects.handle('gpu', 'prepare', f.fence);
+  await f.effects.handle('gpu', 'stop', f.fence);
+  f.current.restoreFails = true;
+  await assert.rejects(f.effects.handle('gpu', 'restore', f.fence), /health failed/);
+  assert.equal(f.current.route, 'cloud');
+});
 test('restart during prepare holds the resource and exact prior suspension survives restoration', async (t) => {
   const f = await fixture(t);
   f.current.suspended = true;

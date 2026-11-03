@@ -1393,6 +1393,11 @@
           "version": 2,
           "path": "candidates/linux-nvidia-dgx-spark-2x-glm53-atlas/v2.json",
           "status": "candidate"
+        },
+        {
+          "version": 3,
+          "path": "candidates/linux-nvidia-dgx-spark-2x-glm53-atlas/v3.json",
+          "status": "candidate"
         }
       ],
       "name": "2x DGX Spark GLM-5.3 Flash FP4-Local Atlas",
