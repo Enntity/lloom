@@ -1,6 +1,7 @@
 import { createBootstrapPlan, applyBootstrap } from './bootstrap.mjs';
 import { defaultBackendVariables } from './backend-catalog.mjs';
 import { createInitPlan, applyInit } from './init.mjs';
+import { loadRecipeVersion } from './recipes.mjs';
 import { RuntimeManager } from './runtime-manager.mjs';
 import { runCommand } from './process-control.mjs';
 
@@ -14,6 +15,7 @@ function customHomeArg(home) {
 
 export function setupCommand({
   recipeId,
+  recipeVersion,
   mode,
   configPath,
   modelRoot,
@@ -33,6 +35,7 @@ export function setupCommand({
 } = {}) {
   const args = ['lloom', 'setup'];
   if (recipeId) args.push('--recipe', shellArg(recipeId));
+  if (recipeVersion != null) args.push('--recipe-version', shellArg(String(recipeVersion)));
   if (mode) args.push('--mode', shellArg(mode));
   args.push(...customHomeArg(home));
   if (generatedRoot) args.push('--generated-root', shellArg(generatedRoot));
@@ -80,12 +83,14 @@ export async function createSetupPlan(
     autoDetectModelRoot,
     additive = false,
     restoreCatalog = false,
-    mode
+    mode,
+    recipeVersion
   } = {}
 ) {
   const init = await createInitPlan(config, {
     recipeId,
     mode,
+    recipeVersion,
     configPath,
     modelRoot,
     gatewayPort,
@@ -103,6 +108,11 @@ export async function createSetupPlan(
     restoreCatalog
   });
   const plannedConfig = configWithSource(init.config, init.configPath);
+  // Bootstrap selects by id, so hand it the requested version's document.
+  const bootstrapRecipes =
+    recipeVersion != null
+      ? [await loadRecipeVersion(recipeId, recipeVersion, recipesRoot), ...recipeDocuments]
+      : recipeDocuments;
   const bootstrap = await createBootstrapPlan(plannedConfig, {
     recipeId: init.selectedRecipe.id,
     modelRoot: init.modelRoot,
@@ -113,7 +123,7 @@ export async function createSetupPlan(
     benchmarksRoot,
     benchmarkDocuments,
     recipesRoot,
-    recipeDocuments,
+    recipeDocuments: bootstrapRecipes,
     backendCatalogPath
   });
 
@@ -134,6 +144,7 @@ export async function createSetupPlan(
       apply: setupCommand({
         recipeId: init.selectedRecipe.id,
         mode: init.selectedRecipe.mode,
+        recipeVersion: init.selectedRecipe.version,
         configPath: init.configPath,
         modelRoot: init.modelRoot,
         gatewayPort,
@@ -152,6 +163,7 @@ export async function createSetupPlan(
       applyAndStart: setupCommand({
         recipeId: init.selectedRecipe.id,
         mode: init.selectedRecipe.mode,
+        recipeVersion: init.selectedRecipe.version,
         configPath: init.configPath,
         modelRoot: init.modelRoot,
         gatewayPort,
@@ -201,6 +213,7 @@ export async function applySetup(
     reviewedPlan: reviewedPlan?.phases?.init,
     recipeId: plan.selectedRecipe.id,
     mode: plan.selectedRecipe.mode,
+    recipeVersion: plan.selectedRecipe.version,
     configPath: plan.configPath,
     modelRoot: plan.modelRoot,
     clientId: options.clientId ?? 'all',
@@ -258,6 +271,7 @@ export async function syncClusterSetupMembers(
   {
     coordinator,
     recipeId,
+    recipeVersion,
     mode,
     additive = false,
     restoreCatalog = false,
@@ -293,6 +307,7 @@ export async function syncClusterSetupMembers(
   for (const nodeId of remoteNodeIds) {
     const body = {
       recipeId,
+      ...(recipeVersion != null ? { recipeVersion } : {}),
       ...(mode ? { mode } : {}),
       additive,
       restoreCatalog,
@@ -311,6 +326,7 @@ export async function syncClusterSetupMembers(
     if (node?.sshAlias) {
       const remoteCommand = `PATH="$HOME/.local/bin:/usr/bin:/bin" ${setupCommand({
         recipeId,
+        recipeVersion,
         mode,
         modelRoot,
         clientId,

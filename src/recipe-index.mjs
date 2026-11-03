@@ -80,8 +80,8 @@ export function validateRecipeIndex(index) {
       if (!version?.path) errors.push(`${versionPrefix} is missing path`);
       const versionPathError = pathTraversalError(version?.path);
       if (versionPathError) errors.push(`${versionPrefix} ${versionPathError}`);
-      if (!['current', 'archived'].includes(version?.status)) {
-        errors.push(`${versionPrefix} status must be current or archived`);
+      if (!['current', 'candidate', 'archived'].includes(version?.status)) {
+        errors.push(`${versionPrefix} status must be current, candidate or archived`);
       }
       if (version?.status === 'current') currentCount += 1;
       if (versionNumbers.has(version?.version)) errors.push(`${prefix} has duplicate version ${version?.version}`);

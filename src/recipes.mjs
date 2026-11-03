@@ -272,6 +272,30 @@ export function planRecipe(
   };
 }
 
+// A version index.json lists, such as a candidate still qualifying. Setup without
+// a version installs the current file; a candidate never becomes the default.
+export async function loadRecipeVersion(recipeId, version, root = recipesRoot) {
+  const index = JSON.parse(await fs.readFile(path.join(root, 'index.json'), 'utf8'));
+  const entry = asArray(index.recipes).find((candidate) => candidate.id === recipeId);
+  if (!entry) throw new Error(`Unknown recipe ${recipeId}`);
+  const versions = asArray(entry.versions);
+  const listed = versions.find((candidate) => candidate.version === Number(version));
+  if (!listed) {
+    throw new Error(
+      `recipe ${recipeId} has no version ${version}; its versions are ${versions.map((v) => v.version).join(', ')}`
+    );
+  }
+  const filePath = path.resolve(root, String(listed.path));
+  if (path.relative(root, filePath).startsWith('..')) {
+    throw new Error(`recipe ${recipeId} version ${version} path must stay inside the recipes root`);
+  }
+  const recipe = await readRecipe(filePath);
+  if (recipe.id !== recipeId || recipe.version !== listed.version) {
+    throw new Error(`recipe ${recipeId} version ${version} file declares ${recipe.id} version ${recipe.version}`);
+  }
+  return recipe;
+}
+
 export async function loadRecipeById(recipeId, root = recipesRoot) {
   const recipes = await loadRecipes(root);
   const recipe = recipes.find((candidate) => candidate.id === recipeId);

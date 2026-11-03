@@ -227,7 +227,7 @@ function advancedUsage() {
 First run:
   lloom [--recipe id] [--host url] [--workload id] [--capability id] [--tag id] [--signing-keys-path path] [--no-trust-host-keys] [--no-auto-host] [--home path] [--model-root path] [--port n] [--backend-port-range a-b] [--client id|all] [--backend-catalog path] [--go|--apply --yes] [--start] [--json]
   lloom up|onboard [--recipe id] [--host url] [--workload id] [--capability id] [--tag id] [--signing-keys-path path] [--no-trust-host-keys] [--no-auto-host] [--home path] [--model-root path] [--port n] [--backend-port-range a-b] [--client id|all] [--backend-catalog path] [--go|--apply --yes] [--start] [--json]
-  lloom setup [--recipe id [--mode id]] [--config-out path] [--home path] [--model-root path] [--client id|all] [--backend-catalog path] [--additive] [--restore-catalog] [--apply --yes] [--start]
+  lloom setup [--recipe id [--recipe-version n] [--mode id]] [--config-out path] [--home path] [--model-root path] [--client id|all] [--backend-catalog path] [--additive] [--restore-catalog] [--apply --yes] [--start]
   lloom doctor [--recipe id] [--model-root path] [--client id|all] [--no-runtimes]
 
 Serving and discovery:
@@ -1651,9 +1651,11 @@ async function main() {
       const additive = hasFlag(args, '--additive');
       const restoreCatalog = hasFlag(args, '--restore-catalog');
       const mode = argValue(args, '--mode');
+      const recipeVersion = argValue(args, '--recipe-version');
       const options = {
         recipeId,
         ...(mode ? { mode } : {}),
+        ...(recipeVersion ? { recipeVersion: Number(recipeVersion) } : {}),
         configPath: configOut,
         ...(modelRoot ? { modelRoot } : {}),
         ...(gatewayPort ? { gatewayPort } : {}),
@@ -1683,6 +1685,7 @@ async function main() {
                         syncClusterSetupMembers(appliedConfig, {
                           coordinator: new ClusterCoordinator(appliedConfig),
                           recipeId: plan.selectedRecipe.id,
+                          recipeVersion: plan.selectedRecipe.version,
                           mode: plan.selectedRecipe.mode,
                           additive,
                           restoreCatalog,
@@ -1738,12 +1741,14 @@ async function main() {
       const integrate = hasFlag(args, '--integrate');
       const additive = hasFlag(args, '--additive');
       const mode = argValue(args, '--mode');
+      const recipeVersion = argValue(args, '--recipe-version');
       const initConfig = additive ? await loadConfig(configOut) : config;
       console.log(
         JSON.stringify(
           await applyInit(initConfig, {
             recipeId,
             ...(mode ? { mode } : {}),
+            ...(recipeVersion ? { recipeVersion: Number(recipeVersion) } : {}),
             configPath: configOut,
             ...(modelRoot ? { modelRoot } : {}),
             ...(gatewayPort ? { gatewayPort } : {}),

@@ -12,7 +12,7 @@ import { nextBackendPort } from './model-intake.mjs';
 import { detectModelRootForRecipe } from './model-files.mjs';
 import { profileMachine, rankRecipes } from './machine-profile.mjs';
 import { createRegistry } from './registry.mjs';
-import { applyRecipeMode, loadRecipeById, loadRecipes } from './recipes.mjs';
+import { applyRecipeMode, loadRecipeById, loadRecipeVersion, loadRecipes } from './recipes.mjs';
 import { repoRoot } from './config.mjs';
 
 function clone(value) {
@@ -1685,14 +1685,19 @@ export async function createInitPlan(
     autoDetectModelRoot = false,
     additive = false,
     restoreCatalog = false,
-    mode
+    mode,
+    recipeVersion
   } = {}
 ) {
   const effectiveConfigPath = configPath ?? defaultUserConfigPath(home);
   const effectiveSessionCacheRoot = defaultSessionCacheRoot(home);
   const profile = await profileMachine();
   const recipes = [...recipeDocuments, ...(await loadRecipes(recipesRoot))];
-  const selected = await selectRecipe({ recipeId, recipes, profile, recipesRoot });
+  if (recipeVersion != null && !recipeId) throw new Error('--recipe-version needs --recipe');
+  const selected =
+    recipeVersion != null
+      ? await loadRecipeVersion(recipeId, recipeVersion, recipesRoot)
+      : await selectRecipe({ recipeId, recipes, profile, recipesRoot });
   const recipe = applyRecipeMode(selected, mode ?? installedRecipeMode(config, selected.id));
   const catalog = await loadBackendCatalog(backendCatalogPath);
   const backend = getBackend(catalog, recipe.backend?.id);
@@ -1730,7 +1735,8 @@ export async function createInitPlan(
       id: recipe.id,
       name: recipe.name,
       backendId: recipe.backend?.id,
-      ...(recipe.mode ? { mode: recipe.mode } : {})
+      ...(recipe.mode ? { mode: recipe.mode } : {}),
+      ...(recipeVersion != null ? { version: recipe.version } : {})
     },
     configPath: effectiveConfigPath,
     modelRoot: effectiveModelRoot,
