@@ -95,6 +95,24 @@ Setup steps, in order:
    with `kv/` and `ssm/`, which both members mount at `/prefix-cache`. It stays
    empty unless the prefix cache on disk is turned on (below).
 
+## Candidate: SparkGLM 0.3.0
+
+Version 2 of both SparkGLM recipes installs SparkGLM 0.3.0: one image
+(`ghcr.io/enntity/atlas-sparkglm:0.3.0`) for two and four Sparks, built on
+Enntity/atlas `spark` (Atlas-Inf main plus Enntity's open Atlas-Inf PRs, here
+#321 for TP-4). It runs in Spark mode with the tool-call guard on, keeps
+compiled CUDA kernels in `${installRoot}/atlas-sparkglm-cuda-cache`, and shares
+the per-host carveout lock `/run/lock/sparkglm` with SparkQwen. Pins are
+`pins-0.3.0.json` (pair, `4x1m`) and `pins-0.3.0-tp4.json` (`4x1m-tp4`). It is
+not qualified, so it installs only when asked for:
+
+```sh
+lloom setup --recipe linux-nvidia-dgx-spark-2x-glm53-atlas --recipe-version 2 --additive --apply --yes
+lloom setup --recipe linux-nvidia-dgx-spark-4x-glm53-atlas-tp4 --recipe-version 2 --additive --apply --yes
+```
+
+Setup without `--recipe-version` keeps installing version 1.
+
 ## Container contract
 
 The image ships its own engine profile and entrypoint. LLooM supplies
