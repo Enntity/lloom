@@ -1379,6 +1379,54 @@
       }
     },
     {
+      "id": "linux-nvidia-dgx-spark-glm53-atlas",
+      "path": "linux-nvidia-dgx-spark-glm53-atlas.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-dgx-spark-glm53-atlas.json",
+          "status": "current",
+          "notes": "SparkGLM 0.3.1 as one recipe with options --sparks 2|4 and --drafter v80|dflash2 (two Sparks default to v80, four to dflash2), one pin manifest (backends/atlas-sparkglm/pins-0.3.1.json). Two Sparks with v80 installs exactly what linux-nvidia-dgx-spark-2x-glm53-atlas version 4 installs, and four Sparks with dflash2 what linux-nvidia-dgx-spark-4x-glm53-atlas-tp4 version 3 installs, under one model name. Qualified at TP-2 with v80; not yet run at TP-4."
+        }
+      ],
+      "name": "DGX Spark GLM-5.3 Flash FP4-Local Atlas (SparkGLM)",
+      "summary": "Atlas SparkGLM on two DGX Sparks (TP-2 pair) or four (TP-4 chain), serving GLM-5.3-Flash-FP4-Local as published from a pinned GHCR image with the v80 or DFlash2 drafter: four requests of up to 1M tokens. Pick with --sparks and --drafter.",
+      "tags": [
+        "linux",
+        "nvidia",
+        "dgx-spark",
+        "cluster",
+        "glm-5.3",
+        "flash",
+        "nvfp4",
+        "fp4-local",
+        "atlas",
+        "sparkglm",
+        "mtp",
+        "tp4",
+        "daisy-chain"
+      ],
+      "recommendedFor": [
+        "Serving GLM-5.3 Flash on the Atlas SparkGLM engine across two or four DGX Sparks through LLooM"
+      ],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "tools",
+        "structured-output",
+        "reasoning",
+        "vision",
+        "speculative-decoding"
+      ],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-dgx-spark-glm53-atlas.json"
+      }
+    },
+    {
       "id": "linux-nvidia-dgx-spark-2x-glm53-atlas",
       "path": "linux-nvidia-dgx-spark-2x-glm53-atlas.json",
       "currentVersion": 4,

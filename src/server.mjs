@@ -1987,6 +1987,9 @@ function setupOptionsFromBody(config, body = {}) {
   return {
     recipeId: body.recipeId ?? body.recipe_id ?? body.recipe,
     ...(typeof body.mode === 'string' && body.mode ? { mode: body.mode } : {}),
+    ...(body.recipeOptions && typeof body.recipeOptions === 'object' && !Array.isArray(body.recipeOptions)
+      ? { recipeOptions: body.recipeOptions }
+      : {}),
     ...(Number.isInteger(Number(body.recipeVersion)) && body.recipeVersion != null
       ? { recipeVersion: Number(body.recipeVersion) }
       : {}),

@@ -16,7 +16,7 @@ import { profileMachine, rankRecipes } from './machine-profile.mjs';
 import { modelAcquisitionStatus } from './model-acquisition.mjs';
 import { modelDirectoryStatus } from './model-files.mjs';
 import { createRegistry } from './registry.mjs';
-import { loadRecipeById, loadRecipes, planRecipe } from './recipes.mjs';
+import { loadRecipeById, loadRecipes, planRecipe, recipeWithInstalledOptions } from './recipes.mjs';
 import { RuntimeManager } from './runtime-manager.mjs';
 
 function asObject(value) {
@@ -415,7 +415,10 @@ export async function createSetupStatus(
   const selectedRecipesRoot = recipesRoot ?? config.init?.recipesRoot;
   const selectedBackendCatalogPath = backendCatalogPath ?? config.init?.backendCatalogPath;
   const recipes = [...recipeDocuments, ...(await loadRecipes(selectedRecipesRoot))];
-  const recipe = await selectRecipe({ recipeId: selectedRecipeId, recipes, profile, recipesRoot: selectedRecipesRoot });
+  const recipe = recipeWithInstalledOptions(
+    await selectRecipe({ recipeId: selectedRecipeId, recipes, profile, recipesRoot: selectedRecipesRoot }),
+    config
+  );
   const catalog = await loadBackendCatalog(selectedBackendCatalogPath);
   const backend = getBackend(catalog, recipe.backend?.id);
   if (!backend) throw new Error(`Recipe ${recipe.id} references unknown backend ${recipe.backend?.id}`);

@@ -93,6 +93,7 @@ Model entries should be specific enough for LLooM to create the local runtime wi
 - `settings.runtime`: optional explicit launcher data for recipes that need backend-specific command lines or bootstrap-only managed containers. LLooM templates `command`, `args`, `env`, `bootstrap`, `healthPath` or `healthUrl`, `warmup`, `watchdog`, and session-cache hints with variables such as `${modelRoot}`, `${modelPath}`, `${modelId}`, `${port}`, `${contextWindow}`, `${maxOutputTokens}`, `${maxActiveRequests}`, `${runtimeId}`, and `${sessionCacheDir}`. If it is absent, LLooM uses the built-in defaults for known backends.
 - `settings.placement`: optional cluster placement. `{"mode":"replicated"}` materializes one local target on every configured node (or the `nodes` subset) plus leader-side LLooM proxy targets for remote replicas; distributed logical runtimes use ordered delegated `members` with per-node resource estimates. See [`clusters.md`](clusters.md).
 - `modes` (recipe level): optional named deployment modes, for example a pair that serves alone and one that leaves memory for sidecars. Each has an `id`, a `summary` and primitive `settings`; exactly one is `default`. `lloom setup --recipe ID --mode MODE` installs a mode: its settings replace each model's settings of the same name, so they also fill `${name}` templates and every memory reservation that reads `memoryGb` (distributed members without their own `resources.memoryGb` inherit it). The installed mode is recorded as `runtimes.*.recipe.mode`, and rerunning setup without `--mode` keeps it.
+- `options` (recipe level): optional named choices, each with a fixed set of `values` and a `default`, for example SparkGLM's `sparks` (`2` or `4`) and `drafter` (`v80` or `dflash2`). `lloom setup --recipe ID --sparks 4 --drafter dflash2` selects them; setup ignores `--NAME VALUE` pairs the recipe does not declare, and an option may not share a name with a setup flag. Anywhere in the recipe, `{"$option": "sparks", "2": A, "4": B}` stands for the branch of the selected value: inside an array an array branch is spliced in, and a `null` branch drops the element or key. Each value may carry primitive `variables` that fill `${name}` in any string of the recipe, including setup steps; other `${...}` templates are left for runtime. A default can be an `$option` node over an earlier option, so the drafter's default follows the size. Recipes load resolved with their defaults, so every reader sees a plain document with `selectedOptions`; validation resolves every combination (at most 64). The installed choice is recorded as `runtimes.*.recipe.options`, rerunning setup keeps it, and it reaches cluster members.
 - Versions (`recipes/index.json`): each recipe lists its versions as `current`, `candidate` or `archived`. `lloom setup --recipe ID` installs the current version. `lloom setup --recipe ID --recipe-version N` installs any listed version, so a candidate that is still qualifying (its file under `recipes/candidates/ID/vN.json`) or an archived one can be installed without becoming the default; the version reaches cluster members too. Promoting a candidate means making it the current file and archiving the old one.
 - `setDefault`: optional explicit instruction to select that model as the installed default for its output modality. This also applies during additive recipe updates, so use it only when the recipe intentionally owns the default choice.
 - `observed`: a lightweight performance summary for humans. Ranking-quality evidence should still live in a linked `benchmark-suite.v1`.
@@ -347,18 +348,36 @@ Per-model image, video and music recipes, each in its own ComfyUI runtime, are d
 Per-model NVIDIA speech and transcription recipes are documented in [Spark audio](spark-audio.md).
 ## Atlas SparkGLM
 
-`linux-nvidia-dgx-spark-2x-glm53-atlas` is the LLooM-managed lane for the
-Atlas SparkGLM engine on two directly connected DGX Sparks. Its current
-version (4) installs SparkGLM 0.3.1 (engine Enntity/atlas `spark` @ `5f79b46b`,
-Atlas-Inf main `2f9c37083`) with Enntity's v80 drafter, serving
-`nvidia/GLM-5.3-Flash-FP4-Local` as published. It qualified on a DGX Spark pair
-on 2026-11-03 against 0.3.0: identical greedy output and prompt logprobs,
-109/109 live checks, speed level (sparkglm-research `experiments/qual-20261103`).
+`linux-nvidia-dgx-spark-glm53-atlas` installs SparkGLM 0.3.1 (engine
+Enntity/atlas `spark` @ `5f79b46b`, Atlas-Inf main `2f9c37083`) as
+`glm-5.3-flash-atlas`, serving `nvidia/GLM-5.3-Flash-FP4-Local` as published.
+Two [options](#plan-contract) pick the deployment:
+
+| Option | Values | Default |
+| --- | --- | --- |
+| `--sparks` | `2`: a TP-2 pair over a direct cable (profile `4x1m`); `4`: TP-4 over a daisy chain (profile `4x1m-tp4`) | `2` |
+| `--drafter` | `v80`: Enntity's v80 (private repository); `dflash2`: `incoai/GLM-5.3-Flash-DFlash2` | `v80` on two Sparks, `dflash2` on four |
 
 ```sh
-lloom setup --recipe linux-nvidia-dgx-spark-2x-glm53-atlas --additive --apply --yes
+lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --additive --apply --yes
+lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --drafter dflash2 --additive --apply --yes
+lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --sparks 4 --additive --apply --yes
 lloom runtime-start glm53-flash-atlas-cluster
 ```
+
+Both sizes and both drafters come from one pin manifest,
+`backends/atlas-sparkglm/pins-0.3.1.json`, and one image. Two Sparks with v80
+installs exactly what `linux-nvidia-dgx-spark-2x-glm53-atlas` version 4 does;
+four Sparks with dflash2 installs what the TP-4 recipe's 0.3.1 candidate
+(version 3) does, under the one model name. 0.3.1 qualified on a DGX Spark pair
+with v80 on 2026-11-03 against 0.3.0: identical greedy output and prompt
+logprobs, 109/109 live checks, speed level (sparkglm-research
+`experiments/qual-20261103`). It has not been run at TP-4 yet.
+
+The per-size recipes `linux-nvidia-dgx-spark-2x-glm53-atlas` (described below)
+and `linux-nvidia-dgx-spark-4x-glm53-atlas-tp4` (the
+[TP-4 chain](#atlas-sparkglm-tp-4-chain) section) stay installable while hosts
+move to this recipe and TP-4 is qualified on 0.3.1.
 
 The recipe is additive. It does not set a default model and does not overwrite
 aliases, so an existing GLM-5.3 Flash route keeps working.

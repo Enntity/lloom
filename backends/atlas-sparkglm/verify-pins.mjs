@@ -36,13 +36,34 @@ const REQUIRED_PINS = [
   ['image.reference', (m) => m.image?.reference],
   ['image.tag', (m) => m.image?.tag],
   ['model.repo', (m) => m.model?.repo],
-  ['model.revision', (m) => m.model?.revision],
-  ['drafter.repo', (m) => m.drafter?.repo],
-  ['drafter.revision', (m) => m.drafter?.revision]
+  ['model.revision', (m) => m.model?.revision]
 ];
 
 export function loadPins(manifestPath = MANIFEST_PATH) {
   return JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+}
+
+// A release pins its drafters by name (drafters.v80, drafters.dflash2) for the
+// recipe's --drafter option; manifests from before that pin one as drafter.
+function drafterPins(manifest) {
+  if (manifest.drafters && typeof manifest.drafters === 'object') {
+    return Object.entries(manifest.drafters).map(([name, pin]) => [`drafters.${name}`, name, pin]);
+  }
+  return manifest.drafter ? [['drafter', null, manifest.drafter]] : [];
+}
+
+export function pinnedDrafter(manifest, name) {
+  if (!manifest.drafters) return manifest.drafter;
+  if (!Object.hasOwn(manifest.drafters, name)) {
+    throw new Error(`pin manifest has no drafter ${name}; it pins ${Object.keys(manifest.drafters).join(', ')}`);
+  }
+  return manifest.drafters[name];
+}
+
+// One image serves every size, so a release lists each profile it must ship.
+export function profilePathsOf(manifest) {
+  const paths = manifest.image?.profilePaths;
+  return Array.isArray(paths) ? paths : [manifest.image?.profilePath];
 }
 
 export function imageTagFor(manifest) {
@@ -56,14 +77,28 @@ export function verifyPins(manifest) {
     if (typeof value !== 'string' || value.length === 0) failures.push(`${name} is missing`);
     else if (/draft|todo/i.test(value)) failures.push(`${name} is a placeholder: ${value}`);
   }
+  const drafters = drafterPins(manifest);
+  if (!drafters.length) failures.push('drafter is missing');
+  for (const [field, name, pin] of drafters) {
+    if (name !== null && !/^[a-z0-9][a-z0-9-]*$/.test(name)) {
+      failures.push(`drafter name ${name} must be lowercase letters, digits or -`);
+    }
+    for (const key of ['repo', 'revision']) {
+      const value = pin?.[key];
+      if (typeof value !== 'string' || value.length === 0) failures.push(`${field}.${key} is missing`);
+      else if (/draft|todo/i.test(value)) failures.push(`${field}.${key} is a placeholder: ${value}`);
+      else if (key === 'revision' && !/^[a-f0-9]{40}$/.test(value)) {
+        failures.push(`${field}.revision must be a 40-character lowercase git object id, got ${value}`);
+      }
+    }
+  }
   if (String(manifest.status).toLowerCase() !== 'final') {
     failures.push(`status must be final, got ${manifest.status}`);
   }
   for (const [name, value] of [
     ['source.revision', manifest.source?.revision],
     ['source.installTree', manifest.source?.installTree],
-    ['engine.commit', manifest.engine?.commit],
-    ['drafter.revision', manifest.drafter?.revision]
+    ['engine.commit', manifest.engine?.commit]
   ]) {
     if (typeof value === 'string' && !/^[a-f0-9]{40}$/.test(value)) {
       failures.push(`${name} must be a 40-character lowercase git object id, got ${value}`);
@@ -85,10 +120,18 @@ export function verifyPins(manifest) {
     failures.push(`image.architecture must be ${REQUIRED_IMAGE_ARCHITECTURE}, got ${manifest.image?.architecture}`);
   }
   // install.sh interpolates these into an in-image check command.
-  for (const name of ['entrypoint', 'profilePath']) {
-    if (!/^\/opt\/atlas\/[A-Za-z0-9_./-]+$/.test(String(manifest.image?.[name] ?? ''))) {
-      failures.push(`image.${name} must be a plain path under /opt/atlas, got ${manifest.image?.[name]}`);
+  const plainPath = (value) => /^\/opt\/atlas\/[A-Za-z0-9_./-]+$/.test(String(value ?? ''));
+  if (!plainPath(manifest.image?.entrypoint)) {
+    failures.push(`image.entrypoint must be a plain path under /opt/atlas, got ${manifest.image?.entrypoint}`);
+  }
+  const profiles = profilePathsOf(manifest);
+  if (Array.isArray(manifest.image?.profilePaths)) {
+    if (!profiles.length) failures.push('image.profilePaths must list at least one profile');
+    for (const profile of profiles.filter((value) => !plainPath(value))) {
+      failures.push(`image.profilePaths must be plain paths under /opt/atlas, got ${profile}`);
     }
+  } else if (!plainPath(profiles[0])) {
+    failures.push(`image.profilePath must be a plain path under /opt/atlas, got ${profiles[0]}`);
   }
   if (Object.hasOwn(manifest.image ?? {}, 'id')) {
     failures.push(

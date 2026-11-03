@@ -20,7 +20,7 @@ import {
 } from './benchmarks.mjs';
 import { profileMachine, rankRecipes } from './machine-profile.mjs';
 import { createRegistry } from './registry.mjs';
-import { loadRecipeById, loadRecipes, planRecipe } from './recipes.mjs';
+import { loadRecipeById, loadRecipes, planRecipe, recipeWithInstalledOptions } from './recipes.mjs';
 
 function integrationSummary(artifacts, clientId = 'all') {
   const selected = selectIntegrationArtifacts(artifacts, clientId);
@@ -153,7 +153,7 @@ export async function createBootstrapPlan(
 ) {
   const profile = await profileMachine();
   const recipes = [...recipeDocuments, ...(await loadRecipes(recipesRoot))];
-  const recipe = await selectRecipe({ recipeId, recipes, profile, recipesRoot });
+  const recipe = recipeWithInstalledOptions(await selectRecipe({ recipeId, recipes, profile, recipesRoot }), config);
   const catalog = await loadBackendCatalog(backendCatalogPath);
   const backend = getBackend(catalog, recipe.backend?.id);
   if (!backend) throw new Error(`Recipe ${recipe.id} references unknown backend ${recipe.backend?.id}`);
@@ -249,7 +249,7 @@ export async function applyBootstrap(
   } else {
     const profile = await profileMachine();
     const recipes = [...recipeDocuments, ...(await loadRecipes(recipesRoot))];
-    recipe = await selectRecipe({ recipeId, recipes, profile, recipesRoot });
+    recipe = recipeWithInstalledOptions(await selectRecipe({ recipeId, recipes, profile, recipesRoot }), config);
     const catalog = await loadBackendCatalog(backendCatalogPath);
     backend = getBackend(catalog, recipe.backend?.id);
   }

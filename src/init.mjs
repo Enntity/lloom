@@ -12,7 +12,15 @@ import { nextBackendPort } from './model-intake.mjs';
 import { detectModelRootForRecipe } from './model-files.mjs';
 import { profileMachine, rankRecipes } from './machine-profile.mjs';
 import { createRegistry } from './registry.mjs';
-import { applyRecipeMode, loadRecipeById, loadRecipeVersion, loadRecipes } from './recipes.mjs';
+import {
+  applyRecipeMode,
+  loadRecipeById,
+  loadRecipeVersion,
+  loadRecipes,
+  prepareRecipeDocument,
+  recipeOptionFlags,
+  recipeWithInstalledOptions
+} from './recipes.mjs';
 import { repoRoot } from './config.mjs';
 import { materializeFederatedNodes } from './cluster.mjs';
 
@@ -311,7 +319,8 @@ function recipeIdentity(recipe) {
     id: recipe.id,
     version: recipe.version ?? 1,
     source: recipe.filePath ?? null,
-    ...(recipe.mode ? { mode: recipe.mode } : {})
+    ...(recipe.mode ? { mode: recipe.mode } : {}),
+    ...(recipe.selectedOptions ? { options: recipe.selectedOptions } : {})
   };
 }
 
@@ -1516,12 +1525,14 @@ function initCommand({
   clientId,
   home,
   generatedRoot,
+  recipeOptions,
   apply = false,
   integrate = false,
   additive = false
 } = {}) {
   const args = ['lloom', 'init'];
   if (recipeId) args.push('--recipe', shellArg(recipeId));
+  args.push(...recipeOptionFlags(recipeOptions, shellArg));
   if (additive) args.push('--additive');
   args.push(...customHomeArg(home));
   if (generatedRoot) args.push('--generated-root', shellArg(generatedRoot));
@@ -1710,19 +1721,23 @@ export async function createInitPlan(
     additive = false,
     restoreCatalog = false,
     mode,
+    recipeOptions = {},
     recipeVersion
   } = {}
 ) {
   const effectiveConfigPath = configPath ?? defaultUserConfigPath(home);
   const effectiveSessionCacheRoot = defaultSessionCacheRoot(home);
   const profile = await profileMachine();
-  const recipes = [...recipeDocuments, ...(await loadRecipes(recipesRoot))];
+  const recipes = [...recipeDocuments.map(prepareRecipeDocument), ...(await loadRecipes(recipesRoot))];
   if (recipeVersion != null && !recipeId) throw new Error('--recipe-version needs --recipe');
   const selected =
     recipeVersion != null
       ? await loadRecipeVersion(recipeId, recipeVersion, recipesRoot)
       : await selectRecipe({ recipeId, recipes, profile, recipesRoot });
-  const recipe = applyRecipeMode(selected, mode ?? installedRecipeMode(config, selected.id));
+  const recipe = applyRecipeMode(
+    recipeWithInstalledOptions(selected, config, recipeOptions),
+    mode ?? installedRecipeMode(config, selected.id)
+  );
   const catalog = await loadBackendCatalog(backendCatalogPath);
   const backend = getBackend(catalog, recipe.backend?.id);
   if (!backend) throw new Error(`Recipe ${recipe.id} references unknown backend ${recipe.backend?.id}`);
@@ -1752,7 +1767,7 @@ export async function createInitPlan(
     restoreCatalog
   });
 
-  return {
+  const plan = {
     dryRun: true,
     profile,
     selectedRecipe: {
@@ -1760,6 +1775,7 @@ export async function createInitPlan(
       name: recipe.name,
       backendId: recipe.backend?.id,
       ...(recipe.mode ? { mode: recipe.mode } : {}),
+      ...(recipe.selectedOptions ? { options: recipe.selectedOptions } : {}),
       ...(recipeVersion != null ? { version: recipe.version } : {})
     },
     configPath: effectiveConfigPath,
@@ -1780,6 +1796,7 @@ export async function createInitPlan(
     next: {
       review: initCommand({
         recipeId: recipe.id,
+        recipeOptions: recipe.selectedOptions,
         recipesRoot,
         backendCatalogPath,
         configPath: effectiveConfigPath,
@@ -1793,6 +1810,7 @@ export async function createInitPlan(
       }),
       apply: initCommand({
         recipeId: recipe.id,
+        recipeOptions: recipe.selectedOptions,
         recipesRoot,
         backendCatalogPath,
         configPath: effectiveConfigPath,
@@ -1807,6 +1825,7 @@ export async function createInitPlan(
       }),
       integrate: initCommand({
         recipeId: recipe.id,
+        recipeOptions: recipe.selectedOptions,
         recipesRoot,
         backendCatalogPath,
         configPath: effectiveConfigPath,
@@ -1834,6 +1853,10 @@ export async function createInitPlan(
     },
     config: userConfig
   };
+  // The recipe as resolved for this plan (version, options, mode), for setup's
+  // bootstrap phase; not part of the printed plan.
+  Object.defineProperty(plan, 'recipe', { value: recipe });
+  return plan;
 }
 
 async function writeJson(filePath, value, { exclusive = false } = {}) {
