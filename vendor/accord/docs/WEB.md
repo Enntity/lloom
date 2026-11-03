@@ -6,7 +6,7 @@ page keeps credentials, message drafts, and session content in memory. Reloading
 or disconnecting requires connecting again. Only appearance and pinned session
 addresses are saved in browser storage.
 
-The dashboard runs directly from Accord. It needs no Tessera installation, cloud
+The dashboard runs directly from Accord. It needs no cloud
 account, frontend build, external fonts, or JavaScript runtime dependencies.
 
 ## Find and steer work
@@ -51,8 +51,7 @@ incidents can produce a generic notification while the tab is running. The tab
 title also shows the attention count. There is no closed-tab push service or
 service worker. Notification permission, clipboard support, and native dialogs
 have explicit fallbacks. The target is modern Safari, Firefox, and Chromium;
-Internet Explorer is not supported. Recorded browser qualification names the
-actual engine/surface tested rather than claiming a full device matrix.
+Internet Explorer is not supported.
 
 ## Failure and privacy behavior
 

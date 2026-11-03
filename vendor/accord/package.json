@@ -1,12 +1,31 @@
 {
   "name": "@enntity/accord",
-  "version": "0.4.0-preview.1",
-  "private": true,
+  "version": "0.5.0",
   "type": "module",
   "description": "Discover agents, exchange messages, and share resources with safe recovery",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Enntity/accord.git"
+  },
+  "homepage": "https://github.com/Enntity/accord#readme",
+  "bugs": {
+    "url": "https://github.com/Enntity/accord/issues"
+  },
+  "keywords": [
+    "agents",
+    "coordination",
+    "mcp",
+    "claude-code",
+    "codex",
+    "reservations",
+    "sqlite"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=22.16.0"
   },
   "bin": {
     "accord": "src/cli.mjs"
@@ -18,8 +37,7 @@
     "verify": "node scripts/verify.mjs",
     "start": "node src/cli.mjs up",
     "demo:process": "node demo/process-recovery.mjs",
-    "demo:bootstrap": "node demo/bootstrap.mjs",
-    "build:sensors": "node scripts/build-sensors.mjs"
+    "demo:bootstrap": "node demo/bootstrap.mjs"
   },
   "files": [
     "src/",
@@ -27,8 +45,10 @@
     "vendor/",
     "README.md",
     "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "SECURITY.md",
     "docs/",
-    "native/",
-    "scripts/build-sensors.mjs"
+    "!docs/assets",
+    "native/"
   ]
 }

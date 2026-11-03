@@ -1,12 +1,12 @@
 # Host telemetry
 
-Each Accord host reads its own sensors. Tessera, LLooM, and agents can ask that
+Each Accord host reads its own sensors. Agents and other tools can ask that
 host directly or ask their local Accord service to forward the request over an
 existing authenticated host link. No samples are published to the coordination
 database, mailbox, or event journal. There is no background sampling when idle.
 
 ```
-Tessera / LLooM / agent → local Accord → SSH host link → owning host → sensors
+agent or tool → local Accord → SSH host link → owning host → sensors
 ```
 
 ```sh
@@ -72,28 +72,19 @@ estimated memory; these endpoint reads do not replace its admission transaction.
 | Network | Linux interface state, speed Mbps and cumulative RX/TX bytes; no traffic sampling loop |
 | Hardware inventory | OS/architecture/release, CPU model/count, total host memory, accelerator IDs/vendor/backend; NVIDIA UUID, compute capability, driver and PCI bus; Apple GPU/ANE inventory |
 
-Sensor support varies. GB10 often reports GPU memory as N/A: host unified memory
-is reported separately, never copied into a fictitious VRAM counter. Apple GPU
-memory, power, clocks, and ANE utilization remain null/unavailable. AMD Strix is
-fixture-tested through standard DRM/sysfs, not hardware-qualified. Network
+Sensor support varies. Unified-memory NVIDIA systems often report GPU memory as N/A:
+host unified memory is reported separately, never copied into a fictitious VRAM
+counter. Apple GPU memory, power, clocks, and ANE utilization remain null/unavailable.
+AMD is fixture-tested through standard DRM/sysfs, not hardware-qualified. Network
 counters on macOS/Windows and vendor-specific topology are not implemented here.
 
-## Product integration
+## Adapters
 
-`response.host` retains LLooM's `snapshot.host` CPU, memory and GPU field names and
-units. The implementation reuses LLooM's unchanged host-memory parser; its NVIDIA
-query and CPU delta calculation are adapted into a product-independent collector.
-The `lloomMachineInput(response)` helper in `src/telemetry.mjs` prepares hardware
-facts for LLooM's existing `normalizeMachineProfile`, preserving its GPU IDs.
-LLooM continues to own cluster topology, accelerator policy, memory domains,
-recipes, runtime/model state, request metrics and admission decisions.
-
-`tesseraVitals(response)` maps readings to Tessera's MachineVitals measurement
-fields: fractions for CPU/GPU/memory, GiB for memory capacity, temperature,
-hottestSensor, gpuName, gpuPowerW, load and cores. The consumer adds its own
-identity, local/remote flag and reachability status. The helper returns null for
-stale or absent samples. The macOS sensor helper is extracted from Tessera and
-retains its license and source attribution.
+`src/telemetry.mjs` includes optional helpers that shape a response for two related
+open-source projects: `lloomMachineInput(response)` for
+[LLooM](https://github.com/Enntity/lloom) and `tesseraVitals(response)` for
+[Tessera](https://github.com/Enntity/tessera). Neither project is required. The macOS
+sensor helper is extracted from Tessera and retains its license and attribution.
 
 Collectors implement `snapshot()` and `metadata()`. They return ordinary objects
 and availability records, have no store access, and do not enforce ownership.
@@ -102,14 +93,11 @@ reuse transport and freshness behavior. There is no executable upload/plugin
 installation API; administrator-installed code remains the trust boundary.
 Resource enforcement plugins remain separate from sensor collectors.
 
-This change supplies the consumer contract. It does not switch Tessera or LLooM
-to Accord; their migration can now be tested against the same readings.
-
 ## Installation and qualification
 
-The preview package includes the Apple arm64 sensor helper. On other macOS
-architectures, `accord install` builds an optional helper when Apple developer
-tools are already installed. Missing tools leave CPU/memory available and mark
+On macOS, `accord install` compiles an optional sensor helper from
+`native/macos-sensors.swift` when Apple developer tools are already installed.
+Accord ships no prebuilt binary. Missing tools leave CPU/memory available and mark
 native sensors unavailable. No sudo, driver installation, or toolchain download
 is performed. Linux uses existing nvidia-smi and readable proc/sysfs files.
 
@@ -122,4 +110,4 @@ existing process and artifact crash/recovery demos.
 `scripts/qualify-telemetry.mjs --confirm-live` is a separate opt-in real-host
 qualification. It runs temporary services through the normal SSH connector,
 checks direct/forwarded sample identity, no coordination writes, CPU warmup,
-cache refresh/restart and host outage. Results are in `evidence/telemetry/`.
+cache refresh/restart and host outage.

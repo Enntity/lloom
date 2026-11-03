@@ -3,13 +3,13 @@ import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'nod
 import { dirname, join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { AccordClient } from './client.mjs';
-import { loopbackUrl, request, requireThat } from './common.mjs';
+import { loopbackUrl, request, requireThat, hash } from './common.mjs';
 
 export function profileAt(path) {
   const profile = JSON.parse(readFileSync(path, 'utf8'));
   requireThat(profile.schema === 1 && typeof profile.authority === 'string', 'PROFILE_INVALID', 'Unsupported Accord connection profile');
-  const endpoint = profile.endpointFile ? JSON.parse(readFileSync(profile.endpointFile, 'utf8')).coordinator : profile.url;
-  return {...profile, url:loopbackUrl(endpoint)};
+  const endpoints = profile.endpointFile ? JSON.parse(readFileSync(profile.endpointFile, 'utf8')) : null;
+  return {...profile, url:loopbackUrl(endpoints ? endpoints.local ?? endpoints.coordinator : profile.url)};
 }
 export async function discover(profile) {
   const descriptor = await request(profile.url, '', '/.well-known/accord');
@@ -18,11 +18,11 @@ export async function discover(profile) {
   requireThat(host.authority === profile.authority, 'AUTHORITY_MISMATCH', 'Pinned host identity changed');
   return host;
 }
-export async function enrollProfile(path, {label = 'agent', harness = 'cli', ttlMs, key} = {}) {
+export async function enrollProfile(path, {label = 'agent', harness = 'cli', ttlMs, key, nativeIdentity} = {}) {
   const profile = profileAt(path);
   const client = await AccordClient.enroll(profile.url, readFileSync(profile.enrollmentFile, 'utf8').trim(),
     {authority:profile.authority, label, harness, ttlMs, key});
-  await bindNativeSession(profile,client);
+  await bindNativeSession(profile,client,nativeIdentity);
   return client;
 }
 export function notice(host) {
@@ -72,9 +72,17 @@ export function inheritedClient() {
 
 // A trusted local launcher supplies native IDs from its environment, never from
 // a model tool argument or a guessed working-directory/name match.
-export async function bindNativeSession(profile,client){
+// A named client trusts only its own ID and its terminal's: an agent started inside
+// another agent's shell inherits that agent's ID and must never take its mailbox.
+export function nativeSessionIdentity(env=process.env,client){
+  const all=[['codex',env.CODEX_THREAD_ID],['claude',env.CLAUDE_SESSION_ID],['zcode',env.ZCODE_SESSION_ID],['tessera',env.TESSERA_TILE_ID]];
+  for(const [source,id] of client===undefined?all:all.filter(([source])=>source==='tessera'||String(client).toLowerCase().startsWith(source)))
+    if(id)return {source,id};
+}
+export const nativeEnrollmentKey=identity=>`mcp-native:${hash(JSON.stringify([identity.source,identity.id]))}`;
+export async function bindNativeSession(profile,client,nativeIdentity){
   if(!profile.endpointFile)return;
-  const bindings=[['codex',process.env.CODEX_THREAD_ID],['claude',process.env.CLAUDE_SESSION_ID],['tessera',process.env.TESSERA_TILE_ID]].filter(([,id])=>id);
+  const bindings=nativeIdentity?[[nativeIdentity.source,nativeIdentity.id]]:nativeIdentity===null?[]:[['codex',process.env.CODEX_THREAD_ID],['claude',process.env.CLAUDE_SESSION_ID],['tessera',process.env.TESSERA_TILE_ID]].filter(([,id])=>id);
   if(!bindings.length)return;
   const admin=readFileSync(join(dirname(profile.endpointFile),'admin.token'),'utf8').trim();
   for(const [source,externalId] of bindings)await request(profile.url,admin,'/v1/collaboration',{operation:'session-bind',args:{key:`bind:${client.session.sessionId}:${source}`,source,externalId,actor:client.session.sessionId}});

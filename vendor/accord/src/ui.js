@@ -371,6 +371,7 @@
       "Your inbox, with durable delivery across the network.",
     ],
     activity: ["Activity", "A record of what changed and why."],
+    memory: ["Memory", "What the agents have learned, indexed from their own stores."],
   };
   // Trusted static shell. All session, question, message and provider content uses text nodes.
   document.body.innerHTML = `<a class="skip" href="#main">Skip to content</a><aside class="rail" aria-label="Main navigation"><div class="brand"><span class="brand-mark" id="brand-mark"></span>Accord</div><div class="rail-caption">Mission control</div><nav class="nav" id="nav"></nav><div class="rail-bottom"><button class="nav-item" id="notifications" type="button"></button><button class="nav-item" id="theme" type="button"></button><button class="nav-item" id="shortcuts" type="button"></button><button class="host-button" id="connection-button" type="button"><span class="host-avatar">AC</span><span class="host-copy"><strong id="host-name">Your Accord</strong><span id="host-caption">Connect to a host</span></span><span id="host-chevron"></span></button></div></aside><button class="nav-scrim" id="nav-scrim" aria-label="Close navigation" hidden></button><div class="workspace"><header class="topbar"><button class="icon-button menu-toggle" id="menu-toggle" aria-label="Open navigation" aria-expanded="false"></button><label class="search-box"><span id="search-icon"></span><input id="search" type="search" maxlength="200" placeholder="Search sessions, activity, or people" aria-label="Search sessions, activity, or people" autocomplete="off"><kbd id="search-key">⌘ K</kbd></label><div class="top-actions"><div class="connection" role="status"><span class="dot" id="connection-dot"></span><span id="connection-status">Not connected</span></div><button class="icon-button" id="refresh" type="button" title="Refresh" aria-label="Refresh"></button><button class="button small" id="connect-button" type="button">Connect</button></div></header><main id="main" class="content" tabindex="-1"><div id="banner" hidden></div><div id="page"></div></main></div><dialog class="dialog" id="connect-dialog" aria-labelledby="connect-title"><div class="dialog-head"><h2 id="connect-title">Enter your Accord</h2><button class="icon-button" data-close="connect-dialog" aria-label="Close connection settings"></button></div><p class="dialog-description">Connect to the host serving this page. Your credential stays in this tab’s memory.</p><form id="connect-form"><label class="field-label" for="token">Host credential</label><input id="token" type="password" autocomplete="off" spellcheck="false" maxlength="512" placeholder="Paste your operator or agent token" required><div class="dialog-footer"><label class="button small file-label" tabindex="0" role="button">Choose credential file<input type="file" id="credential-file" accept=".token,.txt" aria-label="Choose credential file"></label><button class="button primary" id="connect-submit">Connect</button></div><p class="inline-error" id="connect-error" role="alert"></p></form><p class="help">On a default install, the operator credential is in <code>~/.local/share/accord/admin.token</code>. An operator can answer questions and steer admissions. Agent credentials have narrower permissions.</p><div id="connection-details" hidden></div></dialog><dialog class="dialog" id="compose-dialog" aria-labelledby="compose-title"><div class="dialog-head"><h2 id="compose-title">Start a conversation</h2><button class="icon-button" data-close="compose-dialog" aria-label="Close message composer"></button></div><p class="dialog-description">Send a durable message to a collaborator. Delivery does not mean they have read it yet.</p><form id="compose-form"><label class="field-label" for="recipient">To</label><select id="recipient" required></select><label class="field-label" for="recipient-address" id="address-label" hidden>Recipient address</label><input id="recipient-address" placeholder="host-authority/session-id" hidden maxlength="220"><label class="field-label" for="message-text">Message</label><textarea id="message-text" rows="6" maxlength="4000" placeholder="Share context, ask a question, or steer the work…" required></textarea><label class="check-label"><input id="message-notify" type="checkbox">Request attention from the recipient</label><p class="inline-error" id="compose-error" role="alert"></p><div class="dialog-footer"><span class="hint" id="message-count">0 / 4,000</span><button class="button primary" id="message-submit">Send message</button></div></form></dialog><dialog class="dialog drawer" id="detail-dialog" aria-labelledby="detail-title"><div class="drawer-header"><span class="eyebrow" id="detail-kicker">Session activity</span><button class="icon-button" data-close="detail-dialog" aria-label="Close details"></button></div><div class="drawer-content" id="detail-content"></div><div class="drawer-footer" id="detail-actions"></div></dialog><dialog class="dialog" id="help-dialog" aria-labelledby="help-title"><div class="dialog-head"><h2 id="help-title">A little faster</h2><button class="icon-button" data-close="help-dialog" aria-label="Close keyboard shortcuts"></button></div><p class="dialog-description">Everything works with a mouse, touch, or keyboard.</p><div class="shortcut-row"><span>Find sessions and activity</span><kbd>⌘ / Ctrl K</kbd></div><div class="shortcut-row"><span>Focus search</span><kbd>/</kbd></div><div class="shortcut-row"><span>New message</span><kbd>N</kbd></div><div class="shortcut-row"><span>Send a message</span><kbd>⌘ / Ctrl Enter</kbd></div><div class="shortcut-row"><span>Close a panel</span><kbd>Esc</kbd></div><div class="shortcut-row"><span>Keyboard shortcuts</span><kbd>?</kbd></div><p class="help">Browser notifications are optional and work while this page is open. Keep the tab open to receive new-question and overseer alerts. Closed-tab push is not configured.</p></dialog><div id="toasts" class="toast-stack" role="status" aria-live="polite"></div>`;
@@ -390,6 +391,7 @@
     ["resources", "resource", "Resources"],
     ["messages", "message", "Messages"],
     ["activity", "activity", "Activity"],
+    ["memory", "folder", "Memory"],
   ])
     $("nav").append(
       h(
@@ -730,6 +732,7 @@
       ["directory", () => operation("find")],
       ["resources", () => operation("resources")],
       ["inbox", () => operation("inbox")],
+      ["memories", () => operation("memories", { limit: 20 })],
     ];
     try {
       const results = await Promise.allSettled(requests.map(([, fn]) => fn()));
@@ -796,6 +799,7 @@
           .sort((a, b) => b.seq - a.seq)
           .slice(0, 200);
       }
+      if (values.memories) S.data.memories = values.memories;
       if (
         values.directory?.hosts?.some((h) => h.status === "unknown") ||
         a?.hosts?.some((h) => h.status === "unknown")
@@ -1915,6 +1919,71 @@
       .replace(/[._-]/g, " ")
       .replace(/^\w/, (c) => c.toUpperCase());
   }
+  function memoryCard(entry) {
+    const src = entry.source?.harness || "agent";
+    return h(
+      "article",
+      { class: "session-card" },
+      h(
+        "div",
+        { class: "card-top" },
+        h(
+          "span",
+          { class: `avatar ${["codex", "claude"].includes(src) ? src : "agent"}` },
+          src.slice(0, 2),
+        ),
+        h("span", { class: "source" }, src),
+        badge(entry.stale ? "unknown" : "working", entry.type),
+      ),
+      h(
+        "button",
+        {
+          type: "button",
+          class: "card-title clamp",
+          onClick: () => openEvidence(entry.name, entry, "Memory entry"),
+        },
+        entry.name,
+      ),
+      h("p", { class: "card-summary clamp" }, entry.description || "No description."),
+      h(
+        "div",
+        { class: "card-footer" },
+        icon("folder"),
+        h("span", {}, entry.source?.label || "unknown"),
+        time(entry.updated),
+        entry.stale ? badge("unknown", "stale") : null,
+      ),
+    );
+  }
+  function memoryView() {
+    const data = S.data.memories,
+      entries = data?.entries || [];
+    const cards = h(
+      "div",
+      { class: "cards" },
+      entries.length
+        ? entries.map(memoryCard)
+        : [
+            empty(
+              "No indexed memory yet",
+              "Adapters index each harness's own memory store on this host and its linked hosts. Descriptions stay local until recalled.",
+              "folder",
+            ),
+          ],
+    );
+    const sources = Object.entries(data?.sources || {}).map(([name, s]) =>
+      h(
+        "div",
+        { class: "log-row" },
+        icon(s.ok ? "check" : "attention"),
+        h("div", {}, h("strong", {}, name), h("span", { class: "muted" }, s.ok ? `${s.entries} entries` : s.error || "failed")),
+      ),
+    );
+    return [
+      section("Shared memory", cards, { count: entries.length, glyph: "folder" }),
+      section("Sources", sources.length ? sources : empty("No adapters", "No memory sources are enabled on this host.", "folder"), { glyph: "folder" }),
+    ];
+  }
   function activityView() {
     return S.events.length
       ? panel(
@@ -2077,6 +2146,7 @@
       resources: resourceView,
       messages: messagesView,
       activity: activityView,
+      memory: memoryView,
     }[S.view]();
     $("page").replaceChildren(
       h(

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { ArtifactDriver } from './driver.mjs';
 import { workloadJournalMigration } from './workload-schema.mjs';
-import { transaction, requireThat, text, loopbackUrl, request, equal, hash } from './common.mjs';
+import { transaction, requireThat, text, integer, loopbackUrl, request, equal, hash } from './common.mjs';
 export const managedPlugin = {id:'managed-http',enforcement:'provider-confirmed prepare, workload stop, and restoration; unavailable provider remains held'};
 const migration = `ALTER TABLE state ADD COLUMN phase TEXT NOT NULL DEFAULT 'idle';`;
 export function managedManifest(v) {
@@ -13,7 +13,11 @@ export function managedManifest(v) {
   requireThat(!url.username&&!url.password&&!url.search&&!url.hash,'RESOURCE_MANIFEST','Invalid provider endpoint',400);
   const endpoint=url.origin+url.pathname.replace(/\/+$/,'');
   requireThat(isAbsolute(v.tokenFile??''),'RESOURCE_MANIFEST','Use an absolute provider credential file',400);
-  return {schema:1,id:v.id,asset:v.asset,plugin:managedPlugin.id,endpoint,tokenFile:v.tokenFile,label:String(v.label??v.id).slice(0,120),hosts:(v.hosts??[]).slice(0,32).map(String)};
+  // The provider owns its hold policy; Accord applies it when a reservation renews.
+  if(v.maxOwnershipMs!==undefined)integer(v.maxOwnershipMs,'maxOwnershipMs',60000,2592000000);
+  requireThat(v.allowIndefinite===undefined||typeof v.allowIndefinite==='boolean','RESOURCE_MANIFEST','allowIndefinite must be boolean',400);
+  return {schema:1,id:v.id,asset:v.asset,plugin:managedPlugin.id,endpoint,tokenFile:v.tokenFile,label:String(v.label??v.id).slice(0,120),hosts:(v.hosts??[]).slice(0,32).map(String),
+    ...(v.maxOwnershipMs!==undefined?{maxOwnershipMs:v.maxOwnershipMs}:{}),...(v.allowIndefinite?{allowIndefinite:true}:{})};
 }
 export class ManagedDriver extends ArtifactDriver {
   constructor(file,manifest) {
