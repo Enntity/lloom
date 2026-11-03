@@ -14,6 +14,7 @@ import { profileMachine, rankRecipes } from './machine-profile.mjs';
 import { createRegistry } from './registry.mjs';
 import { applyRecipeMode, loadRecipeById, loadRecipeVersion, loadRecipes } from './recipes.mjs';
 import { repoRoot } from './config.mjs';
+import { materializeFederatedNodes } from './cluster.mjs';
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -23,6 +24,23 @@ function stripRuntimeFields(config) {
   const copy = clone(config);
   delete copy.sourcePath;
   return copy;
+}
+
+// Clients see the gateway's catalog, which includes federated peer models.
+function federatedView(config) {
+  return materializeFederatedNodes(clone(config));
+}
+
+// Maintenance and readiness choices live on a runtime but no recipe owns them,
+// so rebuilding a recipe runtime carries them over.
+const OPERATOR_RUNTIME_FIELDS = ['maintenance', 'preferredWarm'];
+
+function setRecipeRuntime(config, runtimeId, runtime) {
+  const existing = config.runtimes[runtimeId];
+  for (const field of OPERATOR_RUNTIME_FIELDS) {
+    if (existing && Object.hasOwn(existing, field)) runtime[field] = existing[field];
+  }
+  config.runtimes[runtimeId] = runtime;
 }
 
 function containsEnvReference(value) {
@@ -865,7 +883,7 @@ function ensureRecipeConfigEntries(
             group: logicalRuntimeId
           };
           runtime.healthStrategy = member.healthStrategy ?? (nodeId === leaderNode ? 'http' : 'container');
-          config.runtimes[memberRuntimeId] = runtime;
+          setRecipeRuntime(config, memberRuntimeId, runtime);
           members.push({
             node: nodeId,
             runtime: memberRuntimeId,
@@ -893,7 +911,7 @@ function ensureRecipeConfigEntries(
         apiKey: settings.apiKey ?? 'sk-local-llm',
         timeoutMs: positiveInteger(settings.timeoutMs, 1800000)
       };
-      config.runtimes[runtimeId] = {
+      setRecipeRuntime(config, runtimeId, {
         enabled: true,
         keepWarm: settings.keepWarm === true,
         maxConcurrency: positiveInteger(settings.maxActiveRequests, backendId === 'mtplx' ? 10 : 4),
@@ -936,7 +954,7 @@ function ensureRecipeConfigEntries(
           group: runtimeId
         },
         placement: { mode: 'distributed', ...(chain ? { leaderNode } : {}), members }
-      };
+      });
       const materializedModel = materializedRecipeModel(recipe, recipeModel, modelId, {
         backend: backendConfigId,
         runtime: runtimeId
@@ -1011,7 +1029,7 @@ function ensureRecipeConfigEntries(
             rewriteDockerPublishedHost(runtime.bootstrap?.createArgs, node.backendHost, port);
             runtime.healthUrl = rewriteUrlOrigin(runtime.healthUrl, backendOrigin);
             if (runtime.warmup?.url) runtime.warmup.url = rewriteUrlOrigin(runtime.warmup.url, backendOrigin);
-            config.runtimes[runtimeId] = runtime;
+            setRecipeRuntime(config, runtimeId, runtime);
           }
         }
         targets.push({ id: nodeId, node: nodeId, backend: backendConfigId, runtime: runtimeId });
@@ -1090,7 +1108,7 @@ function ensureRecipeConfigEntries(
         sessionCacheRoot,
         backendVariables
       });
-      if (runtime) config.runtimes[runtimeId] = runtime;
+      if (runtime) setRecipeRuntime(config, runtimeId, runtime);
     }
 
     const materializedModel = materializedRecipeModel(recipe, recipeModel, modelId, {
@@ -1539,6 +1557,10 @@ export function deriveUserConfig(
 ) {
   const sourceTemplate = config.sourceTemplate;
   const derived = stripRuntimeFields(config);
+  // Loading rewrites models for federation (peer models added, shared ids lose
+  // their local backend and runtime). Start from the models as written so only
+  // the recipe's own models change.
+  if (sourceTemplate) derived.models = clone(sourceTemplate.models ?? []);
   if (restoreCatalog) restoreCatalogAdvertisements(derived);
   let runtimeIds = recipeRuntimeIds(recipe);
   if (additive) {
@@ -1615,6 +1637,8 @@ export function deriveUserConfig(
       : [];
   for (const [runtimeId, runtime] of Object.entries(derived.runtimes ?? {})) {
     runtime.keepWarm = keepWarmRuntimeIds.includes(runtimeId);
+    // A keep-warm pin supersedes a preserved readiness preference.
+    if (runtime.keepWarm && runtime.preferredWarm) runtime.preferredWarm = false;
   }
   delete derived.keepWarm;
   derived.init = {
@@ -1752,7 +1776,7 @@ export async function createInitPlan(
       variables: backendVariables,
       checkCommands: true
     }),
-    integrations: integrationPlan(userConfig, home, generatedRoot, clientId),
+    integrations: integrationPlan(federatedView(userConfig), home, generatedRoot, clientId),
     next: {
       review: initCommand({
         recipeId: recipe.id,
@@ -1851,14 +1875,15 @@ export async function applyInit(
   if (writeConfig) await writeConfig(plan.configPath, plan.config);
   else await writeJson(plan.configPath, plan.config, { exclusive: exclusiveConfig });
   await onConfigWritten?.(plan.configPath, plan.config);
-  const registry = createRegistry(plan.config);
-  const generatedClients = await writeGeneratedIntegrationArtifacts(plan.config, registry, {
+  const clientConfig = federatedView(plan.config);
+  const registry = createRegistry(clientConfig);
+  const generatedClients = await writeGeneratedIntegrationArtifacts(clientConfig, registry, {
     clientId: options.clientId ?? 'all',
     home: options.home ?? process.env.HOME,
     generatedRoot: options.generatedRoot ?? defaultGeneratedRoot(options.home ?? process.env.HOME)
   });
   const integrationResult = integrate
-    ? await applyIntegrationArtifacts(plan.config, registry, {
+    ? await applyIntegrationArtifacts(clientConfig, registry, {
         clientId: options.clientId ?? 'all',
         dryRun: false,
         yes,

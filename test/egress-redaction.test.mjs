@@ -6,7 +6,13 @@ import { test } from 'node:test';
 import { Agent, MockAgent, getGlobalDispatcher, setGlobalDispatcher } from 'undici';
 
 import { loadConfig } from '../src/config.mjs';
-import { isInternalHost, redactEgressBody, redactSecrets, shouldRedactEgress } from '../src/egress-redaction.mjs';
+import {
+  isInternalHost,
+  redactEgressBody,
+  redactSecretValues,
+  redactSecrets,
+  shouldRedactEgress
+} from '../src/egress-redaction.mjs';
 import { createLloomServer } from '../src/server.mjs';
 
 // Fake credentials are assembled at runtime so no literal in this file looks
@@ -234,6 +240,42 @@ test('redactEgressBody returns the same object when nothing matches', () => {
   assert.equal(result.body, body);
   assert.equal(result.count, 0);
   for (const value of [null, undefined, 'text', [1, 2]]) assert.equal(redactEgressBody(value).body, value);
+});
+
+test('redactSecretValues hides credential fields and embedded keys in reports', () => {
+  const report = {
+    backends: {
+      openrouter: { baseUrl: 'https://openrouter.ai/api/v1', apiKey: FAKE.openrouter, timeoutMs: 600000 },
+      local: { apiKey: 'sk-local-llm', apiKeyEnv: 'LOCAL_KEY' },
+      templated: { apiKey: '${OPENROUTER_API_KEY}' }
+    },
+    security: { allowRemoteAdmin: false, apiKeys: [FAKE.lloom], adminApiKeys: ['admin-pass-1234'] },
+    cluster: { nodes: { peer: { apiKey: 'plain-cluster-secret', clientToken: 'tok-123456' } } },
+    runtimes: { r: { bootstrap: { createArgs: ['-e', `HF_TOKEN=${FAKE.huggingface}`] }, maxConcurrency: 4 } },
+    models: [{ id: 'm', maxOutputTokens: 8192, contextWindow: 32768 }],
+    communityHost: { privateKeyPath: 'community/keys/dev.pem' }
+  };
+  const before = structuredClone(report);
+  const out = redactSecretValues(report);
+  assert.deepEqual(report, before, 'the caller report must not be mutated');
+  const text = JSON.stringify(out);
+  for (const secret of [FAKE.openrouter, FAKE.lloom, FAKE.huggingface, 'admin-pass-1234', 'plain-cluster-secret']) {
+    assert.equal(text.includes(secret), false, `${secret.slice(0, 6)}… leaked`);
+  }
+  assert.equal(out.backends.openrouter.apiKey, '[secret]');
+  assert.equal(out.backends.openrouter.baseUrl, 'https://openrouter.ai/api/v1');
+  assert.equal(out.backends.openrouter.timeoutMs, 600000);
+  assert.equal(out.backends.local.apiKey, '[secret]');
+  assert.equal(out.backends.local.apiKeyEnv, 'LOCAL_KEY', 'env variable names are not secrets');
+  assert.equal(out.backends.templated.apiKey, '${OPENROUTER_API_KEY}', 'env references stay readable');
+  assert.deepEqual(out.security, { allowRemoteAdmin: false, apiKeys: ['[secret]'], adminApiKeys: ['[secret]'] });
+  assert.deepEqual(out.cluster.nodes.peer, { apiKey: '[secret]', clientToken: '[secret]' });
+  assert.deepEqual(out.runtimes.r.bootstrap.createArgs, ['-e', 'HF_TOKEN=[secret]']);
+  assert.equal(out.runtimes.r.maxConcurrency, 4);
+  assert.deepEqual(out.models, report.models, 'token counts are numbers, not credentials');
+  assert.equal(out.communityHost.privateKeyPath, 'community/keys/dev.pem');
+  for (const value of [null, undefined, 3, true]) assert.equal(redactSecretValues(value), value);
+  assert.equal(redactSecretValues(`key ${FAKE.openai}`), 'key [secret]');
 });
 
 test('isInternalHost classifies local, private and tailnet hosts', () => {

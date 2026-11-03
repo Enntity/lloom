@@ -6,6 +6,9 @@
  * `backends.<id>.redact` (one backend, either direction). Matches become
  * `[secret]`; labelled values keep their label. Patterns follow Tessera's
  * Steward redactor. Matched values are never returned or logged, only counted.
+ *
+ * redactSecretValues applies the same patterns, plus credential field names,
+ * to structured reports before LLooM prints or returns them.
  */
 
 import { isIP } from 'node:net';
@@ -93,6 +96,43 @@ export function redactSecrets(text) {
     return `${label}${SECRET}${tail}`;
   });
   return { text: output, count };
+}
+
+// Config/report fields that hold a credential: apiKey, apiKeys, adminApiKeys,
+// *Token(s), *Secret(s), *Password, authorization. Names that point at a
+// credential (apiKeyEnv, privateKeyPath) and numeric counts (maxOutputTokens)
+// are not credentials.
+const SECRET_FIELD = /(?:^|[a-z_-])(?:api[_-]?keys?|tokens?|secrets?|passwords?|passwd|authorization|credentials?)$/i;
+const ENV_REFERENCE = /^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/;
+
+function hideString(value) {
+  return typeof value === 'string' && value && !ENV_REFERENCE.test(value) ? SECRET : value;
+}
+
+function hideLeaves(value) {
+  if (Array.isArray(value)) return value.map(hideLeaves);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, hideLeaves(entry)]));
+  }
+  return hideString(value);
+}
+
+/**
+ * A copy of a setup, doctor or status report that is safe to print or log:
+ * credential fields and every string under `security` become `[secret]`
+ * (an env reference such as `${OPENROUTER_API_KEY}` stays readable), and
+ * credentials embedded in other strings are scrubbed. Never use the copy as
+ * config to write.
+ */
+export function redactSecretValues(value, key = '') {
+  if (typeof value?.toJSON === 'function') return redactSecretValues(value.toJSON(), key);
+  if (typeof value === 'string') {
+    return SECRET_FIELD.test(key) || key === 'security' ? hideString(value) : redactSecrets(value).text;
+  }
+  if (key === 'security' || (SECRET_FIELD.test(key) && value && typeof value === 'object')) return hideLeaves(value);
+  if (Array.isArray(value)) return value.map((entry) => redactSecretValues(entry, key));
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).map(([field, entry]) => [field, redactSecretValues(entry, field)]));
 }
 
 // Text-bearing keys inside messages, content parts, tool calls and Responses
