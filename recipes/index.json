@@ -1381,23 +1381,23 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-glm53-atlas",
       "path": "linux-nvidia-dgx-spark-2x-glm53-atlas.json",
-      "currentVersion": 1,
+      "currentVersion": 3,
       "versions": [
         {
           "version": 1,
-          "path": "linux-nvidia-dgx-spark-2x-glm53-atlas.json",
-          "status": "current",
+          "path": "archive/linux-nvidia-dgx-spark-2x-glm53-atlas/v1.json",
+          "status": "archived",
           "notes": "Atlas SparkGLM FP4-Local release (2026-10-17) over the private fabric, additive only, setDefault false, no aliases. Portable pins live in backends/atlas-sparkglm/pins.json and are final; invalid or placeholder manifests fail closed. The checkpoint is served as published, with no conversion step. Image identity is verified per host by the pinned install-tree label and engine commit, whether the image was pulled from GHCR by digest or built from source. The release image qualified on a DGX Spark pair and serves in production."
         },
         {
           "version": 2,
-          "path": "candidates/linux-nvidia-dgx-spark-2x-glm53-atlas/v2.json",
-          "status": "candidate"
+          "path": "archive/linux-nvidia-dgx-spark-2x-glm53-atlas/v2.json",
+          "status": "archived"
         },
         {
           "version": 3,
-          "path": "candidates/linux-nvidia-dgx-spark-2x-glm53-atlas/v3.json",
-          "status": "candidate"
+          "path": "linux-nvidia-dgx-spark-2x-glm53-atlas.json",
+          "status": "current"
         }
       ],
       "name": "2x DGX Spark GLM-5.3 Flash FP4-Local Atlas",
@@ -1438,18 +1438,18 @@
     {
       "id": "linux-nvidia-dgx-spark-4x-glm53-atlas-tp4",
       "path": "linux-nvidia-dgx-spark-4x-glm53-atlas-tp4.json",
-      "currentVersion": 1,
+      "currentVersion": 2,
       "versions": [
         {
           "version": 1,
-          "path": "linux-nvidia-dgx-spark-4x-glm53-atlas-tp4.json",
-          "status": "current",
+          "path": "archive/linux-nvidia-dgx-spark-4x-glm53-atlas-tp4/v1.json",
+          "status": "archived",
           "notes": "Atlas SparkGLM TP-4 over a four-Spark daisy chain, additive only, setDefault false, no aliases, a separate gateway model beside the pair lane. DRAFT pins: backends/atlas-sparkglm/pins-tp4.json carries TODO-TP4-RC placeholders until a TP-4 release image exists, and the fail-closed pin gate refuses them, so nothing installs or starts. Ranks, per-side RDMA rails and the rendezvous address come from each node's cluster.nodes[ID].fabricChain; the workers start from the far end of the chain."
         },
         {
           "version": 2,
-          "path": "candidates/linux-nvidia-dgx-spark-4x-glm53-atlas-tp4/v2.json",
-          "status": "candidate"
+          "path": "linux-nvidia-dgx-spark-4x-glm53-atlas-tp4.json",
+          "status": "current"
         }
       ],
       "name": "4x DGX Spark GLM-5.3 Flash FP4-Local Atlas TP-4 chain",
@@ -1491,7 +1491,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas",
       "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas.json",
-      "currentVersion": 3,
+      "currentVersion": 4,
       "versions": [
         {
           "version": 1,
@@ -1507,14 +1507,14 @@
         },
         {
           "version": 3,
-          "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas.json",
-          "status": "current",
+          "path": "archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas/v3.json",
+          "status": "archived",
           "notes": "SparkQwen 0.4.0 (FP4-Local checkpoint, Spark mode, tool-call guard) with two deployment modes: dedicated (8x262k, 114 GB per Spark, the default) and sidecars (saver-8x262k, 96 GB per Spark). Additive only, setDefault false, no aliases; pins in backends/atlas-sparkqwen/pins.json."
         },
         {
           "version": 4,
-          "path": "candidates/linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas/v4.json",
-          "status": "candidate"
+          "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas.json",
+          "status": "current"
         }
       ],
       "name": "2x DGX Spark Qwen3.8 Flash Next FP4-Local Atlas (SparkQwen 0.4.0)",

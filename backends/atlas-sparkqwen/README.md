@@ -71,17 +71,17 @@ compiled CUDA kernels survive container recreation) and `prepare-atlas-ple-cache
 mounted at `/atlas-ple`: the packed PLE tables belong to one image and
 checkpoint, so a new pin starts a fresh cache instead of reusing stale ones).
 
-## Candidate: SparkQwen 0.5.0
+## SparkQwen 0.5.0
 
-Recipe version 4 (`recipes/candidates/linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas/v4.json`, pins `pins-0.5.0.json`) installs
-SparkQwen 0.5.0, built on Enntity/atlas `spark` (Atlas-Inf main plus Enntity's
-open Atlas-Inf PRs). It is not qualified, so it installs only when asked for:
+The current recipe (version 4, pins `pins-0.5.0.json`) installs SparkQwen 0.5.0,
+built on Enntity/atlas `spark` (Atlas-Inf main plus Enntity's open Atlas-Inf
+PRs). It was qualified on 2026-11-03 against 0.4.0: greedy output and prompt
+logprobs identical, decode and concurrency within 2%. Version 3 (0.4.0) stays
+installable with `--recipe-version 3`.
 
 ```sh
-lloom setup --recipe linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas --recipe-version 4 --mode sidecars --additive --apply --yes
+lloom setup --recipe linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas --mode sidecars --additive --apply --yes
 ```
-
-Setup without `--recipe-version` keeps installing the current version above.
 
 ## Container contract
 

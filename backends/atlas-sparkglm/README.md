@@ -95,31 +95,30 @@ Setup steps, in order:
    with `kv/` and `ssm/`, which both members mount at `/prefix-cache`. It stays
    empty unless the prefix cache on disk is turned on (below).
 
-## Candidate: SparkGLM 0.3.0
+## SparkGLM 0.3.0
 
-Version 2 of both SparkGLM recipes installs SparkGLM 0.3.0: one image
+The current recipes install SparkGLM 0.3.0: one image
 (`ghcr.io/enntity/atlas-sparkglm:0.3.0`) for two and four Sparks, built on
-Enntity/atlas `spark` (Atlas-Inf main plus Enntity's open Atlas-Inf PRs, here
-#321 for TP-4). It runs in Spark mode with the tool-call guard on, keeps
-compiled CUDA kernels in `${installRoot}/atlas-sparkglm-cuda-cache`, and shares
-the per-host carveout lock `/run/lock/sparkglm` with SparkQwen. Pins are
-`pins-0.3.0.json` (pair, `4x1m`) and `pins-0.3.0-tp4.json` (`4x1m-tp4`). It is
-not qualified, so it installs only when asked for:
+Enntity/atlas `spark` (Atlas-Inf main plus Enntity's open Atlas-Inf PRs). It
+runs in Spark mode with the tool-call guard on, keeps compiled CUDA kernels in
+`${installRoot}/atlas-sparkglm-cuda-cache`, and shares the per-host carveout
+lock `/run/lock/sparkglm` with SparkQwen.
+
+- Pair, recipe version 3 (`pins-0.3.0-v80.json`, profile `4x1m`): Enntity's v80
+  drafter, `Enntity/GLM-5.3-Flash-DFlash2-enntity-v80` at revision `8416cdfb`,
+  in its own model folder, and the pair is kept warm. The repository is private,
+  so each node needs a Hugging Face token that can read it.
+- TP-4 chain, recipe version 2 (`pins-0.3.0-tp4.json`, profile `4x1m-tp4`):
+  DFlash2. Each rank uses 105-110 GB at peak, so the four Sparks cannot also
+  host the embedding or image sidecars.
+
+Both were qualified on 2026-11-03: greedy output and prompt logprobs identical
+to the builds they replace, speed level or better. Earlier versions stay
+installable with `--recipe-version N`.
 
 ```sh
-lloom setup --recipe linux-nvidia-dgx-spark-2x-glm53-atlas --recipe-version 2 --additive --apply --yes
-lloom setup --recipe linux-nvidia-dgx-spark-4x-glm53-atlas-tp4 --recipe-version 2 --additive --apply --yes
-```
-
-Setup without `--recipe-version` keeps installing version 1.
-
-Version 3 of the pair recipe is the same 0.3.0 install with Enntity's v80
-drafter, `Enntity/GLM-5.3-Flash-DFlash2-enntity-v80` at revision `8416cdfb`, in
-its own model folder, and keeps the pair warm. The repository is private, so each
-node needs a Hugging Face token that can read it.
-
-```sh
-lloom setup --recipe linux-nvidia-dgx-spark-2x-glm53-atlas --recipe-version 3 --additive --apply --yes
+lloom setup --recipe linux-nvidia-dgx-spark-2x-glm53-atlas --additive --apply --yes
+lloom setup --recipe linux-nvidia-dgx-spark-4x-glm53-atlas-tp4 --additive --apply --yes
 ```
 
 ## Container contract

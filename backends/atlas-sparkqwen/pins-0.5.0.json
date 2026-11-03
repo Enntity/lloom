@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "status": "final",
-  "note": "Pin manifest for the SparkQwen 0.5.0 candidate (recipe version 4). Candidate: not qualified, so it installs only with --recipe-version; the current version stays the default. Engine: Enntity/atlas spark, Atlas-Inf main 9c4519131 plus open Atlas-Inf PRs #321, #322 and #323. image.reference is the GHCR manifest digest; the tag is the first 12 characters of the sparkqwen install/ tree.",
+  "note": "Pin manifest for SparkQwen 0.5.0, recipe linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas version 4. Engine: Enntity/atlas spark, Atlas-Inf main 9c4519131 plus open Atlas-Inf PRs #321, #322 and #323. image.reference is the GHCR manifest digest; the tag is the first 12 characters of the sparkqwen install/ tree. Qualified 2026-11-03 against 0.4.0 (identical greedy output and prompt logprobs, speed within 2%).",
   "source": {
     "repo": "Enntity/sparkqwen",
     "revision": "8ea2c7e2eeedf1fd0c39a0d75b8b4191c0fc2513",

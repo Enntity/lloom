@@ -73,7 +73,7 @@ test('the remote member setup command carries the recipe version', () => {
   assert.doesNotMatch(setupCommand({ recipeId: 'pair-lane', apply: true }), /--recipe-version/);
 });
 
-const candidates = [
+const promoted = [
   {
     id: 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas',
     version: 4,
@@ -83,17 +83,9 @@ const candidates = [
   },
   {
     id: 'linux-nvidia-dgx-spark-2x-glm53-atlas',
-    version: 2,
-    product: '0.3.0',
-    pins: 'atlas-sparkglm/pins-0.3.0.json',
-    verify: '../backends/atlas-sparkglm/verify-pins.mjs',
-    env: ['SPARKGLM_MODE=spark', 'SPARKGLM_TOPOLOGY=pair', 'SPARKGLM_PROFILE=4x1m', 'SPARKGLM_KV_SHARD=1']
-  },
-  {
-    id: 'linux-nvidia-dgx-spark-2x-glm53-atlas',
     version: 3,
     product: '0.3.0',
-    pins: 'atlas-sparkglm/pins-0.3.0.json',
+    pins: 'atlas-sparkglm/pins-0.3.0-v80.json',
     verify: '../backends/atlas-sparkglm/verify-pins.mjs',
     env: [
       'SPARKGLM_MODE=spark',
@@ -102,10 +94,6 @@ const candidates = [
       'SPARKGLM_KV_SHARD=1',
       'DRAFTER_PATH=${modelRoot}/Enntity--GLM-5.3-Flash-DFlash2-enntity-v80'
     ],
-    drafter: {
-      model: 'Enntity/GLM-5.3-Flash-DFlash2-enntity-v80',
-      revision: '8416cdfbf4cfb302b86a058cb5f5b89f891350c0'
-    },
     keepWarm: true
   },
   {
@@ -118,43 +106,38 @@ const candidates = [
   }
 ];
 
-for (const candidate of candidates) {
-  test(`${candidate.id} v${candidate.version} (${candidate.product}) is a candidate behind the current version`, async () => {
-    const current = await loadRecipeById(candidate.id);
-    assert.ok(current.version < candidate.version, 'the candidate must not be the default');
-    const recipe = await loadRecipeVersion(candidate.id, candidate.version);
-    const { loadPins, verifyPins } = await import(candidate.verify);
-    const manifest = loadPins(fileURLToPath(new URL(`../backends/${candidate.pins}`, import.meta.url)));
+for (const release of promoted) {
+  test(`${release.id} v${release.version} (${release.product}) is the default`, async () => {
+    const recipe = await loadRecipeById(release.id);
+    assert.equal(recipe.version, release.version);
+    assert.doesNotMatch(recipe.name, /candidate/i);
+    const { loadPins, verifyPins } = await import(release.verify);
+    const manifest = loadPins(fileURLToPath(new URL(`../backends/${release.pins}`, import.meta.url)));
     assert.deepEqual(verifyPins(manifest), []);
     assert.equal(manifest.engine.branch, 'spark');
     assert.equal(manifest.engine.commit, '162b4226070fbd3a75a5a0d5910f9290fa96bed2');
+    if (release.keepWarm !== undefined) assert.equal(recipe.models[0].settings.keepWarm, release.keepWarm);
+    const setup = Array.isArray(recipe.setup) ? recipe.setup : recipe.setup.steps;
+    const drafter = setup.find((step) => step.id === 'download-atlas-drafter');
+    if (drafter)
+      assert.deepEqual([drafter.model, drafter.revision], [manifest.drafter.repo, manifest.drafter.revision]);
+    const digest = manifest.image.reference.split(':')[1];
     const boots = recipe.models[0].settings.placement.members.map((member) => member.runtimeSettings.bootstrap);
     for (const boot of boots) {
       assert.equal(boot.image, manifest.image.reference);
       const env = boot.createArgs.filter((_, i) => boot.createArgs[i - 1] === '-e');
-      for (const expected of candidate.env ?? []) assert.ok(env.includes(expected), `${expected} missing`);
+      for (const expected of release.env ?? []) assert.ok(env.includes(expected), `${expected} missing`);
       assert.ok(boot.createArgs.includes('/run/lock/sparkglm:/run/lock/sparkglm'), 'shared carveout lock');
-    }
-    if (candidate.keepWarm !== undefined) assert.equal(recipe.models[0].settings.keepWarm, candidate.keepWarm);
-    const setup = Array.isArray(recipe.setup) ? recipe.setup : recipe.setup.steps;
-    if (candidate.drafter) {
-      const drafter = setup.find((step) => step.id === 'download-atlas-drafter');
-      assert.deepEqual({ model: drafter.model, revision: drafter.revision }, candidate.drafter);
-      const folder = candidate.drafter.model.replace('/', '--');
-      for (const boot of boots) {
-        const mounts = boot.createArgs.filter((arg) => arg.includes('DFlash2'));
-        assert.ok(
-          mounts.length && mounts.every((arg) => arg.includes(folder)),
-          'drafter comes only from its own folder'
-        );
-      }
+      // A per-image cache must be keyed by this image, never a previous one.
+      for (const arg of boot.createArgs.filter((a) => a.includes('atlas-sparkqwen-ple/')))
+        assert.ok(arg.includes(digest), arg);
     }
     for (const step of setup.filter((s) =>
       ['verify-atlas-pins', 'build-atlas-image', 'pull-atlas-image'].includes(s.id)
     )) {
       assert.ok(
-        step.args.includes(`\${repoRoot}/backends/${candidate.pins}`),
-        `${step.id} must check the candidate pins`
+        step.args.includes(`\${repoRoot}/backends/${release.pins}`),
+        `${step.id} must check this release's pins`
       );
     }
   });

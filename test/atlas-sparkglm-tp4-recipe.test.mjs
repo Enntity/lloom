@@ -7,20 +7,23 @@ import { fileURLToPath } from 'node:url';
 import { deriveUserConfig } from '../src/init.mjs';
 import { loadRecipeById, planRecipe } from '../src/recipes.mjs';
 import { dockerCreateArgs } from '../src/runtime-manager.mjs';
-import { imageTagFor, loadPins, verifyPins } from '../backends/atlas-sparkglm/verify-pins.mjs';
+import { loadPins, verifyPins } from '../backends/atlas-sparkglm/verify-pins.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const backendDir = path.join(root, 'backends', 'atlas-sparkglm');
-const tp4PinsPath = path.join(backendDir, 'pins-tp4.json');
+// The draft manifest from before a TP-4 image existed; the installer must still refuse it.
+const draftPinsPath = path.join(backendDir, 'pins-tp4.json');
 const recipe = await loadRecipeById('linux-nvidia-dgx-spark-4x-glm53-atlas-tp4');
 const pairRecipe = await loadRecipeById('linux-nvidia-dgx-spark-2x-glm53-atlas');
-const pins = loadPins(tp4PinsPath);
-const pairPins = loadPins();
+const manifestFor = (r) =>
+  r.setup.steps.find((step) => step.id === 'verify-atlas-pins').args.find((arg) => arg.endsWith('.json'));
+const pins = loadPins(manifestFor(recipe).replace('${repoRoot}', root));
+const pairPins = loadPins(manifestFor(pairRecipe).replace('${repoRoot}', root));
 const checkpointDir = 'nvidia--GLM-5.3-Flash-FP4-Local';
 const gatewayModel = 'glm-5.3-flash-atlas-tp4';
 
 // ---- recipe shape ---------------------------------------------------------
-assert.equal(recipe.version, 1);
+assert.equal(recipe.version, 2);
 assert.equal(recipe.backend.id, pairRecipe.backend.id, 'the TP-4 lane reuses the Atlas SparkGLM backend');
 assert.equal(recipe.license.id, 'MIT');
 assert.deepEqual(recipe.requirements.cluster, { nodes: 4, topology: 'chain' });
@@ -32,9 +35,11 @@ assert.deepEqual(
 for (const step of recipe.setup.steps) {
   const pairStep = pairRecipe.setup.steps.find((candidate) => candidate.id === step.id);
   assert.equal(step.alwaysRun, pairStep.alwaysRun, `${step.id} keeps the pair lane's revalidation`);
-  if (step.action === 'download-model') assert.deepEqual(step, pairStep, 'same checkpoint and drafter as the pair');
+  if (step.id === 'download-atlas-model') assert.deepEqual(step, pairStep, 'same checkpoint as the pair');
+  if (step.id === 'download-atlas-drafter')
+    assert.deepEqual([step.model, step.revision], [pins.drafter.repo, pins.drafter.revision]);
 }
-const manifestArg = '${repoRoot}/backends/atlas-sparkglm/pins-tp4.json';
+const manifestArg = '${repoRoot}/backends/atlas-sparkglm/pins-0.3.0-tp4.json';
 assert.deepEqual(recipe.setup.steps.find((step) => step.id === 'verify-atlas-pins').args, [
   '${repoRoot}/backends/atlas-sparkglm/verify-pins.mjs',
   manifestArg
@@ -101,6 +106,13 @@ const expectedEnv = [
   'DRAFTER_PATH=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2',
   `SERVED_MODEL_NAME=${gatewayModel}`,
   'SPARKGLM_PROFILE=4x1m-tp4',
+  'SPARKGLM_MODE=spark',
+  'SPARKGLM_TOPOLOGY=chain',
+  'SPARKGLM_STRICT_MTP=0',
+  'SPARKGLM_TOOL_GUARD=on',
+  'SPARKGLM_TOOL_GUARD_MAX_BYTES=1048576',
+  'SPARKGLM_TOOL_GUARD_ALLOW_HOSTS=',
+  'SPARKGLM_TOOL_GUARD_DENY_HOSTS=',
   'SPARKGLM_GPU_MEMORY_UTILIZATION=0.88',
   'SPARKGLM_KV_SHARD=0',
   'SPARKGLM_DISPLAY_CARVEOUT=0',
@@ -109,7 +121,8 @@ const expectedEnv = [
   'GLOO_SOCKET_IFNAME=${fabricInterface}',
   'HF_HUB_OFFLINE=1',
   'TRANSFORMERS_OFFLINE=1',
-  'CUDA_CACHE_PATH=/atlas-cuda-cache'
+  'CUDA_CACHE_PATH=/atlas-cuda-cache',
+  'CUDA_CACHE_MAXSIZE=4294967296'
 ];
 for (const member of members) {
   const settings = member.runtimeSettings;
@@ -120,7 +133,13 @@ for (const member of members) {
   assert.equal(settings.bootstrap.image, pins.image.reference);
   assert.equal(settings.bootstrap.pull, false);
   assert.deepEqual(settings.bootstrap.command ?? [], []);
-  assert.deepEqual(flagsOf(args), flagsOf(pairArgs));
+  // The lanes differ only in drafter: the pair serves Enntity's v80, TP-4 serves DFlash2.
+  const pairDrafter = pairPins.drafter.repo.replace('/', '--');
+  const tp4Drafter = pins.drafter.repo.replace('/', '--');
+  assert.deepEqual(
+    flagsOf(args),
+    flagsOf(pairArgs).map((arg) => arg.replaceAll(pairDrafter, tp4Drafter))
+  );
   assert.deepEqual(
     args.slice(flagsOf(args).length).filter((arg, index) => index % 2 === 0),
     expectedEnv.map(() => '-e')
@@ -137,35 +156,33 @@ for (const member of members) {
   assert(!/roce|mlx5|enp|enP/.test(rendered), 'no host device names');
 }
 
-// ---- pins: draft until a TP-4 release image exists --------------------------
-assert.equal(pins.status, 'draft');
+// ---- pins: SparkGLM 0.3.0, the pair lane's image --------------------------
+assert.equal(pins.status, 'final');
+assert.deepEqual(verifyPins(pins), []);
 assert.equal(pins.image.profilePath, '/opt/atlas/profiles/4x1m-tp4.json');
+assert.equal(pins.image.reference, pairPins.image.reference, 'one image serves two and four Sparks');
+assert.deepEqual(pins.source, pairPins.source);
+assert.deepEqual(pins.engine, pairPins.engine);
 assert.deepEqual(pins.model, pairPins.model);
-assert.deepEqual(pins.drafter, pairPins.drafter);
+assert.deepEqual(pins.drafter, {
+  repo: 'incoai/GLM-5.3-Flash-DFlash2',
+  revision: '7d74cdd881ed7e32c31175984a67823127b66cfe'
+});
 for (const key of ['label', 'entrypoint', 'architecture']) assert.equal(pins.image[key], pairPins.image[key]);
-assert.deepEqual(
-  verifyPins(pins)
-    .map((failure) => failure.split(' ')[0])
-    .filter((name, index, all) => all.indexOf(name) === index)
-    .sort(),
-  ['engine.commit', 'image.reference', 'image.tag', 'source.installTree', 'source.revision', 'status'],
-  'only the release identities remain to fill in'
-);
-// Filling those identities is the only step left before the lane can install.
-const filled = structuredClone(pins);
-filled.status = 'final';
-filled.source.revision = 'a'.repeat(40);
-filled.source.installTree = 'b'.repeat(40);
-filled.engine = { ...filled.engine, branch: 'sparkglm/atlas-tp4', commit: 'c'.repeat(40) };
-filled.image.reference = `ghcr.io/enntity/atlas-sparkglm@sha256:${'d'.repeat(64)}`;
-filled.image.tag = imageTagFor(filled);
-assert.deepEqual(verifyPins(filled), []);
-assert(!JSON.stringify({ ...filled, note: '' }).includes('TODO'));
+assert(!JSON.stringify(pins).includes('TODO'));
 for (const step of ['verify-atlas-pins', 'build-atlas-image']) {
   assert(recipe.setup.steps.find((entry) => entry.id === step).alwaysRun, `${step} gates every apply`);
 }
+const finalRun = spawnSync(
+  'node',
+  [path.join(backendDir, 'verify-pins.mjs'), manifestArg.replace('${repoRoot}', root)],
+  {
+    encoding: 'utf8'
+  }
+);
+assert.equal(finalRun.status, 0, finalRun.stderr);
 
-const verifyRun = spawnSync('node', [path.join(backendDir, 'verify-pins.mjs'), tp4PinsPath], { encoding: 'utf8' });
+const verifyRun = spawnSync('node', [path.join(backendDir, 'verify-pins.mjs'), draftPinsPath], { encoding: 'utf8' });
 assert.equal(verifyRun.status, 1, 'the draft manifest must fail closed');
 assert.match(verifyRun.stderr, /TODO-TP4-RC/);
 // The installer refuses the draft manifest before touching Docker.
@@ -177,7 +194,7 @@ fs.writeFileSync(path.join(fakeBin, 'docker'), `#!/bin/sh\ntouch '${tmpRoot}/doc
 });
 const installRun = spawnSync(
   'bash',
-  [path.join(backendDir, 'install.sh'), '--manifest', tp4PinsPath, '--backend-root', tmpRoot],
+  [path.join(backendDir, 'install.sh'), '--manifest', draftPinsPath, '--backend-root', tmpRoot],
   { encoding: 'utf8', env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` } }
 );
 assert.notEqual(installRun.status, 0);
@@ -202,7 +219,7 @@ assert.deepEqual(plan.validationErrors, []);
 assert.deepEqual(plan.steps.find((step) => step.id === 'verify-atlas-pins').command, [
   'node',
   `${root}/backends/atlas-sparkglm/verify-pins.mjs`,
-  tp4PinsPath
+  manifestArg.replace('${repoRoot}', root)
 ]);
 assert.equal(plan.steps.find((step) => step.id === 'download-atlas-model').destination, `/models/${checkpointDir}`);
 
@@ -323,6 +340,6 @@ assert(entry, 'the TP-4 recipe must be listed in recipes/index.json');
 assert.equal(entry.path, 'linux-nvidia-dgx-spark-4x-glm53-atlas-tp4.json');
 assert.equal(entry.currentVersion, recipe.version);
 assert.equal(entry.versions.filter((version) => version.status === 'current').length, 1);
-assert.match(`${entry.summary} ${entry.versions[0].notes}`, /draft|DRAFT/);
+assert.equal(entry.versions.find((version) => version.status === 'current').path, entry.path);
 
 console.log('Atlas SparkGLM TP-4 recipe checks passed');

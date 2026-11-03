@@ -21,6 +21,12 @@ const backendDir = path.join(root, 'backends', 'atlas-sparkglm');
 const recipe = await loadRecipeById('linux-nvidia-dgx-spark-2x-glm53-atlas');
 const catalog = await loadBackendCatalog();
 const pins = loadPins();
+// The current recipe names its own immutable manifest; the default pins.json stays the tooling fixture.
+const recipeManifest = recipe.setup.steps
+  .find((step) => step.id === 'verify-atlas-pins')
+  .args.find((arg) => arg.endsWith('.json'));
+const recipePins = loadPins(recipeManifest.replace('${repoRoot}', root));
+const drafterDir = recipePins.drafter.repo.replace('/', '--');
 // FP4-Local ships its MTP layer quantized, so it is served directly from the
 // acquired checkpoint: no converter, no overlay.
 const checkpointDir = 'nvidia--GLM-5.3-Flash-FP4-Local';
@@ -45,7 +51,7 @@ assert(
 
 // ---- recipe shape ---------------------------------------------------------
 assert.equal(recipe.id, 'linux-nvidia-dgx-spark-2x-glm53-atlas');
-assert.equal(recipe.version, 1);
+assert.equal(recipe.version, 3);
 assert.equal(recipe.backend.id, 'docker-atlas-sparkglm');
 assert.equal(recipe.license.id, 'MIT');
 assert.deepEqual(recipe.requirements.cluster, {
@@ -104,12 +110,13 @@ assert(model.capabilities.includes('structured-output'));
 const downloadStep = recipe.setup.steps.find((step) => step.id === 'download-atlas-model');
 assert.equal(downloadStep.model, 'nvidia/GLM-5.3-Flash-FP4-Local');
 assert.equal(downloadStep.revision, '76348ddb2be2e35e39ecfc00e75dc07703f4f3d5');
-assert.equal(downloadStep.model, pins.model.repo);
-assert.equal(downloadStep.revision, pins.model.revision);
+assert.equal(downloadStep.model, recipePins.model.repo);
+assert.equal(downloadStep.revision, recipePins.model.revision);
 const drafterStep = recipe.setup.steps.find((step) => step.id === 'download-atlas-drafter');
 assert.equal(drafterStep.action, 'download-model');
-assert.equal(drafterStep.model, pins.drafter.repo);
-assert.equal(drafterStep.revision, pins.drafter.revision);
+assert.equal(drafterStep.model, recipePins.drafter.repo);
+assert.equal(drafterStep.revision, recipePins.drafter.revision);
+assert.equal(recipePins.drafter.repo, 'Enntity/GLM-5.3-Flash-DFlash2-enntity-v80');
 
 // Additive lane: never take over the default route, never overwrite aliases.
 assert.equal(model.setDefault, false);
@@ -144,7 +151,7 @@ for (const member of members) {
   assert.equal(member.runtimeSettings.management, 'managed');
   assert.equal(member.runtimeSettings.containerName, 'lloom-atlas-sparkglm-${nodeId}');
   assert.equal(bootstrap.adapter, 'docker');
-  assert.equal(bootstrap.image, pins.image.reference);
+  assert.equal(bootstrap.image, recipePins.image.reference);
   assert.equal(bootstrap.pull, false, 'the prepared local image must not be pulled');
   assert.deepEqual(bootstrap.command ?? [], [], 'use the image entrypoint exactly once');
 
@@ -160,7 +167,9 @@ for (const member of members) {
     '--cap-add IPC_LOCK',
     '--cap-add SYS_NICE',
     // The GB10 display carveout's host lock.
-    'type=bind,src=${installRoot}/atlas-carveout-lock,dst=/run/lock/sparkglm',
+    // The carveout lock is per host and shared with SparkQwen; compiled CUDA kernels survive container recreation.
+    '/run/lock/sparkglm:/run/lock/sparkglm',
+    'type=bind,src=${installRoot}/atlas-sparkglm-cuda-cache,dst=/atlas-cuda-cache',
     'SPARKGLM_DISPLAY_CARVEOUT=1',
     '--ulimit memlock=-1:-1',
     '--security-opt no-new-privileges=true',
@@ -178,8 +187,8 @@ for (const member of members) {
     'ATLAS_TP_SIZE=2',
     'ATLAS_EP_SIZE=2',
     'ATLAS_CONTEXT_WINDOW=1048576',
-    'type=bind,src=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2,dst=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2,readonly',
-    'DRAFTER_PATH=${modelRoot}/incoai--GLM-5.3-Flash-DFlash2',
+    `type=bind,src=\${modelRoot}/${drafterDir},dst=\${modelRoot}/${drafterDir},readonly`,
+    `DRAFTER_PATH=\${modelRoot}/${drafterDir}`,
     'SERVED_MODEL_NAME=glm-5.3-flash-atlas',
     'NCCL_IB_HCA=${fabricHca}',
     'NCCL_IB_ADDR_FAMILY=AF_INET',
@@ -217,8 +226,8 @@ const readme = await fs.promises.readFile(path.join(backendDir, 'README.md'), 'u
 assert(readme.includes('127.0.0.1:8893'));
 assert(readme.includes('127.0.0.1:8894'));
 assert(readme.includes('/opt/atlas/serve.py'));
-assert(readme.includes(pins.image.profilePath));
-assert.equal(pins.image.profilePath, '/opt/atlas/profiles/4x1m.json');
+assert(readme.includes(recipePins.image.profilePath));
+assert.equal(recipePins.image.profilePath, '/opt/atlas/profiles/4x1m.json');
 for (const key of [
   'NODE_RANK',
   'MASTER_ADDR',
@@ -266,13 +275,10 @@ assert.deepEqual(plan.steps.find((step) => step.id === 'prepare-atlas-prefix-cac
   '-p',
   '/install/atlas-prefix-cache/kv',
   '/install/atlas-prefix-cache/ssm',
-  '/install/atlas-carveout-lock'
+  '/install/atlas-sparkglm-cuda-cache'
 ]);
 // The drafter lands exactly where both members mount it as DRAFTER_PATH.
-assert.equal(
-  plan.steps.find((step) => step.id === 'download-atlas-drafter').destination,
-  '/models/incoai--GLM-5.3-Flash-DFlash2'
-);
+assert.equal(plan.steps.find((step) => step.id === 'download-atlas-drafter').destination, `/models/${drafterDir}`);
 for (const step of plan.steps.filter((entry) => entry.action === 'command')) {
   assert(!step.command.join(' ').includes('${'), `unresolved recipe template in ${step.id}`);
 }
@@ -281,6 +287,8 @@ assert.equal(plan.steps.find((step) => step.id === 'download-atlas-model').desti
 assert.deepEqual(plan.steps.find((step) => step.id === 'build-atlas-image').command, [
   'bash',
   `${root}/backends/atlas-sparkglm/install.sh`,
+  '--manifest',
+  recipeManifest.replace('${repoRoot}', root),
   '--backend-root',
   '/backend',
   '--install-root',

@@ -3,8 +3,8 @@
   "schemaVersion": 1,
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-4x-glm53-atlas-tp4",
-  "name": "4x DGX Spark GLM-5.3 Flash FP4-Local Atlas TP-4 chain (0.3.0 candidate)",
-  "version": 2,
+  "name": "4x DGX Spark GLM-5.3 Flash FP4-Local Atlas TP-4 chain",
+  "version": 1,
   "summary": "Four DGX Sparks cabled as a daisy chain running Atlas SparkGLM at tensor and expert parallelism 4, serving nvidia/GLM-5.3-Flash-FP4-Local as published with 1048576-token contexts for four concurrent requests and DFlash2 speculative decoding. DRAFT pins: it cannot install until a TP-4 release image is pinned. Additive only: no default model, no aliases overwritten.",
   "description": "This recipe runs the Atlas SparkGLM TP-4 profile (4x1m-tp4) over a switchless chain of four DGX Sparks, rank 0-1-2-3 along the cables. LLooM owns orchestration, admission, far-end-first startup, readiness, routing and telemetry; the engine image, its profile and its chain all-reduce come from Enntity/sparkglm and the Enntity/atlas fork (AGPL-3.0-only), and LLooM commits no engine source. Its pins live in backends/atlas-sparkglm/pins-tp4.json and are DRAFT placeholders until a TP-4 release candidate image is published: the fail-closed pin gate refuses them, so setup stops before any download, pull or start. It reuses the pair lane's installer, model, drafter and container hardening, and serves the same checkpoint as published (no conversion, no overlay). It is a separate lane (glm-5.3-flash-atlas-tp4) beside the pair lane glm-5.3-flash-atlas; on Sparks it shares with a pair lane it also shares that lane's port 8893, and both need 114 GiB per Spark, so LLooM admits one at a time. The DFlash2 drafter weights are CC BY-NC-ND 4.0 (non-commercial).",
   "license": {
@@ -77,11 +77,21 @@
     ]
   },
   "requirements": {
-    "platforms": ["linux-arm64"],
+    "platforms": [
+      "linux-arm64"
+    ],
     "memoryGb": 114,
     "diskGb": 220,
-    "commands": ["docker", "git"],
-    "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"],
+    "commands": [
+      "docker",
+      "git"
+    ],
+    "accelerators": [
+      "cuda",
+      "nvidia-gpu",
+      "blackwell",
+      "gb10"
+    ],
     "cluster": {
       "nodes": 4,
       "topology": "chain"
@@ -99,7 +109,9 @@
         "title": "Check Docker",
         "action": "check-command",
         "command": "docker",
-        "args": ["version"]
+        "args": [
+          "version"
+        ]
       },
       {
         "id": "verify-atlas-pins",
@@ -109,7 +121,7 @@
         "command": "node",
         "args": [
           "${repoRoot}/backends/atlas-sparkglm/verify-pins.mjs",
-          "${repoRoot}/backends/atlas-sparkglm/pins-0.3.0-tp4.json"
+          "${repoRoot}/backends/atlas-sparkglm/pins-tp4.json"
         ]
       },
       {
@@ -137,7 +149,7 @@
         "args": [
           "${repoRoot}/backends/atlas-sparkglm/install.sh",
           "--manifest",
-          "${repoRoot}/backends/atlas-sparkglm/pins-0.3.0-tp4.json",
+          "${repoRoot}/backends/atlas-sparkglm/pins-tp4.json",
           "--backend-root",
           "${backendRoot}",
           "--install-root",
@@ -154,7 +166,7 @@
           "-p",
           "${installRoot}/atlas-prefix-cache/kv",
           "${installRoot}/atlas-prefix-cache/ssm",
-          "${installRoot}/atlas-sparkglm-cuda-cache"
+          "${installRoot}/atlas-carveout-lock"
         ]
       }
     ]
@@ -169,8 +181,14 @@
       "runtime": "glm53-flash-atlas-tp4-cluster",
       "backendConfig": "glm53-flash-atlas-tp4",
       "setDefault": false,
-      "input": ["text", "image", "video"],
-      "output": ["text"],
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ],
       "capabilities": [
         "chat",
         "responses",
@@ -225,7 +243,11 @@
           "minNoProgressMs": 1800000,
           "cooldownMs": 600000,
           "drainTimeoutMs": 30000,
-          "failureStatuses": [500, 502, 504]
+          "failureStatuses": [
+            500,
+            502,
+            504
+          ]
         },
         "placement": {
           "mode": "distributed",
@@ -247,7 +269,7 @@
                 "warmup": false,
                 "bootstrap": {
                   "adapter": "docker",
-                  "image": "ghcr.io/enntity/atlas-sparkglm@sha256:ef36cc1c39a6863f7687c77fc8026a654c765f73498fa2873d4198f597df4ce7",
+                  "image": "ghcr.io/enntity/atlas-sparkglm@sha256:TODO-TP4-RC-image-digest",
                   "pull": false,
                   "pullTimeoutMs": 3600000,
                   "createArgs": [
@@ -282,9 +304,7 @@
                     "--mount",
                     "type=bind,src=${installRoot}/atlas-prefix-cache,dst=/prefix-cache",
                     "--mount",
-                    "type=bind,src=${installRoot}/atlas-sparkglm-cuda-cache,dst=/atlas-cuda-cache",
-                    "--volume",
-                    "/run/lock/sparkglm:/run/lock/sparkglm",
+                    "type=bind,src=${installRoot}/atlas-carveout-lock,dst=/run/lock/sparkglm",
                     "-e",
                     "NODE_RANK=${nodeRank}",
                     "-e",
@@ -308,20 +328,6 @@
                     "-e",
                     "SPARKGLM_PROFILE=4x1m-tp4",
                     "-e",
-                    "SPARKGLM_MODE=spark",
-                    "-e",
-                    "SPARKGLM_TOPOLOGY=chain",
-                    "-e",
-                    "SPARKGLM_STRICT_MTP=0",
-                    "-e",
-                    "SPARKGLM_TOOL_GUARD=on",
-                    "-e",
-                    "SPARKGLM_TOOL_GUARD_MAX_BYTES=1048576",
-                    "-e",
-                    "SPARKGLM_TOOL_GUARD_ALLOW_HOSTS=",
-                    "-e",
-                    "SPARKGLM_TOOL_GUARD_DENY_HOSTS=",
-                    "-e",
                     "SPARKGLM_GPU_MEMORY_UTILIZATION=0.88",
                     "-e",
                     "SPARKGLM_KV_SHARD=0",
@@ -338,9 +344,7 @@
                     "-e",
                     "TRANSFORMERS_OFFLINE=1",
                     "-e",
-                    "CUDA_CACHE_PATH=/atlas-cuda-cache",
-                    "-e",
-                    "CUDA_CACHE_MAXSIZE=4294967296"
+                    "CUDA_CACHE_PATH=/atlas-cuda-cache"
                   ]
                 }
               }
@@ -376,7 +380,7 @@
                 },
                 "bootstrap": {
                   "adapter": "docker",
-                  "image": "ghcr.io/enntity/atlas-sparkglm@sha256:ef36cc1c39a6863f7687c77fc8026a654c765f73498fa2873d4198f597df4ce7",
+                  "image": "ghcr.io/enntity/atlas-sparkglm@sha256:TODO-TP4-RC-image-digest",
                   "pull": false,
                   "pullTimeoutMs": 3600000,
                   "createArgs": [
@@ -411,9 +415,7 @@
                     "--mount",
                     "type=bind,src=${installRoot}/atlas-prefix-cache,dst=/prefix-cache",
                     "--mount",
-                    "type=bind,src=${installRoot}/atlas-sparkglm-cuda-cache,dst=/atlas-cuda-cache",
-                    "--volume",
-                    "/run/lock/sparkglm:/run/lock/sparkglm",
+                    "type=bind,src=${installRoot}/atlas-carveout-lock,dst=/run/lock/sparkglm",
                     "-e",
                     "NODE_RANK=${nodeRank}",
                     "-e",
@@ -437,20 +439,6 @@
                     "-e",
                     "SPARKGLM_PROFILE=4x1m-tp4",
                     "-e",
-                    "SPARKGLM_MODE=spark",
-                    "-e",
-                    "SPARKGLM_TOPOLOGY=chain",
-                    "-e",
-                    "SPARKGLM_STRICT_MTP=0",
-                    "-e",
-                    "SPARKGLM_TOOL_GUARD=on",
-                    "-e",
-                    "SPARKGLM_TOOL_GUARD_MAX_BYTES=1048576",
-                    "-e",
-                    "SPARKGLM_TOOL_GUARD_ALLOW_HOSTS=",
-                    "-e",
-                    "SPARKGLM_TOOL_GUARD_DENY_HOSTS=",
-                    "-e",
                     "SPARKGLM_GPU_MEMORY_UTILIZATION=0.88",
                     "-e",
                     "SPARKGLM_KV_SHARD=0",
@@ -467,9 +455,7 @@
                     "-e",
                     "TRANSFORMERS_OFFLINE=1",
                     "-e",
-                    "CUDA_CACHE_PATH=/atlas-cuda-cache",
-                    "-e",
-                    "CUDA_CACHE_MAXSIZE=4294967296"
+                    "CUDA_CACHE_PATH=/atlas-cuda-cache"
                   ]
                 }
               }

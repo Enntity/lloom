@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "status": "final",
-  "note": "Pin manifest for the SparkGLM 0.3.0 candidate, recipe linux-nvidia-dgx-spark-4x-glm53-atlas-tp4 version 2. Candidate: not qualified, so it installs only with --recipe-version; the current version stays the default. One image serves two and four Sparks; this manifest checks the 4x1m-tp4 profile. Engine: Enntity/atlas spark, Atlas-Inf main 9c4519131 plus open Atlas-Inf PRs #321, #322 and #323. image.reference is the GHCR manifest digest; the tag is the first 12 characters of the sparkglm install/ tree.",
+  "note": "Pin manifest for SparkGLM 0.3.0 at TP-4, recipe linux-nvidia-dgx-spark-4x-glm53-atlas-tp4 version 2. One image serves two and four Sparks; this manifest checks the 4x1m-tp4 profile. Engine: Enntity/atlas spark, Atlas-Inf main 9c4519131 plus open Atlas-Inf PRs #321, #322 and #323. image.reference is the GHCR manifest digest; the tag is the first 12 characters of the sparkglm install/ tree. Qualified 2026-11-03 against the earlier TP-4 chain build (identical greedy output and prompt logprobs).",
   "source": {
     "repo": "Enntity/sparkglm",
     "revision": "e1eae9e4d982a8f9e45bc2f7f2df72a88a4139b2",

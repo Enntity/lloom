@@ -21,6 +21,11 @@ const recipeId = 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas';
 const recipe = await loadRecipeById(recipeId);
 const catalog = await loadBackendCatalog();
 const pins = loadPins();
+// The current recipe names its own immutable manifest; the default pins.json stays the tooling fixture.
+const recipeManifest = recipe.setup.steps
+  .find((step) => step.id === 'verify-atlas-pins')
+  .args.find((arg) => arg.endsWith('.json'));
+const recipePins = loadPins(recipeManifest.replace('${repoRoot}', root));
 const checkpoint = 'nvidia--Qwen3.8-Flash-Next-FP4-Local';
 
 // ---- backend catalog entry --------------------------------------------------
@@ -41,7 +46,7 @@ assert(plannedBackend.steps.every((step) => !step.command.join(' ').includes('${
 
 // ---- recipe shape -----------------------------------------------------------
 assert.equal(recipe.id, recipeId);
-assert.equal(recipe.version, 3);
+assert.equal(recipe.version, 4);
 assert.equal(recipe.backend.id, 'docker-atlas-sparkqwen');
 assert.equal(recipe.license.id, 'MIT');
 assert.deepEqual(recipe.requirements.cluster, { nodes: 2, provider: 'nvidia-sync', topology: 'direct' });
@@ -63,9 +68,9 @@ for (const stepId of ['verify-atlas-pins', 'pull-atlas-image', 'prepare-atlas-cu
 }
 const downloadStep = recipe.setup.steps.find((step) => step.id === 'download-atlas-model');
 assert.equal(downloadStep.provider, 'huggingface');
-assert.equal(downloadStep.model, pins.model.repo);
-assert.equal(downloadStep.revision, pins.model.revision);
-assert.equal(pins.model.revision, 'b9ce18a6887e18c089fdea8509a33e63429a3300');
+assert.equal(downloadStep.model, recipePins.model.repo);
+assert.equal(downloadStep.revision, recipePins.model.revision);
+assert.equal(recipePins.model.revision, 'b9ce18a6887e18c089fdea8509a33e63429a3300');
 
 const model = recipe.models[0];
 assert.equal(recipe.models.length, 1);
@@ -133,7 +138,7 @@ const expectedCreateArgs = [
   '--stop-timeout 60',
   `--mount type=bind,src=\${modelRoot}/${checkpoint},dst=\${modelRoot}/${checkpoint},readonly`,
   '--mount type=bind,src=${installRoot}/atlas-sparkqwen-cuda-cache,dst=/atlas-cuda-cache',
-  `--mount type=bind,src=\${installRoot}/atlas-sparkqwen-ple/${pins.image.reference.split(':')[1]}/${pins.model.revision},dst=/atlas-ple`,
+  `--mount type=bind,src=\${installRoot}/atlas-sparkqwen-ple/${recipePins.image.reference.split(':')[1]}/${recipePins.model.revision},dst=/atlas-ple`,
   '--volume /run/lock/sparkglm:/run/lock/sparkglm',
   '-e NODE_RANK=${nodeRank}',
   '-e MASTER_ADDR=${leaderAddress}',
@@ -158,7 +163,7 @@ for (const member of members) {
   assert.equal(settings.adapter, 'docker');
   assert.equal(settings.management, 'managed');
   assert.equal(settings.containerName, 'lloom-atlas-sparkqwen-${nodeId}');
-  assert.equal(settings.bootstrap.image, pins.image.reference);
+  assert.equal(settings.bootstrap.image, recipePins.image.reference);
   assert.equal(settings.bootstrap.pull, false, 'only the prepared image is started');
   assert.deepEqual(settings.bootstrap.command ?? [], [], 'use the image entrypoint');
   const rendered = settings.bootstrap.createArgs.join(' ');
@@ -192,7 +197,9 @@ assert.deepEqual(
 assert.equal(plan.steps.find((step) => step.id === 'download-atlas-model').destination, `/models/${checkpoint}`);
 assert.deepEqual(plan.steps.find((step) => step.id === 'pull-atlas-image').command, [
   'bash',
-  `${root}/backends/atlas-sparkqwen/install.sh`
+  `${root}/backends/atlas-sparkqwen/install.sh`,
+  '--manifest',
+  recipeManifest.replace('${repoRoot}', root)
 ]);
 assert.deepEqual(plan.steps.find((step) => step.id === 'prepare-atlas-cuda-cache').command, [
   'mkdir',
@@ -200,7 +207,7 @@ assert.deepEqual(plan.steps.find((step) => step.id === 'prepare-atlas-cuda-cache
   '/install/atlas-sparkqwen-cuda-cache'
 ]);
 // The packed PLE tables are specific to one image and checkpoint, so the cache is keyed by both.
-const pleCache = `/install/atlas-sparkqwen-ple/${pins.image.reference.split(':')[1]}/${pins.model.revision}`;
+const pleCache = `/install/atlas-sparkqwen-ple/${recipePins.image.reference.split(':')[1]}/${recipePins.model.revision}`;
 assert.deepEqual(plan.steps.find((step) => step.id === 'prepare-atlas-ple-cache').command, ['mkdir', '-p', pleCache]);
 for (const step of plan.steps.filter((entry) => entry.action === 'command')) {
   assert(!step.command.join(' ').includes('${'), `unresolved recipe template in ${step.id}`);
