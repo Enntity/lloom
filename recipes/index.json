@@ -1398,6 +1398,11 @@
           "version": 3,
           "path": "linux-nvidia-dgx-spark-2x-glm53-atlas.json",
           "status": "current"
+        },
+        {
+          "version": 4,
+          "path": "candidates/linux-nvidia-dgx-spark-2x-glm53-atlas/v4.json",
+          "status": "candidate"
         }
       ],
       "name": "2x DGX Spark GLM-5.3 Flash FP4-Local Atlas",
@@ -1450,6 +1455,11 @@
           "version": 2,
           "path": "linux-nvidia-dgx-spark-4x-glm53-atlas-tp4.json",
           "status": "current"
+        },
+        {
+          "version": 3,
+          "path": "candidates/linux-nvidia-dgx-spark-4x-glm53-atlas-tp4/v3.json",
+          "status": "candidate"
         }
       ],
       "name": "4x DGX Spark GLM-5.3 Flash FP4-Local Atlas TP-4 chain",
@@ -1515,6 +1525,11 @@
           "version": 4,
           "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas.json",
           "status": "current"
+        },
+        {
+          "version": 5,
+          "path": "candidates/linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas/v5.json",
+          "status": "candidate"
         }
       ],
       "name": "2x DGX Spark Qwen3.8 Flash Next FP4-Local Atlas (SparkQwen 0.4.0)",

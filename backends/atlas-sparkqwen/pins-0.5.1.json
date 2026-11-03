@@ -1,0 +1,29 @@
+{
+  "manifestVersion": 1,
+  "status": "final",
+  "note": "Pin manifest for SparkQwen 0.5.1, recipe linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas version 5. Engine: Enntity/atlas spark, Atlas-Inf main 2f9c37083 (carries #321, #322 and #323; no open Enntity PRs). image.reference is the GHCR manifest digest; the tag is the first 12 characters of the sparkqwen install/ tree. 4.0 (identical greedy output and prompt logprobs, speed within 2%). Candidate: not qualified yet, so it installs only with --recipe-version; the current version stays the default.",
+  "source": {
+    "repo": "Enntity/sparkqwen",
+    "revision": "2e95e17b2f2e12fd10fce454ff5adbb32ce5ae91",
+    "installTree": "01e43f5c2eb2d1d2ff35d8e9e4632c2848b00e90",
+    "cloneUrl": "https://github.com/Enntity/sparkqwen.git",
+    "buildScript": "install/build.sh"
+  },
+  "engine": {
+    "repo": "Enntity/atlas",
+    "branch": "spark",
+    "commit": "5f79b46ba7b0e8b14f8b2966cca9e2546f18560d"
+  },
+  "image": {
+    "reference": "ghcr.io/enntity/atlas-sparkqwen@sha256:37272dc6dcb3d1c6d4b8027b8876edf9ba36b1988d85ea6accde22848d5e11e7",
+    "tag": "ghcr.io/enntity/atlas-sparkqwen:01e43f5c2eb2",
+    "label": "io.enntity.sparkqwen.install-tree",
+    "entrypoint": "/opt/atlas/serve.py",
+    "profilePath": "/opt/atlas/profiles/8x262k.json",
+    "architecture": "arm64"
+  },
+  "model": {
+    "repo": "nvidia/Qwen3.8-Flash-Next-FP4-Local",
+    "revision": "b9ce18a6887e18c089fdea8509a33e63429a3300"
+  }
+}
