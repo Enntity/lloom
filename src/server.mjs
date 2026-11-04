@@ -498,6 +498,9 @@ export function shouldFailoverModelRequest(error, res = null) {
     return false;
   }
   const status = errorStatusCode(error);
+  // A peer gateway that no longer serves the model says so by name; another
+  // target may still hold it.
+  if (status === 404 && error?.upstreamCode === 'unknown_model') return true;
   if (status) return MODEL_FAILOVER_STATUS_CODES.has(status);
   if (error instanceof RuntimeAdmissionError) return true;
   const name = String(error?.name ?? '');

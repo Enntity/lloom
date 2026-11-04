@@ -967,6 +967,30 @@ for (const code of ['RUNTIME_QUEUE_TIMEOUT', 'RUNTIME_QUEUE_FULL']) {
   await fixture.close();
 }
 
+// A peer gateway that no longer serves the model says so by name (404
+// unknown_model, as ennspark01 did once SparkGLM moved to 03/04). Another member
+// may still hold it, and later requests skip the peer while it is backed off.
+{
+  const fixture = await createFixture({
+    primaryStatus: 404,
+    primaryError: { message: 'unknown local model: local-upstream', code: 'unknown_model' }
+  });
+  const response = await chat(fixture.url);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).choices[0].message.content, 'cloud');
+  assert.equal((await chat(fixture.url)).status, 200);
+  assert.deepEqual(fixture.hits, { primary: 1, cloud: 2, ensures: 1 });
+  await fixture.close();
+}
+
+// Any other 404 is the caller's to see, as before.
+{
+  const fixture = await createFixture({ primaryStatus: 404, primaryError: { message: 'no such route' } });
+  assert.equal((await chat(fixture.url)).status, 404);
+  assert.deepEqual(fixture.hits, { primary: 1, cloud: 0, ensures: 1 });
+  await fixture.close();
+}
+
 // New work bypasses a runtime that LLooM already knows is upgrading/warming.
 {
   const fixture = await createFixture({ primaryStatus: 200, runtimeStatus: 'warming' });
