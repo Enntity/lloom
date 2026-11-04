@@ -71,7 +71,10 @@ IMAGE_TAG="$(pin image.tag)"
 IMAGE_LABEL="$(pin image.label)"
 IMAGE_ARCHITECTURE="$(pin image.architecture)"
 ENTRYPOINT_PATH="$(pin image.entrypoint)"
-PROFILE_PATH="$(pin image.profilePath)"
+# A release lists every profile its image serves (image.profilePaths); older
+# manifests name one (image.profilePath). verify-pins.mjs keeps each a plain
+# path under /opt/atlas, so joining them into the in-image test is safe.
+PROFILE_PATHS="$(node -e 'const i=require(process.argv[1]).image??{};process.stdout.write((Array.isArray(i.profilePaths)?i.profilePaths:[i.profilePath]).filter(Boolean).join(" "))' "${MANIFEST}")"
 ENGINE_COMMIT="$(pin engine.commit)"
 MODEL_REPO="$(pin model.repo)"
 MODEL_REVISION="$(pin model.revision)"
@@ -100,10 +103,13 @@ verify_image_contract() {
   # Run on every path, including re-entry: a matching label alone does not
   # prove the image ships the serving entrypoint, the selected profile and the
   # pinned engine.
+  local profile profile_checks=""
+  [[ -n "${PROFILE_PATHS}" ]] || fail "pin manifest names no profile"
+  for profile in ${PROFILE_PATHS}; do profile_checks+="test -f '${profile}' && "; done
   docker run --rm --entrypoint bash "${target}" -lc \
-    "test -f '${ENTRYPOINT_PATH}' && test -f '${PROFILE_PATH}' && grep -q '\"${ENGINE_COMMIT}\"' /opt/atlas/source-manifest.json" \
-    || fail "image ${target} is missing ${ENTRYPOINT_PATH}, ${PROFILE_PATH} or engine commit ${ENGINE_COMMIT} in /opt/atlas/source-manifest.json"
-  note "image ${target} ships ${ENTRYPOINT_PATH}, ${PROFILE_PATH} and engine ${ENGINE_COMMIT}"
+    "test -f '${ENTRYPOINT_PATH}' && ${profile_checks}grep -q '\"${ENGINE_COMMIT}\"' /opt/atlas/source-manifest.json" \
+    || fail "image ${target} is missing ${ENTRYPOINT_PATH}, one of ${PROFILE_PATHS} or engine commit ${ENGINE_COMMIT} in /opt/atlas/source-manifest.json"
+  note "image ${target} ships ${ENTRYPOINT_PATH}, ${PROFILE_PATHS} and engine ${ENGINE_COMMIT}"
 }
 
 verify_existing_source_checkout() {

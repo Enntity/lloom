@@ -228,7 +228,7 @@ function advancedUsage() {
 First run:
   lloom [--recipe id] [--host url] [--workload id] [--capability id] [--tag id] [--signing-keys-path path] [--no-trust-host-keys] [--no-auto-host] [--home path] [--model-root path] [--port n] [--backend-port-range a-b] [--client id|all] [--backend-catalog path] [--go|--apply --yes] [--start] [--json]
   lloom up|onboard [--recipe id] [--host url] [--workload id] [--capability id] [--tag id] [--signing-keys-path path] [--no-trust-host-keys] [--no-auto-host] [--home path] [--model-root path] [--port n] [--backend-port-range a-b] [--client id|all] [--backend-catalog path] [--go|--apply --yes] [--start] [--json]
-  lloom setup [--recipe id [--recipe-version n] [--mode id]] [--config-out path] [--home path] [--model-root path] [--client id|all] [--backend-catalog path] [--additive] [--restore-catalog] [--apply --yes] [--start]
+  lloom setup [--recipe id [--recipe-version n] [--mode id] [--OPTION value]] [--config-out path] [--home path] [--model-root path] [--client id|all] [--backend-catalog path] [--additive] [--restore-catalog] [--apply --yes] [--start]
   lloom doctor [--recipe id] [--model-root path] [--client id|all] [--no-runtimes]
 
 Serving and discovery:
@@ -314,6 +314,18 @@ function argValue(args, name) {
 
 function hasFlag(args, name) {
   return args.includes(name);
+}
+
+// Every --NAME VALUE pair; setup keeps the names the selected recipe declares
+// as options (--sparks 4, --drafter dflash2) and ignores the rest.
+function recipeOptionsFromArgs(args) {
+  const options = {};
+  for (let index = 0; index < args.length - 1; index += 1) {
+    const flag = args[index];
+    const value = args[index + 1];
+    if (/^--[a-z][a-z0-9-]*$/.test(flag) && !String(value).startsWith('--')) options[flag.slice(2)] = value;
+  }
+  return options;
 }
 
 function wantsJson(args) {
@@ -1661,6 +1673,7 @@ async function main() {
       const options = {
         recipeId,
         ...(mode ? { mode } : {}),
+        recipeOptions: recipeOptionsFromArgs(args),
         ...(recipeVersion ? { recipeVersion: Number(recipeVersion) } : {}),
         configPath: configOut,
         ...(modelRoot ? { modelRoot } : {}),
@@ -1693,6 +1706,7 @@ async function main() {
                           recipeId: plan.selectedRecipe.id,
                           recipeVersion: plan.selectedRecipe.version,
                           mode: plan.selectedRecipe.mode,
+                          recipeOptions: plan.selectedRecipe.options,
                           additive,
                           restoreCatalog,
                           clientId,
@@ -1752,6 +1766,7 @@ async function main() {
           await applyInit(initConfig, {
             recipeId,
             ...(mode ? { mode } : {}),
+            recipeOptions: recipeOptionsFromArgs(args),
             ...(recipeVersion ? { recipeVersion: Number(recipeVersion) } : {}),
             configPath: configOut,
             ...(modelRoot ? { modelRoot } : {}),
