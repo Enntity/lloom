@@ -71,7 +71,11 @@ Then register it:
 accord resource register --file resource.json
 ```
 
-Agents now reserve `repository` before they touch it. A reservation can hold a resource
+Agents now reserve `repository` before they touch it. CLI and MCP reservations default
+to a one-hour window with no heartbeat calls. For a 90-minute benchmark, use
+`accord reserve --resource AUTHORITY/RESOURCE --duration-ms 5400000`. Release when
+finished; use `accord extend --id ID --host AUTHORITY --duration-ms 5400000` if more
+time is needed, keeping the same claim and workload. A reservation can hold a resource
 for up to eight hours, and a managed resource can declare its own limit. This kind of
 reservation is an agreement between cooperating agents. To have Accord run a workload and confirm it has
 stopped before the next agent starts, see [managed processes](docs/PROCESS-DRIVER.md) and

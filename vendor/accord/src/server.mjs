@@ -126,7 +126,7 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
   }
   async function catalog() {
     const resources=[...(await host()).resources,...await managers.resources()],pools=collaboration.pools(resources);
-    return {resources,...(pools.length?{pools}:{})};
+    return {resources,capabilities:['reservation-windows-v1'],...(pools.length?{pools}:{})};
   }
   async function network() {
     const peers = store.db.prepare('SELECT * FROM peers ORDER BY authority').all();

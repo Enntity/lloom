@@ -70,8 +70,26 @@ arbitrary terminal typing is implied.
 
 `reserve` creates a queue entry owned by the authenticated session. Every resource
 has capacity one; a pool is a group of such resources sharing one FIFO queue. Its queue survives restart; cancellation and queue expiry
-remove a waiting request. A running reservation defaults to a five-minute lease,
-renewable for as long as the resource allows. A `managed-http` manifest may declare
+remove a waiting request. CLI, MCP and the JavaScript client default to a one-hour
+bounded window. `durationMs` requests a different window, including preparation,
+starting when the claim is acquired, not while queued. The owning daemon persists
+the deadline; no chat heartbeat is needed. Release early when finished.
+
+`extend` with `durationMs` sets the deadline to at least that duration from now,
+without changing the claim, generation or workload. It also converts an existing
+live heartbeat lease to a window. Same-key retries return the original deadline.
+A disconnected or crashed chat retains the window until its deadline; explicit
+session close or coordinator/driver restart still initiates recovery. Windows are
+finite (at most 30 days per request) even on indefinitely renewable resources.
+
+Supervised launchers such as `withReservation` explicitly use `leaseMs` instead:
+0.5–300 seconds, renewed automatically while their process lives. Legacy HTTP
+requests without either timing field keep the five-minute heartbeat behavior.
+The resource catalog advertises `reservation-windows-v1`; new clients refuse
+window requests on older hosts before mutation. Compatibility resource managers
+reject windows rather than silently granting a short lease.
+
+Both modes remain subject to the resource ownership limit. A `managed-http` manifest may declare
 `maxOwnershipMs` (one minute to 30 days) or `allowIndefinite: true`; a resource that
 declares neither allows eight hours, and the catalog reports the effective
 `maxOwnershipMs` (`null` when indefinite). Re-registering the same resource may change

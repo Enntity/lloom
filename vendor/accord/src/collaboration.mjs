@@ -6,6 +6,7 @@ import { redact } from './session-awareness.mjs';
 import { MessengerStore } from '../vendor/messenger/store.js';
 import { createHmac,randomBytes } from 'node:crypto';
 import { hash, id, token, text, integer, requireThat, loopbackUrl, request } from './common.mjs';
+import { windowDuration } from './reservation-policy.mjs';
 
 const linkProof=(key,authority,nonce)=>createHmac('sha256',key).update(`accord-link-v1\0${authority}\0${nonce}`).digest('hex');
 
@@ -247,15 +248,20 @@ export class Collaboration {
   reserve(actor,body) {
     return this.store.command(actor,body,'reserve',()=>{
       text(body.resource,'resource',100);text(body.purpose??'reserved','purpose',200);
+      const duration = windowDuration(body);
       integer(body.leaseMs??300000,'leaseMs',500,300000);integer(body.waitMs??3600000,'waitMs',1000,86400000);
       // A waiter holds a place in the pool; schedule() seats it on a free slot.
       const slot=this.slots(body.resource)[0],resource=slot??body.resource;
       requireThat(this.db.prepare('SELECT id FROM resources WHERE id=?').get(resource),'RESOURCE_UNKNOWN','Unknown resource',404);
+      for (const candidate of slot ? this.slots(body.resource) : [resource]) {
+        const limit = this.store.ownershipLimit(candidate);
+        requireThat(duration === null || limit === null || duration <= limit, 'ATTEMPT_LIMIT', 'Reservation window exceeds the resource ownership limit');
+      }
       requireThat(this.db.prepare("SELECT count(*) n FROM tasks WHERE kind='reservation' AND state IN ('queued','preparing','running','recovering','releasing','cancelling')").get().n<5000,'CAPACITY_LIMIT','Active reservation limit reached');
       const reservationId=id(),taskId=id(),now=this.store.now();
       this.db.prepare("INSERT INTO tasks(id,title,input,expected_hash,resource,state,created_at,max_attempts,kind) VALUES(?,?,?,'',?,'queued',?,1,'reservation')")
         .run(taskId,body.purpose??'reserved','',resource,now);
-      this.db.prepare('INSERT INTO reservations(id,actor,task_id,lease_ms,queued_until,pool) VALUES(?,?,?,?,?,?)').run(reservationId,actor.id,taskId,body.leaseMs??300000,now+(body.waitMs??3600000),slot?body.resource:null);
+      this.db.prepare('INSERT INTO reservations(id,actor,task_id,lease_ms,queued_until,pool,duration_ms) VALUES(?,?,?,?,?,?,?)').run(reservationId,actor.id,taskId,body.leaseMs??300000,now+(body.waitMs??3600000),slot?body.resource:null,duration);
       this.store.emit('reservation.queued',{id:reservationId,actor:actor.id,resource:body.resource});return {id:reservationId};
     });
   }
@@ -264,6 +270,7 @@ export class Collaboration {
     requireThat(row,'NOT_FOUND','Unknown reservation',404);requireThat(row.actor===actor.id,'NOT_OWNER','Reservation belongs to another session',403);
     const claim=this.db.prepare('SELECT * FROM claims WHERE task_id=? ORDER BY created_at DESC LIMIT 1').get(row.task_id);
     return {id:row.id,resource:row.pool&&!claim?row.pool:row.resource,state:claim?.state==='closed'?claim.outcome:claim?.state??row.task_state,
+      mode:row.duration_ms===null?'heartbeat':'window',renewalRequired:row.duration_ms===null,durationMs:row.duration_ms,
       authority:this.store.authority,generation:claim?.generation??null,workloadUnitPrefix:claim?'accord-'+hash(this.store.authority+'/'+claim.id+'/'+claim.generation).slice(0,20)+'-':null,claimId:claim?.id??null,deadline:claim?.deadline??null,queuedUntil:row.queued_until,error:claim?.error??null};
   }
   release(actor,reservationId,body) {
@@ -286,7 +293,8 @@ export class Collaboration {
     const route=this.db.prepare('SELECT * FROM remote_routes WHERE actor=?').get(actor);
     if(!route&&!this.db.prepare('SELECT 1 FROM participants WHERE actor=?').get(actor))return;
     const to=route?`${route.authority}/${route.session_id}`:this.address({id:actor});
-    this.send(sender,{key,to,kind:'message',text:`Accord reports reservation ${reservation} is running on ${resource}. Confirm with accord_reservation before use, renew before its deadline, and release when finished.`});
+    const window = this.db.prepare('SELECT duration_ms FROM reservations WHERE id=?').get(reservation)?.duration_ms;
+    this.send(sender,{key,to,kind:'message',text:`Accord reports reservation ${reservation} is running on ${resource}. Confirm with accord_reservation before use. ${window?'Its bounded window needs no heartbeat; extend only if you need more time.':'Renew before its deadline.'} Release when finished.`});
     void this.flush().catch(()=>{});
   }
   grantedClaim(sender,claim) {
@@ -317,7 +325,13 @@ export class Collaboration {
       }
       if(seen.has(row.resource))continue;seen.add(row.resource);
       try{this.store.acquire({id:row.actor,role:'worker'},{key:`reservation:${row.id}`,taskId:row.task_id,leaseMs:row.lease_ms});}
-      catch(e){if(!['RESOURCE_BUSY','PAUSED'].includes(e.code))throw e;}
+      catch(e){
+        if(e.code==='ATTEMPT_LIMIT')this.store.mutate(()=>{
+          this.db.prepare("UPDATE tasks SET state='failed' WHERE id=?").run(row.task_id);
+          this.store.emit('reservation.rejected',{id:row.id,reason:e.message});
+        });
+        else if(!['RESOURCE_BUSY','PAUSED'].includes(e.code))throw e;
+      }
     }
   }
 }

@@ -142,3 +142,22 @@ Host validation accepts loopback names with forwarded ports. Browser Origin must
 match the request Host exactly, and CORS remains disabled. The public descriptor
 is discovery metadata; trust comes from an explicitly pinned authority and the
 separately provisioned credential, not merely seeing a UUID.
+
+
+## Reservation windows (0.6)
+
+`resources` on `/v1/collaboration` advertises `reservation-windows-v1` in
+`capabilities`. Verify this on the owning host before sending a window to it;
+older hosts do not understand the new field. `reserve` accepts `durationMs`
+(1 second to 30 days), mutually exclusive with `leaseMs`. CLI, MCP and
+`AccordClient.reserve` default to a one-hour window. Raw legacy HTTP requests
+without either field retain the five-minute heartbeat default.
+
+The window starts at claim acquisition and includes preparation. Reservation
+status includes `mode` (`window` or `heartbeat`), `renewalRequired`, and the
+absolute `deadline`. A window needs no renewal calls while the chat is idle.
+`renew` accepts `durationMs` to extend the same claim to at least that duration
+from now, including conversion of a live heartbeat lease. It never shortens a
+previous deadline; same-key retries never move it again. Ownership limits,
+owner authentication, session revocation and confirmed recovery still apply.
+Compatibility resource managers reject windows with `WINDOW_UNSUPPORTED`.

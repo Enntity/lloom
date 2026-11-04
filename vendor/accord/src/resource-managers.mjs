@@ -156,6 +156,7 @@ export class ResourceManagers {
     return JSON.parse(Buffer.concat(chunks).toString());
   }
   reserve(actor, body) {
+    requireThat(body.durationMs === undefined, 'WINDOW_UNSUPPORTED', 'This compatibility manager does not support reservation windows; use an explicit supervised heartbeat lease');
     return this.store.command(actor, body, "manager.reserve", () => {
       requireThat(
         this.owns(body.resource),
@@ -254,6 +255,7 @@ export class ResourceManagers {
     });
   }
   async renew(actor, body) {
+    requireThat(body.durationMs === undefined, 'WINDOW_UNSUPPORTED', 'This compatibility manager does not support reservation windows');
     const intent = this.store.command(
       actor,
       body,

@@ -14,9 +14,9 @@ installed tool takes no arguments, bootstrap then `accord_announce`.
   `inboxPending` appears. After handling, `accord_read` its `deliveryId`; delivery
   alone never means read.
 - Sessions do not expire with time. Presence is not proof of current work.
-- Resources: `accord_reserve`; confirm `running` before use, `accord_extend` before
-  the deadline, then `accord_release`. Default leases last five minutes. Unavailable
-  means unknown, never free.
+- Resources: `accord_reserve` with `durationMs` (default one hour); confirm `running`.
+  Windows need no heartbeat. Extend the same ID for more time; release when done.
+  Use `leaseMs` only with an automatic renewer. Unavailable means unknown, never free.
 - Waiting: end your turn, don't poll. Claude Code wakes for mail and grants; on Codex
   first `accord_announce` with `state: waiting`. A grant message is a hint: confirm
   with `accord_reservation`.

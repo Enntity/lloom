@@ -25,15 +25,36 @@ model effects and shared workload definitions require capacity one.
 
 Each registration also declares how long one reservation may hold the resource:
 `maxTtlMs` becomes Accord's `maxOwnershipMs` (kept within one minute to 30 days) and
-`allowIndefinite: true` lets a holder keep renewing without a total limit. Leases still
-need renewal every few minutes. Accord 0.4.0 and earlier ignore both fields and keep
-an eight-hour limit.
+`allowIndefinite: true` lets a holder keep renewing without a total limit.
+Bounded windows need no heartbeat calls. Explicit short `leaseMs` leases still
+require automatic renewal by a supervised launcher. Accord 0.4.0 and earlier
+ignore both ownership fields and keep an eight-hour limit.
 
 1. Join Accord and discover the resource's full address.
-2. Reserve it with a stable request key. Only `running` grants access.
+2. Reserve it with a stable request key and `durationMs` covering preparation and
+   the benchmark (CLI: `--duration-ms`; default one hour). Only `running` grants access.
 3. Start the configured workload through Accord, or register external containers and supervisors before launching them (below). Publish job progress there.
-4. Extend before the returned deadline. A progress report is not an implicit renewal.
+4. The daemon holds the window without chat heartbeats. If more time is needed,
+   extend the same reservation ID with `durationMs` before its deadline. This does
+   not rerun preparation or stop serving. A progress report does not extend a window.
 5. Release and wait for `released`. Unknown or recovering means it remains held.
+
+For a 90-minute managed-serving benchmark:
+
+```sh
+accord reserve --resource AUTHORITY/RESOURCE --purpose "SparkDash benchmark" --duration-ms 5400000
+# Confirm running, then start the configured workload and verify model readiness.
+accord workload start --id RESERVATION_ID --host AUTHORITY
+# Run the benchmark. Extend only if more time is needed, keeping the same ID.
+accord extend --id RESERVATION_ID --host AUTHORITY --duration-ms 5400000
+accord release --id RESERVATION_ID --host AUTHORITY
+```
+
+A chat disconnect does not abandon a window; it remains held until its deadline or
+explicit release. Session close and coordinator/driver recovery still revoke it.
+Both the client and owning Accord host must support `reservation-windows-v1`; old
+hosts are refused before mutation. Upgrade only after active holders have released.
+Do not release/reacquire merely to renew, or bypass Accord to avoid preparation.
 
 The provider stops the old managed workload and restores exact model/route state
 before Accord grants another generation. Coordinator, provider or driver failure,
