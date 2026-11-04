@@ -126,3 +126,11 @@ host policy and enforcement boundary.
 Already-running work must be inventoried with its holder before operator adoption.
 If it cannot be contained safely, let it finish. Neither plugin fences arbitrary
 privileged SSH/Docker actions or discovers unregistered supervisors automatically.
+
+Distributed training plans may pass `--init`, `--ipc`, `--cpuset-cpus`,
+`--memory-swap`, `--cap-add`, `--device`, and `--ulimit` alongside the existing
+container options. These remain trusted operator plans; they do not sandbox a
+malicious workload. Identity and restart settings still belong to the launcher.
+If any container exits unsuccessfully, LLooM requests release of the entire group
+immediately, including ranks still running. Checkpoint retention and disk-space
+margins belong in the trainer; a reservation does not impose a filesystem quota.

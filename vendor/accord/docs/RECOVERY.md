@@ -82,3 +82,17 @@ test output, and the separate demo's coordinator events and driver audit. Test
 fixtures are local and contain no model credentials. The test suite includes a
 100-request claim race, actual SIGKILL faults, lost replies, and a replaced driver
 database. A compile-only pass is never counted as a recovery test.
+
+### Fatal storage failures
+
+A failed leadership heartbeat or ownership reconciliation stops new acknowledgments
+and reports the original error to `serve`. The process logs `coordinator.failed` and
+exits nonzero, with shutdown bounded to five seconds. Installed launchd/systemd
+services restart with their existing ten-second throttle. Persistent storage failure
+therefore remains unavailable; freeing space lets the next restart reconcile the
+old generations before any new grant. No grant is revived in place.
+
+Local regression tests exercise a real SQLite `SQLITE_FULL` using a database page
+limit, and a child process losing leadership then exiting and recovering. This is
+not a full-filesystem or power-loss qualification. Supervised heartbeat reservations
+renew during preparation as well as running; only running grants authorize work.

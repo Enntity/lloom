@@ -209,8 +209,18 @@ try {
     writeFileSync(join(directory,'endpoints.json'),JSON.stringify({coordinator:url,authority,...(local?{local:local.url}:{})}),{mode:0o600});
     ready({ url, authority, local: local?.url });
     let stopping = false;
-    const stop = async () => { if (stopping) return; stopping = true; local?.close(); await service.close(); process.exit(0); };
-    process.on('SIGTERM', stop); process.on('SIGINT', stop);
+    const stop = async (code = 0) => {
+      if (stopping) return; stopping = true;
+      const timeout = setTimeout(() => process.exit(code || 1), 5000);
+      timeout.unref(); local?.close();
+      try { await service.close(); } catch { code = 1; }
+      process.exit(code);
+    };
+    service.failed.then(error => {
+      console.error(JSON.stringify({event:'coordinator.failed',code:error.code,sqliteCode:error.errcode,message:error.message}));
+      void stop(1);
+    });
+    process.on('SIGTERM', () => void stop()); process.on('SIGINT', () => void stop());
   } else if (command === 'up') {
     configuration(directory); // explicit initialization; no overwrite or hidden enrollment
     const driver = child('driver', ['--port', option('driver-port', '8788')]);

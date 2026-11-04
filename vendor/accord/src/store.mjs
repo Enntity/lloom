@@ -268,8 +268,10 @@ export class Store {
   }
   renew(actor, claimId, body) {
     return this.command(actor, body, `renew:${claimId}`, () => {
-      const claim = this.owned(actor, claimId, true);
+      const claim = this.owned(actor, claimId);
       const reservation=this.task(claim.task_id).kind==='reservation';
+      requireThat((claim.state === 'running' || (reservation && claim.state === 'preparing')) && claim.deadline > this.now(),
+        'STALE_CLAIM', 'Claim is not active');
       const duration = windowDuration(body);
       requireThat(duration === null || reservation, 'INVALID_INPUT', 'Windows are only available for reservations', 400);
       if (duration === null) integer(body.leaseMs, 'leaseMs', 500, reservation?300000:30000);

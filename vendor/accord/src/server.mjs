@@ -39,6 +39,13 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
   const driverPath=(path,resource='artifact')=>resource==='artifact'?path:`${path}?resource=${encodeURIComponent(resource)}`;
   const grant = claim => ({ instance: instanceFor(claim.resource), authority: store.authority, epoch: store.epoch, generation: claim.generation, claimId: claim.id });
   let closed = false, busy = false, unhealthy = false;
+  let reportFailure;
+  const failed = new Promise(resolve => { reportFailure = resolve; });
+  function fail(error) {
+    if (closed || unhealthy) return;
+    unhealthy = true;
+    reportFailure(error);
+  }
 
   // Pending claim states are a durable outbox: retries use the exact attempt and generation.
   async function reconcile() {
@@ -67,10 +74,10 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
           store.driverError(claim.id, ['DRIVER_REPLACED','STALE_FENCE','WRONG_AUTHORITY','REVOKED'].includes(error.code) ? error.code : 'DRIVER_UNAVAILABLE');
         }
       }
-    } catch { unhealthy = true; } finally { busy = false; }
+    } catch (error) { fail(error); } finally { busy = false; }
   }
   const heartbeat = setInterval(() => {
-    if (!closed && !unhealthy) { try { store.beat(); } catch { unhealthy = true; } }
+    if (!closed && !unhealthy) { try { store.beat(); } catch (error) { fail(error); } }
   }, Math.min(500, leaderMs / 3));
   const timer = setInterval(reconcile, tickMs);
   let monitoring=false;
@@ -418,13 +425,13 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
     return result;
   });
   return {
-    server, store, reconcile,
+    server, store, reconcile, failed,
     async close() {
       closed = true; attention.close(); await observationRuntime.close();clearInterval(timer); clearInterval(heartbeat);clearInterval(mailTimer);clearInterval(overseerTimer);memory.close();
       server.closeAllConnections();
       await new Promise(resolve => server.close(resolve));
       while (busy||collaboration.sending||monitoring||managers.busy) await new Promise(resolve => setTimeout(resolve, 10));
-      collaboration.close();store.releaseLeadership(); store.close();
+      collaboration.close();try { store.releaseLeadership(); } finally { store.close(); }
     }
   };
 }

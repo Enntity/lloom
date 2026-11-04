@@ -113,16 +113,22 @@ export async function withReservation(client, resource, work, {
     for(;;) {
       controller.signal.throwIfAborted();
       const state=await client.reservation(reservation.id,host);
+      if(!timer && ['preparing','running'].includes(state.state)) {
+        // Ownership begins during preparation; queue time needs no heartbeat.
+        const renew=()=>{
+          if(renewal)return renewal;
+          renewal=client.collaborate('renew',{id:reservation.id,key:randomUUID(),leaseMs},host)
+            .catch(error=>{lost=error;controller.abort(error);}).finally(()=>{renewal=null;});
+          return renewal;
+        };
+        await renew();controller.signal.throwIfAborted();
+        timer=setInterval(renew,Math.max(100,Math.floor(leaseMs/3)));
+      }
       if(state.state==='running') break;
       if(terminal.has(state.state)) throw Error(`Reservation ended: ${state.state}`);
       if(Date.now()>=until) throw Error('Reservation wait timed out');
       await sleep();
     }
-    timer=setInterval(()=>{
-      if(renewal)return;
-      renewal=client.collaborate('renew',{id:reservation.id,key:randomUUID(),leaseMs},host)
-        .catch(error=>{lost=error;controller.abort(error);}).finally(()=>{renewal=null;});
-    },Math.max(100,Math.floor(leaseMs/3)));
     const result=await work({reservationId:reservation.id,host,signal:controller.signal});
     if(lost)throw lost;controller.signal.throwIfAborted();return result;
   } finally {

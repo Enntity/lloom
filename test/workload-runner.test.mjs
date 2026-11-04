@@ -106,3 +106,58 @@ test('unapproved host is rejected before reservation or creation', async () => {
   );
   assert.deepEqual(f.trace, []);
 });
+
+test('one failed rank releases the group while another rank is still running', async () => {
+  const f = fixture();
+  const execute = async (host, args) =>
+    args[1] === 'inspect'
+      ? JSON.stringify(host === 'worker' ? { Running: false, ExitCode: 1 } : { Running: true, ExitCode: 0 })
+      : f.execute(host, args);
+  const collaborate = f.client.collaborate;
+  f.client.collaborate = async (...args) => {
+    const result = await collaborate(...args);
+    if (args[0] === 'resources') result.resources[0].externalWorkloads.hosts.push('peer');
+    return result;
+  };
+  await assert.rejects(
+    runWorkload(
+      {
+        ...plan,
+        supervisors: [],
+        containers: [plan.containers[0], { ...plan.containers[0], name: 'peer', host: 'peer' }]
+      },
+      { ...f, execute }
+    ),
+    /unsuccessfully/
+  );
+  assert(f.trace.includes('release'));
+});
+
+test('distributed training options retain launcher-owned identity and lifecycle', () => {
+  validateWorkloadPlan({
+    ...plan,
+    containers: [
+      {
+        ...plan.containers[0],
+        args: [
+          '--init',
+          '--ipc',
+          'host',
+          '--device',
+          '/dev/infiniband',
+          '--cap-add',
+          'IPC_LOCK',
+          '--ulimit',
+          'memlock=-1:-1',
+          '--memory-swap',
+          '70g',
+          '--cpuset-cpus',
+          '5-9'
+        ]
+      }
+    ]
+  });
+  assert.throws(() =>
+    validateWorkloadPlan({ ...plan, containers: [{ ...plan.containers[0], args: ['--init', '--restart', 'always'] }] })
+  );
+});
