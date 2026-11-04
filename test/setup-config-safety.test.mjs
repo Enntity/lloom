@@ -7,9 +7,10 @@ import process from 'node:process';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { modelTargets } from '../src/cluster.mjs';
 import { loadConfig } from '../src/config.mjs';
 import { deriveUserConfig } from '../src/init.mjs';
-import { applyRecipeMode, loadRecipeById } from '../src/recipes.mjs';
+import { applyRecipeMode, applyRecipeOptions, loadRecipeById } from '../src/recipes.mjs';
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const cliPath = path.join(repoRoot, 'bin', 'lloom.mjs');
@@ -191,6 +192,49 @@ test('a single-runtime recipe re-apply keeps the maintenance record', async (t) 
     ...MAINTENANCE,
     requestedModel: 'synthetic/maintained'
   });
+});
+
+// ennspark03 as it was on 2026-11-03: SparkGLM had run on 01, so 03 kept the
+// peer's copy written as a federated entry. Installing the pair here must give
+// the gateway the local runtime; the peer copy may stay beside it, never alone.
+test('installing a model here replaces a written federated entry with the local route', async (t) => {
+  const root = await tempRoot(t);
+  const { config: fixture } = await sparkQwenPairConfig();
+  const peerCopy = { id: 'ennspark01', node: 'ennspark01', backend: 'lloom-node-ennspark01' };
+  fixture.cluster.nodes.ennspark01.proxy.models.push({ id: 'glm-5.3-flash-atlas', as: 'glm-5.3-flash-atlas' });
+  fixture.models.push({
+    id: 'glm-5.3-flash-atlas',
+    kind: 'chat',
+    upstreamModel: 'glm-5.3-flash-atlas',
+    targets: [{ ...peerCopy, remoteRuntime: 'glm53-flash-atlas-cluster', upstreamModel: 'glm-5.3-flash-atlas' }],
+    federated: true
+  });
+  const { config } = await writeAndLoad(root, fixture);
+  const recipe = applyRecipeOptions(await loadRecipeById('linux-nvidia-dgx-spark-glm53-atlas'), {
+    sparks: '2',
+    drafter: 'dflash2'
+  });
+  const derived = deriveUserConfig(config, applyRecipeMode(recipe), {
+    modelRoot: '/models',
+    additive: true,
+    backendVariables
+  });
+  const written = derived.models.find((model) => model.id === 'glm-5.3-flash-atlas');
+  assert.equal(written.runtime, 'glm53-flash-atlas-cluster');
+  assert.equal(written.backend, 'glm53-flash-atlas');
+  assert.equal(written.targets, undefined, 'no stale target hides the local runtime');
+  assert.equal(written.federated, undefined, 'a model installed here is not a peer copy');
+
+  const { config: loaded } = await writeAndLoad(root, derived);
+  const targets = modelTargets(loaded.models.find((model) => model.id === 'glm-5.3-flash-atlas'));
+  assert.deepEqual(
+    targets.map((target) => [target.node, target.runtime ?? target.remoteRuntime]),
+    [
+      [null, 'glm53-flash-atlas-cluster'],
+      ['ennspark01', null]
+    ],
+    'the local runtime first, and the peer copy the node still advertises after it'
+  );
 });
 
 test('setup and init never print configured credentials, and still write them', async (t) => {

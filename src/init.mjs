@@ -969,7 +969,7 @@ function ensureRecipeConfigEntries(
         runtime: runtimeId
       });
       if (!existingModel) config.models.push(materializedModel);
-      else Object.assign(existingModel, materializedModel);
+      else adoptRecipeModel(existingModel, materializedModel);
       finishRecipeModelConfig(config, recipeModel, materializedModel, modelId);
       continue;
     }
@@ -1070,7 +1070,7 @@ function ensureRecipeConfigEntries(
         targets
       });
       if (!existingModel) config.models.push(materializedModel);
-      else Object.assign(existingModel, materializedModel);
+      else adoptRecipeModel(existingModel, materializedModel);
       finishRecipeModelConfig(config, recipeModel, materializedModel, modelId);
       continue;
     }
@@ -1127,7 +1127,7 @@ function ensureRecipeConfigEntries(
     if (!existingModel) {
       config.models.push(materializedModel);
     } else if (config.runtimes[runtimeId]?.recipe?.id === recipe.id) {
-      Object.assign(existingModel, materializedModel);
+      adoptRecipeModel(existingModel, materializedModel);
     } else if (backendId === 'comfyui-media') {
       // Media recipes refresh their API contract when reusing a runtime
       // another recipe installed. Preserve the operator's upstream route.
@@ -1144,6 +1144,16 @@ function ensureRecipeConfigEntries(
 
     finishRecipeModelConfig(config, recipeModel, materializedModel, modelId);
   }
+}
+
+// The recipe now serves this model here, so its placement is the route. An
+// entry written for a peer's copy (federated, with only the peer's targets)
+// would otherwise keep sending every request to that peer; peers that still
+// advertise the id are added back beside the local route when config loads.
+function adoptRecipeModel(existingModel, materializedModel) {
+  delete existingModel.targets;
+  delete existingModel.federated;
+  Object.assign(existingModel, materializedModel);
 }
 
 function materializedRecipeModel(recipe, recipeModel, modelId, placement) {
