@@ -4,30 +4,49 @@
 
 # Accord
 
+[![CI](https://github.com/Enntity/accord/actions/workflows/ci.yml/badge.svg)](https://github.com/Enntity/accord/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Enntity/accord)](https://github.com/Enntity/accord/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **Multiplayer for AI agents.** Accord lets your coding agents find each other, talk, and
 take turns on shared resources. It sets up Claude Code, Codex, OpenCode, Grok Build,
 Hermes, DeepSeek Harness and more for you, works with any other MCP agent, and runs on your
 own machines, with no cloud service and no account.
 
-Run two agents today and neither knows the other exists. They edit the same branch,
-fight over the same GPU, and you carry messages between terminals. With Accord, every
-session joins automatically, so they can sort it out themselves.
+One agent is editing the checkout. Another is about to reset it. A third needs the
+GPU the first one reserved. Accord gives them a shared directory, durable messages,
+and a queue, so you can stop carrying updates between terminals.
+
+**0.6.1:** one-hour reservations without heartbeat chores, renewal during slow
+preparation, and automatic service restart after fatal coordinator failures.
+[Release notes](CHANGELOG.md) · [Upgrading](docs/UPGRADING.md)
 
 ## Get started
 
-You need Node.js 22.16 or newer.
+You need Node.js 22.16 or newer. macOS and Linux support automatic service setup.
+On Windows, run `accord up` under your own supervisor after installation.
 
 ```sh
-npm install -g github:Enntity/accord
+npm install -g https://github.com/Enntity/accord/releases/download/v0.6.1/enntity-accord-0.6.1.tgz
 accord install
 ```
 
-Restart your agent sessions. Every new session now joins Accord on its own. See
+On Windows, use `accord install --no-start`, then `accord up`.
+
+Restart your agent sessions. Configured clients receive startup instructions to join
+Accord. See
 [which agents are covered](#works-with-your-agents).
 
 To see it work, open two sessions and tell one:
 
-> Ask the other session what it's working on.
+> Find the other session, ask what it is working on, and read its reply.
+
+Then try a handoff:
+
+> Tell the other session which files you changed and ask it to review them.
+
+The recipient can find your address and reply through Accord. Idle wake is available
+in Claude Code; other clients receive pending mail on their next Accord call.
 
 If you use Codex, approve the new hooks in `/hooks` the first time. Run `accord doctor`
 any time to check the service.
@@ -46,16 +65,22 @@ any time to check the service.
 You can watch all of it on the local board at <http://127.0.0.1:8787>. Sign in with the
 token in `~/.local/share/accord/admin.token`.
 
-## Built to stay out of the way
+## How it works
 
-- **Almost no tokens.** The everyday tool list is under 1,000 tokens, and a join reply is
-  capped at 4 KiB.
-- **Waiting is free.** An idle agent spends nothing until a message or its turn arrives.
-- **Fast.** A routine tool call gains about 8 ms and no tokens.
-- **Safe by default.** Peer messages are treated as untrusted data, a wake never carries
-  peer text, and each conversation gets six wakes an hour.
-- **No dependencies.** Each machine keeps its own SQLite database. There's no server to
-  run beyond a small local service, which `accord install` starts for you.
+```text
+Claude Code ─┐                         ┌─ Codex
+Codex ───────┼─ Accord + SQLite ── SSH ──┤  Accord + SQLite
+Other MCP ───┘     your laptop          └─ your server
+```
+
+Each host runs a small Node service with its own SQLite database. The everyday MCP
+surface is compact; less common tools are available on demand. Accord makes no model
+calls and has no runtime npm dependencies. Your agent's normal model usage still applies.
+
+Messages survive restarts. Resource grants carry a generation, so a stale worker cannot
+reclaim an expired grant through Accord. When a driver cannot confirm that work has
+stopped, the resource stays held. [Ownership and recovery](docs/RECOVERY.md) describes
+the failure boundaries and the tests behind them.
 
 ## Share a resource
 
@@ -71,10 +96,16 @@ Then register it:
 accord resource register --file resource.json
 ```
 
-Agents now reserve `repository` before they touch it. A reservation can hold a resource
-for up to eight hours, and a managed resource can declare its own limit. This kind of
-reservation is an agreement between cooperating agents. To have Accord run a workload and confirm it has
-stopped before the next agent starts, see [managed processes](docs/PROCESS-DRIVER.md) and
+Agents now reserve `repository` before they touch it. CLI and MCP reservations default
+to a one-hour window with no heartbeat calls. For a 90-minute benchmark, use
+`accord reserve --resource AUTHORITY/RESOURCE --duration-ms 5400000`. Release when
+finished; use `accord extend --id ID --host AUTHORITY --duration-ms 5400000` if more
+time is needed, keeping the same claim and workload. A reservation can hold a resource
+for up to eight hours by default; a managed resource can declare another limit.
+
+A cooperative reservation does not lock files or isolate a GPU. All agents using that
+resource must participate. To have Accord run a workload and confirm it has stopped
+before the next agent starts, see [managed processes](docs/PROCESS-DRIVER.md) and
 [Docker and systemd workloads](docs/EXTERNAL-WORKLOADS.md).
 
 ## Connect another machine
@@ -98,8 +129,8 @@ A linked machine doesn't see your session history unless you turn that on with
 
 | Agent | What you get |
 | --- | --- |
-| Claude Code | Everything, including idle wake |
-| Codex CLI | Everything, with a held turn instead of a background wake |
+| Claude Code | Discovery, messages, reservations and idle wake |
+| Codex CLI | Discovery, messages and reservations; held-turn hook tested in fixtures |
 | OpenCode, Grok Build, Hermes | All tools and startup instructions, confirmed connecting |
 | DeepSeek Harness (`dsh`, `dsh web`, desktop) | All tools and startup instructions, confirmed connecting from `dsh web` |
 | OMP, ZCode, Devin | All tools and startup instructions, written to their config but not yet confirmed running |
@@ -133,6 +164,9 @@ Shell scripts can use `accord run -- COMMAND`, or commands such as `accord find`
   a real Codex session.
 - **Windows:** run `accord up` under your own supervisor. Service install, managed
   processes and the private local socket are macOS and Linux only.
+- **Upgrades:** wait for active reservations to finish before restarting the service.
+  Restart fences existing grants. [Upgrade instructions](docs/UPGRADING.md) cover both
+  service managers and verification.
 - **Agents stay in charge:** Accord tells an agent what to do at startup, but it can't
   force a model to follow along or wake a closed application.
 
@@ -151,7 +185,26 @@ Shell scripts can use `accord run -- COMMAND`, or commands such as `accord find`
 Prefer a native app? [Tessera](https://github.com/Enntity/tessera) is a macOS mission
 control built on Accord.
 
-To work on Accord itself, run `npm run verify` from a checkout.
+## Contributing
+
+Bug reports are useful when they include `accord --version`, your OS and Node version,
+what you expected, and a small reproduction. Remove tokens, transcripts and private
+paths before posting. Report security vulnerabilities through
+[private reporting](https://github.com/Enntity/accord/security/advisories/new).
+
+To work on Accord itself:
+
+```sh
+git clone https://github.com/Enntity/accord.git
+cd accord
+npm run verify
+```
+
+No dependency install or model account is needed for the tests. They run isolated
+fixtures and recovery demos. CI covers Linux, macOS and Windows on Node 22 and 24,
+plus the minimum Node 22.16 on Linux. Installed-package checks run on Linux and macOS.
+See [qualification](docs/QUALIFICATION.md) for the boundary between fixture tests and
+real-client checks.
 
 ## License
 

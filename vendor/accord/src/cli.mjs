@@ -21,6 +21,7 @@ import { profileAt, discover, notice, runAgent, inheritedClient, enrollProfile }
 import { connectHost,superviseLinks } from './connect.mjs';
 import { validateWorkloadConnector } from './workload-transport.mjs';
 import { serveMcp } from './mcp.mjs';
+import { version } from './version.mjs';
 
 const argv = process.argv.slice(2), requestedCommand = argv.shift() || 'help';
 const separator = argv.indexOf('--'), ownArgs = separator < 0 ? argv : argv.slice(0, separator);
@@ -41,7 +42,9 @@ function readyChild(proc) {
   });
 }
 try {
-  if (command === 'init') {
+  if (command === '--version' || command === '-v' || command === 'version') {
+    console.log(version);
+  } else if (command === 'init') {
     console.log(JSON.stringify(initialize(directory)));
   } else if(command==='ensure'){
     console.log(JSON.stringify(await ensureAccord({home,data:directory,profilePath,dryRun:argv.includes('--dry-run'),start:!argv.includes('--no-start')})));
@@ -101,10 +104,11 @@ try {
     if(command==='inbox')result=await c.waitInbox(Number(option('wait-ms',0)));
     if(command==='read')result=await c.read(id);
     if(command==='sent')result=await c.sent(id);
-    if(command==='reserve')result=await c.reserve(option('resource'),{key,host,purpose:option('purpose','reserved'),leaseMs:Number(option('lease-ms',300000)),waitMs:Number(option('queue-ms',3600000))});
+    const timing={...(option('duration-ms')!==undefined?{durationMs:Number(option('duration-ms'))}:{}),...(option('lease-ms')!==undefined?{leaseMs:Number(option('lease-ms'))}:{})};
+    if(command==='reserve')result=await c.reserve(option('resource'),{key,host,purpose:option('purpose','reserved'),...timing,waitMs:Number(option('queue-ms',3600000))});
     if(command==='reservation')result=await c.reservation(id,host);
     if(command==='release')result=await c.release(id,{key,host});
-    if(command==='extend')result=await c.collaborate('renew',{id,key,leaseMs:Number(option('lease-ms',300000))},host);
+    if(command==='extend')result=await c.extend(id,{key,host,...timing});
     if(command==='workload'){
       const actions={start:'start',status:'process',register:'workload-register',launch:'workload-launch',list:'workload-list'};
       requireThat(actions[argv[0]],'INVALID_COMMAND','Use workload start, status, register, launch, list or adopt');
@@ -208,8 +212,18 @@ try {
     writeFileSync(join(directory,'endpoints.json'),JSON.stringify({coordinator:url,authority,...(local?{local:local.url}:{})}),{mode:0o600});
     ready({ url, authority, local: local?.url });
     let stopping = false;
-    const stop = async () => { if (stopping) return; stopping = true; local?.close(); await service.close(); process.exit(0); };
-    process.on('SIGTERM', stop); process.on('SIGINT', stop);
+    const stop = async (code = 0) => {
+      if (stopping) return; stopping = true;
+      const timeout = setTimeout(() => process.exit(code || 1), 5000);
+      timeout.unref(); local?.close();
+      try { await service.close(); } catch { code = 1; }
+      process.exit(code);
+    };
+    service.failed.then(error => {
+      console.error(JSON.stringify({event:'coordinator.failed',code:error.code,sqliteCode:error.errcode,message:error.message}));
+      void stop(1);
+    });
+    process.on('SIGTERM', () => void stop()); process.on('SIGINT', () => void stop());
   } else if (command === 'up') {
     configuration(directory); // explicit initialization; no overwrite or hidden enrollment
     const driver = child('driver', ['--port', option('driver-port', '8788')]);
@@ -251,7 +265,7 @@ try {
     if (command === 'artifact') result = await request(endpoints.driver, config.readToken('driver-control'), `/control/artifacts/${option('receipt')}`);
     console.log(JSON.stringify(result, null, 2));
   } else {
-    console.log(`Accord 0.5 — discover, message, share; Node 22.16+\n\n  accord install [--no-start] [--dry-run] [--clients codex,claude,opencode,grok,omp,hermes,zcode,dsh]\n  accord connect|disconnect SSH_HOST\n  accord share-sessions --host AUTHORITY [--off]\n  accord session open --label NAME [--session-file FILE]\n  accord session close [--session-file FILE]\n  accord announce --label NAME --activity TEXT [--capabilities a,b]\n  accord find [--query TEXT]\n  accord send --to ADDRESS --text TEXT [--notify] [--key KEY]\n  accord inbox [--wait-ms 3600000]\n  accord read --id DELIVERY_ID\n  accord sent --id MESSAGE_ID\n  accord reserve --resource ADDRESS --purpose TEXT [--key KEY]\n  accord reservation|release|extend --id ID [--host AUTHORITY]\n  accord workload start|status|list --id ID [--host AUTHORITY]\n  accord workload register --id ID --file TARGETS.json [--host AUTHORITY]\n  accord workload launch --id ID --workload BINDING_ID [--host AUTHORITY]\n  accord workload policy --data DIR --file POLICY.json (operator only)\n  accord workload adopt --data DIR --file ADOPTION.json (operator only)\n  accord resource list|register --file MANIFEST\n  accord plugins\n  accord process-start|process-status --claim ID [--key KEY]\n  accord doctor\n  accord run -- COMMAND [ARGS]\n  accord context\n  accord claim|wait --key KEY [--task ID]\n  accord inspect --claim ID\n  accord checkpoint --claim ID --key KEY --note TEXT\n  accord renew --claim ID --key KEY --lease-ms MS\n  accord write --claim ID --key KEY --input FILE\n  accord finish --claim ID --key KEY --receipt ID\n  accord host [--notice]\n  accord mcp\n  accord service install [--enable]\n  accord join --url LOOPBACK --authority ID --discovery-file FILE\n  accord leave --authority ID\n  accord sessions [--query TEXT] [--host AUTHORITY]\n  accord session-read --id ID\n  accord report|job|ask|snooze --input JSON_FILE\n  accord jobs|overseer\n  accord policy|signal --input JSON_FILE\n  accord privacy --source SOURCE --on|--off\n  accord question --id ID\n  accord telemetry|machine [--host AUTHORITY]\n  accord network\n  accord init --data DIR\n  accord up --data DIR [--port 8787] [--driver-port 8788]\n  accord board --data DIR\n  accord submit --data DIR --input FILE --expected FILE [--title TEXT]\n  accord pause|resume --data DIR\n  accord artifact --data DIR --receipt ID\n\nOutput is JSON except help and --notice; run inherits its child's output. init creates an admin identity; agents enroll their own sessions.\nRun npm run demo for the isolated two-process recovery proof. No model or GPU is required.`);
+    console.log(`Accord ${version} — discover, message, share; Node 22.16+\n\n  accord install [--no-start] [--dry-run] [--clients codex,claude,opencode,grok,omp,hermes,zcode,dsh]\n  accord connect|disconnect SSH_HOST\n  accord share-sessions --host AUTHORITY [--off]\n  accord session open --label NAME [--session-file FILE]\n  accord session close [--session-file FILE]\n  accord announce --label NAME --activity TEXT [--capabilities a,b]\n  accord find [--query TEXT]\n  accord send --to ADDRESS --text TEXT [--notify] [--key KEY]\n  accord inbox [--wait-ms 3600000]\n  accord read --id DELIVERY_ID\n  accord sent --id MESSAGE_ID\n  accord reserve --resource ADDRESS --purpose TEXT [--duration-ms MS] [--key KEY]\n  accord reservation|release --id ID [--host AUTHORITY]\n  accord extend --id ID [--host AUTHORITY] [--duration-ms MS]\n  accord workload start|status|list --id ID [--host AUTHORITY]\n  accord workload register --id ID --file TARGETS.json [--host AUTHORITY]\n  accord workload launch --id ID --workload BINDING_ID [--host AUTHORITY]\n  accord workload policy --data DIR --file POLICY.json (operator only)\n  accord workload adopt --data DIR --file ADOPTION.json (operator only)\n  accord resource list|register --file MANIFEST\n  accord plugins\n  accord process-start|process-status --claim ID [--key KEY]\n  accord doctor\n  accord run -- COMMAND [ARGS]\n  accord context\n  accord claim|wait --key KEY [--task ID]\n  accord inspect --claim ID\n  accord checkpoint --claim ID --key KEY --note TEXT\n  accord renew --claim ID --key KEY --lease-ms MS\n  accord write --claim ID --key KEY --input FILE\n  accord finish --claim ID --key KEY --receipt ID\n  accord host [--notice]\n  accord mcp\n  accord service install [--enable]\n  accord join --url LOOPBACK --authority ID --discovery-file FILE\n  accord leave --authority ID\n  accord sessions [--query TEXT] [--host AUTHORITY]\n  accord session-read --id ID\n  accord report|job|ask|snooze --input JSON_FILE\n  accord jobs|overseer\n  accord policy|signal --input JSON_FILE\n  accord privacy --source SOURCE --on|--off\n  accord question --id ID\n  accord telemetry|machine [--host AUTHORITY]\n  accord network\n  accord init --data DIR\n  accord up --data DIR [--port 8787] [--driver-port 8788]\n  accord board --data DIR\n  accord submit --data DIR --input FILE --expected FILE [--title TEXT]\n  accord pause|resume --data DIR\n  accord artifact --data DIR --receipt ID\n\nOutput is JSON except help and --notice; run inherits its child's output. init creates an admin identity; agents enroll their own sessions.\nRun npm run demo for the isolated two-process recovery proof. No model or GPU is required.`);
   }
 } catch (error) {
   console.error(JSON.stringify({ error: { code: error.code || 'STARTUP_FAILED', message: error.message }, ...(error.inboxPending?{inboxPending:error.inboxPending}:{}) })); process.exit(1);

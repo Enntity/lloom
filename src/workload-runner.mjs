@@ -45,14 +45,25 @@ export function validateWorkloadPlan(plan) {
       '--mount',
       '--workdir',
       '--user',
-      '--shm-size'
+      '--shm-size',
+      '--ipc',
+      '--cpuset-cpus',
+      '--memory-swap',
+      '--cap-add',
+      '--device',
+      '--ulimit'
     ]);
     const args = c.args ?? [];
-    for (let i = 0; i < args.length; i += 2)
+    for (let i = 0; i < args.length; i += 2) {
+      if (args[i] === '--init') {
+        i--;
+        continue;
+      }
       check(
         permitted.has(args[i]) && typeof args[i + 1] === 'string' && !args[i + 1].includes('\0'),
         'Use supported container option/value pairs'
       );
+    }
   }
   for (const [host, c] of Object.entries(plan.hosts ?? {})) {
     check(
@@ -224,11 +235,11 @@ export async function runWorkload(
           const states = [];
           for (const c of created)
             states.push(JSON.parse(await execute(c.host, ['docker', 'inspect', '--format', '{{json .State}}', c.id])));
+          check(
+            !states.some((s) => !s.Running && !s.Restarting && !s.Paused && s.ExitCode !== 0),
+            'A workload exited unsuccessfully'
+          );
           if (states.every((s) => !s.Running && !s.Restarting && !s.Paused)) {
-            check(
-              states.every((s) => s.ExitCode === 0),
-              'A workload exited unsuccessfully'
-            );
             return { reservationId, host, exitCodes: states.map((s) => s.ExitCode) };
           }
           await delay(pollMs);

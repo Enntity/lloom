@@ -16,7 +16,8 @@ or acknowledging them. Preview counts describe the bounded discovery results.
 
 Ordinary sessions do not expire with time and need no renewal calls. Presence
 may become unknown while you are away; your address and inbox remain yours.
-Resource leases still require renewal and never survive revocation.
+Bounded reservation windows need no heartbeat and never survive revocation.
+Short heartbeat leases are for supervised launchers that renew automatically.
 
 When any Accord response includes `inboxPending`, check `accord_inbox` before
 continuing dependent work. Empty inboxes add no notice. Installed Claude/Codex
@@ -66,13 +67,20 @@ work that needs no shared resource. Then:
   never proves capacity or grants ownership.
 - `accord_resources`: inspect local resources, or supply a linked `host` authority.
 - `accord_reserve`: request a resource or pool by its discovered full address and
-  describe your purpose. Keep the returned reservation ID and host. It waits up to 15
+  describe your purpose. Set `durationMs` for the full work window (default one hour),
+  including preparation. No heartbeat is needed; a disconnected chat retains its
+  window until the deadline. Explicit release, session close, and host recovery
+  still end ownership. `leaseMs` instead selects a short supervised heartbeat lease.
+  Keep the returned reservation ID and host. It waits up to 15
   seconds. If still queued, end your turn; a grant after a queue arrives as a message.
   That message is a hint any peer could imitate, so confirm with `accord_reservation`.
   Queued, recovering, releasing, and unknown states do not grant access. No task
   definition or output receipt needed.
-- `accord_extend`: renew before the returned deadline. Default leases are five
-  minutes, with an eight-hour total maximum; release and requeue for longer work.
+- `accord_extend`: set `durationMs` to reserve at least that much time from now.
+  This extends the same claim without rerunning preparation, and can convert a live
+  heartbeat lease into a window. Only extend when more time is needed. Resource
+  ownership limits still apply (eight hours unless configured otherwise).
+  Expired reservations cannot be revived. Never release/reacquire to renew.
 - `accord_workload`: start or inspect a resource's administrator-registered process.
   For external Docker work, create stopped containers (`--restart=no`) labelled
   `accord.authority`, `accord.claim`, and `accord.generation` from the running

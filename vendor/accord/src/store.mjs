@@ -4,6 +4,7 @@ import { managerSchema } from './resource-managers.mjs';
 import { awarenessSchema } from './session-awareness.mjs';
 import { continuitySchema, persistentDeadline, upgradeSessionContinuity } from './session-continuity.mjs';
 import { discoveryCleanupSchema } from './discovery-cleanup.mjs';
+import { windowDuration } from './reservation-policy.mjs';
 import { database, transaction, hash, id, requireThat, text, integer, monotonicWallClock } from './common.mjs';
 
 const schema = `
@@ -56,7 +57,9 @@ export class Store {
         stale INTEGER NOT NULL DEFAULT 0);
       CREATE INDEX memory_entries_updated ON memory_entries(updated DESC);`,
       // NULL declares nothing, so the reservation default applies.
-      "ALTER TABLE resource_bindings ADD COLUMN max_ownership_ms INTEGER;ALTER TABLE resource_bindings ADD COLUMN allow_indefinite INTEGER NOT NULL DEFAULT 0;"]); this.now = now; this.leaderMs = leaderMs;
+      "ALTER TABLE resource_bindings ADD COLUMN max_ownership_ms INTEGER;ALTER TABLE resource_bindings ADD COLUMN allow_indefinite INTEGER NOT NULL DEFAULT 0;",
+      // Migration 16: a finite window is owned by the daemon, not a chat heartbeat.
+      "ALTER TABLE reservations ADD COLUMN duration_ms INTEGER;"]); this.now = now; this.leaderMs = leaderMs;
     transaction(this.db, () => {
       this.db.prepare("INSERT OR IGNORE INTO meta VALUES('authority',?)").run(id());
       this.db.prepare("INSERT OR IGNORE INTO meta VALUES('paused','false')").run();
@@ -243,10 +246,14 @@ export class Store {
       requireThat(!firstReservation||firstReservation.task_id===task.id,'RESOURCE_BUSY','An earlier reservation is waiting');
       const holder = this.db.prepare("SELECT id FROM claims WHERE resource=? AND state IN ('preparing','running','releasing','revoking')").get(task.resource);
       requireThat(!holder, 'RESOURCE_BUSY', 'Resource is held; release has not been confirmed');
+      const duration = task.kind === 'reservation' ? this.db.prepare('SELECT duration_ms FROM reservations WHERE task_id=?').get(task.id)?.duration_ms : null;
+      const leaseMs = duration ?? body.leaseMs ?? 10000;
+      const limit = this.ownershipLimit(task.resource);
+      requireThat(!duration || limit === null || duration <= limit, 'ATTEMPT_LIMIT', 'Reservation window exceeds the resource ownership limit');
       const generation = this.db.prepare('UPDATE resources SET generation=generation+1 WHERE id=? RETURNING generation').get(task.resource).generation;
       const claimId = id();
       this.db.prepare("INSERT INTO claims VALUES(?,?,?,?,?,'preparing',?,NULL,NULL,NULL,?)")
-        .run(claimId, task.id, task.resource, actor.id, generation, this.now() + (body.leaseMs ?? 10000), this.now());
+        .run(claimId, task.id, task.resource, actor.id, generation, this.now() + leaseMs, this.now());
       this.db.prepare("UPDATE tasks SET state='preparing' WHERE id=?").run(task.id);
       this.emit('claim.preparing', { claim: claimId, task: task.id, actor: actor.id, generation });
       return { claimId };
@@ -261,12 +268,17 @@ export class Store {
   }
   renew(actor, claimId, body) {
     return this.command(actor, body, `renew:${claimId}`, () => {
-      const claim = this.owned(actor, claimId, true);
+      const claim = this.owned(actor, claimId);
       const reservation=this.task(claim.task_id).kind==='reservation';
-      integer(body.leaseMs, 'leaseMs', 500, reservation?300000:30000);
-      const deadline = Math.max(claim.deadline, this.now() + body.leaseMs);
+      requireThat((claim.state === 'running' || (reservation && claim.state === 'preparing')) && claim.deadline > this.now(),
+        'STALE_CLAIM', 'Claim is not active');
+      const duration = windowDuration(body);
+      requireThat(duration === null || reservation, 'INVALID_INPUT', 'Windows are only available for reservations', 400);
+      if (duration === null) integer(body.leaseMs, 'leaseMs', 500, reservation?300000:30000);
+      const deadline = Math.max(claim.deadline, this.now() + (duration ?? body.leaseMs));
       const limit = reservation ? this.ownershipLimit(claim.resource) : 300000;
       requireThat(limit === null || deadline <= claim.created_at + limit, 'ATTEMPT_LIMIT', 'Ownership reached its maximum duration; release and requeue');
+      if (duration !== null) this.db.prepare('UPDATE reservations SET duration_ms=? WHERE task_id=?').run(duration, claim.task_id);
       this.db.prepare('UPDATE claims SET deadline=? WHERE id=?').run(deadline, claimId);
       this.emit('claim.renewed', { claim: claimId, deadline }); return { deadline };
     });

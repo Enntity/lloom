@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import { randomUUID } from 'node:crypto';
 import { request, requireThat, loopbackUrl } from './common.mjs';
+import { defaultWindowMs, windowCapability, windowDuration } from './reservation-policy.mjs';
 
 export class AccordClient {
   constructor(url, credential) { this.url = loopbackUrl(url); this.credential = credential; }
@@ -44,9 +45,23 @@ export class AccordClient {
   inbox(){return this.collaborate('inbox');}
   read(deliveryId){return this.collaborate('read',{deliveryId});}
   sent(id){return this.collaborate('sent',{id});}
-  reserve(resource,{host,key=randomUUID(),purpose='reserved',leaseMs=300000,waitMs=3600000}={}){
+  async requireWindows(host) {
+    const catalog = await this.collaborate('resources', {}, host);
+    requireThat(catalog.capabilities?.includes(windowCapability), 'WINDOW_UNSUPPORTED',
+      'The owning Accord host must be upgraded for reservation windows; no reservation was changed');
+  }
+  async reserve(resource,{host,key=randomUUID(),purpose='reserved',leaseMs,durationMs,waitMs=3600000}={}){
     if(resource.includes('/'))[host,resource]=resource.split('/');
-    return this.collaborate('reserve',{resource,key,purpose,leaseMs,waitMs},host);
+    const timing = leaseMs === undefined ? {durationMs:durationMs??defaultWindowMs} : {leaseMs,...(durationMs!==undefined?{durationMs}:{})};
+    windowDuration(timing);
+    if(timing.durationMs!==undefined)await this.requireWindows(host);
+    return this.collaborate('reserve',{resource,key,purpose,...timing,waitMs},host);
+  }
+  async extend(id,{host,key=randomUUID(),durationMs,leaseMs}={}){
+    const timing = leaseMs === undefined ? {durationMs:durationMs??defaultWindowMs} : {leaseMs,...(durationMs!==undefined?{durationMs}:{})};
+    windowDuration(timing);
+    if(timing.durationMs!==undefined)await this.requireWindows(host);
+    return this.collaborate('renew',{id,key,...timing},host);
   }
   reservation(id,host){return this.collaborate('reservation',{id},host);}
   release(id,{host,key=randomUUID()}={}){return this.collaborate('release',{id,key},host);}
@@ -98,16 +113,22 @@ export async function withReservation(client, resource, work, {
     for(;;) {
       controller.signal.throwIfAborted();
       const state=await client.reservation(reservation.id,host);
+      if(!timer && ['preparing','running'].includes(state.state)) {
+        // Ownership begins during preparation; queue time needs no heartbeat.
+        const renew=()=>{
+          if(renewal)return renewal;
+          renewal=client.collaborate('renew',{id:reservation.id,key:randomUUID(),leaseMs},host)
+            .catch(error=>{lost=error;controller.abort(error);}).finally(()=>{renewal=null;});
+          return renewal;
+        };
+        await renew();controller.signal.throwIfAborted();
+        timer=setInterval(renew,Math.max(100,Math.floor(leaseMs/3)));
+      }
       if(state.state==='running') break;
       if(terminal.has(state.state)) throw Error(`Reservation ended: ${state.state}`);
       if(Date.now()>=until) throw Error('Reservation wait timed out');
       await sleep();
     }
-    timer=setInterval(()=>{
-      if(renewal)return;
-      renewal=client.collaborate('renew',{id:reservation.id,key:randomUUID(),leaseMs},host)
-        .catch(error=>{lost=error;controller.abort(error);}).finally(()=>{renewal=null;});
-    },Math.max(100,Math.floor(leaseMs/3)));
     const result=await work({reservationId:reservation.id,host,signal:controller.signal});
     if(lost)throw lost;controller.signal.throwIfAborted();return result;
   } finally {
