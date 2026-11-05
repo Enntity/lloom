@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { accordFixture } from './accord-fixture.mjs';
+import { accordFixture, delay } from './accord-fixture.mjs';
 import { ensureLloomAccord } from '../src/accord-install.mjs';
 test('LLooM reuses an installed authority and retires its duplicate skill without losing edits', async (t) => {
   const h = await accordFixture();
@@ -28,3 +28,22 @@ test('LLooM reuses an installed authority and retires its duplicate skill withou
   await ensureLloomAccord({ home: h.home, profilePath: h.profile });
   assert.equal((await fs.readdir(archive)).length, 1);
 });
+
+test(
+  'authority reuse tolerates a scheduling pause within the production leadership window',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const h = await accordFixture();
+    t.after(() => h.close());
+    h.server.kill('SIGSTOP');
+    try {
+      await delay(800);
+    } finally {
+      h.server.kill('SIGCONT');
+    }
+    await delay(200);
+    const result = await ensureLloomAccord({ home: h.home, profilePath: h.profile });
+    assert(result.reused);
+    assert.equal(h.server.exitCode, null);
+  }
+);
