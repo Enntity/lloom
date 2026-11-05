@@ -4,6 +4,11 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Bundle the published Accord 0.6.1 package, including bounded reservation windows, renewal during preparation, coordinator recovery, and installed-version reporting.
+- Release a registered distributed workload group when any rank fails, including peers that are still running. Training plans can pass IPC, RDMA, and resource options while the launcher retains container identity and restart control.
+
 ### Added
 
 - Atlas SparkGLM TP-4 recipe (`linux-nvidia-dgx-spark-4x-glm53-atlas-tp4`) for four DGX Sparks cabled as a daisy chain, serving GLM-5.3-Flash-FP4-Local as the separate gateway model `glm-5.3-flash-atlas-tp4` with the image's `4x1m-tp4` profile. Its pins (`backends/atlas-sparkglm/pins-tp4.json`) are drafts until a TP-4 release image exists, and the fail-closed pin gate refuses them. Distributed recipes gain a `chain` topology: each node declares `cluster.nodes[ID].fabricChain` (rank, interface, rank 0's rendezvous address, and the RDMA devices toward each neighbour), templated as `${nodeRank}`, `${fabricInterface}`, `${leaderAddress}`, `${fabricLeftHca}` and `${fabricRightHca}`. A member spanning several nodes starts them at consecutive orders, `rankOrder` sorts them by rank, and a recipe's declared node count is now enforced at materialization.

@@ -7,7 +7,6 @@ are present; without them, CPU and memory telemetry still work. It prints one JS
 snapshot and exits. IOHID symbols are resolved dynamically;
 unavailable sensors produce null. The OS may change this private sensor API.
 
-Run `npm run build:sensors` on macOS to build the current architecture's helper
-with the installed Swift toolchain. The bundled arm64 executable targets macOS
-13+. CPU/memory collection works without this executable. The source installer
-can build a missing helper into its private data directory.
+The helper is built from source for the current architecture and targets macOS 13+.
+No prebuilt executable is bundled. Run `accord install` again to build a missing
+helper after installing the Apple command line developer tools.
