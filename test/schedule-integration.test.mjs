@@ -153,7 +153,7 @@ for (const crash of ['coordinator', 'gateway'])
       if (crash === 'coordinator') {
         await stop(h.server, 'SIGKILL');
         await assert.rejects(readHostMemory(), 'unavailable telemetry must fail admission closed');
-        await delay(650);
+        await delay(h.leaderMs + 150);
         await h.start(accordPort);
       } else {
         await stop(gateway, 'SIGKILL');

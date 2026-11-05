@@ -34,7 +34,9 @@ export async function accordFixture() {
   mkdirSync(home);
   initialize(data, { fixtures: true });
   install({ home, data, clients: [] });
-  const h = { dir, home, data, profile: join(home, '.config/accord/connection.json'), children: [] };
+  // Use Accord's production leadership window: a 500ms test-only lease can expire
+  // while a shared CI runner is busy, correctly terminating the coordinator.
+  const h = { dir, home, data, profile: join(home, '.config/accord/connection.json'), children: [], leaderMs: 5000 };
   const launch = async (command, args) => {
     const p = fork(
       fileURLToPath(new URL('../vendor/accord/src/cli.mjs', import.meta.url)),
@@ -58,7 +60,14 @@ export async function accordFixture() {
   h.driver = d.p;
   h.driverUrl = d.url;
   h.start = async (port = 0) => {
-    const s = await launch('serve', ['--port', String(port), '--driver-url', h.driverUrl, '--leader-ms', '500']);
+    const s = await launch('serve', [
+      '--port',
+      String(port),
+      '--driver-url',
+      h.driverUrl,
+      '--leader-ms',
+      String(h.leaderMs)
+    ]);
     h.server = s.p;
     h.url = s.url;
   };
