@@ -1,6 +1,6 @@
 {
   "name": "@enntity/accord",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "type": "module",
   "description": "Discover agents, exchange messages, and share resources with safe recovery",
   "license": "MIT",

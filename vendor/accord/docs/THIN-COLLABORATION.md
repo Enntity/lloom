@@ -93,9 +93,12 @@ Both modes remain subject to the resource ownership limit. A `managed-http` mani
 `maxOwnershipMs` (one minute to 30 days) or `allowIndefinite: true`; a resource that
 declares neither allows eight hours, and the catalog reports the effective
 `maxOwnershipMs` (`null` when indefinite). Re-registering the same resource may change
-only these two fields. Session close, expiry, and coordinator restart
-initiate recovery. A reservation that lost ownership is terminal; it does not
-silently reacquire another generation. A fresh request joins the queue again.
+only these two fields. Session close, expiry, and a heartbeat's coordinator restart
+initiate recovery. A window keeps its claim, generation and deadline across a coordinator
+restart: it reports `preparing` until the driver reconfirms the grant, and is revoked only
+if the driver cannot. A reservation that lost ownership is terminal; it does not
+silently reacquire another generation, and a participating holder that did not release
+receives a notice. A fresh request joins the queue again.
 
 `release` needs no work-result receipt. For managed processes, it invalidates the
 old grant and waits for the driver to stop the old group. Unknown release stays

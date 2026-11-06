@@ -111,8 +111,7 @@ export class Store {
   revokeSession(sessionId) {
     this.db.prepare("UPDATE session_views SET state='exited',revision=revision+1,summary_kind='extractive',summary='Session closed' WHERE id=? AND state NOT IN ('done','failed','cancelled')").run(sessionId);
     for (const claim of this.db.prepare("SELECT * FROM claims WHERE actor=? AND state IN ('preparing','running')").all(sessionId)) {
-      this.db.prepare("UPDATE claims SET state='revoking',outcome=?,error='session ended' WHERE id=?").run(this.retryOutcome(claim.task_id), claim.id);
-      this.db.prepare("UPDATE tasks SET state='recovering' WHERE id=?").run(claim.task_id);
+      this.fence(claim, 'session ended');
       this.emit('claim.session_ended', {claim: claim.id, session: sessionId});
     }
   }
@@ -158,10 +157,18 @@ export class Store {
       requireThat(!old || old.until_ms <= this.now(), 'LEADER_ACTIVE', 'Another coordinator still owns the leadership lease', 503);
       this.epoch = (old?.epoch || 0) + 1;
       this.db.prepare('INSERT OR REPLACE INTO leader VALUES(1,?,?,?)').run(this.leaderToken, this.epoch, this.now() + this.leaderMs);
-      // A restart never assumes the old attempt stopped. Revoke every unfinished grant.
-      for (const claim of this.db.prepare("SELECT * FROM claims WHERE state IN ('preparing','running')").all()) {
-        this.db.prepare("UPDATE claims SET state='revoking',outcome=?,error='coordinator restarted' WHERE id=?").run(this.retryOutcome(claim.task_id),claim.id);
-        this.db.prepare("UPDATE tasks SET state='recovering' WHERE id=?").run(claim.task_id);
+      // A restart never assumes the old attempt stopped. Revoke every unfinished grant,
+      // except a bounded window: it promised its holder the resource until its deadline,
+      // so the driver reconfirms the same generation for the same holder instead.
+      for (const claim of this.db.prepare(`SELECT c.*,(r.duration_ms IS NOT NULL AND c.deadline>?) AS resume FROM claims c
+        LEFT JOIN reservations r ON r.task_id=c.task_id WHERE c.state IN ('preparing','running')`).all(this.now())) {
+        if (claim.resume) {
+          this.db.prepare("UPDATE claims SET state='preparing',error='coordinator restarted' WHERE id=?").run(claim.id);
+          this.db.prepare("UPDATE tasks SET state='preparing' WHERE id=?").run(claim.task_id);
+          this.emit('claim.resuming', { claim: claim.id, generation: claim.generation, reason: 'coordinator restarted' });
+          continue;
+        }
+        this.fence(claim, 'coordinator restarted');
         this.emit('claim.recovering', { claim: claim.id, reason: 'coordinator restarted' });
       }
       upgradeSessionContinuity(this);
@@ -207,6 +214,10 @@ export class Store {
     requireThat(claim.actor === actor.id, 'NOT_OWNER', 'Claim belongs to another actor', 403);
     if (active) requireThat(claim.state === 'running' && claim.deadline > this.now(), 'STALE_CLAIM', 'Claim is not active');
     return claim;
+  }
+  fence(claim, reason) {
+    this.db.prepare("UPDATE claims SET state='revoking',outcome=?,error=? WHERE id=?").run(this.retryOutcome(claim.task_id), reason, claim.id);
+    this.db.prepare("UPDATE tasks SET state='recovering' WHERE id=?").run(claim.task_id);
   }
   retryOutcome(taskId) {
     const attempts = this.db.prepare('SELECT count(*) AS n FROM claims WHERE task_id=?').get(taskId).n;
@@ -322,8 +333,7 @@ export class Store {
         this.revokeSession(session.id); this.emit('session.expired', {session: session.id});
       }
       for (const claim of this.db.prepare("SELECT * FROM claims WHERE state IN ('preparing','running') AND deadline<=?").all(this.now())) {
-        this.db.prepare("UPDATE claims SET state='revoking',outcome=?,error='lease expired' WHERE id=?").run(this.retryOutcome(claim.task_id),claim.id);
-        this.db.prepare("UPDATE tasks SET state='recovering' WHERE id=?").run(claim.task_id);
+        this.fence(claim, 'lease expired');
         this.emit('claim.expired', { claim: claim.id, generation: claim.generation });
       }
     });
@@ -345,6 +355,15 @@ export class Store {
       this.db.prepare("UPDATE claims SET state='closed',error=NULL WHERE id=?").run(claimId);
       this.db.prepare('UPDATE tasks SET state=?,result=? WHERE id=?').run(claim.outcome, claim.result, claim.task_id);
       this.emit('claim.released', { claim: claimId, generation: claim.generation, outcome: claim.outcome });
+    });
+  }
+  // A driver that cannot reconfirm a resumed generation fences it as a restart always did.
+  refused(claimId, code) {
+    this.mutate(() => {
+      const claim = this.claim(claimId);
+      if (claim.state !== 'preparing') return;
+      this.fence(claim, code);
+      this.emit('claim.recovering', { claim: claimId, reason: code });
     });
   }
   driverError(claimId, code) {

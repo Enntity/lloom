@@ -12,7 +12,8 @@ export function validateResource(value){
   text(value.asset,'asset',200);return {schema:1,id:value.id,asset:value.asset,plugin:'cooperative'};
 }
 class CooperativeDriver extends ArtifactDriver {
-  constructor(file,manifest){super(file);this.manifest=manifest;}
+  // Nothing to fence here, so a restart keeps the grant a bounded window resumes.
+  constructor(file,manifest){super(file,{recover:false});this.manifest=manifest;}
   start(){requireThat(false,'WRONG_DRIVER','Cooperative resources have no managed workload',400);}
   inspect(){return {state:'unmanaged',enforcement:cooperativePlugin.enforcement};}
   write(){requireThat(false,'WRONG_DRIVER','Cooperative resources do not control external effects',400);}

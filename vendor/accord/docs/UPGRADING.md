@@ -3,19 +3,20 @@
 ## Before restarting
 
 Finish or release active reservations on the host you are upgrading. Coordinate with
-agents using resources on linked hosts. A coordinator restart fences unfinished grants;
-it does not preserve a running workload's permission to continue. Managed release can
-stop a workload and restore its provider.
+agents using resources on linked hosts. A coordinator restart fences unfinished tasks and
+heartbeat reservations; it does not preserve their permission to continue. An unexpired
+reservation window resumes once its driver reconfirms the same generation. Managed release
+can stop a workload and restore its provider.
 
 Keep the existing private data directory and connection profile. Do not initialize a
 second authority or copy tokens between hosts. Keep the previous package available for
 binary rollback; database rollback is a separate recovery operation and can invalidate
 fencing history. See [recovery](RECOVERY.md).
 
-## Install 0.6.1
+## Install 0.6.2
 
 ```sh
-npm install -g https://github.com/Enntity/accord/releases/download/v0.6.1/enntity-accord-0.6.1.tgz
+npm install -g https://github.com/Enntity/accord/releases/download/v0.6.2/enntity-accord-0.6.2.tgz
 accord install
 ```
 
@@ -46,13 +47,20 @@ accord --version
 accord doctor
 ```
 
-The CLI should report `0.6.1`; the doctor should report `ready`. The CLI version identifies
+The CLI should report `0.6.2`; the doctor should report `ready`. The CLI version identifies
 the package invoked by your shell, so also check the running service's command line
 against the new install path. Restart your agent sessions to load the updated MCP bridge.
 
 On linked hosts, verify `accord find`, send and acknowledge a test message, and exercise
 reserve, extend and release on a dedicated cooperative resource. Check that extension
 keeps the claim and generation. Do not use an active GPU workload as a smoke test.
+
+## Changes from 0.6.1
+
+A coordinator restart keeps an unexpired reservation window: its claim returns to
+`preparing` under the same generation and deadline until the driver reconfirms it.
+Heartbeat reservations and tasks are still fenced. No schema migration is added, so a
+0.6.1 database upgrades in place; the first 0.6.2 start resumes windows recorded by 0.6.1.
 
 ## Changes from 0.5
 

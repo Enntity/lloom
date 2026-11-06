@@ -31,9 +31,9 @@ be cancelled. Retries create new claims and higher generations.
 | Driver cannot be reached | Hold remains; no conflicting grant; bounded HTTP attempts continue |
 | Activation happened but reply was lost | Retry the same claim and generation; no duplicate grant |
 | Revoke happened but reply was lost | Hold remains until an idempotent revoke acknowledgment returns |
-| Coordinator dies with active work | After its leadership lease expires, replacement records a higher epoch and revokes unfinished claims |
+| Coordinator dies with active work | After its leadership lease expires, replacement records a higher epoch and revokes unfinished claims. An unexpired reservation window instead returns to `preparing` under the same claim and generation; the driver reconfirms it, or refuses and it is revoked |
 | Coordinator dies after result verification | Persisted releasing state retains the result and resumes revocation |
-| Driver restarts | Clear active grant, retain generation and receipts; coordinator later reconciles its hold |
+| Driver restarts | Clear active grant, retain generation and receipts; coordinator later reconciles its hold. A cooperative driver keeps the grant; a managed driver keeps only a provider-confirmed grant resumable |
 | Delayed old activation arrives | Revocation tombstone or higher epoch/generation rejects it |
 | Old worker writes after new grant | Driver validates current credential and rejects it |
 | Old worker completes late | Coordinator validates owner, active attempt and deadline and rejects it |
