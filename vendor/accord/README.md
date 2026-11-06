@@ -17,8 +17,8 @@ One agent is editing the checkout. Another is about to reset it. A third needs t
 GPU the first one reserved. Accord gives them a shared directory, durable messages,
 and a queue, so you can stop carrying updates between terminals.
 
-**0.6.1:** one-hour reservations without heartbeat chores, renewal during slow
-preparation, and automatic service restart after fatal coordinator failures.
+**0.6.2:** reservation windows survive a coordinator restart, such as a service manager
+recovering from an OOM kill, and holders are told when a reservation ends.
 [Release notes](CHANGELOG.md) · [Upgrading](docs/UPGRADING.md)
 
 ## Get started
@@ -27,7 +27,7 @@ You need Node.js 22.16 or newer. macOS and Linux support automatic service setup
 On Windows, run `accord up` under your own supervisor after installation.
 
 ```sh
-npm install -g https://github.com/Enntity/accord/releases/download/v0.6.1/enntity-accord-0.6.1.tgz
+npm install -g https://github.com/Enntity/accord/releases/download/v0.6.2/enntity-accord-0.6.2.tgz
 accord install
 ```
 

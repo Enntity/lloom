@@ -69,9 +69,14 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
             store.activated(claim.id);
             // Activation is a no-op if the claim changed meanwhile; never report a grant that didn't happen.
             try { if(store.claim(claim.id).state==='running')collaboration.grantedClaim(overseer.actor,claim); } catch { /* A notice is a hint. */ }
-          } else store.released(claim.id);
+          } else {
+            store.released(claim.id);
+            try { collaboration.endedClaim(overseer.actor,claim); } catch { /* A notice is a hint. */ }
+          }
         } catch (error) {
-          store.driverError(claim.id, ['DRIVER_REPLACED','STALE_FENCE','WRONG_AUTHORITY','REVOKED'].includes(error.code) ? error.code : 'DRIVER_UNAVAILABLE');
+          // This generation can never activate there, so waiting for its deadline only idles the resource.
+          if (claim.state === 'preparing' && ['REVOKED','RECOVERING'].includes(error.code)) store.refused(claim.id, error.code);
+          else store.driverError(claim.id, ['DRIVER_REPLACED','STALE_FENCE','WRONG_AUTHORITY','REVOKED'].includes(error.code) ? error.code : 'DRIVER_UNAVAILABLE');
         }
       }
     } catch (error) { fail(error); } finally { busy = false; }

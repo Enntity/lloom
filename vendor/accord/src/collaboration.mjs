@@ -286,13 +286,16 @@ export class Collaboration {
       this.store.emit('reservation.release_requested',{id:reservationId});return this.reservation(actor,reservationId);
     });
   }
+  holder(actor) {
+    const route=this.db.prepare('SELECT * FROM remote_routes WHERE actor=?').get(actor);
+    if(!route&&!this.db.prepare('SELECT 1 FROM participants WHERE actor=?').get(actor))return null;
+    return route?`${route.authority}/${route.session_id}`:this.address({id:actor});
+  }
   // A queued holder can sit idle at no cost: its grant arrives as ordinary mail.
   // An immediate grant already answered the caller, so it adds nothing to the inbox.
   granted(sender,{key,reservation,actor,resource,queuedAt}) {
     if(this.store.now()-queuedAt<5000)return;
-    const route=this.db.prepare('SELECT * FROM remote_routes WHERE actor=?').get(actor);
-    if(!route&&!this.db.prepare('SELECT 1 FROM participants WHERE actor=?').get(actor))return;
-    const to=route?`${route.authority}/${route.session_id}`:this.address({id:actor});
+    const to=this.holder(actor);if(!to)return;
     const window = this.db.prepare('SELECT duration_ms FROM reservations WHERE id=?').get(reservation)?.duration_ms;
     this.send(sender,{key,to,kind:'message',text:`Accord reports reservation ${reservation} is running on ${resource}. Confirm with accord_reservation before use. ${window?'Its bounded window needs no heartbeat; extend only if you need more time.':'Renew before its deadline.'} Release when finished.`});
     void this.flush().catch(()=>{});
@@ -300,6 +303,16 @@ export class Collaboration {
   grantedClaim(sender,claim) {
     const row=this.db.prepare('SELECT r.id,r.actor,t.created_at FROM reservations r JOIN tasks t ON t.id=r.task_id WHERE r.task_id=?').get(claim.task_id);
     if(row)this.granted(sender,{key:`grant:${claim.id}:${claim.generation}`,reservation:row.id,actor:row.actor,resource:claim.resource,queuedAt:row.created_at});
+  }
+  // A holder that did not release must not find out by surprise that its hold is gone.
+  endedClaim(sender,claim) {
+    const row=this.db.prepare('SELECT id,actor FROM reservations WHERE task_id=?').get(claim.task_id);
+    const session=row&&this.db.prepare('SELECT closed_at,expires_at FROM sessions WHERE id=?').get(row.actor);
+    if(!row||claim.outcome==='released'||session&&(session.closed_at!==null||session.expires_at<=this.store.now()))return;
+    const to=this.holder(row.actor);if(!to)return;
+    const why=claim.deadline<=this.store.now()?'its deadline passed':'Accord revoked it before its deadline';
+    this.send(sender,{key:`ended:${claim.id}:${claim.generation}`,to,kind:'message',text:`Accord reports reservation ${row.id} on ${claim.resource} ended as ${claim.outcome}: ${why}. Confirm with accord_reservation; the resource is no longer held for you, so reserve again if you still need it.`});
+    void this.flush().catch(()=>{});
   }
   slots(pool){return this.db.prepare('SELECT resource FROM resource_pools WHERE pool=? ORDER BY length(resource),resource').all(pool).map(r=>r.resource);}
   pools(resources){

@@ -22,7 +22,9 @@ export function managedManifest(v) {
 export class ManagedDriver extends ArtifactDriver {
   constructor(file,manifest) {
     super(file,{recover:false,migrations:[migration,workloadJournalMigration]}); this.manifest=managedManifest(manifest); this.tail=Promise.resolve(); this.flights=new Map();
-    if(this.status().claim_id) this.db.prepare("UPDATE state SET phase='recovering',token_hash=NULL").run();
+    // Only a grant the provider had confirmed may resume; an interrupted one is revoked.
+    const old=this.status();
+    if(old.claim_id)transaction(this.db,()=>{this.db.prepare("UPDATE state SET phase=CASE WHEN phase IN ('active','recovering') THEN 'recovering' ELSE 'interrupted' END,token_hash=NULL").run();this.audit('restart.recovering',old.generation,old.claim_id);});
   }
   status(){return {...super.status(),...this.db.prepare('SELECT phase FROM state').get()};}
   serial(key,fn){if(this.flights.has(key))return this.flights.get(key);const p=this.tail.then(fn);this.tail=p.catch(()=>{});this.flights.set(key,p);p.finally(()=>this.flights.delete(key)).catch(()=>{});return p;}
@@ -39,7 +41,11 @@ export class ManagedDriver extends ArtifactDriver {
   activate(body){return this.serial(`activate:${hash(JSON.stringify(body))}`,async()=>{
     transaction(this.db,()=>{
       const old=this.validate(body);text(body.credentialHash,'credentialHash',64);
-      if(body.generation===old.generation){
+      if(body.generation===old.generation&&old.claim_id===body.claimId&&old.phase==='recovering'){
+        // The coordinator resumes the claim this driver still holds; the provider reconfirms it below.
+        this.db.prepare("UPDATE state SET epoch=?,token_hash=?,phase='preparing'").run(body.epoch,body.credentialHash);
+        this.audit('grant.resuming',body.generation,body.claimId);
+      }else if(body.generation===old.generation){
         const secret=this.db.prepare('SELECT token_hash FROM state').get().token_hash;
         requireThat(old.claim_id===body.claimId && ['preparing','active'].includes(old.phase) && equal(secret,body.credentialHash),'REVOKED','Generation cannot reactivate');
       }else{
