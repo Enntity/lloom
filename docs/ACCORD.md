@@ -40,6 +40,15 @@ On release or recovery, `stop` suspends those workloads and verifies their shutd
 `restore` reverses recorded effects and waits for health. Failed, lost or interrupted
 steps remain held. Replays never create a new lease or resurrect a revoked generation.
 
+Resources may share an effect: with one resource per Spark, a model served across
+two Sparks is drained by a hold on either, and both holds route its aliases the same
+way. Every holder records the state from before the first hold; the effect is
+applied once and restored only when the last holder that needs it releases. A hold
+that would route a shared alias to a different profile is refused before any effect.
+A workload plan that spans Sparks lists them as `resources`; `lloom workload run`
+acquires them in sorted order, so two jobs needing overlapping Sparks queue instead
+of each holding half, and registers each container under the hold for its host.
+
 This controls LLooM-managed workloads. Arbitrary SSH commands, external containers,
 escaped process groups and unrelated GPU users are not isolated by a lease. Use an
 appropriate Accord process/container driver for those workloads; missing evidence

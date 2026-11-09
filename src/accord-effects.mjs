@@ -72,10 +72,29 @@ export function createAccordEffects({ getConfig, statePath, actions, isPaused = 
       );
     return r;
   }
-  async function undo(r) {
+  // Two resources may name the same drain or route swap: a model served across
+  // two Sparks is drained by a hold on either. Every holder records the state
+  // from before the first hold, and only the last holder to release restores it.
+  const effectKey = (step) => [step.kind, step.node ?? '', step.kind === 'route' ? step.alias : step.model].join(':');
+  function heldElsewhere(id, step) {
+    for (const [other, r] of Object.entries(state.resources)) {
+      if (other === id || r.phase === 'idle') continue;
+      const held = r.steps.find(
+        (s) =>
+          s.status !== 'undone' &&
+          effectKey(s) === effectKey(step) &&
+          Object.hasOwn(s, s.kind === 'route' ? 'previous' : 'wasSuspended')
+      );
+      if (held) return { other, held };
+    }
+    return null;
+  }
+  async function undo(id, r) {
     for (const step of [...r.steps].reverse()) {
       if (step.status === 'undone') continue;
-      if (step.kind === 'suspend') {
+      if (heldElsewhere(id, step)) {
+        // Another hold still needs this effect and carries the same original state.
+      } else if (step.kind === 'suspend') {
         if (!step.wasSuspended) {
           try {
             await actions.resume(step);
@@ -115,6 +134,11 @@ export function createAccordEffects({ getConfig, statePath, actions, isPaused = 
           throw fail('Interrupted or revoked generation requires recovery');
         }
         if (r && r.phase !== 'idle') throw fail('Previous restoration is unconfirmed');
+        for (const step of s.actions) {
+          const shared = heldElsewhere(id, step);
+          if (shared && step.kind === 'route' && shared.held.profile !== step.profile)
+            throw fail(`Route ${step.alias} is held at ${shared.held.profile} by ${shared.other}`);
+        }
         r = {
           authority: b.authority,
           generation: b.generation,
@@ -129,15 +153,18 @@ export function createAccordEffects({ getConfig, statePath, actions, isPaused = 
         await save();
         for (const step of s.actions) {
           const recorded = { ...step, status: 'pending' };
+          const shared = heldElsewhere(id, step);
+          const live =
+            step.kind === 'route' ? await actions.activeRoute(step) : (await actions.isSuspended(step)) === true;
           if (step.kind === 'route') {
-            recorded.previous = await actions.activeRoute(step);
+            recorded.previous = shared ? shared.held.previous : live;
             if (recorded.previous == null) throw fail('Route has no exact profile to restore');
-          } else recorded.wasSuspended = (await actions.isSuspended(step)) === true;
+          } else recorded.wasSuspended = shared ? shared.held.wasSuspended : live;
           r.steps.push(recorded);
           await save();
           if (step.kind === 'route') {
-            if (recorded.previous !== step.profile) await actions.setRoute(step);
-          } else if (!recorded.wasSuspended)
+            if (live !== step.profile) await actions.setRoute(step);
+          } else if (!live)
             await actions.suspend({ ...step, drainTimeoutMs: getConfig().reservations?.drainTimeoutMs ?? 300000 });
           recorded.status = 'done';
           await save();
@@ -203,7 +230,7 @@ export function createAccordEffects({ getConfig, statePath, actions, isPaused = 
       }
       if (action === 'restore') {
         if (!['stopped', 'idle'].includes(r.phase)) throw fail('Workload stop has not been confirmed');
-        await undo(r);
+        await undo(id, r);
         r.phase = 'idle';
         await save();
         return reply();
