@@ -1326,6 +1326,52 @@
       }
     },
     {
+      "id": "linux-nvidia-dgx-spark-qwen38-27b-atlas",
+      "path": "linux-nvidia-dgx-spark-qwen38-27b-atlas.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-dgx-spark-qwen38-27b-atlas.json",
+          "status": "current"
+        }
+      ],
+      "name": "DGX Spark Qwen3.8 27B Atlas (SparkQwen 27B)",
+      "summary": "Qwen3.8-27B on one DGX Spark with SparkQwen's exact speculative Atlas build: 262K context, up to 64 requests; default, saver and max modes.",
+      "tags": [
+        "linux",
+        "nvidia",
+        "dgx-spark",
+        "gb10",
+        "qwen3.8",
+        "27b",
+        "nvfp4",
+        "atlas",
+        "sparkqwen",
+        "dflash2",
+        "dspine",
+        "standalone"
+      ],
+      "recommendedFor": ["Fast exact Qwen3.8-27B serving on a single GB10"],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "usage",
+        "tools",
+        "structured-output",
+        "reasoning",
+        "speculative-decoding",
+        "batching",
+        "long-context"
+      ],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-dgx-spark-qwen38-27b-atlas.json"
+      }
+    },
+    {
       "id": "linux-nvidia-ace-step-1-5-xl-diffusers",
       "path": "linux-nvidia-ace-step-1-5-xl-diffusers.json",
       "currentVersion": 1,
