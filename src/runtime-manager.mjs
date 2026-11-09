@@ -2304,11 +2304,20 @@ export class RuntimeManager {
     if (await runtimeHealthOk(runtime)) {
       this.setStatus(runtimeId, 'running');
       const warmupResult = warmup ? await this.warmup(runtimeId, runtime) : null;
+      // A process/catalog that is up is not necessarily model-ready: an explicit
+      // warmup that failed (for example an HTTP 409 from an incompatible weight
+      // layout) must not be flattened to healthy, or routing and CLI admission
+      // will treat the model as admitted. Runtimes with no warmup configured are
+      // read from their catalog health alone and are not a failure.
+      const warmupFailed =
+        warmupResult != null &&
+        warmupResult.warmed === false &&
+        !['no-warmup', 'not-healthy'].includes(warmupResult.reason);
       return {
         runtimeId,
         started: false,
-        healthy: true,
-        reason: 'already-healthy',
+        healthy: !warmupFailed,
+        reason: warmupFailed ? 'warmup-failed' : 'already-healthy',
         ...(warmupResult ? { warmup: warmupResult } : {})
       };
     }
@@ -2887,8 +2896,12 @@ export class RuntimeManager {
       processResult = await terminateProcessTree([child.pid], { termTimeoutMs: 3000 });
       this.processes.delete(runtimeId);
     }
+    // Port cleanup is only safe when this gateway owns the runtime's process: a
+    // listener on the configured port may be owned by a different gateway that
+    // merely shares the port. Cleaning up without a tracked child would stop
+    // that other gateway's server while removing this one's stale record.
     let portResult = null;
-    if (runtime?.port) {
+    if (child?.pid && runtime?.port) {
       portResult = await cleanupPortListener(runtime.port);
     }
     state.status = 'stopped';
