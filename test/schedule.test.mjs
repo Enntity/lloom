@@ -196,6 +196,24 @@ test('capacity slots share no effects and conflicting effectful capacity is refu
   assert.throws(() => normalizeResource('gpu', { capacity: 2, suspend: ['model'] }), /capacity 1/);
   assert.equal(normalizeResource('slots', { capacity: 2 }).capacity, 2);
 });
+test('a resource or slot no longer configured tells Accord it is withdrawn, so Accord can forget it', async (t) => {
+  const f = await fixture(t);
+  f.config.reservations.resources.slots = { capacity: 2 };
+  const withdrawn = { code: 'resource_unknown', statusCode: 404 };
+  assert.deepEqual(await f.effects.handle('gpu', 'availability', {}), { available: true });
+  assert.deepEqual(await f.effects.handle('slots#1', 'availability', {}), { available: true });
+  f.config.reservations.resources.slots.capacity = 1;
+  await assert.rejects(f.effects.handle('slots#1', 'availability', {}), withdrawn);
+  delete f.config.reservations.resources.gpu;
+  await assert.rejects(f.effects.handle('gpu', 'availability', {}), withdrawn);
+  await assert.rejects(f.effects.handle('gpu', 'prepare', f.fence), withdrawn, 'nothing new is granted on it');
+  f.config.reservations.resources.bad = { capacity: 0 };
+  await assert.rejects(
+    f.effects.handle('bad', 'availability', {}),
+    (e) => e.statusCode !== 404,
+    'a broken entry is not a withdrawal'
+  );
+});
 test('deployment fences hold recovery without applying effects; removed configuration can still restore its journal', async (t) => {
   const f = await fixture(t);
   let paused = false;
