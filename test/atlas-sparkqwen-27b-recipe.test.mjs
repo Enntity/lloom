@@ -37,7 +37,7 @@ assert(
 assert(verifyPins({ ...pins, model: { ...pins.model, revision: 'main' } }).some((f) => f.startsWith('model must')));
 
 // ---- recipe -----------------------------------------------------------------
-assert.equal(recipe.version, 1);
+assert.equal(recipe.version, 2);
 assert.equal(recipe.backend.id, 'docker-atlas-sparkqwen');
 assert.equal(recipe.requirements.cluster, undefined, 'one Spark, no fabric');
 assert.deepEqual(validateRecipe(recipe, {}, { checkLocalReferences: false }), []);

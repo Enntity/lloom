@@ -4,9 +4,9 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-qwen38-27b-atlas",
   "name": "DGX Spark Qwen3.8 27B Atlas (SparkQwen 27B)",
-  "version": 1,
+  "version": 2,
   "summary": "Qwen3.8-27B on one DGX Spark with SparkQwen's single-Spark Atlas build: exact speculative decoding with the DFlash2 drafter (DSpine beside it in the max mode), output byte-identical to serial decode at every concurrency, 262144-token context. Three modes: default (64 requests), saver (8 requests in about 78 GB) and max (both drafters, 32 requests). Additive only: no default model, no aliases.",
-  "description": "This recipe installs SparkQwen's 27B variant at the immutable product revision recorded in backends/atlas-sparkqwen/pins-27b-ff2031b23c2b.json. The Atlas engine image is built from Enntity/sparkqwen by install/build.sh with SPARKQWEN_MODEL=27b and published to GHCR; LLooM commits no engine source. Setup acquires NVIDIA's checkpoint, the DFlash2 and DSpine drafters and TandemLLM's NVFP4 Gated DeltaNet and attention weights at pinned revisions (overlay and DSpine files sha256-checked), pulls the image by its manifest digest and verifies it, then builds the served checkpoint with SparkQwen's own install/tandem_overlay.py, fetched at the pinned revision, digest-checked and run inside the image with no network.",
+  "description": "This recipe installs SparkQwen's 27B variant at the immutable product revision recorded in backends/atlas-sparkqwen/pins-27b-704c2d6d8b4a.json. The Atlas engine image is built from Enntity/sparkqwen by install/build.sh with SPARKQWEN_MODEL=27b and published to GHCR; LLooM commits no engine source. Setup acquires NVIDIA's checkpoint, the DFlash2 and DSpine drafters and TandemLLM's NVFP4 Gated DeltaNet and attention weights at pinned revisions (overlay and DSpine files sha256-checked), pulls the image by its manifest digest and verifies it, then builds the served checkpoint with SparkQwen's own install/tandem_overlay.py, fetched at the pinned revision, digest-checked and run inside the image with no network.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata, launcher and orchestration"
@@ -14,16 +14,16 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "SparkQwen model-27b: Enntity/sparkqwen 926fa2fc35c26672f692fb3725146a9bbede978d (install tree ff2031b23c2bc85d352cb9c727091e4649b6649e), engine Enntity/atlas q27/conc @ 9cd23195b689abbcb32077d1bf19e21f2d730a2a (proposed upstream as Atlas-Inf/atlas#333; AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). Image ghcr.io/enntity/atlas-sparkqwen:ff2031b23c2b-27b, addressed by its GHCR manifest digest. Profiles ship in the image as /opt/atlas/profiles/27b.json (0.85 GPU memory utilization, 64 sequences), 27b-saver.json (0.59, 8) and 27b-max.json (0.84, 32, both drafters), all at 262144 tokens with BF16 KV. Model nvidia/Qwen3.8-27B-NVFP4 revision 482ca0f3832238542f8f5295dde86b5f22711d80; drafters incoai/Qwen3.8-27B-DFlash2 @ 015e795645c74b1a0eeef3b570031fb62e769bc5 and tencent/Qwen3.8-27B-DSpine-b16 @ ea909c0f5fab8865f9e14600334f55f7ce47308f; overlay weights 0xBakeer/TandemLLM-Qwen3.8-27B-NVFP4 @ ab09c92fa4a90d5cfd9d012fe92831c886efd9b2 (Apache-2.0, weights only)."
+    "source": "SparkQwen model-27b: Enntity/sparkqwen dda652502be9443e5ea91b7bd76f0950af22c61a (install tree 704c2d6d8b4aef9d6d499668b2faf8a89ef3e13a), engine Enntity/atlas q27/snap-ladder @ 94a8569cc89c35bc1ef2fac7e0ffaf201dbf8302 (q27/conc, proposed upstream as Atlas-Inf/atlas#333, plus two prefix-cache fixes for long conversations; AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). Image ghcr.io/enntity/atlas-sparkqwen:704c2d6d8b4a-27b, addressed by its GHCR manifest digest. Profiles ship in the image as /opt/atlas/profiles/27b.json (0.85 GPU memory utilization, 64 sequences), 27b-saver.json (0.59, 8) and 27b-max.json (0.84, 32, both drafters), all at 262144 tokens with BF16 KV. Model nvidia/Qwen3.8-27B-NVFP4 revision 482ca0f3832238542f8f5295dde86b5f22711d80; drafters incoai/Qwen3.8-27B-DFlash2 @ 015e795645c74b1a0eeef3b570031fb62e769bc5 and tencent/Qwen3.8-27B-DSpine-b16 @ ea909c0f5fab8865f9e14600334f55f7ce47308f; overlay weights 0xBakeer/TandemLLM-Qwen3.8-27B-NVFP4 @ ab09c92fa4a90d5cfd9d012fe92831c886efd9b2 (Apache-2.0, weights only)."
   },
   "links": [
     {
       "rel": "upstream",
-      "href": "https://github.com/Enntity/sparkqwen/tree/926fa2fc35c26672f692fb3725146a9bbede978d"
+      "href": "https://github.com/Enntity/sparkqwen/tree/dda652502be9443e5ea91b7bd76f0950af22c61a"
     },
     {
       "rel": "engine",
-      "href": "https://github.com/Enntity/atlas/tree/9cd23195b689abbcb32077d1bf19e21f2d730a2a"
+      "href": "https://github.com/Enntity/atlas/tree/94a8569cc89c35bc1ef2fac7e0ffaf201dbf8302"
     },
     {
       "rel": "engine-upstream",
@@ -112,7 +112,7 @@
         "command": "node",
         "args": [
           "${repoRoot}/backends/atlas-sparkqwen/verify-pins.mjs",
-          "${repoRoot}/backends/atlas-sparkqwen/pins-27b-ff2031b23c2b.json"
+          "${repoRoot}/backends/atlas-sparkqwen/pins-27b-704c2d6d8b4a.json"
         ]
       },
       {
@@ -206,7 +206,7 @@
         "args": [
           "${repoRoot}/backends/atlas-sparkqwen/install.sh",
           "--manifest",
-          "${repoRoot}/backends/atlas-sparkqwen/pins-27b-ff2031b23c2b.json"
+          "${repoRoot}/backends/atlas-sparkqwen/pins-27b-704c2d6d8b4a.json"
         ]
       },
       {
@@ -218,7 +218,7 @@
         "args": [
           "${repoRoot}/backends/atlas-sparkqwen/overlay-27b.sh",
           "--manifest",
-          "${repoRoot}/backends/atlas-sparkqwen/pins-27b-ff2031b23c2b.json",
+          "${repoRoot}/backends/atlas-sparkqwen/pins-27b-704c2d6d8b4a.json",
           "--model-root",
           "${modelRoot}"
         ]
@@ -359,7 +359,7 @@
           },
           "bootstrap": {
             "adapter": "docker",
-            "image": "ghcr.io/enntity/atlas-sparkqwen@sha256:669c7194ae6c65dad10d61a1ea807f7a22a79b22e8c15750447a6e584c384686",
+            "image": "ghcr.io/enntity/atlas-sparkqwen@sha256:8e30cf645aac085449a44e064986430d59619b0b9fcfc8683bd13be4131b6b3d",
             "pull": false,
             "pullTimeoutMs": 3600000,
             "createArgs": [

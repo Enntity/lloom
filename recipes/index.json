@@ -1328,10 +1328,16 @@
     {
       "id": "linux-nvidia-dgx-spark-qwen38-27b-atlas",
       "path": "linux-nvidia-dgx-spark-qwen38-27b-atlas.json",
-      "currentVersion": 1,
+      "currentVersion": 2,
       "versions": [
         {
           "version": 1,
+          "path": "archive/linux-nvidia-dgx-spark-qwen38-27b-atlas/v1.json",
+          "status": "archived",
+          "notes": "SparkQwen model-27b 926fa2fc35c26672f692fb3725146a9bbede978d (install tree ff2031b23c2b), engine Enntity/atlas q27/conc 9cd23195b689abbcb32077d1bf19e21f2d730a2a, image ghcr.io/enntity/atlas-sparkqwen@sha256:669c7194ae6c65dad10d61a1ea807f7a22a79b22e8c15750447a6e584c384686. Past half the KV pool (~174K tokens) its swap-out gate evicted the tail of the cached conversation a request reused, so long agent turns re-prefilled more each turn and fell to full re-prefills."
+        },
+        {
+          "version": 2,
           "path": "linux-nvidia-dgx-spark-qwen38-27b-atlas.json",
           "status": "current"
         }
