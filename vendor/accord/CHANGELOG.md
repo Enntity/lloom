@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.3
+
+- A `managed-http` resource its provider no longer offers no longer stays forever. The provider
+  answers `availability` with 404 `resource_unknown`, and the resource is removed once it is idle,
+  together with its finished history and driver files. Fencing stays safe: a name registered again
+  starts above every generation it issued. Unreachable providers keep their resources.
+
+Upgrade the host that owns a resource for its withdrawals to take effect. A 0.6.2 database
+upgrades in place.
+
 ## 0.6.2
 
 - A coordinator restart, such as a supervisor restart after an OOM kill, no longer ends an

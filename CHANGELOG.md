@@ -6,6 +6,7 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Fixed
 
+- Bundle Accord 0.6.3: a reservation resource removed from `reservations.resources`, or a slot above a lowered capacity, is forgotten by Accord once idle instead of staying listed forever.
 - Bundle Accord 0.6.2: a reservation window survives an Accord coordinator restart, such as a service manager recovering from an OOM kill, instead of being revoked with its managed workloads restored. Holders are told when a reservation ends.
 - Bundle the published Accord 0.6.1 package, including bounded reservation windows, renewal during preparation, coordinator recovery, and installed-version reporting.
 - Release a registered distributed workload group when any rank fails, including peers that are still running. Training plans can pass IPC, RDMA, and resource options while the launcher retains container identity and restart control.

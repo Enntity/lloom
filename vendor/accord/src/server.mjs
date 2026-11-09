@@ -24,14 +24,26 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
   requireThat(parsed.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(parsed.hostname) && !parsed.username && !parsed.password,
     'BAD_DRIVER_URL', 'This release supports a loopback HTTP driver only', 400);
   const store = new Store(db, { leaderMs });
-  try { store.takeLeadership(); } catch (e) { store.close(); throw e; }
-  const collaboration=new Collaboration(store,db);
-  const memory=new MemoryPanorama(store,memoryConfig());
-  const managers=new ResourceManagers(store,dirname(db));
-  const awareness=new SessionAwareness(store),overseer=new Overseer(store,awareness,collaboration);
+  let collaboration,memory,managers,awareness,overseer,attention,telemetry;
+  try {
+    // Synchronous mailbox migrations and config reads can outlast a lease. Finish
+    // them before taking leadership; no timer can renew while they block startup.
+    collaboration=new Collaboration(store,db);
+    memory=new MemoryPanorama(store,memoryConfig());
+    managers=new ResourceManagers(store,dirname(db));
+    awareness=new SessionAwareness(store);
+    attention=new Attention(store,collaboration,join(dirname(db),'attention'),{perHour:Number(process.env.ACCORD_WAKE_PER_HOUR||6)});
+    telemetry=createTelemetry({authority:store.authority,hostName,collectors:telemetryCollectors??createCollectors({nativeHelper:sensorPath(dirname(db))})});
+    store.takeLeadership();
+    overseer=new Overseer(store,awareness,collaboration);
+  } catch (error) {
+    attention?.close();
+    try { collaboration?.close(); } finally {
+      try { if(store.leaderToken)store.releaseLeadership(); } finally { store.close(); }
+    }
+    throw error;
+  }
   managers.onRunning=row=>{try{collaboration.granted(overseer.actor,{key:`grant:${row.id}`,reservation:row.id,actor:row.actor,resource:row.resource,queuedAt:row.created_at});}catch{/* A notice is a hint. */}};
-  const attention=new Attention(store,collaboration,join(dirname(db),'attention'),{perHour:Number(process.env.ACCORD_WAKE_PER_HOUR||6)});
-  const telemetry=createTelemetry({authority:store.authority,hostName,collectors:telemetryCollectors??createCollectors({nativeHelper:sensorPath(dirname(db))})});
   const observationRuntime=awarenessRuntime(dirname(db),awareness);
   const secretFor = claim => createHmac('sha256', claimSecret).update(claim.id).digest('base64url');
   const sessionSecret = sessionId => createHmac('sha256', claimSecret).update(`session:${sessionId}`).digest('base64url');
@@ -104,6 +116,25 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
     }
     overseer.dispatch();
   }catch{/* Keep ownership reconciliation independent of observation failures. */}finally{monitoring=false;}},10000);
+  // A provider that no longer offers a resource says so; the resource leaves once idle.
+  // The coordinator forgets it first, so no new claim can reach a driver being removed.
+  let pruning=false;
+  async function prune(){
+    if(closed||unhealthy||pruning)return;pruning=true;
+    try{
+      const managed=store.db.prepare("SELECT id FROM resource_bindings WHERE plugin='managed-http'").all().map(r=>r.id);
+      const installed=(await request(driverUrl,driverToken,'/control/resources')).resources.filter(r=>r.plugin==='managed-http').map(r=>r.id);
+      for(const id of new Set([...managed,...installed])){
+        if(closed)break;
+        try{
+          const status=await request(driverUrl,driverToken,driverPath('/control/status',id),undefined,2000);
+          if(!status.withdrawn||status.claim_id||(store.binding(id)&&!store.removeResource(id)))continue;
+          await request(driverUrl,driverToken,'/control/resources/withdraw',{id},5000);
+        }catch{/* The next pass retries. */}
+      }
+    }catch{/* The next pass retries. */}finally{pruning=false;}
+  }
+  const pruneStart=setTimeout(prune,1000),pruneTimer=setInterval(prune,600000);
   const mailTimer=setInterval(()=>{if(!closed&&!unhealthy)void collaboration.flush().catch(()=>{});},1000);
   memory.start();
   function describe(actor, claimId) {
@@ -432,10 +463,10 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
   return {
     server, store, reconcile, failed,
     async close() {
-      closed = true; attention.close(); await observationRuntime.close();clearInterval(timer); clearInterval(heartbeat);clearInterval(mailTimer);clearInterval(overseerTimer);memory.close();
+      closed = true; attention.close(); await observationRuntime.close();clearInterval(timer); clearInterval(heartbeat);clearInterval(mailTimer);clearInterval(overseerTimer);clearTimeout(pruneStart);clearInterval(pruneTimer);memory.close();
       server.closeAllConnections();
       await new Promise(resolve => server.close(resolve));
-      while (busy||collaboration.sending||monitoring||managers.busy) await new Promise(resolve => setTimeout(resolve, 10));
+      while (busy||collaboration.sending||monitoring||pruning||managers.busy) await new Promise(resolve => setTimeout(resolve, 10));
       collaboration.close();try { store.releaseLeadership(); } finally { store.close(); }
     }
   };

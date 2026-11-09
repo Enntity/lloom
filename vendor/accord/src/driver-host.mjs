@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import { WorkloadGuard } from './workload-guard.mjs';
 import { join } from 'node:path';
+import { rmSync } from 'node:fs';
 import { database, transaction, requireThat } from './common.mjs';
 import { ArtifactDriver, driverServer } from './driver.mjs';
 import { createResourceDriver,validateResource,plugins } from './resource-plugins.mjs';
@@ -26,7 +27,16 @@ export function driverHost(directory,controlToken){
     if(!drivers.has(manifest.id))drivers.set(manifest.id,create(join(directory,`process-${manifest.id}.sqlite`),manifest));
     return describe(manifest.id,drivers.get(manifest.id));
   };
+  // A provider that no longer offers an idle resource takes back its registration and files.
+  const withdraw=async({id})=>{
+    const d=drivers.get(id),idle=()=>!d.status().claim_id&&d.status().phase==='idle';
+    if(!d||d.manifest?.plugin!=='managed-http'||!idle()||!(await d.availability()).withdrawn||!idle()||drivers.get(id)!==d)return {id,removed:false};
+    drivers.delete(id);d.close();transaction(db,()=>db.prepare('DELETE FROM registrations WHERE id=?').run(id));
+    const file=join(directory,`process-${id}.sqlite`);
+    for(const f of [file,file+'.workloads'])for(const suffix of ['','-wal','-shm'])rmSync(f+suffix,{force:true});
+    return {id,removed:true};
+  };
   const resolveDriver=resource=>{const d=drivers.get(resource);requireThat(d,'RESOURCE_UNKNOWN','Resource is not installed',404);return d;};
-  return {server:driverServer(drivers.get('artifact'),controlToken,{resolveDriver,register,list}),
+  return {server:driverServer(drivers.get('artifact'),controlToken,{resolveDriver,register,list,withdraw}),
     status:()=>drivers.get('artifact').status(),close:()=>{for(const d of drivers.values())d.close();db.close();}};
 }

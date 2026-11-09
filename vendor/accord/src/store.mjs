@@ -140,11 +140,30 @@ export class Store {
     return this.command(actor,body,'resource.register',()=>{
       const old=this.db.prepare('SELECT * FROM resource_bindings WHERE id=? OR asset=?').get(binding.id,binding.asset);
       requireThat(!old||['id','instance','plugin','asset','enforcement'].every(k=>old[k]===binding[k]),'RESOURCE_CONFLICT','Resource binding changed');
-      this.db.prepare('INSERT OR IGNORE INTO resources(id) VALUES(?)').run(binding.id);
+      // A name used before starts above every generation it issued, so an old holder stays fenced.
+      this.db.prepare("INSERT OR IGNORE INTO resources(id,generation) VALUES(?,coalesce((SELECT CAST(value AS INTEGER) FROM meta WHERE key='generation_floor'),0))").run(binding.id);
       this.db.prepare('INSERT OR IGNORE INTO resource_bindings(id,instance,plugin,asset,enforcement) VALUES(?,?,?,?,?)').run(binding.id,binding.instance,binding.plugin,binding.asset,binding.enforcement);
       this.db.prepare('UPDATE resource_bindings SET max_ownership_ms=?,allow_indefinite=? WHERE id=?').run(binding.maxOwnershipMs??null,binding.allowIndefinite?1:0,binding.id);
       if(body.pool)this.db.prepare('INSERT OR IGNORE INTO resource_pools VALUES(?,?)').run(binding.id,body.pool);
       this.emit('resource.registered',binding);return binding;
+    });
+  }
+  // Forget a managed resource its provider withdrew, once nothing holds, awaits or depends on it.
+  removeResource(resource){
+    return this.mutate(()=>{
+      const b=this.binding(resource),busy="SELECT 1 FROM tasks WHERE resource=? AND state IN ('queued','preparing','running','releasing','recovering','cancelling')";
+      if(b?.plugin!=='managed-http'||this.db.prepare("SELECT 1 FROM claims WHERE resource=? AND state!='closed'").get(resource)||this.db.prepare(busy).get(resource)
+        ||this.db.prepare('SELECT 1 FROM tasks t JOIN tasks d ON d.id=t.dependency WHERE d.resource=? AND t.resource!=?').get(resource,resource))return false;
+      const {generation}=this.db.prepare('SELECT generation FROM resources WHERE id=?').get(resource);
+      this.db.prepare("INSERT INTO meta VALUES('generation_floor',?) ON CONFLICT(key) DO UPDATE SET value=max(CAST(value AS INTEGER),CAST(excluded.value AS INTEGER))").run(String(generation));
+      // Its registration replays as new, so the same command registers it again.
+      this.db.prepare("DELETE FROM commands WHERE json_extract(response,'$.id')=? AND json_extract(response,'$.asset')=?").run(resource,b.asset);
+      this.db.prepare('DELETE FROM reservations WHERE task_id IN (SELECT id FROM tasks WHERE resource=?)').run(resource);
+      for(const table of ['claims','tasks'])this.db.prepare(`DELETE FROM ${table} WHERE resource=?`).run(resource);
+      this.db.prepare('DELETE FROM resource_pools WHERE resource=?').run(resource);
+      this.db.prepare('DELETE FROM resource_bindings WHERE id=?').run(resource);
+      this.db.prepare('DELETE FROM resources WHERE id=?').run(resource);
+      this.emit('resource.removed',{id:resource,asset:b.asset,generation});return true;
     });
   }
   binding(resource){return this.db.prepare('SELECT * FROM resource_bindings WHERE id=?').get(resource);}

@@ -13,10 +13,10 @@ second authority or copy tokens between hosts. Keep the previous package availab
 binary rollback; database rollback is a separate recovery operation and can invalidate
 fencing history. See [recovery](RECOVERY.md).
 
-## Install 0.6.2
+## Install 0.6.3
 
 ```sh
-npm install -g https://github.com/Enntity/accord/releases/download/v0.6.2/enntity-accord-0.6.2.tgz
+npm install -g https://github.com/Enntity/accord/releases/download/v0.6.3/enntity-accord-0.6.3.tgz
 accord install
 ```
 
@@ -47,13 +47,21 @@ accord --version
 accord doctor
 ```
 
-The CLI should report `0.6.2`; the doctor should report `ready`. The CLI version identifies
+The CLI should report `0.6.3`; the doctor should report `ready`. The CLI version identifies
 the package invoked by your shell, so also check the running service's command line
 against the new install path. Restart your agent sessions to load the updated MCP bridge.
 
 On linked hosts, verify `accord find`, send and acknowledge a test message, and exercise
 reserve, extend and release on a dedicated cooperative resource. Check that extension
 keeps the claim and generation. Do not use an active GPU workload as a smoke test.
+
+## Changes from 0.6.2
+
+A `managed-http` resource whose provider answers availability with 404 `resource_unknown`
+is removed once nothing holds, queues on or depends on it; the first pass runs a second
+after the coordinator starts. Providers that never answer that way are unaffected. No
+schema migration is added, so a 0.6.2 database upgrades in place. Upgrade the host that
+owns a resource for its withdrawals to take effect.
 
 ## Changes from 0.6.1
 
