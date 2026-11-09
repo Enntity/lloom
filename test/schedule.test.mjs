@@ -150,6 +150,48 @@ test('live legacy leases cannot be overwritten, expired away, or mistaken for fr
   assert.equal(f.calls.length, 0);
   assert.equal(f.effects.legacy('gpu').length, 1);
 });
+test('two Sparks holding one model and route share its effects; the last release restores the state before both', async (t) => {
+  for (const order of [
+    ['spark01', 'spark02'],
+    ['spark02', 'spark01']
+  ]) {
+    const f = await fixture(t);
+    const effect = { routes: [{ alias: 'chat', profile: 'cloud' }], suspend: ['resident'] };
+    f.config.reservations.resources = { spark01: { ...effect }, spark02: { ...effect } };
+    const fence = (claimId) => ({ ...f.fence, claimId });
+    await f.effects.handle('spark01', 'prepare', fence('a'));
+    await f.effects.handle('spark02', 'prepare', fence('b'));
+    assert.deepEqual(f.calls, ['route:cloud', 'stop:resident'], 'the second hold applies nothing new');
+    const journal = f.effects.status().resources.spark02.steps;
+    assert.equal(journal.find((s) => s.kind === 'route').previous, 'local', 'both holds record the original route');
+    assert.equal(journal.find((s) => s.kind === 'suspend').wasSuspended, false);
+    const [first, last] = order;
+    const claim = { spark01: 'a', spark02: 'b' };
+    await f.effects.handle(first, 'stop', fence(claim[first]));
+    await f.effects.handle(first, 'restore', fence(claim[first]));
+    assert.equal(f.current.route, 'cloud', `${last} still holds the route`);
+    assert(f.current.suspended, `${last} still holds the model down`);
+    await f.effects.handle(last, 'stop', fence(claim[last]));
+    await f.effects.handle(last, 'restore', fence(claim[last]));
+    assert.equal(f.current.route, 'local');
+    assert(!f.current.suspended);
+    assert.deepEqual(f.calls, ['route:cloud', 'stop:resident', 'start:resident', 'route:local']);
+  }
+});
+test('a hold that would move a shared route somewhere else is refused before any effect', async (t) => {
+  const f = await fixture(t);
+  f.config.reservations.resources = {
+    spark01: { routes: [{ alias: 'chat', profile: 'cloud' }] },
+    spark02: { routes: [{ alias: 'chat', profile: 'elsewhere' }], suspend: ['resident'] }
+  };
+  await f.effects.handle('spark01', 'prepare', { ...f.fence, claimId: 'a' });
+  await assert.rejects(
+    f.effects.handle('spark02', 'prepare', { ...f.fence, claimId: 'b' }),
+    /held at cloud by spark01/
+  );
+  assert.equal(f.current.route, 'cloud');
+  assert(!f.current.suspended, 'the refused hold drained nothing');
+});
 test('capacity slots share no effects and conflicting effectful capacity is refused', () => {
   assert.throws(() => normalizeResource('gpu', { capacity: 2, suspend: ['model'] }), /capacity 1/);
   assert.equal(normalizeResource('slots', { capacity: 2 }).capacity, 2);
