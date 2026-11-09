@@ -49,6 +49,11 @@ A workload plan that spans Sparks lists them as `resources`; `lloom workload run
 acquires them in sorted order, so two jobs needing overlapping Sparks queue instead
 of each holding half, and registers each container under the hold for its host.
 
+Removing a resource from `reservations.resources`, or lowering its capacity, withdraws it:
+its provider answers availability with 404 `resource_unknown`, and Accord forgets the
+resource once nothing holds or awaits it. A hold that is still open keeps its journal and
+restores normally first.
+
 This controls LLooM-managed workloads. Arbitrary SSH commands, external containers,
 escaped process groups and unrelated GPU users are not isolated by a lease. Use an
 appropriate Accord process/container driver for those workloads; missing evidence

@@ -28,11 +28,16 @@ export function createAccordEffects({ getConfig, statePath, actions, isPaused = 
   function base(id) {
     return id.split('#')[0];
   }
+  // Accord forgets a resource this answer withdraws, once nothing holds it.
+  const withdrawn = () =>
+    Object.assign(Error('Resource is no longer configured'), { code: 'resource_unknown', statusCode: 404 });
   function spec(id) {
     const raw = getConfig().reservations?.resources?.[base(id)];
+    if (raw === undefined) throw withdrawn();
     const s = normalizeResource(base(id), raw, getConfig());
     const slot = Number(id.split('#')[1] ?? 0);
-    if (!Number.isInteger(slot) || slot < 0 || slot >= s.capacity) throw fail('Invalid capacity slot');
+    if (!Number.isInteger(slot) || slot < 0) throw fail('Invalid capacity slot');
+    if (slot >= s.capacity) throw withdrawn();
     return s;
   }
 
