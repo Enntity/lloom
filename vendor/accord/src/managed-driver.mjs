@@ -36,7 +36,8 @@ export class ManagedDriver extends ArtifactDriver {
   async availability(){
     try{const p=await request(this.manifest.endpoint,readFileSync(this.manifest.tokenFile,'utf8').trim(),'/availability',{},500);
       return {label:this.manifest.label,hosts:this.manifest.hosts,blocked:p.available!==true};
-    }catch{return {label:this.manifest.label,hosts:this.manifest.hosts,blocked:true};}
+    // Only the provider's own answer withdraws a resource; silence or any other error keeps it.
+    }catch(e){return {label:this.manifest.label,hosts:this.manifest.hosts,blocked:true,...(e.status===404&&e.code==='resource_unknown'?{withdrawn:true}:{})};}
   }
   activate(body){return this.serial(`activate:${hash(JSON.stringify(body))}`,async()=>{
     transaction(this.db,()=>{

@@ -88,7 +88,7 @@ export class ArtifactDriver {
   }
 }
 
-export function driverServer(defaultDriver, controlToken, {resolveDriver,register,list} = {}) {
+export function driverServer(defaultDriver, controlToken, {resolveDriver,register,list,withdraw} = {}) {
   return createHttp(async (req, res, url) => {
     const credential = bearer(req);
     const resource=url.searchParams.get('resource')||'artifact';
@@ -104,6 +104,7 @@ export function driverServer(defaultDriver, controlToken, {resolveDriver,registe
     if(url.pathname==='/control/workloads/audit'&&req.method==='GET'){requireThat(driver.externalAudit,'WRONG_DRIVER','External workloads unsupported');return driver.externalAudit();}
     if(url.pathname==='/control/workloads'&&req.method==='POST'){requireThat(driver.adoptExternal,'WRONG_DRIVER','External workloads unsupported');return driver.adoptExternal(await readBody(req));}
     if(url.pathname==='/control/resources'&&req.method==='POST'){requireThat(register,'UNSUPPORTED','Registration unavailable');return register(await readBody(req));}
+    if(url.pathname==='/control/resources/withdraw'&&req.method==='POST'){requireThat(withdraw,'UNSUPPORTED','Withdrawal unavailable');return withdraw(await readBody(req));}
     if(url.pathname==='/control/resources'&&req.method==='GET')return {resources:list?list():[]};
     if (req.method === 'GET' && url.pathname === '/control/status') return {...driver.status(),...(driver.availability?await driver.availability():{})};
     if (req.method === 'GET' && url.pathname === '/control/audit') return { events: driver.db.prepare('SELECT * FROM audit ORDER BY seq').all() };

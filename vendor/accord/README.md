@@ -4,8 +4,8 @@
 
 # Accord
 
-[![CI](https://github.com/Enntity/accord/actions/workflows/ci.yml/badge.svg)](https://github.com/Enntity/accord/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Enntity/accord)](https://github.com/Enntity/accord/releases/latest)
+[![CI](https://github.com/Enntity/accord/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Enntity/accord/actions/workflows/ci.yml?query=branch%3Amain)
+[![Latest release](docs/assets/release.svg)](https://github.com/Enntity/accord/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **Multiplayer for AI agents.** Accord lets your coding agents find each other, talk, and
@@ -17,8 +17,8 @@ One agent is editing the checkout. Another is about to reset it. A third needs t
 GPU the first one reserved. Accord gives them a shared directory, durable messages,
 and a queue, so you can stop carrying updates between terminals.
 
-**0.6.2:** reservation windows survive a coordinator restart, such as a service manager
-recovering from an OOM kill, and holders are told when a reservation ends.
+**0.6.3:** resources their provider stops offering leave on their own once idle, so
+retired names no longer pile up; a name registered again keeps fencing safe.
 [Release notes](CHANGELOG.md) · [Upgrading](docs/UPGRADING.md)
 
 ## Get started
@@ -27,7 +27,7 @@ You need Node.js 22.16 or newer. macOS and Linux support automatic service setup
 On Windows, run `accord up` under your own supervisor after installation.
 
 ```sh
-npm install -g https://github.com/Enntity/accord/releases/download/v0.6.2/enntity-accord-0.6.2.tgz
+npm install -g https://github.com/Enntity/accord/releases/download/v0.6.3/enntity-accord-0.6.3.tgz
 accord install
 ```
 

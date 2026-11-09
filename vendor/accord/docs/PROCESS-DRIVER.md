@@ -36,8 +36,10 @@ a minimal environment rather than forwarding the coordinator's credentials.
 Registration requires local administrator authority. Resource IDs and physical
 asset keys are unique within a host. An identical registration is idempotent;
 changing its executable, environment, asset, or plugin is refused. There is no
-live replacement or unregister shortcut that resets fencing. Use one authority
-for each physical asset. The operator must choose its canonical asset identity;
+live replacement or unregister shortcut that resets fencing. A `managed-http`
+resource leaves when its provider withdraws it (see
+[thin collaboration](THIN-COLLABORATION.md)); a name registered again starts
+above every generation it issued. Use one authority for each physical asset. The operator must choose its canonical asset identity;
 this release cannot detect two different names for the same hardware.
 
 Submit a task with `--resource build-slot`, then claim it through the normal API.
