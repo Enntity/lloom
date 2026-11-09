@@ -22,6 +22,13 @@ export const IMAGE_LABEL = 'io.enntity.sparkqwen.install-tree';
 export const IMAGE_REFERENCE_PATTERN = /^ghcr\.io\/enntity\/atlas-sparkqwen@sha256:[a-f0-9]{64}$/;
 export const MODEL_REPO = 'nvidia/Qwen3.8-Flash-Next-FP4-Local';
 export const MODEL_REVISION = 'b9ce18a6887e18c089fdea8509a33e63429a3300';
+// Every checkpoint a SparkQwen image may serve. install/build.sh tags the
+// single-Spark 27B variant's images <install tree>-27b.
+export const MODEL_27B_REPO = 'nvidia/Qwen3.8-27B-NVFP4';
+export const MODELS = {
+  [MODEL_REPO]: { revision: MODEL_REVISION, tagSuffix: '' },
+  [MODEL_27B_REPO]: { revision: '482ca0f3832238542f8f5295dde86b5f22711d80', tagSuffix: '-27b' }
+};
 
 const REQUIRED_PINS = [
   ['status', (m) => m.status],
@@ -39,7 +46,8 @@ export function loadPins(manifestPath = MANIFEST_PATH) {
 }
 
 export function imageTagFor(manifest) {
-  return `${IMAGE_REPOSITORY}:${String(manifest.source?.installTree ?? '').slice(0, 12)}`;
+  const suffix = MODELS[manifest.model?.repo]?.tagSuffix ?? '';
+  return `${IMAGE_REPOSITORY}:${String(manifest.source?.installTree ?? '').slice(0, 12)}${suffix}`;
 }
 
 export function verifyPins(manifest) {
@@ -83,8 +91,22 @@ export function verifyPins(manifest) {
   if (Object.hasOwn(manifest.image ?? {}, 'id')) {
     failures.push(`image.id must not be pinned: image IDs differ between a pull and a local build`);
   }
-  if (manifest.model?.repo !== MODEL_REPO || manifest.model?.revision !== MODEL_REVISION) {
-    failures.push(`model must stay on ${MODEL_REPO}@${MODEL_REVISION}`);
+  const model = Object.hasOwn(MODELS, manifest.model?.repo) ? MODELS[manifest.model.repo] : null;
+  if (!model || manifest.model?.revision !== model.revision) {
+    const known = Object.entries(MODELS)
+      .map(([repo, pin]) => `${repo}@${pin.revision}`)
+      .join(' or ');
+    failures.push(`model must stay on ${known}`);
+  }
+  if (manifest.model?.repo === MODEL_27B_REPO) {
+    // overlay-27b.sh runs these SparkQwen files from source.revision only after
+    // checking their digests.
+    const tool = manifest.overlayTool ?? {};
+    for (const name of ['tandem_overlay.py', 'checkpoint-27b.json']) {
+      if (!/^[a-f0-9]{64}$/.test(String(tool[name] ?? ''))) {
+        failures.push(`overlayTool.${name} must be a 64-character lowercase sha256`);
+      }
+    }
   }
   return failures;
 }
