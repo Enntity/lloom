@@ -4,7 +4,7 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-glm53-atlas",
   "name": "DGX Spark GLM-5.3 Flash FP4-Local Atlas (SparkGLM 0.3.1)",
-  "version": 1,
+  "version": 2,
   "options": {
     "sparks": {
       "description": "How many DGX Sparks serve the model: 2 is a TP-2 pair over a direct cable, 4 is TP-4 over a daisy chain.",
@@ -36,12 +36,21 @@
       "description": "The DFlash2 drafter for speculative decoding.",
       "default": {
         "$option": "sparks",
-        "2": "v80",
+        "2": "v81",
         "4": "dflash2"
       },
       "values": {
+        "v81": {
+          "description": "Enntity's v81 (private repository; needs access to Enntity/GLM-5.3-Flash-DFlash2-enntity).",
+          "variables": {
+            "drafterRepo": "Enntity/GLM-5.3-Flash-DFlash2-enntity",
+            "drafterRevision": "ee5ed56e3ed2e59fd2d5177fe6773b2f6fb4aa80",
+            "drafterDir": "Enntity--GLM-5.3-Flash-DFlash2-enntity",
+            "drafterTitle": "Enntity's v81"
+          }
+        },
         "v80": {
-          "description": "Enntity's v80 (private repository; needs access to Enntity/GLM-5.3-Flash-DFlash2-enntity-v80).",
+          "description": "Enntity's v80 (private repository Enntity/GLM-5.3-Flash-DFlash2-enntity, pinned under its earlier name Enntity/GLM-5.3-Flash-DFlash2-enntity-v80, which redirects).",
           "variables": {
             "drafterRepo": "Enntity/GLM-5.3-Flash-DFlash2-enntity-v80",
             "drafterRevision": "8416cdfbf4cfb302b86a058cb5f5b89f891350c0",
@@ -61,8 +70,8 @@
       }
     }
   },
-  "summary": "SparkGLM on two directly connected DGX Sparks (TP-2 pair) or four cabled as a daisy chain (TP-4), serving nvidia/GLM-5.3-Flash-FP4-Local as published with DFlash2 speculative decoding: four requests of up to 1M tokens. Options: --sparks 2|4 and --drafter v80|dflash2. Additive only: no default model, no aliases.",
-  "description": "This recipe installs SparkGLM 0.3.1 at the immutable product revision recorded in backends/atlas-sparkglm/pins-0.3.1.json, on two Sparks (--sparks 2, a TP-2 pair over the private fabric) or four (--sparks 4, TP-4 over a switchless daisy chain, rank 0-1-2-3 along the cables), with either drafter (--drafter v80, Enntity's v80 from a private repository, or --drafter dflash2, incoai/GLM-5.3-Flash-DFlash2). Without --drafter, two Sparks use v80 and four use dflash2. Setup remembers the options it installed with. LLooM owns orchestration, admission, worker-first startup, readiness, routing and telemetry. The Atlas engine image is built from Enntity/sparkglm by that repository's install/build.sh; LLooM commits no engine source. The engine (Atlas-Inf/atlas, on the Enntity/atlas spark branch) is AGPL-3.0-only and runs from its own container image. Setup acquires the pinned checkpoint and the selected drafter and pulls the pinned image from GHCR by its immutable manifest digest (image.reference; the mutable tag is never pulled); the serving path only ever starts the prepared image. The checkpoint is served as published, with no overlay. One image serves both sizes. At TP-2 the release qualified on 2026-11-03 against 0.3.0 with the v80 drafter (identical greedy output and prompt logprobs, 109/109 live checks; sparkglm-research experiments/qual-20261103); 0.3.1 has not been run at TP-4 yet.",
+  "summary": "SparkGLM on two directly connected DGX Sparks (TP-2 pair) or four cabled as a daisy chain (TP-4), serving nvidia/GLM-5.3-Flash-FP4-Local as published with DFlash2 speculative decoding: four requests of up to 1M tokens. Options: --sparks 2|4 and --drafter v81|v80|dflash2. Additive only: no default model, no aliases.",
+  "description": "This recipe installs SparkGLM 0.3.1 at the immutable product revision recorded in backends/atlas-sparkglm/pins-0.3.1.json, on two Sparks (--sparks 2, a TP-2 pair over the private fabric) or four (--sparks 4, TP-4 over a switchless daisy chain, rank 0-1-2-3 along the cables), with any of three drafters (--drafter v81 or v80, Enntity's from a private repository, or --drafter dflash2, incoai/GLM-5.3-Flash-DFlash2). Without --drafter, two Sparks use v81 and four use dflash2. Setup remembers the options it installed with. LLooM owns orchestration, admission, worker-first startup, readiness, routing and telemetry. The Atlas engine image is built from Enntity/sparkglm by that repository's install/build.sh; LLooM commits no engine source. The engine (Atlas-Inf/atlas, on the Enntity/atlas spark branch) is AGPL-3.0-only and runs from its own container image. Setup acquires the pinned checkpoint and the selected drafter and pulls the pinned image from GHCR by its immutable manifest digest (image.reference; the mutable tag is never pulled); the serving path only ever starts the prepared image. The checkpoint is served as published, with no overlay. One image serves both sizes. At TP-2 the release qualified on 2026-11-03 against 0.3.0 with the v80 drafter (identical greedy output and prompt logprobs, 109/109 live checks; sparkglm-research experiments/qual-20261103); 0.3.1 has not been run at TP-4 yet, and has not been qualified with v81 (in Enntity's drafter benchmark on a two-Spark Atlas server, 2026-11-05, v81 was 2-6% faster than v80 on code and structured output with identical output text).",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata, launcher and orchestration"
@@ -70,7 +79,7 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "SparkGLM 0.3.1: Enntity/sparkglm 33fe02f83a9edf96ae38ebe4fc6a8ec8e7603f90 (tag v0.3.1, install tree e7af504a3dfde2652e05de9c32304ffd3de7f2fa), engine Enntity/atlas spark @ 5f79b46ba7b0e8b14f8b2966cca9e2546f18560d (Atlas-Inf main 2f9c37083; AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). The install pulls ghcr.io/enntity/atlas-sparkglm@sha256:8e1e378b61f2633283fc86772b78f3524220255064630cc069d64b70cc5df7e0 by digest (pins-0.3.1.json; the tag ghcr.io/enntity/atlas-sparkglm:e7af504a3dfd is never pulled), and each host verifies the image's io.enntity.sparkglm.install-tree label, arm64 architecture, both profiles and the engine commit. Model nvidia/GLM-5.3-Flash-FP4-Local revision 76348ddb2be2e35e39ecfc00e75dc07703f4f3d5 (NVIDIA Open Model Agreement; base model MIT) is served as published. Drafters: Enntity/GLM-5.3-Flash-DFlash2-enntity-v80 revision 8416cdfbf4cfb302b86a058cb5f5b89f891350c0 (private) and incoai/GLM-5.3-Flash-DFlash2 revision 7d74cdd881ed7e32c31175984a67823127b66cfe (CC BY-NC-ND 4.0). Qualified at TP-2 with v80 on 2026-11-03 against 0.3.0 (sparkglm-research experiments/qual-20261103); not yet run at TP-4."
+    "source": "SparkGLM 0.3.1: Enntity/sparkglm 33fe02f83a9edf96ae38ebe4fc6a8ec8e7603f90 (tag v0.3.1, install tree e7af504a3dfde2652e05de9c32304ffd3de7f2fa), engine Enntity/atlas spark @ 5f79b46ba7b0e8b14f8b2966cca9e2546f18560d (Atlas-Inf main 2f9c37083; AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). The install pulls ghcr.io/enntity/atlas-sparkglm@sha256:8e1e378b61f2633283fc86772b78f3524220255064630cc069d64b70cc5df7e0 by digest (pins-0.3.1.json; the tag ghcr.io/enntity/atlas-sparkglm:e7af504a3dfd is never pulled), and each host verifies the image's io.enntity.sparkglm.install-tree label, arm64 architecture, both profiles and the engine commit. Model nvidia/GLM-5.3-Flash-FP4-Local revision 76348ddb2be2e35e39ecfc00e75dc07703f4f3d5 (NVIDIA Open Model Agreement; base model MIT) is served as published. Drafters: Enntity/GLM-5.3-Flash-DFlash2-enntity revision ee5ed56e3ed2e59fd2d5177fe6773b2f6fb4aa80 (v81, tag v81, model.safetensors sha256 d14e1edb080711d4; private), Enntity/GLM-5.3-Flash-DFlash2-enntity-v80 revision 8416cdfbf4cfb302b86a058cb5f5b89f891350c0 (v80, the same repository under its earlier name; private) and incoai/GLM-5.3-Flash-DFlash2 revision 7d74cdd881ed7e32c31175984a67823127b66cfe (CC BY-NC-ND 4.0). Qualified at TP-2 with v80 on 2026-11-03 against 0.3.0 (sparkglm-research experiments/qual-20261103); not yet run at TP-4."
   },
   "links": [
     {
@@ -91,7 +100,11 @@
     },
     {
       "rel": "draft-model",
-      "href": "https://huggingface.co/Enntity/GLM-5.3-Flash-DFlash2-enntity-v80/tree/8416cdfbf4cfb302b86a058cb5f5b89f891350c0"
+      "href": "https://huggingface.co/Enntity/GLM-5.3-Flash-DFlash2-enntity/tree/ee5ed56e3ed2e59fd2d5177fe6773b2f6fb4aa80"
+    },
+    {
+      "rel": "draft-model",
+      "href": "https://huggingface.co/Enntity/GLM-5.3-Flash-DFlash2-enntity/tree/8416cdfbf4cfb302b86a058cb5f5b89f891350c0"
     },
     {
       "rel": "draft-model",
@@ -131,11 +144,11 @@
     "family": "NVIDIA DGX Spark / GB10",
     "testedMachine": "Two directly connected DGX Spark systems (--sparks 2) or four cabled as a daisy chain (--sparks 4)",
     "notes": [
-      "SparkGLM 0.3.1 qualified at TP-2 on 2026-11-03 against 0.3.0 with the v80 drafter: identical greedy output and prompt logprobs, 109/109 live checks, guard log clean, speed level (sparkglm-research experiments/qual-20261103). Not yet run at TP-4 or with dflash2 at TP-2.",
+      "SparkGLM 0.3.1 qualified at TP-2 on 2026-11-03 against 0.3.0 with the v80 drafter: identical greedy output and prompt logprobs, 109/109 live checks, guard log clean, speed level (sparkglm-research experiments/qual-20261103). Not yet run at TP-4 or with dflash2 at TP-2. Not yet qualified with v81, the two-Spark default since recipe version 2; qualify it on the pair before relying on it.",
       "With --sparks 2 the pair uses tensor and expert parallelism 2 across the private ConnectX RoCE fabric; each node needs cluster.nodes[ID].fabricHca and fabricInterface. With --sparks 4 the ranks follow cluster.nodes[ID].fabricChain on a switchless chain, rank 0 leads, and the workers start from the far end.",
       "Every Spark reserves 114 GiB with a 4096 MiB OOM guard. TP-2 raises GPU memory utilization to 0.91 with the display carveout and shards KV across the pair; TP-4 uses the profile's 0.88 with neither, and leaves no room for sidecars.",
       "The disk prefix cache is 48 GB at TP-2 and off at TP-4, where it is not qualified.",
-      "Licenses: the Atlas engine in the image is AGPL-3.0-only (not included in LLooM). The v80 drafter is Enntity's, from a private repository; incoai/GLM-5.3-Flash-DFlash2 is CC BY-NC-ND 4.0 (non-commercial); nvidia/GLM-5.3-Flash-FP4-Local is under the NVIDIA Open Model Agreement (base model MIT).",
+      "Licenses: the Atlas engine in the image is AGPL-3.0-only (not included in LLooM). The v81 and v80 drafters are Enntity's, from a private repository; incoai/GLM-5.3-Flash-DFlash2 is CC BY-NC-ND 4.0 (non-commercial); nvidia/GLM-5.3-Flash-FP4-Local is under the NVIDIA Open Model Agreement (base model MIT).",
       "All Sparks must carry the same pins, the same backend directory, the same checkpoint and drafter, and LLooM configs that name the same cluster leader."
     ]
   },

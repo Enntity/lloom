@@ -57,13 +57,16 @@ function asOneRecipe(r) {
 
 test('the recipe is valid in every combination and installs SparkGLM 0.3.1', () => {
   assert.deepEqual(validateRecipe(recipe, {}, { checkLocalReferences: false }), []);
+  assert.equal(recipe.version, 2);
   assert.deepEqual(recipeOptionCombinations(recipe), [
+    { sparks: '2', drafter: 'v81' },
     { sparks: '2', drafter: 'v80' },
     { sparks: '2', drafter: 'dflash2' },
+    { sparks: '4', drafter: 'v81' },
     { sparks: '4', drafter: 'v80' },
     { sparks: '4', drafter: 'dflash2' }
   ]);
-  assert.deepEqual(recipe.selectedOptions, { sparks: '2', drafter: 'v80' });
+  assert.deepEqual(recipe.selectedOptions, { sparks: '2', drafter: 'v81' });
   assert.deepEqual(resolved({ sparks: '4' }).selectedOptions, { sparks: '4', drafter: 'dflash2' });
   assert.deepEqual(verifyPins(pins), []);
   assert.equal(pins.source.revision, '33fe02f83a9edf96ae38ebe4fc6a8ec8e7603f90');
@@ -80,6 +83,29 @@ test('two Sparks with v80 install exactly what the pair recipe installs', async 
     members(resolved({ sparks: '2', drafter: 'v80' })).map((m) => m.runtimeSettings.bootstrap.createArgs),
     members(pair).map((m) => m.runtimeSettings.bootstrap.createArgs)
   );
+});
+
+test('v81 is pinned to the versionless Enntity repository and changes only the drafter', async () => {
+  assert.deepEqual(pinnedDrafter(pins, 'v81'), {
+    repo: 'Enntity/GLM-5.3-Flash-DFlash2-enntity',
+    revision: 'ee5ed56e3ed2e59fd2d5177fe6773b2f6fb4aa80'
+  });
+  // v80 keeps the repository name it was installed from (the old name
+  // redirects), so its folder and acquisition record on existing hosts stand.
+  assert.equal(pinnedDrafter(pins, 'v80').repo, 'Enntity/GLM-5.3-Flash-DFlash2-enntity-v80');
+  const asV80 = JSON.parse(
+    JSON.stringify(installed(resolved({ sparks: '2', drafter: 'v81' })))
+      .replaceAll('ee5ed56e3ed2e59fd2d5177fe6773b2f6fb4aa80', '8416cdfbf4cfb302b86a058cb5f5b89f891350c0')
+      .replaceAll('GLM-5.3-Flash-DFlash2-enntity', 'GLM-5.3-Flash-DFlash2-enntity-v80')
+  );
+  assert.deepEqual(asV80, installed(resolved({ sparks: '2', drafter: 'v80' })));
+});
+
+test('version 1 still installs v80 by default on two Sparks', async () => {
+  const v1 = await loadRecipeVersion(recipeId, 1);
+  assert.equal(v1.version, 1);
+  assert.deepEqual(v1.selectedOptions, { sparks: '2', drafter: 'v80' });
+  assert.deepEqual(installed(v1), installed(resolved({ sparks: '2', drafter: 'v80' })));
 });
 
 test('four Sparks with dflash2 install what the 0.3.1 TP-4 recipe installs, under one name', async () => {
@@ -99,7 +125,7 @@ test('each drafter is acquired, mounted and served from its pin, at either size'
       assert.ok(args.includes(`DRAFTER_PATH=\${modelRoot}/${directory}`));
       assert.ok(args.includes(`type=bind,src=\${modelRoot}/${directory},dst=\${modelRoot}/${directory},readonly`));
       assert.ok(
-        !args.some((arg) => /DFlash2(-enntity-v80)?[,/]/.test(arg) && !arg.includes(directory)),
+        !args.some((arg) => /DFlash2(-enntity(-v80)?)?[,/]/.test(arg) && !arg.includes(directory)),
         'no other drafter'
       );
     }
@@ -116,7 +142,7 @@ test('each drafter is acquired, mounted and served from its pin, at either size'
 });
 
 test('the pin checker takes a drafter map and a profile list, and keeps the old single forms', () => {
-  assert.throws(() => pinnedDrafter(pins, 'eagle'), /no drafter eagle; it pins v80, dflash2/);
+  assert.throws(() => pinnedDrafter(pins, 'eagle'), /no drafter eagle; it pins v81, v80, dflash2/);
   const legacy = loadPins(path.join(root, 'backends/atlas-sparkglm/pins-0.3.0-v80.json'));
   assert.deepEqual(verifyPins(legacy), []);
   assert.equal(pinnedDrafter(legacy).repo, 'Enntity/GLM-5.3-Flash-DFlash2-enntity-v80');

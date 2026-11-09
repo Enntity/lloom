@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "status": "final",
-  "note": "Pin manifest for SparkGLM 0.3.1, recipe linux-nvidia-dgx-spark-glm53-atlas version 1, for two and four Sparks and both drafters (the recipe's --drafter picks one of drafters). Engine: Enntity/atlas spark, Atlas-Inf main 2f9c37083 (carries #321, #322 and #323; no open Enntity PRs). image.reference is the GHCR manifest digest; the tag is the first 12 characters of the sparkglm install/ tree. Qualified at TP-2 with v80 on 2026-11-03 against 0.3.0 (identical greedy output and prompt logprobs); not yet run at TP-4.",
+  "note": "Pin manifest for SparkGLM 0.3.1, recipe linux-nvidia-dgx-spark-glm53-atlas version 1, for two and four Sparks and its drafters (the recipe's --drafter picks one of drafters; v81 was added for recipe version 2, and v80 stays pinned under the repository's earlier name, which redirects, so installed copies keep their folder). Engine: Enntity/atlas spark, Atlas-Inf main 2f9c37083 (carries #321, #322 and #323; no open Enntity PRs). image.reference is the GHCR manifest digest; the tag is the first 12 characters of the sparkglm install/ tree. Qualified at TP-2 with v80 on 2026-11-03 against 0.3.0 (identical greedy output and prompt logprobs); not yet run at TP-4.",
   "source": {
     "repo": "Enntity/sparkglm",
     "revision": "33fe02f83a9edf96ae38ebe4fc6a8ec8e7603f90",
@@ -30,6 +30,10 @@
     "revision": "76348ddb2be2e35e39ecfc00e75dc07703f4f3d5"
   },
   "drafters": {
+    "v81": {
+      "repo": "Enntity/GLM-5.3-Flash-DFlash2-enntity",
+      "revision": "ee5ed56e3ed2e59fd2d5177fe6773b2f6fb4aa80"
+    },
     "v80": {
       "repo": "Enntity/GLM-5.3-Flash-DFlash2-enntity-v80",
       "revision": "8416cdfbf4cfb302b86a058cb5f5b89f891350c0"
