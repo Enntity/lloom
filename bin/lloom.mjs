@@ -274,7 +274,7 @@ ${scheduleUsage()}
 Models and clients:
   lloom route [alias [profile]] [--suspend-member model|--resume-member model] [--apply --yes]
   lloom add-model <hf-url|repo-id|local-path|ollama:tag|lmstudio:id|openai:url#model> [--backend id] [--api-key-env NAME] [--input TYPE] [--capability ID] [--tag ID] [--keep-warm] [--default] [--go|--apply --yes]
-  lloom remove-model <model-id> [--delete-files] [--apply --yes]
+  lloom remove-model <model-id> [--delete-files] [--timeout-ms N] [--apply --yes]
   lloom integrations [client-id|all] [--home path] [--generated-root path]
   lloom integrate retarget --file PATH --from-url ORIGIN --to-url ORIGIN [--expect-file HASH --apply --yes]
   lloom integrate [client-id|all] [--home path] [--generated-root path] [--apply --yes]
@@ -1212,6 +1212,11 @@ function gatewayProcessPaths(configPath) {
     logPath: path.join(root, 'lloom-gateway.log'),
     pidPath: path.join(root, 'lloom-gateway.pid')
   };
+}
+
+function positiveIntegerArg(args, flag, defaultValue) {
+  const value = Number(argValue(args, flag));
+  return Number.isInteger(value) && value > 0 ? value : defaultValue;
 }
 
 async function startGatewayBackground(configPath, { requireOwned = false } = {}) {
@@ -2196,12 +2201,19 @@ async function main() {
       }
       const apply = hasFlag(args, '--apply');
       const localManager = runtimeManagerForCli(config);
-      let gatewayStatus = null;
-      try {
-        gatewayStatus = await gatewayRequest(config, '/gateway/status');
-      } catch (error) {
-        if (error?.kind !== 'refused') throw error;
-      }
+      // Fleet status collection can exceed the client's two-second default on a
+      // cold multi-node head; allow an explicit override and use a longer fleet
+      // default. Auth/timeout failures are still fatal, never "absent gateway".
+      const gatewayTimeoutMs = positiveIntegerArg(args, '--timeout-ms', 30000);
+      const readGatewayStatus = async () => {
+        try {
+          return await gatewayRequest(config, '/gateway/status', { timeoutMs: gatewayTimeoutMs });
+        } catch (error) {
+          if (error?.kind !== 'refused') throw error;
+          return null;
+        }
+      };
+      let gatewayStatus = await readGatewayStatus();
       const runtimeStatus = gatewayStatus?.runtimeManager ?? (await localManager.status());
       const report = await applyModelRemoval(config, {
         modelId,
@@ -2213,7 +2225,7 @@ async function main() {
         stopRuntime: async (runtimeId) => {
           let latestGatewayStatus = null;
           try {
-            latestGatewayStatus = await gatewayRequest(config, '/gateway/status');
+            latestGatewayStatus = await gatewayRequest(config, '/gateway/status', { timeoutMs: gatewayTimeoutMs });
           } catch (error) {
             if (error?.kind !== 'refused') throw error;
           }
