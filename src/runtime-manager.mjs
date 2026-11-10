@@ -1,3 +1,4 @@
+import { recordRuntimeProcess, recoverRuntimeProcess, forgetRuntimeProcess } from './runtime-process-ownership.mjs';
 import { spawn } from 'node:child_process';
 import { execFile } from 'node:child_process';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -2552,6 +2553,7 @@ export class RuntimeManager {
       }
     );
     owned.child = child;
+    recordRuntimeProcess(this.config, runtimeId, child.pid);
     child.on('message', (message) => {
       if (message?.type === 'memory-safety-abort')
         guard.trip(new RuntimeMemorySafetyError(message.message, { runtimeId, snapshot: message.snapshot, policy }));
@@ -2966,7 +2968,7 @@ export class RuntimeManager {
       this.record({ runtimeId, event: 'docker-stop', processResult });
       return { runtimeId, stopped: true, processResult };
     }
-    const child = this.processes.get(runtimeId);
+    const child = this.processes.get(runtimeId) ?? recoverRuntimeProcess(this.config, runtimeId);
     let processResult = null;
     if (child?.pid) {
       state.status = 'stopping';
@@ -2983,6 +2985,7 @@ export class RuntimeManager {
       this.setStatus(runtimeId, 'blocked', 'runtime-process-ownership');
       return { runtimeId, stopped: false, reason: 'runtime-process-ownership', processResult, portResult };
     }
+    forgetRuntimeProcess(this.config, runtimeId);
     state.status = 'stopped';
     state.stops += 1;
     state.stoppedAt = nowIso();
