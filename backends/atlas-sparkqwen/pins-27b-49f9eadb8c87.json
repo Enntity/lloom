@@ -1,0 +1,33 @@
+{
+  "manifestVersion": 1,
+  "status": "final",
+  "note": "Pin manifest for SparkQwen's single-Spark Qwen3.8-27B variant, recipe linux-nvidia-dgx-spark-qwen38-27b-atlas version 3. Engine: Enntity/atlas q27/ckpt-cadence (q27/conc, the series proposed upstream as Atlas-Inf/atlas#333, plus a swap-out gate that no longer evicts the cached prefix a request reuses an SSM restore ladder, and an interval SSM checkpoint at every prefill chunk end that crosses the interval). image.reference is the GHCR manifest digest; the tag is the first 12 characters of the sparkqwen install/ tree plus -27b. Output is byte-identical to serial decode at every concurrency (8 prompts x thinking on/off at C1-C64).",
+  "source": {
+    "repo": "Enntity/sparkqwen",
+    "revision": "ae68b193d009cb26d0757d2bb8bb0e52aba5c0f3",
+    "installTree": "49f9eadb8c876a760e5992ae226a8a128fbfb0f1",
+    "cloneUrl": "https://github.com/Enntity/sparkqwen.git",
+    "buildScript": "install/build.sh"
+  },
+  "engine": {
+    "repo": "Enntity/atlas",
+    "branch": "q27/ckpt-cadence",
+    "commit": "59165d7cd8ee1b79b04a751c4249e5412ed2eb64"
+  },
+  "image": {
+    "reference": "ghcr.io/enntity/atlas-sparkqwen@sha256:abd92cf2fe649a27c21ab6c86162207a480a9d98e0da76d9386a3237b464ef2b",
+    "tag": "ghcr.io/enntity/atlas-sparkqwen:49f9eadb8c87-27b",
+    "label": "io.enntity.sparkqwen.install-tree",
+    "entrypoint": "/opt/atlas/serve.py",
+    "profilePath": "/opt/atlas/profiles/27b.json",
+    "architecture": "arm64"
+  },
+  "model": {
+    "repo": "nvidia/Qwen3.8-27B-NVFP4",
+    "revision": "482ca0f3832238542f8f5295dde86b5f22711d80"
+  },
+  "overlayTool": {
+    "tandem_overlay.py": "4d827386668e88cc6a2d353058a013c60cff03682c15f0df92ef4c7d54103d16",
+    "checkpoint-27b.json": "2a01f7e49d5e55f5b21002f1c64db3dd72f44b751d53bf80a185dbbc31dd95e2"
+  }
+}
