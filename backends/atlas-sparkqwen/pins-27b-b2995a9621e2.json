@@ -1,0 +1,33 @@
+{
+  "manifestVersion": 1,
+  "status": "final",
+  "note": "Pin manifest for SparkQwen's single-Spark Qwen3.8-27B variant, recipe linux-nvidia-dgx-spark-qwen38-27b-atlas version 5. Engine: Enntity/atlas q27/conc (the series proposed upstream as Atlas-Inf/atlas#333, plus a swap-out gate that no longer evicts the cached prefix a request reuses, an SSM restore ladder, an interval SSM checkpoint at every prefill chunk end that crosses the interval, and a shared-scan BF16 decode attention that reads each KV head once for the rows of a step, set by the 27B profiles as ATLAS_ATTN_SHARED_SCAN, and a scheduler fix that keeps a request joining two or more decoding requests out of the mixed prefill-and-decode forward, where it got no drafter context). image.reference is the GHCR manifest digest; the tag is the first 12 characters of the sparkqwen install/ tree plus -27b. Output is byte-identical to serial decode alone and eight at a time (8 prompts x thinking on/off), at 211K tokens of context, and for a 21K-token request joining two decoding requests.",
+  "source": {
+    "repo": "Enntity/sparkqwen",
+    "revision": "1810c31c7f63d89f886a6cab27d7096014e2f3fa",
+    "installTree": "b2995a9621e2f748f04ac0ced8e6dd6f5c0488f3",
+    "cloneUrl": "https://github.com/Enntity/sparkqwen.git",
+    "buildScript": "install/build.sh"
+  },
+  "engine": {
+    "repo": "Enntity/atlas",
+    "branch": "q27/conc",
+    "commit": "32e4295ca8ae243b10341cd8cde2c700f96dc5f2"
+  },
+  "image": {
+    "reference": "ghcr.io/enntity/atlas-sparkqwen@sha256:5d5dddde62bee256fa60d928e698c5cd5ff2d65ec2c905caf22ae94a28f2ba23",
+    "tag": "ghcr.io/enntity/atlas-sparkqwen:b2995a9621e2-27b",
+    "label": "io.enntity.sparkqwen.install-tree",
+    "entrypoint": "/opt/atlas/serve.py",
+    "profilePath": "/opt/atlas/profiles/27b.json",
+    "architecture": "arm64"
+  },
+  "model": {
+    "repo": "nvidia/Qwen3.8-27B-NVFP4",
+    "revision": "482ca0f3832238542f8f5295dde86b5f22711d80"
+  },
+  "overlayTool": {
+    "tandem_overlay.py": "4d827386668e88cc6a2d353058a013c60cff03682c15f0df92ef4c7d54103d16",
+    "checkpoint-27b.json": "2a01f7e49d5e55f5b21002f1c64db3dd72f44b751d53bf80a185dbbc31dd95e2"
+  }
+}

@@ -1328,7 +1328,7 @@
     {
       "id": "linux-nvidia-dgx-spark-qwen38-27b-atlas",
       "path": "linux-nvidia-dgx-spark-qwen38-27b-atlas.json",
-      "currentVersion": 4,
+      "currentVersion": 5,
       "versions": [
         {
           "version": 1,
@@ -1350,6 +1350,12 @@
         },
         {
           "version": 4,
+          "path": "archive/linux-nvidia-dgx-spark-qwen38-27b-atlas/v4.json",
+          "status": "archived",
+          "notes": "SparkQwen 0.6.0 85ac2ef1e849a97802e570be492d1e4b8951df64 (install tree f6bb0a3cd40d), engine Enntity/atlas q27/conc c125bf9a87db35033939342815e239d8a36541d9, image ghcr.io/enntity/atlas-sparkqwen@sha256:06bc69b4dfc3cb4d433293d2794bfab6c5bad33a48651ac49558173f6d8dc403. A request whose prefill finished beside two or more decoding requests got no drafter context: it decoded one token a step for its whole life and its text could differ from serial decode. Version 5 fixes that."
+        },
+        {
+          "version": 5,
           "path": "linux-nvidia-dgx-spark-qwen38-27b-atlas.json",
           "status": "current"
         }
