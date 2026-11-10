@@ -1,0 +1,30 @@
+{
+  "base": "spark-fleet-base.json",
+  "name": "pair-crash",
+  "description": "spark-node-01 crashes at hour 3 with nobody watching; the TP2 lane dies with it. The node comes back at hour 7 and the operator restarts the unmanaged pair lane 30 minutes later. Without a controller (off), cognition fails over to an on-demand 27B that admission can evict for media; with the controller (auto), the 27B becomes keep-warm and the routes move.",
+  "durationHours": 12,
+  "operator": { "manualDelayMinutes": 30 },
+  "workloads": [
+    { "id": "image-quality", "demand": { "perHour": 3, "diurnal": null } },
+    { "id": "video", "demand": { "perHour": 0.5, "diurnal": null } }
+  ],
+  "events": [
+    { "atHours": 3, "type": "fail", "nodes": ["spark-node-01"] },
+    { "atHours": 7, "type": "recover", "nodes": ["spark-node-01"] },
+    {
+      "atHours": 7.5,
+      "type": "start-lane",
+      "modes": ["off"],
+      "placement": "qwen3.8-flash-next-atlas@spark-node-01+spark-node-02"
+    }
+  ],
+  "expect": {
+    "auto": {
+      "safety.memoryViolations.length": { "max": 0 },
+      "controller.urgentApplies": { "min": 1 },
+      "final.routes.chat-capable": { "equals": "qwen3.8-flash-next-atlas" },
+      "controller.stepFailures": { "max": 0 }
+    },
+    "off": { "safety.memoryViolations.length": { "max": 0 } }
+  }
+}

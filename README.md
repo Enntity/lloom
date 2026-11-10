@@ -122,6 +122,8 @@ lloom route q38fn                                                        # inspe
 lloom route q38fn --suspend-member qwen3.8-flash-next --apply --yes      # keep stable traffic on cloud
 lloom runtime-stop qwen38-flash-next-cluster                             # stop local TP-2 after suspension
 lloom route q38fn --resume-member qwen3.8-flash-next --apply --yes       # restore preferred-local recovery
+lloom pool plan --cordon spark-node-02                                   # dry-run placement across the cluster
+lloom pool members                                                       # nodes that joined with `lloom pool join`
 lloom integrate omp --apply --yes
 lloom add-model mlx-community/Qwen3.6-27B-OptiQ-4bit --keep-warm --default --go           # Mac: install, download, start
 lloom remove-model mlx-community/Qwen3.6-27B-OptiQ-4bit                                  # preview safe cleanup

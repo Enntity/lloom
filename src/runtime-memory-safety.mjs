@@ -30,14 +30,22 @@ export class MemorySafetyConfigError extends Error {
   }
 }
 
+// The host utilization at which the guard aborts a load, or null when the
+// guard is off. Admission and pool planning keep below it.
+export function memorySafetyCeiling(runtimePolicy = {}) {
+  const input = runtimePolicy?.memorySafety ?? {};
+  if (input.mode === 'yolo') return null;
+  return Math.min(input.maxMemoryUtilization ?? 0.9, runtimePolicy?.maxMemoryUtilization ?? 0.9);
+}
+
 export function memorySafetyPolicy(config, totalMemoryGb = os.totalmem() / GiB) {
   const input = config.runtimePolicy?.memorySafety ?? {};
   const configuredReserve = config.runtimePolicy?.reserveMemoryGb;
   const minAvailableMemoryGb = input.minAvailableMemoryGb ?? Math.min(configuredReserve ?? 8, totalMemoryGb * 0.15);
-  const maxMemoryUtilization = Math.min(
-    input.maxMemoryUtilization ?? 0.9,
-    config.runtimePolicy?.maxMemoryUtilization ?? 0.9
-  );
+  const maxMemoryUtilization = memorySafetyCeiling({
+    ...config.runtimePolicy,
+    memorySafety: { ...input, mode: undefined }
+  });
   const pollIntervalMs = input.pollIntervalMs ?? 250;
   const mode = input.mode ?? 'enforce';
   if (

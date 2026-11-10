@@ -83,6 +83,16 @@ export function memoryDomainsForProfile(profile = {}) {
   return domains;
 }
 
+// Host memory LLooM may plan into: an explicit budget, else a utilization
+// ceiling, else capacity minus a reserve. Admission and pool planning share it.
+export function memoryBudgetGb({ totalMemoryGb, memoryBudgetGb, maxMemoryUtilization, reserveMemoryGb = 8 } = {}) {
+  const explicit = finiteNumber(memoryBudgetGb);
+  if (explicit != null) return explicit;
+  const total = finiteNumber(totalMemoryGb) ?? 0;
+  const utilization = finiteNumber(maxMemoryUtilization);
+  return utilization != null ? total * utilization : Math.max(0, total - (finiteNumber(reserveMemoryGb) ?? 0));
+}
+
 export function machineTopologyFingerprint(profile = {}) {
   const domains = memoryDomainsForProfile(profile)
     .map(({ availableGb: _availableGb, ...domain }) => domain)
