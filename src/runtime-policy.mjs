@@ -679,6 +679,25 @@ export async function applyRuntimePolicyPlan(
 ) {
   if (!requestedRuntimeId) throw new Error('requested runtime id is required');
 
+  const stopOwned = async (...args) => {
+    const result = await runtimeManager.stop(...args);
+    if (result?.stopped === false && !['already-stopped', 'container-missing'].includes(result.reason)) {
+      throw new RuntimeAdmissionError(`Runtime ${args[0]} could not be stopped: ${result.reason}`, {
+        code: 'runtime_stop_failed'
+      });
+    }
+    return result;
+  };
+  const startReady = async (...args) => {
+    const result = await runtimeManager.start(...args);
+    if (result?.healthy === false) {
+      throw new RuntimeAdmissionError(`Runtime ${args[0]} failed readiness: ${result.reason ?? 'not healthy'}`, {
+        code: 'runtime_warmup_failed'
+      });
+    }
+    return result;
+  };
+
   const applyPlan = async (admissionSignal) => {
     // Use the freshest runtime manager config inside the admission mutex so
     // that config toggles/reloads queued behind an earlier admission cannot
@@ -707,10 +726,11 @@ export async function applyRuntimePolicyPlan(
     let liveConfig = readLiveConfig();
     admissionSignal?.throwIfAborted?.();
     assertFreshGuard();
-    const status = await runtimeManager.status();
+    const status = await runtimeManager.status({ refresh: !dryRun });
     liveConfig = readLiveConfig();
     assertFreshGuard();
-    if (runtimeManager.clusterCoordinator) status.cluster = await runtimeManager.clusterCoordinator.status();
+    if (runtimeManager.clusterCoordinator)
+      status.cluster = await runtimeManager.clusterCoordinator.status({ refresh: !dryRun, localRuntimeStatus: status });
     liveConfig = readLiveConfig();
     assertFreshGuard();
     planSource = liveConfig;
@@ -769,7 +789,7 @@ export async function applyRuntimePolicyPlan(
         dryRun: false,
         plan,
         results: [
-          await runtimeManager.start(requestedRuntimeId, {
+          await startReady(requestedRuntimeId, {
             force,
             warmup,
             reason,
@@ -870,7 +890,7 @@ export async function applyRuntimePolicyPlan(
           results.push({
             ...action,
             status: 'applied',
-            result: await runtimeManager.stop(action.runtimeId, { requestedBy: requesterNode })
+            result: await stopOwned(action.runtimeId, { requestedBy: requesterNode })
           });
         } finally {
           runtimeManager.resumeRuntime?.(action.runtimeId);
@@ -881,7 +901,7 @@ export async function applyRuntimePolicyPlan(
         results.push({
           ...action,
           status: 'applied',
-          result: await runtimeManager.start(action.runtimeId, {
+          result: await startReady(action.runtimeId, {
             force,
             warmup,
             reason,
@@ -898,7 +918,7 @@ export async function applyRuntimePolicyPlan(
         runtimeId: requestedRuntimeId,
         reason: 'already-admitted',
         status: 'applied',
-        result: await runtimeManager.start(requestedRuntimeId, {
+        result: await startReady(requestedRuntimeId, {
           force,
           warmup,
           reason,

@@ -60,15 +60,15 @@ test('additive init refreshes metadata on an owned external model', () => {
   assert.equal(derived.models[0].recipe.version, 2);
 });
 
-test('additive init leaves an unrelated external model untouched', () => {
+test('additive init reports unowned external metadata instead of silently accepting it', () => {
   const before = externalConfig();
   before.models[0].recipe = { id: 'someone-elses-recipe', version: 1 };
-  const derived = deriveUserConfig(before, recipe(), { additive: true, modelRoot: '/tmp/lloom-ext' });
-
-  // No runtime is associated, the model is not owned by this recipe, and it is
-  // not a media recipe — so its metadata is preserved verbatim.
-  assert.equal(derived.models[0].contextWindow, 32768, 'an operator-owned route must not be overwritten');
-  assert.deepEqual(derived.models[0].capabilities, ['chat']);
+  const snapshot = structuredClone(before);
+  assert.throws(
+    () => deriveUserConfig(before, recipe(), { additive: true, modelRoot: '/tmp/lloom-ext' }),
+    /cannot be refreshed without recipe ownership/
+  );
+  assert.deepEqual(before, snapshot);
 });
 
 test('non-additive init does not refresh an external model', () => {

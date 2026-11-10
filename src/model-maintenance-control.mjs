@@ -181,10 +181,10 @@ export function createModelMaintenanceController({
       });
     }
     for (const id of ownerIds) {
-      // A restarted gateway no longer tracks the orphaned runtime process, so
-      // the stop must also reclaim the configured port; otherwise the surviving
-      // backend keeps serving and the suspend cannot be confirmed.
-      await manager.stop(id, { requestedBy: opts.requestedBy, cleanupPort: true });
+      const result = await manager.stop(id, { requestedBy: opts.requestedBy });
+      if (result?.stopped === false && !['already-stopped', 'container-missing'].includes(result.reason)) {
+        throw new Error(`runtime ${id} could not be stopped: ${result.reason}`);
+      }
     }
     const clean = await allStopped(ownerIds, getConfig());
     if (!clean) {

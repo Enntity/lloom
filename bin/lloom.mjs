@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { recordGatewayProcess, cleanupGatewayProcesses } from '../src/gateway-process-ownership.mjs';
+import { applyArtifactCleanup } from '../src/artifact-cleanup.mjs';
+import { replaceModelRoute } from '../src/model-route-replacement.mjs';
 import { spawn } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -134,6 +137,9 @@ const COMMAND_REGISTRY = [
   { name: 'serve', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'models', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'suspend', aliases: [], tier: 'primary', needsInstalledConfig: true },
+  { name: 'gateway-orphans', aliases: [], tier: 'advanced', needsInstalledConfig: false },
+  { name: 'artifacts', aliases: [], tier: 'advanced', needsInstalledConfig: false },
+  { name: 'replace-model-route', aliases: [], tier: 'advanced', needsInstalledConfig: true },
   { name: 'resume', aliases: [], tier: 'primary', needsInstalledConfig: true },
   { name: 'route', aliases: ['routing'], tier: 'primary', needsInstalledConfig: true },
   { name: 'schedule', aliases: [], tier: 'primary', needsInstalledConfig: false },
@@ -225,6 +231,9 @@ Primary commands:
   lloom job start <title>          Report a long-running job; returns its id
   lloom integrate <client|all>     Write client configs (omp, opencode, codex, …)
   lloom add-model <ref>            Import an ad hoc model (dry-run; add --apply --yes)
+  lloom artifacts --manifest FILE [--expect-plan DIGEST --apply --yes]
+  lloom gateway-orphans [--apply --yes]
+  lloom replace-model-route ID --backend ID --upstream-model MODEL [--apply --yes]
   lloom remove-model <model-id>    Remove a model and its dedicated config resources
   lloom voices                     List installed named voices (clone profiles)
   lloom voice-install <id>         Install a named voice from a reference clip
@@ -1278,6 +1287,13 @@ async function startGatewayBackground(configPath, { requireOwned = false } = {})
     closeSync(logFd);
   }
 
+  const receipt = recordGatewayProcess({
+    pid: child.pid,
+    executable: process.execPath,
+    cliPath: __filename,
+    configPath,
+    port: gatewayConfig.server?.port ?? 8100
+  });
   writeFileSync(paths.pidPath, `${child.pid}\n`);
   const health = await waitGatewayHealth(gatewayConfig);
   if (!health?.ok) {
@@ -1294,6 +1310,7 @@ async function startGatewayBackground(configPath, { requireOwned = false } = {})
     throw new Error('Another server answered on the gateway port. The installed gateway has not been verified.');
   return {
     status: 'started',
+    receiptPath: receipt.receiptPath,
     url,
     pid: child.pid,
     health,
@@ -1486,6 +1503,44 @@ async function main() {
   currentCliConfig = config;
 
   const handlers = {
+    'gateway-orphans': async ({ args }) =>
+      console.log(
+        JSON.stringify(
+          cleanupGatewayProcesses({ apply: hasFlag(args, '--apply'), yes: hasFlag(args, '--yes') }),
+          null,
+          2
+        )
+      ),
+    artifacts: async ({ args }) => {
+      const manifest = argValue(args, '--manifest');
+      if (!manifest) throw new Error('artifacts requires --manifest FILE');
+      console.log(
+        JSON.stringify(
+          await applyArtifactCleanup(manifest, {
+            apply: hasFlag(args, '--apply'),
+            yes: hasFlag(args, '--yes'),
+            expectedDigest: argValue(args, '--expect-plan')
+          }),
+          null,
+          2
+        )
+      );
+    },
+    'replace-model-route': async ({ args, config }) => {
+      console.log(
+        JSON.stringify(
+          await replaceModelRoute(config, {
+            modelId: positional(args)[1],
+            backendId: argValue(args, '--backend'),
+            upstreamModel: argValue(args, '--upstream-model'),
+            apply: hasFlag(args, '--apply'),
+            yes: hasFlag(args, '--yes')
+          }),
+          null,
+          2
+        )
+      );
+    },
     'node-agent': async ({ args }) => {
       const result = await runNodeAgentCli({
         argv: positional(args)
@@ -2258,15 +2313,11 @@ async function main() {
           if (activeRequests > 0) {
             throw new Error(`runtime ${runtimeId} has ${activeRequests} active request(s); wait for them to finish`);
           }
-          // Removal only stops a runtime the gateway reports as loaded, so the
-          // port belongs to this model's process (possibly an orphan of a
-          // previous gateway incarnation); reclaim it along with the record.
           return (
             (await gatewayRequest(config, `/gateway/runtimes/${encodeURIComponent(runtimeId)}/stop`, {
               method: 'POST',
-              fallbackOnRefused: true,
-              body: { cleanupPort: true }
-            })) ?? localManager.stop(runtimeId, { cleanupPort: true })
+              fallbackOnRefused: true
+            })) ?? localManager.stop(runtimeId)
           );
         }
       });
@@ -2906,6 +2957,7 @@ async function main() {
               namespace: argValue(args, '--namespace') ?? nodeId,
               merge: hasFlag(args, '--merge'),
               includeExternal: hasFlag(args, '--include-external'),
+              reconcileImports: hasFlag(args, '--reconcile-imports'),
               timeoutMs,
               apply: hasFlag(args, '--apply'),
               yes: hasFlag(args, '--yes')

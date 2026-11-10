@@ -16,7 +16,7 @@ import {
   runtimeReadinessScope,
   runtimeResourcesByNode
 } from './cluster.mjs';
-import { cleanupPortListener, terminateProcessTree } from './process-control.mjs';
+import { findPortListenerPids, terminateProcessTree } from './process-control.mjs';
 import { memorySafetyPolicy, createMemorySafetyGuard, RuntimeMemorySafetyError } from './runtime-memory-safety.mjs';
 import { readHostMemory } from './host-memory.mjs';
 import { createRuntimeMemoryUsageSampler } from './runtime-memory-usage.mjs';
@@ -1043,7 +1043,13 @@ export class RuntimeManager {
   // pinned to required nodes; this method never performs a cluster-wide sweep.
   async runtimeServingHealthy(runtimeId, nodeEvidence = {}) {
     const runtime = this.getRuntime(runtimeId);
-    if (!runtime || runtime.enabled !== true || this.stateFor(runtimeId).status === 'warming') return false;
+    if (
+      !runtime ||
+      runtime.enabled !== true ||
+      this.stateFor(runtimeId).status === 'warming' ||
+      this.warmupFailed(runtimeId)
+    )
+      return false;
     const placement = runtimePlacement(runtime, this.config);
 
     if (placement.mode === 'distributed') {
@@ -1096,17 +1102,22 @@ export class RuntimeManager {
     }
   }
 
+  warmupFailed(runtimeId) {
+    const result = this.stateFor(runtimeId).lastWarmup;
+    return Boolean(this.getRuntime(runtimeId)?.warmup?.url && result?.warmed === false);
+  }
+
   async isHealthy(runtimeId) {
     const runtime = this.getRuntime(runtimeId);
     if (!runtime) return false;
-    if (this.stateFor(runtimeId).status === 'warming') return false;
+    if (this.stateFor(runtimeId).status === 'warming' || this.warmupFailed(runtimeId)) return false;
     const distributed = runtimePlacement(runtime, this.config).mode === 'distributed';
     const healthy =
       (await this.distributedServingOwnership(runtime)) &&
       (await (distributed && runtime.healthUrl
         ? healthOk(runtime.healthUrl, runtimeHealthTimeoutMs(runtime), runtime.healthModel)
         : runtimeHealthOk(runtime)));
-    if (this.stateFor(runtimeId).status === 'warming') return false;
+    if (this.stateFor(runtimeId).status === 'warming' || this.warmupFailed(runtimeId)) return false;
     if (healthy) return true;
     // Distributed serving health is owned by the configured logical endpoint.
     // When a logical healthUrl is configured, an unhealthy probe fails closed:
@@ -1340,7 +1351,7 @@ export class RuntimeManager {
     return aborted;
   }
 
-  async status({ localOnly = false, includeMemoryUsage = false } = {}) {
+  async status({ localOnly = false, includeMemoryUsage = false, refresh = false } = {}) {
     const runtimes = {};
     const keepWarm = new Set(this.keepWarmRuntimeIds());
     const preferredWarm = new Set(this.preferredWarmRuntimeIds());
@@ -1356,7 +1367,7 @@ export class RuntimeManager {
       if (localOnly && !isLocal) continue;
       if (isLocal) localRuntimeIds.push(runtimeId);
       if (!isLocal && this.clusterCoordinator) {
-        if (!remoteNodes.has(nodeId)) remoteNodes.set(nodeId, this.clusterCoordinator.nodeStatus(nodeId));
+        if (!remoteNodes.has(nodeId)) remoteNodes.set(nodeId, this.clusterCoordinator.nodeStatus(nodeId, { refresh }));
         const node = await remoteNodes.get(nodeId);
         const remote = node.runtimeManager?.runtimes?.[runtimeId];
         const gatewayState = this.stateFor(runtimeId);
@@ -1388,7 +1399,8 @@ export class RuntimeManager {
       }
       const state = this.stateFor(runtimeId);
       const process = this.processes.get(runtimeId);
-      const healthy = await runtimeHealthOk(runtime);
+      const live = await runtimeHealthOk(runtime);
+      const healthy = live && !this.warmupFailed(runtimeId);
       const container = runtimeAdapter(runtime) === 'docker' ? await dockerContainerState(runtime) : null;
       let status = state.status;
       if (state.status === 'queued') {
@@ -1408,9 +1420,11 @@ export class RuntimeManager {
       } else if (container?.exists) {
         status = container.status;
       }
+      if (this.warmupFailed(runtimeId)) status = 'failed';
       runtimes[runtimeId] = {
         ...compactRuntime(runtimeId, runtime, this.config),
         pid: process?.pid ?? null,
+        live,
         healthy,
         status,
         keepWarm: keepWarm.has(runtimeId),
@@ -2085,6 +2099,10 @@ export class RuntimeManager {
           results.push({ runtimeId, started: false, reason: 'runtime-disabled' });
           continue;
         }
+        if (maintenanceBlocksRouting(nextConfig, runtimeId)) {
+          results.push({ runtimeId, started: false, reason: 'maintenance' });
+          continue;
+        }
         const ownership = keepWarmOwnership(nextConfig, runtimeId, { nodeId, leaderNode });
         if (current.keepWarm === true && !ownership.owned) {
           results.push({ runtimeId, started: false, reason: ownership.reason });
@@ -2249,7 +2267,12 @@ export class RuntimeManager {
             healthy: true,
             distributed: true,
             reason: 'startup-adopted',
-            ...(warmupResult ? { warmup: warmupResult } : {})
+            ...(warmupResult
+              ? {
+                  warmup: warmupResult,
+                  ...(this.warmupFailed(runtimeId) ? { healthy: false, reason: 'warmup-failed' } : {})
+                }
+              : {})
           };
         }
         if (force || hasLoadedMember) {
@@ -2291,7 +2314,12 @@ export class RuntimeManager {
           healthy: true,
           distributed: true,
           members: started,
-          ...(warmupResult ? { warmup: warmupResult } : {})
+          ...(warmupResult
+            ? {
+                warmup: warmupResult,
+                ...(this.warmupFailed(runtimeId) ? { healthy: false, reason: 'warmup-failed' } : {})
+              }
+            : {})
         };
       } catch (error) {
         for (const member of [...placement.members].sort((left, right) => right.order - left.order)) {
@@ -2336,7 +2364,12 @@ export class RuntimeManager {
         started: false,
         healthy: !warmupFailed,
         reason: warmupFailed ? 'warmup-failed' : 'already-healthy',
-        ...(warmupResult ? { warmup: warmupResult } : {})
+        ...(warmupResult
+          ? {
+              warmup: warmupResult,
+              ...(this.warmupFailed(runtimeId) ? { healthy: false, reason: 'warmup-failed' } : {})
+            }
+          : {})
       };
     }
 
@@ -2472,7 +2505,12 @@ export class RuntimeManager {
         ...result,
         started: true,
         containerName: dockerContainerName(runtime),
-        ...(warmupResult ? { warmup: warmupResult } : {})
+        ...(warmupResult
+          ? {
+              warmup: warmupResult,
+              ...(this.warmupFailed(runtimeId) ? { healthy: false, reason: 'warmup-failed' } : {})
+            }
+          : {})
       };
     }
 
@@ -2600,7 +2638,9 @@ export class RuntimeManager {
       ...result,
       started: true,
       pid: child.pid,
-      ...(warmupResult ? { warmup: warmupResult } : {})
+      ...(warmupResult
+        ? { warmup: warmupResult, ...(this.warmupFailed(runtimeId) ? { healthy: false, reason: 'warmup-failed' } : {}) }
+        : {})
     };
   }
 
@@ -2703,7 +2743,7 @@ export class RuntimeManager {
         event: 'warmup',
         bodyPreview: text.slice(0, 300)
       });
-      this.setStatus(runtimeId, 'running', response.ok ? null : 'warmup-failed');
+      this.setStatus(runtimeId, response.ok ? 'running' : 'failed', response.ok ? null : 'warmup-failed');
       return result;
     } catch (error) {
       if (signal?.aborted) throw signal.reason ?? error;
@@ -2715,7 +2755,7 @@ export class RuntimeManager {
       };
       state.lastWarmup = result;
       this.record({ ...result, event: 'warmup' });
-      this.setStatus(runtimeId, 'running', 'warmup-failed');
+      this.setStatus(runtimeId, 'failed', 'warmup-failed');
       return result;
     }
   }
@@ -2828,7 +2868,7 @@ export class RuntimeManager {
     return this.withMutationScope(deploymentFenceToken, () => this.stopWithScope(runtimeId, options));
   }
 
-  async stopWithScope(runtimeId, { requestedBy, cleanupPort } = {}) {
+  async stopWithScope(runtimeId, { requestedBy } = {}) {
     this.assertNotStandby('runtime stop');
     const deploymentFenceToken = this.captureDeploymentMutation(`runtime stop (${runtimeId ?? 'unknown'})`);
     const requesterNode = this.assertRuntimeControl(runtimeId, requestedBy);
@@ -2841,8 +2881,7 @@ export class RuntimeManager {
         runtimeId,
         () =>
           this.stopUnlocked(runtimeId, {
-            requestedBy: requesterNode,
-            ...(cleanupPort === true ? { cleanupPort } : {})
+            requestedBy: requesterNode
           }),
         { allowDuringShutdown: true }
       )
@@ -2878,7 +2917,7 @@ export class RuntimeManager {
     };
   }
 
-  async stopUnlocked(runtimeId, { requestedBy, cleanupPort } = {}) {
+  async stopUnlocked(runtimeId, { requestedBy } = {}) {
     this.assertNotStandby('runtime stop');
     this.captureDeploymentMutation(`runtime stop (${runtimeId ?? 'unknown'})`);
     const requesterNode = this.assertRuntimeControl(runtimeId, requestedBy);
@@ -2894,6 +2933,11 @@ export class RuntimeManager {
           result: await this.stop(member.runtime, { requestedBy: requesterNode })
         });
       }
+      const failed = members.filter(
+        (member) =>
+          member.result?.stopped === false && !['already-stopped', 'container-missing'].includes(member.result.reason)
+      );
+      if (failed.length) return { runtimeId, stopped: false, reason: 'member-stop-failed', distributed: true, members };
       this.setStatus(runtimeId, 'stopped');
       state.stops += 1;
       state.stoppedAt = nowIso();
@@ -2931,17 +2975,13 @@ export class RuntimeManager {
       processResult = await terminateProcessTree([child.pid], { termTimeoutMs: 3000 });
       this.processes.delete(runtimeId);
     }
-    // Port cleanup without a tracked child kills whatever process holds the
-    // configured port: for a managed runtime stopped by request that is the
-    // expected repair of an orphan left by a previous gateway incarnation, but
-    // for a stale record shared with another live gateway it would destroy
-    // that gateway's server. The caller opts in only when it has verified the
-    // port is not held by a foreign gateway (see remove-model's
-    // externalPortListeners check); ordinary stops and fleet maintenance clean
-    // up ports only through the tracked process tree.
-    let portResult = null;
-    if (runtime?.port && (child?.pid || cleanupPort === true)) {
-      portResult = await cleanupPortListener(runtime.port);
+    // A port and a successful health probe are not process ownership. Only
+    // terminate the tracked process tree; leave foreign/rebound listeners alone.
+    const listeners = runtime?.port ? await findPortListenerPids(runtime.port) : [];
+    const portResult = runtime?.port ? { port: runtime.port, survivors: listeners } : null;
+    if (listeners.length || processResult?.survivors?.length || processResult?.failed?.length) {
+      this.setStatus(runtimeId, 'blocked', 'runtime-process-ownership');
+      return { runtimeId, stopped: false, reason: 'runtime-process-ownership', processResult, portResult };
     }
     state.status = 'stopped';
     state.stops += 1;

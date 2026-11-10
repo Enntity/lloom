@@ -31,6 +31,10 @@ function modelPathCandidates(runtime, modelRoot) {
 // that no other model's runtime shares. A multi-component model (diffusion
 // weights plus text encoder plus VAE under one directory) owns several
 // payloads; returning only the first candidate orphans the rest.
+function overlaps(left, right) {
+  return left === right || left.startsWith(right + path.sep) || right.startsWith(left + path.sep);
+}
+
 function exclusiveModelPaths(runtime, otherRuntimes, modelRoot) {
   const candidates = modelPathCandidates(runtime, modelRoot);
   const exclusive = [];
@@ -38,7 +42,7 @@ function exclusiveModelPaths(runtime, otherRuntimes, modelRoot) {
   for (const candidate of candidates) {
     const resolved = path.resolve(candidate);
     const sharedBy = otherRuntimes.filter((other) =>
-      modelPathCandidates(other, modelRoot).some((otherPath) => path.resolve(otherPath) === resolved)
+      modelPathCandidates(other, modelRoot).some((otherPath) => overlaps(path.resolve(otherPath), resolved))
     );
     (sharedBy.length ? shared : exclusive).push(resolved);
   }
@@ -128,10 +132,14 @@ export function createModelRemovalPlan(
   const runtimeId = model.runtime ?? null;
   const otherModels = (config.models ?? []).filter((entry) => entry.id !== modelId);
   const backendUsers = backendId
-    ? otherModels.filter((entry) => entry.backend === backendId).map((entry) => entry.id)
+    ? otherModels
+        .filter((entry) => entry.backend === backendId || entry.targets?.some((target) => target.backend === backendId))
+        .map((entry) => entry.id)
     : [];
   const runtimeUsers = runtimeId
-    ? otherModels.filter((entry) => entry.runtime === runtimeId).map((entry) => entry.id)
+    ? otherModels
+        .filter((entry) => entry.runtime === runtimeId || entry.targets?.some((target) => target.runtime === runtimeId))
+        .map((entry) => entry.id)
     : [];
   const removeBackend = Boolean(backendId && config.backends?.[backendId] && backendUsers.length === 0);
   const removeRuntime = Boolean(runtimeId && config.runtimes?.[runtimeId] && runtimeUsers.length === 0);
@@ -145,7 +153,9 @@ export function createModelRemovalPlan(
     .map(([key]) => key);
 
   const modelRoot = config.paths?.modelRoot ?? defaultUserModelRoot();
-  const otherRuntimes = otherModels.map((entry) => config.runtimes?.[entry.runtime]).filter(Boolean);
+  const otherRuntimes = Object.entries(config.runtimes ?? {})
+    .filter(([id]) => id !== runtimeId || runtimeUsers.length > 0)
+    .map(([, runtime]) => runtime);
   const { exclusive, shared } = runtimeId
     ? exclusiveModelPaths(config.runtimes[runtimeId], otherRuntimes, modelRoot)
     : { exclusive: [], shared: [] };
@@ -270,6 +280,27 @@ export async function applyModelRemoval(
     }
   }
 
+  // Validate canonical containment before config mutation or payload deletion.
+  const root = await fs.realpath(config.paths?.modelRoot ?? defaultUserModelRoot()).catch(() => null);
+  for (const target of plan.cleanup.modelFiles ?? []) {
+    const canonical = await fs.realpath(target).catch((error) => {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    });
+    if (canonical && (!root || !canonical.startsWith(root + path.sep)))
+      throw new Error('Model payload escapes its configured root');
+    // Refuse symlinks below the root, including symlinked parent directories.
+    const relative = path.relative(path.resolve(config.paths?.modelRoot ?? defaultUserModelRoot()), target);
+    let current = path.resolve(config.paths?.modelRoot ?? defaultUserModelRoot());
+    for (const part of relative.split(path.sep)) {
+      current = path.join(current, part);
+      const stat = await fs.lstat(current).catch((error) => {
+        if (error.code === 'ENOENT') return null;
+        throw error;
+      });
+      if (stat?.isSymbolicLink()) throw new Error('Model payload crosses a symlink');
+    }
+  }
   const backupPath = `${configPath}.bak-${new Date().toISOString().replace(/[:.]/g, '-')}`;
   const temporaryPath = `${configPath}.tmp-${process.pid}`;
   await fs.copyFile(configPath, backupPath);

@@ -1140,6 +1140,17 @@ function ensureRecipeConfigEntries(
       // the model's recorded recipe, so an unrelated operator route is never
       // touched.
       adoptRecipeModel(existingModel, materializedModel, recipe);
+    } else if (
+      additive &&
+      !existingModel.runtime &&
+      !existingModel.federated &&
+      backendId !== 'comfyui-media' &&
+      (existingModel.contextWindow !== materializedModel.contextWindow ||
+        JSON.stringify(existingModel.capabilities) !== JSON.stringify(materializedModel.capabilities))
+    ) {
+      throw new Error(
+        `Model ${modelId} metadata cannot be refreshed without recipe ownership; use replace-model-route or an explicit new gateway model ID`
+      );
     } else if (backendId === 'comfyui-media') {
       // Media recipes refresh their API contract when reusing a runtime
       // another recipe installed. Preserve the operator's upstream route.

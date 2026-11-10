@@ -1217,13 +1217,13 @@ export class ClusterCoordinator {
     return value;
   }
 
-  async status({ localRuntimeStatus = null, inventory = false } = {}) {
+  async status({ localRuntimeStatus = null, inventory = false, refresh = false } = {}) {
     const entries = await Promise.all(
       Object.keys(this.nodes).map(async (id) => [
         id,
         this.isLocalNode(id) && localRuntimeStatus
           ? await this.localNodeStatus({ runtimeStatus: localRuntimeStatus, includeInventory: inventory })
-          : await this.nodeStatus(id, { inventory })
+          : await this.nodeStatus(id, { inventory, refresh })
       ])
     );
     const scopes = Object.keys(this.config.runtimes ?? {})

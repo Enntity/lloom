@@ -1,5 +1,13 @@
 # Changelog
 
+## Fleet audit — 2026-11-10
+
+- Preserve maintenance during recipe reloads and refresh node capacity before admission; expose redacted admission failures in the CLI.
+- Propagate failed warmups through admission, status and routing. Stop only owned process trees and fail closed when foreign listeners remain.
+- Reconcile exclusively owned stale federation imports, replace logical model routes without deleting aliases, and retain detached gateway ownership receipts for orphan cleanup.
+- Add explicit artifact manifests for guarded legacy/cache cleanup with shared-owner preservation and exact preview digests.
+- Integrate pool planning, membership and simulation; update Undici to 8.12.4 and ESLint to 10.14.0.
+
 All notable changes to LLooM will be documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project intends to use [Semantic Versioning](https://semver.org/) for public releases.
 
 ## [Unreleased]

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { test } from 'node:test';
 
+import { applyRuntimePolicyPlan } from '../src/runtime-policy.mjs';
 import { RuntimeManager } from '../src/runtime-manager.mjs';
 
 // A managed OpenAI-compatible runtime whose catalog health is up but whose model
@@ -47,6 +48,19 @@ test('a failed explicit warmup is not flattened to healthy on an already-healthy
     assert.equal(result.reason, 'warmup-failed');
     assert.equal(result.warmup.warmed, false);
     assert.equal(result.warmup.status, 409);
+    assert.equal(await manager.isHealthy('mtp-runtime'), false);
+    const status = (await manager.status()).runtimes['mtp-runtime'];
+    assert.equal(status.live, true);
+    assert.equal(status.healthy, false);
+    assert.equal(status.status, 'failed');
+    await assert.rejects(
+      applyRuntimePolicyPlan(manager.config, manager, {
+        requestedRuntimeId: 'mtp-runtime',
+        dryRun: false,
+        yes: true
+      }),
+      /failed readiness/
+    );
   } finally {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
