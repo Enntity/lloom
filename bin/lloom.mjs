@@ -2234,11 +2234,15 @@ async function main() {
           if (activeRequests > 0) {
             throw new Error(`runtime ${runtimeId} has ${activeRequests} active request(s); wait for them to finish`);
           }
+          // Removal only stops a runtime the gateway reports as loaded, so the
+          // port belongs to this model's process (possibly an orphan of a
+          // previous gateway incarnation); reclaim it along with the record.
           return (
             (await gatewayRequest(config, `/gateway/runtimes/${encodeURIComponent(runtimeId)}/stop`, {
               method: 'POST',
-              fallbackOnRefused: true
-            })) ?? localManager.stop(runtimeId)
+              fallbackOnRefused: true,
+              body: { cleanupPort: true }
+            })) ?? localManager.stop(runtimeId, { cleanupPort: true })
           );
         }
       });

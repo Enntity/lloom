@@ -2799,7 +2799,7 @@ export class RuntimeManager {
     return this.withMutationScope(deploymentFenceToken, () => this.stopWithScope(runtimeId, options));
   }
 
-  async stopWithScope(runtimeId, { requestedBy } = {}) {
+  async stopWithScope(runtimeId, { requestedBy, cleanupPort } = {}) {
     this.assertNotStandby('runtime stop');
     const deploymentFenceToken = this.captureDeploymentMutation(`runtime stop (${runtimeId ?? 'unknown'})`);
     const requesterNode = this.assertRuntimeControl(runtimeId, requestedBy);
@@ -2808,9 +2808,15 @@ export class RuntimeManager {
     // keeps an explicit stop responsive during a long model startup.
     this.abortRuntimeTree(runtimeId, `runtime ${runtimeId} stop requested`);
     return this.withMutationScope(deploymentFenceToken, () =>
-      this.withRuntimeLifecycleLock(runtimeId, () => this.stopUnlocked(runtimeId, { requestedBy: requesterNode }), {
-        allowDuringShutdown: true
-      })
+      this.withRuntimeLifecycleLock(
+        runtimeId,
+        () =>
+          this.stopUnlocked(runtimeId, {
+            requestedBy: requesterNode,
+            ...(cleanupPort === true ? { cleanupPort } : {})
+          }),
+        { allowDuringShutdown: true }
+      )
     );
   }
 
@@ -2843,7 +2849,7 @@ export class RuntimeManager {
     };
   }
 
-  async stopUnlocked(runtimeId, { requestedBy } = {}) {
+  async stopUnlocked(runtimeId, { requestedBy, cleanupPort } = {}) {
     this.assertNotStandby('runtime stop');
     this.captureDeploymentMutation(`runtime stop (${runtimeId ?? 'unknown'})`);
     const requesterNode = this.assertRuntimeControl(runtimeId, requestedBy);
@@ -2896,12 +2902,16 @@ export class RuntimeManager {
       processResult = await terminateProcessTree([child.pid], { termTimeoutMs: 3000 });
       this.processes.delete(runtimeId);
     }
-    // Port cleanup is only safe when this gateway owns the runtime's process: a
-    // listener on the configured port may be owned by a different gateway that
-    // merely shares the port. Cleaning up without a tracked child would stop
-    // that other gateway's server while removing this one's stale record.
+    // Port cleanup without a tracked child kills whatever process holds the
+    // configured port: for a managed runtime stopped by request that is the
+    // expected repair of an orphan left by a previous gateway incarnation, but
+    // for a stale record shared with another live gateway it would destroy
+    // that gateway's server. The caller opts in only when it has verified the
+    // port is not held by a foreign gateway (see remove-model's
+    // externalPortListeners check); ordinary stops and fleet maintenance clean
+    // up ports only through the tracked process tree.
     let portResult = null;
-    if (child?.pid && runtime?.port) {
+    if (runtime?.port && (child?.pid || cleanupPort === true)) {
       portResult = await cleanupPortListener(runtime.port);
     }
     state.status = 'stopped';
