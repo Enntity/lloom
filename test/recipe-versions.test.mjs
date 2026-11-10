@@ -75,6 +75,7 @@ test('the remote member setup command carries the recipe version', () => {
 
 const ENGINE_0_5_0 = '162b4226070fbd3a75a5a0d5910f9290fa96bed2';
 const ENGINE_0_5_1 = '5f79b46ba7b0e8b14f8b2966cca9e2546f18560d';
+const ENGINE_SPARKQWEN_0_7_0 = '8a193a8667997274096cedd62b13de0d5334c079';
 
 const sparkqwen = {
   id: 'linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas',
@@ -99,11 +100,12 @@ const sparkglmTp4 = {
 };
 
 const promoted = [
-  { ...sparkqwen, version: 5, product: '0.5.1', pins: 'atlas-sparkqwen/pins-0.5.1.json', engine: ENGINE_0_5_1 },
+  { ...sparkqwen, version: 6, product: '0.7.0', pins: 'atlas-sparkqwen/pins-0.7.0.json', engine: ENGINE_SPARKQWEN_0_7_0 },
   { ...sparkglmPair, version: 4, product: '0.3.1', pins: 'atlas-sparkglm/pins-0.3.1-v80.json', engine: ENGINE_0_5_1 },
   { ...sparkglmTp4, version: 2, product: '0.3.0', pins: 'atlas-sparkglm/pins-0.3.0-tp4.json', engine: ENGINE_0_5_0 }
 ];
 const archived = [
+  { ...sparkqwen, version: 5, product: '0.5.1', pins: 'atlas-sparkqwen/pins-0.5.1.json', engine: ENGINE_0_5_1 },
   { ...sparkqwen, version: 4, product: '0.5.0', pins: 'atlas-sparkqwen/pins-0.5.0.json', engine: ENGINE_0_5_0 },
   { ...sparkglmPair, version: 3, product: '0.3.0', pins: 'atlas-sparkglm/pins-0.3.0-v80.json', engine: ENGINE_0_5_0 }
 ];

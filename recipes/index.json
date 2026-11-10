@@ -1328,7 +1328,7 @@
     {
       "id": "linux-nvidia-dgx-spark-qwen38-27b-atlas",
       "path": "linux-nvidia-dgx-spark-qwen38-27b-atlas.json",
-      "currentVersion": 5,
+      "currentVersion": 6,
       "versions": [
         {
           "version": 1,
@@ -1356,6 +1356,12 @@
         },
         {
           "version": 5,
+          "path": "archive/linux-nvidia-dgx-spark-qwen38-27b-atlas/v5.json",
+          "status": "archived",
+          "notes": "SparkQwen 0.6.1 1810c31c7f63d89f886a6cab27d7096014e2f3fa (install tree b2995a9621e2), engine Enntity/atlas q27/conc 32e4295ca8ae243b10341cd8cde2c700f96dc5f2, image ghcr.io/enntity/atlas-sparkqwen@sha256:5d5dddde62bee256fa60d928e698c5cd5ff2d65ec2c905caf22ae94a28f2ba23. The engine's content-loop watchdog and stream loop guards were on: they ended a JSON array after 48 tokens and a Go test file at about 1,700, reported as length. Version 6 turns them off."
+        },
+        {
+          "version": 6,
           "path": "linux-nvidia-dgx-spark-qwen38-27b-atlas.json",
           "status": "current"
         }
@@ -1631,7 +1637,7 @@
     {
       "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas",
       "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas.json",
-      "currentVersion": 5,
+      "currentVersion": 6,
       "versions": [
         {
           "version": 1,
@@ -1658,12 +1664,18 @@
         },
         {
           "version": 5,
+          "path": "archive/linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas/v5.json",
+          "status": "archived",
+          "notes": "SparkQwen 0.5.1 2e95e17b2f2e12fd10fce454ff5adbb32ce5ae91 (install tree 01e43f5c2eb2), engine Enntity/atlas spark 5f79b46ba7b0e8b14f8b2966cca9e2546f18560d, image ghcr.io/enntity/atlas-sparkqwen@sha256:37272dc6dcb3d1c6d4b8027b8876edf9ba36b1988d85ea6accde22848d5e11e7. Same modes and profiles as version 6; version 6 moves to SparkQwen 0.7.0, whose engine adds a snapshot spill fix for the prefix cache on disk."
+        },
+        {
+          "version": 6,
           "path": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas.json",
           "status": "current"
         }
       ],
-      "name": "2x DGX Spark Qwen3.8 Flash Next FP4-Local Atlas (SparkQwen 0.4.0)",
-      "summary": "Two-node SparkQwen 0.5.1 serving Qwen3.8-Flash-Next-FP4-Local (built-in MTP, Spark mode) from a pinned GHCR image: eight requests of up to 262K tokens, in a dedicated or a sidecars mode.",
+      "name": "2x DGX Spark Qwen3.8 Flash Next FP4-Local Atlas (SparkQwen 0.7.0)",
+      "summary": "Two-node SparkQwen 0.7.0 serving Qwen3.8-Flash-Next-FP4-Local (built-in MTP, Spark mode) from a pinned GHCR image: eight requests of up to 262K tokens, in a dedicated or a sidecars mode.",
       "tags": [
         "linux",
         "nvidia",

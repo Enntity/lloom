@@ -673,8 +673,10 @@ with `/health` and a POST warmup.
 
 ## Atlas SparkQwen
 
-`linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas` runs SparkQwen 0.5.1
-(engine Enntity/atlas `spark` @ `5f79b46b`, Atlas-Inf main `2f9c37083`) on two directly connected
+`linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas` runs SparkQwen 0.7.0
+(engine Enntity/atlas `spark` @ `8a193a86`: Atlas-Inf main `2f9c37083` plus a
+snapshot spill fix for SparkQwen's prefix cache on disk, which this recipe
+leaves off) on two directly connected
 DGX Sparks, serving `nvidia/Qwen3.8-Flash-Next-FP4-Local` at revision
 `b9ce18a6887e18c089fdea8509a33e63429a3300` as `qwen3.8-flash-next-atlas` in
 SparkQwen's Spark mode. There is no overlay conversion and no separate drafter;
@@ -693,8 +695,8 @@ lloom resume qwen3.8-flash-next-atlas --apply --yes
 ```
 
 The recipe is additive (no default model, no aliases, `keepWarm` false). Pins
-live in `backends/atlas-sparkqwen/pins-0.5.1.json` (source `Enntity/sparkqwen`
-`v0.5.1`, install tree `01e43f5c2eb2`). The GHCR manifest digest is pinned in the same manifest.
+live in `backends/atlas-sparkqwen/pins-0.7.0.json` (source `Enntity/sparkqwen`
+`v0.7.0`, install tree `5b9fecbcf5d9`). The GHCR manifest digest is pinned in the same manifest.
 `node backends/atlas-sparkqwen/verify-pins.mjs`, setup step
 `verify-atlas-pins` and `install.sh` reject missing or placeholder identities. The
 installer only pulls that digest and verifies the image's arm64 architecture,

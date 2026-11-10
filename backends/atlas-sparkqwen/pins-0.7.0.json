@@ -1,0 +1,29 @@
+{
+  "manifestVersion": 1,
+  "status": "final",
+  "note": "Pin manifest for SparkQwen 0.7.0, recipe linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas version 6. Engine: Enntity/atlas spark, 0.5.1's engine (Atlas-Inf main 2f9c37083) plus Enntity/atlas#23, which spills a snapshot's auxiliary layer state with it for the prefix cache on disk. image.reference is the GHCR manifest digest; the tag is the first 12 characters of the sparkqwen install/ tree. Measured 2026-11-10 on one pair in Spark mode with 8x262k: RigMark 9 of 9 gates twice, greedy output identical to 0.5.1 on 8 prompts, speed level with the 0.6.1 image on the same pair the same day.",
+  "source": {
+    "repo": "Enntity/sparkqwen",
+    "revision": "30fa63c2b888d17daabcad822f961df6fb7afdf0",
+    "installTree": "5b9fecbcf5d9f9318611db0f380338a3ccf37e9e",
+    "cloneUrl": "https://github.com/Enntity/sparkqwen.git",
+    "buildScript": "install/build.sh"
+  },
+  "engine": {
+    "repo": "Enntity/atlas",
+    "branch": "spark",
+    "commit": "8a193a8667997274096cedd62b13de0d5334c079"
+  },
+  "image": {
+    "reference": "ghcr.io/enntity/atlas-sparkqwen@sha256:e79f1904dfa9d5b07ab0cb6fc08cbaf17cda774bf471a6625e6e1b810f07b213",
+    "tag": "ghcr.io/enntity/atlas-sparkqwen:5b9fecbcf5d9",
+    "label": "io.enntity.sparkqwen.install-tree",
+    "entrypoint": "/opt/atlas/serve.py",
+    "profilePath": "/opt/atlas/profiles/8x262k.json",
+    "architecture": "arm64"
+  },
+  "model": {
+    "repo": "nvidia/Qwen3.8-Flash-Next-FP4-Local",
+    "revision": "b9ce18a6887e18c089fdea8509a33e63429a3300"
+  }
+}

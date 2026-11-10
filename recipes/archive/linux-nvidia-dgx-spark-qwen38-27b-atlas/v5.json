@@ -1,0 +1,426 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-dgx-spark-qwen38-27b-atlas",
+  "name": "DGX Spark Qwen3.8 27B Atlas (SparkQwen 27B)",
+  "version": 5,
+  "summary": "Qwen3.8-27B on one DGX Spark with SparkQwen's single-Spark Atlas build: exact speculative decoding with the DFlash2 drafter (DSpine beside it in the max mode), output byte-identical to serial decode at every concurrency, 262144-token context. Three modes: default (64 requests), saver (8 requests in about 78 GB) and max (both drafters, 32 requests). Additive only: no default model, no aliases.",
+  "description": "This recipe installs SparkQwen's 27B variant at the immutable product revision recorded in backends/atlas-sparkqwen/pins-27b-b2995a9621e2.json. The Atlas engine image is built from Enntity/sparkqwen by install/build.sh with SPARKQWEN_MODEL=27b and published to GHCR; LLooM commits no engine source. Setup acquires NVIDIA's checkpoint, the DFlash2 and DSpine drafters and TandemLLM's NVFP4 Gated DeltaNet and attention weights at pinned revisions (overlay and DSpine files sha256-checked), pulls the image by its manifest digest and verifies it, then builds the served checkpoint with SparkQwen's own install/tandem_overlay.py, fetched at the pinned revision, digest-checked and run inside the image with no network.",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe metadata, launcher and orchestration"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "SparkQwen 0.6.1: Enntity/sparkqwen 1810c31c7f63d89f886a6cab27d7096014e2f3fa (install tree b2995a9621e2f748f04ac0ced8e6dd6f5c0488f3), engine Enntity/atlas q27/conc @ 32e4295ca8ae243b10341cd8cde2c700f96dc5f2 (the series merged upstream as Atlas-Inf/atlas#333, plus three prefix-cache fixes for long conversations, a shared-scan decode attention that about doubles decode speed at 200K tokens of context, and a scheduler fix so a request that joins two or more decoding requests keeps its speculation; AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). Image ghcr.io/enntity/atlas-sparkqwen:b2995a9621e2-27b, addressed by its GHCR manifest digest. Profiles ship in the image as /opt/atlas/profiles/27b.json (0.85 GPU memory utilization, 64 sequences), 27b-saver.json (0.59, 8) and 27b-max.json (0.84, 32, both drafters), all at 262144 tokens with BF16 KV. Model nvidia/Qwen3.8-27B-NVFP4 revision 482ca0f3832238542f8f5295dde86b5f22711d80; drafters incoai/Qwen3.8-27B-DFlash2 @ 015e795645c74b1a0eeef3b570031fb62e769bc5 and tencent/Qwen3.8-27B-DSpine-b16 @ ea909c0f5fab8865f9e14600334f55f7ce47308f; overlay weights 0xBakeer/TandemLLM-Qwen3.8-27B-NVFP4 @ ab09c92fa4a90d5cfd9d012fe92831c886efd9b2 (Apache-2.0, weights only)."
+  },
+  "links": [
+    {
+      "rel": "upstream",
+      "href": "https://github.com/Enntity/sparkqwen/tree/1810c31c7f63d89f886a6cab27d7096014e2f3fa"
+    },
+    {
+      "rel": "engine",
+      "href": "https://github.com/Enntity/atlas/tree/32e4295ca8ae243b10341cd8cde2c700f96dc5f2"
+    },
+    {
+      "rel": "engine-upstream",
+      "href": "https://github.com/Atlas-Inf/atlas/pull/333"
+    },
+    {
+      "rel": "model",
+      "href": "https://huggingface.co/nvidia/Qwen3.8-27B-NVFP4/tree/482ca0f3832238542f8f5295dde86b5f22711d80"
+    },
+    {
+      "rel": "drafter",
+      "href": "https://huggingface.co/incoai/Qwen3.8-27B-DFlash2/tree/015e795645c74b1a0eeef3b570031fb62e769bc5"
+    },
+    {
+      "rel": "drafter",
+      "href": "https://huggingface.co/tencent/Qwen3.8-27B-DSpine-b16/tree/ea909c0f5fab8865f9e14600334f55f7ce47308f"
+    },
+    {
+      "rel": "weights",
+      "href": "https://huggingface.co/0xBakeer/TandemLLM-Qwen3.8-27B-NVFP4/tree/ab09c92fa4a90d5cfd9d012fe92831c886efd9b2"
+    }
+  ],
+  "keywords": [
+    "linux",
+    "nvidia",
+    "dgx-spark",
+    "gb10",
+    "qwen3.8",
+    "27b",
+    "nvfp4",
+    "atlas",
+    "sparkqwen",
+    "dflash2",
+    "dspine",
+    "standalone"
+  ],
+  "capabilities": [
+    "chat",
+    "responses",
+    "anthropic-messages",
+    "streaming",
+    "usage",
+    "tools",
+    "structured-output",
+    "reasoning",
+    "speculative-decoding",
+    "batching",
+    "long-context"
+  ],
+  "hardware": {
+    "family": "NVIDIA DGX Spark / GB10",
+    "testedMachine": "One DGX Spark with 128 GB unified memory",
+    "notes": [
+      "Measured on one GB10, 2026-11-09, temperature 0: single-request decode 71 tok/s on code and 70 with thinking on (max mode 75.5 / 71.8); aggregate 93 tok/s at 8 requests and 180 at 64; cold TTFT 4.9 s at 8K and 20.9 s at 28K; every output byte-identical to serial decode at C1-C64.",
+      "Peak host memory: default about 111 GB, saver about 77 GB, max about 111 GB. The container is capped at 114 GiB because a GB10 that runs out of shared memory hangs instead of killing a process. In the default and max modes nothing else should use this Spark's GPU memory.",
+      "The engine serves 127.0.0.1:8893 (fixed by the image) with host networking.",
+      "Licenses: the Atlas engine in the image is AGPL-3.0-only (not included in LLooM). nvidia/Qwen3.8-27B-NVFP4, both drafters and TandemLLM's NVFP4 weights are Apache-2.0; TandemLLM's LICENSE and README are kept beside the weights for attribution."
+    ]
+  },
+  "requirements": {
+    "platforms": ["linux-arm64"],
+    "memoryGb": 112,
+    "diskGb": 70,
+    "commands": ["docker", "node", "curl"],
+    "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"]
+  },
+  "backend": {
+    "id": "docker-atlas-sparkqwen",
+    "name": "Pinned Atlas SparkQwen image",
+    "type": "openai-compatible-server"
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-docker",
+        "title": "Check Docker",
+        "action": "check-command",
+        "command": "docker",
+        "args": ["version"]
+      },
+      {
+        "id": "verify-atlas-pins",
+        "title": "Verify the SparkQwen 27B pin manifest is final",
+        "action": "command",
+        "alwaysRun": true,
+        "command": "node",
+        "args": [
+          "${repoRoot}/backends/atlas-sparkqwen/verify-pins.mjs",
+          "${repoRoot}/backends/atlas-sparkqwen/pins-27b-b2995a9621e2.json"
+        ]
+      },
+      {
+        "id": "download-atlas-model",
+        "title": "Acquire the pinned Qwen3.8-27B NVFP4 checkpoint",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "nvidia/Qwen3.8-27B-NVFP4",
+        "revision": "482ca0f3832238542f8f5295dde86b5f22711d80"
+      },
+      {
+        "id": "download-atlas-drafter",
+        "title": "Acquire the pinned DFlash2 drafter",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "incoai/Qwen3.8-27B-DFlash2",
+        "revision": "015e795645c74b1a0eeef3b570031fb62e769bc5"
+      },
+      {
+        "id": "download-atlas-dspine",
+        "title": "Acquire the pinned DSpine drafter (served in the max mode)",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "tencent/Qwen3.8-27B-DSpine-b16",
+        "revision": "ea909c0f5fab8865f9e14600334f55f7ce47308f",
+        "include": ["config.json", "model.safetensors", "LICENSE", "README.md"],
+        "integrity": {
+          "files": [
+            {
+              "path": "config.json",
+              "sizeBytes": 2302,
+              "sha256": "c2aa9e3ff22766ea7df0fa5b5f5f7d2035ae722671c6b7eb58b65578705e6815"
+            },
+            {
+              "path": "model.safetensors",
+              "sizeBytes": 4051831880,
+              "sha256": "ac90f1df842ea66b23e4224f3e86624add547526f689ffe9e9c6b7a5937116b1"
+            },
+            {
+              "path": "LICENSE",
+              "sizeBytes": 11544,
+              "sha256": "bbedc3fda3305820b977265f01b8619d87570a6739de3a5582c3464840f1e57a"
+            },
+            {
+              "path": "README.md",
+              "sizeBytes": 10628,
+              "sha256": "2df6198c3150dd9c2b65c708fc5d144c970fd90b8c1393c45a9eafe4b764ee54"
+            }
+          ]
+        }
+      },
+      {
+        "id": "download-atlas-overlay-weights",
+        "title": "Acquire TandemLLM's NVFP4 GDN and attention weights",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "0xBakeer/TandemLLM-Qwen3.8-27B-NVFP4",
+        "revision": "ab09c92fa4a90d5cfd9d012fe92831c886efd9b2",
+        "include": ["gdn.safetensors", "attn.safetensors", "LICENSE", "README.md"],
+        "integrity": {
+          "files": [
+            {
+              "path": "gdn.safetensors",
+              "sizeBytes": 3114320376,
+              "sha256": "7ac37e6ed289caf0d8c2f4a0c719570b1df17c881dbb297c4b017f3f769aa961"
+            },
+            {
+              "path": "attn.safetensors",
+              "sizeBytes": 943739392,
+              "sha256": "2898b0721452142f5d39074109d113034f96f503c4bfcdc132902f75fa23dd1e"
+            },
+            {
+              "path": "LICENSE",
+              "sizeBytes": 11544,
+              "sha256": "bbedc3fda3305820b977265f01b8619d87570a6739de3a5582c3464840f1e57a"
+            },
+            {
+              "path": "README.md",
+              "sizeBytes": 9705,
+              "sha256": "8bbd97b86b3862f9fada2ee27ffdfc5bd76daad9c63b0919a2227e4cb023528b"
+            }
+          ]
+        }
+      },
+      {
+        "id": "pull-atlas-image",
+        "title": "Pull or verify the pinned SparkQwen 27B image",
+        "action": "command",
+        "alwaysRun": true,
+        "command": "bash",
+        "args": [
+          "${repoRoot}/backends/atlas-sparkqwen/install.sh",
+          "--manifest",
+          "${repoRoot}/backends/atlas-sparkqwen/pins-27b-b2995a9621e2.json"
+        ]
+      },
+      {
+        "id": "build-atlas-overlay",
+        "title": "Build the served checkpoint with TandemLLM's GDN and attention weights",
+        "action": "command",
+        "alwaysRun": true,
+        "command": "bash",
+        "args": [
+          "${repoRoot}/backends/atlas-sparkqwen/overlay-27b.sh",
+          "--manifest",
+          "${repoRoot}/backends/atlas-sparkqwen/pins-27b-b2995a9621e2.json",
+          "--model-root",
+          "${modelRoot}"
+        ]
+      },
+      {
+        "id": "prepare-atlas-cuda-cache",
+        "title": "Create the persistent CUDA JIT cache directory",
+        "action": "command",
+        "alwaysRun": true,
+        "command": "mkdir",
+        "args": ["-p", "${installRoot}/atlas-sparkqwen-cuda-cache"]
+      }
+    ]
+  },
+  "modes": [
+    {
+      "id": "default",
+      "default": true,
+      "summary": "Profile 27b: DFlash2, 64 requests at 262144 tokens, 0.85 GPU memory utilization, 112 GB reserved.",
+      "settings": {
+        "sparkqwenProfile": "27b",
+        "sparkqwenDrafter": "dflash2",
+        "memoryGb": 112,
+        "maxActiveRequests": 64,
+        "maxQueuedRequests": 64
+      }
+    },
+    {
+      "id": "saver",
+      "summary": "Profile 27b-saver: DFlash2, 8 requests at 262144 tokens, 0.59 GPU memory utilization, 78 GB reserved; leaves room for sidecars.",
+      "settings": {
+        "sparkqwenProfile": "27b-saver",
+        "sparkqwenDrafter": "dflash2",
+        "memoryGb": 78,
+        "maxActiveRequests": 8,
+        "maxQueuedRequests": 8
+      }
+    },
+    {
+      "id": "max",
+      "summary": "Profile 27b-max: DFlash2 and DSpine routed per request, 32 requests at 262144 tokens, 0.84 GPU memory utilization, 112 GB reserved.",
+      "settings": {
+        "sparkqwenProfile": "27b-max",
+        "sparkqwenDrafter": "both",
+        "memoryGb": 112,
+        "maxActiveRequests": 32,
+        "maxQueuedRequests": 32
+      }
+    }
+  ],
+  "models": [
+    {
+      "role": "standalone-cognition",
+      "name": "Qwen3.8 27B on Atlas SparkQwen",
+      "model": "nvidia/Qwen3.8-27B-NVFP4",
+      "gatewayModel": "qwen3.8-27b-atlas",
+      "upstreamModel": "qwen3.8-27b-atlas",
+      "runtime": "qwen38-27b-atlas",
+      "backendConfig": "qwen38-27b-atlas",
+      "setDefault": false,
+      "input": ["text"],
+      "output": ["text"],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "usage",
+        "tools",
+        "structured-output",
+        "reasoning",
+        "speculative-decoding",
+        "batching",
+        "long-context"
+      ],
+      "settings": {
+        "port": 8893,
+        "baseUrl": "http://127.0.0.1:8893/v1",
+        "healthUrl": "http://127.0.0.1:8893/health",
+        "warmup": {
+          "url": "http://127.0.0.1:8893/v1/chat/completions",
+          "method": "POST",
+          "body": {
+            "model": "qwen3.8-27b-atlas",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Reply with OK."
+              }
+            ],
+            "max_tokens": 16,
+            "stream": false
+          }
+        },
+        "contextWindow": 262144,
+        "maxOutputTokens": 32768,
+        "maxActiveRequests": 64,
+        "maxQueuedRequests": 64,
+        "queueTimeoutMs": 300000,
+        "queueRetryAfterSeconds": 5,
+        "requestStartupWaitMs": 1000,
+        "startupRetryAfterSeconds": 30,
+        "healthTimeoutMs": 5000,
+        "memoryGb": 112,
+        "priority": 150,
+        "keepWarm": false,
+        "startupTimeoutMs": 1800000,
+        "timeoutMs": 3600000,
+        "watchdog": {
+          "enabled": true,
+          "failureThreshold": 2,
+          "failureWindowMs": 900000,
+          "minNoProgressMs": 1800000,
+          "cooldownMs": 600000,
+          "drainTimeoutMs": 30000,
+          "failureStatuses": [500, 502, 504]
+        },
+        "runtime": {
+          "adapter": "docker",
+          "management": "managed",
+          "containerName": "lloom-atlas-sparkqwen-27b",
+          "healthUrl": "http://127.0.0.1:8893/health",
+          "healthTimeoutMs": 5000,
+          "warmup": {
+            "url": "http://127.0.0.1:8893/v1/chat/completions",
+            "method": "POST",
+            "body": {
+              "model": "qwen3.8-27b-atlas",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "Reply with OK."
+                }
+              ],
+              "max_tokens": 16,
+              "stream": false
+            }
+          },
+          "bootstrap": {
+            "adapter": "docker",
+            "image": "ghcr.io/enntity/atlas-sparkqwen@sha256:5d5dddde62bee256fa60d928e698c5cd5ff2d65ec2c905caf22ae94a28f2ba23",
+            "pull": false,
+            "pullTimeoutMs": 3600000,
+            "createArgs": [
+              "--restart",
+              "no",
+              "--network",
+              "host",
+              "--ipc",
+              "host",
+              "--shm-size",
+              "16g",
+              "--memory",
+              "114g",
+              "--gpus",
+              "all",
+              "--security-opt",
+              "no-new-privileges=true",
+              "--stop-timeout",
+              "60",
+              "--mount",
+              "type=bind,src=${modelRoot}/nvidia--Qwen3.8-27B-NVFP4,dst=${modelRoot}/nvidia--Qwen3.8-27B-NVFP4,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/nvidia--Qwen3.8-27B-NVFP4+tandem-gdn-attn,dst=${modelRoot}/nvidia--Qwen3.8-27B-NVFP4+tandem-gdn-attn,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/incoai--Qwen3.8-27B-DFlash2,dst=${modelRoot}/incoai--Qwen3.8-27B-DFlash2,readonly",
+              "--mount",
+              "type=bind,src=${modelRoot}/tencent--Qwen3.8-27B-DSpine-b16,dst=${modelRoot}/tencent--Qwen3.8-27B-DSpine-b16,readonly",
+              "--mount",
+              "type=bind,src=${installRoot}/atlas-sparkqwen-cuda-cache,dst=/atlas-cuda-cache",
+              "-e",
+              "MODEL_PATH=${modelRoot}/nvidia--Qwen3.8-27B-NVFP4+tandem-gdn-attn",
+              "-e",
+              "DRAFT_PATH=${modelRoot}/incoai--Qwen3.8-27B-DFlash2",
+              "-e",
+              "DSPINE_PATH=${modelRoot}/tencent--Qwen3.8-27B-DSpine-b16",
+              "-e",
+              "SPARKQWEN_PROFILE=${sparkqwenProfile}",
+              "-e",
+              "SPARKQWEN_DRAFTER=${sparkqwenDrafter}",
+              "-e",
+              "SERVED_MODEL_NAME=qwen3.8-27b-atlas",
+              "-e",
+              "SPARKQWEN_TOOL_GUARD=on",
+              "-e",
+              "SPARKQWEN_TOOL_GUARD_MAX_BYTES=1048576",
+              "-e",
+              "SPARKQWEN_TOOL_GUARD_ALLOW_HOSTS=",
+              "-e",
+              "SPARKQWEN_TOOL_GUARD_DENY_HOSTS=",
+              "-e",
+              "HF_HUB_OFFLINE=1",
+              "-e",
+              "TRANSFORMERS_OFFLINE=1",
+              "-e",
+              "CUDA_CACHE_PATH=/atlas-cuda-cache",
+              "-e",
+              "CUDA_CACHE_MAXSIZE=4294967296"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
