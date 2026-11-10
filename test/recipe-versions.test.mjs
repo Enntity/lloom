@@ -100,7 +100,13 @@ const sparkglmTp4 = {
 };
 
 const promoted = [
-  { ...sparkqwen, version: 6, product: '0.7.0', pins: 'atlas-sparkqwen/pins-0.7.0.json', engine: ENGINE_SPARKQWEN_0_7_0 },
+  {
+    ...sparkqwen,
+    version: 6,
+    product: '0.7.0',
+    pins: 'atlas-sparkqwen/pins-0.7.0.json',
+    engine: ENGINE_SPARKQWEN_0_7_0
+  },
   { ...sparkglmPair, version: 4, product: '0.3.1', pins: 'atlas-sparkglm/pins-0.3.1-v80.json', engine: ENGINE_0_5_1 },
   { ...sparkglmTp4, version: 2, product: '0.3.0', pins: 'atlas-sparkglm/pins-0.3.0-tp4.json', engine: ENGINE_0_5_0 }
 ];
