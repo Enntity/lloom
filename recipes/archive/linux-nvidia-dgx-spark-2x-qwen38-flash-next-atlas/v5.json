@@ -1,0 +1,478 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas",
+  "name": "2x DGX Spark Qwen3.8 Flash Next FP4-Local Atlas (SparkQwen 0.5.1)",
+  "version": 5,
+  "summary": "Two directly connected Sparks running SparkQwen 0.5.1 on the Atlas engine over the private fabric, serving nvidia/Qwen3.8-Flash-Next-FP4-Local with its built-in MTP head: up to eight requests of up to 262144 tokens from one shared BF16 KV pool, in Spark mode. Two modes: dedicated (the pair serves Qwen alone) and sidecars (leaves memory for services such as embedding or image generation on the same Sparks). Additive only: no default model, no aliases.",
+  "description": "This recipe installs SparkQwen 0.5.1 at the immutable product revision recorded in backends/atlas-sparkqwen/pins-0.5.1.json. LLooM owns orchestration, admission, worker-first startup, readiness, routing and telemetry. The Atlas engine image is built from Enntity/sparkqwen by that repository's install/build.sh and published to GHCR; LLooM commits no engine source. The engine (Atlas-Inf/atlas plus Enntity's open Atlas-Inf PRs, on the Enntity/atlas spark branch) is AGPL-3.0-only and runs from its own container image. Setup acquires the pinned checkpoint, pulls the pinned image by its immutable manifest digest (the mutable tag is never pulled), and verifies the image's arm64 architecture, io.enntity.sparkqwen.install-tree contents label and in-image contract. The checkpoint is served as published: no overlay conversion and no separate drafter (speculation uses the checkpoint's own MTP head). Tools and reasoning are qualified by SparkQwen; structured output is implemented by the engine but untested with this model; image and short-video input are qualified by SparkQwen.",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe metadata, launcher and orchestration"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "SparkQwen 0.5.1: Enntity/sparkqwen 2e95e17b2f2e12fd10fce454ff5adbb32ce5ae91 (tag v0.5.1, install tree 01e43f5c2eb2d1d2ff35d8e9e4632c2848b00e90), engine Enntity/atlas spark @ 5f79b46ba7b0e8b14f8b2966cca9e2546f18560d (Atlas-Inf main 2f9c37083, which carries Enntity's Atlas-Inf PRs #321, #322 and #323 and the maintainers' #319 and #320; AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). The image is ghcr.io/enntity/atlas-sparkqwen:01e43f5c2eb2 (also :0.5.1), addressed by its GHCR manifest digest in pins-0.5.1.json. The engine argument vectors ship inside the image as /opt/atlas/profiles/*.json and are selected with SPARKQWEN_PROFILE: 8x262k (dedicated: eight sequences of up to 262144 tokens, BF16 KV, 0.88 GPU memory utilization) and saver-8x262k (sidecars: the same slots at 0.74, with the display carveout). Model nvidia/Qwen3.8-Flash-Next-FP4-Local revision b9ce18a6887e18c089fdea8509a33e63429a3300."
+  },
+  "links": [
+    {
+      "rel": "upstream",
+      "href": "https://github.com/Enntity/sparkqwen/tree/v0.5.1"
+    },
+    {
+      "rel": "engine",
+      "href": "https://github.com/Enntity/atlas/tree/5f79b46ba7b0e8b14f8b2966cca9e2546f18560d"
+    },
+    {
+      "rel": "engine-upstream",
+      "href": "https://github.com/Atlas-Inf/atlas"
+    },
+    {
+      "rel": "model",
+      "href": "https://huggingface.co/nvidia/Qwen3.8-Flash-Next-FP4-Local/tree/b9ce18a6887e18c089fdea8509a33e63429a3300"
+    }
+  ],
+  "keywords": [
+    "linux",
+    "nvidia",
+    "dgx-spark",
+    "cluster",
+    "qwen3.8",
+    "flash-next",
+    "nvfp4",
+    "atlas",
+    "sparkqwen",
+    "mtp"
+  ],
+  "capabilities": [
+    "chat",
+    "responses",
+    "anthropic-messages",
+    "streaming",
+    "usage",
+    "tools",
+    "structured-output",
+    "reasoning",
+    "mtp",
+    "speculative-decoding",
+    "moe",
+    "long-context"
+  ],
+  "hardware": {
+    "family": "NVIDIA DGX Spark / GB10",
+    "testedMachine": "Two directly connected DGX Spark systems",
+    "notes": [
+      "SparkQwen 0.5.1 as released, qualified on 03/04 on 2026-11-03 against 0.5.0: greedy output and prompt logprobs identical, decode, prefill and concurrency within 1% (sparkglm-research experiments/qual-20261103); the sidecars mode is the saver-8x262k profile its README documents for shared Sparks.",
+      "TP2 with expert parallelism 2 across the private ConnectX RoCE fabric. MASTER_ADDR, FABRIC_INTERFACE and FABRIC_HCA come from the cluster node config. FABRIC_HCA and NCCL_IB_HCA are the node's explicit, node-local cluster.nodes[ID].fabricHca list (exact RDMA device names, no :port syntax); LLooM requires it on every participating node and never guesses an HCA from the NIC name, and FABRIC_SIBLINGS=0 stops the engine from adding a backchannel. Explicit lists may include both verified rails.",
+      "The worker is admitted first (rank 1) and readiness-checked through its container state; the leader starts second (rank 0), serves 127.0.0.1:8893 (fixed by the image) and owns routing.",
+      "Peak container memory is capped at 114 GiB per node with the profile's 4096 MiB load-time OOM guard. In the dedicated mode nothing else should use the pair's GPU memory; the sidecars mode reserves 96 GB per Spark and leaves the rest to other admitted runtimes.",
+      "Licenses: the Atlas engine in the image is AGPL-3.0-only (not included in LLooM). nvidia/Qwen3.8-Flash-Next-FP4-Local is under the NVIDIA Open Model License per its model card; read it before use."
+    ]
+  },
+  "requirements": {
+    "platforms": [
+      "linux-arm64"
+    ],
+    "memoryGb": 114,
+    "diskGb": 140,
+    "commands": [
+      "docker",
+      "node"
+    ],
+    "accelerators": [
+      "cuda",
+      "nvidia-gpu",
+      "blackwell",
+      "gb10"
+    ],
+    "cluster": {
+      "nodes": 2,
+      "provider": "nvidia-sync",
+      "topology": "direct"
+    }
+  },
+  "backend": {
+    "id": "docker-atlas-sparkqwen",
+    "name": "Pinned Atlas SparkQwen image",
+    "type": "openai-compatible-server"
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-docker",
+        "title": "Check Docker",
+        "action": "check-command",
+        "command": "docker",
+        "args": [
+          "version"
+        ]
+      },
+      {
+        "id": "verify-atlas-pins",
+        "title": "Verify the Atlas SparkQwen pin manifest is final",
+        "action": "command",
+        "alwaysRun": true,
+        "command": "node",
+        "args": [
+          "${repoRoot}/backends/atlas-sparkqwen/verify-pins.mjs",
+          "${repoRoot}/backends/atlas-sparkqwen/pins-0.5.1.json"
+        ]
+      },
+      {
+        "id": "download-atlas-model",
+        "title": "Acquire the pinned Qwen3.8 Flash Next FP4-Local checkpoint",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "nvidia/Qwen3.8-Flash-Next-FP4-Local",
+        "revision": "b9ce18a6887e18c089fdea8509a33e63429a3300"
+      },
+      {
+        "id": "pull-atlas-image",
+        "title": "Pull or verify the pinned Atlas SparkQwen image on this node",
+        "action": "command",
+        "alwaysRun": true,
+        "command": "bash",
+        "args": [
+          "${repoRoot}/backends/atlas-sparkqwen/install.sh",
+          "--manifest",
+          "${repoRoot}/backends/atlas-sparkqwen/pins-0.5.1.json"
+        ]
+      },
+      {
+        "id": "prepare-atlas-cuda-cache",
+        "title": "Create the persistent CUDA JIT cache directory",
+        "action": "command",
+        "alwaysRun": true,
+        "command": "mkdir",
+        "args": [
+          "-p",
+          "${installRoot}/atlas-sparkqwen-cuda-cache"
+        ]
+      },
+      {
+        "id": "prepare-atlas-ple-cache",
+        "title": "Create the persistent packed PLE cache for this image and checkpoint",
+        "action": "command",
+        "alwaysRun": true,
+        "command": "mkdir",
+        "args": [
+          "-p",
+          "${installRoot}/atlas-sparkqwen-ple/37272dc6dcb3d1c6d4b8027b8876edf9ba36b1988d85ea6accde22848d5e11e7/b9ce18a6887e18c089fdea8509a33e63429a3300"
+        ]
+      }
+    ]
+  },
+  "modes": [
+    {
+      "id": "dedicated",
+      "default": true,
+      "summary": "The pair serves Qwen alone: profile 8x262k (0.88 GPU memory utilization), 114 GB reserved on each Spark.",
+      "settings": {
+        "sparkqwenProfile": "8x262k",
+        "memoryGb": 114
+      }
+    },
+    {
+      "id": "sidecars",
+      "summary": "Leaves memory for sidecar services on the same Sparks: profile saver-8x262k (0.74 GPU memory utilization, display carveout), 96 GB reserved on each Spark.",
+      "settings": {
+        "sparkqwenProfile": "saver-8x262k",
+        "memoryGb": 96
+      }
+    }
+  ],
+  "models": [
+    {
+      "role": "default",
+      "name": "Qwen3.8 Flash Next FP4-Local on Atlas SparkQwen",
+      "model": "nvidia/Qwen3.8-Flash-Next-FP4-Local",
+      "gatewayModel": "qwen3.8-flash-next-atlas",
+      "upstreamModel": "qwen3.8-flash-next-atlas",
+      "runtime": "qwen38-flash-next-atlas-cluster",
+      "backendConfig": "qwen38-flash-next-atlas",
+      "setDefault": false,
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "usage",
+        "tools",
+        "structured-output",
+        "reasoning",
+        "mtp",
+        "speculative-decoding",
+        "moe",
+        "long-context",
+        "vision"
+      ],
+      "settings": {
+        "port": 8893,
+        "baseUrl": "http://127.0.0.1:8893/v1",
+        "healthUrl": "http://127.0.0.1:8893/health",
+        "warmup": {
+          "url": "http://127.0.0.1:8893/v1/chat/completions",
+          "method": "POST",
+          "body": {
+            "model": "qwen3.8-flash-next-atlas",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Reply with OK."
+              }
+            ],
+            "max_tokens": 16,
+            "stream": false
+          }
+        },
+        "contextWindow": 262144,
+        "maxOutputTokens": 32768,
+        "maxActiveRequests": 8,
+        "maxQueuedRequests": 8,
+        "queueTimeoutMs": 300000,
+        "queueRetryAfterSeconds": 5,
+        "requestStartupWaitMs": 1000,
+        "startupRetryAfterSeconds": 30,
+        "healthTimeoutMs": 5000,
+        "memoryGb": 114,
+        "priority": 150,
+        "keepWarm": false,
+        "startupTimeoutMs": 3600000,
+        "timeoutMs": 3600000,
+        "watchdog": {
+          "enabled": true,
+          "failureThreshold": 2,
+          "failureWindowMs": 900000,
+          "minNoProgressMs": 1800000,
+          "cooldownMs": 600000,
+          "drainTimeoutMs": 30000,
+          "failureStatuses": [
+            500,
+            502,
+            504
+          ]
+        },
+        "placement": {
+          "mode": "distributed",
+          "members": [
+            {
+              "nodeRole": "worker",
+              "runtime": "qwen38-flash-next-atlas-worker",
+              "role": "worker",
+              "order": 10,
+              "healthStrategy": "container",
+              "runtimeSettings": {
+                "adapter": "docker",
+                "management": "managed",
+                "containerName": "lloom-atlas-sparkqwen-${nodeId}",
+                "warmup": false,
+                "bootstrap": {
+                  "adapter": "docker",
+                  "image": "ghcr.io/enntity/atlas-sparkqwen@sha256:37272dc6dcb3d1c6d4b8027b8876edf9ba36b1988d85ea6accde22848d5e11e7",
+                  "pull": false,
+                  "pullTimeoutMs": 3600000,
+                  "createArgs": [
+                    "--restart",
+                    "no",
+                    "--network",
+                    "host",
+                    "--ipc",
+                    "host",
+                    "--shm-size",
+                    "32g",
+                    "--memory",
+                    "114g",
+                    "--gpus",
+                    "all",
+                    "--device",
+                    "/dev/infiniband:/dev/infiniband",
+                    "--cap-add",
+                    "IPC_LOCK",
+                    "--cap-add",
+                    "SYS_NICE",
+                    "--ulimit",
+                    "memlock=-1:-1",
+                    "--security-opt",
+                    "no-new-privileges=true",
+                    "--stop-timeout",
+                    "60",
+                    "--mount",
+                    "type=bind,src=${modelRoot}/nvidia--Qwen3.8-Flash-Next-FP4-Local,dst=${modelRoot}/nvidia--Qwen3.8-Flash-Next-FP4-Local,readonly",
+                    "--mount",
+                    "type=bind,src=${installRoot}/atlas-sparkqwen-cuda-cache,dst=/atlas-cuda-cache",
+                    "--mount",
+                    "type=bind,src=${installRoot}/atlas-sparkqwen-ple/37272dc6dcb3d1c6d4b8027b8876edf9ba36b1988d85ea6accde22848d5e11e7/b9ce18a6887e18c089fdea8509a33e63429a3300,dst=/atlas-ple",
+                    "--volume",
+                    "/run/lock/sparkglm:/run/lock/sparkglm",
+                    "-e",
+                    "NODE_RANK=${nodeRank}",
+                    "-e",
+                    "MASTER_ADDR=${leaderAddress}",
+                    "-e",
+                    "MASTER_PORT=29510",
+                    "-e",
+                    "FABRIC_INTERFACE=${fabricInterface}",
+                    "-e",
+                    "FABRIC_HCA=${fabricHca}",
+                    "-e",
+                    "FABRIC_SIBLINGS=0",
+                    "-e",
+                    "MODEL_PATH=${modelRoot}/nvidia--Qwen3.8-Flash-Next-FP4-Local",
+                    "-e",
+                    "SERVED_MODEL_NAME=qwen3.8-flash-next-atlas",
+                    "-e",
+                    "SPARKQWEN_PROFILE=${sparkqwenProfile}",
+                    "-e",
+                    "SPARKQWEN_MODE=${sparkqwenMode}",
+                    "-e",
+                    "SPARKQWEN_TOOL_GUARD=on",
+                    "-e",
+                    "SPARKQWEN_TOOL_GUARD_MAX_BYTES=1048576",
+                    "-e",
+                    "SPARKQWEN_TOOL_GUARD_ALLOW_HOSTS=",
+                    "-e",
+                    "SPARKQWEN_TOOL_GUARD_DENY_HOSTS=",
+                    "-e",
+                    "NCCL_SOCKET_IFNAME=${fabricInterface}",
+                    "-e",
+                    "GLOO_SOCKET_IFNAME=${fabricInterface}",
+                    "-e",
+                    "NCCL_IB_HCA=${fabricHca}",
+                    "-e",
+                    "HF_HUB_OFFLINE=1",
+                    "-e",
+                    "TRANSFORMERS_OFFLINE=1",
+                    "-e",
+                    "CUDA_CACHE_PATH=/atlas-cuda-cache",
+                    "-e",
+                    "CUDA_CACHE_MAXSIZE=4294967296"
+                  ]
+                }
+              }
+            },
+            {
+              "nodeRole": "leader",
+              "runtime": "qwen38-flash-next-atlas-head",
+              "role": "head",
+              "order": 20,
+              "runtimeSettings": {
+                "adapter": "docker",
+                "management": "managed",
+                "containerName": "lloom-atlas-sparkqwen-${nodeId}",
+                "healthUrl": "http://127.0.0.1:8893/health",
+                "healthTimeoutMs": 5000,
+                "warmup": {
+                  "url": "http://127.0.0.1:8893/v1/chat/completions",
+                  "method": "POST",
+                  "body": {
+                    "model": "qwen3.8-flash-next-atlas",
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": "Reply with OK."
+                      }
+                    ],
+                    "max_tokens": 16,
+                    "stream": false
+                  }
+                },
+                "bootstrap": {
+                  "adapter": "docker",
+                  "image": "ghcr.io/enntity/atlas-sparkqwen@sha256:37272dc6dcb3d1c6d4b8027b8876edf9ba36b1988d85ea6accde22848d5e11e7",
+                  "pull": false,
+                  "pullTimeoutMs": 3600000,
+                  "createArgs": [
+                    "--restart",
+                    "no",
+                    "--network",
+                    "host",
+                    "--ipc",
+                    "host",
+                    "--shm-size",
+                    "32g",
+                    "--memory",
+                    "114g",
+                    "--gpus",
+                    "all",
+                    "--device",
+                    "/dev/infiniband:/dev/infiniband",
+                    "--cap-add",
+                    "IPC_LOCK",
+                    "--cap-add",
+                    "SYS_NICE",
+                    "--ulimit",
+                    "memlock=-1:-1",
+                    "--security-opt",
+                    "no-new-privileges=true",
+                    "--stop-timeout",
+                    "60",
+                    "--mount",
+                    "type=bind,src=${modelRoot}/nvidia--Qwen3.8-Flash-Next-FP4-Local,dst=${modelRoot}/nvidia--Qwen3.8-Flash-Next-FP4-Local,readonly",
+                    "--mount",
+                    "type=bind,src=${installRoot}/atlas-sparkqwen-cuda-cache,dst=/atlas-cuda-cache",
+                    "--mount",
+                    "type=bind,src=${installRoot}/atlas-sparkqwen-ple/37272dc6dcb3d1c6d4b8027b8876edf9ba36b1988d85ea6accde22848d5e11e7/b9ce18a6887e18c089fdea8509a33e63429a3300,dst=/atlas-ple",
+                    "--volume",
+                    "/run/lock/sparkglm:/run/lock/sparkglm",
+                    "-e",
+                    "NODE_RANK=${nodeRank}",
+                    "-e",
+                    "MASTER_ADDR=${leaderAddress}",
+                    "-e",
+                    "MASTER_PORT=29510",
+                    "-e",
+                    "FABRIC_INTERFACE=${fabricInterface}",
+                    "-e",
+                    "FABRIC_HCA=${fabricHca}",
+                    "-e",
+                    "FABRIC_SIBLINGS=0",
+                    "-e",
+                    "MODEL_PATH=${modelRoot}/nvidia--Qwen3.8-Flash-Next-FP4-Local",
+                    "-e",
+                    "SERVED_MODEL_NAME=qwen3.8-flash-next-atlas",
+                    "-e",
+                    "SPARKQWEN_PROFILE=${sparkqwenProfile}",
+                    "-e",
+                    "SPARKQWEN_MODE=${sparkqwenMode}",
+                    "-e",
+                    "SPARKQWEN_TOOL_GUARD=on",
+                    "-e",
+                    "SPARKQWEN_TOOL_GUARD_MAX_BYTES=1048576",
+                    "-e",
+                    "SPARKQWEN_TOOL_GUARD_ALLOW_HOSTS=",
+                    "-e",
+                    "SPARKQWEN_TOOL_GUARD_DENY_HOSTS=",
+                    "-e",
+                    "NCCL_SOCKET_IFNAME=${fabricInterface}",
+                    "-e",
+                    "GLOO_SOCKET_IFNAME=${fabricInterface}",
+                    "-e",
+                    "NCCL_IB_HCA=${fabricHca}",
+                    "-e",
+                    "HF_HUB_OFFLINE=1",
+                    "-e",
+                    "TRANSFORMERS_OFFLINE=1",
+                    "-e",
+                    "CUDA_CACHE_PATH=/atlas-cuda-cache",
+                    "-e",
+                    "CUDA_CACHE_MAXSIZE=4294967296"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "sparkqwenMode": "spark"
+      }
+    }
+  ]
+}

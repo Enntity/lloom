@@ -46,7 +46,7 @@ assert(plannedBackend.steps.every((step) => !step.command.join(' ').includes('${
 
 // ---- recipe shape -----------------------------------------------------------
 assert.equal(recipe.id, recipeId);
-assert.equal(recipe.version, 5);
+assert.equal(recipe.version, 6);
 assert.equal(recipe.backend.id, 'docker-atlas-sparkqwen');
 assert.equal(recipe.license.id, 'MIT');
 assert.deepEqual(recipe.requirements.cluster, { nodes: 2, provider: 'nvidia-sync', topology: 'direct' });
