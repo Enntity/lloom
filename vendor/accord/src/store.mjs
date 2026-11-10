@@ -148,11 +148,11 @@ export class Store {
       this.emit('resource.registered',binding);return binding;
     });
   }
-  // Forget a managed resource its provider withdrew, once nothing holds, awaits or depends on it.
+  // Forget a withdrawn or retired resource once nothing holds, awaits or depends on it.
   removeResource(resource){
     return this.mutate(()=>{
       const b=this.binding(resource),busy="SELECT 1 FROM tasks WHERE resource=? AND state IN ('queued','preparing','running','releasing','recovering','cancelling')";
-      if(b?.plugin!=='managed-http'||this.db.prepare("SELECT 1 FROM claims WHERE resource=? AND state!='closed'").get(resource)||this.db.prepare(busy).get(resource)
+      if(!b||this.db.prepare("SELECT 1 FROM claims WHERE resource=? AND state!='closed'").get(resource)||this.db.prepare(busy).get(resource)
         ||this.db.prepare('SELECT 1 FROM tasks t JOIN tasks d ON d.id=t.dependency WHERE d.resource=? AND t.resource!=?').get(resource,resource))return false;
       const {generation}=this.db.prepare('SELECT generation FROM resources WHERE id=?').get(resource);
       this.db.prepare("INSERT INTO meta VALUES('generation_floor',?) ON CONFLICT(key) DO UPDATE SET value=max(CAST(value AS INTEGER),CAST(excluded.value AS INTEGER))").run(String(generation));
@@ -194,12 +194,31 @@ export class Store {
       this.emit('coordinator.started', { epoch: this.epoch });
     });
   }
-  assertLeader() {
+  leaderRow() {
     const row = this.db.prepare('SELECT * FROM leader').get();
-    requireThat(row?.token === this.leaderToken && row.until_ms > this.now(), 'LEADER_LOST', 'Coordinator authority expired; restart and reconcile', 503);
+    requireThat(row?.token === this.leaderToken && row.until_ms > 0, 'LEADER_LOST', 'Coordinator authority replaced or released; restart and reconcile', 503);
+    return row;
   }
-  mutate(fn) { return transaction(this.db, () => { this.assertLeader(); return fn(); }); }
-  beat() { this.mutate(() => this.db.prepare('UPDATE leader SET until_ms=? WHERE token=?').run(this.now() + this.leaderMs, this.leaderToken)); }
+  // Called only with the SQLite write lock held. An expired election lease lets
+  // a contender take over, but an unchanged token proves none has done so yet.
+  renewLeadership(row) {
+    const now = this.now();
+    this.db.prepare('UPDATE leader SET until_ms=? WHERE token=?').run(now + this.leaderMs, this.leaderToken);
+    if (row.until_ms <= now) this.emit('coordinator.lease_recovered', {
+      epoch: this.epoch, expiredAt: row.until_ms, resumedAt: now, gapMs: now - row.until_ms
+    });
+  }
+  assertLeader() {
+    if (this.leaderRow().until_ms <= this.now()) this.beat();
+  }
+  mutate(fn) {
+    return transaction(this.db, () => {
+      const row = this.leaderRow();
+      if (row.until_ms <= this.now()) this.renewLeadership(row);
+      return fn();
+    });
+  }
+  beat() { transaction(this.db, () => this.renewLeadership(this.leaderRow())); }
   releaseLeadership() {
     this.db.prepare('UPDATE leader SET until_ms=0 WHERE token=?').run(this.leaderToken);
   }

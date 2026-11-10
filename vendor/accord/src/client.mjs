@@ -16,6 +16,7 @@ export class AccordClient {
   registerResource(manifest,key=randomUUID()){return request(this.url,this.credential,'/v1/resources',{key,manifest});}
   adoptWorkloads(body){return request(this.url,this.credential,'/v1/workloads/adopt',body,30000);}
   resources(){return request(this.url,this.credential,'/v1/resources');}
+  removeResource(id){return request(this.url,this.credential,'/v1/resources/remove',{id});}
   startProcess(claimId,key){return request(this.url,this.credential,`/v1/claims/${claimId}/process`,{key});}
   processStatus(claimId){return request(this.url,this.credential,`/v1/claims/${claimId}/process`);}
   bootstrap() { return request(this.url, this.credential, '/v1/bootstrap',undefined,6000); }

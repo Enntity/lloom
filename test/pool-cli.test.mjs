@@ -165,12 +165,17 @@ test('the CLI prints an offline JSON plan and rejects unknown actions', async ()
   const cliConfig = {
     ...config(),
     cluster: undefined,
+    // This subprocess probes the real host; keep its fixture within a CI runner budget.
+    runtimes: { small: { enabled: true, memoryGb: 0.01 } },
     models: [config().models[0]],
     aliases: { chat: { members: ['small'] } }
   };
   await fs.writeFile(configPath, JSON.stringify(cliConfig, null, 2));
   const env = { ...process.env, HOME: dir, LLOOM_MODEL_ROOT: path.join(dir, 'models') };
-  const result = await runCli(['pool', 'plan', '--offline', '--json', '--config', configPath], env);
+  const result = await runCli(
+    ['pool', 'plan', '--offline', '--headroom-gb', '0', '--json', '--config', configPath],
+    env
+  );
   assert.equal(result.code, 0, result.stderr);
   const report = JSON.parse(result.stdout);
   assert.equal(report.dryRun, true);

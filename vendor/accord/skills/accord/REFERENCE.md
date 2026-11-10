@@ -97,8 +97,8 @@ work that needs no shared resource. Then:
 A lost response is ambiguous. Retain and retry the same operation key and payload.
 MCP generates a key when omitted, but explicit keys are best for effectful retries.
 An unavailable host means unknown, never free. Managers may be agents themselves.
-Each resource has one authoritative host; do not register another authority for
-an existing physical resource.
+Each resource has one authoritative host and one name; find it before registering, and
+do not register another authority or a second name for an existing physical resource.
 
 Shell agents: `accord run -- COMMAND` supplies `ACCORD_SESSION_FILE` and context.
 Use `accord announce`, `find`, `send`, `inbox`, `read`, `reserve`, `reservation`,

@@ -65,10 +65,16 @@ export class ManagedDriver extends ArtifactDriver {
       const old=this.validate(body);
       requireThat(!old.claim_id||old.claim_id===body.claimId,'OWNER_MISMATCH','Cannot revoke another owner');
       if(!old.claim_id && old.generation===body.generation && old.phase==='idle')return;
-      this.db.prepare("UPDATE state SET authority=?,epoch=?,generation=?,claim_id=?,token_hash=NULL,phase='stopping'").run(body.authority,body.epoch,body.generation,body.claimId);
+      // A failed restore must not repeat a confirmed stop. A new coordinator
+      // epoch or driver restart still reconfirms it before restoring anything.
+      const phase=old.phase==='restoring'&&old.epoch===body.epoch&&old.generation===body.generation?'restoring':'stopping';
+      this.db.prepare('UPDATE state SET authority=?,epoch=?,generation=?,claim_id=?,token_hash=NULL,phase=?').run(body.authority,body.epoch,body.generation,body.claimId,phase);
     });
+    if(this.status().phase==='stopping'){
+      await this.call('stop',body);
+      transaction(this.db,()=>{this.db.prepare("UPDATE state SET phase='restoring'").run();this.audit('workload.stopped',body.generation,body.claimId);});
+    }
     if(this.status().phase!=='idle'){
-      await this.call('stop',body);this.audit('workload.stopped',body.generation,body.claimId);
       await this.call('restore',body);this.audit('provider.restored',body.generation,body.claimId);
     }
     const receipt=super.revoke(body);this.db.prepare("UPDATE state SET phase='idle'").run();return receipt;

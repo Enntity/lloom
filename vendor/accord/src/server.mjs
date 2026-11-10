@@ -360,6 +360,14 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
       const result=await request(driverUrl,driverToken,driverPath('/control/workloads',claim.resource),{...grant(claim),key:body.key,targets:body.targets},30000);
       store.assertLeader();return result;
     }
+    if(url.pathname==='/v1/resources/remove'&&req.method==='POST'){
+      requireThat(actor.role==='admin','FORBIDDEN','Administrator required',403);
+      const {id}=await readBody(req);text(id,'id',64);requireThat(id!=='artifact','INVALID_INPUT','The artifact resource is built in',400);
+      // As with a withdrawal, the coordinator forgets it first; a retry finishes the driver.
+      if(store.binding(id))requireThat(store.removeResource(id),'RESOURCE_BUSY','Release or cancel every reservation on this resource first',409);
+      else if(!(await request(driverUrl,driverToken,'/control/resources')).resources.some(r=>r.id===id))return {id,removed:false};
+      return request(driverUrl,driverToken,'/control/resources/withdraw',{id,requested:true},5000);
+    }
     if(url.pathname==='/v1/resources'&&req.method==='POST'){
       requireThat(actor.role==='admin','FORBIDDEN','Administrator required',403);
       const body=await readBody(req);text(body.key,'key',128);

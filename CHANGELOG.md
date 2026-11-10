@@ -2,6 +2,9 @@
 
 ## Fleet audit — 2026-11-10
 
+- Bundle qualified Accord 0.6.6, including safe restoration retries and leadership expiry checks.
+- Keep the offline pool CLI test within small CI runner memory budgets.
+
 - Preserve maintenance during recipe reloads and refresh node capacity before admission; expose redacted admission failures in the CLI.
 - Propagate failed warmups through admission, status and routing. Stop only owned process trees and fail closed when foreign listeners remain.
 - Reconcile exclusively owned stale federation imports, replace logical model routes without deleting aliases, and retain detached gateway ownership receipts for orphan cleanup.
