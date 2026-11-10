@@ -85,22 +85,11 @@
     ]
   },
   "requirements": {
-    "platforms": [
-      "linux-arm64"
-    ],
+    "platforms": ["linux-arm64"],
     "memoryGb": 112,
     "diskGb": 70,
-    "commands": [
-      "docker",
-      "node",
-      "curl"
-    ],
-    "accelerators": [
-      "cuda",
-      "nvidia-gpu",
-      "blackwell",
-      "gb10"
-    ]
+    "commands": ["docker", "node", "curl"],
+    "accelerators": ["cuda", "nvidia-gpu", "blackwell", "gb10"]
   },
   "backend": {
     "id": "docker-atlas-sparkqwen",
@@ -114,9 +103,7 @@
         "title": "Check Docker",
         "action": "check-command",
         "command": "docker",
-        "args": [
-          "version"
-        ]
+        "args": ["version"]
       },
       {
         "id": "verify-atlas-pins",
@@ -152,12 +139,7 @@
         "provider": "huggingface",
         "model": "tencent/Qwen3.8-27B-DSpine-b16",
         "revision": "ea909c0f5fab8865f9e14600334f55f7ce47308f",
-        "include": [
-          "config.json",
-          "model.safetensors",
-          "LICENSE",
-          "README.md"
-        ],
+        "include": ["config.json", "model.safetensors", "LICENSE", "README.md"],
         "integrity": {
           "files": [
             {
@@ -190,12 +172,7 @@
         "provider": "huggingface",
         "model": "0xBakeer/TandemLLM-Qwen3.8-27B-NVFP4",
         "revision": "ab09c92fa4a90d5cfd9d012fe92831c886efd9b2",
-        "include": [
-          "gdn.safetensors",
-          "attn.safetensors",
-          "LICENSE",
-          "README.md"
-        ],
+        "include": ["gdn.safetensors", "attn.safetensors", "LICENSE", "README.md"],
         "integrity": {
           "files": [
             {
@@ -253,10 +230,7 @@
         "action": "command",
         "alwaysRun": true,
         "command": "mkdir",
-        "args": [
-          "-p",
-          "${installRoot}/atlas-sparkqwen-cuda-cache"
-        ]
+        "args": ["-p", "${installRoot}/atlas-sparkqwen-cuda-cache"]
       }
     ]
   },
@@ -306,12 +280,8 @@
       "runtime": "qwen38-27b-atlas",
       "backendConfig": "qwen38-27b-atlas",
       "setDefault": false,
-      "input": [
-        "text"
-      ],
-      "output": [
-        "text"
-      ],
+      "input": ["text"],
+      "output": ["text"],
       "capabilities": [
         "chat",
         "responses",
@@ -365,11 +335,7 @@
           "minNoProgressMs": 1800000,
           "cooldownMs": 600000,
           "drainTimeoutMs": 30000,
-          "failureStatuses": [
-            500,
-            502,
-            504
-          ]
+          "failureStatuses": [500, 502, 504]
         },
         "runtime": {
           "adapter": "docker",
