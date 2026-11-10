@@ -1328,7 +1328,7 @@
     {
       "id": "linux-nvidia-dgx-spark-qwen38-27b-atlas",
       "path": "linux-nvidia-dgx-spark-qwen38-27b-atlas.json",
-      "currentVersion": 3,
+      "currentVersion": 4,
       "versions": [
         {
           "version": 1,
@@ -1344,6 +1344,12 @@
         },
         {
           "version": 3,
+          "path": "archive/linux-nvidia-dgx-spark-qwen38-27b-atlas/v3.json",
+          "status": "archived",
+          "notes": "SparkQwen model-27b ae68b193d009cb26d0757d2bb8bb0e52aba5c0f3 (install tree 49f9eadb8c87), engine Enntity/atlas q27/ckpt-cadence 59165d7cd8ee1b79b04a751c4249e5412ed2eb64, image ghcr.io/enntity/atlas-sparkqwen@sha256:abd92cf2fe649a27c21ab6c86162207a480a9d98e0da76d9386a3237b464ef2b. Decode attention scanned each KV head's cache once per query head and row, so a decode step at 200K tokens of context took about 365 ms; version 4 reads it once (about 175 ms)."
+        },
+        {
+          "version": 4,
           "path": "linux-nvidia-dgx-spark-qwen38-27b-atlas.json",
           "status": "current"
         }
