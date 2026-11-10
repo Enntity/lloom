@@ -1,0 +1,46 @@
+{
+  "manifestVersion": 1,
+  "status": "final",
+  "note": "Pin manifest for SparkGLM 0.3.2, recipe linux-nvidia-dgx-spark-glm53-atlas version 3, for two and four Sparks and its drafters (the recipe's --drafter picks one of drafters; v80 stays pinned under the repository's earlier name, which redirects, so installed copies keep their folder). Engine: Enntity/atlas f7cea507, which is spark 5f79b46b (0.3.1's engine, Atlas-Inf main 2f9c37083) plus the GLM vision scratch lending of Atlas-Inf#338; spark carries it from merge c865149d. image.reference is the GHCR manifest digest; the tag is the first 12 characters of the sparkglm install/ tree. Candidate: qualified at TP-2 with v81 on 2026-11-10 against 0.3.1 (identical greedy output, prompt logprobs and vision output; KV pool about 15% larger); not yet run at TP-4.",
+  "source": {
+    "repo": "Enntity/sparkglm",
+    "revision": "a06b8ca36ca1e515ab7d1d96674355e90ca6bcdc",
+    "installTree": "fd4bdf836fbe862414b9b7ab165c975eb37a567b",
+    "cloneUrl": "https://github.com/Enntity/sparkglm.git",
+    "buildScript": "install/build.sh"
+  },
+  "engine": {
+    "repo": "Enntity/atlas",
+    "branch": "spark",
+    "commit": "f7cea50742de09470d5c6032cf135f895564239b"
+  },
+  "image": {
+    "reference": "ghcr.io/enntity/atlas-sparkglm@sha256:8ad608a3e0df01b8b1fc16bf54d74466fd612de1de00bbcd93bc6f513ad9182a",
+    "tag": "ghcr.io/enntity/atlas-sparkglm:fd4bdf836fbe",
+    "label": "io.enntity.sparkglm.install-tree",
+    "entrypoint": "/opt/atlas/serve.py",
+    "profilePaths": [
+      "/opt/atlas/profiles/4x1m.json",
+      "/opt/atlas/profiles/4x1m-tp4.json"
+    ],
+    "architecture": "arm64"
+  },
+  "model": {
+    "repo": "nvidia/GLM-5.3-Flash-FP4-Local",
+    "revision": "76348ddb2be2e35e39ecfc00e75dc07703f4f3d5"
+  },
+  "drafters": {
+    "v81": {
+      "repo": "Enntity/GLM-5.3-Flash-DFlash2-enntity",
+      "revision": "ee5ed56e3ed2e59fd2d5177fe6773b2f6fb4aa80"
+    },
+    "v80": {
+      "repo": "Enntity/GLM-5.3-Flash-DFlash2-enntity-v80",
+      "revision": "8416cdfbf4cfb302b86a058cb5f5b89f891350c0"
+    },
+    "dflash2": {
+      "repo": "incoai/GLM-5.3-Flash-DFlash2",
+      "revision": "7d74cdd881ed7e32c31175984a67823127b66cfe"
+    }
+  }
+}

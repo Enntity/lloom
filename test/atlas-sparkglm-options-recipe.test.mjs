@@ -159,3 +159,28 @@ test('the pin checker takes a drafter map and a profile list, and keeps the old 
   delete none.drafters;
   assert.match(verifyPins(none).join('\n'), /drafter is missing/);
 });
+
+test('version 3 is the SparkGLM 0.3.2 candidate and installs version 2 with only its pins changed', async () => {
+  const v3 = await loadRecipeVersion(recipeId, 3);
+  assert.equal(v3.version, 3);
+  assert.match(v3.name, /SparkGLM 0\.3\.2 candidate/);
+  assert.deepEqual(validateRecipe(v3, {}, { checkLocalReferences: false }), []);
+  assert.deepEqual(recipeOptionCombinations(v3), recipeOptionCombinations(recipe));
+  assert.deepEqual(v3.selectedOptions, recipe.selectedOptions);
+  const next = loadPins(path.join(root, 'backends/atlas-sparkglm/pins-0.3.2.json'));
+  assert.deepEqual(verifyPins(next), []);
+  assert.equal(next.engine.commit, 'f7cea50742de09470d5c6032cf135f895564239b');
+  assert.equal(next.source.revision, 'a06b8ca36ca1e515ab7d1d96674355e90ca6bcdc');
+  assert.equal(next.image.tag, `ghcr.io/enntity/atlas-sparkglm:${next.source.installTree.slice(0, 12)}`);
+  // Same checkpoint, drafters and profiles: only the product and its image move.
+  for (const key of ['model', 'drafters']) assert.deepEqual(next[key], pins[key], key);
+  assert.deepEqual(profilePathsOf(next), profilePathsOf(pins));
+  for (const options of recipeOptionCombinations(recipe)) {
+    const swapped = JSON.stringify(installed(applyRecipeOptions(recipe, options)))
+      .replaceAll('pins-0.3.1.json', 'pins-0.3.2.json')
+      .replaceAll(pins.image.reference, next.image.reference);
+    assert.deepEqual(installed(applyRecipeOptions(v3, options)), JSON.parse(swapped), JSON.stringify(options));
+    for (const member of members(applyRecipeOptions(v3, options)))
+      assert.equal(member.runtimeSettings.bootstrap.image, next.image.reference);
+  }
+});
