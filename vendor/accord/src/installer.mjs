@@ -91,10 +91,13 @@ continue work that needs no shared resource.
     const [block]=blocks(registration);
     if(/(?:\[\s*["']?mcp_servers["']?\s*\.\s*["']?accord["']?(?:\s*\]|\s*\.)|^\s*["']?mcp_servers["']?\s*=)/m.test(old)){
       const prior=namedIn(old,'[mcp_servers.accord]');
-      const from=[...blocks(registration),...(earlier(prior,registration)?blocks(prior):[])].find(b=>old.includes(b));
+      // Codex re-saves this file in its own style (spaced arrays, 40.0), so compare values, not text.
+      const canonical=line=>{const m=/^(\w+) = (.*)$/.exec(line);try{return m?m[1]+' = '+JSON.stringify(JSON.parse(m[2])):line;}catch{return line;}};
+      const at=old.indexOf('[mcp_servers.accord]'),lines=old.slice(at).split('\n'),rows=b=>b.trimEnd().split('\n');
+      const from=[...blocks(registration),...(earlier(prior,registration)?blocks(prior):[])].find(b=>rows(b).every((want,i)=>canonical(want)===canonical(lines[i]??'')));
       requireThat(from,'INSTALL_CONFLICT','Existing Codex Accord MCP registration differs');
       if(from===block)plan.push({path,action:'unchanged'});
-      else add(path,old.replace(from,()=>block),{merge:true});
+      else add(path,old.slice(0,at)+block+old.slice(at+lines.slice(0,rows(from).length).join('\n').length+1),{merge:true});
     }else add(path,old+(old.endsWith('\n')?'':'\n')+'\n'+block,{merge:true});
   }
   for(const [source,path] of [['claude',join(home,'.claude','settings.json')],['codex',join(home,'.codex','hooks.json')]]){

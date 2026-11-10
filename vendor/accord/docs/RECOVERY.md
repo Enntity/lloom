@@ -85,6 +85,13 @@ database. A compile-only pass is never counted as a recovery test.
 
 ### Fatal storage failures
 
+A stalled coordinator may renew an expired leadership lease while its token still
+owns the leader row. The check and renewal hold the SQLite write lock, so a
+replacement coordinator and the old coordinator cannot both renew. Each late
+renewal records `coordinator.lease_recovered` with the gap duration. A changed or
+explicitly released token remains fenced. This does not extend resource claims:
+their deadlines still expire, and expired claims cannot be renewed or reactivated.
+
 A failed leadership heartbeat or ownership reconciliation stops new acknowledgments
 and reports the original error to `serve`. The process logs `coordinator.failed` and
 exits nonzero, with shutdown bounded to five seconds. Installed launchd/systemd

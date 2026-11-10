@@ -13,10 +13,10 @@ second authority or copy tokens between hosts. Keep the previous package availab
 binary rollback; database rollback is a separate recovery operation and can invalidate
 fencing history. See [recovery](RECOVERY.md).
 
-## Install 0.6.3
+## Install 0.6.6
 
 ```sh
-npm install -g https://github.com/Enntity/accord/releases/download/v0.6.3/enntity-accord-0.6.3.tgz
+npm install -g https://github.com/Enntity/accord/releases/download/v0.6.6/enntity-accord-0.6.6.tgz
 accord install
 ```
 
@@ -47,13 +47,33 @@ accord --version
 accord doctor
 ```
 
-The CLI should report `0.6.3`; the doctor should report `ready`. The CLI version identifies
+The CLI should report `0.6.6`; the doctor should report `ready`. The CLI version identifies
 the package invoked by your shell, so also check the running service's command line
 against the new install path. Restart your agent sessions to load the updated MCP bridge.
 
 On linked hosts, verify `accord find`, send and acknowledge a test message, and exercise
 reserve, extend and release on a dedicated cooperative resource. Check that extension
 keeps the claim and generation. Do not use an active GPU workload as a smoke test.
+
+## Changes from 0.6.5
+
+A coordinator stalled past its leadership lease renews only if it still owns the
+leadership token; a replacement or explicitly released token remains fenced.
+The service records the gap as `coordinator.lease_recovered`. Resource deadlines
+still apply. Managed-provider restoration retries retain a confirmed stop; a new
+coordinator epoch or driver restart reconfirms it. No schema migration is added.
+
+## Changes from 0.6.4
+
+The installer compares the Codex Accord entry in `~/.codex/config.toml` by value, so an
+upgrade no longer stops with "Existing Codex Accord MCP registration differs" after Codex has
+re-saved the file. No schema change, so a 0.6.4 database upgrades in place.
+
+## Changes from 0.6.3
+
+`accord resource remove --id NAME` lets the administrator of the host that owns a resource
+retire it. It works for every plugin and refuses while anything holds, queues on or depends
+on the resource. No schema migration is added, so a 0.6.3 database upgrades in place.
 
 ## Changes from 0.6.2
 

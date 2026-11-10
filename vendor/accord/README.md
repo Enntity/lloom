@@ -17,8 +17,8 @@ One agent is editing the checkout. Another is about to reset it. A third needs t
 GPU the first one reserved. Accord gives them a shared directory, durable messages,
 and a queue, so you can stop carrying updates between terminals.
 
-**0.6.3:** resources their provider stops offering leave on their own once idle, so
-retired names no longer pile up; a name registered again keeps fencing safe.
+**0.6.6:** stalled coordinators recover without losing live claims when no replacement
+has taken over. Failed provider restores no longer repeat a confirmed workload stop.
 [Release notes](CHANGELOG.md) · [Upgrading](docs/UPGRADING.md)
 
 ## Get started
@@ -27,7 +27,7 @@ You need Node.js 22.16 or newer. macOS and Linux support automatic service setup
 On Windows, run `accord up` under your own supervisor after installation.
 
 ```sh
-npm install -g https://github.com/Enntity/accord/releases/download/v0.6.3/enntity-accord-0.6.3.tgz
+npm install -g https://github.com/Enntity/accord/releases/download/v0.6.6/enntity-accord-0.6.6.tgz
 accord install
 ```
 
@@ -102,6 +102,10 @@ to a one-hour window with no heartbeat calls. For a 90-minute benchmark, use
 finished; use `accord extend --id ID --host AUTHORITY --duration-ms 5400000` if more
 time is needed, keeping the same claim and workload. A reservation can hold a resource
 for up to eight hours by default; a managed resource can declare another limit.
+
+Register one name per physical thing. To retire a name nobody uses any more, run
+`accord resource remove --id NAME` on the host that owns it. It
+refuses while the resource is held or awaited.
 
 A cooperative reservation does not lock files or isolate a GPU. All agents using that
 resource must participate. To have Accord run a workload and confirm it has stopped
