@@ -1,0 +1,33 @@
+{
+  "manifestVersion": 1,
+  "status": "final",
+  "note": "Pin manifest for SparkQwen's single-Spark Qwen3.8-27B variant, recipe linux-nvidia-dgx-spark-qwen38-27b-atlas version 4. Engine: Enntity/atlas q27/conc (the series proposed upstream as Atlas-Inf/atlas#333, plus a swap-out gate that no longer evicts the cached prefix a request reuses, an SSM restore ladder, an interval SSM checkpoint at every prefill chunk end that crosses the interval, and a shared-scan BF16 decode attention that reads each KV head once for the rows of a step, set by the 27B profiles as ATLAS_ATTN_SHARED_SCAN). image.reference is the GHCR manifest digest; the tag is the first 12 characters of the sparkqwen install/ tree plus -27b. Output is byte-identical to serial decode alone and eight at a time (8 prompts x thinking on/off), and at 211K tokens of context.",
+  "source": {
+    "repo": "Enntity/sparkqwen",
+    "revision": "85ac2ef1e849a97802e570be492d1e4b8951df64",
+    "installTree": "f6bb0a3cd40d5f14f599431399f87f1e8f27973b",
+    "cloneUrl": "https://github.com/Enntity/sparkqwen.git",
+    "buildScript": "install/build.sh"
+  },
+  "engine": {
+    "repo": "Enntity/atlas",
+    "branch": "q27/conc",
+    "commit": "c125bf9a87db35033939342815e239d8a36541d9"
+  },
+  "image": {
+    "reference": "ghcr.io/enntity/atlas-sparkqwen@sha256:06bc69b4dfc3cb4d433293d2794bfab6c5bad33a48651ac49558173f6d8dc403",
+    "tag": "ghcr.io/enntity/atlas-sparkqwen:f6bb0a3cd40d-27b",
+    "label": "io.enntity.sparkqwen.install-tree",
+    "entrypoint": "/opt/atlas/serve.py",
+    "profilePath": "/opt/atlas/profiles/27b.json",
+    "architecture": "arm64"
+  },
+  "model": {
+    "repo": "nvidia/Qwen3.8-27B-NVFP4",
+    "revision": "482ca0f3832238542f8f5295dde86b5f22711d80"
+  },
+  "overlayTool": {
+    "tandem_overlay.py": "4d827386668e88cc6a2d353058a013c60cff03682c15f0df92ef4c7d54103d16",
+    "checkpoint-27b.json": "2a01f7e49d5e55f5b21002f1c64db3dd72f44b751d53bf80a185dbbc31dd95e2"
+  }
+}
