@@ -7,6 +7,12 @@ All notable changes to LLooM will be documented in this file. The format follows
 ### Fixed
 
 - Bundle Accord 0.6.3: a reservation resource removed from `reservations.resources`, or a slot above a lowered capacity, is forgotten by Accord once idle instead of staying listed forever.
+- `remove-model` now prunes removed runtime IDs from `init.enabledRuntimes` and clears `init.keepWarmRuntime` when it names a removed runtime, so the next additive init cannot re-union stale bookkeeping.
+- `remove-model --delete-files` reclaims every exclusively owned weight of a multi-component model (diffusion, text encoder, VAE) instead of only the first runtime argument, reports reclaimed bytes, and preserves components still referenced by another model.
+- `remove-model` accepts `--timeout-ms` for gateway status collection (30s default) so a cold multi-node head no longer times out at the client's two-second default before a cleanup plan is produced.
+- Maintenance suspend and `remove-model` runtime stops clean up the configured port even when the gateway does not track a live child (an orphaned backend left by a previous gateway incarnation), while an unloaded stale record whose port is held by an external process is reported in the cleanup preview and left running, so removing a stale entry cannot stop a different gateway's same-port listener.
+- A managed runtime whose explicit model warmup fails (for example an HTTP 409 from an incompatible weight layout) is no longer reported `healthy`/`already-healthy`; the failed readiness is visible to routing and CLI admission. Runtimes without a configured warmup are still read from catalog health alone.
+- `init --additive` refreshes context and capability metadata on an external (runtime-less) model owned by the recipe, instead of silently preserving stale metadata; unrelated operator-owned routes are left untouched.
 - Bundle Accord 0.6.2: a reservation window survives an Accord coordinator restart, such as a service manager recovering from an OOM kill, instead of being revoked with its managed workloads restored. Holders are told when a reservation ends.
 - Bundle the published Accord 0.6.1 package, including bounded reservation windows, renewal during preparation, coordinator recovery, and installed-version reporting.
 - Release a registered distributed workload group when any rank fails, including peers that are still running. Training plans can pass IPC, RDMA, and resource options while the launcher retains container identity and restart control.

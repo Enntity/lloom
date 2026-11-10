@@ -1343,7 +1343,7 @@ assert.equal(removalPlan.cleanup.runtime, removalRuntimeId);
 assert.deepEqual(removalPlan.cleanup.aliases, ['quick', 'quicker', 'enntity-presence']);
 assert.deepEqual(removalPlan.cleanup.defaultKeys, ['chatModel']);
 assert.equal(removalPlan.cleanup.modelFiles, null);
-assert(removalPlan.preserved.modelFiles.includes('mlx-community--Qwen3.5-4B-Instruct-4bit'));
+assert(removalPlan.preserved.modelFiles.some((entry) => entry.includes('mlx-community--Qwen3.5-4B-Instruct-4bit')));
 assert.equal(JSON.stringify(removalPlan).includes('"config"'), false);
 let removedRuntimeId = null;
 const removalApplied = await applyModelRemoval(removableIntakeConfig, {
@@ -1451,7 +1451,7 @@ const deleteRemovalApplied = await applyModelRemoval(deleteRemovalConfig, {
   dryRun: false,
   yes: true
 });
-assert.equal(deleteRemovalApplied.deletedFiles, deleteModelPath);
+assert.deepEqual(deleteRemovalApplied.deletedFiles, [deleteModelPath]);
 await assert.rejects(() => fs.access(deleteModelPath));
 
 const goConfigPath = path.join(tempDir, 'model-intake-go-config.json');

@@ -5659,11 +5659,13 @@ export function createLloomServer(
 
       const stopMatch = url.pathname.match(/^\/gateway\/runtimes\/([^/]+)\/stop$/);
       if (req.method === 'POST' && stopMatch) {
+        const body = await readJson(req).catch(() => ({}));
         sendJson(
           res,
           200,
           await runtimeManager.stop(decodeURIComponent(stopMatch[1]), {
-            requestedBy: runtimeRequesterNode(req, config)
+            requestedBy: runtimeRequesterNode(req, config),
+            ...(body?.cleanupPort === true ? { cleanupPort: true } : {})
           })
         );
         return;

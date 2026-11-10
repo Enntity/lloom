@@ -731,7 +731,7 @@ function buildRecipeRuntime({
 function ensureRecipeConfigEntries(
   config,
   recipe,
-  { modelRoot, sessionCacheRoot, backendVariables, backendPortRange } = {}
+  { modelRoot, sessionCacheRoot, backendVariables, backendPortRange, additive = false } = {}
 ) {
   const backendId = recipe.backend?.id;
   if (!backendId) return;
@@ -968,8 +968,10 @@ function ensureRecipeConfigEntries(
         backend: backendConfigId,
         runtime: runtimeId
       });
-      if (!existingModel) config.models.push(materializedModel);
-      else adoptRecipeModel(existingModel, materializedModel);
+      if (!existingModel) {
+        materializedModel.recipe = recipeIdentity(recipe);
+        config.models.push(materializedModel);
+      } else adoptRecipeModel(existingModel, materializedModel, recipe);
       finishRecipeModelConfig(config, recipeModel, materializedModel, modelId);
       continue;
     }
@@ -1069,8 +1071,10 @@ function ensureRecipeConfigEntries(
         runtime: targets[0].runtime,
         targets
       });
-      if (!existingModel) config.models.push(materializedModel);
-      else adoptRecipeModel(existingModel, materializedModel);
+      if (!existingModel) {
+        materializedModel.recipe = recipeIdentity(recipe);
+        config.models.push(materializedModel);
+      } else adoptRecipeModel(existingModel, materializedModel, recipe);
       finishRecipeModelConfig(config, recipeModel, materializedModel, modelId);
       continue;
     }
@@ -1125,9 +1129,17 @@ function ensureRecipeConfigEntries(
       ...(config.runtimes[runtimeId] ? { runtime: runtimeId } : {})
     });
     if (!existingModel) {
+      materializedModel.recipe = recipeIdentity(recipe);
       config.models.push(materializedModel);
     } else if (config.runtimes[runtimeId]?.recipe?.id === recipe.id) {
-      adoptRecipeModel(existingModel, materializedModel);
+      adoptRecipeModel(existingModel, materializedModel, recipe);
+    } else if (additive && externalModelOwnedByRecipe(existingModel, recipe)) {
+      // An external (runtime-less) model owned by this recipe must refresh its
+      // advertised contract — context, capabilities, upstream — even though the
+      // runtime-ownership check above cannot match it. Ownership is proven by
+      // the model's recorded recipe, so an unrelated operator route is never
+      // touched.
+      adoptRecipeModel(existingModel, materializedModel, recipe);
     } else if (backendId === 'comfyui-media') {
       // Media recipes refresh their API contract when reusing a runtime
       // another recipe installed. Preserve the operator's upstream route.
@@ -1150,10 +1162,25 @@ function ensureRecipeConfigEntries(
 // entry written for a peer's copy (federated, with only the peer's targets)
 // would otherwise keep sending every request to that peer; peers that still
 // advertise the id are added back beside the local route when config loads.
-function adoptRecipeModel(existingModel, materializedModel) {
+function adoptRecipeModel(existingModel, materializedModel, recipe) {
   delete existingModel.targets;
   delete existingModel.federated;
   Object.assign(existingModel, materializedModel);
+  // Record which recipe now owns this model. Managed runtimes already carry the
+  // recipe on the runtime; for external (runtime-less) models this is the only
+  // proof of ownership that lets a later additive refresh update the model
+  // instead of silently preserving stale context/capability metadata.
+  if (recipe) existingModel.recipe = recipeIdentity(recipe);
+}
+
+// An external (runtime-less) model owned by this recipe can refresh its
+// advertised metadata on an additive run. Ownership is proven by the model's
+// recorded recipe identity, stamped whenever the recipe first materializes the
+// model. A model without that stamp — an unrelated operator-owned route — is
+// left untouched.
+function externalModelOwnedByRecipe(model, recipe) {
+  if (model?.runtime) return false;
+  return model?.recipe?.id === recipe.id;
 }
 
 function materializedRecipeModel(recipe, recipeModel, modelId, placement) {
@@ -1597,7 +1624,8 @@ export function deriveUserConfig(
     modelRoot,
     sessionCacheRoot,
     backendVariables,
-    backendPortRange
+    backendPortRange,
+    additive
   });
   const materializedRuntimeIds = Object.entries(derived.runtimes ?? {})
     .filter(([, runtime]) => runtime.recipe?.id === recipe.id)

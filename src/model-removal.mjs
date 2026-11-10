@@ -16,16 +16,63 @@ function runtimeLoaded(status) {
   return status?.healthy === true || ['running', 'external', 'starting'].includes(status?.status);
 }
 
-function safeModelPath(runtime, modelRoot) {
-  if (!runtime || !modelRoot) return null;
+function modelPathCandidates(runtime, modelRoot) {
+  if (!runtime || !modelRoot) return [];
   const root = path.resolve(modelRoot);
   const candidates = (runtime.args ?? []).filter((value) => typeof value === 'string' && path.isAbsolute(value));
+  const underRoot = (candidate) => {
+    const relative = path.relative(root, path.resolve(candidate));
+    return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
+  };
+  return [...new Set(candidates.filter(underRoot))];
+}
+
+// Every weight path the runtime references beneath the configured model root
+// that no other model's runtime shares. A multi-component model (diffusion
+// weights plus text encoder plus VAE under one directory) owns several
+// payloads; returning only the first candidate orphans the rest.
+function exclusiveModelPaths(runtime, otherRuntimes, modelRoot) {
+  const candidates = modelPathCandidates(runtime, modelRoot);
+  const exclusive = [];
+  const shared = [];
   for (const candidate of candidates) {
     const resolved = path.resolve(candidate);
-    const relative = path.relative(root, resolved);
-    if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) return resolved;
+    const sharedBy = otherRuntimes.filter((other) =>
+      modelPathCandidates(other, modelRoot).some((otherPath) => path.resolve(otherPath) === resolved)
+    );
+    (sharedBy.length ? shared : exclusive).push(resolved);
   }
-  return null;
+  return { exclusive: [...new Set(exclusive)], shared: [...new Set(shared)] };
+}
+
+// Delete a single reclaimed weight path (a file or a model directory) and
+// report how many bytes were actually removed. Returns 0 when the path was
+// already absent so a preview/apply round trip stays idempotent.
+async function reclaimModelFiles(target) {
+  try {
+    const stat = await fs.lstat(target);
+    if (stat.isDirectory()) {
+      const bytes = await directorySize(target);
+      await fs.rm(target, { recursive: true, force: true });
+      return bytes;
+    }
+    await fs.rm(target, { force: true });
+    return stat.size;
+  } catch (error) {
+    if (error?.code === 'ENOENT') return 0;
+    throw error;
+  }
+}
+
+async function directorySize(dir) {
+  let total = 0;
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const child = path.join(dir, entry.name);
+    if (entry.isDirectory()) total += await directorySize(child);
+    else if (entry.isFile()) total += (await fs.stat(child)).size;
+  }
+  return total;
 }
 
 function aliasesRemovedWithModel(aliases, modelId) {
@@ -60,9 +107,18 @@ function removableDistributedMembers(config, runtimeId, removeRuntime, otherMode
   });
 }
 
+// Every runtime entry removed from `runtimes` by this plan: the dedicated
+// runtime plus any exclusively owned distributed members. Stale IDs here would
+// otherwise persist in init bookkeeping and be re-unioned by the next additive
+// init, or keep a keep-warm pin on a runtime that no longer exists.
+function removedRuntimeIds(runtimeId, removeRuntime, runtimeMembers) {
+  const ids = removeRuntime && runtimeId ? [runtimeId, ...runtimeMembers] : [...runtimeMembers];
+  return [...new Set(ids.filter(Boolean))];
+}
+
 export function createModelRemovalPlan(
   config,
-  { modelId, configPath = config.sourcePath, deleteFiles = false, runtimeStatus = {} } = {}
+  { modelId, configPath = config.sourcePath, deleteFiles = false, runtimeStatus = {}, externalPortListeners = [] } = {}
 ) {
   if (!modelId) throw new Error('modelId is required');
   const model = (config.models ?? []).find((entry) => entry.id === modelId);
@@ -89,10 +145,17 @@ export function createModelRemovalPlan(
     .map(([key]) => key);
 
   const modelRoot = config.paths?.modelRoot ?? defaultUserModelRoot();
-  const modelPath = runtimeId ? safeModelPath(config.runtimes?.[runtimeId], modelRoot) : null;
-  const sharedPathUsers = modelPath
+  const otherRuntimes = otherModels.map((entry) => config.runtimes?.[entry.runtime]).filter(Boolean);
+  const { exclusive, shared } = runtimeId
+    ? exclusiveModelPaths(config.runtimes[runtimeId], otherRuntimes, modelRoot)
+    : { exclusive: [], shared: [] };
+  const sharedOwners = shared.length
     ? otherModels
-        .filter((entry) => safeModelPath(config.runtimes?.[entry.runtime], modelRoot) === modelPath)
+        .filter((entry) =>
+          exclusiveModelPaths(config.runtimes?.[entry.runtime], otherRuntimes, modelRoot).shared.some((path) =>
+            shared.includes(path)
+          )
+        )
         .map((entry) => entry.id)
     : [];
   const validationErrors = [];
@@ -100,21 +163,45 @@ export function createModelRemovalPlan(
   if (removeRuntime && activeRequests > 0) {
     validationErrors.push(`runtime ${runtimeId} has ${activeRequests} active request(s); wait for them to finish`);
   }
-  if (deleteFiles && !modelPath) {
+  if (deleteFiles && !exclusive.length && !shared.length) {
     validationErrors.push('model files cannot be identified safely under the configured model root');
   }
-  if (deleteFiles && sharedPathUsers.length) {
-    validationErrors.push(`model files are shared by: ${sharedPathUsers.join(', ')}`);
+  if (deleteFiles && shared.length) {
+    warnings.push(`preserving model files shared by: ${sharedOwners.join(', ')}`);
   }
   if (backendUsers.length) warnings.push(`preserving shared backend ${backendId}; used by ${backendUsers.join(', ')}`);
   if (runtimeUsers.length) warnings.push(`preserving shared runtime ${runtimeId}; used by ${runtimeUsers.join(', ')}`);
-  if (!deleteFiles && modelPath) warnings.push(`preserving model files at ${modelPath}`);
+  if (!deleteFiles && (exclusive.length || shared.length)) {
+    warnings.push(`preserving model files at: ${[...exclusive, ...shared].join(', ')}`);
+  }
+  // A stale runtime record (not currently loaded) whose configured port is
+  // held by a process this gateway does not own must not trigger port cleanup.
+  // Surface the conflict so an operator is not surprised that the listener was
+  // left running; the runtime-manager now only cleans up ports it owns.
+  if (removeRuntime && !runtimeLoaded(status)) {
+    const runtimePort = Number(config.runtimes?.[runtimeId]?.port);
+    if (runtimePort && externalPortListeners.includes(runtimePort)) {
+      warnings.push(
+        `port ${runtimePort} is held by an external process; it will be left running (runtime ${runtimeId} is not loaded by this gateway)`
+      );
+    }
+  }
 
   const nextConfig = clone(config.sourceTemplate ?? config);
   delete nextConfig.sourcePath;
   nextConfig.models = (nextConfig.models ?? []).filter((entry) => entry.id !== modelId);
+  const removedRuntimes = removedRuntimeIds(runtimeId, removeRuntime, runtimeMembers);
   if (removeRuntime) delete nextConfig.runtimes?.[runtimeId];
   for (const memberRuntimeId of runtimeMembers) delete nextConfig.runtimes?.[memberRuntimeId];
+  // Prune init bookkeeping for every runtime this removal deletes so the next
+  // additive init cannot re-union stale IDs and no keep-warm pin survives on
+  // a runtime that is gone. Shared runtimes preserved above are untouched.
+  if (removedRuntimes.length) {
+    if (nextConfig.init?.enabledRuntimes) {
+      nextConfig.init.enabledRuntimes = nextConfig.init.enabledRuntimes.filter((id) => !removedRuntimes.includes(id));
+    }
+    if (removedRuntimes.includes(nextConfig.init?.keepWarmRuntime)) delete nextConfig.init.keepWarmRuntime;
+  }
   if (removeBackend) delete nextConfig.backends?.[backendId];
   for (const aliasId of aliases) delete nextConfig.aliases?.[aliasId];
   if (nextConfig.clientCatalog?.modelOrder) {
@@ -137,12 +224,15 @@ export function createModelRemovalPlan(
       runtime: removeRuntime ? runtimeId : null,
       runtimeMembers,
       stopRuntime: removeRuntime && runtimeLoaded(status),
-      modelFiles: deleteFiles ? modelPath : null
+      // Every exclusively owned payload this removal reclaims. A multi-component
+      // model (diffusion plus encoder plus VAE) contributes several entries.
+      modelFiles: deleteFiles ? exclusive : null,
+      preservedModelFiles: shared
     },
     preserved: {
       backend: backendUsers.length ? { id: backendId, usedBy: backendUsers } : null,
       runtime: runtimeUsers.length ? { id: runtimeId, usedBy: runtimeUsers } : null,
-      modelFiles: !deleteFiles && modelPath ? modelPath : null
+      modelFiles: !deleteFiles && exclusive.length ? exclusive : null
     },
     warnings,
     validationErrors
@@ -185,13 +275,19 @@ export async function applyModelRemoval(
   await fs.copyFile(configPath, backupPath);
   await fs.writeFile(temporaryPath, `${JSON.stringify(plan.config, null, 2)}\n`, { mode: 0o600 });
   await fs.rename(temporaryPath, configPath);
-  if (plan.cleanup.modelFiles) await fs.rm(plan.cleanup.modelFiles, { recursive: true, force: true });
-
+  const deletedFiles = [];
+  let reclaimedBytes = 0;
+  for (const target of plan.cleanup.modelFiles ?? []) {
+    const bytes = await reclaimModelFiles(target);
+    deletedFiles.push(target);
+    reclaimedBytes += bytes;
+  }
   return {
     ...plan,
     dryRun: false,
     runtimeStop,
     written: { configPath, backupPath },
-    deletedFiles: plan.cleanup.modelFiles
+    deletedFiles,
+    reclaimedBytes
   };
 }
