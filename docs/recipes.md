@@ -381,6 +381,27 @@ with v81; in Enntity's drafter benchmark on a two-Spark Atlas server
 (2026-11-05) v81 was 2-6%
 faster than v80 on code and structured output, with identical output text.
 
+Version 3 is a candidate that installs SparkGLM 0.3.2 with the same options,
+checkpoint and drafters as version 2:
+
+```sh
+lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --recipe-version 3 --additive --apply --yes
+```
+
+0.3.2 is 0.3.1's engine plus
+[Atlas-Inf#338](https://github.com/Atlas-Inf/atlas/pull/338) (Enntity/atlas
+`f7cea507`, carried on `spark` from merge `c865149d`). On the rank that encodes
+images and video, the GLM vision tower borrows its 1.25 GiB of encode scratch
+from the prefill arena instead of holding it. Because the KV pool is the
+smallest rank's, the TP-2 pool grows about 15%, to 136,362-142,332 blocks
+(about 2.2M tokens) from 116,958-123,298, with image and video support
+unchanged. Its pins are `backends/atlas-sparkglm/pins-0.3.2.json`; apart from
+those, it installs exactly what version 2 does. It qualified on a DGX Spark
+pair with v81 on 2026-11-10 against 0.3.1: identical greedy output, prompt
+logprobs and vision output, 109/109 live checks with an identical guard log,
+and decode and image/video time to first token level. It has not been run at
+TP-4.
+
 The per-size recipes `linux-nvidia-dgx-spark-2x-glm53-atlas` (described below)
 and `linux-nvidia-dgx-spark-4x-glm53-atlas-tp4` (the
 [TP-4 chain](#atlas-sparkglm-tp-4-chain) section) stay installable while hosts
