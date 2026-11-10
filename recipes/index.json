@@ -1328,7 +1328,7 @@
     {
       "id": "linux-nvidia-dgx-spark-qwen38-27b-atlas",
       "path": "linux-nvidia-dgx-spark-qwen38-27b-atlas.json",
-      "currentVersion": 2,
+      "currentVersion": 3,
       "versions": [
         {
           "version": 1,
@@ -1338,6 +1338,12 @@
         },
         {
           "version": 2,
+          "path": "archive/linux-nvidia-dgx-spark-qwen38-27b-atlas/v2.json",
+          "status": "archived",
+          "notes": "SparkQwen model-27b dda652502be9443e5ea91b7bd76f0950af22c61a (install tree 704c2d6d8b4a), engine Enntity/atlas q27/snap-ladder 94a8569cc89c35bc1ef2fac7e0ffaf201dbf8302, image ghcr.io/enntity/atlas-sparkqwen@sha256:8e30cf645aac085449a44e064986430d59619b0b9fcfc8683bd13be4131b6b3d. An idle server's cold prefill saved no interval SSM checkpoint (its arena-sized first chunk kept every later chunk end off the interval), so a match well behind a conversation's tail, after a concurrent large request evicted it, recomputed the whole prompt."
+        },
+        {
+          "version": 3,
           "path": "linux-nvidia-dgx-spark-qwen38-27b-atlas.json",
           "status": "current"
         }
