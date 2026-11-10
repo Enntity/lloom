@@ -1,3 +1,5 @@
+import { unlinkSync } from 'node:fs';
+import { cleanupGatewayProcesses } from '../src/gateway-process-ownership.mjs';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -1343,7 +1345,7 @@ assert.equal(removalPlan.cleanup.runtime, removalRuntimeId);
 assert.deepEqual(removalPlan.cleanup.aliases, ['quick', 'quicker', 'enntity-presence']);
 assert.deepEqual(removalPlan.cleanup.defaultKeys, ['chatModel']);
 assert.equal(removalPlan.cleanup.modelFiles, null);
-assert(removalPlan.preserved.modelFiles.includes('mlx-community--Qwen3.5-4B-Instruct-4bit'));
+assert(removalPlan.preserved.modelFiles.some((entry) => entry.includes('mlx-community--Qwen3.5-4B-Instruct-4bit')));
 assert.equal(JSON.stringify(removalPlan).includes('"config"'), false);
 let removedRuntimeId = null;
 const removalApplied = await applyModelRemoval(removableIntakeConfig, {
@@ -1451,7 +1453,7 @@ const deleteRemovalApplied = await applyModelRemoval(deleteRemovalConfig, {
   dryRun: false,
   yes: true
 });
-assert.equal(deleteRemovalApplied.deletedFiles, deleteModelPath);
+assert.deepEqual(deleteRemovalApplied.deletedFiles, [deleteModelPath]);
 await assert.rejects(() => fs.access(deleteModelPath));
 
 const goConfigPath = path.join(tempDir, 'model-intake-go-config.json');
@@ -4167,43 +4169,71 @@ if (lifecyclePort) {
   const installedLifecycleConfig = `${JSON.stringify(lifecycleConfig, null, 2)}\n`;
   await fs.writeFile(lifecycleConfigPath, installedLifecycleConfig, 'utf8');
 
-  const upCliJson = JSON.parse(
-    (
-      await runCommand(
-        process.execPath,
-        [path.join(process.cwd(), 'bin', 'lloom.mjs'), 'up', '--home', lifecycleHome, '--go', '--json'],
-        { env: envWithoutLloomConfig }
-      )
-    ).stdout
-  );
-  assert.equal(upCliJson.status, 'started');
-  assert.equal(upCliJson.complete, true);
-  assert.equal(upCliJson.config, lifecycleConfigPath);
-  assert.equal(upCliJson.objective, undefined);
-  assert.equal(await fs.readFile(lifecycleConfigPath, 'utf8'), installedLifecycleConfig);
+  const cleanupLifecycle = () => {
+    try {
+      // Keep the launch receipt outside this temporary config's lifetime.
+      requireCleanup();
+    } catch {}
+  };
+  const requireCleanup = () => cleanupGatewayProcesses({ configPath: lifecycleConfigPath, apply: true, yes: true });
+  const onLifecycleExit = () => {
+    try {
+      unlinkSync(lifecycleConfigPath);
+    } catch {}
+    cleanupLifecycle();
+  };
+  const onLifecycleSignal = () => {
+    onLifecycleExit();
+    process.exit(1);
+  };
+  process.once('SIGTERM', onLifecycleSignal);
+  process.once('SIGINT', onLifecycleSignal);
+  process.once('exit', onLifecycleExit);
+  try {
+    const upCliJson = JSON.parse(
+      (
+        await runCommand(
+          process.execPath,
+          [path.join(process.cwd(), 'bin', 'lloom.mjs'), 'up', '--home', lifecycleHome, '--go', '--json'],
+          { env: envWithoutLloomConfig }
+        )
+      ).stdout
+    );
+    assert.equal(upCliJson.status, 'started');
+    assert.equal(upCliJson.complete, true);
+    assert.equal(upCliJson.config, lifecycleConfigPath);
+    assert.equal(upCliJson.objective, undefined);
+    assert.equal(await fs.readFile(lifecycleConfigPath, 'utf8'), installedLifecycleConfig);
 
-  const secondUpCliJson = JSON.parse(
-    (
-      await runCommand(
-        process.execPath,
-        [path.join(process.cwd(), 'bin', 'lloom.mjs'), 'up', '--home', lifecycleHome, '--json'],
-        { env: envWithoutLloomConfig }
-      )
-    ).stdout
-  );
-  assert.equal(secondUpCliJson.status, 'already-running');
+    const secondUpCliJson = JSON.parse(
+      (
+        await runCommand(
+          process.execPath,
+          [path.join(process.cwd(), 'bin', 'lloom.mjs'), 'up', '--home', lifecycleHome, '--json'],
+          { env: envWithoutLloomConfig }
+        )
+      ).stdout
+    );
+    assert.equal(secondUpCliJson.status, 'already-running');
 
-  const downCliJson = JSON.parse(
-    (
-      await runCommand(
-        process.execPath,
-        [path.join(process.cwd(), 'bin', 'lloom.mjs'), 'down', '--home', lifecycleHome, '--json'],
-        { env: envWithoutLloomConfig }
-      )
-    ).stdout
-  );
-  assert.equal(downCliJson.ok, true);
-  assert.equal(downCliJson.gateway.status, 'stopped');
+    const downCliJson = JSON.parse(
+      (
+        await runCommand(
+          process.execPath,
+          [path.join(process.cwd(), 'bin', 'lloom.mjs'), 'down', '--home', lifecycleHome, '--json'],
+          { env: envWithoutLloomConfig }
+        )
+      ).stdout
+    );
+    assert.equal(downCliJson.ok, true);
+    assert.equal(downCliJson.gateway.status, 'stopped');
+  } finally {
+    await fs.rm(lifecycleConfigPath, { force: true });
+    cleanupLifecycle();
+    process.off('exit', onLifecycleExit);
+    process.off('SIGTERM', onLifecycleSignal);
+    process.off('SIGINT', onLifecycleSignal);
+  }
 }
 
 const installedDoctorCli = await runCommand(

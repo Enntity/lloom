@@ -1,7 +1,13 @@
+import { normalizeNodeEndpoint, validNodeId } from './pool-membership.mjs';
 import { promises as fs } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { mutateConfigSource } from './config-mutation.mjs';
-import { currentNodeId, federatedNodeConfigFromSnapshot, updateFederatedBackendTimeout } from './cluster.mjs';
+import {
+  currentNodeId,
+  federatedNodeConfigFromSnapshot,
+  updateFederatedBackendTimeout,
+  materializeFederatedNodes
+} from './cluster.mjs';
 
 export function parsePositiveTimeoutMs(value) {
   if (value == null || value === '') return undefined;
@@ -43,6 +49,7 @@ export async function addAuthenticatedNode(
     namespace = nodeId,
     merge = false,
     includeExternal = false,
+    reconcileImports = false,
     apply = false,
     yes = false,
     timeoutMs: requestedTimeoutMs,
@@ -50,18 +57,10 @@ export async function addAuthenticatedNode(
   } = {}
 ) {
   const timeoutMs = parsePositiveTimeoutMs(requestedTimeoutMs);
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(nodeId ?? '')) throw new Error('Invalid node identity');
+  if (!validNodeId(nodeId)) throw new Error('Invalid node identity');
   if (nodeId === currentNodeId(config)) throw new Error('Cannot replace the local node with a federation peer');
-  let url;
-  try {
-    url = new URL(endpoint);
-  } catch {
-    throw new Error('Invalid node endpoint');
-  }
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash)
-    throw new Error('Node endpoint must be an HTTP(S) URL without credentials, query, or fragment');
+  const base = normalizeNodeEndpoint(endpoint);
   if (apply && !yes) throw new Error('Adding this node requires --apply --yes');
-  const base = url.toString().replace(/\/+$/, '');
   let response;
   try {
     response = await fetchFn(base + '/gateway/node', {
@@ -95,7 +94,9 @@ export async function addAuthenticatedNode(
   }
   if (telemetryOnly) node.proxy = { enabled: false, models: [] };
   if (timeoutMs !== undefined) node.proxy.timeoutMs = timeoutMs;
+  const reconciliation = reconcileImportedModels(config.sourceTemplate ?? config, nodeId, node);
   const summary = {
+    reconciliation: reconciliation.report,
     ok: true,
     applied: false,
     nodeId,
@@ -159,6 +160,14 @@ export async function addAuthenticatedNode(
       backendId = update.backendId;
       backendTimeoutUpdated = update.updated;
     }
+    if (reconcileImports) {
+      const reconciled = reconcileImportedModels(raw, nodeId, nextNode);
+      raw.models = reconciled.models;
+      if (raw.clientCatalog?.modelOrder)
+        raw.clientCatalog.modelOrder = raw.clientCatalog.modelOrder.filter(
+          (id) => !reconciled.report.removed.includes(id)
+        );
+    }
     raw.cluster.nodes[nodeId] = nextNode;
   });
   return {
@@ -168,4 +177,38 @@ export async function addAuthenticatedNode(
     backupPath,
     ...(timeoutMs === undefined ? {} : { backendId, backendTimeoutUpdated })
   };
+}
+
+// Reconcile only persisted imports whose targets prove exclusive node ownership.
+export function reconcileImportedModels(raw, nodeId, node) {
+  const generated = materializeFederatedNodes({ cluster: { nodes: { [nodeId]: node } }, models: [] }).models;
+  const byId = new Map(generated.map((model) => [model.id, model]));
+  const references = new Set(Object.values(raw.defaults ?? {}));
+  for (const alias of Object.values(raw.aliases ?? {})) {
+    for (const id of typeof alias === 'string'
+      ? [alias]
+      : [alias?.target, ...(alias?.members ?? []), ...(alias?.fallbacks ?? [])])
+      references.add(id);
+  }
+  const report = { removed: [], refreshed: [], protected: [], ambiguous: [] };
+  const models = [];
+  for (const original of raw.models ?? []) {
+    const targets = original.targets ?? [];
+    const owned =
+      original.federated === true && targets.length > 0 && targets.every((target) => target.node === nodeId);
+    if (!owned) {
+      if (targets.some((target) => target.node === nodeId)) report.ambiguous.push(original.id);
+      models.push(original);
+      continue;
+    }
+    const fresh = byId.get(original.id);
+    if (fresh) {
+      models.push(fresh);
+      if (JSON.stringify(original) !== JSON.stringify(fresh)) report.refreshed.push(original.id);
+    } else if (references.has(original.id)) {
+      models.push(original);
+      report.protected.push(original.id);
+    } else report.removed.push(original.id);
+  }
+  return { models, report };
 }

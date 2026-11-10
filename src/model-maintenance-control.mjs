@@ -181,7 +181,10 @@ export function createModelMaintenanceController({
       });
     }
     for (const id of ownerIds) {
-      await manager.stop(id, { requestedBy: opts.requestedBy });
+      const result = await manager.stop(id, { requestedBy: opts.requestedBy });
+      if (result?.stopped === false && !['already-stopped', 'container-missing'].includes(result.reason)) {
+        throw new Error(`runtime ${id} could not be stopped: ${result.reason}`);
+      }
     }
     const clean = await allStopped(ownerIds, getConfig());
     if (!clean) {

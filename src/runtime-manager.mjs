@@ -1,3 +1,4 @@
+import { recordRuntimeProcess, recoverRuntimeProcess, forgetRuntimeProcess } from './runtime-process-ownership.mjs';
 import { spawn } from 'node:child_process';
 import { execFile } from 'node:child_process';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -16,8 +17,9 @@ import {
   runtimeReadinessScope,
   runtimeResourcesByNode
 } from './cluster.mjs';
-import { cleanupPortListener, terminateProcessTree } from './process-control.mjs';
+import { findPortListenerPids, terminateProcessTree } from './process-control.mjs';
 import { memorySafetyPolicy, createMemorySafetyGuard, RuntimeMemorySafetyError } from './runtime-memory-safety.mjs';
+import { readHostMemory } from './host-memory.mjs';
 import { createRuntimeMemoryUsageSampler } from './runtime-memory-usage.mjs';
 
 import {
@@ -46,6 +48,21 @@ const PREFERRED_WARM_DEFAULT_IDLE_MS = 30000;
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+// What a memory-safety abort tells pool planning: host memory in use when the
+// guard tripped, and how much of it this load had taken (a lower bound on its
+// footprint, since the load was cut short).
+function memorySafetyAbortRecord(baseline, snapshot) {
+  const gib = (bytes) => Math.round((bytes / 1024 ** 3) * 10) / 10;
+  const total = numberOrNull(snapshot?.totalBytes);
+  const available = numberOrNull(snapshot?.availableBytes);
+  const before = numberOrNull(baseline?.availableBytes);
+  return {
+    at: nowIso(),
+    usedGb: total != null && available != null ? gib(total - available) : null,
+    consumedGb: before != null && available != null ? gib(Math.max(0, before - available)) : null
+  };
 }
 
 const MTPLX_SESSION_CACHE_FLAGS = new Set([
@@ -1027,7 +1044,13 @@ export class RuntimeManager {
   // pinned to required nodes; this method never performs a cluster-wide sweep.
   async runtimeServingHealthy(runtimeId, nodeEvidence = {}) {
     const runtime = this.getRuntime(runtimeId);
-    if (!runtime || runtime.enabled !== true || this.stateFor(runtimeId).status === 'warming') return false;
+    if (
+      !runtime ||
+      runtime.enabled !== true ||
+      this.stateFor(runtimeId).status === 'warming' ||
+      this.warmupFailed(runtimeId)
+    )
+      return false;
     const placement = runtimePlacement(runtime, this.config);
 
     if (placement.mode === 'distributed') {
@@ -1080,17 +1103,22 @@ export class RuntimeManager {
     }
   }
 
+  warmupFailed(runtimeId) {
+    const result = this.stateFor(runtimeId).lastWarmup;
+    return Boolean(this.getRuntime(runtimeId)?.warmup?.url && result?.warmed === false);
+  }
+
   async isHealthy(runtimeId) {
     const runtime = this.getRuntime(runtimeId);
     if (!runtime) return false;
-    if (this.stateFor(runtimeId).status === 'warming') return false;
+    if (this.stateFor(runtimeId).status === 'warming' || this.warmupFailed(runtimeId)) return false;
     const distributed = runtimePlacement(runtime, this.config).mode === 'distributed';
     const healthy =
       (await this.distributedServingOwnership(runtime)) &&
       (await (distributed && runtime.healthUrl
         ? healthOk(runtime.healthUrl, runtimeHealthTimeoutMs(runtime), runtime.healthModel)
         : runtimeHealthOk(runtime)));
-    if (this.stateFor(runtimeId).status === 'warming') return false;
+    if (this.stateFor(runtimeId).status === 'warming' || this.warmupFailed(runtimeId)) return false;
     if (healthy) return true;
     // Distributed serving health is owned by the configured logical endpoint.
     // When a logical healthUrl is configured, an unhealthy probe fails closed:
@@ -1324,7 +1352,7 @@ export class RuntimeManager {
     return aborted;
   }
 
-  async status({ localOnly = false, includeMemoryUsage = false } = {}) {
+  async status({ localOnly = false, includeMemoryUsage = false, refresh = false } = {}) {
     const runtimes = {};
     const keepWarm = new Set(this.keepWarmRuntimeIds());
     const preferredWarm = new Set(this.preferredWarmRuntimeIds());
@@ -1340,7 +1368,7 @@ export class RuntimeManager {
       if (localOnly && !isLocal) continue;
       if (isLocal) localRuntimeIds.push(runtimeId);
       if (!isLocal && this.clusterCoordinator) {
-        if (!remoteNodes.has(nodeId)) remoteNodes.set(nodeId, this.clusterCoordinator.nodeStatus(nodeId));
+        if (!remoteNodes.has(nodeId)) remoteNodes.set(nodeId, this.clusterCoordinator.nodeStatus(nodeId, { refresh }));
         const node = await remoteNodes.get(nodeId);
         const remote = node.runtimeManager?.runtimes?.[runtimeId];
         const gatewayState = this.stateFor(runtimeId);
@@ -1372,7 +1400,8 @@ export class RuntimeManager {
       }
       const state = this.stateFor(runtimeId);
       const process = this.processes.get(runtimeId);
-      const healthy = await runtimeHealthOk(runtime);
+      const live = await runtimeHealthOk(runtime);
+      const healthy = live && !this.warmupFailed(runtimeId);
       const container = runtimeAdapter(runtime) === 'docker' ? await dockerContainerState(runtime) : null;
       let status = state.status;
       if (state.status === 'queued') {
@@ -1392,9 +1421,11 @@ export class RuntimeManager {
       } else if (container?.exists) {
         status = container.status;
       }
+      if (this.warmupFailed(runtimeId)) status = 'failed';
       runtimes[runtimeId] = {
         ...compactRuntime(runtimeId, runtime, this.config),
         pid: process?.pid ?? null,
+        live,
         healthy,
         status,
         keepWarm: keepWarm.has(runtimeId),
@@ -1413,6 +1444,8 @@ export class RuntimeManager {
         stoppedAt: state.stoppedAt,
         lastWarmup: state.lastWarmup,
         lastError: state.lastError,
+        memorySafetyLatched: this.memorySafetyFailures.has(runtimeId),
+        memorySafetyAbort: state.memorySafetyAbort ?? null,
         watchdog: {
           ...runtimeWatchdogConfig(runtime),
           ...state.watchdog
@@ -2067,6 +2100,10 @@ export class RuntimeManager {
           results.push({ runtimeId, started: false, reason: 'runtime-disabled' });
           continue;
         }
+        if (maintenanceBlocksRouting(nextConfig, runtimeId)) {
+          results.push({ runtimeId, started: false, reason: 'maintenance' });
+          continue;
+        }
         const ownership = keepWarmOwnership(nextConfig, runtimeId, { nodeId, leaderNode });
         if (current.keepWarm === true && !ownership.owned) {
           results.push({ runtimeId, started: false, reason: ownership.reason });
@@ -2231,7 +2268,12 @@ export class RuntimeManager {
             healthy: true,
             distributed: true,
             reason: 'startup-adopted',
-            ...(warmupResult ? { warmup: warmupResult } : {})
+            ...(warmupResult
+              ? {
+                  warmup: warmupResult,
+                  ...(this.warmupFailed(runtimeId) ? { healthy: false, reason: 'warmup-failed' } : {})
+                }
+              : {})
           };
         }
         if (force || hasLoadedMember) {
@@ -2273,7 +2315,12 @@ export class RuntimeManager {
           healthy: true,
           distributed: true,
           members: started,
-          ...(warmupResult ? { warmup: warmupResult } : {})
+          ...(warmupResult
+            ? {
+                warmup: warmupResult,
+                ...(this.warmupFailed(runtimeId) ? { healthy: false, reason: 'warmup-failed' } : {})
+              }
+            : {})
         };
       } catch (error) {
         for (const member of [...placement.members].sort((left, right) => right.order - left.order)) {
@@ -2304,12 +2351,26 @@ export class RuntimeManager {
     if (await runtimeHealthOk(runtime)) {
       this.setStatus(runtimeId, 'running');
       const warmupResult = warmup ? await this.warmup(runtimeId, runtime) : null;
+      // A process/catalog that is up is not necessarily model-ready: an explicit
+      // warmup that failed (for example an HTTP 409 from an incompatible weight
+      // layout) must not be flattened to healthy, or routing and CLI admission
+      // will treat the model as admitted. Runtimes with no warmup configured are
+      // read from their catalog health alone and are not a failure.
+      const warmupFailed =
+        warmupResult != null &&
+        warmupResult.warmed === false &&
+        !['no-warmup', 'not-healthy'].includes(warmupResult.reason);
       return {
         runtimeId,
         started: false,
-        healthy: true,
-        reason: 'already-healthy',
-        ...(warmupResult ? { warmup: warmupResult } : {})
+        healthy: !warmupFailed,
+        reason: warmupFailed ? 'warmup-failed' : 'already-healthy',
+        ...(warmupResult
+          ? {
+              warmup: warmupResult,
+              ...(this.warmupFailed(runtimeId) ? { healthy: false, reason: 'warmup-failed' } : {})
+            }
+          : {})
       };
     }
 
@@ -2340,12 +2401,21 @@ export class RuntimeManager {
           });
         }
       })());
+    // The first sample is the host before this load; at an abort, the
+    // difference is a lower bound on what the load really needs.
+    const sampleHost = this.memorySampler ?? (() => readHostMemory({ strict: true }));
+    let baseline = null;
     const guard = createMemorySafetyGuard({
       policy,
       runtimeId,
-      sample: this.memorySampler,
+      sample: async () => {
+        const snapshot = await sampleHost();
+        baseline ??= snapshot;
+        return snapshot;
+      },
       onAbort: (error) => {
         this.memorySafetyFailures.set(runtimeId, error);
+        this.stateFor(runtimeId).memorySafetyAbort = memorySafetyAbortRecord(baseline, error.snapshot);
         this.record({ runtimeId, event: 'memory-safety-abort', message: error.message, snapshot: error.snapshot });
         this.logger.error?.(error.message);
         void cleanup().catch(() => {});
@@ -2368,6 +2438,8 @@ export class RuntimeManager {
       await guard.check();
       combinedSignal.throwIfAborted();
       if (owned.child?.connected) owned.child.send({ type: 'memory-safety-complete' }, () => {});
+      // A completed load is measured from here on; old abort evidence no longer applies.
+      if (result?.healthy) this.stateFor(runtimeId).memorySafetyAbort = null;
       return result;
     } catch (cause) {
       const error = guard.signal.aborted ? guard.signal.reason : cause;
@@ -2434,7 +2506,12 @@ export class RuntimeManager {
         ...result,
         started: true,
         containerName: dockerContainerName(runtime),
-        ...(warmupResult ? { warmup: warmupResult } : {})
+        ...(warmupResult
+          ? {
+              warmup: warmupResult,
+              ...(this.warmupFailed(runtimeId) ? { healthy: false, reason: 'warmup-failed' } : {})
+            }
+          : {})
       };
     }
 
@@ -2476,6 +2553,7 @@ export class RuntimeManager {
       }
     );
     owned.child = child;
+    recordRuntimeProcess(this.config, runtimeId, child.pid);
     child.on('message', (message) => {
       if (message?.type === 'memory-safety-abort')
         guard.trip(new RuntimeMemorySafetyError(message.message, { runtimeId, snapshot: message.snapshot, policy }));
@@ -2562,7 +2640,9 @@ export class RuntimeManager {
       ...result,
       started: true,
       pid: child.pid,
-      ...(warmupResult ? { warmup: warmupResult } : {})
+      ...(warmupResult
+        ? { warmup: warmupResult, ...(this.warmupFailed(runtimeId) ? { healthy: false, reason: 'warmup-failed' } : {}) }
+        : {})
     };
   }
 
@@ -2665,7 +2745,7 @@ export class RuntimeManager {
         event: 'warmup',
         bodyPreview: text.slice(0, 300)
       });
-      this.setStatus(runtimeId, 'running', response.ok ? null : 'warmup-failed');
+      this.setStatus(runtimeId, response.ok ? 'running' : 'failed', response.ok ? null : 'warmup-failed');
       return result;
     } catch (error) {
       if (signal?.aborted) throw signal.reason ?? error;
@@ -2677,7 +2757,7 @@ export class RuntimeManager {
       };
       state.lastWarmup = result;
       this.record({ ...result, event: 'warmup' });
-      this.setStatus(runtimeId, 'running', 'warmup-failed');
+      this.setStatus(runtimeId, 'failed', 'warmup-failed');
       return result;
     }
   }
@@ -2799,9 +2879,14 @@ export class RuntimeManager {
     // keeps an explicit stop responsive during a long model startup.
     this.abortRuntimeTree(runtimeId, `runtime ${runtimeId} stop requested`);
     return this.withMutationScope(deploymentFenceToken, () =>
-      this.withRuntimeLifecycleLock(runtimeId, () => this.stopUnlocked(runtimeId, { requestedBy: requesterNode }), {
-        allowDuringShutdown: true
-      })
+      this.withRuntimeLifecycleLock(
+        runtimeId,
+        () =>
+          this.stopUnlocked(runtimeId, {
+            requestedBy: requesterNode
+          }),
+        { allowDuringShutdown: true }
+      )
     );
   }
 
@@ -2850,6 +2935,11 @@ export class RuntimeManager {
           result: await this.stop(member.runtime, { requestedBy: requesterNode })
         });
       }
+      const failed = members.filter(
+        (member) =>
+          member.result?.stopped === false && !['already-stopped', 'container-missing'].includes(member.result.reason)
+      );
+      if (failed.length) return { runtimeId, stopped: false, reason: 'member-stop-failed', distributed: true, members };
       this.setStatus(runtimeId, 'stopped');
       state.stops += 1;
       state.stoppedAt = nowIso();
@@ -2878,7 +2968,7 @@ export class RuntimeManager {
       this.record({ runtimeId, event: 'docker-stop', processResult });
       return { runtimeId, stopped: true, processResult };
     }
-    const child = this.processes.get(runtimeId);
+    const child = this.processes.get(runtimeId) ?? recoverRuntimeProcess(this.config, runtimeId);
     let processResult = null;
     if (child?.pid) {
       state.status = 'stopping';
@@ -2887,10 +2977,15 @@ export class RuntimeManager {
       processResult = await terminateProcessTree([child.pid], { termTimeoutMs: 3000 });
       this.processes.delete(runtimeId);
     }
-    let portResult = null;
-    if (runtime?.port) {
-      portResult = await cleanupPortListener(runtime.port);
+    // A port and a successful health probe are not process ownership. Only
+    // terminate the tracked process tree; leave foreign/rebound listeners alone.
+    const listeners = runtime?.port ? await findPortListenerPids(runtime.port) : [];
+    const portResult = runtime?.port ? { port: runtime.port, survivors: listeners } : null;
+    if (listeners.length || processResult?.survivors?.length || processResult?.failed?.length) {
+      this.setStatus(runtimeId, 'blocked', 'runtime-process-ownership');
+      return { runtimeId, stopped: false, reason: 'runtime-process-ownership', processResult, portResult };
     }
+    forgetRuntimeProcess(this.config, runtimeId);
     state.status = 'stopped';
     state.stops += 1;
     state.stoppedAt = nowIso();

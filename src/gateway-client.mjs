@@ -280,9 +280,9 @@ export async function gatewayRequest(
       // needs, so they pass through: redacted (including the key just sent),
       // without control characters, and bounded.
       const schedule =
-        detail?.error?.type === 'schedule_error' &&
+        ['schedule_error', 'runtime_admission_error', 'runtime_maintenance_error'].includes(detail?.error?.type) &&
         typeof detail.error.message === 'string' &&
-        /^schedule_[a-z_]{1,40}$/.test(String(detail.error.code ?? ''))
+        /^(?:schedule|runtime)_[a-z_]{1,60}$/.test(String(detail.error.code ?? ''))
           ? redactDiagnosticValue(
               {
                 code: detail.error.code,

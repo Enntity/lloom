@@ -60,15 +60,20 @@ export function adminKeysConfigured(config) {
   return keySet(config.security?.adminApiKeys).size > 0;
 }
 
+const POOL_NODE_ROUTES = new Set(['/gateway/pool/enroll', '/gateway/pool/heartbeat']);
+
 /**
  * @param {string} method
  * @param {string} pathname
- * @returns {'public' | 'inference' | 'admin-read' | 'admin-write'}
+ * @returns {'public' | 'inference' | 'admin-read' | 'admin-write' | 'pool-node'}
  */
 export function classifyRoute(method, pathname) {
   const verb = String(method ?? 'GET').toUpperCase();
   const path = String(pathname ?? '/');
   if (verb === 'OPTIONS') return 'public';
+  // Pool enrollment and heartbeats authenticate in their handlers with an
+  // enrollment token or a node secret. API keys neither grant nor replace them.
+  if (verb === 'POST' && POOL_NODE_ROUTES.has(path)) return 'pool-node';
   if (
     verb === 'GET' &&
     (path === '/health' || path === '/' || path === '/gateway/dashboard' || path === '/gateway/security')
@@ -102,7 +107,7 @@ export function authorizeRequest(req, config, { method, pathname } = {}) {
   const validInferenceKey = hasValidApiKey(req, config, { admin: false });
   const validAdminKey = hasValidApiKey(req, config, { admin: true });
 
-  if (routeKind === 'public') {
+  if (routeKind === 'public' || routeKind === 'pool-node') {
     return { ok: true, routeKind };
   }
 

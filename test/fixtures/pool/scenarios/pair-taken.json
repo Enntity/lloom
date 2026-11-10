@@ -1,0 +1,61 @@
+{
+  "base": "spark-fleet-base.json",
+  "name": "pair-taken",
+  "description": "The operator takes the 01/02 pair for other work at hour 2 and gives it back at hour 8. Without a controller (off), the operator also switches fleet profiles by hand at the same moments, as on 2026-10-10. With the controller (auto), the operator only cordons and uncordons.",
+  "durationHours": 12,
+  "operator": { "manualDelayMinutes": 5 },
+  "events": [
+    { "atHours": 2, "type": "cordon", "nodes": ["spark-node-01", "spark-node-02"] },
+    { "atHours": 2, "type": "stop-lane", "placement": "qwen3.8-flash-next-atlas@spark-node-01+spark-node-02" },
+    {
+      "atHours": 2,
+      "type": "apply-profile",
+      "modes": ["off"],
+      "note": "lloom fleet use standalone",
+      "routes": {
+        "chat-capable": "qwen38-27b-nvfp4",
+        "chat-fast": "qwen38-27b-nvfp4",
+        "chat-classifier": "qwen38-27b-nvfp4",
+        "multimodal": "qwen38-27b-nvfp4",
+        "enntity-presence": "qwen38-27b-nvfp4",
+        "omp": "qwen38-27b-nvfp4",
+        "ds4f": "qwen38-27b-nvfp4"
+      },
+      "residency": { "qwen38-27b-nvfp4": "always" }
+    },
+    { "atHours": 8, "type": "uncordon", "nodes": ["spark-node-01", "spark-node-02"] },
+    {
+      "atHours": 8,
+      "type": "start-lane",
+      "modes": ["off"],
+      "placement": "qwen3.8-flash-next-atlas@spark-node-01+spark-node-02"
+    },
+    {
+      "atHours": 8.25,
+      "type": "apply-profile",
+      "modes": ["off"],
+      "note": "lloom fleet use sparkqwen-pair-rc16",
+      "routes": {
+        "chat-capable": "qwen3.8-flash-next-atlas",
+        "chat-fast": "qwen3.8-flash-next-atlas",
+        "chat-classifier": "qwen3.8-flash-next-atlas",
+        "multimodal": "qwen3.8-flash-next-atlas",
+        "enntity-presence": "qwen3.8-flash-next-atlas",
+        "omp": "qwen3.8-flash-next-atlas",
+        "ds4f": "qwen3.8-flash-next-atlas"
+      },
+      "residency": { "qwen38-27b-nvfp4": "auto" }
+    }
+  ],
+  "expect": {
+    "auto": {
+      "safety.memoryViolations.length": { "max": 0 },
+      "final.routes.chat-capable": { "equals": "qwen3.8-flash-next-atlas" },
+      "final.residency.qwen38-27b-nvfp4": { "equals": "auto" },
+      "controller.stepFailures": { "max": 0 }
+    },
+    "off": {
+      "safety.memoryViolations.length": { "max": 0 }
+    }
+  }
+}

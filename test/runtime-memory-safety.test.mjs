@@ -192,6 +192,14 @@ test('explicit YOLO is the only guard bypass', async (t) => {
   assert(alive((await f.ids()).backend));
 });
 
+test('a successful start clears earlier memory-safety abort evidence', async (t) => {
+  const f = await fixture(t, { yolo: true });
+  f.manager.stateFor('demo').memorySafetyAbort = { at: '2026-10-11T00:00:00.000Z', usedGb: 90, consumedGb: 40 };
+  const result = await f.manager.start('demo');
+  assert.equal(result.healthy, true);
+  assert.equal((await f.manager.status()).runtimes.demo.memorySafetyAbort, null);
+});
+
 test('a stale sample cannot abort a completed operation', async () => {
   let release;
   let aborts = 0;
@@ -324,6 +332,14 @@ default: process.exit(4);
   );
   await assert.rejects(manager.start('demo'), (e) => e.code === 'runtime_memory_safety_abort');
   assert.equal(await fs.readFile(killed, 'utf8'), 'killed');
+  // The abort is recorded with how much host memory the load had taken, a
+  // lower bound on its real footprint that pool planning uses, and the
+  // runtime stays latched until a manual start.
+  const status = (await manager.status()).runtimes.demo;
+  assert.equal(status.memorySafetyLatched, true);
+  assert.equal(status.memorySafetyAbort.consumedGb, 57);
+  assert.equal(status.memorySafetyAbort.usedGb, 93);
+  assert.ok(Date.parse(status.memorySafetyAbort.at));
 });
 
 test('supervisor preflight rejection cannot race an immediate health success', async (t) => {

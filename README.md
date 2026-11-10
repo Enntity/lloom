@@ -122,6 +122,8 @@ lloom route q38fn                                                        # inspe
 lloom route q38fn --suspend-member qwen3.8-flash-next --apply --yes      # keep stable traffic on cloud
 lloom runtime-stop qwen38-flash-next-cluster                             # stop local TP-2 after suspension
 lloom route q38fn --resume-member qwen3.8-flash-next --apply --yes       # restore preferred-local recovery
+lloom pool plan --cordon spark-node-02                                   # dry-run placement across the cluster
+lloom pool members                                                       # nodes that joined with `lloom pool join`
 lloom integrate omp --apply --yes
 lloom add-model mlx-community/Qwen3.6-27B-OptiQ-4bit --keep-warm --default --go           # Mac: install, download, start
 lloom remove-model mlx-community/Qwen3.6-27B-OptiQ-4bit                                  # preview safe cleanup
@@ -638,3 +640,52 @@ For authentication, transport failures, and machine-readable CLI errors, see
 Linux gateway persistence: [service installation and diagnostics](docs/service-installation.md).
 
 Run temporary container workloads with `lloom workload run --file plan.json --apply --yes`. LLooM handles Accord reservation, registration, renewal and confirmed release; see [shared resources](docs/reservations.md).
+
+
+### Maintenance diagnostics and safe cleanup
+
+`lloom resume MODEL --apply --yes` uses the configured admin credential (or
+`--admin-api-key-env NAME`). Admission failures include a bounded, redacted
+reason and error code. Recipe reloads preserve maintenance; installing a recipe
+does not silently resume a suspended workload. Run `resume` explicitly when the
+hardware is available.
+
+`lloom cluster add-node ... --reconcile-imports` previews obsolete persisted
+imports and metadata refreshes. Add `--apply --yes` to reconcile entries whose
+federated targets belong exclusively to that node. Entries referenced by defaults
+or aliases, and models with mixed ownership, remain in the preview for review.
+
+`lloom replace-model-route ID --backend BACKEND --upstream-model MODEL` previews
+an atomic switch to an existing OpenAI-compatible backend. `--apply --yes`
+preserves the logical ID, aliases, defaults and catalog order. The old runtime
+and its files remain configured; the command does not stop its listener.
+
+`lloom gateway-orphans` inspects launch receipts kept outside temporary config
+directories. `--apply --yes` signals only gateways whose config is gone and whose
+PID start time, exact command and listening socket still match the receipt.
+Gateways started before receipts were introduced need independent ownership
+verification; port matching alone is never permission to stop a process.
+
+For legacy model roots and backend caches, `lloom artifacts --manifest FILE`
+previews an explicit ownership manifest:
+
+```json
+{
+  "schema": 1,
+  "roots": ["/absolute/managed-cache"],
+  "configs": ["/absolute/gateway/config.json", "/absolute/other-gateway/config.json"],
+  "artifacts": [
+    {"path": "/absolute/managed-cache/weights.bin", "models": ["model-a", "model-b"]}
+  ]
+}
+```
+
+Register every consumer config and every model sharing a payload. Use canonical
+paths and list cache payloads explicitly; symlinks and paths outside registered
+roots are refused. Remove unwanted model configuration first, then preview again.
+Only artifacts without remaining owners or references are eligible. Apply the
+exact preview with `--apply --yes --expect-plan DIGEST`. A changed config, manifest
+or file invalidates the digest. The receipt reports deleted files and reclaimed
+bytes; shared blobs, unlisted files and empty cache directories remain. This
+registry does not call native backend delete commands or infer ownership from
+cache names.
