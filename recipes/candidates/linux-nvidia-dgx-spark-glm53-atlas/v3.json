@@ -68,6 +68,18 @@
           }
         }
       }
+    },
+    "memory": {
+      "description": "How much of each Spark's memory the model takes. Speed is the same; only the prompt cache pool changes.",
+      "default": "full",
+      "values": {
+        "full": {
+          "description": "The qualified setting: 114 GB a Spark, for Sparks that run nothing else."
+        },
+        "shared": {
+          "description": "106 GB a Spark (GPU memory utilization 0.83), for a Spark that also hosts about 10 GB of other services. The prompt cache pool is smaller."
+        }
+      }
     }
   },
   "summary": "SparkGLM on two directly connected DGX Sparks (TP-2 pair) or four cabled as a daisy chain (TP-4), serving nvidia/GLM-5.3-Flash-FP4-Local as published with DFlash2 speculative decoding: four requests of up to 1M tokens. Options: --sparks 2|4 and --drafter v81|v80|dflash2. Additive only: no default model, no aliases.",
@@ -156,7 +168,11 @@
     "platforms": [
       "linux-arm64"
     ],
-    "memoryGb": 114,
+    "memoryGb": {
+      "$option": "memory",
+      "full": 114,
+      "shared": 106
+    },
     "diskGb": 220,
     "commands": [
       "docker",
@@ -323,7 +339,11 @@
         "requestStartupWaitMs": 1000,
         "startupRetryAfterSeconds": 30,
         "healthTimeoutMs": 5000,
-        "memoryGb": 114,
+        "memoryGb": {
+          "$option": "memory",
+          "full": 114,
+          "shared": 106
+        },
         "prefixCacheGb": {
           "$option": "sparks",
           "2": 48,
@@ -365,7 +385,11 @@
               },
               "healthStrategy": "container",
               "resources": {
-                "memoryGb": 114
+                "memoryGb": {
+                  "$option": "memory",
+                  "full": 114,
+                  "shared": 106
+                }
               },
               "runtimeSettings": {
                 "adapter": "docker",
@@ -452,7 +476,11 @@
                     "-e",
                     "SERVED_MODEL_NAME=glm-5.3-flash-atlas",
                     "-e",
-                    "SPARKGLM_GPU_MEMORY_UTILIZATION=${gpuMemoryUtilization}",
+                    {
+                      "$option": "memory",
+                      "full": "SPARKGLM_GPU_MEMORY_UTILIZATION=${gpuMemoryUtilization}",
+                      "shared": "SPARKGLM_GPU_MEMORY_UTILIZATION=0.83"
+                    },
                     "-e",
                     "SPARKGLM_DISPLAY_CARVEOUT=${displayCarveout}",
                     "-e",
@@ -551,7 +579,11 @@
               "role": "head",
               "order": 20,
               "resources": {
-                "memoryGb": 114
+                "memoryGb": {
+                  "$option": "memory",
+                  "full": 114,
+                  "shared": 106
+                }
               },
               "runtimeSettings": {
                 "adapter": "docker",
@@ -654,7 +686,11 @@
                     "-e",
                     "SERVED_MODEL_NAME=glm-5.3-flash-atlas",
                     "-e",
-                    "SPARKGLM_GPU_MEMORY_UTILIZATION=${gpuMemoryUtilization}",
+                    {
+                      "$option": "memory",
+                      "full": "SPARKGLM_GPU_MEMORY_UTILIZATION=${gpuMemoryUtilization}",
+                      "shared": "SPARKGLM_GPU_MEMORY_UTILIZATION=0.83"
+                    },
                     "-e",
                     "SPARKGLM_DISPLAY_CARVEOUT=${displayCarveout}",
                     "-e",

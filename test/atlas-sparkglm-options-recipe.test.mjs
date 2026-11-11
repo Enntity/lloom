@@ -58,16 +58,25 @@ function asOneRecipe(r) {
 test('the recipe is valid in every combination and installs SparkGLM 0.3.1', () => {
   assert.deepEqual(validateRecipe(recipe, {}, { checkLocalReferences: false }), []);
   assert.equal(recipe.version, 2);
-  assert.deepEqual(recipeOptionCombinations(recipe), [
-    { sparks: '2', drafter: 'v81' },
-    { sparks: '2', drafter: 'v80' },
-    { sparks: '2', drafter: 'dflash2' },
-    { sparks: '4', drafter: 'v81' },
-    { sparks: '4', drafter: 'v80' },
-    { sparks: '4', drafter: 'dflash2' }
-  ]);
-  assert.deepEqual(recipe.selectedOptions, { sparks: '2', drafter: 'v81' });
-  assert.deepEqual(resolved({ sparks: '4' }).selectedOptions, { sparks: '4', drafter: 'dflash2' });
+  assert.deepEqual(
+    recipeOptionCombinations(recipe),
+    ['2', '4'].flatMap((sparks) =>
+      ['v81', 'v80', 'dflash2'].flatMap((drafter) => ['full', 'shared'].map((memory) => ({ sparks, drafter, memory })))
+    )
+  );
+  assert.deepEqual(recipe.selectedOptions, { sparks: '2', drafter: 'v81', memory: 'full' });
+  assert.deepEqual(resolved({ sparks: '4' }).selectedOptions, { sparks: '4', drafter: 'dflash2', memory: 'full' });
+  // `shared` leaves room for a Spark's other services: a smaller budget and GPU share, nothing else.
+  const shared = resolved({ memory: 'shared' });
+  assert.equal(shared.requirements.memoryGb, 106);
+  assert.equal(recipe.requirements.memoryGb, 114);
+  assert.equal(
+    JSON.stringify(shared)
+      .replaceAll('SPARKGLM_GPU_MEMORY_UTILIZATION=0.83', 'SPARKGLM_GPU_MEMORY_UTILIZATION=0.91')
+      .replaceAll('"memoryGb":106', '"memoryGb":114')
+      .replace('"memory":"shared"', '"memory":"full"'),
+    JSON.stringify(recipe)
+  );
   assert.deepEqual(verifyPins(pins), []);
   assert.equal(pins.source.revision, '33fe02f83a9edf96ae38ebe4fc6a8ec8e7603f90');
   for (const step of recipe.setup.steps.filter((s) => ['verify-atlas-pins', 'build-atlas-image'].includes(s.id))) {
