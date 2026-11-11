@@ -77,7 +77,7 @@
           "description": "The qualified setting: 114 GB a Spark, for Sparks that run nothing else."
         },
         "shared": {
-          "description": "107 GB a Spark (GPU memory utilization 0.85), for a Spark that also hosts about 10 GB of other services. The model takes about 103 GB before any prompt cache, so the cache pool is roughly a third of the full one."
+          "description": "107 GB a Spark (GPU memory utilization 0.87), for a Spark that also hosts about 10 GB of other services. The model takes about 104 GB before any prompt cache, so the cache pool is roughly a third of the full one."
         }
       }
     }
@@ -479,7 +479,7 @@
                     {
                       "$option": "memory",
                       "full": "SPARKGLM_GPU_MEMORY_UTILIZATION=${gpuMemoryUtilization}",
-                      "shared": "SPARKGLM_GPU_MEMORY_UTILIZATION=0.85"
+                      "shared": "SPARKGLM_GPU_MEMORY_UTILIZATION=0.87"
                     },
                     "-e",
                     "SPARKGLM_DISPLAY_CARVEOUT=${displayCarveout}",
@@ -689,7 +689,7 @@
                     {
                       "$option": "memory",
                       "full": "SPARKGLM_GPU_MEMORY_UTILIZATION=${gpuMemoryUtilization}",
-                      "shared": "SPARKGLM_GPU_MEMORY_UTILIZATION=0.85"
+                      "shared": "SPARKGLM_GPU_MEMORY_UTILIZATION=0.87"
                     },
                     "-e",
                     "SPARKGLM_DISPLAY_CARVEOUT=${displayCarveout}",

@@ -72,7 +72,7 @@ test('the recipe is valid in every combination and installs SparkGLM 0.3.1', () 
   assert.equal(recipe.requirements.memoryGb, 114);
   assert.equal(
     JSON.stringify(shared)
-      .replaceAll('SPARKGLM_GPU_MEMORY_UTILIZATION=0.85', 'SPARKGLM_GPU_MEMORY_UTILIZATION=0.91')
+      .replaceAll('SPARKGLM_GPU_MEMORY_UTILIZATION=0.87', 'SPARKGLM_GPU_MEMORY_UTILIZATION=0.91')
       .replaceAll('"memoryGb":107', '"memoryGb":114')
       .replace('"memory":"shared"', '"memory":"full"'),
     JSON.stringify(recipe)
