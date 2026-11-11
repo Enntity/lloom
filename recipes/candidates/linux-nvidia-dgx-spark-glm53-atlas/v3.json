@@ -77,7 +77,7 @@
           "description": "The qualified setting: 114 GB a Spark, for Sparks that run nothing else."
         },
         "shared": {
-          "description": "106 GB a Spark (GPU memory utilization 0.83), for a Spark that also hosts about 10 GB of other services. The prompt cache pool is smaller."
+          "description": "107 GB a Spark (GPU memory utilization 0.85), for a Spark that also hosts about 10 GB of other services. The model takes about 103 GB before any prompt cache, so the cache pool is roughly a third of the full one."
         }
       }
     }
@@ -171,7 +171,7 @@
     "memoryGb": {
       "$option": "memory",
       "full": 114,
-      "shared": 106
+      "shared": 107
     },
     "diskGb": 220,
     "commands": [
@@ -342,7 +342,7 @@
         "memoryGb": {
           "$option": "memory",
           "full": 114,
-          "shared": 106
+          "shared": 107
         },
         "prefixCacheGb": {
           "$option": "sparks",
@@ -388,7 +388,7 @@
                 "memoryGb": {
                   "$option": "memory",
                   "full": 114,
-                  "shared": 106
+                  "shared": 107
                 }
               },
               "runtimeSettings": {
@@ -479,7 +479,7 @@
                     {
                       "$option": "memory",
                       "full": "SPARKGLM_GPU_MEMORY_UTILIZATION=${gpuMemoryUtilization}",
-                      "shared": "SPARKGLM_GPU_MEMORY_UTILIZATION=0.83"
+                      "shared": "SPARKGLM_GPU_MEMORY_UTILIZATION=0.85"
                     },
                     "-e",
                     "SPARKGLM_DISPLAY_CARVEOUT=${displayCarveout}",
@@ -582,7 +582,7 @@
                 "memoryGb": {
                   "$option": "memory",
                   "full": 114,
-                  "shared": 106
+                  "shared": 107
                 }
               },
               "runtimeSettings": {
@@ -689,7 +689,7 @@
                     {
                       "$option": "memory",
                       "full": "SPARKGLM_GPU_MEMORY_UTILIZATION=${gpuMemoryUtilization}",
-                      "shared": "SPARKGLM_GPU_MEMORY_UTILIZATION=0.83"
+                      "shared": "SPARKGLM_GPU_MEMORY_UTILIZATION=0.85"
                     },
                     "-e",
                     "SPARKGLM_DISPLAY_CARVEOUT=${displayCarveout}",
