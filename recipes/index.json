@@ -1476,6 +1476,12 @@
           "path": "candidates/linux-nvidia-dgx-spark-glm53-atlas/v3.json",
           "status": "candidate",
           "notes": "SparkGLM 0.3.2: 0.3.1's engine plus Atlas-Inf#338 (the GLM vision tower borrows its 1.25 GiB of encode scratch from the prefill arena), so the TP-2 KV pool is about 15% larger with image and video unchanged. Pins backends/atlas-sparkglm/pins-0.3.2.json; otherwise installs exactly what version 2 does. Qualified at TP-2 with v81 against 0.3.1 (identical output, speed level); not yet run at TP-4."
+        },
+        {
+          "version": 4,
+          "path": "candidates/linux-nvidia-dgx-spark-glm53-atlas/v4.json",
+          "status": "candidate",
+          "notes": "SparkGLM 0.3.3: 0.3.2's engine plus three exact changes (a lone sequence on a pair may verify one draft, packed gathers between the pair during prefill in Spark mode, per-pass buffers sized for this model), and the reference drafter incoai/GLM-5.3-Flash-DFlash2 at its Apache-2.0 revision 6cc6c481 as the default at both sizes. Pins backends/atlas-sparkglm/pins-0.3.3.json. Qualified at TP-2 with dflash2 against 0.3.2 (identical output; RigMark prose 38.1 against 34.7 tok/s, cold 16K prefill 2,865 against 2,753, KV pool 151,242-166,564 blocks against 136,362-142,448); not yet run at TP-4."
         }
       ],
       "name": "DGX Spark GLM-5.3 Flash FP4-Local Atlas (SparkGLM)",

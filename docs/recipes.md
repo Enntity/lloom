@@ -402,6 +402,33 @@ logprobs and vision output, 109/109 live checks with an identical guard log,
 and decode and image/video time to first token level. It has not been run at
 TP-4.
 
+Version 4 is a candidate that installs SparkGLM 0.3.3:
+
+```sh
+lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --recipe-version 4 --additive --apply --yes
+```
+
+0.3.3 is 0.3.2's engine plus three exact changes (Enntity/atlas `a703c117`):
+a lone sequence on a pair under expert TP may verify one draft
+([Atlas-Inf#346](https://github.com/Atlas-Inf/atlas/pull/346)), the pair
+exchanges packed MoE and MLA inputs during prefill in Spark mode
+([Atlas-Inf#347](https://github.com/Atlas-Inf/atlas/pull/347)), and three
+per-pass buffers are sized for this model, which grows the KV pool
+([Atlas-Inf#348](https://github.com/Atlas-Inf/atlas/pull/348)). Its pins are
+`backends/atlas-sparkglm/pins-0.3.3.json`. It has the same options and
+checkpoint as version 3, with two drafter changes: `dflash2` is pinned at
+`6cc6c481`, the revision from which `incoai/GLM-5.3-Flash-DFlash2` is
+Apache-2.0 (it carries that drafter's 2026-08-31 weights), and `dflash2` is the
+default at both sizes. The drafter folder is shared with earlier versions, so
+installing version 4 replaces the reference drafter's files, and installing an
+earlier version with `--drafter dflash2` puts the old ones back. It qualified
+on a DGX Spark pair with dflash2 on 2026-11-11 against 0.3.2 on the same pair:
+identical greedy output, prompt logprobs (Spark and Strict modes) and vision
+output, 109/109 live checks. One RigMark round each gave prose 38.1 against
+34.7 tok/s and cold 16K prefill 2,865 against 2,753 (0.3.2 ran with v81), and
+the KV pool was 151,242-166,564 blocks over two starts against 136,362-142,448.
+It has not been run at TP-4.
+
 The per-size recipes `linux-nvidia-dgx-spark-2x-glm53-atlas` (described below)
 and `linux-nvidia-dgx-spark-4x-glm53-atlas-tp4` (the
 [TP-4 chain](#atlas-sparkglm-tp-4-chain) section) stay installable while hosts
@@ -416,7 +443,7 @@ Licenses: the recipe and LLooM's backend files are MIT. The engine is
 runs from its own container image; LLooM includes none of its source. The
 pair lane's drafter is Enntity's v81 or v80 (`Enntity/GLM-5.3-Flash-DFlash2-enntity`,
 a private repository). The TP-4 lane's DFlash2 drafter
-`incoai/GLM-5.3-Flash-DFlash2` is **CC BY-NC-ND 4.0 (non-commercial)**. See the backend README's "Credits and licenses" section and
+`incoai/GLM-5.3-Flash-DFlash2` is **Apache-2.0** from revision `6cc6c481` (recipe version 4); the revision that earlier versions pin was published as **CC BY-NC-ND 4.0 (non-commercial)**. See the backend README's "Credits and licenses" section and
 [Third-Party Notices](../THIRD_PARTY_NOTICES.md).
 
 ### Single pin manifest and fail-closed pin gate

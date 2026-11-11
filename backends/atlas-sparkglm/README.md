@@ -86,8 +86,9 @@ Setup steps, in order:
    acquisition manifest. Both members mount that directory read-only as
    `MODEL_PATH`; it is served as published.
 4. `download-atlas-drafter` — acquires `incoai/GLM-5.3-Flash-DFlash2` at its
-   pinned revision. The drafter's weights are licensed **CC BY-NC-ND 4.0
-   (non-commercial)**; read its model card before use.
+   pinned revision. The drafter is **Apache-2.0** from revision `6cc6c481`
+   (SparkGLM 0.3.3); the revision earlier releases pin was published as
+   **CC BY-NC-ND 4.0 (non-commercial)**. Read its model card before use.
 5. `build-atlas-image` — `bash backends/atlas-sparkglm/install.sh` with the
    managed backend and install roots: pull the immutable digest, then verify.
    A source build runs only with the explicit `--source-build` flag.
@@ -279,5 +280,7 @@ is not part of LLooM:
 - **Models.** Weights are downloaded from their publishers, not distributed by
   LLooM. `nvidia/GLM-5.3-Flash-FP4-Local` is under the NVIDIA Open Model
   Agreement (the GLM-5.3-Flash base model is MIT) per SparkGLM's
-  `docs/LICENSING.md`; `incoai/GLM-5.3-Flash-DFlash2` is **CC BY-NC-ND 4.0
-  (non-commercial)**. Read each model card before use.
+  `docs/LICENSING.md`; `incoai/GLM-5.3-Flash-DFlash2` is **Apache-2.0** from
+  revision `6cc6c481` (SparkGLM 0.3.3) and was **CC BY-NC-ND 4.0
+  (non-commercial)** at the revision earlier releases pin. Read each model
+  card before use.
