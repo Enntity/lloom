@@ -77,7 +77,19 @@
           "description": "The qualified setting: 114 GB a Spark, for Sparks that run nothing else."
         },
         "shared": {
-          "description": "107 GB a Spark (GPU memory utilization 0.87), for a Spark that also hosts about 10 GB of other services. The model takes about 104 GB before any prompt cache, so the cache pool is roughly a third of the full one."
+          "description": "107 GB a Spark (GPU memory utilization 0.87), for a Spark that also hosts about 10 GB of other services. The model takes about 104 GB before any prompt cache, so the cache pool is small: about 150K tokens against 1.9M."
+        }
+      }
+    },
+    "streams": {
+      "description": "How many requests decode at once on a two-Spark pair. Four Sparks always run 4.",
+      "default": "4",
+      "values": {
+        "4": {
+          "description": "Four streams with a 1M-token context each (profile 4x1m)."
+        },
+        "8": {
+          "description": "Eight streams with a 128K-token context each (profile 8x128k): more total throughput for many short requests, such as parallel section writing."
         }
       }
     }
@@ -330,10 +342,34 @@
             "stream": false
           }
         },
-        "contextWindow": 1048576,
+        "contextWindow": {
+          "$option": "streams",
+          "4": 1048576,
+          "8": {
+            "$option": "sparks",
+            "2": 131072,
+            "4": 1048576
+          }
+        },
         "maxOutputTokens": 131072,
-        "maxActiveRequests": 4,
-        "maxQueuedRequests": 4,
+        "maxActiveRequests": {
+          "$option": "streams",
+          "4": 4,
+          "8": {
+            "$option": "sparks",
+            "2": 8,
+            "4": 4
+          }
+        },
+        "maxQueuedRequests": {
+          "$option": "streams",
+          "4": 4,
+          "8": {
+            "$option": "sparks",
+            "2": 8,
+            "4": 4
+          }
+        },
         "queueTimeoutMs": 300000,
         "queueRetryAfterSeconds": 5,
         "requestStartupWaitMs": 1000,
@@ -486,7 +522,15 @@
                     "-e",
                     "SPARKGLM_KV_SHARD=${kvShard}",
                     "-e",
-                    "SPARKGLM_PROFILE=${profile}",
+                    {
+                      "$option": "streams",
+                      "4": "SPARKGLM_PROFILE=${profile}",
+                      "8": {
+                        "$option": "sparks",
+                        "2": "SPARKGLM_PROFILE=8x128k",
+                        "4": "SPARKGLM_PROFILE=${profile}"
+                      }
+                    },
                     "-e",
                     "SPARKGLM_MODE=spark",
                     "-e",
@@ -513,7 +557,11 @@
                         "-e",
                         "ATLAS_EP_SIZE=2",
                         "-e",
-                        "ATLAS_CONTEXT_WINDOW=1048576"
+                        {
+                          "$option": "streams",
+                          "4": "ATLAS_CONTEXT_WINDOW=1048576",
+                          "8": "ATLAS_CONTEXT_WINDOW=131072"
+                        }
                       ],
                       "4": null
                     },
@@ -696,7 +744,15 @@
                     "-e",
                     "SPARKGLM_KV_SHARD=${kvShard}",
                     "-e",
-                    "SPARKGLM_PROFILE=${profile}",
+                    {
+                      "$option": "streams",
+                      "4": "SPARKGLM_PROFILE=${profile}",
+                      "8": {
+                        "$option": "sparks",
+                        "2": "SPARKGLM_PROFILE=8x128k",
+                        "4": "SPARKGLM_PROFILE=${profile}"
+                      }
+                    },
                     "-e",
                     "SPARKGLM_MODE=spark",
                     "-e",
@@ -723,7 +779,11 @@
                         "-e",
                         "ATLAS_EP_SIZE=2",
                         "-e",
-                        "ATLAS_CONTEXT_WINDOW=1048576"
+                        {
+                          "$option": "streams",
+                          "4": "ATLAS_CONTEXT_WINDOW=1048576",
+                          "8": "ATLAS_CONTEXT_WINDOW=131072"
+                        }
                       ],
                       "4": null
                     },

@@ -61,11 +61,18 @@ test('the recipe is valid in every combination and installs SparkGLM 0.3.1', () 
   assert.deepEqual(
     recipeOptionCombinations(recipe),
     ['2', '4'].flatMap((sparks) =>
-      ['v81', 'v80', 'dflash2'].flatMap((drafter) => ['full', 'shared'].map((memory) => ({ sparks, drafter, memory })))
+      ['v81', 'v80', 'dflash2'].flatMap((drafter) =>
+        ['full', 'shared'].flatMap((memory) => ['4', '8'].map((streams) => ({ sparks, drafter, memory, streams })))
+      )
     )
   );
-  assert.deepEqual(recipe.selectedOptions, { sparks: '2', drafter: 'v81', memory: 'full' });
-  assert.deepEqual(resolved({ sparks: '4' }).selectedOptions, { sparks: '4', drafter: 'dflash2', memory: 'full' });
+  assert.deepEqual(recipe.selectedOptions, { sparks: '2', drafter: 'v81', memory: 'full', streams: '4' });
+  assert.deepEqual(resolved({ sparks: '4' }).selectedOptions, {
+    sparks: '4',
+    drafter: 'dflash2',
+    memory: 'full',
+    streams: '4'
+  });
   // `shared` leaves room for a Spark's other services: a smaller budget and GPU share, nothing else.
   const shared = resolved({ memory: 'shared' });
   assert.equal(shared.requirements.memoryGb, 107);
@@ -76,6 +83,15 @@ test('the recipe is valid in every combination and installs SparkGLM 0.3.1', () 
       .replaceAll('"memoryGb":107', '"memoryGb":114')
       .replace('"memory":"shared"', '"memory":"full"'),
     JSON.stringify(recipe)
+  );
+  // `streams 8` is the pair's 8x128k profile; four Sparks keep their one qualified profile.
+  const eight = JSON.stringify(resolved({ streams: '8' }));
+  assert.match(eight, /SPARKGLM_PROFILE=8x128k/);
+  assert.match(eight, /ATLAS_CONTEXT_WINDOW=131072/);
+  assert.match(eight, /"maxActiveRequests":8/);
+  assert.equal(
+    JSON.stringify(resolved({ sparks: '4', streams: '8' })).replace('"streams":"8"', '"streams":"4"'),
+    JSON.stringify(resolved({ sparks: '4' }))
   );
   assert.deepEqual(verifyPins(pins), []);
   assert.equal(pins.source.revision, '33fe02f83a9edf96ae38ebe4fc6a8ec8e7603f90');
@@ -140,7 +156,7 @@ test('each drafter is acquired, mounted and served from its pin, at either size'
     }
     const env = envOf(r);
     const four = options.sparks === '4';
-    assert.equal(env.SPARKGLM_PROFILE, four ? '4x1m-tp4' : '4x1m');
+    assert.equal(env.SPARKGLM_PROFILE, four ? '4x1m-tp4' : options.streams === '8' ? '8x128k' : '4x1m');
     assert.equal(env.SPARKGLM_TOPOLOGY, four ? 'chain' : 'pair');
     assert.equal(r.requirements.cluster.nodes, four ? 4 : 2);
     assert.ok(
