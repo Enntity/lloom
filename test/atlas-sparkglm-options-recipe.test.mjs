@@ -184,3 +184,40 @@ test('version 3 is the SparkGLM 0.3.2 candidate and installs version 2 with only
       assert.equal(member.runtimeSettings.bootstrap.image, next.image.reference);
   }
 });
+
+test('version 4 is the SparkGLM 0.3.3 candidate: new pins, the Apache reference drafter, and dflash2 by default', async () => {
+  const v3 = await loadRecipeVersion(recipeId, 3);
+  const v4 = await loadRecipeVersion(recipeId, 4);
+  assert.equal(v4.version, 4);
+  assert.match(v4.name, /SparkGLM 0\.3\.3 candidate/);
+  assert.deepEqual(validateRecipe(v4, {}, { checkLocalReferences: false }), []);
+  assert.deepEqual(recipeOptionCombinations(v4), recipeOptionCombinations(v3));
+  const before = loadPins(path.join(root, 'backends/atlas-sparkglm/pins-0.3.2.json'));
+  const next = loadPins(path.join(root, 'backends/atlas-sparkglm/pins-0.3.3.json'));
+  assert.deepEqual(verifyPins(next), []);
+  assert.equal(next.engine.commit, 'a703c117e33545c4692ab0042fa54c537cc5e661');
+  assert.equal(next.source.revision, '08c46830095bdd869890b7dc8b8bcf14fc9243d2');
+  assert.equal(next.image.tag, `ghcr.io/enntity/atlas-sparkglm:${next.source.installTree.slice(0, 12)}`);
+  // Same checkpoint, profiles and Enntity drafters; only the reference drafter's revision moves.
+  assert.deepEqual(next.model, before.model);
+  assert.deepEqual(profilePathsOf(next), profilePathsOf(before));
+  assert.equal(next.drafters.dflash2.revision, '6cc6c481eee930a5139619ed919f78726371adbc');
+  assert.deepEqual({ ...next.drafters, dflash2: before.drafters.dflash2 }, before.drafters);
+  // Without --drafter both sizes now install the reference drafter.
+  for (const sparks of ['2', '4']) {
+    const text = JSON.stringify(installed(applyRecipeOptions(v4, { sparks })));
+    assert.match(text, /incoai--GLM-5\.3-Flash-DFlash2/, sparks);
+    assert.match(text, /6cc6c481eee930a5139619ed919f78726371adbc/, sparks);
+    assert.doesNotMatch(text, /DFlash2-enntity/, sparks);
+  }
+  // With the options spelled out, version 4 is version 3 with the pins, image and that revision swapped.
+  for (const options of recipeOptionCombinations(v3)) {
+    const swapped = JSON.stringify(installed(applyRecipeOptions(v3, options)))
+      .replaceAll('pins-0.3.2.json', 'pins-0.3.3.json')
+      .replaceAll(before.image.reference, next.image.reference)
+      .replaceAll(before.drafters.dflash2.revision, next.drafters.dflash2.revision);
+    assert.deepEqual(installed(applyRecipeOptions(v4, options)), JSON.parse(swapped), JSON.stringify(options));
+    for (const member of members(applyRecipeOptions(v4, options)))
+      assert.equal(member.runtimeSettings.bootstrap.image, next.image.reference);
+  }
+});
