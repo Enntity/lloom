@@ -75,12 +75,12 @@ test('the recipe is valid in every combination and installs SparkGLM 0.3.1', () 
   });
   // `shared` leaves room for a Spark's other services: a smaller budget and GPU share, nothing else.
   const shared = resolved({ memory: 'shared' });
-  assert.equal(shared.requirements.memoryGb, 107);
+  assert.equal(shared.requirements.memoryGb, 108);
   assert.equal(recipe.requirements.memoryGb, 114);
   assert.equal(
     JSON.stringify(shared)
-      .replaceAll('SPARKGLM_GPU_MEMORY_UTILIZATION=0.87', 'SPARKGLM_GPU_MEMORY_UTILIZATION=0.91')
-      .replaceAll('"memoryGb":107', '"memoryGb":114')
+      .replaceAll('SPARKGLM_GPU_MEMORY_UTILIZATION=0.88', 'SPARKGLM_GPU_MEMORY_UTILIZATION=0.91')
+      .replaceAll('"memoryGb":108', '"memoryGb":114')
       .replace('"memory":"shared"', '"memory":"full"'),
     JSON.stringify(recipe)
   );
