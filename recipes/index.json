@@ -1714,6 +1714,48 @@
         "type": "local",
         "url": "recipes/linux-nvidia-dgx-spark-2x-qwen38-flash-next-atlas.json"
       }
+    },
+    {
+      "id": "linux-nvidia-gb10-drama3-tensorfold",
+      "path": "linux-nvidia-gb10-drama3-tensorfold.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-gb10-drama3-tensorfold.json",
+          "status": "current"
+        }
+      ],
+      "name": "Drama 3 expressive TTS (DGX Spark, TensorFold)",
+      "summary": "Fish Audio Drama 3, pruned NVFP4, on the TensorFold CUDA engine for one DGX Spark.",
+      "tags": [
+        "linux",
+        "nvidia",
+        "dgx-spark",
+        "gb10",
+        "tts",
+        "audio-speech",
+        "drama-3",
+        "voice-clone",
+        "cuda",
+        "nvfp4",
+        "tensorfold"
+      ],
+      "recommendedFor": [
+        "A DGX Spark with about 20 GB free that should narrate in a cloned, expressive voice",
+        "Streaming speech replies with about half a second to first audio"
+      ],
+      "capabilities": [
+        "audio-speech",
+        "tts",
+        "tts-voice-clone",
+        "tts-streaming",
+        "drama-3"
+      ],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-gb10-drama3-tensorfold.json"
+      }
     }
   ]
 }
