@@ -1807,6 +1807,64 @@
         ],
         "notes": "Reclamation is unverified for the Atlas engine; confirm abort behaviour on the prepared image before advertising it. The LLooM watchdog drains and evicts on repeated 5xx/timeout regardless."
       }
+    },
+    {
+      "id": "drama-tensorfold",
+      "name": "Drama 3 (TensorFold)",
+      "kind": "openai-compatible-server",
+      "description": "Fish Audio Drama 3 on the TensorFold CUDA engine for DGX Spark: expressive 44.1 kHz speech, zero-shot voice clone from a LLooM voice profile, inline delivery cues, PCM streaming.",
+      "platforms": [
+        "linux-arm64"
+      ],
+      "features": [
+        "audio-speech",
+        "tts",
+        "tts-voice-clone",
+        "tts-streaming",
+        "drama-3",
+        "cuda"
+      ],
+      "commands": [
+        "lloom-drama-server"
+      ],
+      "notes": [
+        "Builds plotarmordev/drama-tensorfold at a pinned commit with Zig 0.17.0 and CUDA 13 nvcc into ~/.lloom/backends/drama-tensorfold; serves plotarmordev/drama-3-NVFP4-Pruned (about 21 GB on disk, about 20 GB loaded).",
+        "A voice profile's reference clip is encoded to codec codes on first use (about 3 s) and cached; the engine itself never receives audio.",
+        "Weights are under the Fish Audio Community License 1.0: attribution required, commercial use limited by revenue, and no cloning of a real person's voice without consent."
+      ],
+      "setup": [
+        {
+          "id": "check-lloom-drama-server",
+          "title": "Check LLooM Drama 3 server shim",
+          "action": "check-command",
+          "command": "lloom-drama-server",
+          "args": [
+            "--help"
+          ]
+        },
+        {
+          "id": "install-drama-tensorfold",
+          "title": "Build the Drama 3 TensorFold engine and download the pruned NVFP4 weights",
+          "action": "command",
+          "command": "bash",
+          "args": [
+            "${repoRoot}/backends/drama-tensorfold/install.sh"
+          ]
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health",
+        "speechPath": "/v1/audio/speech"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "unsupported",
+        "modes": [
+          "speech"
+        ],
+        "notes": "The shim closes the engine response when the client leaves; whether the engine stops the take early is not measured."
+      }
     }
   ]
 }
