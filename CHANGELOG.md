@@ -17,6 +17,7 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Fixed
 
+- The gateway no longer stalls while saving metrics history. Every generation interval ever recorded was kept in `metrics-history.json` and the whole file was rewritten synchronously after each request, so a host with a 56 MB history file paused every request for about 260 ms each time it saved. Intervals older than an hour now fold into an exact total, the file is written in the background with atomic replacement, and an oversized file is compacted on the first start. An unreadable history file is kept as `metrics-history.json.corrupt` instead of being overwritten.
 - Bundle Accord 0.6.7: sessions silent for 36 hours leave the Accord board instead of showing as working, a coordinator restart no longer repeats "is running" notices for windows it resumes, and a window that reaches its deadline is reported as ended, not failed.
 - Bundle Accord 0.6.3: a reservation resource removed from `reservations.resources`, or a slot above a lowered capacity, is forgotten by Accord once idle instead of staying listed forever.
 - `remove-model` now prunes removed runtime IDs from `init.enabledRuntimes` and clears `init.keepWarmRuntime` when it names a removed runtime, so the next additive init cannot re-union stale bookkeeping.
