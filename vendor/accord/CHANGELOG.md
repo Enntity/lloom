@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.7
+
+- A session that has sent no heartbeat for 36 hours, the same window observers use for
+  transcripts, now shows as exited. Before, it stayed "working" on the board and the overseer
+  kept checking in with it. If it later heartbeats again, it comes back as idle.
+- A coordinator restart that resumes a window no longer tells the holder its window "is
+  running", since it already knew.
+- A window that reaches its deadline is reported as "reached its deadline and ended" instead
+  of "ended as failed".
+
+No schema change.
+
 ## 0.6.6
 
 - A coordinator delayed past its leadership lease can continue if no replacement

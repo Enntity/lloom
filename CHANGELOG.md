@@ -17,6 +17,7 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Fixed
 
+- Bundle Accord 0.6.7: sessions silent for 36 hours leave the Accord board instead of showing as working, a coordinator restart no longer repeats "is running" notices for windows it resumes, and a window that reaches its deadline is reported as ended, not failed.
 - Bundle Accord 0.6.3: a reservation resource removed from `reservations.resources`, or a slot above a lowered capacity, is forgotten by Accord once idle instead of staying listed forever.
 - `remove-model` now prunes removed runtime IDs from `init.enabledRuntimes` and clears `init.keepWarmRuntime` when it names a removed runtime, so the next additive init cannot re-union stale bookkeeping.
 - `remove-model --delete-files` reclaims every exclusively owned weight of a multi-component model (diffusion, text encoder, VAE) instead of only the first runtime argument, reports reclaimed bytes, and preserves components still referenced by another model.

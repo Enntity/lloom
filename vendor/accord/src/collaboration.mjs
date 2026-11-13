@@ -301,6 +301,8 @@ export class Collaboration {
     void this.flush().catch(()=>{});
   }
   grantedClaim(sender,claim) {
+    // A window resumed after a coordinator restart was granted before; its holder was never told otherwise.
+    if(claim.error==='coordinator restarted')return;
     const row=this.db.prepare('SELECT r.id,r.actor,t.created_at FROM reservations r JOIN tasks t ON t.id=r.task_id WHERE r.task_id=?').get(claim.task_id);
     if(row)this.granted(sender,{key:`grant:${claim.id}:${claim.generation}`,reservation:row.id,actor:row.actor,resource:claim.resource,queuedAt:row.created_at});
   }
@@ -310,8 +312,8 @@ export class Collaboration {
     const session=row&&this.db.prepare('SELECT closed_at,expires_at FROM sessions WHERE id=?').get(row.actor);
     if(!row||claim.outcome==='released'||session&&(session.closed_at!==null||session.expires_at<=this.store.now()))return;
     const to=this.holder(row.actor);if(!to)return;
-    const why=claim.deadline<=this.store.now()?'its deadline passed':'Accord revoked it before its deadline';
-    this.send(sender,{key:`ended:${claim.id}:${claim.generation}`,to,kind:'message',text:`Accord reports reservation ${row.id} on ${claim.resource} ended as ${claim.outcome}: ${why}. Confirm with accord_reservation; the resource is no longer held for you, so reserve again if you still need it.`});
+    const how=claim.deadline<=this.store.now()?'reached its deadline and ended':`ended as ${claim.outcome}: Accord revoked it before its deadline`;
+    this.send(sender,{key:`ended:${claim.id}:${claim.generation}`,to,kind:'message',text:`Accord reports reservation ${row.id} on ${claim.resource} ${how}. Confirm with accord_reservation; the resource is no longer held for you, so reserve again if you still need it.`});
     void this.flush().catch(()=>{});
   }
   slots(pool){return this.db.prepare('SELECT resource FROM resource_pools WHERE pool=? ORDER BY length(resource),resource').all(pool).map(r=>r.resource);}
