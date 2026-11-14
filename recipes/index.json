@@ -1482,6 +1482,12 @@
           "path": "candidates/linux-nvidia-dgx-spark-glm53-atlas/v4.json",
           "status": "candidate",
           "notes": "SparkGLM 0.3.3: 0.3.2's engine plus three exact changes (a lone sequence on a pair may verify one draft, packed gathers between the pair during prefill in Spark mode, per-pass buffers sized for this model), and the reference drafter incoai/GLM-5.3-Flash-DFlash2 at its Apache-2.0 revision 6cc6c481 as the default at both sizes. Pins backends/atlas-sparkglm/pins-0.3.3.json. Qualified at TP-2 with dflash2 against 0.3.2 (identical output; RigMark prose 38.1 against 34.7 tok/s, cold 16K prefill 2,865 against 2,753, KV pool 151,242-166,564 blocks against 136,362-142,448); not yet run at TP-4."
+        },
+        {
+          "version": 5,
+          "path": "candidates/linux-nvidia-dgx-spark-glm53-atlas/v5.json",
+          "status": "candidate",
+          "notes": "SparkGLM 0.3.4: 0.3.3's engine plus --thinking-off-budget (Enntity/atlas#29). In Spark mode, which this recipe runs, a request that turns thinking off is served at the template's Low effort under a 256-token cap instead of reasoning at Max effort with no limit; requests that reason are unchanged. Pins backends/atlas-sparkglm/pins-0.3.4.json; otherwise installs exactly what version 4 does. Qualified at TP-2 with dflash2 against 0.3.3 (identical greedy output and prompt logprobs, 109/109 live checks, RigMark level; a thinking-off JSON-schema call 19-27 s to about 3 s); Strict mode, vision and TP-4 not run."
         }
       ],
       "name": "DGX Spark GLM-5.3 Flash FP4-Local Atlas (SparkGLM)",

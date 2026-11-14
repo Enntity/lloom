@@ -429,6 +429,30 @@ output, 109/109 live checks. One RigMark round each gave prose 38.1 against
 the KV pool was 151,242-166,564 blocks over two starts against 136,362-142,448.
 It has not been run at TP-4.
 
+Version 5 is a candidate that installs SparkGLM 0.3.4:
+
+```sh
+lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --recipe-version 5 --additive --apply --yes
+```
+
+0.3.4 is 0.3.3's engine plus `--thinking-off-budget`
+([Enntity/atlas#29](https://github.com/Enntity/atlas/pull/29), Enntity/atlas
+`640d7595`). GLM's chat template opens a reasoning block whatever a request
+says, so a request that turned thinking off
+(`chat_template_kwargs.enable_thinking: false` or `reasoning_effort: "none"`)
+reasoned at Max effort with no limit, and a short structured call could run to
+`max_tokens` or its caller's timeout with no answer. In Spark mode, which this
+recipe runs, such a request is now served at the template's Low effort under a
+256-token cap. Requests that reason are unchanged. `SPARKGLM_THINKING_OFF=reference`
+on every member restores the earlier behavior. Its pins are
+`backends/atlas-sparkglm/pins-0.3.4.json`; it has the same options, checkpoint
+and drafters as version 4. It qualified on a DGX Spark pair with dflash2 on
+2026-11-14 against 0.3.3 on the same pair: identical greedy output and prompt
+logprobs, 109/109 live checks, and one RigMark round level with 0.3.3 (prose
+38.8 against 38.1 tok/s, cold 16K prefill 2,849 against 2,865). A thinking-off
+JSON-schema call went from 19-27 s to about 3 s. Strict mode, vision and TP-4
+were not run.
+
 The per-size recipes `linux-nvidia-dgx-spark-2x-glm53-atlas` (described below)
 and `linux-nvidia-dgx-spark-4x-glm53-atlas-tp4` (the
 [TP-4 chain](#atlas-sparkglm-tp-4-chain) section) stay installable while hosts

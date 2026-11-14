@@ -1,0 +1,755 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-dgx-spark-glm53-atlas",
+  "name": "DGX Spark GLM-5.3 Flash FP4-Local Atlas (SparkGLM 0.3.4 candidate)",
+  "version": 5,
+  "options": {
+    "sparks": {
+      "description": "How many DGX Sparks serve the model: 2 is a TP-2 pair over a direct cable, 4 is TP-4 over a daisy chain.",
+      "default": "2",
+      "values": {
+        "2": {
+          "description": "Two directly connected Sparks, tensor and expert parallelism 2, profile 4x1m.",
+          "variables": {
+            "profile": "4x1m",
+            "topology": "pair",
+            "gpuMemoryUtilization": "0.91",
+            "displayCarveout": "1",
+            "kvShard": "1"
+          }
+        },
+        "4": {
+          "description": "Four Sparks cabled as a chain, tensor and expert parallelism 4, profile 4x1m-tp4.",
+          "variables": {
+            "profile": "4x1m-tp4",
+            "topology": "chain",
+            "gpuMemoryUtilization": "0.88",
+            "displayCarveout": "0",
+            "kvShard": "0"
+          }
+        }
+      }
+    },
+    "drafter": {
+      "description": "The DFlash2 drafter for speculative decoding.",
+      "default": {
+        "$option": "sparks",
+        "2": "dflash2",
+        "4": "dflash2"
+      },
+      "values": {
+        "v81": {
+          "description": "Enntity's v81 (private repository; needs access to Enntity/GLM-5.3-Flash-DFlash2-enntity).",
+          "variables": {
+            "drafterRepo": "Enntity/GLM-5.3-Flash-DFlash2-enntity",
+            "drafterRevision": "ee5ed56e3ed2e59fd2d5177fe6773b2f6fb4aa80",
+            "drafterDir": "Enntity--GLM-5.3-Flash-DFlash2-enntity",
+            "drafterTitle": "Enntity's v81"
+          }
+        },
+        "v80": {
+          "description": "Enntity's v80 (private repository Enntity/GLM-5.3-Flash-DFlash2-enntity, pinned under its earlier name Enntity/GLM-5.3-Flash-DFlash2-enntity-v80, which redirects).",
+          "variables": {
+            "drafterRepo": "Enntity/GLM-5.3-Flash-DFlash2-enntity-v80",
+            "drafterRevision": "8416cdfbf4cfb302b86a058cb5f5b89f891350c0",
+            "drafterDir": "Enntity--GLM-5.3-Flash-DFlash2-enntity-v80",
+            "drafterTitle": "Enntity's v80"
+          }
+        },
+        "dflash2": {
+          "description": "incoai/GLM-5.3-Flash-DFlash2, the reference drafter (Apache-2.0 from the pinned revision).",
+          "variables": {
+            "drafterRepo": "incoai/GLM-5.3-Flash-DFlash2",
+            "drafterRevision": "6cc6c481eee930a5139619ed919f78726371adbc",
+            "drafterDir": "incoai--GLM-5.3-Flash-DFlash2",
+            "drafterTitle": "incoai DFlash2"
+          }
+        }
+      }
+    }
+  },
+  "summary": "SparkGLM on two directly connected DGX Sparks (TP-2 pair) or four cabled as a daisy chain (TP-4), serving nvidia/GLM-5.3-Flash-FP4-Local as published with DFlash2 speculative decoding: four requests of up to 1M tokens. Options: --sparks 2|4 and --drafter v81|v80|dflash2. Additive only: no default model, no aliases.",
+  "description": "This recipe installs SparkGLM 0.3.4 at the immutable product revision recorded in backends/atlas-sparkglm/pins-0.3.4.json, on two Sparks (--sparks 2, a TP-2 pair over the private fabric) or four (--sparks 4, TP-4 over a switchless daisy chain, rank 0-1-2-3 along the cables), with any of three drafters (--drafter v81 or v80, Enntity's from a private repository, or --drafter dflash2, incoai/GLM-5.3-Flash-DFlash2). Without --drafter, both sizes use dflash2. Setup remembers the options it installed with. LLooM owns orchestration, admission, worker-first startup, readiness, routing and telemetry. The Atlas engine image is built from Enntity/sparkglm by that repository's install/build.sh; LLooM commits no engine source. The engine (Atlas-Inf/atlas, on the Enntity/atlas spark branch) is AGPL-3.0-only and runs from its own container image. Setup acquires the pinned checkpoint and the selected drafter and pulls the pinned image from GHCR by its immutable manifest digest (image.reference; the mutable tag is never pulled); the serving path only ever starts the prepared image. The checkpoint is served as published, with no overlay. One image serves both sizes. 0.3.4 is 0.3.3's engine plus one behavior change in Spark mode, which this recipe runs: a request that turns thinking off (chat_template_kwargs.enable_thinking false, or reasoning_effort none) is served at the template's Low effort under a 256-token cap. GLM's template opens a reasoning block whatever a request says, so on 0.3.3 and earlier such a request reasoned at Max effort with no limit and a short structured call could run to max_tokens or its caller's timeout with no answer. Requests that reason are unchanged. Setting SPARKGLM_THINKING_OFF=reference on every member restores the earlier behavior. Candidate: it installs only with --recipe-version 5. At TP-2 with dflash2 it qualified on 2026-11-14 against 0.3.3 on the same pair: identical greedy output and prompt logprobs, 109/109 live checks, and one RigMark round level with 0.3.3 (prose 38.8 against 38.1 tok/s, cold 16K prefill 2,849 against 2,865); a thinking-off JSON-schema call went from 19-27 s to about 3 s. Strict mode, vision and TP-4 were not run. It installs the same checkpoint and drafters as version 4.",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe metadata, launcher and orchestration"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "SparkGLM 0.3.4: Enntity/sparkglm fd52a4ccb4fba7dcc4e5b4a5177a699aae9d08ed (tag v0.3.4, install tree 46fc994aa710465b4fd3100fed9ec856f0d214cb), engine Enntity/atlas spark @ 640d75951f84d0de998fe0b8cc4e274320cb9535 (0.3.3's a703c117 plus Enntity/atlas#29, --thinking-off-budget; AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). The install pulls ghcr.io/enntity/atlas-sparkglm@sha256:354aeb54c311e6f1022aaefa2b4f0eafa1dc2387701324b65b11331b1025f6ab by digest (pins-0.3.4.json; the tag ghcr.io/enntity/atlas-sparkglm:46fc994aa710 is never pulled), and each host verifies the image's io.enntity.sparkglm.install-tree label, arm64 architecture, both profiles and the engine commit. Model nvidia/GLM-5.3-Flash-FP4-Local revision 76348ddb2be2e35e39ecfc00e75dc07703f4f3d5 (NVIDIA Open Model Agreement; base model MIT) is served as published. Drafters: Enntity/GLM-5.3-Flash-DFlash2-enntity revision ee5ed56e3ed2e59fd2d5177fe6773b2f6fb4aa80 (v81, tag v81, model.safetensors sha256 d14e1edb080711d4; private), Enntity/GLM-5.3-Flash-DFlash2-enntity-v80 revision 8416cdfbf4cfb302b86a058cb5f5b89f891350c0 (v80, the same repository under its earlier name; private) and incoai/GLM-5.3-Flash-DFlash2 revision 6cc6c481eee930a5139619ed919f78726371adbc (Apache-2.0). Candidate: qualified at TP-2 with dflash2 on 2026-11-14 against 0.3.3; Strict mode, vision and TP-4 not run."
+  },
+  "links": [
+    {
+      "rel": "upstream",
+      "href": "https://github.com/Enntity/sparkglm"
+    },
+    {
+      "rel": "engine",
+      "href": "https://github.com/Enntity/atlas/tree/640d75951f84d0de998fe0b8cc4e274320cb9535"
+    },
+    {
+      "rel": "engine-upstream",
+      "href": "https://github.com/Atlas-Inf/atlas"
+    },
+    {
+      "rel": "model",
+      "href": "https://huggingface.co/nvidia/GLM-5.3-Flash-FP4-Local/tree/76348ddb2be2e35e39ecfc00e75dc07703f4f3d5"
+    },
+    {
+      "rel": "draft-model",
+      "href": "https://huggingface.co/Enntity/GLM-5.3-Flash-DFlash2-enntity/tree/ee5ed56e3ed2e59fd2d5177fe6773b2f6fb4aa80"
+    },
+    {
+      "rel": "draft-model",
+      "href": "https://huggingface.co/Enntity/GLM-5.3-Flash-DFlash2-enntity/tree/8416cdfbf4cfb302b86a058cb5f5b89f891350c0"
+    },
+    {
+      "rel": "draft-model",
+      "href": "https://huggingface.co/incoai/GLM-5.3-Flash-DFlash2/tree/6cc6c481eee930a5139619ed919f78726371adbc"
+    }
+  ],
+  "keywords": [
+    "linux",
+    "nvidia",
+    "dgx-spark",
+    "cluster",
+    "glm-5.3",
+    "flash",
+    "nvfp4",
+    "fp4-local",
+    "atlas",
+    "sparkglm",
+    "source-build",
+    "dflash",
+    "daisy-chain",
+    "tp4"
+  ],
+  "capabilities": [
+    "chat",
+    "responses",
+    "anthropic-messages",
+    "streaming",
+    "usage",
+    "tools",
+    "structured-output",
+    "reasoning",
+    "vision",
+    "speculative-decoding",
+    "moe"
+  ],
+  "hardware": {
+    "family": "NVIDIA DGX Spark / GB10",
+    "testedMachine": "Two directly connected DGX Spark systems (--sparks 2) or four cabled as a daisy chain (--sparks 4)",
+    "notes": [
+      "Candidate: SparkGLM 0.3.4. At TP-2 with dflash2 it qualified on 2026-11-14 against 0.3.3 on the same pair: identical greedy output and prompt logprobs, 109/109 live checks, and one RigMark round level with 0.3.3 (prose 38.8 against 38.1 tok/s, cold 16K prefill 2,849 against 2,865); a thinking-off JSON-schema call went from 19-27 s to about 3 s. Strict mode, vision and TP-4 were not run.",
+      "With --sparks 2 the pair uses tensor and expert parallelism 2 across the private ConnectX RoCE fabric; each node needs cluster.nodes[ID].fabricHca and fabricInterface. With --sparks 4 the ranks follow cluster.nodes[ID].fabricChain on a switchless chain, rank 0 leads, and the workers start from the far end.",
+      "Every Spark reserves 114 GiB with a 4096 MiB OOM guard. TP-2 raises GPU memory utilization to 0.91 with the display carveout and shards KV across the pair; TP-4 uses the profile's 0.88 with neither, and leaves no room for sidecars.",
+      "The disk prefix cache is 48 GB at TP-2 and off at TP-4, where it is not qualified.",
+      "Licenses: the Atlas engine in the image is AGPL-3.0-only (not included in LLooM). The v81 and v80 drafters are Enntity's, from a private repository; incoai/GLM-5.3-Flash-DFlash2 is Apache-2.0 from the pinned revision 6cc6c481; nvidia/GLM-5.3-Flash-FP4-Local is under the NVIDIA Open Model Agreement (base model MIT).",
+      "All Sparks must carry the same pins, the same backend directory, the same checkpoint and drafter, and LLooM configs that name the same cluster leader."
+    ]
+  },
+  "requirements": {
+    "platforms": [
+      "linux-arm64"
+    ],
+    "memoryGb": 114,
+    "diskGb": 220,
+    "commands": [
+      "docker",
+      "git"
+    ],
+    "accelerators": [
+      "cuda",
+      "nvidia-gpu",
+      "blackwell",
+      "gb10"
+    ],
+    "cluster": {
+      "nodes": {
+        "$option": "sparks",
+        "2": 2,
+        "4": 4
+      },
+      "provider": {
+        "$option": "sparks",
+        "2": "nvidia-sync",
+        "4": null
+      },
+      "topology": {
+        "$option": "sparks",
+        "2": "direct",
+        "4": "chain"
+      }
+    }
+  },
+  "backend": {
+    "id": "docker-atlas-sparkglm",
+    "name": "Pinned Atlas SparkGLM image",
+    "type": "openai-compatible-server"
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-docker",
+        "title": "Check Docker",
+        "action": "check-command",
+        "command": "docker",
+        "args": [
+          "version"
+        ]
+      },
+      {
+        "id": "verify-atlas-pins",
+        "title": "Verify the Atlas SparkGLM pin manifest is final",
+        "action": "command",
+        "alwaysRun": true,
+        "command": "node",
+        "args": [
+          "${repoRoot}/backends/atlas-sparkglm/verify-pins.mjs",
+          "${repoRoot}/backends/atlas-sparkglm/pins-0.3.4.json"
+        ]
+      },
+      {
+        "id": "download-atlas-model",
+        "title": "Acquire the pinned GLM-5.3 Flash FP4-Local checkpoint",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "nvidia/GLM-5.3-Flash-FP4-Local",
+        "revision": "76348ddb2be2e35e39ecfc00e75dc07703f4f3d5"
+      },
+      {
+        "id": "download-atlas-drafter",
+        "title": "Acquire the pinned ${drafterTitle} GLM-5.3 Flash drafter",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "${drafterRepo}",
+        "revision": "${drafterRevision}"
+      },
+      {
+        "id": "build-atlas-image",
+        "title": "Pull and verify the pinned Atlas SparkGLM image on this node",
+        "action": "command",
+        "alwaysRun": true,
+        "command": "bash",
+        "args": [
+          "${repoRoot}/backends/atlas-sparkglm/install.sh",
+          "--manifest",
+          "${repoRoot}/backends/atlas-sparkglm/pins-0.3.4.json",
+          "--backend-root",
+          "${backendRoot}",
+          "--install-root",
+          "${installRoot}"
+        ]
+      },
+      {
+        "id": "prepare-atlas-prefix-cache",
+        "title": "Create the directories for the optional prefix cache on disk and the display-carveout lock",
+        "action": "command",
+        "alwaysRun": true,
+        "command": "mkdir",
+        "args": [
+          "-p",
+          "${installRoot}/atlas-prefix-cache/kv",
+          "${installRoot}/atlas-prefix-cache/ssm",
+          "${installRoot}/atlas-sparkglm-cuda-cache"
+        ]
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "default",
+      "name": {
+        "$option": "sparks",
+        "2": "GLM-5.3 Flash FP4-Local on Atlas SparkGLM",
+        "4": "GLM-5.3 Flash FP4-Local on Atlas SparkGLM TP-4"
+      },
+      "model": "nvidia/GLM-5.3-Flash-FP4-Local",
+      "gatewayModel": "glm-5.3-flash-atlas",
+      "upstreamModel": "glm-5.3-flash-atlas",
+      "runtime": "glm53-flash-atlas-cluster",
+      "backendConfig": "glm53-flash-atlas",
+      "setDefault": false,
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "usage",
+        "tools",
+        "structured-output",
+        "reasoning",
+        "vision",
+        "speculative-decoding",
+        "moe"
+      ],
+      "settings": {
+        "port": 8893,
+        "baseUrl": "http://127.0.0.1:8893/v1",
+        "healthUrl": "http://127.0.0.1:8893/health",
+        "warmup": {
+          "url": "http://127.0.0.1:8893/v1/chat/completions",
+          "method": "POST",
+          "body": {
+            "model": "glm-5.3-flash-atlas",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Reply with OK."
+              }
+            ],
+            "max_tokens": 16,
+            "stream": false
+          }
+        },
+        "contextWindow": 1048576,
+        "maxOutputTokens": 131072,
+        "maxActiveRequests": 4,
+        "maxQueuedRequests": 4,
+        "queueTimeoutMs": 300000,
+        "queueRetryAfterSeconds": 5,
+        "requestStartupWaitMs": 1000,
+        "startupRetryAfterSeconds": 30,
+        "healthTimeoutMs": 5000,
+        "memoryGb": 114,
+        "prefixCacheGb": {
+          "$option": "sparks",
+          "2": 48,
+          "4": 0
+        },
+        "priority": 150,
+        "keepWarm": {
+          "$option": "sparks",
+          "2": true,
+          "4": false
+        },
+        "startupTimeoutMs": 7200000,
+        "timeoutMs": 14400000,
+        "watchdog": {
+          "enabled": true,
+          "failureThreshold": 2,
+          "failureWindowMs": 900000,
+          "minNoProgressMs": 1800000,
+          "cooldownMs": 600000,
+          "drainTimeoutMs": 30000,
+          "failureStatuses": [
+            500,
+            502,
+            504
+          ]
+        },
+        "placement": {
+          "mode": "distributed",
+          "members": [
+            {
+              "nodeRole": "worker",
+              "runtime": "glm53-flash-atlas-worker",
+              "role": "worker",
+              "order": 10,
+              "rankOrder": {
+                "$option": "sparks",
+                "2": null,
+                "4": "descending"
+              },
+              "healthStrategy": "container",
+              "resources": {
+                "memoryGb": 114
+              },
+              "runtimeSettings": {
+                "adapter": "docker",
+                "management": "managed",
+                "containerName": "lloom-atlas-sparkglm-${nodeId}",
+                "warmup": false,
+                "bootstrap": {
+                  "adapter": "docker",
+                  "image": "ghcr.io/enntity/atlas-sparkglm@sha256:354aeb54c311e6f1022aaefa2b4f0eafa1dc2387701324b65b11331b1025f6ab",
+                  "pull": false,
+                  "pullTimeoutMs": 3600000,
+                  "createArgs": [
+                    "--restart",
+                    "no",
+                    "--network",
+                    "host",
+                    "--ipc",
+                    "host",
+                    "--shm-size",
+                    "32g",
+                    "--memory",
+                    "114g",
+                    "--gpus",
+                    "all",
+                    "--device",
+                    "/dev/infiniband:/dev/infiniband",
+                    "--cap-add",
+                    "IPC_LOCK",
+                    "--cap-add",
+                    "SYS_NICE",
+                    "--ulimit",
+                    "memlock=-1:-1",
+                    "--security-opt",
+                    "no-new-privileges=true",
+                    "--stop-timeout",
+                    "60",
+                    "--mount",
+                    "type=bind,src=${modelRoot}/nvidia--GLM-5.3-Flash-FP4-Local,dst=${modelRoot}/nvidia--GLM-5.3-Flash-FP4-Local,readonly",
+                    "--mount",
+                    "type=bind,src=${modelRoot}/${drafterDir},dst=${modelRoot}/${drafterDir},readonly",
+                    "--mount",
+                    "type=bind,src=${installRoot}/atlas-prefix-cache,dst=/prefix-cache",
+                    "--mount",
+                    "type=bind,src=${installRoot}/atlas-sparkglm-cuda-cache,dst=/atlas-cuda-cache",
+                    "--volume",
+                    "/run/lock/sparkglm:/run/lock/sparkglm",
+                    "-e",
+                    "NODE_RANK=${nodeRank}",
+                    "-e",
+                    "MASTER_ADDR=${leaderAddress}",
+                    "-e",
+                    "MASTER_PORT=29510",
+                    "-e",
+                    "FABRIC_INTERFACE=${fabricInterface}",
+                    {
+                      "$option": "sparks",
+                      "2": [
+                        "-e",
+                        "FABRIC_HCA=${fabricHca}"
+                      ],
+                      "4": [
+                        "-e",
+                        "FABRIC_LEFT_HCA=${fabricLeftHca}",
+                        "-e",
+                        "FABRIC_RIGHT_HCA=${fabricRightHca}"
+                      ]
+                    },
+                    "-e",
+                    "FABRIC_SIBLINGS=0",
+                    {
+                      "$option": "sparks",
+                      "2": [
+                        "-e",
+                        "NODE_ADDRESS=${nodeAddress}",
+                        "-e",
+                        "CLUSTER_NODE_COUNT=${clusterNodeCount}"
+                      ],
+                      "4": null
+                    },
+                    "-e",
+                    "MODEL_PATH=${modelRoot}/nvidia--GLM-5.3-Flash-FP4-Local",
+                    "-e",
+                    "DRAFTER_PATH=${modelRoot}/${drafterDir}",
+                    "-e",
+                    "SERVED_MODEL_NAME=glm-5.3-flash-atlas",
+                    "-e",
+                    "SPARKGLM_GPU_MEMORY_UTILIZATION=${gpuMemoryUtilization}",
+                    "-e",
+                    "SPARKGLM_DISPLAY_CARVEOUT=${displayCarveout}",
+                    "-e",
+                    "SPARKGLM_KV_SHARD=${kvShard}",
+                    "-e",
+                    "SPARKGLM_PROFILE=${profile}",
+                    "-e",
+                    "SPARKGLM_MODE=spark",
+                    "-e",
+                    "SPARKGLM_TOPOLOGY=${topology}",
+                    "-e",
+                    "SPARKGLM_STRICT_MTP=0",
+                    "-e",
+                    "SPARKGLM_TOOL_GUARD=on",
+                    "-e",
+                    "SPARKGLM_TOOL_GUARD_MAX_BYTES=1048576",
+                    "-e",
+                    "SPARKGLM_TOOL_GUARD_ALLOW_HOSTS=",
+                    "-e",
+                    "SPARKGLM_TOOL_GUARD_DENY_HOSTS=",
+                    "-e",
+                    "SPARKGLM_PREFIX_CACHE_GB=${prefixCacheGb}",
+                    {
+                      "$option": "sparks",
+                      "2": [
+                        "-e",
+                        "ATLAS_WORLD_SIZE=2",
+                        "-e",
+                        "ATLAS_TP_SIZE=2",
+                        "-e",
+                        "ATLAS_EP_SIZE=2",
+                        "-e",
+                        "ATLAS_CONTEXT_WINDOW=1048576"
+                      ],
+                      "4": null
+                    },
+                    "-e",
+                    "NCCL_SOCKET_IFNAME=${fabricInterface}",
+                    "-e",
+                    "GLOO_SOCKET_IFNAME=${fabricInterface}",
+                    {
+                      "$option": "sparks",
+                      "2": [
+                        "-e",
+                        "NCCL_IB_HCA=${fabricHca}",
+                        "-e",
+                        "NCCL_IB_ADDR_FAMILY=AF_INET",
+                        "-e",
+                        "NCCL_IB_ROCE_VERSION_NUM=2",
+                        "-e",
+                        "NCCL_CROSS_NIC=0",
+                        "-e",
+                        "NCCL_NET=IB",
+                        "-e",
+                        "NCCL_IB_DISABLE=0",
+                        "-e",
+                        "NCCL_IB_RETRY_CNT=7",
+                        "-e",
+                        "NCCL_IB_TIMEOUT=22",
+                        "-e",
+                        "NCCL_ALGO=Ring",
+                        "-e",
+                        "NCCL_PROTO=Simple",
+                        "-e",
+                        "NCCL_BUFFSIZE=33554432",
+                        "-e",
+                        "NCCL_CUMEM_ENABLE=0",
+                        "-e",
+                        "NCCL_NVLS_ENABLE=0",
+                        "-e",
+                        "NCCL_MAX_NCHANNELS=2",
+                        "-e",
+                        "NCCL_MIN_NCHANNELS=1",
+                        "-e",
+                        "NCCL_DMABUF_ENABLE=0",
+                        "-e",
+                        "NCCL_DEBUG=WARN"
+                      ],
+                      "4": null
+                    },
+                    "-e",
+                    "HF_HUB_OFFLINE=1",
+                    "-e",
+                    "TRANSFORMERS_OFFLINE=1",
+                    "-e",
+                    "CUDA_CACHE_PATH=/atlas-cuda-cache",
+                    "-e",
+                    "CUDA_CACHE_MAXSIZE=4294967296"
+                  ]
+                }
+              }
+            },
+            {
+              "nodeRole": "leader",
+              "runtime": "glm53-flash-atlas-head",
+              "role": "head",
+              "order": 20,
+              "resources": {
+                "memoryGb": 114
+              },
+              "runtimeSettings": {
+                "adapter": "docker",
+                "management": "managed",
+                "containerName": "lloom-atlas-sparkglm-${nodeId}",
+                "healthUrl": "http://127.0.0.1:8893/health",
+                "healthTimeoutMs": 5000,
+                "warmup": {
+                  "url": "http://127.0.0.1:8893/v1/chat/completions",
+                  "method": "POST",
+                  "body": {
+                    "model": "glm-5.3-flash-atlas",
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": "Reply with OK."
+                      }
+                    ],
+                    "max_tokens": 16,
+                    "stream": false
+                  }
+                },
+                "bootstrap": {
+                  "adapter": "docker",
+                  "image": "ghcr.io/enntity/atlas-sparkglm@sha256:354aeb54c311e6f1022aaefa2b4f0eafa1dc2387701324b65b11331b1025f6ab",
+                  "pull": false,
+                  "pullTimeoutMs": 3600000,
+                  "createArgs": [
+                    "--restart",
+                    "no",
+                    "--network",
+                    "host",
+                    "--ipc",
+                    "host",
+                    "--shm-size",
+                    "32g",
+                    "--memory",
+                    "114g",
+                    "--gpus",
+                    "all",
+                    "--device",
+                    "/dev/infiniband:/dev/infiniband",
+                    "--cap-add",
+                    "IPC_LOCK",
+                    "--cap-add",
+                    "SYS_NICE",
+                    "--ulimit",
+                    "memlock=-1:-1",
+                    "--security-opt",
+                    "no-new-privileges=true",
+                    "--stop-timeout",
+                    "60",
+                    "--mount",
+                    "type=bind,src=${modelRoot}/nvidia--GLM-5.3-Flash-FP4-Local,dst=${modelRoot}/nvidia--GLM-5.3-Flash-FP4-Local,readonly",
+                    "--mount",
+                    "type=bind,src=${modelRoot}/${drafterDir},dst=${modelRoot}/${drafterDir},readonly",
+                    "--mount",
+                    "type=bind,src=${installRoot}/atlas-prefix-cache,dst=/prefix-cache",
+                    "--mount",
+                    "type=bind,src=${installRoot}/atlas-sparkglm-cuda-cache,dst=/atlas-cuda-cache",
+                    "--volume",
+                    "/run/lock/sparkglm:/run/lock/sparkglm",
+                    "-e",
+                    "NODE_RANK=${nodeRank}",
+                    "-e",
+                    "MASTER_ADDR=${leaderAddress}",
+                    "-e",
+                    "MASTER_PORT=29510",
+                    "-e",
+                    "FABRIC_INTERFACE=${fabricInterface}",
+                    {
+                      "$option": "sparks",
+                      "2": [
+                        "-e",
+                        "FABRIC_HCA=${fabricHca}"
+                      ],
+                      "4": [
+                        "-e",
+                        "FABRIC_LEFT_HCA=${fabricLeftHca}",
+                        "-e",
+                        "FABRIC_RIGHT_HCA=${fabricRightHca}"
+                      ]
+                    },
+                    "-e",
+                    "FABRIC_SIBLINGS=0",
+                    {
+                      "$option": "sparks",
+                      "2": [
+                        "-e",
+                        "NODE_ADDRESS=${nodeAddress}",
+                        "-e",
+                        "CLUSTER_NODE_COUNT=${clusterNodeCount}"
+                      ],
+                      "4": null
+                    },
+                    "-e",
+                    "MODEL_PATH=${modelRoot}/nvidia--GLM-5.3-Flash-FP4-Local",
+                    "-e",
+                    "DRAFTER_PATH=${modelRoot}/${drafterDir}",
+                    "-e",
+                    "SERVED_MODEL_NAME=glm-5.3-flash-atlas",
+                    "-e",
+                    "SPARKGLM_GPU_MEMORY_UTILIZATION=${gpuMemoryUtilization}",
+                    "-e",
+                    "SPARKGLM_DISPLAY_CARVEOUT=${displayCarveout}",
+                    "-e",
+                    "SPARKGLM_KV_SHARD=${kvShard}",
+                    "-e",
+                    "SPARKGLM_PROFILE=${profile}",
+                    "-e",
+                    "SPARKGLM_MODE=spark",
+                    "-e",
+                    "SPARKGLM_TOPOLOGY=${topology}",
+                    "-e",
+                    "SPARKGLM_STRICT_MTP=0",
+                    "-e",
+                    "SPARKGLM_TOOL_GUARD=on",
+                    "-e",
+                    "SPARKGLM_TOOL_GUARD_MAX_BYTES=1048576",
+                    "-e",
+                    "SPARKGLM_TOOL_GUARD_ALLOW_HOSTS=",
+                    "-e",
+                    "SPARKGLM_TOOL_GUARD_DENY_HOSTS=",
+                    "-e",
+                    "SPARKGLM_PREFIX_CACHE_GB=${prefixCacheGb}",
+                    {
+                      "$option": "sparks",
+                      "2": [
+                        "-e",
+                        "ATLAS_WORLD_SIZE=2",
+                        "-e",
+                        "ATLAS_TP_SIZE=2",
+                        "-e",
+                        "ATLAS_EP_SIZE=2",
+                        "-e",
+                        "ATLAS_CONTEXT_WINDOW=1048576"
+                      ],
+                      "4": null
+                    },
+                    "-e",
+                    "NCCL_SOCKET_IFNAME=${fabricInterface}",
+                    "-e",
+                    "GLOO_SOCKET_IFNAME=${fabricInterface}",
+                    {
+                      "$option": "sparks",
+                      "2": [
+                        "-e",
+                        "NCCL_IB_HCA=${fabricHca}",
+                        "-e",
+                        "NCCL_IB_ADDR_FAMILY=AF_INET",
+                        "-e",
+                        "NCCL_IB_ROCE_VERSION_NUM=2",
+                        "-e",
+                        "NCCL_CROSS_NIC=0",
+                        "-e",
+                        "NCCL_NET=IB",
+                        "-e",
+                        "NCCL_IB_DISABLE=0",
+                        "-e",
+                        "NCCL_IB_RETRY_CNT=7",
+                        "-e",
+                        "NCCL_IB_TIMEOUT=22",
+                        "-e",
+                        "NCCL_ALGO=Ring",
+                        "-e",
+                        "NCCL_PROTO=Simple",
+                        "-e",
+                        "NCCL_BUFFSIZE=33554432",
+                        "-e",
+                        "NCCL_CUMEM_ENABLE=0",
+                        "-e",
+                        "NCCL_NVLS_ENABLE=0",
+                        "-e",
+                        "NCCL_MAX_NCHANNELS=2",
+                        "-e",
+                        "NCCL_MIN_NCHANNELS=1",
+                        "-e",
+                        "NCCL_DMABUF_ENABLE=0",
+                        "-e",
+                        "NCCL_DEBUG=WARN"
+                      ],
+                      "4": null
+                    },
+                    "-e",
+                    "HF_HUB_OFFLINE=1",
+                    "-e",
+                    "TRANSFORMERS_OFFLINE=1",
+                    "-e",
+                    "CUDA_CACHE_PATH=/atlas-cuda-cache",
+                    "-e",
+                    "CUDA_CACHE_MAXSIZE=4294967296"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
