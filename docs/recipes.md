@@ -453,6 +453,41 @@ logprobs, 109/109 live checks, and one RigMark round level with 0.3.3 (prose
 JSON-schema call went from 19-27 s to about 3 s. Strict mode, vision and TP-4
 were not run.
 
+Version 6 is a candidate that installs SparkGLM 0.3.5:
+
+```sh
+lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --recipe-version 6 --additive --apply --yes
+```
+
+0.3.5 is 0.3.4's engine plus three changes for concurrent streams on a pair
+(Enntity/atlas `59ead299`). Each leaves every token as it was, and each is set
+by the image in Spark mode on a pair only:
+
+- A request with a `response_format` grammar joins the shared verify pass
+  ([Enntity/atlas#30](https://github.com/Enntity/atlas/pull/30)). It took a
+  target pass of its own every step, so two or four JSON streams decoded no
+  faster combined than one.
+- Each stream in a shared pass verifies as many drafts as its own drafter was
+  sure of ([Enntity/atlas#31](https://github.com/Enntity/atlas/pull/31)).
+- Prompts prefill in arrival order (`ATLAS_PREFILL_QUEUE_FIRST_CHUNK`). A
+  prompt longer than one 8K-token chunk that arrives while another is
+  prefilling waits its turn, where it used to run its first chunk ahead of the
+  chunks the earlier prompt still had to run.
+
+The engine also carries a prefill pass that yields to decoding streams between
+layers ([Enntity/atlas#32](https://github.com/Enntity/atlas/pull/32)). This
+version leaves it off: it cut a decoding stream's longest freeze from about 3 s
+to about 0.5 s and made waves of prompts 2-5% longer. Its pins are
+`backends/atlas-sparkglm/pins-0.3.5.json`; it has the same options, checkpoint
+and drafters as version 5. It qualified on a DGX Spark pair with dflash2 on
+2026-11-15 against 0.3.4 on the same pair: identical greedy output and prompt
+logprobs, 109/109 live checks, and one RigMark round level with 0.3.4 (prose
+38.7 against 38.8 tok/s, cold 16K prefill 2,856 against 2,849). Four
+JSON-schema streams decoded 68.5 tok/s combined against 43.1. The first of four
+cold 16K-token prompts sent one second apart got its first token in 5.9 s
+against 11.2 s, with the wave level at 46.2 s against 45.7 s. Strict mode,
+vision and TP-4 were not run.
+
 The per-size recipes `linux-nvidia-dgx-spark-2x-glm53-atlas` (described below)
 and `linux-nvidia-dgx-spark-4x-glm53-atlas-tp4` (the
 [TP-4 chain](#atlas-sparkglm-tp-4-chain) section) stay installable while hosts

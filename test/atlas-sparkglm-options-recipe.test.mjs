@@ -249,3 +249,31 @@ test('version 5 is the SparkGLM 0.3.4 candidate: version 4 with the pins, image 
       assert.equal(member.runtimeSettings.bootstrap.image, next.image.reference);
   }
 });
+
+test('version 6 is the SparkGLM 0.3.5 candidate: version 5 with the pins, image and engine swapped', async () => {
+  const v5 = await loadRecipeVersion(recipeId, 5);
+  const v6 = await loadRecipeVersion(recipeId, 6);
+  assert.equal(v6.version, 6);
+  assert.match(v6.name, /SparkGLM 0\.3\.5 candidate/);
+  assert.deepEqual(validateRecipe(v6, {}, { checkLocalReferences: false }), []);
+  assert.deepEqual(recipeOptionCombinations(v6), recipeOptionCombinations(v5));
+  const before = loadPins(path.join(root, 'backends/atlas-sparkglm/pins-0.3.4.json'));
+  const next = loadPins(path.join(root, 'backends/atlas-sparkglm/pins-0.3.5.json'));
+  assert.deepEqual(verifyPins(next), []);
+  assert.equal(next.engine.commit, '59ead2996f3f453e5ea9031f41ff9638993bd877');
+  assert.equal(next.source.revision, '44ffdc2b0c21c4d255932c983318ea5e0aeeb91d');
+  assert.equal(next.image.tag, `ghcr.io/enntity/atlas-sparkglm:${next.source.installTree.slice(0, 12)}`);
+  assert.notEqual(next.image.reference, before.image.reference);
+  // Same checkpoint, profiles and drafters: 0.3.5 changes the engine and the switches its image sets.
+  assert.deepEqual(next.model, before.model);
+  assert.deepEqual(profilePathsOf(next), profilePathsOf(before));
+  assert.deepEqual(next.drafters, before.drafters);
+  for (const options of recipeOptionCombinations(v5)) {
+    const swapped = JSON.stringify(installed(applyRecipeOptions(v5, options)))
+      .replaceAll('pins-0.3.4.json', 'pins-0.3.5.json')
+      .replaceAll(before.image.reference, next.image.reference);
+    assert.deepEqual(installed(applyRecipeOptions(v6, options)), JSON.parse(swapped), JSON.stringify(options));
+    for (const member of members(applyRecipeOptions(v6, options)))
+      assert.equal(member.runtimeSettings.bootstrap.image, next.image.reference);
+  }
+});
