@@ -48,6 +48,19 @@ lloom runtime-start chatterbox
 Speech API extras: `voice` (named LLooM profile), `ref_audio` / `audio_prompt_path`, `exaggeration`, `cfg_weight`, `temperature`, `language` / `language_id` (multilingual), plus `ResembleAI/chatterbox-turbo` for the faster lane. Do not install the Spark recipe until the host has spare memory.
 
 Chatterbox keeps ResembleAI's built-in Perth watermark enabled. Only create or clone voices you own or have explicit permission to use, and disclose synthetic audio where appropriate.
+## Drama 3 expressive TTS (DGX Spark)
+
+Fish Audio Drama 3 (pruned NVFP4) on the TensorFold CUDA engine, for narration in a cloned voice: `linux-nvidia-gb10-drama3-tensorfold`.
+
+```zsh
+lloom setup --recipe linux-nvidia-gb10-drama3-tensorfold --additive --apply --yes
+lloom runtime-start drama-tensorfold
+```
+
+Send `voice` (a LLooM voice profile) or `ref_audio` with `ref_text`; the reference is encoded once and cached. Delivery cues go inline in `input`: `[laughs]`, `[sighs]`, `<whisper>…</whisper>`. `response_format` is `wav` or `pcm` at 44.1 kHz, and `stream: true` with `pcm` streams. On one GB10 it measured 0.70x realtime and about 0.5 s to first streamed audio. It needs about 20 GB loaded, so install it only where that is free.
+
+The weights are under the Fish Audio Community License 1.0. Only clone a voice the model invented, your own, or one whose owner has consented.
+
 Community host seed recipes also publish split Apple Silicon MTPLX lanes plus a Linux/NVIDIA Qwen3.6 27B NVFP4 vLLM lane under `community/recipes/`; first-run onboarding can consume those signed packs directly from `lloom-host` and let machine-profile evidence decide which one fits.
 
 ## LLooM Hear

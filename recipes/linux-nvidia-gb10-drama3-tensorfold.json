@@ -1,0 +1,176 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-gb10-drama3-tensorfold",
+  "name": "Drama 3 expressive TTS (DGX Spark, TensorFold)",
+  "version": 1,
+  "summary": "Fish Audio Drama 3, pruned NVFP4, on the TensorFold CUDA engine for one DGX Spark: expressive 44.1 kHz narration in a cloned voice, with PCM streaming, through LLooM's OpenAI speech API.",
+  "license": {
+    "id": "LicenseRef-Fish-Audio-Community-1.0",
+    "name": "Recipe metadata only; Drama 3 weights are under the Fish Audio Community License 1.0"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "plotarmordev/drama-tensorfold 3786fd16eae932a96ee5ef92c57994aff78dcfc7; plotarmordev/drama-3-NVFP4-Pruned 494db08481db952f834b2241bce63fb3dfa72554. Measured on one GB10 on 2026-11-12: 0.70x realtime, 0.37-0.54 s to first streamed audio with a cloned voice."
+  },
+  "links": [
+    {
+      "rel": "model",
+      "href": "https://huggingface.co/fishaudio/drama-3",
+      "mediaType": "text/html"
+    },
+    {
+      "rel": "model",
+      "href": "https://huggingface.co/plotarmordev/drama-3-NVFP4-Pruned",
+      "mediaType": "text/html"
+    },
+    {
+      "rel": "runtime",
+      "href": "https://github.com/plotarmordev/drama-tensorfold",
+      "mediaType": "text/html"
+    }
+  ],
+  "keywords": [
+    "linux",
+    "nvidia",
+    "dgx-spark",
+    "gb10",
+    "tts",
+    "audio-speech",
+    "drama-3",
+    "voice-clone",
+    "cuda",
+    "nvfp4",
+    "tensorfold"
+  ],
+  "capabilities": [
+    "audio-speech",
+    "tts",
+    "tts-voice-clone",
+    "tts-streaming",
+    "drama-3"
+  ],
+  "hardware": {
+    "family": "NVIDIA DGX Spark GB10",
+    "testedMachine": "One DGX Spark (GB10, 128 GB unified memory), CUDA 13.",
+    "notes": [
+      "About 20 GB loaded. The launcher caps the engine's cgroup at 54 GiB; LLooM's memory budget admits the load.",
+      "One request at a time. Delivery cues go inline in the text: [laughs], [sighs], <whisper>...</whisper>.",
+      "Only clone a voice the model invented, your own, or one whose owner has consented on record."
+    ]
+  },
+  "requirements": {
+    "platforms": [
+      "linux-arm64"
+    ],
+    "memoryGb": 24,
+    "diskGb": 30,
+    "commands": [
+      "lloom-drama-server"
+    ],
+    "accelerators": [
+      "cuda",
+      "nvidia-gpu"
+    ]
+  },
+  "backend": {
+    "id": "drama-tensorfold",
+    "name": "Drama 3 (TensorFold)",
+    "type": "openai-compatible-server",
+    "features": [
+      "audio-speech",
+      "tts",
+      "tts-voice-clone",
+      "cuda"
+    ]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-lloom-drama-server",
+        "title": "Check LLooM Drama 3 server shim",
+        "action": "check-command",
+        "command": "lloom-drama-server",
+        "args": [
+          "--help"
+        ]
+      },
+      {
+        "id": "install-drama-tensorfold",
+        "title": "Build the Drama 3 TensorFold engine and download the pruned NVFP4 weights",
+        "action": "command",
+        "command": "bash",
+        "args": [
+          "${repoRoot}/backends/drama-tensorfold/install.sh"
+        ]
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "speech",
+      "name": "Drama 3 voice clone",
+      "model": "fishaudio/drama-3",
+      "gatewayModel": "fishaudio/drama-3",
+      "runtime": "drama-tensorfold",
+      "backendConfig": "drama-tensorfold",
+      "input": [
+        "text"
+      ],
+      "output": [
+        "audio"
+      ],
+      "capabilities": [
+        "audio-speech",
+        "tts",
+        "tts-voice-clone",
+        "tts-streaming",
+        "drama-3"
+      ],
+      "aliases": [
+        "drama-3",
+        "drama3"
+      ],
+      "tts": {
+        "family": "drama-3",
+        "mode": "voice_clone",
+        "description": "Fish Audio Drama 3: expressive clone from a voice profile (reference clip plus its exact transcript). Write delivery cues inline: [laughs], [sighs], <whisper>...</whisper>.",
+        "languages": [
+          "en",
+          "zh",
+          "ja",
+          "ko"
+        ],
+        "sampleRate": 44100,
+        "responseFormats": [
+          "wav",
+          "pcm"
+        ]
+      },
+      "settings": {
+        "contextWindow": 4096,
+        "maxOutputTokens": 4096,
+        "maxActiveRequests": 1,
+        "memoryGb": 24,
+        "priority": 45,
+        "keepWarm": true,
+        "startupTimeoutMs": 600000,
+        "timeoutMs": 1800000,
+        "runtime": {
+          "command": "lloom-drama-server",
+          "args": [
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "${port}"
+          ],
+          "env": {},
+          "healthPath": "/health",
+          "warmup": false
+        }
+      }
+    }
+  ]
+}
