@@ -17,6 +17,10 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Fixed
 
+- Changing an installed recipe's options (SparkGLM `--sparks 2` to `--sparks 4` or back) no longer needs hand edits to the config (#139). Setup and init remove the recipe's runtimes that no model reaches any more, such as a pair's worker after moving to four Sparks, instead of leaving a former group member that fails validation. A placement installed for another node count no longer chooses the nodes, so going back to two Sparks is not refused with "needs 2 cluster nodes but selects 4".
+- Setup and init refuse to write a config that does not load, and exit non-zero with the validation errors, instead of writing it and leaving every later command to fail while the running gateway silently keeps its old config.
+- A maintenance (suspend) record is dropped when a re-install gives the runtime another owner. Only the owner gateway enforces and clears the record, so one written by a former leader blocked the new leader's `lloom resume` and could not be cleared on the member (HTTP 403).
+- A cluster admission refusal on memory names each short node and the amounts: `NODE is short by 3.0 GB (needs 114.0 GB, 10.0 GB in use, budget 121.0 GB)`.
 - Bundle Accord 0.6.7: sessions silent for 36 hours leave the Accord board instead of showing as working, a coordinator restart no longer repeats "is running" notices for windows it resumes, and a window that reaches its deadline is reported as ended, not failed.
 - Bundle Accord 0.6.3: a reservation resource removed from `reservations.resources`, or a slot above a lowered capacity, is forgotten by Accord once idle instead of staying listed forever.
 - `remove-model` now prunes removed runtime IDs from `init.enabledRuntimes` and clears `init.keepWarmRuntime` when it names a removed runtime, so the next additive init cannot re-union stale bookkeeping.
