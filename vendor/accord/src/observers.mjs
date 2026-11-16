@@ -3,7 +3,7 @@
 import fs from "node:fs/promises";
 import { join, basename } from "node:path";
 import { hash } from "./common.mjs";
-import { redact } from "./session-awareness.mjs";
+import { redact, staleSessionMs } from "./session-awareness.mjs";
 const content = (value) =>
   typeof value === "string"
     ? value
@@ -201,7 +201,7 @@ export class TranscriptObserver {
         const known=this.awareness.db.prepare('SELECT external_id FROM session_views WHERE source=? AND hidden=0').all(root.source).map(r=>r.external_id).filter(Boolean);
         for (const path of await filesUnder(root.path)) {
           const stat = await fs.stat(path).catch(() => null);
-          const old=stat&&this.now()-stat.mtimeMs>(root.lookbackMs??36*3600000);
+          const old=stat&&this.now()-stat.mtimeMs>(root.lookbackMs??staleSessionMs);
           if (
             !stat ||
             old&&!known.some(id=>basename(path,'.jsonl').endsWith(id))

@@ -17,6 +17,8 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Fixed
 
+- The gateway no longer stalls while saving metrics history. Every generation interval ever recorded was kept in `metrics-history.json` and the whole file was rewritten synchronously after each request, so a host with a 56 MB history file paused every request for about 260 ms each time it saved. Intervals older than an hour now fold into an exact total, the file is written in the background with atomic replacement, and an oversized file is compacted on the first start. An unreadable history file is kept as `metrics-history.json.corrupt` instead of being overwritten.
+- Bundle Accord 0.6.7: sessions silent for 36 hours leave the Accord board instead of showing as working, a coordinator restart no longer repeats "is running" notices for windows it resumes, and a window that reaches its deadline is reported as ended, not failed.
 - Bundle Accord 0.6.3: a reservation resource removed from `reservations.resources`, or a slot above a lowered capacity, is forgotten by Accord once idle instead of staying listed forever.
 - `remove-model` now prunes removed runtime IDs from `init.enabledRuntimes` and clears `init.keepWarmRuntime` when it names a removed runtime, so the next additive init cannot re-union stale bookkeeping.
 - `remove-model --delete-files` reclaims every exclusively owned weight of a multi-component model (diffusion, text encoder, VAE) instead of only the first runtime argument, reports reclaimed bytes, and preserves components still referenced by another model.
@@ -29,6 +31,8 @@ All notable changes to LLooM will be documented in this file. The format follows
 - Release a registered distributed workload group when any rank fails, including peers that are still running. Training plans can pass IPC, RDMA, and resource options while the launcher retains container identity and restart control.
 
 ### Added
+
+- Drama 3 expressive TTS recipe (`linux-nvidia-gb10-drama3-tensorfold`) for one DGX Spark on the TensorFold engine, serving Fish Audio Drama 3 (pruned NVFP4) for narration and streamed replies in a cloned voice. The `drama-tensorfold` backend's `lloom_drama_server.py` shim encodes a voice profile's reference audio and text into the codec codes the engine expects.
 
 - Atlas SparkGLM TP-4 recipe (`linux-nvidia-dgx-spark-4x-glm53-atlas-tp4`) for four DGX Sparks cabled as a daisy chain, serving GLM-5.3-Flash-FP4-Local as the separate gateway model `glm-5.3-flash-atlas-tp4` with the image's `4x1m-tp4` profile. Its pins (`backends/atlas-sparkglm/pins-tp4.json`) are drafts until a TP-4 release image exists, and the fail-closed pin gate refuses them. Distributed recipes gain a `chain` topology: each node declares `cluster.nodes[ID].fabricChain` (rank, interface, rank 0's rendezvous address, and the RDMA devices toward each neighbour), templated as `${nodeRank}`, `${fabricInterface}`, `${leaderAddress}`, `${fabricLeftHca}` and `${fabricRightHca}`. A member spanning several nodes starts them at consecutive orders, `rankOrder` sorts them by rank, and a recipe's declared node count is now enforced at materialization.
 

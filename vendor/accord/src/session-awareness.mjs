@@ -56,6 +56,9 @@ export function redact(value) {
     );
 }
 const terminal = new Set(["done", "failed", "exited", "cancelled"]);
+// A live MCP session heartbeats every 30 s and observers stop reading transcripts this
+// old, so a session silent this long has nobody left to report for it.
+export const staleSessionMs = 36 * 3600000;
 export const sessionStates = [
   "starting",
   "working",
@@ -426,13 +429,28 @@ export class SessionAwareness {
   heartbeat(actor) {
     return this.store.mutate(() => {
       const now = this.store.now();
+      // A heartbeat after a stale silence is a resumed session, alive but not yet working.
       this.db
-        .prepare("UPDATE session_views SET heartbeat_at=? WHERE id=?")
-        .run(now, actor.id);
+        .prepare("UPDATE session_views SET state=CASE WHEN state='exited' AND heartbeat_at<:stale THEN 'idle' ELSE state END,revision=revision+(state='exited' AND heartbeat_at<:stale),heartbeat_at=:now WHERE id=:id")
+        .run({ stale: now - staleSessionMs, now, id: actor.id });
       this.db
         .prepare("UPDATE participants SET updated_at=? WHERE actor=?")
         .run(now, actor.id);
       return { heartbeatAt: now };
+    });
+  }
+  expireStale() {
+    return this.store.mutate(() => {
+      // A remote session's heartbeats reach its home host, which judges its silence.
+      const stale = this.db.prepare(`SELECT id FROM session_views v WHERE hidden=0 AND heartbeat_at<? AND state NOT IN (${[...terminal].map(() => "?").join(",")})
+          AND NOT EXISTS (SELECT 1 FROM remote_routes r WHERE r.actor=v.id)`)
+          .all(this.store.now() - staleSessionMs, ...terminal),
+        exit = this.db.prepare("UPDATE session_views SET state='exited',revision=revision+1 WHERE id=?");
+      for (const { id } of stale) {
+        exit.run(id);
+        this.store.emit("session.stale", { session: id });
+      }
+      return { expired: stale.length };
     });
   }
   list({ query = "", limit = 50 } = {}) {

@@ -17,8 +17,8 @@ One agent is editing the checkout. Another is about to reset it. A third needs t
 GPU the first one reserved. Accord gives them a shared directory, durable messages,
 and a queue, so you can stop carrying updates between terminals.
 
-**0.6.6:** stalled coordinators recover without losing live claims when no replacement
-has taken over. Failed provider restores no longer repeat a confirmed workload stop.
+**0.6.7:** sessions silent for 36 hours leave the board instead of showing as working,
+and a coordinator restart no longer repeats "is running" notices for windows it resumes.
 [Release notes](CHANGELOG.md) · [Upgrading](docs/UPGRADING.md)
 
 ## Get started
@@ -27,7 +27,7 @@ You need Node.js 22.16 or newer. macOS and Linux support automatic service setup
 On Windows, run `accord up` under your own supervisor after installation.
 
 ```sh
-npm install -g https://github.com/Enntity/accord/releases/download/v0.6.6/enntity-accord-0.6.6.tgz
+npm install -g https://github.com/Enntity/accord/releases/download/v0.6.7/enntity-accord-0.6.7.tgz
 accord install
 ```
 

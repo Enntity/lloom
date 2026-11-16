@@ -121,6 +121,7 @@ export function coordinator({ db, claimSecret, driverUrl, driverToken, driverIns
   let pruning=false;
   async function prune(){
     if(closed||unhealthy||pruning)return;pruning=true;
+    try{awareness.expireStale();}catch{/* The next pass retries. */}
     try{
       const managed=store.db.prepare("SELECT id FROM resource_bindings WHERE plugin='managed-http'").all().map(r=>r.id);
       const installed=(await request(driverUrl,driverToken,'/control/resources')).resources.filter(r=>r.plugin==='managed-http').map(r=>r.id);
