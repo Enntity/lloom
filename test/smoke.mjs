@@ -887,6 +887,7 @@ assert.deepEqual(
     'linux-nvidia-dgx-spark-glm53-atlas',
     'linux-nvidia-dgx-spark-qwen38-27b-atlas',
     'linux-nvidia-gb10-chatterbox',
+    'linux-nvidia-gb10-drama3-tensorfold',
     'linux-nvidia-gb10-image-generation',
     'linux-nvidia-gb10-qwen36-unsloth-vllm',
     'linux-nvidia-gb10-qwen38-27b-nvfp4-vllm',
