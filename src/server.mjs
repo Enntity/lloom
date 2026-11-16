@@ -20,6 +20,7 @@ import {
   watchFile,
   writeFileSync
 } from 'node:fs';
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 // Dispatcher and fetch must come from the same undici copy: the package's
@@ -1189,7 +1190,22 @@ function mergeGenerationIntervals(intervals) {
   return merged;
 }
 
-function restoreMetricBucket(target, source) {
+// A finished interval can only overlap a stream that was still running when it
+// ended, so older intervals fold into an exact scalar. The count cap bounds a
+// bucket under sustained back-to-back traffic. Without both, every interval
+// ever recorded stayed in memory and in the history file.
+const GENERATION_INTERVAL_HORIZON_MS = 3600_000;
+const MAX_GENERATION_INTERVALS = 1024;
+
+function settleGenerationIntervals(bucket, cutoff = Infinity) {
+  const intervals = bucket.generationIntervals;
+  let settled = Math.max(0, intervals.length - MAX_GENERATION_INTERVALS);
+  while (settled < intervals.length && intervals[settled][1] < cutoff) settled += 1;
+  for (const [start, end] of intervals.splice(0, settled)) bucket.settledGenerationMs += end - start;
+  return bucket;
+}
+
+function restoreMetricBucket(target, source, cutoff) {
   if (!source || typeof source !== 'object') return target;
   for (const key of Object.keys(target)) {
     if (key === 'id') continue;
@@ -1217,14 +1233,14 @@ function restoreMetricBucket(target, source) {
   }
   // Older history has only summed request generation time; retain it as an estimate.
   if (source.untrackedGenerationMs == null) target.untrackedGenerationMs = target.generationDurationMs;
-  return target;
+  return settleGenerationIntervals(target, cutoff);
 }
 
-function restoreMetricMap(entries) {
+function restoreMetricMap(entries, cutoff) {
   return new Map(
     (Array.isArray(entries) ? entries : [])
       .filter((entry) => entry?.id)
-      .map((entry) => [entry.id, restoreMetricBucket(emptyMetricBucket(entry.id), entry)])
+      .map((entry) => [entry.id, restoreMetricBucket(emptyMetricBucket(entry.id), entry, cutoff)])
   );
 }
 
@@ -1232,12 +1248,12 @@ function createMetricGroup(id = 'all') {
   return { totals: emptyMetricBucket(id), models: new Map(), routes: new Map(), requested: new Map() };
 }
 
-function restoreMetricGroup(source, id = 'all') {
+function restoreMetricGroup(source, id = 'all', cutoff) {
   return {
-    totals: restoreMetricBucket(emptyMetricBucket(id), source?.totals),
-    models: restoreMetricMap(source?.models),
-    routes: restoreMetricMap(source?.routes),
-    requested: restoreMetricMap(source?.requested)
+    totals: restoreMetricBucket(emptyMetricBucket(id), source?.totals, cutoff),
+    models: restoreMetricMap(source?.models, cutoff),
+    routes: restoreMetricMap(source?.routes, cutoff),
+    requested: restoreMetricMap(source?.requested, cutoff)
   };
 }
 
@@ -1253,6 +1269,7 @@ function mergeMetricBucket(target, source) {
     'firstContentMs',
     'generationDurationMs',
     'untrackedGenerationMs',
+    'settledGenerationMs',
     'decodeTokens',
     'decodeSamples',
     'estimatedDecodeSamples',
@@ -1306,16 +1323,25 @@ export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } =
   const recent = [];
   const active = new Map();
   let nextConnectionId = 1;
-  const totals = restoreMetricBucket(emptyMetricBucket('all'), initialSnapshot?.totals);
-  const models = restoreMetricMap(initialSnapshot?.models);
-  const routes = restoreMetricMap(initialSnapshot?.routes);
+  // Restoring settles old intervals, which also compacts an oversized history file.
+  const restoredAt = Date.now();
+  const restoreCutoff = restoredAt - GENERATION_INTERVAL_HORIZON_MS;
+  const today = new Date(restoredAt).toISOString().slice(0, 10);
+  const totals = restoreMetricBucket(emptyMetricBucket('all'), initialSnapshot?.totals, restoreCutoff);
+  const models = restoreMetricMap(initialSnapshot?.models, restoreCutoff);
+  const routes = restoreMetricMap(initialSnapshot?.routes, restoreCutoff);
   // Demand per requested id (usually an alias), separate from resolved models.
-  const requested = restoreMetricMap(initialSnapshot?.requested);
+  const requested = restoreMetricMap(initialSnapshot?.requested, restoreCutoff);
   const days = new Map(
     (Array.isArray(initialSnapshot?.history?.days) ? initialSnapshot.history.days : [])
       .filter((entry) => /^\d{4}-\d{2}-\d{2}$/.test(entry?.date || ''))
-      .map((entry) => [entry.date, restoreMetricGroup(entry, entry.date)])
+      .map((entry) => [
+        entry.date,
+        restoreMetricGroup(entry, entry.date, entry.date < today ? Infinity : restoreCutoff)
+      ])
   );
+  // Serialized days keep their identity until they change, so persistence encodes each once.
+  const serializedDays = new Map();
 
   function bucketFor(map, key) {
     if (!map.has(key)) map.set(key, emptyMetricBucket(key));
@@ -1352,6 +1378,7 @@ export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } =
           ...bucket.generationIntervals,
           [generationStart, generationStart + decodeDurationMs]
         ]);
+        settleGenerationIntervals(bucket, Date.parse(entry.at) - GENERATION_INTERVAL_HORIZON_MS);
         bucket.decodeSamples += 1;
         bucket.recentDecodeRates.push(decodeRate);
         if (bucket.recentDecodeRates.length > 10) bucket.recentDecodeRates.shift();
@@ -1458,13 +1485,33 @@ export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } =
       if (entry.route) apply(bucketFor(routes, entry.route), entry);
       if (entry.requestedModel) apply(bucketFor(requested, entry.requestedModel), entry);
       const dayId = entry.at.slice(0, 10);
-      if (!days.has(dayId)) days.set(dayId, createMetricGroup(dayId));
+      if (!days.has(dayId)) {
+        // Requests land on their completion day, so earlier days are final.
+        for (const [date, group] of days) {
+          for (const bucket of [
+            group.totals,
+            ...group.models.values(),
+            ...group.routes.values(),
+            ...group.requested.values()
+          ]) {
+            if (!bucket.generationIntervals.length) continue;
+            settleGenerationIntervals(bucket);
+            serializedDays.delete(date);
+          }
+        }
+        days.set(dayId, createMetricGroup(dayId));
+      }
+      serializedDays.delete(dayId);
       const day = days.get(dayId);
       apply(day.totals, entry);
       if (entry.model) apply(bucketFor(day.models, entry.model), entry);
       if (entry.route) apply(bucketFor(day.routes, entry.route), entry);
       if (entry.requestedModel) apply(bucketFor(day.requested, entry.requestedModel), entry);
-      while (days.size > 400) days.delete([...days.keys()].sort()[0]);
+      while (days.size > 400) {
+        const oldest = [...days.keys()].sort()[0];
+        days.delete(oldest);
+        serializedDays.delete(oldest);
+      }
     },
     snapshot({ model, period = 'all' } = {}) {
       const normalizedPeriod = ['today', '7d', '30d', 'all'].includes(period) ? period : 'all';
@@ -1518,10 +1565,10 @@ export function createMetricsStore({ maxRecent = 200, initialSnapshot = null } =
         history: {
           days: [...days.entries()]
             .sort(([a], [b]) => a.localeCompare(b))
-            .map(([date, group]) => ({
-              date,
-              ...serializeMetricGroup(group)
-            }))
+            .map(([date, group]) => {
+              if (!serializedDays.has(date)) serializedDays.set(date, { date, ...serializeMetricGroup(group) });
+              return serializedDays.get(date);
+            })
         }
       };
     }
@@ -1538,7 +1585,11 @@ export function createMetricsPersistence(config, { logger = console } = {}) {
   const filePath = config.logging?.metricsPath || process.env.LLOOM_METRICS_PATH || defaultMetricsHistoryPath();
   let latestSnapshot = null;
   let flushTimer = null;
+  let writing = null;
+  let dirty = false;
+  let writes = 0;
   let createdAt = new Date().toISOString();
+  const encodedDays = new WeakMap();
 
   function loadSnapshot() {
     if (!enabled || !existsSync(filePath)) return null;
@@ -1549,51 +1600,97 @@ export function createMetricsPersistence(config, { logger = console } = {}) {
       return document.metrics;
     } catch (error) {
       logger.error?.(`could not load LLooM metrics history ${filePath}: ${error?.message ?? error}`);
+      // Keep the unreadable file for inspection instead of overwriting it on the next flush.
+      try {
+        renameSync(filePath, `${filePath}.corrupt`);
+      } catch {
+        // Best effort: persistence continues with a fresh history either way.
+      }
       return null;
     }
   }
 
-  function flush() {
-    if (flushTimer) {
-      clearTimeout(flushTimer);
-      flushTimer = null;
+  // Only the live buckets and changed days are stringified; unchanged days reuse their bytes.
+  function serialize() {
+    const snapshot = typeof latestSnapshot === 'function' ? latestSnapshot() : latestSnapshot;
+    const head = JSON.stringify({
+      version: 1,
+      createdAt,
+      updatedAt: new Date().toISOString(),
+      metrics: {
+        totals: snapshot.totals,
+        models: snapshot.models,
+        routes: snapshot.routes,
+        requested: snapshot.requested
+      }
+    });
+    const parts = [Buffer.from(`${head.slice(0, -2)},"history":{"days":[`)];
+    const comma = Buffer.from(',');
+    for (const day of snapshot.history?.days ?? []) {
+      if (!encodedDays.has(day)) encodedDays.set(day, Buffer.from(JSON.stringify(day)));
+      if (parts.length > 1) parts.push(comma);
+      parts.push(encodedDays.get(day));
     }
+    parts.push(Buffer.from(']}}}\n'));
+    return Buffer.concat(parts);
+  }
+
+  function clearFlushTimer() {
+    if (flushTimer) clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+
+  // Synchronous flush for shutdown; request-time flushes go through flushAsync.
+  function flush() {
+    clearFlushTimer();
     if (!enabled || !latestSnapshot) return;
     try {
+      dirty = false;
+      writes += 1;
       mkdirSync(path.dirname(filePath), { recursive: true });
-      const temporaryPath = `${filePath}.tmp`;
-      writeFileSync(
-        temporaryPath,
-        `${JSON.stringify(
-          {
-            version: 1,
-            createdAt,
-            updatedAt: new Date().toISOString(),
-            metrics: {
-              totals: latestSnapshot.totals,
-              models: latestSnapshot.models,
-              routes: latestSnapshot.routes,
-              requested: latestSnapshot.requested,
-              history: latestSnapshot.history
-            }
-          },
-          null,
-          2
-        )}\n`,
-        { mode: 0o600 }
-      );
+      const temporaryPath = `${filePath}.sync.tmp`;
+      writeFileSync(temporaryPath, serialize(), { mode: 0o600 });
       renameSync(temporaryPath, filePath);
     } catch (error) {
       logger.error?.(`could not persist LLooM metrics history ${filePath}: ${error?.message ?? error}`);
     }
   }
 
+  async function flushAsync() {
+    clearFlushTimer();
+    while (writing) await writing;
+    if (!enabled || !latestSnapshot || !dirty) return;
+    dirty = false;
+    const write = (writes += 1);
+    const temporaryPath = `${filePath}.tmp`;
+    writing = (async () => {
+      try {
+        await mkdir(path.dirname(filePath), { recursive: true });
+        await writeFile(temporaryPath, serialize(), { mode: 0o600 });
+        // A synchronous flush that ran meanwhile already wrote newer data.
+        if (write === writes) await rename(temporaryPath, filePath);
+        else await rm(temporaryPath, { force: true });
+      } catch (error) {
+        logger.error?.(`could not persist LLooM metrics history ${filePath}: ${error?.message ?? error}`);
+      }
+    })();
+    await writing;
+    writing = null;
+    if (dirty) arm();
+  }
+
+  function arm() {
+    if (flushTimer || writing) return;
+    flushTimer = setTimeout(flushAsync, 1000);
+    flushTimer.unref?.();
+  }
+
+  // Accepts a snapshot or a function returning one, so callers need not build it per request.
   function schedule(snapshot) {
     if (!enabled) return;
     latestSnapshot = snapshot;
-    if (flushTimer) return;
-    flushTimer = setTimeout(flush, 1000);
-    flushTimer.unref?.();
+    dirty = true;
+    arm();
   }
 
   return {
@@ -1602,6 +1699,7 @@ export function createMetricsPersistence(config, { logger = console } = {}) {
     loadSnapshot,
     schedule,
     flush,
+    flushAsync,
     metadata() {
       return { enabled, scope: enabled ? 'all-time' : 'process', since: createdAt };
     }
@@ -1654,6 +1752,7 @@ function emptyMetricBucket(id) {
     maxFirstContentMs: null,
     generationDurationMs: 0,
     untrackedGenerationMs: 0,
+    settledGenerationMs: 0,
     generationIntervals: [],
     decodeTokens: 0,
     decodeSamples: 0,
@@ -1669,7 +1768,9 @@ function emptyMetricBucket(id) {
 function finalizeMetricBucket(bucket, includeIntervals = false) {
   const { generationIntervals, ...publicBucket } = bucket;
   const activeGenerationMs =
-    bucket.untrackedGenerationMs + generationIntervals.reduce((sum, [start, end]) => sum + end - start, 0);
+    bucket.untrackedGenerationMs +
+    bucket.settledGenerationMs +
+    generationIntervals.reduce((sum, [start, end]) => sum + end - start, 0);
   const durationSeconds = bucket.durationMs / 1000;
   const recentDecodeRate = bucket.recentDecodeRates.length
     ? bucket.recentDecodeRates.reduce((sum, rate) => sum + rate, 0) / bucket.recentDecodeRates.length
@@ -3032,7 +3133,10 @@ export function createLloomServer(
 
   const performanceSampler = createPerformanceSampler();
   const metricsPersistence = createMetricsPersistence(config, { logger });
-  const baseMetrics = createMetricsStore({ initialSnapshot: metricsPersistence.loadSnapshot() });
+  const restoredMetrics = metricsPersistence.loadSnapshot();
+  const baseMetrics = createMetricsStore({ initialSnapshot: restoredMetrics });
+  // Rewrite a restored history once at start, so its first full encoding is not paid by a request.
+  if (restoredMetrics) metricsPersistence.schedule(baseMetrics.persistenceSnapshot);
   const metrics = {
     begin(entry) {
       const id = baseMetrics.begin(entry);
@@ -3071,7 +3175,7 @@ export function createLloomServer(
         totalTokens: entry.usage?.total_tokens ?? (entry.usage?.input_tokens ?? 0) + metricOutputTokens(entry),
         error: entry.ok === false ? (entry.error ?? entry.status) : undefined
       });
-      metricsPersistence.schedule(baseMetrics.persistenceSnapshot());
+      metricsPersistence.schedule(baseMetrics.persistenceSnapshot);
     },
     snapshot(...args) {
       return {

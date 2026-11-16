@@ -13,10 +13,10 @@ second authority or copy tokens between hosts. Keep the previous package availab
 binary rollback; database rollback is a separate recovery operation and can invalidate
 fencing history. See [recovery](RECOVERY.md).
 
-## Install 0.6.6
+## Install 0.6.7
 
 ```sh
-npm install -g https://github.com/Enntity/accord/releases/download/v0.6.6/enntity-accord-0.6.6.tgz
+npm install -g https://github.com/Enntity/accord/releases/download/v0.6.7/enntity-accord-0.6.7.tgz
 accord install
 ```
 
@@ -47,13 +47,21 @@ accord --version
 accord doctor
 ```
 
-The CLI should report `0.6.6`; the doctor should report `ready`. The CLI version identifies
+The CLI should report `0.6.7`; the doctor should report `ready`. The CLI version identifies
 the package invoked by your shell, so also check the running service's command line
 against the new install path. Restart your agent sessions to load the updated MCP bridge.
 
 On linked hosts, verify `accord find`, send and acknowledge a test message, and exercise
 reserve, extend and release on a dedicated cooperative resource. Check that extension
 keeps the claim and generation. Do not use an active GPU workload as a smoke test.
+
+## Changes from 0.6.6
+
+The prune pass that runs every ten minutes marks a session `exited` once it has sent no
+heartbeat for 36 hours, the observer's transcript lookback. The first pass after upgrading
+clears sessions that died before 0.6.7, which stops the overseer's check-ins to them. A later
+heartbeat brings a session back as `idle`. A coordinator restart that resumes a window no longer
+sends its holder a second "is running" notice. No schema migration is added.
 
 ## Changes from 0.6.5
 

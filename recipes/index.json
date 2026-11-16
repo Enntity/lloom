@@ -1457,7 +1457,7 @@
     {
       "id": "linux-nvidia-dgx-spark-glm53-atlas",
       "path": "linux-nvidia-dgx-spark-glm53-atlas.json",
-      "currentVersion": 2,
+      "currentVersion": 6,
       "versions": [
         {
           "version": 1,
@@ -1467,19 +1467,37 @@
         },
         {
           "version": 2,
-          "path": "linux-nvidia-dgx-spark-glm53-atlas.json",
-          "status": "current",
+          "path": "archive/linux-nvidia-dgx-spark-glm53-atlas/v2.json",
+          "status": "archived",
           "notes": "Adds Enntity's v81 drafter (Enntity/GLM-5.3-Flash-DFlash2-enntity at ee5ed56e3ed2, model.safetensors sha256 d14e1edb080711d4) as --drafter v81 and makes it the two-Spark default; four Sparks still default to dflash2. v80 is unchanged and pinned under the repository's earlier name, so --drafter v80 installs exactly what version 1 did. Same SparkGLM 0.3.1 image and pins manifest. Not yet qualified with v81."
         },
         {
           "version": 3,
-          "path": "candidates/linux-nvidia-dgx-spark-glm53-atlas/v3.json",
-          "status": "candidate",
+          "path": "archive/linux-nvidia-dgx-spark-glm53-atlas/v3.json",
+          "status": "archived",
           "notes": "SparkGLM 0.3.2: 0.3.1's engine plus Atlas-Inf#338 (the GLM vision tower borrows its 1.25 GiB of encode scratch from the prefill arena), so the TP-2 KV pool is about 15% larger with image and video unchanged. Pins backends/atlas-sparkglm/pins-0.3.2.json; otherwise installs exactly what version 2 does. Qualified at TP-2 with v81 against 0.3.1 (identical output, speed level); not yet run at TP-4."
+        },
+        {
+          "version": 4,
+          "path": "archive/linux-nvidia-dgx-spark-glm53-atlas/v4.json",
+          "status": "archived",
+          "notes": "SparkGLM 0.3.3: 0.3.2's engine plus three exact changes (a lone sequence on a pair may verify one draft, packed gathers between the pair during prefill in Spark mode, per-pass buffers sized for this model), and the reference drafter incoai/GLM-5.3-Flash-DFlash2 at its Apache-2.0 revision 6cc6c481 as the default at both sizes. Pins backends/atlas-sparkglm/pins-0.3.3.json. Qualified at TP-2 with dflash2 against 0.3.2 (identical output; RigMark prose 38.1 against 34.7 tok/s, cold 16K prefill 2,865 against 2,753, KV pool 151,242-166,564 blocks against 136,362-142,448); not yet run at TP-4."
+        },
+        {
+          "version": 5,
+          "path": "archive/linux-nvidia-dgx-spark-glm53-atlas/v5.json",
+          "status": "archived",
+          "notes": "SparkGLM 0.3.4: 0.3.3's engine plus --thinking-off-budget (Enntity/atlas#29). In Spark mode, which this recipe runs, a request that turns thinking off is served at the template's Low effort under a 256-token cap instead of reasoning at Max effort with no limit; requests that reason are unchanged. Pins backends/atlas-sparkglm/pins-0.3.4.json; otherwise installs exactly what version 4 does. Qualified at TP-2 with dflash2 against 0.3.3 (identical greedy output and prompt logprobs, 109/109 live checks, RigMark level; a thinking-off JSON-schema call 19-27 s to about 3 s); Strict mode, vision and TP-4 not run."
+        },
+        {
+          "version": 6,
+          "path": "linux-nvidia-dgx-spark-glm53-atlas.json",
+          "status": "current",
+          "notes": "SparkGLM 0.3.5: 0.3.4's engine plus three exact changes for concurrent streams on a pair in Spark mode, which this recipe runs (structured output joins the shared verify pass, Enntity/atlas#30; each stream verifies its own width, Enntity/atlas#31; prompts prefill in arrival order, ATLAS_PREFILL_QUEUE_FIRST_CHUNK). Pins backends/atlas-sparkglm/pins-0.3.5.json; otherwise installs exactly what version 5 does. Qualified at TP-2 with dflash2 against 0.3.4 (identical greedy output and prompt logprobs, 109/109 live checks, RigMark level; four JSON-schema streams 68.5 tok/s combined against 43.1; first token of the first of four cold 16K-token prompts 5.9 s against 11.2 s), then in Strict mode and with images against 0.3.3 and on a four-Spark chain against 0.3.0 (identical output; the chain ran at GPU memory utilization 0.82). Current since 2026-11-16."
         }
       ],
       "name": "DGX Spark GLM-5.3 Flash FP4-Local Atlas (SparkGLM)",
-      "summary": "Atlas SparkGLM on two DGX Sparks (TP-2 pair) or four (TP-4 chain), serving GLM-5.3-Flash-FP4-Local as published from a pinned GHCR image with Enntity's v81 or v80 drafter or DFlash2: four requests of up to 1M tokens. Pick with --sparks and --drafter.",
+      "summary": "Atlas SparkGLM 0.3.5 on two DGX Sparks (TP-2 pair) or four (TP-4 chain), serving GLM-5.3-Flash-FP4-Local as published from a pinned GHCR image with DFlash2 or Enntity's v81 or v80 drafter: four requests of up to 1M tokens. Pick with --sparks and --drafter.",
       "tags": [
         "linux",
         "nvidia",

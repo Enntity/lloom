@@ -1,0 +1,46 @@
+{
+  "manifestVersion": 1,
+  "status": "final",
+  "note": "Pin manifest for SparkGLM 0.3.3, recipe linux-nvidia-dgx-spark-glm53-atlas version 4, for two and four Sparks and its drafters (the recipe's --drafter picks one of drafters). Engine: Enntity/atlas spark a703c117, which is 0.3.2's engine (f7cea507) plus three exact changes: a lone sequence on a pair under expert TP may verify one draft (Atlas-Inf#346), packed MoE and MLA gathers between the pair during prefill in Spark mode (Atlas-Inf#347), and three per-pass buffers sized for this model (Atlas-Inf#348). drafters.dflash2 moves to the reference drafter's Apache-2.0 revision 6cc6c481, which carries its 2026-08-31 weights. image.reference is the GHCR manifest digest; the tag is the first 12 characters of the sparkglm install/ tree. Candidate: qualified at TP-2 with dflash2 on 2026-11-11 against 0.3.2 (identical greedy output, prompt logprobs in Spark and Strict modes, and vision output; KV pool 151,242-166,564 blocks); not yet run at TP-4.",
+  "source": {
+    "repo": "Enntity/sparkglm",
+    "revision": "08c46830095bdd869890b7dc8b8bcf14fc9243d2",
+    "installTree": "c5801bd29e452bf4413dfc33acef27c1a8781d23",
+    "cloneUrl": "https://github.com/Enntity/sparkglm.git",
+    "buildScript": "install/build.sh"
+  },
+  "engine": {
+    "repo": "Enntity/atlas",
+    "branch": "spark",
+    "commit": "a703c117e33545c4692ab0042fa54c537cc5e661"
+  },
+  "image": {
+    "reference": "ghcr.io/enntity/atlas-sparkglm@sha256:09f731548ecfa045195c7e81f2535b9544adea4b4cc43e16fd23a4a6a681bb04",
+    "tag": "ghcr.io/enntity/atlas-sparkglm:c5801bd29e45",
+    "label": "io.enntity.sparkglm.install-tree",
+    "entrypoint": "/opt/atlas/serve.py",
+    "profilePaths": [
+      "/opt/atlas/profiles/4x1m.json",
+      "/opt/atlas/profiles/4x1m-tp4.json"
+    ],
+    "architecture": "arm64"
+  },
+  "model": {
+    "repo": "nvidia/GLM-5.3-Flash-FP4-Local",
+    "revision": "76348ddb2be2e35e39ecfc00e75dc07703f4f3d5"
+  },
+  "drafters": {
+    "v81": {
+      "repo": "Enntity/GLM-5.3-Flash-DFlash2-enntity",
+      "revision": "ee5ed56e3ed2e59fd2d5177fe6773b2f6fb4aa80"
+    },
+    "v80": {
+      "repo": "Enntity/GLM-5.3-Flash-DFlash2-enntity-v80",
+      "revision": "8416cdfbf4cfb302b86a058cb5f5b89f891350c0"
+    },
+    "dflash2": {
+      "repo": "incoai/GLM-5.3-Flash-DFlash2",
+      "revision": "6cc6c481eee930a5139619ed919f78726371adbc"
+    }
+  }
+}
