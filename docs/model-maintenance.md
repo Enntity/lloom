@@ -71,6 +71,12 @@ Admission retains memory, ownership, active-work, and resident-model protections
 It does not force incompatible workloads to coexist or terminate arbitrary
 processes launched outside LLooM.
 
+A maintenance record belongs to the gateway that owns the runtime. If setup
+re-installs a recipe so that another node owns it (a pair's leader becoming a
+member of a four-node chain, for example), the record is dropped on the former
+owner, which could no longer clear it. The model is then no longer suspended:
+suspend it again on the new owner if it should stay down.
+
 Distributed member IDs resolve to their containing group. The dry run reports
 other model IDs and aliases sharing that group. Run commands on the owner
 gateway. Models represented only by delegated `remoteRuntime` targets must be

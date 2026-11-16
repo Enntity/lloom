@@ -21,8 +21,8 @@ import {
   recipeOptionFlags,
   recipeWithInstalledOptions
 } from './recipes.mjs';
-import { repoRoot } from './config.mjs';
-import { materializeFederatedNodes } from './cluster.mjs';
+import { loadConfig, repoRoot } from './config.mjs';
+import { materializeFederatedNodes, runtimeAuthority } from './cluster.mjs';
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -40,12 +40,18 @@ function federatedView(config) {
 }
 
 // Maintenance and readiness choices live on a runtime but no recipe owns them,
-// so rebuilding a recipe runtime carries them over.
+// so rebuilding a recipe runtime carries them over. A maintenance record is
+// its owner's, though: only the owner gateway enforces and clears it, so one
+// written under another owner would block this runtime with no way to resume.
 const OPERATOR_RUNTIME_FIELDS = ['maintenance', 'preferredWarm'];
 
 function setRecipeRuntime(config, runtimeId, runtime) {
   const existing = config.runtimes[runtimeId];
+  const owner = runtime.authority?.owner;
+  const ownerChanged =
+    existing && owner && (existing.authority?.owner ?? runtimeAuthority(config, runtimeId)?.owner) !== owner;
   for (const field of OPERATOR_RUNTIME_FIELDS) {
+    if (field === 'maintenance' && ownerChanged) continue;
     if (existing && Object.hasOwn(existing, field)) runtime[field] = existing[field];
   }
   config.runtimes[runtimeId] = runtime;
@@ -752,10 +758,19 @@ function ensureRecipeConfigEntries(
     if (placement.mode === 'distributed') {
       const logicalRuntimeId = existingModel?.runtime ?? recipeModel.runtime ?? `${backendId}-${modelSlug}`;
       const existingLogicalRuntime = config.runtimes?.[logicalRuntimeId];
-      const existingPlacementMembers =
+      const installedPlacementMembers =
         existingLogicalRuntime?.recipe?.id === recipe.id && existingLogicalRuntime?.placement?.mode === 'distributed'
           ? asArray(existingLogicalRuntime.placement.members)
           : [];
+      const requiredNodes = Number(recipe.requirements?.cluster?.nodes);
+      // A placement installed for another node count (another option set)
+      // cannot name this one's nodes; they are selected afresh.
+      const existingPlacementMembers =
+        Number.isInteger(requiredNodes) &&
+        requiredNodes > 0 &&
+        new Set(installedPlacementMembers.map((member) => member.node)).size !== requiredNodes
+          ? []
+          : installedPlacementMembers;
       const configuredNodes = asObject(config.cluster?.nodes);
       const nodeIds = Object.keys(configuredNodes);
       if (nodeIds.length < 2) {
@@ -812,7 +827,6 @@ function ensureRecipeConfigEntries(
           .flatMap(({ selectedNodes }) => selectedNodes)
           .filter((nodeId) => nodeId !== leaderNode)
       ].filter((nodeId, index, all) => all.indexOf(nodeId) === index);
-      const requiredNodes = Number(recipe.requirements?.cluster?.nodes);
       if (Number.isInteger(requiredNodes) && requiredNodes > 0 && selectedNodeIds.length !== requiredNodes) {
         throw new Error(
           `recipe model ${modelId} needs ${requiredNodes} cluster nodes but selects ${selectedNodeIds.length} ` +
@@ -1256,6 +1270,26 @@ function dropUnreferencedRoute(config, { runtime, backend }) {
   if (backend && !routes.some((route) => route.backend === backend)) delete config.backends[backend];
 }
 
+// An option or mode change can rename a recipe's runtimes: a pair has one
+// worker, a chain one per node. Runtimes this recipe installed earlier that no
+// model reaches any more, directly or as a distributed member, are removed. A
+// former member left behind no longer validates, and nothing could start it.
+function dropUnroutedRecipeRuntimes(config, recipe) {
+  const routed = new Set(
+    config.models.flatMap((model) => [model, ...asArray(model?.targets)]).map((route) => route?.runtime)
+  );
+  for (const runtimeId of routed) {
+    for (const member of asArray(config.runtimes[runtimeId]?.placement?.members)) routed.add(member?.runtime);
+  }
+  const dropped = Object.keys(config.runtimes).filter(
+    (runtimeId) => config.runtimes[runtimeId]?.recipe?.id === recipe.id && !routed.has(runtimeId)
+  );
+  for (const runtimeId of dropped) delete config.runtimes[runtimeId];
+  if (dropped.length && config.init?.enabledRuntimes) {
+    config.init.enabledRuntimes = config.init.enabledRuntimes.filter((runtimeId) => !dropped.includes(runtimeId));
+  }
+}
+
 function finishRecipeModelConfig(config, recipeModel, materializedModel, modelId) {
   if (!config.clientCatalog.modelOrder.includes(modelId)) {
     config.clientCatalog.modelOrder.push(modelId);
@@ -1638,6 +1672,7 @@ export function deriveUserConfig(
     backendPortRange,
     additive
   });
+  dropUnroutedRecipeRuntimes(derived, recipe);
   const materializedRuntimeIds = Object.entries(derived.runtimes ?? {})
     .filter(([, runtime]) => runtime.recipe?.id === recipe.id)
     .map(([runtimeId]) => runtimeId);
@@ -1908,7 +1943,9 @@ export async function createInitPlan(
   return plan;
 }
 
-async function writeJson(filePath, value, { exclusive = false } = {}) {
+// Writes the config only if it loads: a config that fails validation would stop
+// every later command, and a running gateway would keep its old one unnoticed.
+async function writeConfigFile(filePath, value, { exclusive = false } = {}) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   const temporaryPath = path.join(
     path.dirname(filePath),
@@ -1916,6 +1953,11 @@ async function writeJson(filePath, value, { exclusive = false } = {}) {
   );
   try {
     await fs.writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+    await loadConfig(temporaryPath).catch((error) => {
+      throw new Error(`Not writing ${filePath}: ${error.message.replaceAll(temporaryPath, filePath)}`, {
+        cause: error
+      });
+    });
     if (exclusive) await fs.link(temporaryPath, filePath);
     else await fs.rename(temporaryPath, filePath);
   } finally {
@@ -1945,7 +1987,7 @@ export async function applyInit(
   if (dryRun) return plan;
 
   if (writeConfig) await writeConfig(plan.configPath, plan.config);
-  else await writeJson(plan.configPath, plan.config, { exclusive: exclusiveConfig });
+  else await writeConfigFile(plan.configPath, plan.config, { exclusive: exclusiveConfig });
   await onConfigWritten?.(plan.configPath, plan.config);
   const clientConfig = federatedView(plan.config);
   const registry = createRegistry(clientConfig);

@@ -657,6 +657,20 @@ export async function createRuntimePolicyPlan(
   };
 }
 
+// ": NODE is short by N GB (...)" for each node still over budget after the
+// planned evictions, so a refusal says where the memory is missing.
+function shortNodesText(plan) {
+  const gb = (value) => `${value.toFixed(1)} GB`;
+  const short = Object.entries(plan.admission.nodes ?? {})
+    .filter(([, node]) => node.overBudgetGb > 0)
+    .map(
+      ([nodeId, node]) =>
+        `${nodeId} is short by ${gb(node.overBudgetGb)} (needs ${gb(node.requestedAddsMemoryGb)}, ` +
+        `${gb(node.projectedMemoryGb - node.requestedAddsMemoryGb)} in use, budget ${gb(node.memoryBudgetGb)})`
+    );
+  return short.length ? `: ${short.join(', ')}` : '';
+}
+
 export async function applyRuntimePolicyPlan(
   config,
   runtimeManager,
@@ -824,7 +838,7 @@ export async function applyRuntimePolicyPlan(
               : temporary
                 ? `Runtime ${requestedRuntimeId} is queued for capacity; waiting for active runtime(s) to drain: ${blockerText}`
                 : plan.admission.clustered
-                  ? `Runtime ${requestedRuntimeId} cannot fit within the per-node cluster memory budgets; protected runtime(s): ${blockerText || 'none'}`
+                  ? `Runtime ${requestedRuntimeId} cannot fit within the per-node cluster memory budgets${shortNodesText(plan)}; protected runtime(s): ${blockerText || 'none'}`
                   : `Runtime ${requestedRuntimeId} cannot fit within the ${plan.policy.memoryBudgetGb.toFixed(1)} GB memory budget; protected runtime(s): ${blockerText || 'none'}`,
         {
           plan,
