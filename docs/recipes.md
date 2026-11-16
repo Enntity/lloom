@@ -348,25 +348,32 @@ Per-model image, video and music recipes, each in its own ComfyUI runtime, are d
 Per-model NVIDIA speech and transcription recipes are documented in [Spark audio](spark-audio.md).
 ## Atlas SparkGLM
 
-`linux-nvidia-dgx-spark-glm53-atlas` installs SparkGLM 0.3.1 (engine
-Enntity/atlas `spark` @ `5f79b46b`, Atlas-Inf main `2f9c37083`) as
+`linux-nvidia-dgx-spark-glm53-atlas` installs SparkGLM 0.3.5 (engine
+Enntity/atlas `spark` @ `59ead299`) as
 `glm-5.3-flash-atlas`, serving `nvidia/GLM-5.3-Flash-FP4-Local` as published.
 Two [options](#plan-contract) pick the deployment:
 
 | Option | Values | Default |
 | --- | --- | --- |
 | `--sparks` | `2`: a TP-2 pair over a direct cable (profile `4x1m`); `4`: TP-4 over a daisy chain (profile `4x1m-tp4`) | `2` |
-| `--drafter` | `v81` or `v80`: Enntity's drafters (private repository); `dflash2`: `incoai/GLM-5.3-Flash-DFlash2` | `v81` on two Sparks, `dflash2` on four |
+| `--drafter` | `v81` or `v80`: Enntity's drafters (private repository); `dflash2`: `incoai/GLM-5.3-Flash-DFlash2` | `dflash2` |
 
 ```sh
 lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --additive --apply --yes
-lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --drafter dflash2 --additive --apply --yes
+lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --drafter v81 --additive --apply --yes
 lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --sparks 4 --additive --apply --yes
 lloom runtime-start glm53-flash-atlas-cluster
 ```
 
-Both sizes and all three drafters come from one pin manifest,
-`backends/atlas-sparkglm/pins-0.3.1.json`, and one image. Version 2 of the
+Version 6 (SparkGLM 0.3.5) is the current version since 2026-11-16. Versions 2
+to 5 (0.3.1 to 0.3.4) are archived and install with `--recipe-version N`; they
+are described below in order. A host that already has the recipe installed
+keeps the options it was installed with, so its drafter changes only if
+`--drafter` is given.
+
+In version 2 (SparkGLM 0.3.1) both sizes and all three drafters come from one
+pin manifest, `backends/atlas-sparkglm/pins-0.3.1.json`, and one image, and
+the default drafter is v81 on two Sparks and dflash2 on four. Version 2 of the
 recipe added v81 (`Enntity/GLM-5.3-Flash-DFlash2-enntity` at `ee5ed56e`) and
 made it the two-Spark default; v80 stays pinned under the repository's earlier
 name `Enntity/GLM-5.3-Flash-DFlash2-enntity-v80` (Hugging Face redirects it),
@@ -381,7 +388,7 @@ with v81; in Enntity's drafter benchmark on a two-Spark Atlas server
 (2026-11-05) v81 was 2-6%
 faster than v80 on code and structured output, with identical output text.
 
-Version 3 is a candidate that installs SparkGLM 0.3.2 with the same options,
+Version 3 installs SparkGLM 0.3.2 with the same options,
 checkpoint and drafters as version 2:
 
 ```sh
@@ -402,7 +409,7 @@ logprobs and vision output, 109/109 live checks with an identical guard log,
 and decode and image/video time to first token level. It has not been run at
 TP-4.
 
-Version 4 is a candidate that installs SparkGLM 0.3.3:
+Version 4 installs SparkGLM 0.3.3:
 
 ```sh
 lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --recipe-version 4 --additive --apply --yes
@@ -429,7 +436,7 @@ output, 109/109 live checks. One RigMark round each gave prose 38.1 against
 the KV pool was 151,242-166,564 blocks over two starts against 136,362-142,448.
 It has not been run at TP-4.
 
-Version 5 is a candidate that installs SparkGLM 0.3.4:
+Version 5 installs SparkGLM 0.3.4:
 
 ```sh
 lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --recipe-version 5 --additive --apply --yes
@@ -453,10 +460,10 @@ logprobs, 109/109 live checks, and one RigMark round level with 0.3.3 (prose
 JSON-schema call went from 19-27 s to about 3 s. Strict mode, vision and TP-4
 were not run.
 
-Version 6 is a candidate that installs SparkGLM 0.3.5:
+Version 6, the current version, installs SparkGLM 0.3.5:
 
 ```sh
-lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --recipe-version 6 --additive --apply --yes
+lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --additive --apply --yes
 ```
 
 0.3.5 is 0.3.4's engine plus three changes for concurrent streams on a pair
@@ -485,8 +492,17 @@ logprobs, 109/109 live checks, and one RigMark round level with 0.3.4 (prose
 38.7 against 38.8 tok/s, cold 16K prefill 2,856 against 2,849). Four
 JSON-schema streams decoded 68.5 tok/s combined against 43.1. The first of four
 cold 16K-token prompts sent one second apart got its first token in 5.9 s
-against 11.2 s, with the wave level at 46.2 s against 45.7 s. Strict mode,
-vision and TP-4 were not run.
+against 11.2 s, with the wave level at 46.2 s against 45.7 s.
+
+On 2026-11-16 it was installed through this recipe on all four Sparks, each
+pulling the image by digest. On a pair its Strict output and its image and
+video output were identical to 0.3.3's. On a four-Spark chain its greedy output
+and prompt logprobs were identical to 0.3.0's, with 107/109 live checks (0.3.0:
+105/109) and speed level. That run used GPU memory utilization 0.82 under a
+106 GB budget where this recipe sets 0.88 and 114 GB, because one Spark of the
+chain hosts other services and LLooM refused the 114 GB budget there. Strict
+mode and images were not run on four Sparks. Receipts:
+[sparkglm results/2026-11-16-0.3.5-promotion](https://github.com/Enntity/sparkglm/tree/main/results/2026-11-16-0.3.5-promotion).
 
 The per-size recipes `linux-nvidia-dgx-spark-2x-glm53-atlas` (described below)
 and `linux-nvidia-dgx-spark-4x-glm53-atlas-tp4` (the
