@@ -722,4 +722,59 @@ assert.equal(unknownCapacity.admission.nodes.b.memoryBudgetGb, 0);
 assert.equal(unknownCapacity.admission.overBudgetGb, 0);
 assert.equal(unknownCapacity.admission.allowed, true);
 
+// A refusal on per-node budgets names each short node and by how much: here a
+// four-node model needs 114 GB everywhere and one node hosts other services.
+const shortNodeIds = ['s1', 's2', 's3', 's4'];
+const shortNodeConfig = {
+  cluster: {
+    nodeId: 's1',
+    leaderNode: 's1',
+    nodes: Object.fromEntries(shortNodeIds.map((id) => [id, { resources: { memoryGb: 128, reserveMemoryGb: 8 } }]))
+  },
+  runtimePolicy: { enabled: true, autoEvict: true },
+  runtimes: {
+    ...Object.fromEntries(shortNodeIds.map((id) => [`tp-${id}`, { enabled: true, node: id, memoryGb: 114 }])),
+    tp: {
+      enabled: true,
+      placement: { mode: 'distributed', members: shortNodeIds.map((id) => ({ node: id, runtime: `tp-${id}` })) }
+    }
+  }
+};
+const gib = 1024 ** 3;
+const shortNodeStatus = {
+  runtimes: Object.fromEntries(Object.keys(shortNodeConfig.runtimes).map((id) => [id, { status: 'idle' }])),
+  cluster: {
+    nodes: Object.fromEntries(
+      shortNodeIds.map((id) => [
+        id,
+        {
+          local: id === 's1',
+          reachable: true,
+          telemetry: { memory: { totalBytes: 128 * gib, availableBytes: (id === 's3' ? 111 : 128) * gib } }
+        }
+      ])
+    )
+  }
+};
+await assert.rejects(
+  () =>
+    applyRuntimePolicyPlan(
+      shortNodeConfig,
+      {
+        async status() {
+          return shortNodeStatus;
+        }
+      },
+      { requestedRuntimeId: 'tp', requesterNode: 's1', dryRun: false, yes: true }
+    ),
+  (error) => {
+    assert.equal(
+      error.message,
+      'Runtime tp cannot fit within the per-node cluster memory budgets: s3 is short by 15.8 GB ' +
+        '(needs 114.0 GB, 17.0 GB in use, budget 115.2 GB); protected runtime(s): none'
+    );
+    return true;
+  }
+);
+
 console.log('runtime-policy tests passed');

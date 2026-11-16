@@ -21,6 +21,7 @@
     "entrypoint": "/opt/atlas/serve.py",
     "profilePaths": [
       "/opt/atlas/profiles/4x1m.json",
+      "/opt/atlas/profiles/8x128k.json",
       "/opt/atlas/profiles/4x1m-tp4.json"
     ],
     "architecture": "arm64"
