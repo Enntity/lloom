@@ -305,11 +305,11 @@ test('version 6 is SparkGLM 0.3.5: version 5 with the pins, image and engine swa
   }
 });
 
-test('version 7 is the SparkGLM 0.3.6 candidate: version 6 with the pins, image and engine swapped', async () => {
+test('version 7 is SparkGLM 0.3.6: version 6 with the pins, image and engine swapped', async () => {
   const v6 = await loadRecipeVersion(recipeId, 6);
   const v7 = await loadRecipeVersion(recipeId, 7);
   assert.equal(v7.version, 7);
-  assert.match(v7.name, /SparkGLM 0\.3\.6 candidate/);
+  assert.match(v7.name, /SparkGLM 0\.3\.6\)/);
   assert.deepEqual(validateRecipe(v7, {}, { checkLocalReferences: false }), []);
   assert.deepEqual(recipeOptionCombinations(v7), recipeOptionCombinations(v6));
   const before = loadPins(path.join(root, 'backends/atlas-sparkglm/pins-0.3.5.json'));
@@ -319,7 +319,6 @@ test('version 7 is the SparkGLM 0.3.6 candidate: version 6 with the pins, image 
   assert.equal(next.source.revision, '5e36d6bc23dbb862a4a1a415d9c697fc7f299de1');
   assert.equal(next.image.tag, `ghcr.io/enntity/atlas-sparkglm:${next.source.installTree.slice(0, 12)}`);
   assert.notEqual(next.image.reference, before.image.reference);
-  assert.match(next.note, /Candidate:/);
   // Same checkpoint, profiles and drafters: 0.3.6 changes the engine only.
   assert.deepEqual(next.model, before.model);
   assert.deepEqual(profilePathsOf(next), profilePathsOf(before));
@@ -334,16 +333,16 @@ test('version 7 is the SparkGLM 0.3.6 candidate: version 6 with the pins, image 
   }
 });
 
-test('the current version is 6, SparkGLM 0.3.5, and earlier versions install by number', async () => {
+test('the current version is 7, SparkGLM 0.3.6, and earlier versions install by number', async () => {
   const current = await loadRecipeById(recipeId);
-  assert.equal(current.version, 6);
-  assert.deepEqual(current, await loadRecipeVersion(recipeId, 6));
+  assert.equal(current.version, 7);
+  assert.deepEqual(current, await loadRecipeVersion(recipeId, 7));
   assert.doesNotMatch(JSON.stringify(current), /Candidate:|candidate\)/);
-  const manifest = loadPins(path.join(root, 'backends/atlas-sparkglm/pins-0.3.5.json'));
+  const manifest = loadPins(path.join(root, 'backends/atlas-sparkglm/pins-0.3.6.json'));
   assert.doesNotMatch(manifest.note, /Candidate:/);
   // Without options it installs a pair with the reference drafter.
   const plain = applyRecipeOptions(current, {});
   assert.equal(members(plain).length, 2);
   assert.match(envOf(plain).DRAFTER_PATH, /incoai--GLM-5\.3-Flash-DFlash2$/);
-  for (const version of [2, 3, 4, 5]) assert.equal((await loadRecipeVersion(recipeId, version)).version, version);
+  for (const version of [2, 3, 4, 5, 6]) assert.equal((await loadRecipeVersion(recipeId, version)).version, version);
 });
