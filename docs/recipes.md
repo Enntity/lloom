@@ -361,8 +361,8 @@ Per-model image, video and music recipes, each in its own ComfyUI runtime, are d
 Per-model NVIDIA speech and transcription recipes are documented in [Spark audio](spark-audio.md).
 ## Atlas SparkGLM
 
-`linux-nvidia-dgx-spark-glm53-atlas` installs SparkGLM 0.3.5 (engine
-Enntity/atlas `spark` @ `59ead299`) as
+`linux-nvidia-dgx-spark-glm53-atlas` installs SparkGLM 0.3.6 (engine
+Enntity/atlas `spark` @ `01d34b34`) as
 `glm-5.3-flash-atlas`, serving `nvidia/GLM-5.3-Flash-FP4-Local` as published.
 Two [options](#plan-contract) pick the deployment:
 
@@ -378,8 +378,8 @@ lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --sparks 4 --additive --
 lloom runtime-start glm53-flash-atlas-cluster
 ```
 
-Version 6 (SparkGLM 0.3.5) is the current version since 2026-11-16. Versions 2
-to 5 (0.3.1 to 0.3.4) are archived and install with `--recipe-version N`; they
+Version 7 (SparkGLM 0.3.6) is the current version since 2026-11-18. Versions 2
+to 6 (0.3.1 to 0.3.5) are archived and install with `--recipe-version N`; they
 are described below in order. A host that already has the recipe installed
 keeps the options it was installed with, so its drafter changes only if
 `--drafter` is given.
@@ -473,10 +473,10 @@ logprobs, 109/109 live checks, and one RigMark round level with 0.3.3 (prose
 JSON-schema call went from 19-27 s to about 3 s. Strict mode, vision and TP-4
 were not run.
 
-Version 6, the current version, installs SparkGLM 0.3.5:
+Version 6 installs SparkGLM 0.3.5:
 
 ```sh
-lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --additive --apply --yes
+lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --recipe-version 6 --additive --apply --yes
 ```
 
 0.3.5 is 0.3.4's engine plus three changes for concurrent streams on a pair
@@ -517,10 +517,10 @@ chain hosts other services and LLooM refused the 114 GB budget there. Strict
 mode and images were not run on four Sparks. Receipts:
 [sparkglm results/2026-11-16-0.3.5-promotion](https://github.com/Enntity/sparkglm/tree/main/results/2026-11-16-0.3.5-promotion).
 
-Version 7 is a candidate that installs SparkGLM 0.3.6:
+Version 7, the current version, installs SparkGLM 0.3.6:
 
 ```sh
-lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --recipe-version 7 --additive --apply --yes
+lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --additive --apply --yes
 ```
 
 0.3.6 is 0.3.5's engine plus one fix (Enntity/atlas `01d34b34`,
@@ -540,9 +540,20 @@ RigMark round level with 0.3.5 (prose 37.7 against 37.6 tok/s, code 66.1
 against 65.9, structured 88.8 against 87.7). That run used GPU memory
 utilization 0.90 under a 113 GB budget where this recipe sets 0.91 and 114 GB,
 because its head had about 0.3 GB less memory available than the 114 GB budget
-needs. Strict mode, images, four Sparks and an install through this recipe were
-not run. Receipts:
+needs. Receipts:
 [sparkglm results/2026-11-18-0.3.6](https://github.com/Enntity/sparkglm/tree/main/results/2026-11-18-0.3.6).
+
+On 2026-11-18 it was installed through this recipe on all four Sparks, each
+pulling the image by digest. On a pair, at this recipe's 0.91 and 114 GB, its
+greedy output and prompt logprobs were identical to the qualification run's,
+and its Strict output and its image and video output were identical to 0.3.5's.
+On a four-Spark chain its greedy output and prompt logprobs were identical to
+0.3.5's, with the same 107/109 live checks and speed level (prose 57.5 against
+58.3 tok/s, code 106.5 against 106.9, structured 146.8 against 146.2). The
+four-Spark run used GPU memory utilization 0.69 under a 90 GB budget where this
+recipe sets 0.88 and 114 GB, because two Sparks of that chain host other
+services; Strict mode and images were not run on four Sparks. Receipts:
+[sparkglm results/2026-11-18-0.3.6-promotion](https://github.com/Enntity/sparkglm/tree/main/results/2026-11-18-0.3.6-promotion).
 
 The per-size recipes `linux-nvidia-dgx-spark-2x-glm53-atlas` (described below)
 and `linux-nvidia-dgx-spark-4x-glm53-atlas-tp4` (the
