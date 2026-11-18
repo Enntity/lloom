@@ -517,6 +517,33 @@ chain hosts other services and LLooM refused the 114 GB budget there. Strict
 mode and images were not run on four Sparks. Receipts:
 [sparkglm results/2026-11-16-0.3.5-promotion](https://github.com/Enntity/sparkglm/tree/main/results/2026-11-16-0.3.5-promotion).
 
+Version 7 is a candidate that installs SparkGLM 0.3.6:
+
+```sh
+lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --recipe-version 7 --additive --apply --yes
+```
+
+0.3.6 is 0.3.5's engine plus one fix (Enntity/atlas `01d34b34`,
+[Enntity/atlas#33](https://github.com/Enntity/atlas/pull/33)). With
+`tool_choice` set to `required` or to a named tool, the first token of the call
+is the native `<tool_call>` token; the tag spelled out as text is no longer
+legal there. GLM-5.3-Flash FP4-Local already opened a forced call with the
+native token, so its output is unchanged. A checkpoint of the same architecture
+that ranks the text form first (Sage S2.1 Flash) returned forced calls as plain
+text on 0.3.5, and passes 109/109 live checks on 0.3.6 where it passed 97/109.
+
+Its pins are `backends/atlas-sparkglm/pins-0.3.6.json`; it has the same
+options, checkpoint and drafters as version 6. It qualified on a DGX Spark pair
+in Spark mode with dflash2 on 2026-11-18 against 0.3.5 on the same pair:
+identical greedy output and prompt logprobs, 109/109 live checks, and one
+RigMark round level with 0.3.5 (prose 37.7 against 37.6 tok/s, code 66.1
+against 65.9, structured 88.8 against 87.7). That run used GPU memory
+utilization 0.90 under a 113 GB budget where this recipe sets 0.91 and 114 GB,
+because its head had about 0.3 GB less memory available than the 114 GB budget
+needs. Strict mode, images, four Sparks and an install through this recipe were
+not run. Receipts:
+[sparkglm results/2026-11-18-0.3.6](https://github.com/Enntity/sparkglm/tree/main/results/2026-11-18-0.3.6).
+
 The per-size recipes `linux-nvidia-dgx-spark-2x-glm53-atlas` (described below)
 and `linux-nvidia-dgx-spark-4x-glm53-atlas-tp4` (the
 [TP-4 chain](#atlas-sparkglm-tp-4-chain) section) stay installable while hosts

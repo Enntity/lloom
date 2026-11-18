@@ -305,6 +305,35 @@ test('version 6 is SparkGLM 0.3.5: version 5 with the pins, image and engine swa
   }
 });
 
+test('version 7 is the SparkGLM 0.3.6 candidate: version 6 with the pins, image and engine swapped', async () => {
+  const v6 = await loadRecipeVersion(recipeId, 6);
+  const v7 = await loadRecipeVersion(recipeId, 7);
+  assert.equal(v7.version, 7);
+  assert.match(v7.name, /SparkGLM 0\.3\.6 candidate/);
+  assert.deepEqual(validateRecipe(v7, {}, { checkLocalReferences: false }), []);
+  assert.deepEqual(recipeOptionCombinations(v7), recipeOptionCombinations(v6));
+  const before = loadPins(path.join(root, 'backends/atlas-sparkglm/pins-0.3.5.json'));
+  const next = loadPins(path.join(root, 'backends/atlas-sparkglm/pins-0.3.6.json'));
+  assert.deepEqual(verifyPins(next), []);
+  assert.equal(next.engine.commit, '01d34b343be6d675d8a1d6185e5b044b804b900c');
+  assert.equal(next.source.revision, '5e36d6bc23dbb862a4a1a415d9c697fc7f299de1');
+  assert.equal(next.image.tag, `ghcr.io/enntity/atlas-sparkglm:${next.source.installTree.slice(0, 12)}`);
+  assert.notEqual(next.image.reference, before.image.reference);
+  assert.match(next.note, /Candidate:/);
+  // Same checkpoint, profiles and drafters: 0.3.6 changes the engine only.
+  assert.deepEqual(next.model, before.model);
+  assert.deepEqual(profilePathsOf(next), profilePathsOf(before));
+  assert.deepEqual(next.drafters, before.drafters);
+  for (const options of recipeOptionCombinations(v6)) {
+    const swapped = JSON.stringify(installed(applyRecipeOptions(v6, options)))
+      .replaceAll('pins-0.3.5.json', 'pins-0.3.6.json')
+      .replaceAll(before.image.reference, next.image.reference);
+    assert.deepEqual(installed(applyRecipeOptions(v7, options)), JSON.parse(swapped), JSON.stringify(options));
+    for (const member of members(applyRecipeOptions(v7, options)))
+      assert.equal(member.runtimeSettings.bootstrap.image, next.image.reference);
+  }
+});
+
 test('the current version is 6, SparkGLM 0.3.5, and earlier versions install by number', async () => {
   const current = await loadRecipeById(recipeId);
   assert.equal(current.version, 6);
