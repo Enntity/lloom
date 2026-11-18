@@ -364,19 +364,47 @@ Per-model NVIDIA speech and transcription recipes are documented in [Spark audio
 `linux-nvidia-dgx-spark-glm53-atlas` installs SparkGLM 0.3.6 (engine
 Enntity/atlas `spark` @ `01d34b34`) as
 `glm-5.3-flash-atlas`, serving `nvidia/GLM-5.3-Flash-FP4-Local` as published.
-Two [options](#plan-contract) pick the deployment:
+Three [options](#plan-contract) pick the deployment:
 
 | Option | Values | Default |
 | --- | --- | --- |
 | `--sparks` | `2`: a TP-2 pair over a direct cable (profile `4x1m`); `4`: TP-4 over a daisy chain (profile `4x1m-tp4`) | `2` |
 | `--drafter` | `v81` or `v80`: Enntity's drafters (private repository); `dflash2`: `incoai/GLM-5.3-Flash-DFlash2` | `dflash2` |
+| `--model` | `glm53-flash`: `nvidia/GLM-5.3-Flash-FP4-Local`; `sage-s21-flash`: `Enntity/Sage-S2.1-Flash-NVFP4` | `glm53-flash` |
 
 ```sh
 lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --additive --apply --yes
 lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --drafter v81 --additive --apply --yes
 lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --sparks 4 --additive --apply --yes
+lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --model sage-s21-flash --additive --apply --yes
 lloom runtime-start glm53-flash-atlas-cluster
 ```
+
+`--model sage-s21-flash` serves
+[Enntity/Sage-S2.1-Flash-NVFP4](https://huggingface.co/Enntity/Sage-S2.1-Flash-NVFP4)
+in place of the GLM checkpoint: a calibrated NVFP4 quantization of
+`internlm/Sage-S2.1-Flash` (MIT), 179 GB, laid out as this engine loads it. It
+takes text, images and video; Sage's scientific-input projectors are not
+included. The option is in version 7 only, because 0.3.6 is the first release
+that returns Sage's forced tool calls as tool calls.
+
+- **One gateway id.** Either checkpoint is served as `glm-5.3-flash-atlas`, so
+  routes, aliases and `lloom suspend` or `resume` commands stay as they are.
+  The catalog entry's name and `model` field say which checkpoint is installed.
+- **Switching.** Run setup again with the other `--model` while the model is
+  suspended, then resume. The first install of Sage downloads 179 GB to each
+  Spark; the other checkpoint's files stay on disk.
+- **What was run.** Installed with this option on a pair on 2026-11-18, in
+  Spark mode with dflash2, Sage passed 109/109 live checks and decoded 38.6 /
+  67.9 / 90.0 tok/s (prose, code, structured) against GLM-5.3-Flash's 37.7 /
+  66.1 / 88.8 on the same pair and image. Switching back to `glm53-flash` gave
+  output identical to the 0.3.6 qualification run. Sage takes about 1 GB more
+  before the prompt cache, so its pool is about 1.6M tokens against 1.9M.
+- **What was not run.** Sage with `--sparks 4`, `--memory shared` or
+  `--streams 8`, and a first download of all 179 GB through setup: the check
+  started from a local copy of the weights, which the Hugging Face tool
+  verified against the pinned revision. The drafters were trained on
+  GLM-5.3-Flash, not on Sage.
 
 Version 7 (SparkGLM 0.3.6) is the current version since 2026-11-18. Versions 2
 to 6 (0.3.1 to 0.3.5) are archived and install with `--recipe-version N`; they

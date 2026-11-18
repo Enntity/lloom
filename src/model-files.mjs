@@ -19,7 +19,9 @@ async function pathExists(filePath) {
 function isModelPayloadFile(filePath) {
   const name = path.basename(filePath).toLowerCase();
   return (
-    /^model(?:-\d+-of-\d+)?\.safetensors$/.test(name) ||
+    // model.safetensors, model-00001-of-00009.safetensors, and shards that carry
+    // their own names (model-experts-l03.safetensors).
+    /^model(?:-[a-z0-9_.-]+)?\.safetensors$/.test(name) ||
     /^model.*\.bin$/.test(name) ||
     /^pytorch_model.*\.bin$/.test(name) ||
     name.endsWith('.gguf')

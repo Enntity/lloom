@@ -45,19 +45,35 @@ export function loadPins(manifestPath = MANIFEST_PATH) {
 
 // A release pins its drafters by name (drafters.v80, drafters.dflash2) for the
 // recipe's --drafter option; manifests from before that pin one as drafter.
-function drafterPins(manifest) {
-  if (manifest.drafters && typeof manifest.drafters === 'object') {
-    return Object.entries(manifest.drafters).map(([name, pin]) => [`drafters.${name}`, name, pin]);
+// The checkpoints of the recipe's --model option are pinned the same way
+// (models.sage-s21-flash) beside model, the default one.
+function namedPins(manifest, group, kind) {
+  if (manifest[group] && typeof manifest[group] === 'object') {
+    return Object.entries(manifest[group]).map(([name, pin]) => [`${group}.${name}`, name, pin, kind]);
   }
-  return manifest.drafter ? [['drafter', null, manifest.drafter]] : [];
+  return [];
+}
+
+function drafterPins(manifest) {
+  const named = namedPins(manifest, 'drafters', 'drafter');
+  if (named.length || manifest.drafters) return named;
+  return manifest.drafter ? [['drafter', null, manifest.drafter, 'drafter']] : [];
+}
+
+function pinnedByName(manifest, group, kind, name) {
+  if (!manifest[group]) return manifest[kind];
+  if (!Object.hasOwn(manifest[group], name)) {
+    throw new Error(`pin manifest has no ${kind} ${name}; it pins ${Object.keys(manifest[group]).join(', ')}`);
+  }
+  return manifest[group][name];
 }
 
 export function pinnedDrafter(manifest, name) {
-  if (!manifest.drafters) return manifest.drafter;
-  if (!Object.hasOwn(manifest.drafters, name)) {
-    throw new Error(`pin manifest has no drafter ${name}; it pins ${Object.keys(manifest.drafters).join(', ')}`);
-  }
-  return manifest.drafters[name];
+  return pinnedByName(manifest, 'drafters', 'drafter', name);
+}
+
+export function pinnedModel(manifest, name) {
+  return pinnedByName(manifest, 'models', 'model', name);
 }
 
 // One image serves every size, so a release lists each profile it must ship.
@@ -79,9 +95,12 @@ export function verifyPins(manifest) {
   }
   const drafters = drafterPins(manifest);
   if (!drafters.length) failures.push('drafter is missing');
-  for (const [field, name, pin] of drafters) {
+  const models = namedPins(manifest, 'models', 'model');
+  const isDefault = ([, , pin]) => pin?.repo === manifest.model?.repo && pin?.revision === manifest.model?.revision;
+  if (manifest.models && !models.some(isDefault)) failures.push('models must include the default model');
+  for (const [field, name, pin, kind] of [...drafters, ...models]) {
     if (name !== null && !/^[a-z0-9][a-z0-9-]*$/.test(name)) {
-      failures.push(`drafter name ${name} must be lowercase letters, digits or -`);
+      failures.push(`${kind} name ${name} must be lowercase letters, digits or -`);
     }
     for (const key of ['repo', 'revision']) {
       const value = pin?.[key];
