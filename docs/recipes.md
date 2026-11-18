@@ -398,8 +398,10 @@ that returns Sage's forced tool calls as tool calls.
   Spark mode with dflash2, Sage passed 109/109 live checks and decoded 38.6 /
   67.9 / 90.0 tok/s (prose, code, structured) against GLM-5.3-Flash's 37.7 /
   66.1 / 88.8 on the same pair and image. Switching back to `glm53-flash` gave
-  output identical to the 0.3.6 qualification run. Sage takes about 1 GB more
-  before the prompt cache, so its pool is about 1.6M tokens against 1.9M.
+  output identical to the 0.3.6 qualification run. Sage leaves a slightly
+  smaller prompt cache: in consecutive starts on the same pair the pool read
+  2.22M tokens with Sage and 2.38M with GLM-5.3-Flash, and it varies by a few
+  percent from start to start.
 - **What was not run.** Sage with `--sparks 4`, `--memory shared` or
   `--streams 8`, and a first download of all 179 GB through setup: the check
   started from a local copy of the weights, which the Hugging Face tool
