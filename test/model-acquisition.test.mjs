@@ -551,4 +551,24 @@ assert.deepEqual(
   selections.map((entry) => entry.matches.length),
   [2, 1]
 );
+// A revision-pinned checkpoint with no file list is judged by its weight files, and
+// shards may carry their own names rather than -NNNNN-of-NNNNN.
+const shardStep = {
+  action: 'download-model',
+  provider: 'huggingface',
+  model: 'owner/shards',
+  revision,
+  destination: path.join(root, 'owner--shards')
+};
+const shardWork = await prepareModelAcquisition(shardStep);
+await fs.writeFile(path.join(shardWork.workPath, 'model.safetensors.index.json'), '{}\n');
+await fs.writeFile(path.join(shardWork.workPath, 'model-experts-L03.safetensors'), contents);
+await fs.writeFile(path.join(shardWork.workPath, 'model-rest-00001.safetensors'), contents);
+assert.equal((await finalizeModelAcquisition(shardStep, shardWork)).complete, true);
+assert.equal((await modelAcquisitionStatus(shardStep)).complete, true);
+// An index with no weights beside it is still not a checkpoint.
+const indexOnly = path.join(root, 'owner--index-only');
+await fs.mkdir(indexOnly);
+await fs.writeFile(path.join(indexOnly, 'model.safetensors.index.json'), '{}\n');
+assert.equal((await modelAcquisitionStatus({ destination: indexOnly })).reason, 'payload-missing');
 await fs.rm(root, { recursive: true, force: true });

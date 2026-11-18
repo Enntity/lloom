@@ -17,6 +17,7 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Fixed
 
+- A pinned checkpoint whose weight shards carry their own names (such as `model-experts-L03.safetensors`) is recognised as downloaded. Setup reported `download verification failed … payload-missing` for one after a complete download, because only `model.safetensors` and `model-NNNNN-of-NNNNN.safetensors` counted as weights.
 - Changing an installed recipe's options (SparkGLM `--sparks 2` to `--sparks 4` or back) no longer needs hand edits to the config (#139). Setup and init remove the recipe's runtimes that no model reaches any more, such as a pair's worker after moving to four Sparks, instead of leaving a former group member that fails validation. A placement installed for another node count no longer chooses the nodes, so going back to two Sparks is not refused with "needs 2 cluster nodes but selects 4".
 - Setup and init refuse to write a config that does not load, and exit non-zero with the validation errors, instead of writing it and leaving every later command to fail while the running gateway silently keeps its old config.
 - A maintenance (suspend) record is dropped when a re-install gives the runtime another owner. Only the owner gateway enforces and clears the record, so one written by a former leader blocked the new leader's `lloom resume` and could not be cleared on the member (HTTP 403).
