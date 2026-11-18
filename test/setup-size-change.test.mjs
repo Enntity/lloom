@@ -143,6 +143,36 @@ test('an option change removes only runtimes of this recipe that nothing routes 
   assert.equal(four.runtimes[WORKER], undefined);
 });
 
+test('changing --model swaps the checkpoint in place: same runtimes, one gateway id', async (t) => {
+  const withModel = (config, model) =>
+    deriveUserConfig(config, applyRecipeOptions(recipe, { model }), {
+      modelRoot: '/models',
+      backendVariables,
+      additive: true
+    });
+  const modelPath = (config) => config.runtimes[HEAD].bootstrap.createArgs.find((arg) => arg.startsWith('MODEL_PATH='));
+
+  const glm = withModel(pairHostConfig(), 'glm53-flash');
+  assert.equal(modelPath(glm), 'MODEL_PATH=/models/nvidia--GLM-5.3-Flash-FP4-Local');
+  glm.runtimes[GROUP].maintenance = structuredClone(MAINTENANCE);
+
+  const sage = withModel(glm, 'sage-s21-flash');
+  assert.equal(modelPath(sage), 'MODEL_PATH=/models/Enntity--Sage-S2.1-Flash-NVFP4');
+  assert.deepEqual(recipeRuntimeIds(sage), [GROUP, HEAD, WORKER]);
+  assert.deepEqual(
+    sage.models.map((model) => model.id),
+    ['glm-5.3-flash-atlas'],
+    'routes and aliases keep naming one model'
+  );
+  assert.equal(sage.runtimes[GROUP].recipe.options.model, 'sage-s21-flash');
+  assert.deepEqual(sage.runtimes[GROUP].maintenance, MAINTENANCE, 'a suspension stands through the swap');
+  await loads(t, sage);
+
+  const back = withModel(sage, 'glm53-flash');
+  assert.equal(modelPath(back), modelPath(glm));
+  assert.deepEqual(back.runtimes[HEAD].bootstrap, glm.runtimes[HEAD].bootstrap);
+});
+
 test('a maintenance record is dropped when the runtime changes owner, and kept when it does not', () => {
   const pair = install(pairHostConfig(), '2');
   assert.equal(pair.runtimes[GROUP].authority.owner, 'spark03');

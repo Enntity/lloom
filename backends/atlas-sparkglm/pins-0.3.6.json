@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "status": "final",
-  "note": "Pin manifest for SparkGLM 0.3.6, recipe linux-nvidia-dgx-spark-glm53-atlas version 7, for two and four Sparks and its drafters (the recipe's --drafter picks one of drafters). Engine: Enntity/atlas spark 01d34b34, which is 0.3.5's engine (59ead299) plus Enntity/atlas#33: with tool_choice required or naming a tool, the first token of the call is the native <tool_call> token and the tag spelled out as text is no longer legal there. Checkpoint, profiles, drafters and the switches the image sets are those of 0.3.5. image.reference is the GHCR manifest digest; the tag is the first 12 characters of the sparkglm install/ tree. Qualified at TP-2 with dflash2 on 2026-11-18 against 0.3.5 (identical greedy output and prompt logprobs, 109/109 live checks, RigMark level) at GPU memory utilization 0.90, then installed through the recipe, and in Strict mode and with images against 0.3.5 and on a four-Spark chain against 0.3.5 (identical output; the chain ran at GPU memory utilization 0.69).",
+  "note": "Pin manifest for SparkGLM 0.3.6, recipe linux-nvidia-dgx-spark-glm53-atlas version 7, for two and four Sparks and its drafters (the recipe's --drafter picks one of drafters). Engine: Enntity/atlas spark 01d34b34, which is 0.3.5's engine (59ead299) plus Enntity/atlas#33: with tool_choice required or naming a tool, the first token of the call is the native <tool_call> token and the tag spelled out as text is no longer legal there. Checkpoint, profiles, drafters and the switches the image sets are those of 0.3.5. models pins the checkpoints of the recipe's --model option: the default, and Enntity/Sage-S2.1-Flash-NVFP4, a calibrated NVFP4 quantization of internlm/Sage-S2.1-Flash (MIT) in the same layout, which passed 109/109 live checks on this image at TP-2 in Spark mode with dflash2. image.reference is the GHCR manifest digest; the tag is the first 12 characters of the sparkglm install/ tree. Qualified at TP-2 with dflash2 on 2026-11-18 against 0.3.5 (identical greedy output and prompt logprobs, 109/109 live checks, RigMark level) at GPU memory utilization 0.90, then installed through the recipe, and in Strict mode and with images against 0.3.5 and on a four-Spark chain against 0.3.5 (identical output; the chain ran at GPU memory utilization 0.69).",
   "source": {
     "repo": "Enntity/sparkglm",
     "revision": "5e36d6bc23dbb862a4a1a415d9c697fc7f299de1",
@@ -29,6 +29,16 @@
   "model": {
     "repo": "nvidia/GLM-5.3-Flash-FP4-Local",
     "revision": "76348ddb2be2e35e39ecfc00e75dc07703f4f3d5"
+  },
+  "models": {
+    "glm53-flash": {
+      "repo": "nvidia/GLM-5.3-Flash-FP4-Local",
+      "revision": "76348ddb2be2e35e39ecfc00e75dc07703f4f3d5"
+    },
+    "sage-s21-flash": {
+      "repo": "Enntity/Sage-S2.1-Flash-NVFP4",
+      "revision": "6967e49571a951ac0c71bb554eeeca365e838130"
+    }
   },
   "drafters": {
     "v81": {

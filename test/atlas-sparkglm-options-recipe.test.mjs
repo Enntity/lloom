@@ -3,7 +3,13 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { loadPins, pinnedDrafter, profilePathsOf, verifyPins } from '../backends/atlas-sparkglm/verify-pins.mjs';
+import {
+  loadPins,
+  pinnedDrafter,
+  pinnedModel,
+  profilePathsOf,
+  verifyPins
+} from '../backends/atlas-sparkglm/verify-pins.mjs';
 import {
   applyRecipeOptions,
   loadRecipeById,
@@ -311,7 +317,13 @@ test('version 7 is SparkGLM 0.3.6: version 6 with the pins, image and engine swa
   assert.equal(v7.version, 7);
   assert.match(v7.name, /SparkGLM 0\.3\.6\)/);
   assert.deepEqual(validateRecipe(v7, {}, { checkLocalReferences: false }), []);
-  assert.deepEqual(recipeOptionCombinations(v7), recipeOptionCombinations(v6));
+  // Version 7 has every version 6 combination, once for each checkpoint its --model option offers.
+  assert.deepEqual(
+    recipeOptionCombinations(v7),
+    recipeOptionCombinations(v6).flatMap((options) =>
+      ['glm53-flash', 'sage-s21-flash'].map((model) => ({ ...options, model }))
+    )
+  );
   const before = loadPins(path.join(root, 'backends/atlas-sparkglm/pins-0.3.5.json'));
   const next = loadPins(path.join(root, 'backends/atlas-sparkglm/pins-0.3.6.json'));
   assert.deepEqual(verifyPins(next), []);
@@ -344,5 +356,70 @@ test('the current version is 7, SparkGLM 0.3.6, and earlier versions install by 
   const plain = applyRecipeOptions(current, {});
   assert.equal(members(plain).length, 2);
   assert.match(envOf(plain).DRAFTER_PATH, /incoai--GLM-5\.3-Flash-DFlash2$/);
+  assert.match(envOf(plain).MODEL_PATH, /nvidia--GLM-5\.3-Flash-FP4-Local$/);
   for (const version of [2, 3, 4, 5, 6]) assert.equal((await loadRecipeVersion(recipeId, version)).version, version);
+});
+
+test('--model serves another pinned checkpoint of the same architecture and changes nothing else', async () => {
+  const current = await loadRecipeById(recipeId);
+  const manifest = loadPins(path.join(root, 'backends/atlas-sparkglm/pins-0.3.6.json'));
+  assert.deepEqual(verifyPins(manifest), []);
+  assert.equal(current.selectedOptions.model, 'glm53-flash');
+  const glm = pinnedModel(manifest, 'glm53-flash');
+  const sage = pinnedModel(manifest, 'sage-s21-flash');
+  assert.deepEqual(glm, manifest.model);
+  assert.deepEqual(sage, {
+    repo: 'Enntity/Sage-S2.1-Flash-NVFP4',
+    revision: '6967e49571a951ac0c71bb554eeeca365e838130'
+  });
+  const directory = (pin) => pin.repo.replace('/', '--');
+  for (const options of recipeOptionCombinations(current)) {
+    const r = applyRecipeOptions(current, options);
+    const pinned = pinnedModel(manifest, options.model);
+    const other = options.model === 'glm53-flash' ? sage : glm;
+    const step = r.setup.steps.find((s) => s.id === 'download-atlas-model');
+    assert.deepEqual([step.model, step.revision], [pinned.repo, pinned.revision], JSON.stringify(options));
+    assert.equal(r.models[0].model, pinned.repo);
+    // Routes and aliases name the pair's endpoint, so it keeps one id whichever checkpoint it serves.
+    assert.equal(r.models[0].gatewayModel, 'glm-5.3-flash-atlas');
+    for (const member of members(r)) {
+      const args = member.runtimeSettings.bootstrap.createArgs;
+      assert.ok(args.includes(`MODEL_PATH=\${modelRoot}/${directory(pinned)}`));
+      assert.ok(
+        args.includes(
+          `type=bind,src=\${modelRoot}/${directory(pinned)},dst=\${modelRoot}/${directory(pinned)},readonly`
+        )
+      );
+      assert.ok(!args.some((arg) => arg.includes(directory(other))), 'no other checkpoint');
+    }
+    // Sage differs from GLM in the checkpoint it acquires, mounts and names, and in nothing else.
+    if (options.model === 'sage-s21-flash') {
+      const asGlm = JSON.stringify(installed(r))
+        .replaceAll(sage.repo, glm.repo)
+        .replaceAll(directory(sage), directory(glm))
+        .replaceAll(sage.revision, glm.revision)
+        .replaceAll('Sage S2.1 Flash NVFP4', 'GLM-5.3 Flash FP4-Local');
+      assert.deepEqual(
+        JSON.parse(asGlm),
+        installed(applyRecipeOptions(current, { ...options, model: 'glm53-flash' })),
+        JSON.stringify(options)
+      );
+    }
+  }
+});
+
+test('the pin checker takes a map of named checkpoints beside the default one', () => {
+  const manifest = loadPins(path.join(root, 'backends/atlas-sparkglm/pins-0.3.6.json'));
+  assert.throws(() => pinnedModel(manifest, 'eagle'), /no model eagle; it pins glm53-flash, sage-s21-flash/);
+  // Manifests from before the option pin one checkpoint.
+  assert.deepEqual(pinnedModel(pins), pins.model);
+  const broken = structuredClone(manifest);
+  broken.models['sage-s21-flash'].revision = 'main';
+  broken.models['Bad Name'] = { repo: 'x/y', revision: 'a'.repeat(40) };
+  const failures = verifyPins(broken).join('\n');
+  assert.match(failures, /models\.sage-s21-flash\.revision must be a 40-character lowercase git object id, got main/);
+  assert.match(failures, /model name Bad Name must be lowercase/);
+  const orphan = structuredClone(manifest);
+  delete orphan.models['glm53-flash'];
+  assert.match(verifyPins(orphan).join('\n'), /models must include the default model/);
 });
