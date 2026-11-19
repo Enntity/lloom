@@ -918,7 +918,18 @@ export class RuntimeManager {
   assertRuntimeControl(runtimeId, requestedBy) {
     const requesterNode = this.requesterNode(requestedBy);
     if (!runtimeControlAllowed(this.config, runtimeId, requesterNode)) {
-      throw new RuntimeAuthorityError(runtimeId, runtimeAuthority(this.config, runtimeId), requesterNode);
+      // A config reload may hand a runtime to this node from a previous
+      // leader. While the reload is in flight the previous config still
+      // denies control, so let the reload path reconcile the runtime it is
+      // reconfiguring and its placement members; other callers keep the
+      // strict check.
+      const authority = runtimeAuthority(this.config, runtimeId);
+      const reconfiguring =
+        this.reconfiguringRuntimes.has(runtimeId) ||
+        (authority?.group ? this.reconfiguringRuntimes.has(authority.group) : false);
+      if (!reconfiguring || requesterNode !== currentNodeId(this.config)) {
+        throw new RuntimeAuthorityError(runtimeId, runtimeAuthority(this.config, runtimeId), requesterNode);
+      }
     }
     return requesterNode;
   }
