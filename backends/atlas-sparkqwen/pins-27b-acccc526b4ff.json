@@ -1,0 +1,33 @@
+{
+  "manifestVersion": 1,
+  "status": "final",
+  "note": "Pin manifest for SparkQwen's single-Spark Qwen3.8-27B variant, recipe linux-nvidia-dgx-spark-qwen38-27b-atlas version 7: SparkQwen 0.7.0 with the engine moved to Enntity/atlas q27/conc a9db5243a, which adds a faster cold start (kernel modules loaded on eight threads, plain tensors uploaded through pinned staging buffers by sixteen workers, tokenizer setup run during the weight read). Everything else is as version 6: the 27B profiles pass --content-loop-watchdog=false and --stream-loop-guards=false. image.reference is the GHCR manifest digest; the tag is the first 12 characters of the sparkqwen install/ tree plus -27b. Measured 2026-11-19 on one Spark, default profile: launch to ready 7.2 to 7.9 s cold against 9.5 s for the version 6 image; four greedy prompts gave byte-identical text and logprobs to version 6; the image build's own test suite passed 8,592 tests.",
+  "source": {
+    "repo": "Enntity/sparkqwen",
+    "revision": "f3f166636ff4e11051510c6642c37b21f8916190",
+    "installTree": "acccc526b4ff2c57bf4b1759fcec34e7d581e43d",
+    "cloneUrl": "https://github.com/Enntity/sparkqwen.git",
+    "buildScript": "install/build.sh"
+  },
+  "engine": {
+    "repo": "Enntity/atlas",
+    "branch": "q27/conc",
+    "commit": "a9db5243abcee86ccf929bf4e50e3fdf94b48787"
+  },
+  "image": {
+    "reference": "ghcr.io/enntity/atlas-sparkqwen@sha256:cc08787f5913117d809b35e618e01bc6bfde701936ca4a1f67d4f05e741271a3",
+    "tag": "ghcr.io/enntity/atlas-sparkqwen:acccc526b4ff-27b",
+    "label": "io.enntity.sparkqwen.install-tree",
+    "entrypoint": "/opt/atlas/serve.py",
+    "profilePath": "/opt/atlas/profiles/27b.json",
+    "architecture": "arm64"
+  },
+  "model": {
+    "repo": "nvidia/Qwen3.8-27B-NVFP4",
+    "revision": "482ca0f3832238542f8f5295dde86b5f22711d80"
+  },
+  "overlayTool": {
+    "tandem_overlay.py": "4d827386668e88cc6a2d353058a013c60cff03682c15f0df92ef4c7d54103d16",
+    "checkpoint-27b.json": "2a01f7e49d5e55f5b21002f1c64db3dd72f44b751d53bf80a185dbbc31dd95e2"
+  }
+}
