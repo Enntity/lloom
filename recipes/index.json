@@ -1328,7 +1328,7 @@
     {
       "id": "linux-nvidia-dgx-spark-qwen38-27b-atlas",
       "path": "linux-nvidia-dgx-spark-qwen38-27b-atlas.json",
-      "currentVersion": 6,
+      "currentVersion": 7,
       "versions": [
         {
           "version": 1,
@@ -1362,6 +1362,12 @@
         },
         {
           "version": 6,
+          "path": "archive/linux-nvidia-dgx-spark-qwen38-27b-atlas/v6.json",
+          "status": "archived",
+          "notes": "SparkQwen 0.7.0 30fa63c2b888d17daabcad822f961df6fb7afdf0 (install tree 5b9fecbcf5d9), engine Enntity/atlas q27/conc 6a7091b3b54e52d797ec59429903c8c617974376, image ghcr.io/enntity/atlas-sparkqwen@sha256:954b26f12ffee271ad2b6c7b15d74d422804ba5dc2a853942bcf050b1ef64bc9. A cold start took about 9.5 s to ready on one GB10 (9.1 to 11.1 s across runs): the weight read ran at 6.2 GB/s and CUDA init and tokenizer setup ran one after the other. Version 7 starts in 7.2 to 7.9 s with identical output."
+        },
+        {
+          "version": 7,
           "path": "linux-nvidia-dgx-spark-qwen38-27b-atlas.json",
           "status": "current"
         }
