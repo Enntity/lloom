@@ -7,7 +7,24 @@ import { buildRelease, inherit, parseArgs } from './release-lib.mjs';
 const flags = parseArgs(process.argv.slice(2));
 const host = String(flags.host || process.env.ENNTITY_SPARK_HOST || '').trim();
 if (!host) throw new Error('Pass --host user@host or set ENNTITY_SPARK_HOST');
-const workerHosts = splitHosts(flags['worker-host'] || process.env.ENNTITY_SPARK_WORKER_HOSTS);
+// Repeated --worker-host flags all count; parseArgs alone would keep only
+// the last one and silently skip the earlier workers.
+const workerHostFlags = [];
+for (let index = 0; index < process.argv.length; index += 1) {
+  const raw = process.argv[index];
+  if (raw === '--worker-host' && process.argv[index + 1] && !process.argv[index + 1].startsWith('--')) {
+    workerHostFlags.push(process.argv[++index]);
+  } else if (raw.startsWith('--worker-host=')) {
+    workerHostFlags.push(raw.slice('--worker-host='.length));
+  }
+}
+const workerHosts = [
+  ...new Set(
+    splitHosts(
+      [...workerHostFlags, flags['worker-host'] || process.env.ENNTITY_SPARK_WORKER_HOSTS].filter(Boolean).join(',')
+    )
+  )
+];
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 await requireClusterWorkers(root, flags.recipe, workerHosts);
 const release = await buildRelease({ root, allowDirty: !!flags['allow-dirty'], runTests: !flags['skip-tests'] });
