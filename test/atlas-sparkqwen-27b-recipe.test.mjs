@@ -15,7 +15,7 @@ const recipe = await loadRecipeById('linux-nvidia-dgx-spark-qwen38-27b-atlas');
 const manifestArg = recipe.setup.steps.find((step) => step.id === 'verify-atlas-pins').args[1];
 const manifestPath = manifestArg.replace('${repoRoot}', root);
 const pins = loadPins(manifestPath);
-const checkpoint = 'nvidia--Qwen3.8-27B-NVFP4';
+const checkpoint = 'nvidia--Qwen3.8-27B-NVFP4-QAD';
 const overlay = `/models/${checkpoint}+tandem-gdn-attn`;
 
 // ---- pins -------------------------------------------------------------------
@@ -37,7 +37,7 @@ assert(
 assert(verifyPins({ ...pins, model: { ...pins.model, revision: 'main' } }).some((f) => f.startsWith('model must')));
 
 // ---- recipe -----------------------------------------------------------------
-assert.equal(recipe.version, 7);
+assert.equal(recipe.version, 8);
 assert.equal(recipe.backend.id, 'docker-atlas-sparkqwen');
 assert.equal(recipe.requirements.cluster, undefined, 'one Spark, no fabric');
 assert.deepEqual(validateRecipe(recipe, {}, { checkLocalReferences: false }), []);

@@ -1,0 +1,33 @@
+{
+  "manifestVersion": 1,
+  "status": "final",
+  "note": "Pin manifest for SparkQwen's single-Spark Qwen3.8-27B variant, recipe linux-nvidia-dgx-spark-qwen38-27b-atlas version 8: the checkpoint moves to nvidia/Qwen3.8-27B-NVFP4-QAD (NVIDIA's quantization-aware distillation of Qwen3.8-27B), with TandemLLM's NVFP4 projections laid only over the ten GDN layers and the attention it stores in FP8, so every projection is NVFP4. Engine and profiles as version 7. image.reference is the GHCR manifest digest; the tag is the first 12 characters of the sparkqwen install/ tree plus -27b. Measured 2026-11-20 on one Spark against version 7's weights on the same image: next-token KL to BF16 0.069 against 0.096 on 224 held-out documents; RigMark code 66.4 / prose 30.4 / structured 86.5 tok/s against 67.0 / 28.7 / 84.9, C8 106.2 against 108.3, gates 9/9 against 8/9 (Enntity/sparkqwen results/2026-11-20-27b-qad).",
+  "source": {
+    "repo": "Enntity/sparkqwen",
+    "revision": "8603f22128a393559adf257d55853f1ac2c0911a",
+    "installTree": "b4541392c44bd2baba68d680c30a39b9a589beb4",
+    "cloneUrl": "https://github.com/Enntity/sparkqwen.git",
+    "buildScript": "install/build.sh"
+  },
+  "engine": {
+    "repo": "Enntity/atlas",
+    "branch": "q27/conc",
+    "commit": "a9db5243abcee86ccf929bf4e50e3fdf94b48787"
+  },
+  "image": {
+    "reference": "ghcr.io/enntity/atlas-sparkqwen@sha256:8f9d48720c67512c1e8844cd6162af872f693d5c1a7e1fe7f6a8840e42a23160",
+    "tag": "ghcr.io/enntity/atlas-sparkqwen:b4541392c44b-27b",
+    "label": "io.enntity.sparkqwen.install-tree",
+    "entrypoint": "/opt/atlas/serve.py",
+    "profilePath": "/opt/atlas/profiles/27b.json",
+    "architecture": "arm64"
+  },
+  "model": {
+    "repo": "nvidia/Qwen3.8-27B-NVFP4-QAD",
+    "revision": "cd46ab575a5a687f0bc3e54251016fc2cc1a6aef"
+  },
+  "overlayTool": {
+    "tandem_overlay.py": "96e6ced98c1185dc933192e25dbb15fade9bb50166900bc923db22f941d94b63",
+    "checkpoint-27b.json": "55b8b65e96e88178e9bb4cf979822d48eb152b72cc0191a61b6166c604995341"
+  }
+}
