@@ -24,10 +24,14 @@ export const MODEL_REPO = 'nvidia/Qwen3.8-Flash-Next-FP4-Local';
 export const MODEL_REVISION = 'b9ce18a6887e18c089fdea8509a33e63429a3300';
 // Every checkpoint a SparkQwen image may serve. install/build.sh tags the
 // single-Spark 27B variant's images <install tree>-27b.
-export const MODEL_27B_REPO = 'nvidia/Qwen3.8-27B-NVFP4';
+// The current 27B checkpoint is NVIDIA's QAD release; the earlier NVFP4 one
+// stays listed so the archived recipe versions' manifests still verify.
+export const MODEL_27B_REPO = 'nvidia/Qwen3.8-27B-NVFP4-QAD';
+export const MODEL_27B_PREVIOUS_REPO = 'nvidia/Qwen3.8-27B-NVFP4';
 export const MODELS = {
   [MODEL_REPO]: { revision: MODEL_REVISION, tagSuffix: '' },
-  [MODEL_27B_REPO]: { revision: '482ca0f3832238542f8f5295dde86b5f22711d80', tagSuffix: '-27b' }
+  [MODEL_27B_REPO]: { revision: 'cd46ab575a5a687f0bc3e54251016fc2cc1a6aef', tagSuffix: '-27b' },
+  [MODEL_27B_PREVIOUS_REPO]: { revision: '482ca0f3832238542f8f5295dde86b5f22711d80', tagSuffix: '-27b' }
 };
 
 const REQUIRED_PINS = [
@@ -98,7 +102,7 @@ export function verifyPins(manifest) {
       .join(' or ');
     failures.push(`model must stay on ${known}`);
   }
-  if (manifest.model?.repo === MODEL_27B_REPO) {
+  if (model?.tagSuffix === '-27b') {
     // overlay-27b.sh runs these SparkQwen files from source.revision only after
     // checking their digests.
     const tool = manifest.overlayTool ?? {};

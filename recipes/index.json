@@ -1328,7 +1328,7 @@
     {
       "id": "linux-nvidia-dgx-spark-qwen38-27b-atlas",
       "path": "linux-nvidia-dgx-spark-qwen38-27b-atlas.json",
-      "currentVersion": 7,
+      "currentVersion": 8,
       "versions": [
         {
           "version": 1,
@@ -1368,6 +1368,12 @@
         },
         {
           "version": 7,
+          "path": "archive/linux-nvidia-dgx-spark-qwen38-27b-atlas/v7.json",
+          "status": "archived",
+          "notes": "SparkQwen f3f166636ff4e11051510c6642c37b21f8916190 (install tree acccc526b4ff), engine Enntity/atlas q27/conc a9db5243abcee86ccf929bf4e50e3fdf94b48787, image ghcr.io/enntity/atlas-sparkqwen@sha256:cc08787f5913117d809b35e618e01bc6bfde701936ca4a1f67d4f05e741271a3, checkpoint nvidia/Qwen3.8-27B-NVFP4 with TandemLLM's GDN and attention. Version 8 serves nvidia/Qwen3.8-27B-NVFP4-QAD on the same engine: next-token KL to BF16 0.069 against 0.096, speed level."
+        },
+        {
+          "version": 8,
           "path": "linux-nvidia-dgx-spark-qwen38-27b-atlas.json",
           "status": "current"
         }

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # MIT. LLooM orchestration only.
 #
-# Builds the served checkpoint for SparkQwen's single-Spark 27B lane: NVIDIA's
-# Qwen3.8-27B-NVFP4 with TandemLLM's NVFP4 Gated DeltaNet and attention
-# projections re-keyed in, at <model root>/nvidia--Qwen3.8-27B-NVFP4+tandem-gdn-attn.
+# Builds the served checkpoint for SparkQwen's single-Spark 27B lane: the
+# manifest's NVIDIA checkpoint (model.repo) with TandemLLM's NVFP4 Gated DeltaNet
+# and attention projections re-keyed in over the ones it stores in FP8, at
+# <model root>/<owner>--<name>+tandem-gdn-attn.
 #
 # The re-keying tool is SparkQwen's own install/tandem_overlay.py (AGPL-3.0-only,
 # standard library only). It is not copied into LLooM: this script fetches it
@@ -39,7 +40,8 @@ pin() { node -e 'const m=require(process.argv[1]);let v=m;for(const k of process
 SOURCE_REPO="$(pin source.repo)"
 SOURCE_REVISION="$(pin source.revision)"
 IMAGE_REFERENCE="$(pin image.reference)"
-checkpoint="${MODEL_ROOT}/nvidia--Qwen3.8-27B-NVFP4"
+MODEL_REPO="$(pin model.repo)"
+checkpoint="${MODEL_ROOT}/${MODEL_REPO/\//--}"
 weights="${MODEL_ROOT}/0xBakeer--TandemLLM-Qwen3.8-27B-NVFP4"
 overlay="${checkpoint}+tandem-gdn-attn"
 [[ -d "${checkpoint}" ]] || fail "checkpoint ${checkpoint} is missing; the download step runs first"
