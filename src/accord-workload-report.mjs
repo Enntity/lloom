@@ -17,6 +17,7 @@ const REPORT_STATES = new Map([
   ['stopped', 'stopped'],
   ['exited', 'stopped'],
   ['created', 'stopped'],
+  ['idle', 'stopped'],
   ['dead', 'stopped'],
   ['paused', 'stopped'],
   ['failed', 'failed']

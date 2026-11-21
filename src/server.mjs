@@ -51,7 +51,7 @@ import {
 import { defaultLloomHome, loadConfig } from './config.mjs';
 import { createFleetProfileController } from './config-profiles.mjs';
 import { createDoctorReport } from './doctor.mjs';
-import { createHostTelemetry } from './accord-client.mjs';
+import { accordProfile, createHostTelemetry } from './accord-client.mjs';
 import { MACHINE_PROFILE_MEDIA_TYPE, profileMachine, rankRecipes, validateMachineProfile } from './machine-profile.mjs';
 import { applyModelImport, createModelImportPlan } from './model-intake.mjs';
 import { applyOnboarding, createOnboardingPlan } from './onboarding.mjs';
@@ -2856,9 +2856,17 @@ export function createLloomServer(
       existsSync(schedulePaths(config).statePath.replace(/\.json$/, '') + '-accord-effects.json'))
       ? effectCredential(config)
       : null;
-  // Runtime reports go only to a configured local Accord; without the provider
-  // credential there is nobody to receive them, and fixtures never reach out.
-  const workloadReporter = providerTokenFile
+  // Any file-backed primary gateway with a local Accord profile reports its
+  // runtime workloads — including worker nodes that register no resources.
+  // Opt out with config.accord.reportWorkloads === false; without a profile
+  // there is nobody to receive reports, and fixtures never reach out.
+  const accordReporting =
+    schedulePaths(config).statePath &&
+    processRole === 'primary' &&
+    !isStandby(config) &&
+    config.accord?.reportWorkloads !== false &&
+    existsSync(accordProfile());
+  const workloadReporter = accordReporting
     ? createAccordWorkloadReporter({ getConfig: () => config, manager: runtimeManager, logger })
     : null;
   if (workloadReporter) runtimeManager.onEvent = () => workloadReporter.notifyChanged();

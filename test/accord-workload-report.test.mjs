@@ -277,3 +277,53 @@ test('stop clears the interval and pending debounce', async () => {
   await delay(40);
   assert.equal(sent.length, 0);
 });
+
+test('items() reads the real RuntimeManager status shape', async () => {
+  const { RuntimeManager } = await import('../src/runtime-manager.mjs');
+  const config = {
+    runtimes: {
+      'nemo-lane': {
+        enabled: true,
+        containerName: 'lloom-nemo-lane',
+        maintenance: {
+          state: 'suspended',
+          requestedModel: 'nvidia/parakeet-nemo',
+          since: '2026-11-18T20:33:00.000Z',
+          operationId: 'op-real',
+          by: 'cli'
+        }
+      },
+      'cold-lane': { enabled: true }
+    },
+    models: [{ id: 'nvidia/parakeet-nemo', runtime: 'nemo-lane' }]
+  };
+  const manager = new RuntimeManager(config, { logger: { info() {}, warn() {}, error() {} } });
+  const status = await manager.status({ localOnly: true });
+  assert.equal(status.runtimes['nemo-lane'].status, 'idle'); // real managers report idle for never-started lanes
+  const sent = [];
+  const reporter = createAccordWorkloadReporter({
+    getConfig: () => config,
+    manager,
+    clientFor: () => ({
+      async collaborate(operation, body) {
+        sent.push({ operation, body });
+        return { ok: true };
+      }
+    }),
+    logger: { info() {}, warn() {}, error() {} }
+  });
+  await reporter.sendNow();
+  const items = sent.at(-1)?.body?.items ?? [];
+  const nemo = items.find((item) => item.id === 'nemo-lane');
+  assert.equal(nemo.state, 'suspended');
+  assert.equal(nemo.container, 'lloom-nemo-lane');
+  assert.equal(nemo.model, 'nvidia/parakeet-nemo');
+  assert.equal(nemo.since, Date.parse('2026-11-18T20:33:00.000Z'));
+  assert.equal(nemo.by, 'cli');
+  assert.equal(nemo.operationId, 'op-real');
+  const cold = items.find((item) => item.id === 'cold-lane');
+  assert.equal(cold.state, 'stopped'); // idle maps to a stopped report item
+  assert.equal(sent.at(-1).operation, 'workload-report');
+  assert.equal(sent.at(-1).body.source, 'lloom');
+  assert.equal(sent.at(-1).body.ttlMs, 180000);
+});

@@ -39,6 +39,7 @@ for (const crash of ['coordinator', 'gateway'])
       const sourcePath = path.join(h.dir, 'config.json');
       const raw = {
         server: { host: '127.0.0.1', port: gatewayPort },
+        accord: { reportWorkloads: false },
         security: { adminApiKeys: ['test-admin'] },
         logging: { metricsPersistence: false },
         runtimePolicy: { enabled: true, memoryBudgetGb: 4 },

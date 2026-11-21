@@ -59,6 +59,20 @@ escaped process groups and unrelated GPU users are not isolated by a lease. Use 
 appropriate Accord process/container driver for those workloads; missing evidence
 must never be represented as a confirmed stop.
 
+## Runtime workload reports
+
+A file-backed, primary, non-standby gateway with an Accord connection profile
+(`~/.config/accord/connection.json` or `ACCORD_PROFILE`) reports its enabled
+runtimes as trusted `workload-report` items: every 60 seconds, and shortly after
+any runtime lifecycle or maintenance change. Items carry `source: "lloom"`, a
+180-second TTL, the runtime id, its worker `node` when remote, its container
+name, state (suspended runtimes report `suspended` with `since`/`by` from their
+maintenance record), model and operation id. Each report replaces the previous
+one; Accord expires them if reporting stops. Reports are observations for
+resource views, never ownership or admission input. Reporting failures are
+logged once per distinct error and never affect the gateway or admission. Set
+`accord.reportWorkloads: false` in the config to opt a gateway out.
+
 ## Cutover and old data
 
 Existing `schedule.json` files are retained as immutable migration evidence. Active,

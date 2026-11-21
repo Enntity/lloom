@@ -71,7 +71,8 @@ async function fixture(t) {
       { id: 'local', backend: 'test', runtime: 'resident', upstreamModel: 'local' },
       { id: 'cloud', backend: 'test', upstreamModel: 'cloud' }
     ],
-    aliases: { stable: { members: ['local', 'cloud'], strategy: 'ordered' }, nested: { members: ['stable'] } }
+    aliases: { stable: { members: ['local', 'cloud'], strategy: 'ordered' }, nested: { members: ['stable'] } },
+    accord: { reportWorkloads: false }
   };
   const sourcePath = path.join(dir, 'config.json');
   await fs.writeFile(sourcePath, JSON.stringify(raw));
