@@ -186,6 +186,7 @@ test('uses a fresh adapter per phase against createLloomServer and stages a real
   const upstreamPort = await listen(upstream);
   const config = {
     sourcePath: configPath,
+    accord: { reportWorkloads: false },
     releaseManifestPath: path.join(root, 'current.manifest.json'),
     server: { host: '127.0.0.1', port: 0 },
     security: { allowMissingAuth: false, apiKeys: ['infer'], adminApiKeys: ['admin'] },

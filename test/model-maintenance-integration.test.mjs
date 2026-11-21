@@ -71,7 +71,8 @@ async function fixture(t) {
       { id: 'local', backend: 'test', runtime: 'resident', upstreamModel: 'local' },
       { id: 'cloud', backend: 'test', upstreamModel: 'cloud' }
     ],
-    aliases: { stable: { members: ['local', 'cloud'], strategy: 'ordered' }, nested: { members: ['stable'] } }
+    aliases: { stable: { members: ['local', 'cloud'], strategy: 'ordered' }, nested: { members: ['stable'] } },
+    accord: { reportWorkloads: false }
   };
   const sourcePath = path.join(dir, 'config.json');
   await fs.writeFile(sourcePath, JSON.stringify(raw));
@@ -190,7 +191,13 @@ test(
     assert.equal(ready.status, 200, ready.text);
     assert.match((await f.request()).text, /"content":"local"/);
     const after = JSON.parse(await fs.readFile(f.sourcePath, 'utf8'));
-    assert.deepEqual(after, f.raw);
+    const { maintenanceHistory, ...residentAfter } = after.runtimes.resident;
+    assert.equal(residentAfter.maintenance, undefined);
+    assert.deepEqual(
+      maintenanceHistory.map((entry) => entry.state),
+      ['suspended', 'resuming', 'resumed']
+    );
+    assert.deepEqual({ ...after, runtimes: { resident: residentAfter } }, f.raw);
   }
 );
 

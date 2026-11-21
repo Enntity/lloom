@@ -278,6 +278,7 @@ test(
     fixture.config.server.requestScheduling.mode = 'adaptive';
     fixture.config.server.foregroundIdleMs = 0;
     fixture.config.sourcePath = path.join(directory, 'config.json');
+    fixture.config.accord = { reportWorkloads: false };
     await fs.writeFile(fixture.config.sourcePath, JSON.stringify(fixture.config));
     const gateway = await chatGateway(fixture);
     const abort = new AbortController();

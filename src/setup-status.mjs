@@ -415,15 +415,91 @@ export async function createSetupStatus(
   const selectedRecipesRoot = recipesRoot ?? config.init?.recipesRoot;
   const selectedBackendCatalogPath = backendCatalogPath ?? config.init?.backendCatalogPath;
   const recipes = [...recipeDocuments, ...(await loadRecipes(selectedRecipesRoot))];
-  const recipe = recipeWithInstalledOptions(
-    await selectRecipe({ recipeId: selectedRecipeId, recipes, profile, recipesRoot: selectedRecipesRoot }),
-    config
+  let recipe = null;
+  try {
+    recipe = recipeWithInstalledOptions(
+      await selectRecipe({ recipeId: selectedRecipeId, recipes, profile, recipesRoot: selectedRecipesRoot }),
+      config
+    );
+  } catch (error) {
+    if (!selectedRecipeId || !/^Unknown recipe /.test(error?.message ?? '')) throw error;
+  }
+  const selectedModelRoot = modelRootFor(config, modelRoot);
+  const registry = createRegistry(config);
+  const integrationReport = await createClientIntegrationStatus(config, registry, {
+    clientId,
+    home,
+    generatedRoot
+  });
+  const integrations = integrationReport.data;
+  const runtimes = includeRuntimes ? await new RuntimeManager(config, { logger: { error() {} } }).status() : null;
+  const keepWarm = new Set(
+    Object.entries(config.runtimes ?? {})
+      .filter(([, runtime]) => runtime.keepWarm === true)
+      .map(([runtimeId]) => runtimeId)
   );
+  const keepWarmRuntimeStatus = runtimes
+    ? Object.fromEntries(Object.entries(runtimes.runtimes).filter(([runtimeId]) => keepWarm.has(runtimeId)))
+    : null;
+  const runtimesReady = keepWarmRuntimeStatus
+    ? Object.values(keepWarmRuntimeStatus).every((runtime) => runtime.healthy)
+    : null;
+  if (!recipe) {
+    // The recorded recipe came from a catalog this install no longer carries
+    // (for example a preview checkout). Report it plainly and keep showing the
+    // rest of the machine's status instead of failing the whole command.
+    const missing = `recipe ${selectedRecipeId} is not in this catalog`;
+    return {
+      ok: false,
+      complete: false,
+      config: config.sourcePath,
+      statePath,
+      profile,
+      selectedRecipe: { id: selectedRecipeId, name: selectedRecipeId, backendId: null },
+      modelRoot: selectedModelRoot,
+      backend: { id: null, name: '(unknown)', ready: false, platformSupported: true, missingCommands: [], steps: [] },
+      recipe: {
+        id: selectedRecipeId,
+        inCatalog: false,
+        note: missing,
+        ready: false,
+        platformSupported: true,
+        validationErrors: [missing],
+        steps: [],
+        models: []
+      },
+      integrations: {
+        ready: integrations.every((integration) => integration.current),
+        clientId,
+        summary: integrationReport.summary,
+        data: integrations
+      },
+      runtimes: runtimes
+        ? {
+            ready: runtimesReady,
+            keepWarm: keepWarmRuntimeStatus,
+            events: runtimes.events
+          }
+        : null,
+      next: nextCommands({
+        backendId: null,
+        recipeId: selectedRecipeId,
+        modelRoot: selectedModelRoot,
+        clientId,
+        statePath,
+        configPath: config.sourcePath,
+        home,
+        generatedRoot,
+        recipesRoot: selectedRecipesRoot,
+        backendCatalogPath: selectedBackendCatalogPath,
+        includeClient: true
+      })
+    };
+  }
   const catalog = await loadBackendCatalog(selectedBackendCatalogPath);
   const backend = getBackend(catalog, recipe.backend?.id);
   if (!backend) throw new Error(`Recipe ${recipe.id} references unknown backend ${recipe.backend?.id}`);
 
-  const selectedModelRoot = modelRootFor(config, modelRoot);
   const installState = await readInstallState(statePath);
   const backendPlan = await planBackend(backend, {
     variables: backendVariables,
@@ -445,30 +521,10 @@ export async function createSetupStatus(
     recipeSteps.push(await recipeStepStatus(step, recipeState));
   }
 
-  const registry = createRegistry(config);
-  const integrationReport = await createClientIntegrationStatus(config, registry, {
-    clientId,
-    home,
-    generatedRoot
-  });
-  const integrations = integrationReport.data;
-
-  const runtimes = includeRuntimes ? await new RuntimeManager(config, { logger: { error() {} } }).status() : null;
-  const keepWarm = new Set(
-    Object.entries(config.runtimes ?? {})
-      .filter(([, runtime]) => runtime.keepWarm === true)
-      .map(([runtimeId]) => runtimeId)
-  );
-  const keepWarmRuntimeStatus = runtimes
-    ? Object.fromEntries(Object.entries(runtimes.runtimes).filter(([runtimeId]) => keepWarm.has(runtimeId)))
-    : null;
   const backendReady = backendPlan.runnable || backendSteps.every((step) => step.ready);
   const recipeReady =
     recipePlan.platformSupported && recipePlan.validationErrors.length === 0 && recipeSteps.every((step) => step.ready);
   const integrationsReady = integrations.every((integration) => integration.current);
-  const runtimesReady = keepWarmRuntimeStatus
-    ? Object.values(keepWarmRuntimeStatus).every((runtime) => runtime.healthy)
-    : null;
   const valid =
     recipePlan.platformSupported && recipePlan.validationErrors.length === 0 && backendPlan.platformSupported;
 
