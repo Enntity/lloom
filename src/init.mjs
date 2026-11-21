@@ -1655,6 +1655,22 @@ export function deriveUserConfig(
   // the recipe's own models change.
   if (sourceTemplate) derived.models = clone(sourceTemplate.models ?? []);
   if (restoreCatalog) restoreCatalogAdvertisements(derived);
+  // Read before the recipe rebuilds its runtimes: an additive re-apply or
+  // upgrade keeps a resident runtime pinned though its recipe says keepWarm
+  // false. Choosing other recipe options (a pair become four) asks the recipe
+  // to decide residency again. A distributed member is never pinned itself.
+  const optionsChanged = (installed = {}) =>
+    Object.keys({ ...installed, ...recipe.selectedOptions }).some(
+      (name) => installed[name] !== recipe.selectedOptions?.[name]
+    );
+  const existingKeepWarm = Object.entries(derived.runtimes ?? {})
+    .filter(
+      ([, runtime]) =>
+        runtime.keepWarm === true &&
+        runtime.authority?.scope !== 'distributed-member' &&
+        !(runtime.recipe?.id === recipe.id && optionsChanged(runtime.recipe.options))
+    )
+    .map(([runtimeId]) => runtimeId);
   let runtimeIds = recipeRuntimeIds(recipe);
   if (additive) {
     derived.clientCatalog ??= {};
@@ -1685,9 +1701,6 @@ export function deriveUserConfig(
     };
   }
   if (!additive) restrictAdvertisedModelsToRecipe(derived, recipe);
-  const existingKeepWarm = Object.entries(derived.runtimes ?? {})
-    .filter(([, runtime]) => runtime.keepWarm === true)
-    .map(([runtimeId]) => runtimeId);
   const requestedRecipeKeepWarm = (recipe.models ?? [])
     .filter((model) => model.settings?.keepWarm === true)
     .flatMap((model) => {
@@ -1945,7 +1958,8 @@ export async function createInitPlan(
 
 // Writes the config only if it loads: a config that fails validation would stop
 // every later command, and a running gateway would keep its old one unnoticed.
-async function writeConfigFile(filePath, value, { exclusive = false } = {}) {
+// Without publish, only checks that it would load where it is to be written.
+async function stageConfigFile(filePath, value, publish) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   const temporaryPath = path.join(
     path.dirname(filePath),
@@ -1958,12 +1972,18 @@ async function writeConfigFile(filePath, value, { exclusive = false } = {}) {
         cause: error
       });
     });
-    if (exclusive) await fs.link(temporaryPath, filePath);
-    else await fs.rename(temporaryPath, filePath);
+    await publish?.(temporaryPath);
   } finally {
     await fs.unlink(temporaryPath).catch(() => {});
   }
 }
+
+export const checkConfigFile = (filePath, value) => stageConfigFile(filePath, value);
+
+const writeConfigFile = (filePath, value, { exclusive = false } = {}) =>
+  stageConfigFile(filePath, value, (temporaryPath) =>
+    exclusive ? fs.link(temporaryPath, filePath) : fs.rename(temporaryPath, filePath)
+  );
 
 export async function applyInit(
   config,

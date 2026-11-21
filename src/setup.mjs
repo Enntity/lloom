@@ -1,6 +1,6 @@
 import { createBootstrapPlan, applyBootstrap } from './bootstrap.mjs';
 import { defaultBackendVariables } from './backend-catalog.mjs';
-import { createInitPlan, applyInit } from './init.mjs';
+import { createInitPlan, applyInit, checkConfigFile } from './init.mjs';
 import { recipeOptionFlags } from './recipes.mjs';
 import { RuntimeManager } from './runtime-manager.mjs';
 import { runCommand } from './process-control.mjs';
@@ -212,21 +212,13 @@ export async function applySetup(
   const plan = reviewedPlan ?? (await createSetupPlan(config, options));
   if (dryRun) return plan;
 
-  const init = await applyInit(config, {
-    ...options,
-    reviewedPlan: reviewedPlan?.phases?.init,
-    recipeId: plan.selectedRecipe.id,
-    mode: plan.selectedRecipe.mode,
-    recipeOptions: plan.selectedRecipe.options,
-    recipeVersion: plan.selectedRecipe.version,
-    configPath: plan.configPath,
-    modelRoot: plan.modelRoot,
-    clientId: options.clientId ?? 'all',
-    dryRun: false,
-    yes,
-    integrate: false
-  });
-  const appliedConfig = configWithSource(init.config, plan.configPath);
+  // The gateway hot-reloads its config and restarts a changed runtime, so the
+  // config goes live only after every download and build has succeeded: a
+  // serving runtime keeps serving meanwhile, and a failed step leaves it as it
+  // was. Bootstrap runs against the planned config that is written afterwards,
+  // so check first that it will load rather than refuse it after the download.
+  await checkConfigFile(plan.configPath, plan.phases.init.config);
+  const appliedConfig = configWithSource(plan.phases.init.config, plan.configPath);
   const bootstrap = await applyBootstrap(appliedConfig, {
     recipeId: plan.selectedRecipe.id,
     modelRoot: plan.modelRoot,
@@ -247,6 +239,16 @@ export async function applySetup(
     dryRun: false,
     yes
   });
+  const init = bootstrap.ok
+    ? await applyInit(config, {
+        ...options,
+        reviewedPlan: plan.phases.init,
+        clientId: options.clientId ?? 'all',
+        dryRun: false,
+        yes,
+        integrate: false
+      })
+    : plan.phases.init;
   const clusterSync = bootstrap.ok && typeof afterApply === 'function' ? await afterApply(appliedConfig, plan) : null;
   const runtimeStart =
     start && bootstrap.ok

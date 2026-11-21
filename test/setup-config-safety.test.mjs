@@ -194,6 +194,32 @@ test('a single-runtime recipe re-apply keeps the maintenance record', async (t) 
   });
 });
 
+// spark03 on 2026-11-21: the girls' 27B engine is pinned resident, and recipe
+// v8 says keepWarm false. An additive re-apply must not unpin it.
+test('additive setup keeps a runtime pinned warm though its recipe says keepWarm false', async (t) => {
+  const root = await tempRoot(t);
+  const recipe = applyRecipeMode(await loadRecipeById('linux-nvidia-dgx-spark-qwen38-27b-atlas'));
+  const runtimeId = recipe.models[0].runtime;
+  assert.equal(recipe.models[0].settings.keepWarm, false, 'fixture: the recipe pins keepWarm false');
+  const base = {
+    server: { host: '127.0.0.1', port: 8100 },
+    defaults: {},
+    models: [],
+    backends: {},
+    runtimes: {},
+    aliases: {},
+    clientCatalog: { modelOrder: [] }
+  };
+  const first = deriveUserConfig(base, recipe, { modelRoot: '/models', backendVariables });
+  assert.equal(first.runtimes[runtimeId].keepWarm, false);
+  first.runtimes[runtimeId].keepWarm = true;
+  const { config } = await writeAndLoad(root, first);
+  const again = deriveUserConfig(config, recipe, { modelRoot: '/models', additive: true, backendVariables });
+  assert.equal(again.runtimes[runtimeId].keepWarm, true);
+  const replaced = deriveUserConfig(config, recipe, { modelRoot: '/models', backendVariables });
+  assert.equal(replaced.runtimes[runtimeId].keepWarm, false, 'a full (non-additive) setup still follows the recipe');
+});
+
 // ennspark03 as it was on 2026-11-03: SparkGLM had run on 01, so 03 kept the
 // peer's copy written as a federated entry. Installing the pair here must give
 // the gateway the local runtime; the peer copy may stay beside it, never alone.
