@@ -187,6 +187,8 @@ test('a maintenance record is dropped when the runtime changes owner, and kept w
   const four = install(withChain(pair), '4');
   assert.equal(four.runtimes[GROUP].authority.owner, 'spark01');
   assert.equal(four.runtimes[GROUP].maintenance, undefined);
+  assert.equal(pair.runtimes[GROUP].keepWarm, true);
+  assert.equal(four.runtimes[GROUP].keepWarm, false, 'other recipe options let the recipe decide residency again');
   assert.equal(four.runtimes[GROUP].preferredWarm, true, 'a readiness choice is not tied to the owner');
 });
 
