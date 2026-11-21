@@ -66,6 +66,7 @@ import { createRegistry, UnknownModelError } from './registry.mjs';
 import { routeProfileStatus, writeRouteMemberSuspension, writeRouteProfile } from './route-control.mjs';
 import { mutateConfigSource } from './config-mutation.mjs';
 import { createModelMaintenanceController } from './model-maintenance-control.mjs';
+import { createAccordWorkloadReporter } from './accord-workload-report.mjs';
 import { ScheduleError, schedulePaths } from './resource-spec.mjs';
 import { createAccordEffects } from './accord-effects.mjs';
 import { registerResources, scheduleView, effectCredential, importScheduleHistory } from './accord-resources.mjs';
@@ -2829,7 +2830,8 @@ export function createLloomServer(
     mutateSource: (mutate) => mutateConfigSource(config, mutate),
     reload: reloadConfig,
     manager: runtimeManager,
-    admit: (id, options) => runtimeManager.admit(id, options)
+    admit: (id, options) => runtimeManager.admit(id, options),
+    onChanged: () => workloadReporter?.notifyChanged()
   });
 
   function runRuntimeAdminAction(action) {
@@ -2854,6 +2856,12 @@ export function createLloomServer(
       existsSync(schedulePaths(config).statePath.replace(/\.json$/, '') + '-accord-effects.json'))
       ? effectCredential(config)
       : null;
+  // Runtime reports go only to a configured local Accord; without the provider
+  // credential there is nobody to receive them, and fixtures never reach out.
+  const workloadReporter = providerTokenFile
+    ? createAccordWorkloadReporter({ getConfig: () => config, manager: runtimeManager, logger })
+    : null;
+  if (workloadReporter) runtimeManager.onEvent = () => workloadReporter.notifyChanged();
   const provider = providerTokenFile
     ? createAccordProvider({
         tokenFile: providerTokenFile,
@@ -2891,10 +2899,14 @@ export function createLloomServer(
   function createGatewaySchedule() {
     const { statePath } = schedulePaths(config);
     if (!statePath || processRole !== 'primary' || isStandby(config)) return null;
-    async function maintenance(model, action, node, drainTimeoutMs = 300000, apply = true) {
-      const body = { apply, yes: apply, drainTimeoutMs };
+    async function maintenance(model, action, node, { drainTimeoutMs = 300000, apply = true, requestedBy } = {}) {
+      const body = { apply, yes: apply, drainTimeoutMs, ...(requestedBy ? { requestedBy } : {}) };
       const result = clusterCoordinator.isLocalNode(node)
-        ? await modelMaintenance.run(model, action, { ...body, requestedBy: currentNodeId(config) })
+        ? await modelMaintenance.run(model, action, {
+            ...body,
+            requestedBy,
+            requesterNode: currentNodeId(config)
+          })
         : await clusterCoordinator.requestNode(node, `/gateway/models/${encodeURIComponent(model)}/${action}`, {
             method: 'POST',
             body,
@@ -2913,7 +2925,7 @@ export function createLloomServer(
         actions: {
           // The dry-run plan reports each runtime's maintenance record.
           async isSuspended({ model, node }) {
-            const plan = await maintenance(model, 'suspend', node, undefined, false);
+            const plan = await maintenance(model, 'suspend', node, { apply: false });
             return Object.values(plan?.state ?? {}).some(Boolean);
           },
           async activeRoute({ alias, node }) {
@@ -2937,8 +2949,9 @@ export function createLloomServer(
             }
             return result;
           },
-          suspend: ({ model, node, drainTimeoutMs }) => maintenance(model, 'suspend', node, drainTimeoutMs),
-          resume: ({ model, node }) => maintenance(model, 'resume', node)
+          suspend: ({ model, node, drainTimeoutMs, requestedBy }) =>
+            maintenance(model, 'suspend', node, { drainTimeoutMs, requestedBy }),
+          resume: ({ model, node, requestedBy }) => maintenance(model, 'resume', node, { requestedBy })
         }
       });
     } catch (error) {
@@ -5323,7 +5336,11 @@ export function createLloomServer(
           apply: body.apply ?? false,
           yes: body.yes ?? false,
           drainTimeoutMs: body.drainTimeoutMs ?? 300000,
-          requestedBy: runtimeRequesterNode(req, config)
+          requestedBy:
+            typeof body.requestedBy === 'string' && body.requestedBy.trim()
+              ? body.requestedBy.trim().slice(0, 200)
+              : undefined,
+          requesterNode: runtimeRequesterNode(req, config)
         });
         sendJson(res, 200, result);
         return;
@@ -6336,6 +6353,7 @@ export function createLloomServer(
                   .catch((error) => logger.error?.(error));
           if (configPath && !isStandby(config)) watchFile(configPath, { interval: 500 }, reloadConfig);
           registerAccordResources(server.address().port);
+          workloadReporter?.start();
           startPoolHeartbeat();
           resolve(server);
         });
@@ -6344,6 +6362,7 @@ export function createLloomServer(
     async close({ stopRuntimes = true, httpGraceMs = 5000 } = {}) {
       runtimeManager.shuttingDown = true;
       clearTimeout(accordRegistrationTimer);
+      await workloadReporter?.stop();
       if (configPath && !isStandby(config)) unwatchFile(configPath, reloadConfig);
       await poolHeartbeat.stop();
       const closingError = Object.assign(new Error('gateway is closing'), {

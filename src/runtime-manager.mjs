@@ -157,7 +157,7 @@ function runtimeManagement(runtime) {
   return runtime?.management ?? (runtime?.managed === false ? 'external' : 'managed');
 }
 
-function dockerContainerName(runtime) {
+export function dockerContainerName(runtime) {
   return runtime?.containerName ?? runtime?.container?.name ?? null;
 }
 
@@ -191,7 +191,9 @@ const LIVE_ADMISSION_FIELDS = new Set([
 function runtimeLifecycleConfig(runtime) {
   if (!runtime) return runtime ?? null;
   return Object.fromEntries(
-    Object.entries(runtime).filter(([key]) => key !== 'maintenance' && !LIVE_ADMISSION_FIELDS.has(key))
+    Object.entries(runtime).filter(
+      ([key]) => key !== 'maintenance' && key !== 'maintenanceHistory' && !LIVE_ADMISSION_FIELDS.has(key)
+    )
   );
 }
 
@@ -886,6 +888,7 @@ export class RuntimeManager {
       ...event
     });
     this.events = this.events.slice(0, 100);
+    this.onEvent?.(event);
   }
 
   setStatus(runtimeId, status, reason = null) {
