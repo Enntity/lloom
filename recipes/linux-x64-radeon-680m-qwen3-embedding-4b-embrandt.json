@@ -13,7 +13,7 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "Enntity/embrandt 0cf190be8e538597e8487a0b3e90ee9163d7820c; Qwen/Qwen3-Embedding-4B-GGUF f4602530db1d980e16da9d7d3a70294cf5c190be. Measured on a Ryzen 7 PRO 6850U with Mesa 25.2.8 on 2026-11-22: 168 ms at 128 tokens and 609 ms at 488, against 322 and 1,248 ms for llama.cpp b12606, every vector identical."
+    "source": "Enntity/embrandt 5dff959bcaddc3eb7be9e8c203e35cc5bc04c3dc; Qwen/Qwen3-Embedding-4B-GGUF f4602530db1d980e16da9d7d3a70294cf5c190be. Measured on a Ryzen 7 PRO 6850U with Mesa 25.2.8 on 2026-11-22: 167 ms at 128 tokens and 631 ms at 488, against 322 and 1,248 ms for llama.cpp b12606, every vector identical."
   },
   "links": [
     {
