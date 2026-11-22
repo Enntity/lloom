@@ -1208,7 +1208,12 @@ async function modelMaintenanceCommand({ args, config, command }) {
     `/gateway/models/${encodeURIComponent(id)}/${command}`,
     gatewayRequestOptions(config, args, {
       method: 'POST',
-      body: { apply: hasFlag(args, '--apply'), yes: hasFlag(args, '--yes'), drainTimeoutMs },
+      body: {
+        apply: hasFlag(args, '--apply'),
+        yes: hasFlag(args, '--yes'),
+        drainTimeoutMs,
+        requestedBy: 'cli'
+      },
       timeoutMs: hasFlag(args, '--apply') ? 14400000 : 10000,
       throwOnError: true
     })

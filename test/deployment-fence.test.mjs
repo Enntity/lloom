@@ -83,6 +83,7 @@ test('deployment fence drains bodies and streams before preparing', async () => 
   const upstreamPort = await listen(upstream);
   const config = {
     sourcePath,
+    accord: { reportWorkloads: false },
     server: { host: '127.0.0.1', port: 0 },
     security: { allowMissingAuth: false, apiKeys: ['infer'], adminApiKeys: ['admin'] },
     defaults: { chatModel: 'local-model' },
@@ -226,6 +227,7 @@ test('gateway status is truthful and fenced canary returns observed local attrib
   const upstreamPort = await listen(upstream);
   const config = {
     sourcePath,
+    accord: { reportWorkloads: false },
     server: { host: '127.0.0.1', port: 0 },
     security: { allowMissingAuth: false, apiKeys: ['infer'], adminApiKeys: ['admin'] },
     defaults: { chatModel: 'local-model' },
@@ -355,6 +357,7 @@ test('deployment canary rejects non-completions, oversized bodies, and streams b
   const upstreamPort = await listen(upstream);
   const config = {
     sourcePath,
+    accord: { reportWorkloads: false },
     server: { host: '127.0.0.1', port: 0 },
     security: { allowMissingAuth: false, apiKeys: ['infer'], adminApiKeys: ['admin'] },
     defaults: { chatModel: 'local-model' },

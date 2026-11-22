@@ -190,6 +190,7 @@ function communityOnlyConfig(baseConfig) {
 }
 
 const config = await loadConfig();
+config.accord = { reportWorkloads: false };
 assert.equal(runtimeControlTimeoutMs(config, 'missing-runtime'), 1800000);
 assert.equal(runtimeControlTimeoutMs({ runtimes: { cold: { startupTimeoutMs: 7200000 } } }, 'cold'), 7260000);
 assert.equal(runtimeControlTimeoutMs({ runtimes: { quick: { startupTimeoutMs: 5000 } } }, 'quick'), 1800000);
@@ -900,6 +901,7 @@ assert.deepEqual(
     'linux-nvidia-spark-audio-qwen3-tts-1-7b-customvoice',
     'linux-nvidia-spark-audio-qwen3-tts-1-7b-voicedesign',
     'linux-nvidia-spark-audio-whisper-large-v3-turbo',
+    'linux-x64-radeon-680m-qwen3-embedding-4b-embrandt',
     'lloom-hear'
   ]
 );

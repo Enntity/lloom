@@ -20,6 +20,10 @@ function markerOf(config, id) {
   return config?.runtimes?.[id]?.maintenance || null;
 }
 
+function appendHistory(rt, entry) {
+  rt.maintenanceHistory = [...(Array.isArray(rt.maintenanceHistory) ? rt.maintenanceHistory : []), entry].slice(-20);
+}
+
 function sameMarker(a, b) {
   if (a === b) return true;
   if (!a || !b) return false;
@@ -50,7 +54,8 @@ export function createModelMaintenanceController({
   reload,
   manager,
   admit,
-  now = () => new Date().toISOString()
+  now = () => new Date().toISOString(),
+  onChanged
 }) {
   let queue = Promise.resolve();
 
@@ -74,7 +79,8 @@ export function createModelMaintenanceController({
                 state: record.state,
                 requestedModel: record.requestedModel,
                 since: record.since,
-                operationId: record.operationId
+                operationId: record.operationId,
+                by: record.by
               }
             : null
         ];
@@ -82,7 +88,7 @@ export function createModelMaintenanceController({
     );
   }
 
-  async function latchAll(plan, opId, state) {
+  async function latchAll(plan, opId, state, by) {
     let mutated = false;
     await mutateSource((raw) => {
       const config = raw && typeof raw === 'object' ? raw : {};
@@ -99,12 +105,15 @@ export function createModelMaintenanceController({
       }
       for (const id of plan.runtimeIds) {
         const rt = isPlainObject(config.runtimes[id]) ? config.runtimes[id] : (config.runtimes[id] = {});
+        const at = now();
         rt.maintenance = {
           state,
           requestedModel: plan.requestedModel,
-          since: now(),
-          operationId: opId
+          since: at,
+          operationId: opId,
+          by
         };
+        appendHistory(rt, { state, at, by, operationId: opId });
       }
       mutated = true;
       return undefined;
@@ -112,7 +121,7 @@ export function createModelMaintenanceController({
     return mutated;
   }
 
-  async function removeOwned(plan, opId) {
+  async function removeOwned(plan, opId, by) {
     await mutateSource((raw) => {
       const config = raw && typeof raw === 'object' ? raw : {};
       if (!isPlainObject(config.runtimes)) return undefined;
@@ -123,14 +132,15 @@ export function createModelMaintenanceController({
       }
       for (const id of plan.runtimeIds) {
         const rt = config.runtimes[id];
+        appendHistory(rt, { state: 'resumed', at: now(), by, operationId: opId });
         delete rt.maintenance;
-        if (Object.keys(rt).length === 0) delete config.runtimes[id];
+        if (Object.keys(rt).every((key) => key === 'maintenanceHistory')) delete config.runtimes[id];
       }
       return undefined;
     });
   }
 
-  async function reMarkOwned(plan, opId, state) {
+  async function reMarkOwned(plan, opId, state, by) {
     try {
       await mutateSource((raw) => {
         const config = raw && typeof raw === 'object' ? raw : {};
@@ -139,12 +149,15 @@ export function createModelMaintenanceController({
           const rt = config.runtimes[id];
           const marker = rt?.maintenance;
           if (!isPlainObject(rt) || !marker || marker.operationId !== opId) continue;
+          const at = now();
           rt.maintenance = {
             state,
             requestedModel: plan.requestedModel,
-            since: marker.since || now(),
-            operationId: opId
+            since: marker.since || at,
+            operationId: opId,
+            by
           };
+          appendHistory(rt, { state, at, by, operationId: opId });
         }
         return undefined;
       });
@@ -171,17 +184,17 @@ export function createModelMaintenanceController({
   }
 
   async function runSuspend(plan, opId, opts, ownerIds) {
-    await latchAll(plan, opId, 'suspended');
+    await latchAll(plan, opId, 'suspended', opts.by);
     await reload();
     for (const id of controlledRuntimeIds(plan, getConfig())) {
       await manager.drainRuntime(id, {
         timeoutMs: opts.drainTimeoutMs,
         reason: 'maintenance-suspend',
-        requestedBy: opts.requestedBy
+        requestedBy: opts.requesterNode ?? opts.requestedBy
       });
     }
     for (const id of ownerIds) {
-      const result = await manager.stop(id, { requestedBy: opts.requestedBy });
+      const result = await manager.stop(id, { requestedBy: opts.requesterNode ?? opts.requestedBy });
       if (result?.stopped === false && !['already-stopped', 'container-missing'].includes(result.reason)) {
         throw new Error(`runtime ${id} could not be stopped: ${result.reason}`);
       }
@@ -189,7 +202,7 @@ export function createModelMaintenanceController({
     const clean = await allStopped(ownerIds, getConfig());
     if (!clean) {
       const err = new Error('runtimes still loaded or healthy after suspend');
-      const cleanupErr = await reMarkOwned(plan, opId, 'suspended');
+      const cleanupErr = await reMarkOwned(plan, opId, 'suspended', opts.by);
       await reload();
       if (cleanupErr) err.cleanupError = cleanupErr;
       throw err;
@@ -223,19 +236,19 @@ export function createModelMaintenanceController({
         health: Object.fromEntries(ownerIds.map((id) => [id, true]))
       };
     }
-    await latchAll(plan, opId, 'resuming');
+    await latchAll(plan, opId, 'resuming', opts.by);
     try {
       await reload();
       for (const id of controlledRuntimeIds(plan, getConfig())) await manager.resumeRuntime(id);
       for (const id of ownerIds) {
-        await admit(id, { force: false, warmup: true, requestedBy: opts.requestedBy });
+        await admit(id, { force: false, warmup: true, requestedBy: opts.requesterNode ?? opts.requestedBy });
       }
       for (const id of ownerIds) {
         if (!(await manager.isHealthy(id))) {
           throw new Error(`runtime ${id} failed health check after resume`);
         }
       }
-      await removeOwned(plan, opId);
+      await removeOwned(plan, opId, opts.by);
       await reload();
       const health = Object.fromEntries(ownerIds.map((id) => [id, true]));
       return {
@@ -253,7 +266,7 @@ export function createModelMaintenanceController({
     } catch (err) {
       let cleanupErr;
       try {
-        cleanupErr = await reMarkOwned(plan, opId, 'suspended');
+        cleanupErr = await reMarkOwned(plan, opId, 'suspended', opts.by);
         await reload();
       } catch (cleanupInner) {
         cleanupErr = cleanupInner;
@@ -262,7 +275,7 @@ export function createModelMaintenanceController({
         try {
           const cfg = getConfig();
           if (markerOf(cfg, id)?.operationId === opId) {
-            await manager.pauseRuntime(id, 'resume-failed', { requestedBy: opts.requestedBy });
+            await manager.pauseRuntime(id, 'resume-failed', { requestedBy: opts.requesterNode ?? opts.requestedBy });
           }
         } catch (pauseErr) {
           if (!cleanupErr) cleanupErr = pauseErr;
@@ -275,7 +288,8 @@ export function createModelMaintenanceController({
 
   async function invoke(id, action, rawOpts) {
     const opts = rawOpts || {};
-    const { apply = false, yes = false, requestedBy, drainTimeoutMs = 300000 } = opts;
+    const { apply = false, yes = false, requestedBy, requesterNode, drainTimeoutMs = 300000 } = opts;
+    const by = requestedBy === undefined || requestedBy === null ? 'cli' : String(requestedBy).slice(0, 200);
     if (!flagsOk(apply, yes)) throw new TypeError('apply and yes must be booleans');
     if (!timeoutOk(drainTimeoutMs)) throw new RangeError('drainTimeoutMs must be an integer 0..7200000');
     if (action !== undefined && !ACTIONS.has(action)) throw new TypeError('action must be suspend or resume');
@@ -289,16 +303,18 @@ export function createModelMaintenanceController({
     }
     if (!yes) throw new Error('apply requires yes=true');
     for (const ownerId of controlledRuntimeIds(plan, getConfig())) {
-      manager.assertRuntimeControl(ownerId, requestedBy);
+      manager.assertRuntimeControl(ownerId, requesterNode ?? requestedBy);
     }
     const opId = randomUUID();
-    if (plan.action === 'suspend') return runSuspend(plan, opId, { ...opts, drainTimeoutMs }, ownerIds);
-    return runResume(plan, opId, { ...opts, drainTimeoutMs }, ownerIds);
+    if (plan.action === 'suspend') return runSuspend(plan, opId, { ...opts, drainTimeoutMs, by }, ownerIds);
+    return runResume(plan, opId, { ...opts, drainTimeoutMs, by }, ownerIds);
   }
 
   return {
     run(id, action, opts = {}) {
-      return serialize(() => invoke(id, action, opts));
+      return serialize(() => invoke(id, action, opts)).finally(() => {
+        if (opts.apply === true) onChanged?.();
+      });
     }
   };
 }

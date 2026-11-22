@@ -1023,7 +1023,7 @@ console.log('server-resilience tests passed');
     runtimes: {}
   };
   await fs.writeFile(configPath, `${JSON.stringify(base, null, 2)}\n`);
-  const liveConfig = { ...structuredClone(base), sourcePath: configPath };
+  const liveConfig = { ...structuredClone(base), sourcePath: configPath, accord: { reportWorkloads: false } };
   liveConfig.server.port = 0;
   const app = createLloomServer(liveConfig, { runtimeManager, logger: { error() {}, warn() {}, info() {} } });
   await app.listen();
@@ -1077,7 +1077,7 @@ console.log('server-resilience tests passed');
     runtimes: {}
   };
   await fs.writeFile(configPath, `${JSON.stringify(base, null, 2)}\n`);
-  const liveConfig = { ...structuredClone(base), sourcePath: configPath };
+  const liveConfig = { ...structuredClone(base), sourcePath: configPath, accord: { reportWorkloads: false } };
   liveConfig.server.port = 0;
   const app = createLloomServer(liveConfig, { runtimeManager, logger: { error() {}, warn() {}, info() {} } });
   await app.listen();

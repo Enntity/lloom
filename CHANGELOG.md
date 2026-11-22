@@ -38,6 +38,7 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Added
 
+- Embrandt recipe (`linux-x64-radeon-680m-qwen3-embedding-4b-embrandt`) for Qwen3-Embedding-4B Q8_0 on an AMD Radeon 680M through Vulkan. The `embrandt` backend builds [Enntity/embrandt](https://github.com/Enntity/embrandt) at a pinned commit and downloads the pinned GGUF. The model installs as `embrandt/Qwen3-Embedding-4B-Q8_0`, is not kept warm and joins no alias, so a host gains an embeddings target without any traffic moving to it.
 - Drama 3 expressive TTS recipe (`linux-nvidia-gb10-drama3-tensorfold`) for one DGX Spark on the TensorFold engine, serving Fish Audio Drama 3 (pruned NVFP4) for narration and streamed replies in a cloned voice. The `drama-tensorfold` backend's `lloom_drama_server.py` shim encodes a voice profile's reference audio and text into the codec codes the engine expects.
 - SparkGLM recipe option `--model sage-s21-flash` (recipe version 7, SparkGLM 0.3.6): serves `Enntity/Sage-S2.1-Flash-NVFP4`, a calibrated NVFP4 quantization of `internlm/Sage-S2.1-Flash`, in place of `nvidia/GLM-5.3-Flash-FP4-Local`, under the same gateway id `glm-5.3-flash-atlas`. The pin manifest names each checkpoint under `models`. The default resolves to the same recipe as before.
 

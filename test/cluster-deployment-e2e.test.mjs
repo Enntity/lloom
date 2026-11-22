@@ -169,6 +169,7 @@ async function makeFleet(t, { failRestartNode = null, failReleaseNode = null } =
     const configPath = path.join(root, 'config.json');
     const config = {
       sourcePath: configPath,
+      accord: { reportWorkloads: false },
       releaseManifestPath: path.join(root, 'current.manifest.json'),
       server: { host: '127.0.0.1', port: 0 },
       security: { allowMissingAuth: false, apiKeys: ['infer'], adminApiKeys: [ADMIN_KEY] },

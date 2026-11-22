@@ -530,7 +530,7 @@ async function reloadFixture(t) {
     reconfigure: async () => ({ changed: [] })
   };
   await fs.writeFile(configPath, JSON.stringify(base));
-  const config = { ...structuredClone(base), sourcePath: configPath };
+  const config = { ...structuredClone(base), sourcePath: configPath, accord: { reportWorkloads: false } };
   const app = createLloomServer(config, {
     runtimeManager: manager,
     logger: {

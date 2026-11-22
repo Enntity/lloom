@@ -94,7 +94,7 @@ export function createAccordEffects({ getConfig, statePath, actions, isPaused = 
     }
     return null;
   }
-  async function undo(id, r) {
+  async function undo(id, r, requestedBy) {
     for (const step of [...r.steps].reverse()) {
       if (step.status === 'undone') continue;
       if (heldElsewhere(id, step)) {
@@ -102,7 +102,7 @@ export function createAccordEffects({ getConfig, statePath, actions, isPaused = 
       } else if (step.kind === 'suspend') {
         if (!step.wasSuspended) {
           try {
-            await actions.resume(step);
+            await actions.resume({ ...step, requestedBy });
           } catch (error) {
             // A model disabled or removed after the hold has nothing to resume.
             if (!RETIRED.test(error?.message ?? '')) throw error;
@@ -119,6 +119,7 @@ export function createAccordEffects({ getConfig, statePath, actions, isPaused = 
       spec(id);
       return { available: !isPaused() && !legacy(id).length };
     }
+    const requestedBy = `accord:${String(b?.holder?.label ?? b?.claimId).slice(0, 120)}`;
     return serialize(`${id}:${action}:${b?.authority}:${b?.generation}:${b?.claimId}:${b?.key ?? ''}`, async () => {
       // Deployment owns model effects while fenced. Accord keeps the grant held
       // until recovery can verify stop and restoration after deployment.
@@ -170,14 +171,22 @@ export function createAccordEffects({ getConfig, statePath, actions, isPaused = 
           if (step.kind === 'route') {
             if (live !== step.profile) await actions.setRoute(step);
           } else if (!live)
-            await actions.suspend({ ...step, drainTimeoutMs: getConfig().reservations?.drainTimeoutMs ?? 300000 });
+            await actions.suspend({
+              ...step,
+              drainTimeoutMs: getConfig().reservations?.drainTimeoutMs ?? 300000,
+              requestedBy
+            });
           recorded.status = 'done';
           await save();
         }
         // Establish a stopped baseline before granting this generation, even
         // if a configured workload was already running before registration.
         for (const w of r.workloads) {
-          await actions.suspend({ ...w, drainTimeoutMs: getConfig().reservations?.drainTimeoutMs ?? 300000 });
+          await actions.suspend({
+            ...w,
+            drainTimeoutMs: getConfig().reservations?.drainTimeoutMs ?? 300000,
+            requestedBy
+          });
           w.stopped = true;
           await save();
         }
@@ -210,7 +219,7 @@ export function createAccordEffects({ getConfig, statePath, actions, isPaused = 
         r.phase = 'starting';
         r.workloads = r.allowedWorkloads.map((w) => ({ ...w, stopped: false }));
         await save();
-        for (const w of r.workloads) await actions.resume(w);
+        for (const w of r.workloads) await actions.resume({ ...w, requestedBy });
         r.phase = 'active';
         await save();
         return reply({ state: 'running' });
@@ -225,7 +234,11 @@ export function createAccordEffects({ getConfig, statePath, actions, isPaused = 
         await save();
         for (const w of r.workloads) {
           if (w.stopped) continue;
-          await actions.suspend({ ...w, drainTimeoutMs: getConfig().reservations?.drainTimeoutMs ?? 300000 });
+          await actions.suspend({
+            ...w,
+            drainTimeoutMs: getConfig().reservations?.drainTimeoutMs ?? 300000,
+            requestedBy
+          });
           w.stopped = true;
           await save();
         }
@@ -235,7 +248,7 @@ export function createAccordEffects({ getConfig, statePath, actions, isPaused = 
       }
       if (action === 'restore') {
         if (!['stopped', 'idle'].includes(r.phase)) throw fail('Workload stop has not been confirmed');
-        await undo(id, r);
+        await undo(id, r, requestedBy);
         r.phase = 'idle';
         await save();
         return reply();
