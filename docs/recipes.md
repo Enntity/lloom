@@ -48,6 +48,16 @@ lloom runtime-start chatterbox
 Speech API extras: `voice` (named LLooM profile), `ref_audio` / `audio_prompt_path`, `exaggeration`, `cfg_weight`, `temperature`, `language` / `language_id` (multilingual), plus `ResembleAI/chatterbox-turbo` for the faster lane. Do not install the Spark recipe until the host has spare memory.
 
 Chatterbox keeps ResembleAI's built-in Perth watermark enabled. Only create or clone voices you own or have explicit permission to use, and disclose synthetic audio where appropriate.
+## Qwen3 Embedding 4B on a Radeon 680M
+
+Qwen3-Embedding-4B Q8_0 on the integrated Radeon 680M of a Ryzen 6000 machine, through Vulkan, on the [Embrandt](https://github.com/Enntity/embrandt) engine: `linux-x64-radeon-680m-qwen3-embedding-4b-embrandt`.
+
+```zsh
+lloom setup --recipe linux-x64-radeon-680m-qwen3-embedding-4b-embrandt --additive --apply --yes
+```
+
+The build needs `git`, `cmake`, `ninja`, `g++`, `glslc` and the Vulkan and SPIR-V headers, and Mesa's RADV driver must be installed. The model is served as `embrandt/Qwen3-Embedding-4B-Q8_0`. It is not kept warm and joins no alias, so installing it sends it no traffic; route an embeddings alias to it when you want it used. On a Ryzen 7 PRO 6850U it measured 168 ms at 128 tokens and 609 ms at 488, about twice llama.cpp's speed with identical vectors, and about 6 sequences per second at 128 tokens. Its vectors are Q8_0: check retrieval before mixing them in one index with vectors from a BF16 server of the same model.
+
 ## Drama 3 expressive TTS (DGX Spark)
 
 Fish Audio Drama 3 (pruned NVFP4) on the TensorFold CUDA engine, for narration in a cloned voice: `linux-nvidia-gb10-drama3-tensorfold`.

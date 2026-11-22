@@ -1,0 +1,102 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-x64-radeon-680m-qwen3-embedding-4b-embrandt",
+  "name": "Qwen3 Embedding 4B on the Radeon 680M (Embrandt)",
+  "version": 1,
+  "summary": "Qwen3-Embedding-4B Q8_0 on an AMD Radeon 680M integrated GPU through Vulkan, served by the Embrandt engine: about twice as fast as llama.cpp with identical embeddings. Installed on demand, not kept warm.",
+  "license": {
+    "id": "Apache-2.0",
+    "name": "Recipe metadata only; Qwen3-Embedding-4B is Apache-2.0 and Embrandt is AGPL-3.0-only"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "Enntity/embrandt 0cf190be8e538597e8487a0b3e90ee9163d7820c; Qwen/Qwen3-Embedding-4B-GGUF f4602530db1d980e16da9d7d3a70294cf5c190be. Measured on a Ryzen 7 PRO 6850U with Mesa 25.2.8 on 2026-11-22: 168 ms at 128 tokens and 609 ms at 488, against 322 and 1,248 ms for llama.cpp b12606, every vector identical."
+  },
+  "links": [
+    {
+      "rel": "model",
+      "href": "https://huggingface.co/Qwen/Qwen3-Embedding-4B-GGUF",
+      "mediaType": "text/html"
+    },
+    {
+      "rel": "runtime",
+      "href": "https://github.com/Enntity/embrandt",
+      "mediaType": "text/html"
+    }
+  ],
+  "keywords": ["linux", "amd", "radeon-680m", "vulkan", "embedding", "qwen3", "embrandt", "continuity"],
+  "capabilities": ["embedding", "embeddings", "multilingual", "long-context"],
+  "hardware": {
+    "family": "AMD Ryzen 6000 with Radeon 680M",
+    "testedMachine": "Ryzen 7 PRO 6850U mini PC, Ubuntu 24.04, Mesa 25.2.8 RADV.",
+    "notes": [
+      "The engine's fast paths are written for the Radeon 680M (PCI device 0x1681); nothing else is tested.",
+      "About 8 GB of system memory while loaded. One forward pass at a time: about 15 short or 6 128-token sequences per second.",
+      "The build needs git, cmake, ninja, g++, glslc and the Vulkan and SPIR-V headers; Mesa's RADV driver must be installed.",
+      "Embeddings are Q8_0. Do not mix them in one index with vectors from a BF16 server of the same model without checking retrieval."
+    ]
+  },
+  "requirements": {
+    "platforms": ["linux-x64"],
+    "memoryGb": 8,
+    "diskGb": 8,
+    "commands": ["lloom-embrandt"],
+    "accelerators": []
+  },
+  "backend": {
+    "id": "embrandt",
+    "name": "Embrandt",
+    "type": "openai-compatible-server",
+    "features": ["vulkan", "openai-embeddings"]
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-lloom-embrandt",
+        "title": "Check LLooM Embrandt server shim",
+        "action": "check-command",
+        "command": "lloom-embrandt",
+        "args": ["--help"]
+      },
+      {
+        "id": "install-embrandt",
+        "title": "Build the Embrandt engine and download the pinned Q8_0 GGUF",
+        "action": "command",
+        "command": "bash",
+        "args": ["${repoRoot}/backends/embrandt/install.sh"]
+      }
+    ]
+  },
+  "models": [
+    {
+      "role": "embedding",
+      "name": "Qwen3 Embedding 4B Q8_0 (Radeon 680M)",
+      "model": "Qwen/Qwen3-Embedding-4B-GGUF",
+      "gatewayModel": "embrandt/Qwen3-Embedding-4B-Q8_0",
+      "upstreamModel": "Qwen/Qwen3-Embedding-4B",
+      "runtime": "embrandt",
+      "backendConfig": "embrandt",
+      "input": ["text"],
+      "output": ["embedding"],
+      "capabilities": ["embedding", "embeddings", "multilingual", "long-context"],
+      "settings": {
+        "contextWindow": 8192,
+        "maxActiveRequests": 8,
+        "memoryGb": 8,
+        "priority": 40,
+        "keepWarm": false,
+        "startupTimeoutMs": 300000,
+        "runtime": {
+          "command": "lloom-embrandt",
+          "args": ["--port", "${port}"],
+          "env": {},
+          "healthPath": "/health",
+          "warmup": false
+        }
+      }
+    }
+  ]
+}
