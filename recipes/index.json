@@ -1414,6 +1414,52 @@
       }
     },
     {
+      "id": "linux-nvidia-dgx-spark-inkling2-mini-atlas",
+      "path": "linux-nvidia-dgx-spark-inkling2-mini-atlas.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-dgx-spark-inkling2-mini-atlas.json",
+          "status": "current"
+        }
+      ],
+      "name": "DGX Spark Inkling 2 Mini Atlas (SparkInkling 0.4.0)",
+      "summary": "Thinking Machines' Inkling 2 Mini on one DGX Spark with SparkInkling's Atlas build and DSpark drafter: strict or spark weights; default, saver and max modes.",
+      "tags": [
+        "linux",
+        "nvidia",
+        "dgx-spark",
+        "gb10",
+        "inkling-2-mini",
+        "thinking-machines",
+        "moe",
+        "nvfp4",
+        "atlas",
+        "sparkinkling",
+        "dspark",
+        "standalone"
+      ],
+      "recommendedFor": ["Fast Inkling 2 Mini serving on a single GB10"],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "usage",
+        "tools",
+        "structured-output",
+        "reasoning",
+        "speculative-decoding",
+        "batching",
+        "long-context"
+      ],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-dgx-spark-inkling2-mini-atlas.json"
+      }
+    },
+    {
       "id": "linux-nvidia-ace-step-1-5-xl-diffusers",
       "path": "linux-nvidia-ace-step-1-5-xl-diffusers.json",
       "currentVersion": 1,
