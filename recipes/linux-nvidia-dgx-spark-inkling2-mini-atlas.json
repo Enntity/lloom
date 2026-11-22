@@ -38,16 +38,16 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "SparkInkling 0.4.1 (candidate): Enntity/sparkinkling b13243c4cef46ff1e6cffe219f6e75ccea67993f (install tree 951ef3f527d76b77a1c5a54245a9060ee0d9879e), engine Enntity/atlas inkling2/mini-20261121 @ fed29ccdc5780f863b67ddb26ff9cd343bae0218 (AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). Image ghcr.io/enntity/atlas-sparkinkling:951ef3f527d7, addressed by its GHCR manifest digest. Profiles default.json (0.80 GPU memory utilization, 8 sequences, 131072 tokens), saver.json (0.50, 8, 131072) and max.json (0.85, 32, 262144), all with BF16 KV, 4096-token prefill chunks and prefix caching. Model thinkingmachines/Inkling-2-Mini revision ed40e7da625f594fc9c4990f5f66be24873c22d7 (Apache-2.0) with its bundled DSpark drafter; overlay Enntity/Inkling-2-Mini-Spark-NVFP4 @ e9df93dceea2fbf0927caf178104e868452a6292 (Apache-2.0)."
+    "source": "SparkInkling 0.4.1 (candidate): Enntity/sparkinkling ec585dd13244235f2b50a0e1b0250ac24cf0ddec (install tree bf2f407604463fed8cad506af8cd4816f3ee0a3e), engine Enntity/atlas inkling2/mini-20261121 @ 8ff8711969e5d644b45b9b9a85f3bfcc46100843 (AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). Image ghcr.io/enntity/atlas-sparkinkling:bf2f40760446, addressed by its GHCR manifest digest. Profiles default.json (0.80 GPU memory utilization, 8 sequences, 131072 tokens), saver.json (0.50, 8, 131072) and max.json (0.85, 32, 262144), all with BF16 KV, 4096-token prefill chunks and prefix caching. Model thinkingmachines/Inkling-2-Mini revision ed40e7da625f594fc9c4990f5f66be24873c22d7 (Apache-2.0) with its bundled DSpark drafter; overlay Enntity/Inkling-2-Mini-Spark-NVFP4 @ e9df93dceea2fbf0927caf178104e868452a6292 (Apache-2.0)."
   },
   "links": [
     {
       "rel": "upstream",
-      "href": "https://github.com/Enntity/sparkinkling/tree/b13243c4cef46ff1e6cffe219f6e75ccea67993f"
+      "href": "https://github.com/Enntity/sparkinkling/tree/ec585dd13244235f2b50a0e1b0250ac24cf0ddec"
     },
     {
       "rel": "engine",
-      "href": "https://github.com/Enntity/atlas/tree/fed29ccdc5780f863b67ddb26ff9cd343bae0218"
+      "href": "https://github.com/Enntity/atlas/tree/8ff8711969e5d644b45b9b9a85f3bfcc46100843"
     },
     {
       "rel": "engine-upstream",
@@ -93,7 +93,7 @@
     "family": "NVIDIA DGX Spark / GB10",
     "testedMachine": "One DGX Spark with 128 GB unified memory",
     "notes": [
-      "This version pins the SparkInkling 0.4.1 candidate image (engine fed29ccdc): decode batches and verifies of up to 8 rows read each BF16 weight once (Strict RigMark short code C2 / C4 / C8 49.5 / 79.2 / 120.2 -> 52.7 / 81.9 / 122.7 on a development build), and tool calls at thinking effort 0 (enable_thinking=false, reasoning_effort none) come back as tool calls; 0.4.0 streamed them as text. Budget forcing: once Inkling's reasoning passes its effort's budget (low 4K, high 16K tokens) or the loop watchdog fires, the engine closes it at a sentence boundary and the model answers; on the 30 MMLU-Pro questions Inkling left unanswered at high effort, answers at 32K tokens went from 8 to 29 (correct 5 to 18). Requests that name no reasoning effort reason at low, which on 150 MMLU-Pro questions scored 125 against high's 107 at a quarter of the tokens. Checked on one Spark: 8,779 engine tests, task probe 30/30 and 10/10 in both modes, tool calls streamed and whole with thinking on and off, default effort low. Its full RigMark release measurement is pending; the RigMark figures below are 0.4.0's.",
+      "This version pins the SparkInkling 0.4.1 candidate image (engine 8ff871196): decode batches and verifies of up to 8 rows read each BF16 weight once (Strict RigMark short code C2 / C4 / C8 49.5 / 79.2 / 120.2 -> 52.7 / 81.9 / 122.7 on a development build), and tool calls at thinking effort 0 (enable_thinking=false, reasoning_effort none) come back as tool calls; 0.4.0 streamed them as text. Budget forcing: once Inkling's reasoning passes its effort's budget (low 4K, high 16K tokens) or the loop watchdog fires, the engine closes it at a sentence boundary and the model answers; on the 30 MMLU-Pro questions Inkling left unanswered at high effort, answers at 32K tokens went from 8 to 29 (correct 5 to 18). Requests that name no reasoning effort reason at low, which on 150 MMLU-Pro questions scored 125 against high's 107 at a quarter of the tokens. With the tool guard off, a call's arguments stream as they are generated; with it on (the default) they arrive whole after the guard passes the call. With the checkpoint's weights a visit's input projections run as one launch (plain Strict decode 35.9 -> 36.4 tok/s, bit-identical). Checked on one Spark: 8,786 engine tests, task probe 30/30 and 10/10 in both modes, tool calls streamed and whole with thinking on and off, default effort low. Its full RigMark release measurement is pending; the RigMark figures below are 0.4.0's.",
       "SparkInkling 0.4.0 on one GB10, 2026-11-21, RigMark protocol 1.1.0 (low reasoning effort, temperature 0), default profile and DSpark drafter, nothing else serving. Strict: code 49.2, prose 33.6 and structured 86.4 tok/s decode, 32K cold prefill 3,277 tok/s, short-code aggregate C1/C2/C4/C8 35.9/49.1/78.1/119.6, 6 of 6 basic gates. Spark: code 66.8, prose 51.6, structured 96.4, 32K cold prefill 3,275, C1/C2/C4/C8 50.9/72.0/101.3/134.9, 6 of 6 gates. An immediate replay of the 32K prompt reached its first token in 0.16 s (Strict) and 0.15 s (Spark).",
       "Against vLLM's own Inkling 2 Mini image on the same Spark and protocol (measured 2026-11-20): without speculation vLLM read code 35.1, prose 35.6, structured 35.6, 32K prefill 2,722, C1/C8 35.1/122.4; with its DSpark drafter code 69.8, prose 31.2, structured 104.3, C8 144.0. Spark mode leads vLLM without speculation in every cell and leads vLLM with DSpark on prose, prefill and one to four requests; it trails it on code (0.96x), structured output (0.92x) and eight requests (0.94x). Strict trails vLLM without speculation on prose (0.94x) and at two to eight requests (0.90x to 0.98x).",
       "The 0.4.0 image build ran the engine's CPU workspace suite (8,750 tests passed) and Clippy. A task probe (30 arithmetic word problems, 10 single-tool calls) passed 30/30 and 10/10 in both modes; it is a smoke-level check, not a benchmark.",
@@ -362,7 +362,7 @@
           },
           "bootstrap": {
             "adapter": "docker",
-            "image": "ghcr.io/enntity/atlas-sparkinkling@sha256:0d7cd233d3563d310ae51ac06da25c021f7c133b4863ac41cdad197071549bbe",
+            "image": "ghcr.io/enntity/atlas-sparkinkling@sha256:9691140a856225e133e94038fe59a01be19777aec13dc11716f1bb13194321d1",
             "pull": false,
             "pullTimeoutMs": 3600000,
             "createArgs": [

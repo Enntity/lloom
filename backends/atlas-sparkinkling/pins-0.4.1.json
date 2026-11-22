@@ -1,22 +1,22 @@
 {
   "manifestVersion": 1,
   "status": "final",
-  "note": "Pin manifest for SparkInkling 0.4.1 (candidate), recipe linux-nvidia-dgx-spark-inkling2-mini-atlas version 1: Inkling 2 Mini on one DGX Spark. Engine adds the batched BF16 GEMV for decode batches and verifies of up to 8 rows (Strict RigMark short code C2 / C4 / C8 49.5 / 79.2 / 120.2 -> 52.7 / 81.9 / 122.7 on a development build), fixes tool calls at thinking effort 0 (the checkpoint opens such a call as a text block, which 0.4.0 returned as text when streamed), and adds budget forcing: once Inkling's reasoning passes its effort's budget or the loop watchdog fires, the engine closes it at a sentence boundary and the model answers. Requests that name no reasoning effort now reason at low (the template's own default is high). Image built from Enntity/sparkinkling next-0.4.1 and checked on one Spark: 8,779 engine tests passed; task probe 30/30 and 10/10 in both modes; tool calls streamed and whole, thinking on and off, in both modes; default effort 0.2. Its full RigMark release measurement is pending. image.reference is the GHCR manifest digest; the tag is the first 12 characters of the install/ tree.",
+  "note": "Pin manifest for SparkInkling 0.4.1 (candidate), recipe linux-nvidia-dgx-spark-inkling2-mini-atlas version 1: Inkling 2 Mini on one DGX Spark. Engine adds the batched BF16 GEMV for decode batches and verifies of up to 8 rows (Strict RigMark short code C2 / C4 / C8 49.5 / 79.2 / 120.2 -> 52.7 / 81.9 / 122.7 on a development build), fixes tool calls at thinking effort 0 (the checkpoint opens such a call as a text block, which 0.4.0 returned as text when streamed), streams tool-call arguments as they are generated (with the tool guard off), runs a visit's Strict input projections as one launch, and adds budget forcing: once Inkling's reasoning passes its effort's budget or the loop watchdog fires, the engine closes it at a sentence boundary and the model answers. Requests that name no reasoning effort now reason at low (the template's own default is high). Image built from Enntity/sparkinkling next-0.4.1 and checked on one Spark: 8,786 engine tests passed; task probe 30/30 and 10/10 in both modes; tool calls streamed and whole, thinking on and off, in both modes; default effort 0.2. Its full RigMark release measurement is pending. image.reference is the GHCR manifest digest; the tag is the first 12 characters of the install/ tree.",
   "source": {
     "repo": "Enntity/sparkinkling",
-    "revision": "b13243c4cef46ff1e6cffe219f6e75ccea67993f",
-    "installTree": "951ef3f527d76b77a1c5a54245a9060ee0d9879e",
+    "revision": "ec585dd13244235f2b50a0e1b0250ac24cf0ddec",
+    "installTree": "bf2f407604463fed8cad506af8cd4816f3ee0a3e",
     "cloneUrl": "https://github.com/Enntity/sparkinkling.git",
     "buildScript": "install/build.sh"
   },
   "engine": {
     "repo": "Enntity/atlas",
     "branch": "inkling2/mini-20261121",
-    "commit": "fed29ccdc5780f863b67ddb26ff9cd343bae0218"
+    "commit": "8ff8711969e5d644b45b9b9a85f3bfcc46100843"
   },
   "image": {
-    "reference": "ghcr.io/enntity/atlas-sparkinkling@sha256:0d7cd233d3563d310ae51ac06da25c021f7c133b4863ac41cdad197071549bbe",
-    "tag": "ghcr.io/enntity/atlas-sparkinkling:951ef3f527d7",
+    "reference": "ghcr.io/enntity/atlas-sparkinkling@sha256:9691140a856225e133e94038fe59a01be19777aec13dc11716f1bb13194321d1",
+    "tag": "ghcr.io/enntity/atlas-sparkinkling:bf2f40760446",
     "label": "io.enntity.sparkinkling.install-tree",
     "entrypoint": "/opt/atlas/serve.py",
     "profilePath": "/opt/atlas/profiles/default.json",
