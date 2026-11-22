@@ -9,7 +9,9 @@ const modelId = 'embrandt/Qwen3-Embedding-4B-Q8_0';
 const recipe = await loadRecipeById(recipeId);
 assert.equal(recipe.backend.id, 'embrandt');
 assert.deepEqual(recipe.requirements.platforms, ['linux-x64']);
-assert.ok(getBackend(await loadBackendCatalog(), 'embrandt'));
+const backend = getBackend(await loadBackendCatalog(), 'embrandt');
+// Setup skips a completed install step unless it always runs, and then a new pinned commit is never built.
+assert.equal(backend.setup.find((step) => step.id === 'install-embrandt').alwaysRun, true);
 
 const before = await loadConfig();
 const next = (await createInitPlan(before, { recipeId, additive: true, modelRoot: '/tmp/lloom-models' })).config;

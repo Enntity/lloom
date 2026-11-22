@@ -20,10 +20,13 @@ done
 mkdir -p "$BACKEND_ROOT" "$SHIM_DIR"
 cd "$BACKEND_ROOT"
 
-[[ -d src/.git ]] || git clone -q "$RECIPE_REPOSITORY" src
-git -C src fetch -q origin "$RECIPE_COMMIT"
-git -C src checkout -q --detach "$RECIPE_COMMIT"
-src/build.sh
+# Setup runs this every time, so a new pin is picked up; a build already at the pin is kept.
+if [[ "$(git -C src rev-parse HEAD 2>/dev/null)" != "$RECIPE_COMMIT" || ! -x src/encoder || ! -f src/vocabulary.so ]]; then
+  [[ -d src/.git ]] || git clone -q "$RECIPE_REPOSITORY" src
+  git -C src fetch -q origin "$RECIPE_COMMIT"
+  git -C src checkout -q --detach "$RECIPE_COMMIT"
+  src/build.sh
+fi
 
 model_ok() { [[ -f "$MODEL_FILE" ]] && echo "$MODEL_SHA256  $MODEL_FILE" | sha256sum -c --status -; }
 if ! model_ok; then
