@@ -38,10 +38,10 @@ async function tempRoot(t) {
   return root;
 }
 
-async function writeAndLoad(root, config) {
+async function writeAndLoad(root, config, env = {}) {
   const configPath = path.join(root, 'config.json');
   await fs.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
-  return { configPath, config: await loadConfig(configPath, { env: {} }) };
+  return { configPath, config: await loadConfig(configPath, { env }) };
 }
 
 function runCli(args, { home } = {}) {
@@ -152,6 +152,27 @@ test('additive setup leaves models its recipe does not declare as written', asyn
     false,
     'federated peer models are derived at load time, never persisted'
   );
+});
+
+test('additive setup writes credential references back, wherever they are (#154)', async (t) => {
+  const root = await tempRoot(t);
+  const { recipe, config: fixture } = await sparkQwenPairConfig();
+  fixture.cluster.nodes.ennspark01.apiKey = '${PEER_KEY}';
+  fixture.security = { apiKeys: ['${GATEWAY_KEY}'] };
+  fixture.backends['glm-tp4-local'].apiKey = '${PEER_KEY}';
+  const { config } = await writeAndLoad(root, fixture, { PEER_KEY: FAKE.cluster, GATEWAY_KEY: FAKE.inference });
+  assert.equal(config.cluster.nodes.ennspark01.apiKey, FAKE.cluster, 'the loaded config carries the value');
+  const derived = deriveUserConfig(config, applyRecipeMode(recipe), {
+    modelRoot: '/models',
+    additive: true,
+    backendVariables
+  });
+  assert.equal(derived.cluster.nodes.ennspark01.apiKey, '${PEER_KEY}');
+  assert.deepEqual(derived.security.apiKeys, ['${GATEWAY_KEY}']);
+  assert.equal(derived.backends['glm-tp4-local'].apiKey, '${PEER_KEY}');
+  assert.equal('lloom-node-ennspark01' in derived.backends, false, 'the peer proxy backend is derived at load');
+  const written = JSON.stringify(derived);
+  assert.equal(written.includes(FAKE.cluster) || written.includes(FAKE.inference), false, 'no secret is written');
 });
 
 test('a single-runtime recipe re-apply keeps the maintenance record', async (t) => {

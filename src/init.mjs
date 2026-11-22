@@ -57,26 +57,18 @@ function setRecipeRuntime(config, runtimeId, runtime) {
   config.runtimes[runtimeId] = runtime;
 }
 
-function containsEnvReference(value) {
-  if (typeof value === 'string') return /\$\{[A-Za-z_][A-Za-z0-9_]*\}/.test(value);
-  if (Array.isArray(value)) return value.some(containsEnvReference);
-  return false;
-}
+const CREDENTIAL_FIELDS = new Set(['apiKey', 'apiKeys', 'adminApiKeys']);
 
-function preserveEnvBackedSecrets(derived, sourceTemplate) {
-  if (!sourceTemplate) return derived;
-  for (const key of ['apiKeys', 'adminApiKeys']) {
-    const template = sourceTemplate.security?.[key];
-    if (containsEnvReference(template)) {
-      derived.security ??= {};
-      derived.security[key] = clone(template);
-    }
-  }
-  for (const section of ['backends', 'providers']) {
-    for (const [id, templateEntry] of Object.entries(sourceTemplate[section] ?? {})) {
-      if (!containsEnvReference(templateEntry?.apiKey) || !derived[section]?.[id]) continue;
-      derived[section][id].apiKey = templateEntry.apiKey;
-    }
+// Loading expands ${NAME} references into the values they name. Wherever this
+// derivation left a loaded credential as it was, write its reference back, so
+// a secret supplied by the environment never lands in the config file.
+function preserveEnvBackedSecrets(derived, loaded, template, credential = false) {
+  for (const [key, written] of Object.entries(template ?? {})) {
+    if (!derived || !Object.hasOwn(derived, key)) continue;
+    const secret = credential || CREDENTIAL_FIELDS.has(key);
+    if (written && typeof written === 'object') preserveEnvBackedSecrets(derived[key], loaded?.[key], written, secret);
+    else if (secret && /\$\{[A-Za-z_][A-Za-z0-9_]*\}/.test(written) && derived[key] === loaded?.[key])
+      derived[key] = written;
   }
   return derived;
 }
@@ -1654,6 +1646,10 @@ export function deriveUserConfig(
   // their local backend and runtime). Start from the models as written so only
   // the recipe's own models change.
   if (sourceTemplate) derived.models = clone(sourceTemplate.models ?? []);
+  // Loading also adds a proxy backend for each federated peer, holding the
+  // peer's resolved key. Those are derived again at every load.
+  for (const id of sourceTemplate ? Object.keys(derived.backends ?? {}) : [])
+    if (!Object.hasOwn(sourceTemplate.backends ?? {}, id)) delete derived.backends[id];
   if (restoreCatalog) restoreCatalogAdvertisements(derived);
   let runtimeIds = recipeRuntimeIds(recipe);
   if (additive) {
@@ -1748,7 +1744,7 @@ export function deriveUserConfig(
     benchmarksRoot: benchmarksRoot || undefined,
     backendCatalogPath: backendCatalogPath || undefined
   };
-  return preserveEnvBackedSecrets(derived, sourceTemplate);
+  return preserveEnvBackedSecrets(derived, config, sourceTemplate);
 }
 
 async function selectRecipe({ recipeId, recipes, profile, recipesRoot }) {

@@ -104,11 +104,12 @@ test('systemd quoting has literal argv, specifiers and no shell or inline secret
     nodePath: '/usr/bin/node',
     entryPath: odd,
     configPath: '/tmp/config',
-    environmentFile: '/tmp/$env%u'
+    environmentFile: '/tmp/my $env%u'
   });
   assert.match(unit, /Restart=on-failure/);
   assert.match(unit, /StartLimitIntervalSec=0/);
-  assert.match(unit, /EnvironmentFile="\/tmp\/\$env%%u"/);
+  // systemd ignores a quoted EnvironmentFile path; the path is the rest of the line.
+  assert.ok(unit.includes('\nEnvironmentFile=/tmp/my $env%%u\n'));
   assert.doesNotMatch(unit, /Environment=|\/bin\/sh|sudo/);
   for (const bad of ['\n', '\r', '\0', '\t']) assert.throws(() => systemdQuoteArg('/tmp/' + bad), /control character/);
 });
