@@ -87,8 +87,12 @@ export function buildServiceUnit({ nodePath, entryPath, configPath, environmentF
     'KillSignal=SIGTERM',
     'KillMode=process'
   ];
+  // systemd takes the rest of this line as the path: it expands %specifiers but
+  // does not unquote, and it ignores a quoted path as not absolute.
   if (environmentFile)
-    lines.push(`EnvironmentFile=${systemdQuoteArg(environmentFile, 'environment file path').replaceAll('$$', '$')}`);
+    lines.push(
+      `EnvironmentFile=${assertSafeSystemdToken(environmentFile, 'environment file path').replace(/%/g, '%%')}`
+    );
   lines.push('', '[Install]', 'WantedBy=default.target', '');
   return lines.join('\n');
 }
