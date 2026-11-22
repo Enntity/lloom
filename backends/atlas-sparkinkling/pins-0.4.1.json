@@ -1,22 +1,22 @@
 {
   "manifestVersion": 1,
   "status": "final",
-  "note": "Pin manifest for SparkInkling 0.4.1 (candidate), recipe linux-nvidia-dgx-spark-inkling2-mini-atlas version 1: Inkling 2 Mini on one DGX Spark. Engine adds the batched BF16 GEMV for decode batches and verifies of up to 8 rows (Strict RigMark short code C2 / C4 / C8 49.5 / 79.2 / 120.2 -> 52.7 / 81.9 / 122.7 on a development build) and fixes tool calls at thinking effort 0 (enable_thinking=false or reasoning_effort none): the checkpoint opens such a call as a text block, which 0.4.0 returned as text when streamed. Image built from Enntity/sparkinkling next-0.4.1 and checked on one Spark: 8,753 engine tests passed; task probe 30/30 and 10/10 in both modes; a Say(text) tool streamed and whole, thinking on and off, in both modes. Its full RigMark release measurement is pending. image.reference is the GHCR manifest digest; the tag is the first 12 characters of the install/ tree.",
+  "note": "Pin manifest for SparkInkling 0.4.1 (candidate), recipe linux-nvidia-dgx-spark-inkling2-mini-atlas version 1: Inkling 2 Mini on one DGX Spark. Engine adds the batched BF16 GEMV for decode batches and verifies of up to 8 rows (Strict RigMark short code C2 / C4 / C8 49.5 / 79.2 / 120.2 -> 52.7 / 81.9 / 122.7 on a development build), fixes tool calls at thinking effort 0 (the checkpoint opens such a call as a text block, which 0.4.0 returned as text when streamed), and adds budget forcing: once Inkling's reasoning passes its effort's budget or the loop watchdog fires, the engine closes it at a sentence boundary and the model answers. Requests that name no reasoning effort now reason at low (the template's own default is high). Image built from Enntity/sparkinkling next-0.4.1 and checked on one Spark: 8,779 engine tests passed; task probe 30/30 and 10/10 in both modes; tool calls streamed and whole, thinking on and off, in both modes; default effort 0.2. Its full RigMark release measurement is pending. image.reference is the GHCR manifest digest; the tag is the first 12 characters of the install/ tree.",
   "source": {
     "repo": "Enntity/sparkinkling",
-    "revision": "33c96a4fd13fc2b30b30ab81f5d9c8d0e5501f85",
-    "installTree": "179dd64aec9cd588438089432a9a2e9fb2c0d2cf",
+    "revision": "b13243c4cef46ff1e6cffe219f6e75ccea67993f",
+    "installTree": "951ef3f527d76b77a1c5a54245a9060ee0d9879e",
     "cloneUrl": "https://github.com/Enntity/sparkinkling.git",
     "buildScript": "install/build.sh"
   },
   "engine": {
     "repo": "Enntity/atlas",
     "branch": "inkling2/mini-20261121",
-    "commit": "c4db7a368106ed3b9d5e1d08b788f045eb8eb7c2"
+    "commit": "fed29ccdc5780f863b67ddb26ff9cd343bae0218"
   },
   "image": {
-    "reference": "ghcr.io/enntity/atlas-sparkinkling@sha256:88043ee1479757c900274d6e57a58b5c062c4e6903a87cc52d615803ab6a37c4",
-    "tag": "ghcr.io/enntity/atlas-sparkinkling:179dd64aec9c",
+    "reference": "ghcr.io/enntity/atlas-sparkinkling@sha256:0d7cd233d3563d310ae51ac06da25c021f7c133b4863ac41cdad197071549bbe",
+    "tag": "ghcr.io/enntity/atlas-sparkinkling:951ef3f527d7",
     "label": "io.enntity.sparkinkling.install-tree",
     "entrypoint": "/opt/atlas/serve.py",
     "profilePath": "/opt/atlas/profiles/default.json",
