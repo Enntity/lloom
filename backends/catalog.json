@@ -1883,7 +1883,7 @@
       ],
       "notes": [
         "Builds Enntity/embrandt at a pinned commit into ~/.lloom/backends/embrandt (it fetches llama.cpp b12606 and patches it) and downloads the pinned Q8_0 GGUF (4.3 GB) next to it, checked against its SHA-256.",
-        "The build needs git, cmake, ninja, g++, glslc and the Vulkan and SPIR-V headers on PATH. For a Mesa outside the system paths, run the install with VK_DRIVER_FILES and EMBRANDT_VULKAN_LIBRARY_PATH set; the shim keeps both.",
+        "The build needs git, cmake, ninja, g++, glslc and the Vulkan and SPIR-V headers on PATH. For a Mesa outside the system paths, run the install with VK_DRIVER_FILES and EMBRANDT_VULKAN_LIBRARY_PATH set; the shim keeps both. The shim runs the service through sg render when the gateway's own session lacks the render group its user belongs to.",
         "The service answers model id Qwen/Qwen3-Embedding-4B on loopback. Send X-LLoom-Request-Class: standard for background documents so interactive lookups overtake them."
       ],
       "setup": [

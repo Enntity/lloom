@@ -35,7 +35,14 @@ fi
 # EMBRANDT_VULKAN_LIBRARY_PATH. The shim keeps the ones this install ran with, so the gateway
 # starts the service against the same driver.
 {
-  echo '#!/bin/sh'
+  cat <<'SH'
+#!/bin/sh
+# A gateway whose login session predates its user joining the render group cannot open the GPU.
+# sg applies the membership. It also clears LD_LIBRARY_PATH, so the driver paths are set after it.
+if [ -z "${EMBRANDT_SG:-}" ] && ! id -Gn | grep -qw render && id -Gn "$(id -un)" | grep -qw render; then
+  exec sg render -c "EMBRANDT_SG=1 exec \"$0\" $*"
+fi
+SH
   [[ -z "${VK_DRIVER_FILES:-}" ]] || echo "export VK_DRIVER_FILES='$VK_DRIVER_FILES'"
   [[ -z "${EMBRANDT_VULKAN_LIBRARY_PATH:-}" ]] || echo "export LD_LIBRARY_PATH='$EMBRANDT_VULKAN_LIBRARY_PATH'"
   echo "export EMBRANDT_MODEL='$BACKEND_ROOT/$MODEL_FILE'"
