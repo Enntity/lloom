@@ -1,6 +1,6 @@
 # Atlas SparkInkling under LLooM
 
-LLooM-managed SparkInkling 0.4.0 lane: Thinking Machines'
+LLooM-managed SparkInkling 0.4.1 (candidate) lane: Thinking Machines'
 [Inkling 2 Mini](https://huggingface.co/thinkingmachines/Inkling-2-Mini) on one
 NVIDIA DGX Spark, served by the Atlas engine with the checkpoint's own DSpark
 drafter, prefix caching, reasoning and tool calls. Text input only (the engine
@@ -13,7 +13,7 @@ published as `ghcr.io/enntity/atlas-sparkinkling:646b6c9dafe6`. The recipe is
 
 ## Layout
 
-- `pins-0.4.0.json`: the pin manifest. SparkInkling source revision and its
+- `pins-0.4.1.json`: the pin manifest. SparkInkling source revision and its
   `install/` git tree, the engine commit (`Enntity/atlas`
   `inkling2/mini-20261121` at `f0f0a2c78b53`), the image by GHCR manifest
   digest with the tag kept as metadata, the install-tree label, the checkpoint
@@ -83,7 +83,7 @@ pull needs `docker login ghcr.io` with a token that can read it.
 
 ## Container contract
 
-LLooM mirrors SparkInkling 0.4.0's `start.sh`: host network and IPC, 16 GiB
+LLooM mirrors SparkInkling 0.4.1's `start.sh`: host network and IPC, 16 GiB
 shm, `--memory 114g` (a GB10 that runs out of shared memory hangs instead of
 killing a process), all GPUs, `no-new-privileges`, a 60 s stop timeout, every
 model directory mounted read-only at its own path, and the CUDA cache.

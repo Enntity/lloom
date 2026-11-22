@@ -1424,7 +1424,7 @@
           "status": "current"
         }
       ],
-      "name": "DGX Spark Inkling 2 Mini Atlas (SparkInkling 0.4.0)",
+      "name": "DGX Spark Inkling 2 Mini Atlas (SparkInkling 0.4.1)",
       "summary": "Thinking Machines' Inkling 2 Mini on one DGX Spark with SparkInkling's Atlas build and DSpark drafter: strict or spark weights; default, saver and max modes.",
       "tags": [
         "linux",
