@@ -8,7 +8,7 @@ BACKEND_ROOT="${LLOOM_EMBRANDT_HOME:-$HOME_ROOT/backends/embrandt}"
 SHIM_DIR="$HOME_ROOT/bin"
 
 RECIPE_REPOSITORY=https://github.com/Enntity/embrandt
-RECIPE_COMMIT=0cf190be8e538597e8487a0b3e90ee9163d7820c
+RECIPE_COMMIT=5dff959bcaddc3eb7be9e8c203e35cc5bc04c3dc
 MODEL_FILE=Qwen3-Embedding-4B-Q8_0.gguf
 MODEL_URL=https://huggingface.co/Qwen/Qwen3-Embedding-4B-GGUF/resolve/f4602530db1d980e16da9d7d3a70294cf5c190be/$MODEL_FILE
 MODEL_SHA256=b60ae5ce2dd6a0b77f82cadf21def1f310a3e10cde380ad0081b07a9d416949d
@@ -20,10 +20,13 @@ done
 mkdir -p "$BACKEND_ROOT" "$SHIM_DIR"
 cd "$BACKEND_ROOT"
 
-[[ -d src/.git ]] || git clone -q "$RECIPE_REPOSITORY" src
-git -C src fetch -q origin "$RECIPE_COMMIT"
-git -C src checkout -q --detach "$RECIPE_COMMIT"
-src/build.sh
+# Setup runs this every time, so a new pin is picked up; a build already at the pin is kept.
+if [[ "$(git -C src rev-parse HEAD 2>/dev/null)" != "$RECIPE_COMMIT" || ! -x src/encoder || ! -f src/vocabulary.so ]]; then
+  [[ -d src/.git ]] || git clone -q "$RECIPE_REPOSITORY" src
+  git -C src fetch -q origin "$RECIPE_COMMIT"
+  git -C src checkout -q --detach "$RECIPE_COMMIT"
+  src/build.sh
+fi
 
 model_ok() { [[ -f "$MODEL_FILE" ]] && echo "$MODEL_SHA256  $MODEL_FILE" | sha256sum -c --status -; }
 if ! model_ok; then

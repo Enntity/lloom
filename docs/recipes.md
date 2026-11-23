@@ -56,7 +56,7 @@ Qwen3-Embedding-4B Q8_0 on the integrated Radeon 680M of a Ryzen 6000 machine, t
 lloom setup --recipe linux-x64-radeon-680m-qwen3-embedding-4b-embrandt --additive --apply --yes
 ```
 
-The build needs `git`, `cmake`, `ninja`, `g++`, `glslc` and the Vulkan and SPIR-V headers, and Mesa's RADV driver must be installed. The model is served as `embrandt/Qwen3-Embedding-4B-Q8_0`. It is not kept warm and joins no alias, so installing it sends it no traffic; route an embeddings alias to it when you want it used. On a Ryzen 7 PRO 6850U it measured 168 ms at 128 tokens and 609 ms at 488, about twice llama.cpp's speed with identical vectors, and about 6 sequences per second at 128 tokens. Its vectors are Q8_0: check retrieval before mixing them in one index with vectors from a BF16 server of the same model.
+The build needs `git`, `cmake`, `ninja`, `g++`, `glslc` and the Vulkan and SPIR-V headers, and Mesa's RADV driver must be installed. The model is served as `embrandt/Qwen3-Embedding-4B-Q8_0`. It is not kept warm and joins no alias, so installing it sends it no traffic; route an embeddings alias to it when you want it used. On a Ryzen 7 PRO 6850U it measured 167 ms at 128 tokens and 631 ms at 488, about twice llama.cpp's speed with identical vectors, and about 6 sequences per second at 128 tokens. Its vectors are Q8_0: check retrieval before mixing them in one index with vectors from a BF16 server of the same model.
 
 ## Drama 3 expressive TTS (DGX Spark)
 

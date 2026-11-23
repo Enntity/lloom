@@ -1,0 +1,39 @@
+{
+  "manifestVersion": 1,
+  "status": "final",
+  "note": "Pin manifest for SparkInkling 0.4.1, recipe linux-nvidia-dgx-spark-inkling2-mini-atlas version 1: Inkling 2 Mini on one DGX Spark. The release adds image input, budget forcing for Inkling's reasoning loops (and low as the default reasoning effort), streamed tool-call arguments with the tool guard's stream setting, branch checkpoints in the prefix cache, and faster batched decode. Image built from Enntity/sparkinkling main at the pinned revision; its build ran 8,803 engine tests, and its RigMark release measurement and functional check are in that repository's results/2026-11-23-release-0.4.1. image.reference is the GHCR manifest digest; the tag is the first 12 characters of the install/ tree.",
+  "source": {
+    "repo": "Enntity/sparkinkling",
+    "revision": "2d595a248284914a2a49d5a5a0cd9ca0a0025490",
+    "installTree": "3f625e2d302ec11b0f8efbbfa17b3e4a1409a2e9",
+    "cloneUrl": "https://github.com/Enntity/sparkinkling.git",
+    "buildScript": "install/build.sh"
+  },
+  "engine": {
+    "repo": "Enntity/atlas",
+    "branch": "inkling2/mini-20261121",
+    "commit": "6cf40a5a0bf4045140c3f2bc65d98c94bb009d3c"
+  },
+  "image": {
+    "reference": "ghcr.io/enntity/atlas-sparkinkling@sha256:ca60f5bdc08927c42a2d0807dbe6695e6a921305f077b1e78463ef2a7745037f",
+    "tag": "ghcr.io/enntity/atlas-sparkinkling:3f625e2d302e",
+    "label": "io.enntity.sparkinkling.install-tree",
+    "entrypoint": "/opt/atlas/serve.py",
+    "profilePath": "/opt/atlas/profiles/default.json",
+    "architecture": "arm64"
+  },
+  "model": {
+    "repo": "thinkingmachines/Inkling-2-Mini",
+    "revision": "ed40e7da625f594fc9c4990f5f66be24873c22d7"
+  },
+  "overlay": {
+    "repo": "Enntity/Inkling-2-Mini-Spark-NVFP4",
+    "revision": "e9df93dceea2fbf0927caf178104e868452a6292"
+  },
+  "prepareTool": {
+    "checkpoint.json": "1ca19cda956a94a5c4451f58f9d5f8675aa3594a3e979a8202b7afbc83c1bd38",
+    "check_files.py": "4fddd82d84f23e7a02a0dfc28e036f655f8df5a0c250f85b06fe307bbb7c8ea1",
+    "dspark_drafter.py": "370487ddcea7363a2234f8f38748b1a688e57749df187c473d9845cc388ee271",
+    "spark_overlay.py": "18b398a459ff013833080876d10892e0aaf55eb8301fe5d45ef3f0f1df415b81"
+  }
+}
