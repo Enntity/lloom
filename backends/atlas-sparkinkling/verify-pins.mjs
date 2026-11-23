@@ -15,7 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const MANIFEST_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'pins-0.4.1.json');
+export const MANIFEST_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'pins-0.4.2.json');
 export const REQUIRED_IMAGE_ARCHITECTURE = 'arm64';
 export const SOURCE_REPO = 'Enntity/sparkinkling';
 export const IMAGE_REPOSITORY = 'ghcr.io/enntity/atlas-sparkinkling';

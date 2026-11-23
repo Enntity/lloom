@@ -58,7 +58,7 @@ rejects({ ...pins, prepareTool: { ...pins.prepareTool, 'spark_overlay.py': 'TODO
 assert.deepEqual(Object.keys(pins.prepareTool).sort(), [...PREPARE_TOOL_FILES].sort());
 
 // ---- recipe -----------------------------------------------------------------
-assert.equal(recipe.version, 1);
+assert.equal(recipe.version, 2);
 assert.equal(recipe.backend.id, 'docker-atlas-sparkinkling');
 assert.equal(recipe.requirements.cluster, undefined, 'one Spark, no fabric');
 assert.equal(recipe.aliases, undefined, 'additive: no aliases');

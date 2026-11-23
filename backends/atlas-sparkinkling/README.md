@@ -1,21 +1,23 @@
 # Atlas SparkInkling under LLooM
 
-LLooM-managed SparkInkling 0.4.1 lane: Thinking Machines'
+LLooM-managed SparkInkling 0.4.2 lane: Thinking Machines'
 [Inkling 2 Mini](https://huggingface.co/thinkingmachines/Inkling-2-Mini) on one
 NVIDIA DGX Spark, served by the Atlas engine with the checkpoint's own DSpark
 drafter, prefix caching, reasoning, tool calls and image input (no video).
 This directory is **MIT orchestration only**: no
 Atlas engine source is committed here. The engine image is built from
-`Enntity/sparkinkling` revision `76ed675d069484cc0a46007ea71f633b45235665`
-(install tree `646b6c9dafe6`) by that repository's `install/build.sh` and
-published as `ghcr.io/enntity/atlas-sparkinkling:646b6c9dafe6`. The recipe is
+`Enntity/sparkinkling` revision `27e42a6f893cb4c38491e440b82d253c90548e98`
+(tag `v0.4.2`, install tree `b1e18bf91437`) by that repository's
+`install/build.sh` and published as `ghcr.io/enntity/atlas-sparkinkling:b1e18bf91437`
+(also `:0.4.2`). The recipe is
 `linux-nvidia-dgx-spark-inkling2-mini-atlas`.
 
 ## Layout
 
-- `pins-0.4.1.json`: the pin manifest. SparkInkling source revision and its
+- `pins-0.4.2.json`: the pin manifest (recipe version 2; `pins-0.4.1.json`
+  stays for the archived version 1). SparkInkling source revision and its
   `install/` git tree, the engine commit (`Enntity/atlas`
-  `inkling2/mini-20261121` at `f0f0a2c78b53`), the image by GHCR manifest
+  `inkling2/concurrent-spec-20261123` at `d3318e087850`), the image by GHCR manifest
   digest with the tag kept as metadata, the install-tree label, the checkpoint
   and overlay revisions, and `prepareTool`: the sha256 of the four SparkInkling
   install files `prepare.sh` runs.
@@ -83,7 +85,7 @@ pull needs `docker login ghcr.io` with a token that can read it.
 
 ## Container contract
 
-LLooM mirrors SparkInkling 0.4.1's `start.sh`: host network and IPC, 16 GiB
+LLooM mirrors SparkInkling 0.4.2's `start.sh`: host network and IPC, 16 GiB
 shm, `--memory 114g` (a GB10 that runs out of shared memory hangs instead of
 killing a process), all GPUs, `no-new-privileges`, a 60 s stop timeout, every
 model directory mounted read-only at its own path, and the CUDA cache.
@@ -91,8 +93,10 @@ Environment: `MODEL_PATH` (the checkpoint, or its `+spark-nvfp4` directory),
 `SPARKINKLING_MODE` (`strict` or `spark`), `SPARKINKLING_DRAFTER=dspark`,
 `DRAFTER_PATH`, `SPARKINKLING_PROFILE` (the mode's profile),
 `SERVED_MODEL_NAME=inkling-2-mini-atlas`, the tool-call guard
-(`SPARKINKLING_TOOL_GUARD=stream`: a call's arguments stream and the guard
-checks the call when it ends; `_MAX_BYTES=1048576`, empty allow and deny lists), offline Hugging Face and the CUDA cache settings. The engine serves
+(`SPARKINKLING_TOOL_GUARD=stream`: a request that sends
+`stream_tool_arguments: true` gets its calls' arguments as they are written
+and the guard checks each call when it ends; every other request's calls are
+held until they pass; `_MAX_BYTES=1048576`, empty allow and deny lists), offline Hugging Face and the CUDA cache settings. The engine serves
 `127.0.0.1:8895`, fixed by the image. The disk tier for evicted prefix-cache KV
 (`PREFIX_CACHE_DIR` in `start.sh`) is not enabled by this recipe.
 

@@ -1,0 +1,39 @@
+{
+  "manifestVersion": 1,
+  "status": "final",
+  "note": "Pin manifest for SparkInkling 0.4.2, recipe linux-nvidia-dgx-spark-inkling2-mini-atlas version 2: Inkling 2 Mini on one DGX Spark. The release sizes each verify by the drafter's confidence, turns drafts off per sequence while they stop paying, drafts for two live requests in Strict, keeps greedy text with drafts identical to text without them in its checks, decodes batches at their own width, and streams tool-call arguments only to a request that sends stream_tool_arguments: true (every other request's calls are held until the tool guard passes them). Image built from Enntity/sparkinkling main at the pinned revision; its build ran 8,819 engine tests, and its RigMark release measurement and functional check are in that repository's results/2026-11-23-release-0.4.2. image.reference is the GHCR manifest digest; the tag is the first 12 characters of the install/ tree.",
+  "source": {
+    "repo": "Enntity/sparkinkling",
+    "revision": "27e42a6f893cb4c38491e440b82d253c90548e98",
+    "installTree": "b1e18bf91437bd668926d853502e273253953310",
+    "cloneUrl": "https://github.com/Enntity/sparkinkling.git",
+    "buildScript": "install/build.sh"
+  },
+  "engine": {
+    "repo": "Enntity/atlas",
+    "branch": "inkling2/concurrent-spec-20261123",
+    "commit": "d3318e087850d59a05788bc89da749181e1bb289"
+  },
+  "image": {
+    "reference": "ghcr.io/enntity/atlas-sparkinkling@sha256:a9ae1e375e74d0ffa3422817d851bf4751f21c496fc7346d6801e2f1891c1812",
+    "tag": "ghcr.io/enntity/atlas-sparkinkling:b1e18bf91437",
+    "label": "io.enntity.sparkinkling.install-tree",
+    "entrypoint": "/opt/atlas/serve.py",
+    "profilePath": "/opt/atlas/profiles/default.json",
+    "architecture": "arm64"
+  },
+  "model": {
+    "repo": "thinkingmachines/Inkling-2-Mini",
+    "revision": "ed40e7da625f594fc9c4990f5f66be24873c22d7"
+  },
+  "overlay": {
+    "repo": "Enntity/Inkling-2-Mini-Spark-NVFP4",
+    "revision": "e9df93dceea2fbf0927caf178104e868452a6292"
+  },
+  "prepareTool": {
+    "checkpoint.json": "1ca19cda956a94a5c4451f58f9d5f8675aa3594a3e979a8202b7afbc83c1bd38",
+    "check_files.py": "4fddd82d84f23e7a02a0dfc28e036f655f8df5a0c250f85b06fe307bbb7c8ea1",
+    "dspark_drafter.py": "370487ddcea7363a2234f8f38748b1a688e57749df187c473d9845cc388ee271",
+    "spark_overlay.py": "18b398a459ff013833080876d10892e0aaf55eb8301fe5d45ef3f0f1df415b81"
+  }
+}
