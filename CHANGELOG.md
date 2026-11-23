@@ -17,6 +17,8 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Fixed
 
+- Setup and init keep every credential the config takes from the environment as its `${NAME}` reference (#154). Only `security` keys and backend and provider keys were kept; a cluster node's `apiKey` was written back as the secret it resolved to. The proxy backends that loading adds for federated peers, which carry the peer's resolved key, are no longer written to the file either.
+- The generated `lloom.service` names its environment file in a form systemd accepts. The path was quoted, and systemd ignores a quoted path as "not absolute", so a file given with `--environment-file` never reached the gateway. The default `~/.config/lloom/env` kept working only because the CLI reads it itself. Run `lloom service stop` and `lloom service install` again to pick the new unit up.
 - A pinned checkpoint whose weight shards carry their own names (such as `model-experts-L03.safetensors`) is recognised as downloaded. Setup reported `download verification failed … payload-missing` for one after a complete download, because only `model.safetensors` and `model-NNNNN-of-NNNNN.safetensors` counted as weights.
 - Changing an installed recipe's options (SparkGLM `--sparks 2` to `--sparks 4` or back) no longer needs hand edits to the config (#139). Setup and init remove the recipe's runtimes that no model reaches any more, such as a pair's worker after moving to four Sparks, instead of leaving a former group member that fails validation. A placement installed for another node count no longer chooses the nodes, so going back to two Sparks is not refused with "needs 2 cluster nodes but selects 4".
 - Setup and init refuse to write a config that does not load, and exit non-zero with the validation errors, instead of writing it and leaving every later command to fail while the running gateway silently keeps its old config.
@@ -38,6 +40,7 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Added
 
+- Embrandt recipe (`linux-x64-radeon-680m-qwen3-embedding-4b-embrandt`) for Qwen3-Embedding-4B Q8_0 on an AMD Radeon 680M through Vulkan. The `embrandt` backend builds [Enntity/embrandt](https://github.com/Enntity/embrandt) at a pinned commit and downloads the pinned GGUF. The model installs as `embrandt/Qwen3-Embedding-4B-Q8_0`, is not kept warm and joins no alias, so a host gains an embeddings target without any traffic moving to it.
 - Drama 3 expressive TTS recipe (`linux-nvidia-gb10-drama3-tensorfold`) for one DGX Spark on the TensorFold engine, serving Fish Audio Drama 3 (pruned NVFP4) for narration and streamed replies in a cloned voice. The `drama-tensorfold` backend's `lloom_drama_server.py` shim encodes a voice profile's reference audio and text into the codec codes the engine expects.
 - SparkGLM recipe option `--model sage-s21-flash` (recipe version 7, SparkGLM 0.3.6): serves `Enntity/Sage-S2.1-Flash-NVFP4`, a calibrated NVFP4 quantization of `internlm/Sage-S2.1-Flash`, in place of `nvidia/GLM-5.3-Flash-FP4-Local`, under the same gateway id `glm-5.3-flash-atlas`. The pin manifest names each checkpoint under `models`. The default resolves to the same recipe as before.
 

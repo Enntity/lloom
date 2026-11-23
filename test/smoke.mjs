@@ -902,6 +902,7 @@ assert.deepEqual(
     'linux-nvidia-spark-audio-qwen3-tts-1-7b-customvoice',
     'linux-nvidia-spark-audio-qwen3-tts-1-7b-voicedesign',
     'linux-nvidia-spark-audio-whisper-large-v3-turbo',
+    'linux-x64-radeon-680m-qwen3-embedding-4b-embrandt',
     'lloom-hear'
   ]
 );
