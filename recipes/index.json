@@ -1416,15 +1416,21 @@
     {
       "id": "linux-nvidia-dgx-spark-inkling2-mini-atlas",
       "path": "linux-nvidia-dgx-spark-inkling2-mini-atlas.json",
-      "currentVersion": 1,
+      "currentVersion": 2,
       "versions": [
         {
           "version": 1,
+          "path": "archive/linux-nvidia-dgx-spark-inkling2-mini-atlas/v1.json",
+          "status": "archived",
+          "notes": "SparkInkling 0.4.1 2d595a248284914a2a49d5a5a0cd9ca0a0025490 (install tree 3f625e2d302e), engine Enntity/atlas inkling2/mini-20261121 6cf40a5a0bf4045140c3f2bc65d98c94bb009d3c, image ghcr.io/enntity/atlas-sparkinkling@sha256:ca60f5bdc08927c42a2d0807dbe6695e6a921305f077b1e78463ef2a7745037f. Under the tool guard's stream setting every request's tool calls streamed, so a client that did not read the finish reason could run a call the guard had blocked; version 2 streams them only to a request that asks, and drafts faster (Strict code 54.2 -> 65.2 tok/s, Spark 68.4 -> 77.5)."
+        },
+        {
+          "version": 2,
           "path": "linux-nvidia-dgx-spark-inkling2-mini-atlas.json",
           "status": "current"
         }
       ],
-      "name": "DGX Spark Inkling 2 Mini Atlas (SparkInkling 0.4.1)",
+      "name": "DGX Spark Inkling 2 Mini Atlas (SparkInkling 0.4.2)",
       "summary": "Thinking Machines' Inkling 2 Mini on one DGX Spark with SparkInkling's Atlas build and DSpark drafter: strict or spark weights; default, saver and max modes.",
       "tags": [
         "linux",
