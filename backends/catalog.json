@@ -1809,6 +1809,75 @@
       }
     },
     {
+      "id": "docker-atlas-sparkinkling",
+      "name": "Docker Atlas SparkInkling",
+      "kind": "openai-compatible-server",
+      "description": "LLooM-managed Atlas SparkInkling 0.4.1 (candidate) for Thinking Machines' Inkling 2 Mini on one DGX Spark, from an immutable GHCR image addressed by digest. Strict serves the checkpoint as shipped; spark adds a calibrated NVFP4 overlay. Text input only. See backends/atlas-sparkinkling/README.md.",
+      "platforms": [
+        "linux-arm64"
+      ],
+      "features": [
+        "chat",
+        "responses",
+        "streaming",
+        "usage",
+        "tools",
+        "structured-output",
+        "reasoning",
+        "speculative-decoding",
+        "moe",
+        "long-context",
+        "cuda",
+        "blackwell",
+        "dgx-spark",
+        "docker"
+      ],
+      "commands": [
+        "docker",
+        "bash",
+        "node",
+        "curl"
+      ],
+      "setup": [
+        {
+          "id": "check-docker",
+          "title": "Check Docker",
+          "action": "check-command",
+          "command": "docker",
+          "args": [
+            "version"
+          ]
+        },
+        {
+          "id": "check-atlas-pins",
+          "title": "Verify Atlas SparkInkling pins are final",
+          "action": "command",
+          "alwaysRun": true,
+          "command": "node",
+          "args": [
+            "${repoRoot}/backends/atlas-sparkinkling/verify-pins.mjs",
+            "${repoRoot}/backends/atlas-sparkinkling/pins-0.4.1.json"
+          ]
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health",
+        "chatPath": "/v1/chat/completions"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "unverified",
+        "modes": [
+          "streaming",
+          "buffered",
+          "queued",
+          "generation"
+        ],
+        "notes": "Reclamation is unverified for the Atlas engine; confirm abort behaviour on the prepared image before advertising it. The LLooM watchdog drains and evicts on repeated 5xx/timeout regardless."
+      }
+    },
+    {
       "id": "drama-tensorfold",
       "name": "Drama 3 (TensorFold)",
       "kind": "openai-compatible-server",
