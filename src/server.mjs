@@ -1,3 +1,4 @@
+import { prepareImageRequest } from './image-request.mjs';
 import { createAccordProvider } from './accord-provider.mjs';
 import { runtimeCapabilityModels } from './runtime-capabilities.mjs';
 import runtimeCapabilities from './runtime-capabilities.json' with { type: 'json' };
@@ -4212,10 +4213,7 @@ export function createLloomServer(
           path: '/v1/images/generations',
           signal,
           dispatcher: longRunningMediaDispatcher,
-          body: {
-            ...body,
-            model: resolved.model.upstreamModel
-          }
+          body: prepareImageRequest(resolved.backend.baseUrl, resolved.model.upstreamModel, body)
         });
         return proxyRawResponse(res, upstream, { signal, timing, corsConfig: config });
       }
