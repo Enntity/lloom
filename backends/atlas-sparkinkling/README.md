@@ -1,10 +1,10 @@
 # Atlas SparkInkling under LLooM
 
-LLooM-managed SparkInkling 0.4.1 (candidate) lane: Thinking Machines'
+LLooM-managed SparkInkling 0.4.1 lane: Thinking Machines'
 [Inkling 2 Mini](https://huggingface.co/thinkingmachines/Inkling-2-Mini) on one
 NVIDIA DGX Spark, served by the Atlas engine with the checkpoint's own DSpark
-drafter, prefix caching, reasoning and tool calls. Text input only (the engine
-target has no vision tower). This directory is **MIT orchestration only**: no
+drafter, prefix caching, reasoning, tool calls and image input (no video).
+This directory is **MIT orchestration only**: no
 Atlas engine source is committed here. The engine image is built from
 `Enntity/sparkinkling` revision `76ed675d069484cc0a46007ea71f633b45235665`
 (install tree `646b6c9dafe6`) by that repository's `install/build.sh` and
@@ -91,8 +91,8 @@ Environment: `MODEL_PATH` (the checkpoint, or its `+spark-nvfp4` directory),
 `SPARKINKLING_MODE` (`strict` or `spark`), `SPARKINKLING_DRAFTER=dspark`,
 `DRAFTER_PATH`, `SPARKINKLING_PROFILE` (the mode's profile),
 `SERVED_MODEL_NAME=inkling-2-mini-atlas`, the tool-call guard
-(`SPARKINKLING_TOOL_GUARD=on`, `_MAX_BYTES=1048576`, empty allow and deny
-lists), offline Hugging Face and the CUDA cache settings. The engine serves
+(`SPARKINKLING_TOOL_GUARD=stream`: a call's arguments stream and the guard
+checks the call when it ends; `_MAX_BYTES=1048576`, empty allow and deny lists), offline Hugging Face and the CUDA cache settings. The engine serves
 `127.0.0.1:8895`, fixed by the image. The disk tier for evicted prefix-cache KV
 (`PREFIX_CACHE_DIR` in `start.sh`) is not enabled by this recipe.
 

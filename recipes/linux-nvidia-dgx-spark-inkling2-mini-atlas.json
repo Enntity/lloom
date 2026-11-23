@@ -29,8 +29,8 @@
       }
     }
   },
-  "summary": "Thinking Machines' Inkling 2 Mini on one DGX Spark with SparkInkling 0.4.1's Atlas build (candidate): the checkpoint's own DSpark drafter, prefix caching, up to 131072-token requests (262144 in the max mode). --weights strict (default) serves the checkpoint as shipped; --weights spark adds a calibrated NVFP4 overlay. Three modes: default (8 requests), saver (8 requests at half the GPU memory) and max (32 requests). Additive only: no default model, no aliases.",
-  "description": "This recipe installs SparkInkling 0.4.1 (candidate) at the immutable product revision recorded in backends/atlas-sparkinkling/pins-0.4.1.json. The Atlas engine image is built from Enntity/sparkinkling by install/build.sh and published to GHCR; LLooM commits no engine source. Setup acquires thinkingmachines/Inkling-2-Mini (and, with --weights spark, Enntity/Inkling-2-Mini-Spark-NVFP4, sha256-checked) at pinned revisions, pulls the image by its manifest digest and verifies it, then runs SparkInkling's own install/check_files.py, dspark_drafter.py and spark_overlay.py, fetched at the pinned revision, digest-checked and run inside the image with no network: they check the checkpoint's and overlay's weights against their pinned sha256, assemble the DSpark drafter directory and, with --weights spark, the Spark model directory beside the checkpoint. Setup remembers the weights it installed with.",
+  "summary": "Thinking Machines' Inkling 2 Mini on one DGX Spark with SparkInkling 0.4.1's Atlas build: the checkpoint's own DSpark drafter, prefix caching, up to 131072-token requests (262144 in the max mode). --weights strict (default) serves the checkpoint as shipped; --weights spark adds a calibrated NVFP4 overlay. Three modes: default (8 requests), saver (8 requests at half the GPU memory) and max (32 requests). Additive only: no default model, no aliases.",
+  "description": "This recipe installs SparkInkling 0.4.1 at the immutable product revision recorded in backends/atlas-sparkinkling/pins-0.4.1.json. The Atlas engine image is built from Enntity/sparkinkling by install/build.sh and published to GHCR; LLooM commits no engine source. Setup acquires thinkingmachines/Inkling-2-Mini (and, with --weights spark, Enntity/Inkling-2-Mini-Spark-NVFP4, sha256-checked) at pinned revisions, pulls the image by its manifest digest and verifies it, then runs SparkInkling's own install/check_files.py, dspark_drafter.py and spark_overlay.py, fetched at the pinned revision, digest-checked and run inside the image with no network: they check the checkpoint's and overlay's weights against their pinned sha256, assemble the DSpark drafter directory and, with --weights spark, the Spark model directory beside the checkpoint. Setup remembers the weights it installed with.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata, launcher and orchestration"
@@ -38,16 +38,16 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "SparkInkling 0.4.1 (candidate): Enntity/sparkinkling ec585dd13244235f2b50a0e1b0250ac24cf0ddec (install tree bf2f407604463fed8cad506af8cd4816f3ee0a3e), engine Enntity/atlas inkling2/mini-20261121 @ 8ff8711969e5d644b45b9b9a85f3bfcc46100843 (AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). Image ghcr.io/enntity/atlas-sparkinkling:bf2f40760446, addressed by its GHCR manifest digest. Profiles default.json (0.80 GPU memory utilization, 8 sequences, 131072 tokens), saver.json (0.50, 8, 131072) and max.json (0.85, 32, 262144), all with BF16 KV, 4096-token prefill chunks and prefix caching. Model thinkingmachines/Inkling-2-Mini revision ed40e7da625f594fc9c4990f5f66be24873c22d7 (Apache-2.0) with its bundled DSpark drafter; overlay Enntity/Inkling-2-Mini-Spark-NVFP4 @ e9df93dceea2fbf0927caf178104e868452a6292 (Apache-2.0)."
+    "source": "SparkInkling 0.4.1: Enntity/sparkinkling 2d595a248284914a2a49d5a5a0cd9ca0a0025490 (install tree 3f625e2d302ec11b0f8efbbfa17b3e4a1409a2e9), engine Enntity/atlas inkling2/mini-20261121 @ 6cf40a5a0bf4045140c3f2bc65d98c94bb009d3c (AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). Image ghcr.io/enntity/atlas-sparkinkling:3f625e2d302e, addressed by its GHCR manifest digest. Profiles default.json (0.80 GPU memory utilization, 8 sequences, 131072 tokens), saver.json (0.50, 8, 131072) and max.json (0.85, 32, 262144), all with BF16 KV, 4096-token prefill chunks and prefix caching. Model thinkingmachines/Inkling-2-Mini revision ed40e7da625f594fc9c4990f5f66be24873c22d7 (Apache-2.0) with its bundled DSpark drafter; overlay Enntity/Inkling-2-Mini-Spark-NVFP4 @ e9df93dceea2fbf0927caf178104e868452a6292 (Apache-2.0)."
   },
   "links": [
     {
       "rel": "upstream",
-      "href": "https://github.com/Enntity/sparkinkling/tree/ec585dd13244235f2b50a0e1b0250ac24cf0ddec"
+      "href": "https://github.com/Enntity/sparkinkling/tree/2d595a248284914a2a49d5a5a0cd9ca0a0025490"
     },
     {
       "rel": "engine",
-      "href": "https://github.com/Enntity/atlas/tree/8ff8711969e5d644b45b9b9a85f3bfcc46100843"
+      "href": "https://github.com/Enntity/atlas/tree/6cf40a5a0bf4045140c3f2bc65d98c94bb009d3c"
     },
     {
       "rel": "engine-upstream",
@@ -85,6 +85,7 @@
     "tools",
     "structured-output",
     "reasoning",
+    "vision",
     "speculative-decoding",
     "batching",
     "long-context"
@@ -93,14 +94,14 @@
     "family": "NVIDIA DGX Spark / GB10",
     "testedMachine": "One DGX Spark with 128 GB unified memory",
     "notes": [
-      "This version pins the SparkInkling 0.4.1 candidate image (engine 8ff871196): decode batches and verifies of up to 8 rows read each BF16 weight once (Strict RigMark short code C2 / C4 / C8 49.5 / 79.2 / 120.2 -> 52.7 / 81.9 / 122.7 on a development build), and tool calls at thinking effort 0 (enable_thinking=false, reasoning_effort none) come back as tool calls; 0.4.0 streamed them as text. Budget forcing: once Inkling's reasoning passes its effort's budget (low 4K, high 16K tokens) or the loop watchdog fires, the engine closes it at a sentence boundary and the model answers; on the 30 MMLU-Pro questions Inkling left unanswered at high effort, answers at 32K tokens went from 8 to 29 (correct 5 to 18). Requests that name no reasoning effort reason at low, which on 150 MMLU-Pro questions scored 125 against high's 107 at a quarter of the tokens. With the tool guard off, a call's arguments stream as they are generated; with it on (the default) they arrive whole after the guard passes the call. With the checkpoint's weights a visit's input projections run as one launch (plain Strict decode 35.9 -> 36.4 tok/s, bit-identical). Checked on one Spark: 8,786 engine tests, task probe 30/30 and 10/10 in both modes, tool calls streamed and whole with thinking on and off, default effort low. Its full RigMark release measurement is pending; the RigMark figures below are 0.4.0's.",
-      "SparkInkling 0.4.0 on one GB10, 2026-11-21, RigMark protocol 1.1.0 (low reasoning effort, temperature 0), default profile and DSpark drafter, nothing else serving. Strict: code 49.2, prose 33.6 and structured 86.4 tok/s decode, 32K cold prefill 3,277 tok/s, short-code aggregate C1/C2/C4/C8 35.9/49.1/78.1/119.6, 6 of 6 basic gates. Spark: code 66.8, prose 51.6, structured 96.4, 32K cold prefill 3,275, C1/C2/C4/C8 50.9/72.0/101.3/134.9, 6 of 6 gates. An immediate replay of the 32K prompt reached its first token in 0.16 s (Strict) and 0.15 s (Spark).",
-      "Against vLLM's own Inkling 2 Mini image on the same Spark and protocol (measured 2026-11-20): without speculation vLLM read code 35.1, prose 35.6, structured 35.6, 32K prefill 2,722, C1/C8 35.1/122.4; with its DSpark drafter code 69.8, prose 31.2, structured 104.3, C8 144.0. Spark mode leads vLLM without speculation in every cell and leads vLLM with DSpark on prose, prefill and one to four requests; it trails it on code (0.96x), structured output (0.92x) and eight requests (0.94x). Strict trails vLLM without speculation on prose (0.94x) and at two to eight requests (0.90x to 0.98x).",
-      "The 0.4.0 image build ran the engine's CPU workspace suite (8,750 tests passed) and Clippy. A task probe (30 arithmetic word problems, 10 single-tool calls) passed 30/30 and 10/10 in both modes; it is a smoke-level check, not a benchmark.",
+      "This version pins the SparkInkling 0.4.1 image (engine 6cf40a5a0). New since 0.4.0: image input (OpenAI image_url parts with base64 data URIs, one token per 40x40 pixel tile, no resize, no video); budget forcing (the engine closes a reasoning block that runs past its effort's budget, low 4K and high 16K tokens, or loops, and the model then answers; on the 30 MMLU-Pro questions Inkling left unanswered at high effort, unanswered went from 22 to 1 and correct from 5 to 18); requests that name no reasoning effort reason at low; tool-call arguments stream as they are generated, and the tool guard (stream, this recipe's setting) checks each call when it ends, a blocked call finishing content_filter instead of tool_calls; tool calls with thinking off and forced tool choices come back as calls when streamed; a prompt that forks from a cached one saves a prefix-cache state at the fork, so a client that rebuilds its last messages every turn resumes there (a voice-call replay's new-turn time to first token 1.3-1.7 s -> 0.6-0.8 s); decode batches of up to 8 rows read each BF16 weight once.",
+      "SparkInkling 0.4.1 on one GB10, 2026-11-23, RigMark protocol 1.1.0 (low reasoning effort, temperature 0), default profile and DSpark drafter, nothing else serving. Strict: code 54.2, prose 35.0, structured 79.9 tok/s, cold 32K prefill 3,283 tok/s, short code C1 / C2 / C4 / C8 36.8 / 53.4 / 84.5 / 121.0. Spark: code 68.4, prose 54.9, structured 95.3 tok/s, cold 32K prefill 3,274 tok/s, short code 51.6 / 76.1 / 105.4 / 135.2. vLLM's own Inkling 2 Mini image on the same Spark without speculation: code 35.1, prose 35.6, 32K prefill 2,722, short code 35.1 / 54.0 / 86.6 / 122.4. Six of six output gates in both modes. Receipts: Enntity/sparkinkling results/2026-11-23-release-0.4.1.",
+      "Against vLLM's own Inkling 2 Mini image on the same Spark and protocol (measured 2026-11-20): Spark is ahead of vLLM without speculation in every cell (1.95x code, 1.54x prose, 1.20x 32K prefill, 1.47x at one request, 1.10x at eight); Strict is ahead on code (1.54x), structured output, prefill and one request and within 1-3% on prose and at two to eight short-code requests. vLLM with its DSpark drafter read code 69.8, prose 31.2, structured 104.3, short code 43.4 / 60.9 / 94.7 / 144.0: ahead of Spark on code (0.98x), structured output and eight requests. SparkInkling drafts only while one request is live (Enntity/sparkinkling issue 1).",
+      "The 0.4.1 image build ran the engine's CPU workspace suite (8,803 tests passed) and Clippy. On the image, in both modes: a task probe (30 arithmetic word problems, 10 single-tool calls) passed 30/30 and 10/10; tool calls came back as calls blocking and streamed, with thinking on and off and with a forced tool choice; a call to a blocked address streamed and finished content_filter; an invoice image was transcribed exactly and a 3x3 labelled colour grid read 9/9. Smoke-level checks, not a qualification.",
       "The DSpark drafter speculates only while one request is live and only while its drafts pay; from two requests the engine decodes plainly.",
       "Profiles: default 8 requests of up to 131,072 tokens at 0.80 GPU memory utilization (a KV pool of about 404K tokens); saver 8 x 131,072 at 0.50 (212,672 tokens on the development build, where 8 concurrent short code requests all stopped normally); max 32 x 262,144 at 0.85 (about 446K tokens, so long requests wait for blocks). Requests the pool cannot hold yet wait rather than fail. The max profile was checked at 0.88 (32 concurrent short code requests all stopped normally, and a code hidden in a 182,100-token prompt was recalled), where the host kept about 8 GB available under the full batch; it ships at 0.85.",
       "Peak host memory was not measured per mode. LLooM reserves an estimate: saver 66 GB, default 104 GB, max 110 GB. The container is capped at 114 GiB because a GB10 that runs out of shared memory hangs instead of killing a process. In the default and max modes little else should use this Spark's GPU memory.",
-      "The engine serves 127.0.0.1:8895 (fixed by the image) with host networking. Text input only: the engine target has no vision tower.",
+      "The engine serves 127.0.0.1:8895 (fixed by the image) with host networking. Text and image input (OpenAI image_url parts with base64 data URIs; one image token per 40x40 pixel tile, no resize); no video.",
       "Licenses: the Atlas engine and SparkInkling's install tools run from the image and are AGPL-3.0-only (not included in LLooM). thinkingmachines/Inkling-2-Mini and Enntity/Inkling-2-Mini-Spark-NVFP4 are Apache-2.0; the overlay's README is kept beside its weights for attribution."
     ]
   },
@@ -275,7 +276,8 @@
       "backendConfig": "inkling2-mini-atlas",
       "setDefault": false,
       "input": [
-        "text"
+        "text",
+        "image"
       ],
       "output": [
         "text"
@@ -289,6 +291,7 @@
         "tools",
         "structured-output",
         "reasoning",
+        "vision",
         "speculative-decoding",
         "batching",
         "long-context"
@@ -362,7 +365,7 @@
           },
           "bootstrap": {
             "adapter": "docker",
-            "image": "ghcr.io/enntity/atlas-sparkinkling@sha256:9691140a856225e133e94038fe59a01be19777aec13dc11716f1bb13194321d1",
+            "image": "ghcr.io/enntity/atlas-sparkinkling@sha256:ca60f5bdc08927c42a2d0807dbe6695e6a921305f077b1e78463ef2a7745037f",
             "pull": false,
             "pullTimeoutMs": 3600000,
             "createArgs": [
@@ -411,7 +414,7 @@
               "-e",
               "SERVED_MODEL_NAME=inkling-2-mini-atlas",
               "-e",
-              "SPARKINKLING_TOOL_GUARD=on",
+              "SPARKINKLING_TOOL_GUARD=stream",
               "-e",
               "SPARKINKLING_TOOL_GUARD_MAX_BYTES=1048576",
               "-e",

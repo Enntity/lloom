@@ -183,7 +183,7 @@ for (const weights of ['strict', 'spark']) {
     assert.equal(env.DRAFTER_PATH, `/models/${checkpoint}+dspark`);
     assert.equal(env.MODEL_PATH, `/models/${checkpoint}${weights === 'spark' ? '+spark-nvfp4' : ''}`);
     assert.equal(env.SERVED_MODEL_NAME, 'inkling-2-mini-atlas');
-    assert.equal(env.SPARKINKLING_TOOL_GUARD, 'on');
+    assert.equal(env.SPARKINKLING_TOOL_GUARD, 'stream');
     assert.equal(env.SPARKINKLING_TOOL_GUARD_MAX_BYTES, '1048576');
     assert.equal(env.SPARKINKLING_TOOL_GUARD_ALLOW_HOSTS, '');
     assert.equal(env.SPARKINKLING_TOOL_GUARD_DENY_HOSTS, '');
