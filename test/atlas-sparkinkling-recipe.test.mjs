@@ -65,7 +65,11 @@ assert.deepEqual(prepareToolFiles(pins), PREPARE_TOOL_FILES, '0.5.0 runs no DSpa
 // a 0.4.x manifest (no dflash2 pin) still needs the DSpark tool's digest
 rejects({ ...pins, dflash2: undefined }, `prepareTool.${DSPARK_TOOL_FILE}`);
 for (const archived of ['pins-0.5.0.json', 'pins-0.4.2.json']) {
-  assert.deepEqual(verifyPins(loadPins(path.join(backendDir, archived))), [], `${archived}: the archived version stays installable`);
+  assert.deepEqual(
+    verifyPins(loadPins(path.join(backendDir, archived))),
+    [],
+    `${archived}: the archived version stays installable`
+  );
 }
 
 // ---- recipe -----------------------------------------------------------------
