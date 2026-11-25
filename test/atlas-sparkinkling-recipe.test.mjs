@@ -64,20 +64,18 @@ assert.deepEqual(Object.keys(pins.prepareTool).sort(), [...PREPARE_TOOL_FILES].s
 assert.deepEqual(prepareToolFiles(pins), PREPARE_TOOL_FILES, '0.5.0 runs no DSpark tool');
 // a 0.4.x manifest (no dflash2 pin) still needs the DSpark tool's digest
 rejects({ ...pins, dflash2: undefined }, `prepareTool.${DSPARK_TOOL_FILE}`);
-assert.deepEqual(
-  verifyPins(loadPins(path.join(backendDir, 'pins-0.4.2.json'))),
-  [],
-  'the archived version stays installable'
-);
+for (const archived of ['pins-0.5.0.json', 'pins-0.4.2.json']) {
+  assert.deepEqual(verifyPins(loadPins(path.join(backendDir, archived))), [], `${archived}: the archived version stays installable`);
+}
 
 // ---- recipe -----------------------------------------------------------------
-assert.equal(recipe.version, 3);
+assert.equal(recipe.version, 4);
 assert.equal(recipe.backend.id, 'docker-atlas-sparkinkling');
 assert.equal(recipe.requirements.cluster, undefined, 'one Spark, no fabric');
 assert.equal(recipe.aliases, undefined, 'additive: no aliases');
 assert.deepEqual(validateRecipe(recipe, {}, { checkLocalReferences: false }), []);
 assert.deepEqual(recipeOptionCombinations(recipe), [{ weights: 'strict' }, { weights: 'spark' }]);
-assert.deepEqual(recipe.selectedOptions, { weights: 'strict' }, 'strict is the default');
+assert.deepEqual(recipe.selectedOptions, { weights: 'spark' }, 'spark is the default');
 assert.equal(recipe.models[0].setDefault, false);
 
 for (const weights of ['strict', 'spark']) {

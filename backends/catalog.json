@@ -1856,7 +1856,7 @@
           "command": "node",
           "args": [
             "${repoRoot}/backends/atlas-sparkinkling/verify-pins.mjs",
-            "${repoRoot}/backends/atlas-sparkinkling/pins-0.5.0.json"
+            "${repoRoot}/backends/atlas-sparkinkling/pins-0.5.0-a9fac42abe15.json"
           ]
         }
       ],

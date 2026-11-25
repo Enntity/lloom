@@ -7,17 +7,21 @@ NVIDIA DGX Spark, served by the Atlas engine with incoai's DFlash2 drafter,
 calls and image input (no video).
 This directory is **MIT orchestration only**: no
 Atlas engine source is committed here. The engine image is built from
-`Enntity/sparkinkling` at the revision pinned in `pins-0.5.0.json`
-(tag `v0.5.0`) by that repository's `install/build.sh` and published as
-`ghcr.io/enntity/atlas-sparkinkling:<install tree>` (also `:0.5.0`). The recipe is
+`Enntity/sparkinkling` at the revision pinned in
+`pins-0.5.0-a9fac42abe15.json` (`main`, 0.5.0 as republished 2026-11-25) by
+that repository's `install/build.sh` and published as
+`ghcr.io/enntity/atlas-sparkinkling:<install tree>` (also `:0.5.0`). The
+recipe's `--weights` option defaults to `spark`. The recipe is
 `linux-nvidia-dgx-spark-inkling2-mini-atlas`.
 
 ## Layout
 
-- `pins-0.5.0.json`: the pin manifest (recipe version 3; `pins-0.4.2.json`
-  and `pins-0.4.1.json` stay for the archived versions 2 and 1). SparkInkling
-  source revision and its `install/` git tree, the engine commit
-  (`Enntity/atlas` `inkling2/rc-0.5.0-20261124` at `1559aa4bcbce`), the image
+- `pins-0.5.0-a9fac42abe15.json`: the pin manifest (recipe version 4;
+  `pins-0.5.0.json`, `pins-0.4.2.json` and `pins-0.4.1.json` stay for the
+  archived versions 3, 2 and 1). SparkInkling source revision and its
+  `install/` git tree, the engine commit (`Enntity/atlas`
+  `inkling2/loopcd-20261124` at `6ab2e9c78d2c`, the 0.5.0 engine plus an
+  opt-in LoopCD the recipe leaves off), the image
   by GHCR manifest digest with the tag kept as metadata, the install-tree
   label, the checkpoint, overlay and DFlash2 drafter revisions, and
   `prepareTool`: the sha256 of the three SparkInkling install files

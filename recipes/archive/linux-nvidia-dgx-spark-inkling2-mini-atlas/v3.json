@@ -1,0 +1,473 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-dgx-spark-inkling2-mini-atlas",
+  "name": "DGX Spark Inkling 2 Mini Atlas (SparkInkling 0.5.0)",
+  "version": 3,
+  "options": {
+    "weights": {
+      "description": "Which weights the engine serves: strict is the checkpoint as shipped; spark adds SparkInkling's calibrated NVFP4 overlay for decode.",
+      "default": "strict",
+      "values": {
+        "strict": {
+          "description": "Thinking Machines' checkpoint as shipped (NVFP4 experts in layers 0-19, MXFP8 in 20-23, BF16 attention, router and vocabulary head).",
+          "variables": {
+            "sparkinklingMode": "strict",
+            "modelSuffix": "",
+            "weightsTitle": "Strict"
+          }
+        },
+        "spark": {
+          "description": "Strict plus Enntity/Inkling-2-Mini-Spark-NVFP4 (2.9 GB): calibrated NVFP4 attention projections, vocabulary head and layer 20-23 experts. Next-token KL 0.0081 to Strict on 224 held-out documents (97.0% top-1 agreement).",
+          "variables": {
+            "sparkinklingMode": "spark",
+            "modelSuffix": "+spark-nvfp4",
+            "weightsTitle": "Spark NVFP4"
+          }
+        }
+      }
+    }
+  },
+  "summary": "Thinking Machines' Inkling 2 Mini on one DGX Spark with SparkInkling 0.5.0's Atlas build: incoai's DFlash2 drafter, window-bounded KV with requests of up to 1048576 tokens (786432 in the saver mode), prefix caching. --weights strict (default) serves the checkpoint as shipped; --weights spark adds a calibrated NVFP4 overlay. Three modes: default (8 requests), saver (8 requests at half the GPU memory) and max (32 requests). Additive only: no default model, no aliases.",
+  "description": "This recipe installs SparkInkling 0.5.0 at the immutable product revision recorded in backends/atlas-sparkinkling/pins-0.5.0.json. The Atlas engine image is built from Enntity/sparkinkling by install/build.sh and published to GHCR; LLooM commits no engine source. Setup acquires thinkingmachines/Inkling-2-Mini, incoai/Inkling-2-Mini-DFlash2 (sha256-checked) and, with --weights spark, Enntity/Inkling-2-Mini-Spark-NVFP4 (sha256-checked) at pinned revisions, pulls the image by its manifest digest and verifies it, then runs SparkInkling's own install/check_files.py and spark_overlay.py, fetched at the pinned revision, digest-checked and run inside the image with no network: they check the checkpoint's, drafter's and overlay's weights against their pinned sha256 and, with --weights spark, assemble the Spark model directory beside the checkpoint. Setup remembers the weights it installed with.",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe metadata, launcher and orchestration"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "SparkInkling 0.5.0: Enntity/sparkinkling ce53a656768796a17db450237790b800edcaebbc (tag v0.5.0, install tree 13920bc38fd6be6f3c238ff4007113957526c123), engine Enntity/atlas inkling2/rc-0.5.0-20261124 @ 1559aa4bcbcea7de56a0f85ab29e0535a1922d92 (AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). Image ghcr.io/enntity/atlas-sparkinkling:13920bc38fd6 (also :0.5.0), addressed by its GHCR manifest digest. Profiles default.json (0.80 GPU memory utilization, 8 sequences, 1048576 tokens), saver.json (0.50, 8, 786432) and max.json (0.85, 32, 1048576), all with BF16 KV (window-bounded), 4096-token prefill chunks and prefix caching. Model thinkingmachines/Inkling-2-Mini revision ed40e7da625f594fc9c4990f5f66be24873c22d7 (Apache-2.0); drafter incoai/Inkling-2-Mini-DFlash2 @ 4f9088ea66c21f2b99ed657d1941c306b03e84d2 (Apache-2.0); overlay Enntity/Inkling-2-Mini-Spark-NVFP4 @ e9df93dceea2fbf0927caf178104e868452a6292 (Apache-2.0)."
+  },
+  "links": [
+    {
+      "rel": "upstream",
+      "href": "https://github.com/Enntity/sparkinkling/tree/v0.5.0"
+    },
+    {
+      "rel": "engine",
+      "href": "https://github.com/Enntity/atlas/tree/1559aa4bcbcea7de56a0f85ab29e0535a1922d92"
+    },
+    {
+      "rel": "engine-upstream",
+      "href": "https://github.com/Atlas-Inf/atlas/pull/401"
+    },
+    {
+      "rel": "model",
+      "href": "https://huggingface.co/thinkingmachines/Inkling-2-Mini/tree/ed40e7da625f594fc9c4990f5f66be24873c22d7"
+    },
+    {
+      "rel": "weights",
+      "href": "https://huggingface.co/Enntity/Inkling-2-Mini-Spark-NVFP4/tree/e9df93dceea2fbf0927caf178104e868452a6292"
+    },
+    {
+      "rel": "drafter",
+      "href": "https://huggingface.co/incoai/Inkling-2-Mini-DFlash2/tree/4f9088ea66c21f2b99ed657d1941c306b03e84d2"
+    }
+  ],
+  "keywords": [
+    "linux",
+    "nvidia",
+    "dgx-spark",
+    "gb10",
+    "inkling-2-mini",
+    "thinking-machines",
+    "moe",
+    "nvfp4",
+    "atlas",
+    "sparkinkling",
+    "dflash2",
+    "standalone"
+  ],
+  "capabilities": [
+    "chat",
+    "responses",
+    "anthropic-messages",
+    "streaming",
+    "usage",
+    "tools",
+    "structured-output",
+    "reasoning",
+    "vision",
+    "speculative-decoding",
+    "batching",
+    "long-context"
+  ],
+  "hardware": {
+    "family": "NVIDIA DGX Spark / GB10",
+    "testedMachine": "One DGX Spark with 128 GB unified memory",
+    "notes": [
+      "This version pins the SparkInkling 0.5.0 image (engine 1559aa4bc). New since 0.4.2: incoai's DFlash2 drafter replaces the checkpoint's DSpark drafter (downloaded by setup, about 1 GB, Apache-2.0); window-bounded KV, so the 40 sliding-window layer visits keep only their last 1,024 tokens and requests run to 1,048,576 tokens (786,432 in saver); drafting retuned for DFlash2 (Strict drafts three each for two live requests and keeps drafting while a block accepts one token; Spark drafts for one); the prefix cache's disk tier is gone. Versions 2 (0.4.2) and 1 (0.4.1) stay installable by number.",
+      "SparkInkling 0.5.0 on one GB10, 2026-11-25, RigMark protocol 1.1.0 (low reasoning effort, temperature 0), default profile and DFlash2 drafter, nothing else serving. Strict: code 70.0, prose 39.6, structured 103.2 tok/s, cold 32K prefill 3,268 tok/s, short code C1 / C2 / C4 / C8 46.5 / 62.6 / 85.7 / 122.7. Spark: code 81.4, prose 56.1, structured 117.4 tok/s, cold 32K prefill 3,282 tok/s, short code 58.8 / 77.8 / 103.5 / 135.2. Against 0.4.2: Strict code +7%, prose +12%, structured +11%, one short-code request +13%; Spark code +5%, structured +13%, one short-code request +9%; prefill and two to eight requests level. Six of six output gates in both modes. Receipts: Enntity/sparkinkling results/2026-11-25-release-0.5.0.",
+      "Against vLLM's own Inkling 2 Mini image on the same Spark and protocol (measured 2026-11-20): vLLM without speculation read code 35.1, prose 35.6, 32K prefill 2,722, short code 35.1 / 54.0 / 86.6 / 122.4; with its DSpark drafter code 69.8, prose 31.2, structured 104.3, short code 43.4 / 60.9 / 94.7 / 144.0. Spark leads vLLM with its drafter on code (1.17x), prose (1.80x), structured output (1.13x), prefill (1.21x) and one to four requests, and trails at eight (0.94x). Strict is level with it on code (1.00x) and structured output (0.99x), leads on prose (1.27x), prefill and one and two requests, and trails at four and eight.",
+      "The 0.5.0 image build ran the engine's CPU workspace suite (8,852 tests passed, the closure-attestation test included) and Clippy. On the image, in both modes: a task probe (30 arithmetic word problems, 10 single-tool calls) passed 30/30 and 10/10; tool calls came back as calls blocking and streamed, with thinking on and off and with a forced tool choice; a call to a blocked address finished content_filter, streamed when asked and with no arguments sent when not; an invoice image was transcribed exactly and a 3x3 labelled colour grid read 9/9; greedy text with the drafter on at one, two and four requests matched text with it off, 8/8. Smoke-level checks, not a qualification.",
+      "Profiles: default 8 requests of up to 1,048,576 tokens at 0.80 GPU memory utilization (KV pool 1,969,120 tokens Strict, 1,838,992 Spark); saver 8 x 786,432 at 0.50 (964,560 / 799,520); max 32 x 1,048,576 at 0.85 (1,908,256 / 1,746,976). Two full-length requests are not resident together; requests the pool cannot hold yet wait rather than fail. A code hidden a third of the way into a 1,032,929-token prompt was recalled in Spark mode (1,253 s for the request).",
+      "Peak host memory was not measured per mode. LLooM reserves an estimate: saver 66 GB, default 104 GB, max 110 GB. The container is capped at 114 GiB because a GB10 that runs out of shared memory hangs instead of killing a process. In the default and max modes little else should use this Spark's GPU memory.",
+      "The engine serves 127.0.0.1:8895 (fixed by the image) with host networking. Text and image input (OpenAI image_url parts with base64 data URIs; one image token per 40x40 pixel tile, no resize); no video.",
+      "Licenses: the Atlas engine and SparkInkling's install tools run from the image and are AGPL-3.0-only (not included in LLooM). thinkingmachines/Inkling-2-Mini, incoai/Inkling-2-Mini-DFlash2 and Enntity/Inkling-2-Mini-Spark-NVFP4 are Apache-2.0; the drafter's and overlay's READMEs are kept beside their weights for attribution."
+    ]
+  },
+  "requirements": {
+    "platforms": [
+      "linux-arm64"
+    ],
+    "memoryGb": 110,
+    "diskGb": 40,
+    "commands": [
+      "docker",
+      "node",
+      "curl"
+    ],
+    "accelerators": [
+      "cuda",
+      "nvidia-gpu",
+      "blackwell",
+      "gb10"
+    ]
+  },
+  "backend": {
+    "id": "docker-atlas-sparkinkling",
+    "name": "Pinned Atlas SparkInkling image",
+    "type": "openai-compatible-server"
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-docker",
+        "title": "Check Docker",
+        "action": "check-command",
+        "command": "docker",
+        "args": [
+          "version"
+        ]
+      },
+      {
+        "id": "verify-atlas-pins",
+        "title": "Verify the SparkInkling pin manifest is final",
+        "action": "command",
+        "alwaysRun": true,
+        "command": "node",
+        "args": [
+          "${repoRoot}/backends/atlas-sparkinkling/verify-pins.mjs",
+          "${repoRoot}/backends/atlas-sparkinkling/pins-0.5.0.json"
+        ]
+      },
+      {
+        "id": "download-atlas-model",
+        "title": "Acquire the pinned Inkling 2 Mini checkpoint",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "thinkingmachines/Inkling-2-Mini",
+        "revision": "ed40e7da625f594fc9c4990f5f66be24873c22d7"
+      },
+      {
+        "id": "download-atlas-drafter",
+        "title": "Acquire incoai's DFlash2 drafter for Inkling 2 Mini",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "incoai/Inkling-2-Mini-DFlash2",
+        "revision": "4f9088ea66c21f2b99ed657d1941c306b03e84d2",
+        "include": [
+          "config.json",
+          "model.safetensors",
+          "README.md"
+        ],
+        "integrity": {
+          "files": [
+            {
+              "path": "config.json",
+              "sizeBytes": 1311,
+              "sha256": "d094e435eb939e01fca6297f637c5af35e3da4b552f8e1ab0a181cd278a1cefa"
+            },
+            {
+              "path": "model.safetensors",
+              "sizeBytes": 989975616,
+              "sha256": "217980ab00d116693fa5946df7bbfd967caf5fac1f529afd541fbd470ddb54ee"
+            },
+            {
+              "path": "README.md",
+              "sizeBytes": 4660,
+              "sha256": "e809da60c54b754707657585ef479981925cfc9a14d3d4fe5223189b354a8a91"
+            }
+          ]
+        }
+      },
+      {
+        "$option": "weights",
+        "strict": null,
+        "spark": {
+          "id": "download-atlas-overlay",
+          "title": "Acquire SparkInkling's calibrated NVFP4 overlay",
+          "action": "download-model",
+          "provider": "huggingface",
+          "model": "Enntity/Inkling-2-Mini-Spark-NVFP4",
+          "revision": "e9df93dceea2fbf0927caf178104e868452a6292",
+          "include": [
+            "spark-nvfp4.safetensors",
+            "README.md"
+          ],
+          "integrity": {
+            "files": [
+              {
+                "path": "spark-nvfp4.safetensors",
+                "sizeBytes": 2914878540,
+                "sha256": "974daf0c7df61201e43f6e6550e677277206f9c0c5b7d0787078262cd578f570"
+              },
+              {
+                "path": "README.md",
+                "sizeBytes": 3558,
+                "sha256": "c6bbda8ed741afb77d174b6fdce5d5d46fd14eec7fbf924ef82ba45fe27cfa3c"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "pull-atlas-image",
+        "title": "Pull or verify the pinned SparkInkling image",
+        "action": "command",
+        "alwaysRun": true,
+        "command": "bash",
+        "args": [
+          "${repoRoot}/backends/atlas-sparkinkling/install.sh",
+          "--manifest",
+          "${repoRoot}/backends/atlas-sparkinkling/pins-0.5.0.json"
+        ]
+      },
+      {
+        "id": "prepare-atlas-model",
+        "title": "Check the weights and the DFlash2 drafter, and assemble the ${weightsTitle} model directory",
+        "action": "command",
+        "alwaysRun": true,
+        "command": "bash",
+        "args": [
+          "${repoRoot}/backends/atlas-sparkinkling/prepare.sh",
+          "--manifest",
+          "${repoRoot}/backends/atlas-sparkinkling/pins-0.5.0.json",
+          "--model-root",
+          "${modelRoot}",
+          "--weights",
+          "${sparkinklingMode}"
+        ]
+      },
+      {
+        "id": "prepare-atlas-cuda-cache",
+        "title": "Create the persistent CUDA JIT cache directory",
+        "action": "command",
+        "alwaysRun": true,
+        "command": "mkdir",
+        "args": [
+          "-p",
+          "${installRoot}/atlas-sparkinkling-cuda-cache"
+        ]
+      }
+    ]
+  },
+  "modes": [
+    {
+      "id": "saver",
+      "summary": "Profile saver: 8 requests of up to 786432 tokens, 0.50 GPU memory utilization, 66 GB reserved; leaves room for sidecars.",
+      "settings": {
+        "sparkinklingProfile": "saver",
+        "memoryGb": 66,
+        "maxActiveRequests": 8,
+        "maxQueuedRequests": 8,
+        "contextWindow": 786432
+      }
+    },
+    {
+      "id": "default",
+      "default": true,
+      "summary": "Profile default: 8 requests of up to 1048576 tokens, 0.80 GPU memory utilization, 104 GB reserved.",
+      "settings": {
+        "sparkinklingProfile": "default",
+        "memoryGb": 104,
+        "maxActiveRequests": 8,
+        "maxQueuedRequests": 8,
+        "contextWindow": 1048576
+      }
+    },
+    {
+      "id": "max",
+      "summary": "Profile max: 32 requests of up to 1048576 tokens, 0.85 GPU memory utilization, 110 GB reserved.",
+      "settings": {
+        "sparkinklingProfile": "max",
+        "memoryGb": 110,
+        "maxActiveRequests": 32,
+        "maxQueuedRequests": 32,
+        "contextWindow": 1048576
+      }
+    }
+  ],
+  "models": [
+    {
+      "role": "standalone-cognition",
+      "name": "Inkling 2 Mini on Atlas SparkInkling (${weightsTitle})",
+      "model": "thinkingmachines/Inkling-2-Mini",
+      "gatewayModel": "inkling-2-mini-atlas",
+      "upstreamModel": "inkling-2-mini-atlas",
+      "runtime": "inkling2-mini-atlas",
+      "backendConfig": "inkling2-mini-atlas",
+      "setDefault": false,
+      "input": [
+        "text",
+        "image"
+      ],
+      "output": [
+        "text"
+      ],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "usage",
+        "tools",
+        "structured-output",
+        "reasoning",
+        "vision",
+        "speculative-decoding",
+        "batching",
+        "long-context"
+      ],
+      "settings": {
+        "port": 8895,
+        "baseUrl": "http://127.0.0.1:8895/v1",
+        "healthUrl": "http://127.0.0.1:8895/health",
+        "warmup": {
+          "url": "http://127.0.0.1:8895/v1/chat/completions",
+          "method": "POST",
+          "body": {
+            "model": "inkling-2-mini-atlas",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Reply with OK."
+              }
+            ],
+            "max_tokens": 16,
+            "stream": false
+          }
+        },
+        "contextWindow": 1048576,
+        "maxOutputTokens": 32768,
+        "maxActiveRequests": 8,
+        "maxQueuedRequests": 8,
+        "queueTimeoutMs": 300000,
+        "queueRetryAfterSeconds": 5,
+        "requestStartupWaitMs": 1000,
+        "startupRetryAfterSeconds": 30,
+        "healthTimeoutMs": 5000,
+        "memoryGb": 104,
+        "priority": 150,
+        "keepWarm": false,
+        "startupTimeoutMs": 1800000,
+        "timeoutMs": 3600000,
+        "watchdog": {
+          "enabled": true,
+          "failureThreshold": 2,
+          "failureWindowMs": 900000,
+          "minNoProgressMs": 1800000,
+          "cooldownMs": 600000,
+          "drainTimeoutMs": 30000,
+          "failureStatuses": [
+            500,
+            502,
+            504
+          ]
+        },
+        "runtime": {
+          "adapter": "docker",
+          "management": "managed",
+          "containerName": "lloom-atlas-sparkinkling",
+          "healthUrl": "http://127.0.0.1:8895/health",
+          "healthTimeoutMs": 5000,
+          "warmup": {
+            "url": "http://127.0.0.1:8895/v1/chat/completions",
+            "method": "POST",
+            "body": {
+              "model": "inkling-2-mini-atlas",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "Reply with OK."
+                }
+              ],
+              "max_tokens": 16,
+              "stream": false
+            }
+          },
+          "bootstrap": {
+            "adapter": "docker",
+            "image": "ghcr.io/enntity/atlas-sparkinkling@sha256:d126b3712a1fc466261a8f2e7d781f9d6d926b7697452f6b6d3bf4a095aa322e",
+            "pull": false,
+            "pullTimeoutMs": 3600000,
+            "createArgs": [
+              "--restart",
+              "no",
+              "--network",
+              "host",
+              "--ipc",
+              "host",
+              "--shm-size",
+              "16g",
+              "--memory",
+              "114g",
+              "--gpus",
+              "all",
+              "--security-opt",
+              "no-new-privileges=true",
+              "--stop-timeout",
+              "60",
+              "--mount",
+              "type=bind,src=${modelRoot}/thinkingmachines--Inkling-2-Mini,dst=${modelRoot}/thinkingmachines--Inkling-2-Mini,readonly",
+              {
+                "$option": "weights",
+                "strict": null,
+                "spark": [
+                  "--mount",
+                  "type=bind,src=${modelRoot}/Enntity--Inkling-2-Mini-Spark-NVFP4,dst=${modelRoot}/Enntity--Inkling-2-Mini-Spark-NVFP4,readonly",
+                  "--mount",
+                  "type=bind,src=${modelRoot}/thinkingmachines--Inkling-2-Mini+spark-nvfp4,dst=${modelRoot}/thinkingmachines--Inkling-2-Mini+spark-nvfp4,readonly"
+                ]
+              },
+              "--mount",
+              "type=bind,src=${modelRoot}/incoai--Inkling-2-Mini-DFlash2,dst=${modelRoot}/incoai--Inkling-2-Mini-DFlash2,readonly",
+              "--mount",
+              "type=bind,src=${installRoot}/atlas-sparkinkling-cuda-cache,dst=/atlas-cuda-cache",
+              "-e",
+              "MODEL_PATH=${modelRoot}/thinkingmachines--Inkling-2-Mini${modelSuffix}",
+              "-e",
+              "SPARKINKLING_MODE=${sparkinklingMode}",
+              "-e",
+              "SPARKINKLING_DRAFTER=dflash2",
+              "-e",
+              "DRAFTER_PATH=${modelRoot}/incoai--Inkling-2-Mini-DFlash2",
+              "-e",
+              "SPARKINKLING_PROFILE=${sparkinklingProfile}",
+              "-e",
+              "SERVED_MODEL_NAME=inkling-2-mini-atlas",
+              "-e",
+              "SPARKINKLING_TOOL_GUARD=stream",
+              "-e",
+              "SPARKINKLING_TOOL_GUARD_MAX_BYTES=1048576",
+              "-e",
+              "SPARKINKLING_TOOL_GUARD_ALLOW_HOSTS=",
+              "-e",
+              "SPARKINKLING_TOOL_GUARD_DENY_HOSTS=",
+              "-e",
+              "HF_HUB_OFFLINE=1",
+              "-e",
+              "TRANSFORMERS_OFFLINE=1",
+              "-e",
+              "CUDA_CACHE_PATH=/atlas-cuda-cache",
+              "-e",
+              "CUDA_CACHE_MAXSIZE=4294967296"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
