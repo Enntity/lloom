@@ -371,8 +371,8 @@ Per-model image, video and music recipes, each in its own ComfyUI runtime, are d
 Per-model NVIDIA speech and transcription recipes are documented in [Spark audio](spark-audio.md).
 ## Atlas SparkGLM
 
-`linux-nvidia-dgx-spark-glm53-atlas` installs SparkGLM 0.3.6 (engine
-Enntity/atlas `spark` @ `01d34b34`) as
+`linux-nvidia-dgx-spark-glm53-atlas` installs SparkGLM 0.3.6, as republished
+on 2026-11-25 (engine Enntity/atlas `spark` @ `6bb95b52`), as
 `glm-5.3-flash-atlas`, serving `nvidia/GLM-5.3-Flash-FP4-Local` as published.
 Three [options](#plan-contract) pick the deployment:
 
@@ -395,8 +395,8 @@ lloom runtime-start glm53-flash-atlas-cluster
 in place of the GLM checkpoint: a calibrated NVFP4 quantization of
 `internlm/Sage-S2.1-Flash` (MIT), 179 GB, laid out as this engine loads it. It
 takes text, images and video; Sage's scientific-input projectors are not
-included. The option is in version 7 only, because 0.3.6 is the first release
-that returns Sage's forced tool calls as tool calls.
+included. The option is in versions 7 and 8 only, because 0.3.6 is the first
+release that returns Sage's forced tool calls as tool calls.
 
 - **One gateway id.** Either checkpoint is served as `glm-5.3-flash-atlas`, so
   routes, aliases and `lloom suspend` or `resume` commands stay as they are.
@@ -418,8 +418,9 @@ that returns Sage's forced tool calls as tool calls.
   verified against the pinned revision. The drafters were trained on
   GLM-5.3-Flash, not on Sage.
 
-Version 7 (SparkGLM 0.3.6) is the current version since 2026-11-18. Versions 2
-to 6 (0.3.1 to 0.3.5) are archived and install with `--recipe-version N`; they
+Version 8 (SparkGLM 0.3.6 as republished) is the current version since
+2026-11-25. Versions 2 to 7 (0.3.1 to 0.3.6 as first published) are archived
+and install with `--recipe-version N`; they
 are described below in order. A host that already has the recipe installed
 keeps the options it was installed with, so its drafter changes only if
 `--drafter` is given.
@@ -557,10 +558,11 @@ chain hosts other services and LLooM refused the 114 GB budget there. Strict
 mode and images were not run on four Sparks. Receipts:
 [sparkglm results/2026-11-16-0.3.5-promotion](https://github.com/Enntity/sparkglm/tree/main/results/2026-11-16-0.3.5-promotion).
 
-Version 7, the current version, installs SparkGLM 0.3.6:
+Version 7, current from 2026-11-18 to 2026-11-25, installs SparkGLM 0.3.6 as
+first published:
 
 ```sh
-lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --additive --apply --yes
+lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --recipe-version 7 --additive --apply --yes
 ```
 
 0.3.6 is 0.3.5's engine plus one fix (Enntity/atlas `01d34b34`,
@@ -594,6 +596,26 @@ four-Spark run used GPU memory utilization 0.69 under a 90 GB budget where this
 recipe sets 0.88 and 114 GB, because two Sparks of that chain host other
 services; Strict mode and images were not run on four Sparks. Receipts:
 [sparkglm results/2026-11-18-0.3.6-promotion](https://github.com/Enntity/sparkglm/tree/main/results/2026-11-18-0.3.6-promotion).
+
+Version 8, the current version, installs SparkGLM 0.3.6 as republished on
+2026-11-25:
+
+```sh
+lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --additive --apply --yes
+```
+
+Its pins are `backends/atlas-sparkglm/pins-0.3.6-7880aee26de2.json`: Enntity/sparkglm
+`main` at `e2ee39ae` and the image
+`ghcr.io/enntity/atlas-sparkglm@sha256:52672349a052…`, which also carries the
+`:0.3.6` tag. Two things changed from version 7's image. SparkGLM's own
+launchers now default to Spark mode; this recipe already sets
+`SPARKGLM_MODE=spark`, so what it serves is unchanged. The engine is
+Enntity/atlas `spark` @ `6bb95b52`, 0.3.6's engine plus
+[Enntity/atlas#38](https://github.com/Enntity/atlas/pull/38), a fix to a
+build-time attestation test with no change to serving code, so the image's
+full-suite release check passes. Checkpoints, drafters, profiles and options
+are version 7's. On 2026-11-25 the image resolved an unset mode to Spark with
+the DFlash2 drafter; it was not run on a pair, because the pairs were serving.
 
 The per-size recipes `linux-nvidia-dgx-spark-2x-glm53-atlas` (described below)
 and `linux-nvidia-dgx-spark-4x-glm53-atlas-tp4` (the

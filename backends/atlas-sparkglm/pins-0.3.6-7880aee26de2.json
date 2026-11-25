@@ -1,0 +1,57 @@
+{
+  "manifestVersion": 1,
+  "status": "final",
+  "note": "Pin manifest for SparkGLM 0.3.6 as republished on 2026-11-25, recipe linux-nvidia-dgx-spark-glm53-atlas version 8. Same release as pins-0.3.6.json (version 7) with two changes. The product's own launchers default to Spark mode; this recipe already sets SPARKGLM_MODE=spark, so what it serves is unchanged. The engine is Enntity/atlas spark 6bb95b52, 0.3.6's engine (01d34b34) plus Enntity/atlas#38, a build-time attestation test fix with no serving change, so the image's full-suite release check passes. Checkpoints, profiles, drafters and the switches the image sets are those of 0.3.6. image.reference is the GHCR manifest digest, also tagged ghcr.io/enntity/atlas-sparkglm:0.3.6; the tag is the first 12 characters of the sparkglm install/ tree. On 2026-11-25 the image resolved an unset mode to Spark with the DFlash2 drafter; it was not run on a pair, because the pairs were serving.",
+  "source": {
+    "repo": "Enntity/sparkglm",
+    "revision": "e2ee39ae3fd7a2235085ddd0fb1aa52177e9875b",
+    "installTree": "7880aee26de26549c573095597285c3a8b88df17",
+    "cloneUrl": "https://github.com/Enntity/sparkglm.git",
+    "buildScript": "install/build.sh"
+  },
+  "engine": {
+    "repo": "Enntity/atlas",
+    "branch": "spark",
+    "commit": "6bb95b52c173f2df488a74a7d3570c50110b8f6c"
+  },
+  "image": {
+    "reference": "ghcr.io/enntity/atlas-sparkglm@sha256:52672349a0527ce28e49b1564c20f8045296ef46d1dae903d67c9cbd8f76b537",
+    "tag": "ghcr.io/enntity/atlas-sparkglm:7880aee26de2",
+    "label": "io.enntity.sparkglm.install-tree",
+    "entrypoint": "/opt/atlas/serve.py",
+    "profilePaths": [
+      "/opt/atlas/profiles/4x1m.json",
+      "/opt/atlas/profiles/8x128k.json",
+      "/opt/atlas/profiles/4x1m-tp4.json"
+    ],
+    "architecture": "arm64"
+  },
+  "model": {
+    "repo": "nvidia/GLM-5.3-Flash-FP4-Local",
+    "revision": "76348ddb2be2e35e39ecfc00e75dc07703f4f3d5"
+  },
+  "models": {
+    "glm53-flash": {
+      "repo": "nvidia/GLM-5.3-Flash-FP4-Local",
+      "revision": "76348ddb2be2e35e39ecfc00e75dc07703f4f3d5"
+    },
+    "sage-s21-flash": {
+      "repo": "Enntity/Sage-S2.1-Flash-NVFP4",
+      "revision": "6967e49571a951ac0c71bb554eeeca365e838130"
+    }
+  },
+  "drafters": {
+    "v81": {
+      "repo": "Enntity/GLM-5.3-Flash-DFlash2-enntity",
+      "revision": "ee5ed56e3ed2e59fd2d5177fe6773b2f6fb4aa80"
+    },
+    "v80": {
+      "repo": "Enntity/GLM-5.3-Flash-DFlash2-enntity-v80",
+      "revision": "8416cdfbf4cfb302b86a058cb5f5b89f891350c0"
+    },
+    "dflash2": {
+      "repo": "incoai/GLM-5.3-Flash-DFlash2",
+      "revision": "6cc6c481eee930a5139619ed919f78726371adbc"
+    }
+  }
+}

@@ -345,24 +345,56 @@ test('version 7 is SparkGLM 0.3.6: version 6 with the pins, image and engine swa
   }
 });
 
-test('the current version is 7, SparkGLM 0.3.6, and earlier versions install by number', async () => {
+test('version 8 is SparkGLM 0.3.6 as republished: version 7 with the pins, image and engine swapped', async () => {
+  const v7 = await loadRecipeVersion(recipeId, 7);
+  const v8 = await loadRecipeVersion(recipeId, 8);
+  assert.equal(v8.version, 8);
+  assert.match(v8.name, /SparkGLM 0\.3\.6\)/);
+  assert.deepEqual(validateRecipe(v8, {}, { checkLocalReferences: false }), []);
+  assert.deepEqual(recipeOptionCombinations(v8), recipeOptionCombinations(v7));
+  const before = loadPins(path.join(root, 'backends/atlas-sparkglm/pins-0.3.6.json'));
+  const next = loadPins(path.join(root, 'backends/atlas-sparkglm/pins-0.3.6-7880aee26de2.json'));
+  assert.deepEqual(verifyPins(next), []);
+  assert.equal(next.engine.commit, '6bb95b52c173f2df488a74a7d3570c50110b8f6c');
+  assert.equal(next.source.revision, 'e2ee39ae3fd7a2235085ddd0fb1aa52177e9875b');
+  assert.equal(next.image.tag, `ghcr.io/enntity/atlas-sparkglm:${next.source.installTree.slice(0, 12)}`);
+  assert.notEqual(next.image.reference, before.image.reference);
+  // Same checkpoints, profiles and drafters: the republished image changes the launchers' default
+  // mode, which this recipe sets explicitly, and adds a build-time engine test fix.
+  assert.deepEqual(next.model, before.model);
+  assert.deepEqual(next.models, before.models);
+  assert.deepEqual(profilePathsOf(next), profilePathsOf(before));
+  assert.deepEqual(next.drafters, before.drafters);
+  for (const options of recipeOptionCombinations(v7)) {
+    const swapped = JSON.stringify(installed(applyRecipeOptions(v7, options)))
+      .replaceAll('pins-0.3.6.json', 'pins-0.3.6-7880aee26de2.json')
+      .replaceAll(before.image.reference, next.image.reference);
+    assert.deepEqual(installed(applyRecipeOptions(v8, options)), JSON.parse(swapped), JSON.stringify(options));
+    for (const member of members(applyRecipeOptions(v8, options))) {
+      assert.equal(member.runtimeSettings.bootstrap.image, next.image.reference);
+      assert.ok(member.runtimeSettings.bootstrap.createArgs.includes('SPARKGLM_MODE=spark'));
+    }
+  }
+});
+
+test('the current version is 8, SparkGLM 0.3.6 as republished, and earlier versions install by number', async () => {
   const current = await loadRecipeById(recipeId);
-  assert.equal(current.version, 7);
-  assert.deepEqual(current, await loadRecipeVersion(recipeId, 7));
+  assert.equal(current.version, 8);
+  assert.deepEqual(current, await loadRecipeVersion(recipeId, 8));
   assert.doesNotMatch(JSON.stringify(current), /Candidate:|candidate\)/);
-  const manifest = loadPins(path.join(root, 'backends/atlas-sparkglm/pins-0.3.6.json'));
+  const manifest = loadPins(path.join(root, 'backends/atlas-sparkglm/pins-0.3.6-7880aee26de2.json'));
   assert.doesNotMatch(manifest.note, /Candidate:/);
   // Without options it installs a pair with the reference drafter.
   const plain = applyRecipeOptions(current, {});
   assert.equal(members(plain).length, 2);
   assert.match(envOf(plain).DRAFTER_PATH, /incoai--GLM-5\.3-Flash-DFlash2$/);
   assert.match(envOf(plain).MODEL_PATH, /nvidia--GLM-5\.3-Flash-FP4-Local$/);
-  for (const version of [2, 3, 4, 5, 6]) assert.equal((await loadRecipeVersion(recipeId, version)).version, version);
+  for (const version of [2, 3, 4, 5, 6, 7]) assert.equal((await loadRecipeVersion(recipeId, version)).version, version);
 });
 
 test('--model serves another pinned checkpoint of the same architecture and changes nothing else', async () => {
   const current = await loadRecipeById(recipeId);
-  const manifest = loadPins(path.join(root, 'backends/atlas-sparkglm/pins-0.3.6.json'));
+  const manifest = loadPins(path.join(root, 'backends/atlas-sparkglm/pins-0.3.6-7880aee26de2.json'));
   assert.deepEqual(verifyPins(manifest), []);
   assert.equal(current.selectedOptions.model, 'glm53-flash');
   const glm = pinnedModel(manifest, 'glm53-flash');
