@@ -4,7 +4,7 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-glm53-atlas",
   "name": "DGX Spark GLM-5.3 Flash FP4-Local Atlas (SparkGLM 0.3.6)",
-  "version": 7,
+  "version": 8,
   "options": {
     "sparks": {
       "description": "How many DGX Sparks serve the model: 2 is a TP-2 pair over a direct cable, 4 is TP-4 over a daisy chain.",
@@ -119,7 +119,7 @@
     }
   },
   "summary": "SparkGLM on two directly connected DGX Sparks (TP-2 pair) or four cabled as a daisy chain (TP-4), serving nvidia/GLM-5.3-Flash-FP4-Local as published with DFlash2 speculative decoding: four requests of up to 1M tokens. Options: --sparks 2|4, --drafter v81|v80|dflash2 and --model glm53-flash|sage-s21-flash. Additive only: no default model, no aliases.",
-  "description": "This recipe installs SparkGLM 0.3.6 at the immutable product revision recorded in backends/atlas-sparkglm/pins-0.3.6.json, on two Sparks (--sparks 2, a TP-2 pair over the private fabric) or four (--sparks 4, TP-4 over a switchless daisy chain, rank 0-1-2-3 along the cables), with any of three drafters (--drafter v81 or v80, Enntity's from a private repository, or --drafter dflash2, incoai/GLM-5.3-Flash-DFlash2). Without --drafter, both sizes use dflash2. --model sage-s21-flash serves Enntity/Sage-S2.1-Flash-NVFP4 in place of the GLM checkpoint, under the same gateway id. Setup remembers the options it installed with. LLooM owns orchestration, admission, worker-first startup, readiness, routing and telemetry. The Atlas engine image is built from Enntity/sparkglm by that repository's install/build.sh; LLooM commits no engine source. The engine (Atlas-Inf/atlas, on the Enntity/atlas spark branch) is AGPL-3.0-only and runs from its own container image. Setup acquires the pinned checkpoint and the selected drafter and pulls the pinned image from GHCR by its immutable manifest digest (image.reference; the mutable tag is never pulled); the serving path only ever starts the prepared image. The checkpoint is served as published, with no overlay. One image serves both sizes. 0.3.6 is 0.3.5's engine plus one fix (Enntity/atlas#33). With tool_choice required or naming a tool, the first token of the call is the native <tool_call> token; the tag spelled out as text is no longer legal there. GLM-5.3-Flash FP4-Local already opened a forced call with the native token, so its output is unchanged. A checkpoint of the same architecture that ranks the text form first (Sage S2.1 Flash) returned forced calls as plain text on 0.3.5 and passes 109/109 on 0.3.6 where it passed 97/109. On a pair in Spark mode with dflash2 it qualified on 2026-11-18 against 0.3.5: identical greedy output and prompt logprobs, 109/109 live checks, and one RigMark round level with 0.3.5 (prose 37.7 against 37.6 tok/s, code 66.1 against 65.9, structured 88.8 against 87.7). That run used GPU memory utilization 0.90 under a 113 GB budget where this recipe sets 0.91 and 114 GB, because its head had about 0.3 GB less memory available than the 114 GB budget needs. On 2026-11-18 it was installed through this recipe on all four Sparks, each pulling the image by digest. On a pair, at this recipe's 0.91 and 114 GB, its greedy output and prompt logprobs were identical to the qualification run's, and its Strict output and its image and video output were identical to 0.3.5's. On a four-Spark chain its greedy output and prompt logprobs were identical to 0.3.5's, with the same 107/109 live checks and speed level (prose 57.5 against 58.3 tok/s, code 106.5 against 106.9, structured 146.8 against 146.2). The four-Spark run used GPU memory utilization 0.69 under a 90 GB budget where this recipe sets 0.88 and 114 GB, because two Sparks of that chain host other services; Strict mode and images were not run on four Sparks. It installs the same checkpoint, drafters and options as version 6.",
+  "description": "This recipe installs SparkGLM 0.3.6, as republished on 2026-11-25, at the immutable product revision recorded in backends/atlas-sparkglm/pins-0.3.6-7880aee26de2.json, on two Sparks (--sparks 2, a TP-2 pair over the private fabric) or four (--sparks 4, TP-4 over a switchless daisy chain, rank 0-1-2-3 along the cables), with any of three drafters (--drafter v81 or v80, Enntity's from a private repository, or --drafter dflash2, incoai/GLM-5.3-Flash-DFlash2). Without --drafter, both sizes use dflash2. --model sage-s21-flash serves Enntity/Sage-S2.1-Flash-NVFP4 in place of the GLM checkpoint, under the same gateway id. Setup remembers the options it installed with. LLooM owns orchestration, admission, worker-first startup, readiness, routing and telemetry. The Atlas engine image is built from Enntity/sparkglm by that repository's install/build.sh; LLooM commits no engine source. The engine (Atlas-Inf/atlas, on the Enntity/atlas spark branch) is AGPL-3.0-only and runs from its own container image. Setup acquires the pinned checkpoint and the selected drafter and pulls the pinned image from GHCR by its immutable manifest digest (image.reference; the mutable tag is never pulled); the serving path only ever starts the prepared image. The checkpoint is served as published, with no overlay. One image serves both sizes. 0.3.6 is 0.3.5's engine plus one fix (Enntity/atlas#33). With tool_choice required or naming a tool, the first token of the call is the native <tool_call> token; the tag spelled out as text is no longer legal there. GLM-5.3-Flash FP4-Local already opened a forced call with the native token, so its output is unchanged. A checkpoint of the same architecture that ranks the text form first (Sage S2.1 Flash) returned forced calls as plain text on 0.3.5 and passes 109/109 on 0.3.6 where it passed 97/109. On a pair in Spark mode with dflash2 it qualified on 2026-11-18 against 0.3.5: identical greedy output and prompt logprobs, 109/109 live checks, and one RigMark round level with 0.3.5 (prose 37.7 against 37.6 tok/s, code 66.1 against 65.9, structured 88.8 against 87.7). That run used GPU memory utilization 0.90 under a 113 GB budget where this recipe sets 0.91 and 114 GB, because its head had about 0.3 GB less memory available than the 114 GB budget needs. On 2026-11-18 it was installed through this recipe on all four Sparks, each pulling the image by digest. On a pair, at this recipe's 0.91 and 114 GB, its greedy output and prompt logprobs were identical to the qualification run's, and its Strict output and its image and video output were identical to 0.3.5's. On a four-Spark chain its greedy output and prompt logprobs were identical to 0.3.5's, with the same 107/109 live checks and speed level (prose 57.5 against 58.3 tok/s, code 106.5 against 106.9, structured 146.8 against 146.2). The four-Spark run used GPU memory utilization 0.69 under a 90 GB budget where this recipe sets 0.88 and 114 GB, because two Sparks of that chain host other services; Strict mode and images were not run on four Sparks. Version 8 pins the image republished on 2026-11-25: the product's launchers now default to Spark mode, which this recipe already sets, and its engine adds Enntity/atlas#38, a build-time test fix with no serving change. It installs the same checkpoints, drafters and options as version 7.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata, launcher and orchestration"
@@ -127,7 +127,7 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "SparkGLM 0.3.6: Enntity/sparkglm 5e36d6bc23dbb862a4a1a415d9c697fc7f299de1 (tag v0.3.6, install tree 9d6a1889555233cd8359db29230b566a645d1c2a), engine Enntity/atlas spark @ 01d34b343be6d675d8a1d6185e5b044b804b900c (0.3.5's 59ead299 plus Enntity/atlas#33; AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). The install pulls ghcr.io/enntity/atlas-sparkglm@sha256:e241d69dc3d1c592c6c605ad8e01b67763ff96178676282d40ccea18f43373d8 by digest (pins-0.3.6.json; the tag ghcr.io/enntity/atlas-sparkglm:9d6a18895552 is never pulled), and each host verifies the image's io.enntity.sparkglm.install-tree label, arm64 architecture, both profiles and the engine commit. Model nvidia/GLM-5.3-Flash-FP4-Local revision 76348ddb2be2e35e39ecfc00e75dc07703f4f3d5 (NVIDIA Open Model Agreement; base model MIT) is served as published. With --model sage-s21-flash the checkpoint is Enntity/Sage-S2.1-Flash-NVFP4 revision 6967e49571a951ac0c71bb554eeeca365e838130 (MIT) instead. Drafters: Enntity/GLM-5.3-Flash-DFlash2-enntity revision ee5ed56e3ed2e59fd2d5177fe6773b2f6fb4aa80 (v81, tag v81, model.safetensors sha256 d14e1edb080711d4; private), Enntity/GLM-5.3-Flash-DFlash2-enntity-v80 revision 8416cdfbf4cfb302b86a058cb5f5b89f891350c0 (v80, the same repository under its earlier name; private) and incoai/GLM-5.3-Flash-DFlash2 revision 6cc6c481eee930a5139619ed919f78726371adbc (Apache-2.0). Qualified at TP-2 on 2026-11-18 against 0.3.5, then installed through this recipe, and in Strict mode and with images against 0.3.5 and on a four-Spark chain against 0.3.5."
+    "source": "SparkGLM 0.3.6: Enntity/sparkglm e2ee39ae3fd7a2235085ddd0fb1aa52177e9875b (main, 0.3.6 as republished 2026-11-25, install tree 7880aee26de26549c573095597285c3a8b88df17), engine Enntity/atlas spark @ 6bb95b52c173f2df488a74a7d3570c50110b8f6c (0.3.5's 59ead299 plus Enntity/atlas#33 and #38; AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). The install pulls ghcr.io/enntity/atlas-sparkglm@sha256:52672349a0527ce28e49b1564c20f8045296ef46d1dae903d67c9cbd8f76b537 by digest (pins-0.3.6-7880aee26de2.json; the tags ghcr.io/enntity/atlas-sparkglm:7880aee26de2 and :0.3.6 are never pulled), and each host verifies the image's io.enntity.sparkglm.install-tree label, arm64 architecture, both profiles and the engine commit. Model nvidia/GLM-5.3-Flash-FP4-Local revision 76348ddb2be2e35e39ecfc00e75dc07703f4f3d5 (NVIDIA Open Model Agreement; base model MIT) is served as published. With --model sage-s21-flash the checkpoint is Enntity/Sage-S2.1-Flash-NVFP4 revision 6967e49571a951ac0c71bb554eeeca365e838130 (MIT) instead. Drafters: Enntity/GLM-5.3-Flash-DFlash2-enntity revision ee5ed56e3ed2e59fd2d5177fe6773b2f6fb4aa80 (v81, tag v81, model.safetensors sha256 d14e1edb080711d4; private), Enntity/GLM-5.3-Flash-DFlash2-enntity-v80 revision 8416cdfbf4cfb302b86a058cb5f5b89f891350c0 (v80, the same repository under its earlier name; private) and incoai/GLM-5.3-Flash-DFlash2 revision 6cc6c481eee930a5139619ed919f78726371adbc (Apache-2.0). Qualified at TP-2 on 2026-11-18 against 0.3.5, then installed through this recipe, and in Strict mode and with images against 0.3.5 and on a four-Spark chain against 0.3.5."
   },
   "links": [
     {
@@ -267,7 +267,7 @@
         "command": "node",
         "args": [
           "${repoRoot}/backends/atlas-sparkglm/verify-pins.mjs",
-          "${repoRoot}/backends/atlas-sparkglm/pins-0.3.6.json"
+          "${repoRoot}/backends/atlas-sparkglm/pins-0.3.6-7880aee26de2.json"
         ]
       },
       {
@@ -295,7 +295,7 @@
         "args": [
           "${repoRoot}/backends/atlas-sparkglm/install.sh",
           "--manifest",
-          "${repoRoot}/backends/atlas-sparkglm/pins-0.3.6.json",
+          "${repoRoot}/backends/atlas-sparkglm/pins-0.3.6-7880aee26de2.json",
           "--backend-root",
           "${backendRoot}",
           "--install-root",
@@ -463,7 +463,7 @@
                 "warmup": false,
                 "bootstrap": {
                   "adapter": "docker",
-                  "image": "ghcr.io/enntity/atlas-sparkglm@sha256:e241d69dc3d1c592c6c605ad8e01b67763ff96178676282d40ccea18f43373d8",
+                  "image": "ghcr.io/enntity/atlas-sparkglm@sha256:52672349a0527ce28e49b1564c20f8045296ef46d1dae903d67c9cbd8f76b537",
                   "pull": false,
                   "pullTimeoutMs": 3600000,
                   "createArgs": [
@@ -685,7 +685,7 @@
                 },
                 "bootstrap": {
                   "adapter": "docker",
-                  "image": "ghcr.io/enntity/atlas-sparkglm@sha256:e241d69dc3d1c592c6c605ad8e01b67763ff96178676282d40ccea18f43373d8",
+                  "image": "ghcr.io/enntity/atlas-sparkglm@sha256:52672349a0527ce28e49b1564c20f8045296ef46d1dae903d67c9cbd8f76b537",
                   "pull": false,
                   "pullTimeoutMs": 3600000,
                   "createArgs": [

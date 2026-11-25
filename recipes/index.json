@@ -1533,7 +1533,7 @@
     {
       "id": "linux-nvidia-dgx-spark-glm53-atlas",
       "path": "linux-nvidia-dgx-spark-glm53-atlas.json",
-      "currentVersion": 7,
+      "currentVersion": 8,
       "versions": [
         {
           "version": 1,
@@ -1573,9 +1573,15 @@
         },
         {
           "version": 7,
+          "path": "archive/linux-nvidia-dgx-spark-glm53-atlas/v7.json",
+          "status": "archived",
+          "notes": "SparkGLM 0.3.6: 0.3.5's engine plus one fix (Enntity/atlas#33): a call forced with tool_choice opens with the native <tool_call> token, so it can no longer come back as text. Pins backends/atlas-sparkglm/pins-0.3.6.json; otherwise installs exactly what version 6 does. Qualified at TP-2 with dflash2 against 0.3.5 (identical greedy output and prompt logprobs, 109/109 live checks, RigMark level) at GPU memory utilization 0.90, then installed through the recipe, and in Strict mode and with images against 0.3.5 and on a four-Spark chain against 0.3.5 (identical output; the chain ran at GPU memory utilization 0.69). Current from 2026-11-18 to 2026-11-25. Since 2026-11-18 its --model option also serves Enntity/Sage-S2.1-Flash-NVFP4 (--model sage-s21-flash); the default installs what it did before."
+        },
+        {
+          "version": 8,
           "path": "linux-nvidia-dgx-spark-glm53-atlas.json",
           "status": "current",
-          "notes": "SparkGLM 0.3.6: 0.3.5's engine plus one fix (Enntity/atlas#33): a call forced with tool_choice opens with the native <tool_call> token, so it can no longer come back as text. Pins backends/atlas-sparkglm/pins-0.3.6.json; otherwise installs exactly what version 6 does. Qualified at TP-2 with dflash2 against 0.3.5 (identical greedy output and prompt logprobs, 109/109 live checks, RigMark level) at GPU memory utilization 0.90, then installed through the recipe, and in Strict mode and with images against 0.3.5 and on a four-Spark chain against 0.3.5 (identical output; the chain ran at GPU memory utilization 0.69). Current since 2026-11-18. Since 2026-11-18 its --model option also serves Enntity/Sage-S2.1-Flash-NVFP4 (--model sage-s21-flash); the default installs what it did before."
+          "notes": "SparkGLM 0.3.6 as republished on 2026-11-25: Enntity/sparkglm main e2ee39ae (install tree 7880aee26de2), image ghcr.io/enntity/atlas-sparkglm@sha256:52672349a0527ce28e49b1564c20f8045296ef46d1dae903d67c9cbd8f76b537 (also tagged :0.3.6), pins backends/atlas-sparkglm/pins-0.3.6-7880aee26de2.json. The product's launchers now default to Spark mode, which this recipe already sets, and the engine (Enntity/atlas spark 6bb95b52) is 0.3.6's plus Enntity/atlas#38, a build-time test fix with no serving change. Otherwise installs exactly what version 7 does. Current since 2026-11-25."
         }
       ],
       "name": "DGX Spark GLM-5.3 Flash FP4-Local Atlas (SparkGLM)",
