@@ -22,6 +22,14 @@ import {
   verifyPins
 } from '../backends/atlas-sparkling/verify-pins.mjs';
 
+// The Ling-3.2-air files install/prepare_sante_draft.py borrows the MTP predictor from.
+const DONOR_FILES = [
+  'config.json',
+  'model.safetensors.index.json',
+  'experts-layer42.safetensors',
+  'rest-001.safetensors'
+];
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const backendDir = path.join(root, 'backends', 'atlas-sparkling');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-sparkling-'));
@@ -33,10 +41,35 @@ const writeJson = (name, value) => {
 const verifyCli = (manifest) =>
   spawnSync(process.execPath, [path.join(backendDir, 'verify-pins.mjs'), manifest], { encoding: 'utf8' });
 
-// ---- pins: the 0.1.0 manifest is a draft and fails closed ----------------------
-const draftPath = path.join(backendDir, 'pins-0.1.0.json');
-const draft = loadPins(draftPath);
-assert.equal(draft.status, 'draft');
+// ---- pins: the 0.1.0 release manifest is final ---------------------------------
+const pinsPath = path.join(backendDir, 'pins-0.1.0.json');
+const pins = loadPins(pinsPath);
+assert.deepEqual(verifyPins(pins), []);
+assert.equal(pins.status, 'final');
+assert.equal(pins.source.revision, '46afd596505480a370392f2dc88ea36644e519b7', 'tag v0.1.0');
+assert.equal(pins.source.installTree, 'a66a1e6464f475f033d7bfc8b2b3a6ac75c65bf4');
+assert.deepEqual(pins.engine, {
+  repo: 'Enntity/atlas',
+  branch: 'ling/3.2-air',
+  commit: 'dc0035de58878ff8b339cb8e0692b48f45398d1f'
+});
+assert.equal(
+  pins.image.reference,
+  'ghcr.io/enntity/atlas-sparkling@sha256:7f8c93512553d4fcf968a925e95cee0dfe6ed6c99a3d1be28b30a77dbbe95a5a'
+);
+assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkling:a66a1e6464f4');
+assert.equal(imageTagFor(pins), pins.image.tag);
+assert.deepEqual(pins.checkpoints, CHECKPOINTS);
+assert.deepEqual(Object.keys(pins.prepareTool).sort(), [...PREPARE_TOOL_FILES].sort());
+assert.equal(
+  pins.prepareTool['prepare_sante_draft.py'],
+  'ccca4c5d12470fb146b3ed01ec2bb10412e8af2a87826033be876983c5938a4d'
+);
+const finalCli = verifyCli(pinsPath);
+assert.equal(finalCli.status, 0, finalCli.stderr);
+assert.match(finalCli.stdout, /atlas-sparkling pins verified/);
+
+// A manifest with placeholder identities fails closed, at the command line too.
 const PLACEHOLDERS = [
   'source.revision',
   'source.installTree',
@@ -46,44 +79,33 @@ const PLACEHOLDERS = [
   'image.tag',
   ...PREPARE_TOOL_FILES.map((name) => `prepareTool.${name}`)
 ];
+const draft = {
+  ...pins,
+  status: 'draft',
+  source: { ...pins.source, revision: 'DRAFT-RELEASE-REVISION', installTree: 'DRAFT-RELEASE-INSTALL-TREE' },
+  engine: { ...pins.engine, branch: 'DRAFT-RELEASE-ENGINE-BRANCH', commit: 'DRAFT-RELEASE-ENGINE-COMMIT' },
+  image: {
+    ...pins.image,
+    reference: 'ghcr.io/enntity/atlas-sparkling@sha256:DRAFT-RELEASE-IMAGE-DIGEST',
+    tag: 'ghcr.io/enntity/atlas-sparkling:DRAFT-RELEASE-TAG'
+  },
+  prepareTool: Object.fromEntries(PREPARE_TOOL_FILES.map((name) => [name, 'DRAFT-RELEASE-SHA256']))
+};
 const draftFailures = verifyPins(draft);
 for (const name of ['status', ...PLACEHOLDERS]) {
   assert(
     draftFailures.some((failure) => failure.startsWith(name)),
-    `the draft manifest is refused for ${name}`
+    `a draft manifest is refused for ${name}`
   );
 }
 assert(
   draftFailures.every((failure) => ['status', ...PLACEHOLDERS].some((name) => failure.startsWith(name))),
   `only the placeholders fail: ${draftFailures.join('; ')}`
 );
-assert.deepEqual(draft.checkpoints, CHECKPOINTS);
-assert.deepEqual(Object.keys(draft.prepareTool).sort(), [...PREPARE_TOOL_FILES].sort());
+const draftPath = writeJson('draft.json', draft);
 const draftCli = verifyCli(draftPath);
-assert.equal(draftCli.status, 1, 'verify-pins.mjs exits non-zero on the draft');
+assert.equal(draftCli.status, 1, 'verify-pins.mjs exits non-zero on a draft');
 assert.match(draftCli.stderr, /status must be final, got draft/);
-
-// The same manifest with well-formed release values passes.
-const hex = (seed, length) => crypto.createHash('sha256').update(seed).digest('hex').slice(0, length);
-const installTree = hex('tree', 40);
-const pins = {
-  ...draft,
-  status: 'final',
-  source: { ...draft.source, revision: hex('revision', 40), installTree },
-  engine: { ...draft.engine, branch: 'ling/sparkling-0.1.0', commit: hex('engine', 40) },
-  image: {
-    ...draft.image,
-    reference: `ghcr.io/enntity/atlas-sparkling@sha256:${hex('image', 64)}`,
-    tag: `ghcr.io/enntity/atlas-sparkling:${installTree.slice(0, 12)}`
-  },
-  prepareTool: Object.fromEntries(PREPARE_TOOL_FILES.map((name) => [name, hex(name, 64)]))
-};
-assert.deepEqual(verifyPins(pins), []);
-assert.equal(imageTagFor(pins), pins.image.tag);
-const finalPath = writeJson('final.json', pins);
-const finalCli = verifyCli(finalPath);
-assert.equal(finalCli.status, 0, finalCli.stderr);
-assert.match(finalCli.stdout, /atlas-sparkling pins verified/);
 const rejects = (manifest, prefix, message) =>
   assert(
     verifyPins(manifest).some((failure) => failure.startsWith(prefix)),
@@ -101,6 +123,9 @@ rejects({ ...pins, source: { ...pins.source, revision: 'main' } }, 'source.revis
 const moved = structuredClone(CHECKPOINTS);
 moved['sante-air-vl'].spark.revision = 'main';
 rejects({ ...pins, checkpoints: moved }, 'checkpoints');
+const donorMoved = structuredClone(CHECKPOINTS);
+donorMoved['sante-air-vl'].spark.lingMtpDonor.revision = 'main';
+rejects({ ...pins, checkpoints: donorMoved }, 'checkpoints', 'the drafter donor stays pinned');
 rejects({ ...pins, checkpoints: undefined }, 'checkpoints', 'the checkpoint pins are required');
 rejects({ ...pins, prepareTool: undefined }, 'prepareTool', 'the prepare tool digests are required');
 rejects({ ...pins, prepareTool: { ...pins.prepareTool, 'check_files.py': 'TODO' } }, 'prepareTool.check_files.py');
@@ -113,7 +138,8 @@ const LANES = [
     served: 'ling-3.2-air-atlas',
     runtime: 'ling32-air-atlas',
     container: 'lloom-atlas-sparkling-ling32-air',
-    window: 262144,
+    windows: { saver: 8192, default: 131072, max: 262144 },
+    servedDir: { spark: 'primitive-ai--Ling-3.2-air-NVFP4A16', strict: 'inclusionAI--Ling-3.2-air' },
     env: {
       spark: {
         SPARKLING_DRAFTER: 'mtp',
@@ -135,13 +161,17 @@ const LANES = [
     served: 'lingsante-air-vl',
     runtime: 'lingsante-air-vl-atlas',
     container: 'lloom-atlas-sparkling-lingsante-air-vl',
-    window: 131072,
+    windows: { saver: 8192, default: 131072, max: 131072 },
+    servedDir: {
+      spark: 'Enntity--LingSante-3.1-air-VL-NVFP4-ling-mtp-3a78e5850631',
+      strict: 'inclusionAI--LingSante-3.1-air-VL'
+    },
     env: {
       spark: {
-        SPARKLING_DRAFTER: 'none',
+        SPARKLING_DRAFTER: 'ling-mtp',
         SPARKLING_QUANT: 'nvfp4',
-        SPARKLING_PREFILL_PRECISION: 'checkpoint',
-        SPARKLING_DECODE_PRECISION: 'checkpoint'
+        SPARKLING_PREFILL_PRECISION: 'nvfp4',
+        SPARKLING_DECODE_PRECISION: 'nvfp4'
       },
       strict: {
         SPARKLING_DRAFTER: 'none',
@@ -166,7 +196,7 @@ for (const lane of LANES) {
   const recipe = await loadRecipeById(lane.id);
   const manifestArg = recipe.setup.steps.find((step) => step.id === 'verify-atlas-pins').args[1];
   const manifestPath = manifestArg.replace('${repoRoot}', root);
-  assert.equal(manifestPath, draftPath, `${lane.id} checks the 0.1.0 pins`);
+  assert.equal(manifestPath, pinsPath, `${lane.id} checks the 0.1.0 pins`);
   assert.equal(recipe.version, 1);
   assert.equal(recipe.backend.id, 'docker-atlas-sparkling');
   assert.equal(recipe.requirements.cluster, undefined, 'one Spark, no fabric');
@@ -180,21 +210,46 @@ for (const lane of LANES) {
 
   for (const weights of ['spark', 'strict']) {
     const checkpoint = CHECKPOINTS[lane.model][weights];
-    const checkpointDir = checkpoint.repo.replace('/', '--');
+    const donor = checkpoint.lingMtpDonor;
     const resolved = applyRecipeOptions(recipe, { weights });
     const model = resolved.models[0];
     assert.equal(model.model, checkpoint.repo);
     assert.equal(model.gatewayModel, lane.served);
     assert.equal(model.upstreamModel, lane.served);
-    assert.equal(model.settings.runtime.bootstrap.image, draft.image.reference, 'the pinned digest runs');
+    assert.equal(model.settings.runtime.bootstrap.image, pins.image.reference, 'the pinned digest runs');
     assert.equal(model.settings.runtime.bootstrap.pull, false);
     assert.equal(model.capabilities.includes('speculative-decoding'), lane.env[weights].SPARKLING_DRAFTER !== 'none');
     const downloads = resolved.setup.steps.filter((step) => step.action === 'download-model');
     assert.deepEqual(
       downloads.map((step) => [step.model, step.revision]),
-      [[checkpoint.repo, checkpoint.revision]],
-      `${lane.id} ${weights} downloads only its pinned checkpoint`
+      [[checkpoint.repo, checkpoint.revision], ...(donor ? [[donor.repo, donor.revision]] : [])],
+      `${lane.id} ${weights} downloads its pinned checkpoint and, for ling-mtp, the donor`
     );
+    if (donor) {
+      const donorStep = downloads[1];
+      assert.deepEqual(donorStep.include, DONOR_FILES);
+      assert.deepEqual(
+        donorStep.integrity.files.map((file) => file.path),
+        DONOR_FILES
+      );
+      assert(
+        donorStep.integrity.files.every((file) => /^[a-f0-9]{64}$/.test(file.sha256) && file.sizeBytes > 0),
+        'every donor file is digest-pinned, so a full Ling download already covers them'
+      );
+      assert.equal(
+        donorStep.integrity.files.find((file) => file.path === 'experts-layer42.safetensors').sha256,
+        '48b9b49d6d8978ee2be100b767b3abea4910914c76cabd9f65fff71fe42b363c'
+      );
+    }
+    if (checkpoint.repo === 'primitive-ai/Ling-3.2-air-NVFP4A16') {
+      const files = downloads[0].integrity?.files ?? [];
+      assert.equal(files.length, 58, 'every pinned file of the donor-shared directory has its size');
+      for (const name of DONOR_FILES)
+        assert(
+          files.some((file) => file.path === name && file.sizeBytes > 0),
+          name
+        );
+    }
 
     const plan = planRecipe(
       resolved,
@@ -215,6 +270,7 @@ for (const lane of LANES) {
         'check-docker',
         'verify-atlas-pins',
         'download-atlas-model',
+        ...(donor ? ['download-atlas-drafter-donor'] : []),
         'pull-atlas-image',
         'prepare-atlas-model',
         'prepare-atlas-cuda-cache'
@@ -224,7 +280,7 @@ for (const lane of LANES) {
       'bash',
       path.join(backendDir, 'prepare.sh'),
       '--manifest',
-      draftPath,
+      pinsPath,
       '--model-root',
       '/models',
       '--model',
@@ -236,7 +292,7 @@ for (const lane of LANES) {
       'bash',
       path.join(backendDir, 'install.sh'),
       '--manifest',
-      draftPath
+      pinsPath
     ]);
     for (const step of plan.steps.filter((entry) => entry.action === 'command')) {
       assert(!step.command.join(' ').includes('${'), `unresolved recipe template in ${step.id}`);
@@ -244,9 +300,9 @@ for (const lane of LANES) {
 
     // ---- modes materialize to the image's profiles ------------------------------
     const expected = {
-      saver: ['saver', 92, 1, 8192],
-      default: ['default', 104, 8, lane.window],
-      max: ['max', 114, 16, lane.window]
+      saver: ['saver', 92, 1, lane.windows.saver],
+      default: ['default', 104, 8, lane.windows.default],
+      max: ['max', 114, 16, lane.windows.max]
     };
     assert.deepEqual(
       resolved.modes.map((mode) => mode.id),
@@ -305,7 +361,7 @@ for (const lane of LANES) {
       assert.equal(flagValue(args, '--security-opt'), 'no-new-privileges=true');
       const mounts = args.filter((_, index) => args[index - 1] === '--mount');
       assert.deepEqual(mounts, [
-        `type=bind,src=/models/${checkpointDir},dst=/model,readonly`,
+        `type=bind,src=/models/${lane.servedDir[weights]},dst=/model,readonly`,
         'type=bind,src=/install/atlas-sparkling-cuda-cache,dst=/atlas-cuda-cache'
       ]);
       assert.equal(runtime.bootstrap.containerName ?? runtime.containerName, lane.container);
@@ -376,8 +432,8 @@ const runPrepare = (model, weights, manifest = testPins) => {
   );
   result.calls = fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '';
   result.fetched = [...result.calls.matchAll(/^curl .*\/install\/(\S+)$/gm)].map((match) => match[1]);
-  result.checks = [...result.calls.matchAll(/^docker .*\/sparkling-tool\/check_files\.py (.*)$/gm)].map(
-    (match) => match[1]
+  result.tools = [...result.calls.matchAll(/^docker .*\/sparkling-tool\/(\S+) (.*)$/gm)].map(
+    (match) => `${match[1]} ${match[2]}`
   );
   return result;
 };
@@ -386,12 +442,36 @@ for (const [model, byWeights] of Object.entries(CHECKPOINTS)) {
     const dir = path.join(models, checkpoint.repo.replace('/', '--'));
     const run = runPrepare(model, weights);
     assert.equal(run.status, 0, run.stderr);
-    assert.deepEqual(run.fetched, ['check_files.py', checkpoint.manifest], `${model} ${weights} fetches its pin file`);
     assert.match(run.calls, /docker run --rm --network none --user \d+:\d+ --entrypoint python3/);
-    assert(run.calls.includes(`type=bind,src=${dir},dst=${dir},readonly`), 'only the checkpoint is mounted, read-only');
-    assert.deepEqual(run.checks, [`${weights} ${dir} --manifest /sparkling-tool/${checkpoint.manifest}`]);
+    assert(run.calls.includes(`type=bind,src=${models},dst=${models} `), 'the model root is mounted at its own path');
+    const check = `check_files.py ${weights} ${dir} --manifest /sparkling-tool/${checkpoint.manifest}`;
+    const donor = checkpoint.lingMtpDonor;
+    if (!donor) {
+      assert.deepEqual(
+        run.fetched,
+        ['check_files.py', checkpoint.manifest],
+        `${model} ${weights} fetches its pin file`
+      );
+      assert.deepEqual(run.tools, [check]);
+      continue;
+    }
+    assert.deepEqual(run.fetched, [
+      'check_files.py',
+      checkpoint.manifest,
+      'checkpoint.json',
+      'checkpoint-sante-draft.json',
+      'prepare_sante_draft.py'
+    ]);
+    const link = path.join(models, '.sparkling-donor', donor.revision);
+    assert.equal(fs.readlinkSync(link), `../${donor.repo.replace('/', '--')}`, 'the donor is named by its revision');
+    assert.equal(fs.realpathSync(link), fs.realpathSync(path.join(models, donor.repo.replace('/', '--'))));
+    const view = `${dir}-ling-mtp-${donor.revision.slice(0, 12)}`;
+    assert.equal(path.basename(view), 'Enntity--LingSante-3.1-air-VL-NVFP4-ling-mtp-3a78e5850631');
+    assert.deepEqual(run.tools, [check, `prepare_sante_draft.py ${dir} ${link} ${view}`]);
   }
 }
+const again = runPrepare('sante-air-vl', 'spark');
+assert.equal(again.status, 0, `a second run replaces the donor link: ${again.stderr}`);
 for (const [model, weights] of [
   ['ling-3.2-air', 'fast'],
   ['ling-4', 'spark']
@@ -406,17 +486,25 @@ assert.match(refusedDraft.stderr, /is not installable/);
 assert.equal(refusedDraft.calls, '', 'the draft manifest fetches and runs nothing');
 const tampered = writeJson('tampered.json', {
   ...pins,
-  prepareTool: { ...JSON.parse(fs.readFileSync(testPins, 'utf8')).prepareTool, 'check_files.py': 'a'.repeat(64) }
+  prepareTool: {
+    ...JSON.parse(fs.readFileSync(testPins, 'utf8')).prepareTool,
+    'prepare_sante_draft.py': 'a'.repeat(64)
+  }
 });
 const refused = runPrepare('sante-air-vl', 'spark', tampered);
 assert.equal(refused.status, 1);
-assert.match(refused.stderr, /install\/check_files\.py has sha256 [a-f0-9]{64}; the manifest pins a{64}/);
+assert.match(refused.stderr, /install\/prepare_sante_draft\.py has sha256 [a-f0-9]{64}; the manifest pins a{64}/);
 assert.doesNotMatch(refused.calls, /docker/, 'an unpinned tool never runs');
 fs.rmSync(path.join(models, 'inclusionAI--LingSante-3.1-air-VL'), { recursive: true });
 const missing = runPrepare('sante-air-vl', 'strict');
 assert.equal(missing.status, 1);
 assert.match(missing.stderr, /checkpoint .* is missing/);
 assert.equal(missing.calls, '');
+fs.rmSync(path.join(models, 'primitive-ai--Ling-3.2-air-NVFP4A16'), { recursive: true });
+const noDonor = runPrepare('sante-air-vl', 'spark');
+assert.equal(noDonor.status, 1);
+assert.match(noDonor.stderr, /drafter donor .* is missing/);
+assert.equal(noDonor.calls, '');
 fs.rmSync(tmp, { recursive: true, force: true });
 
 console.log('atlas-sparkling recipe tests passed');

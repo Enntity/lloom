@@ -1,22 +1,22 @@
 {
   "manifestVersion": 1,
-  "status": "draft",
-  "note": "DRAFT pin manifest for SparkLing 0.1.0, recipes linux-nvidia-dgx-spark-ling32-air-atlas and linux-nvidia-dgx-spark-lingsante-air-vl-atlas version 1: Ling-3.2-air or LingSante-3.1-air-VL on one DGX Spark. The release is not built yet: the SparkLing revision and install tree, the engine branch and commit, the image digest and tag and the prepareTool digests are placeholders, so verify-pins.mjs refuses this manifest and setup stops at its first step. Replace every DRAFT-RELEASE value from the release build (image.reference is the GHCR manifest digest; the tag is the first 12 characters of the install/ tree), then set status to final.",
+  "status": "final",
+  "note": "Pin manifest for SparkLing 0.1.0, recipes linux-nvidia-dgx-spark-ling32-air-atlas and linux-nvidia-dgx-spark-lingsante-air-vl-atlas version 1: Ling-3.2-air or LingSante-3.1-air-VL on one DGX Spark. Image built from Enntity/SparkLing main at the pinned revision (tag v0.1.0); its build ran 8,827 engine tests with 0 failures, and its release measurement and functional checks are in that repository's results/2026-11-25. image.reference is the GHCR manifest digest (an arm64 image index, also tagged :0.1.0); the tag is the first 12 characters of the install/ tree.",
   "source": {
     "repo": "Enntity/SparkLing",
-    "revision": "DRAFT-RELEASE-REVISION",
-    "installTree": "DRAFT-RELEASE-INSTALL-TREE",
+    "revision": "46afd596505480a370392f2dc88ea36644e519b7",
+    "installTree": "a66a1e6464f475f033d7bfc8b2b3a6ac75c65bf4",
     "cloneUrl": "https://github.com/Enntity/SparkLing.git",
     "buildScript": "install/build.sh"
   },
   "engine": {
     "repo": "Enntity/atlas",
-    "branch": "DRAFT-RELEASE-ENGINE-BRANCH",
-    "commit": "DRAFT-RELEASE-ENGINE-COMMIT"
+    "branch": "ling/3.2-air",
+    "commit": "dc0035de58878ff8b339cb8e0692b48f45398d1f"
   },
   "image": {
-    "reference": "ghcr.io/enntity/atlas-sparkling@sha256:DRAFT-RELEASE-IMAGE-DIGEST",
-    "tag": "ghcr.io/enntity/atlas-sparkling:DRAFT-RELEASE-TAG",
+    "reference": "ghcr.io/enntity/atlas-sparkling@sha256:7f8c93512553d4fcf968a925e95cee0dfe6ed6c99a3d1be28b30a77dbbe95a5a",
+    "tag": "ghcr.io/enntity/atlas-sparkling:a66a1e6464f4",
     "label": "io.enntity.sparkling.install-tree",
     "entrypoint": "/opt/atlas/serve.py",
     "profilePath": "/opt/atlas/profiles/default.json",
@@ -44,14 +44,20 @@
       "spark": {
         "repo": "Enntity/LingSante-3.1-air-VL-NVFP4",
         "revision": "2702935791ac4f04b2b103c748a19de89f6df940",
-        "manifest": "checkpoint-sante-nvfp4.json"
+        "manifest": "checkpoint-sante-nvfp4.json",
+        "lingMtpDonor": {
+          "repo": "primitive-ai/Ling-3.2-air-NVFP4A16",
+          "revision": "3a78e58506316b5b9b7d06037910c3f4abdd291f"
+        }
       }
     }
   },
   "prepareTool": {
-    "check_files.py": "DRAFT-RELEASE-SHA256",
-    "checkpoint.json": "DRAFT-RELEASE-SHA256",
-    "checkpoint-sante-air-vl.json": "DRAFT-RELEASE-SHA256",
-    "checkpoint-sante-nvfp4.json": "DRAFT-RELEASE-SHA256"
+    "check_files.py": "44fbb2e3188fe99a58208c3a378368c2637314b6f818871246e94b25af277fef",
+    "checkpoint.json": "fc67b0dd88aab86c37bb1420a8d4816ba99c936c7f73b5c8e13eab44bd3c99b1",
+    "checkpoint-sante-air-vl.json": "10238bc2a99af5f7b843f46983dbae18c7d743a8b65cb77fad669fa78ffe6242",
+    "checkpoint-sante-nvfp4.json": "cea616f277a73c3ba87f3fec7c45c0d8080449bd260f531d5f04b817e2519978",
+    "checkpoint-sante-draft.json": "987c11c853af846486cbe7e129184db9d575b0a557208edbc2ac9b7b60024332",
+    "prepare_sante_draft.py": "ccca4c5d12470fb146b3ed01ec2bb10412e8af2a87826033be876983c5938a4d"
   }
 }

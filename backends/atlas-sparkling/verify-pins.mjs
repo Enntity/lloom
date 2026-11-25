@@ -46,7 +46,13 @@ export const CHECKPOINTS = {
     spark: {
       repo: 'Enntity/LingSante-3.1-air-VL-NVFP4',
       revision: '2702935791ac4f04b2b103c748a19de89f6df940',
-      manifest: 'checkpoint-sante-nvfp4.json'
+      manifest: 'checkpoint-sante-nvfp4.json',
+      // DRAFTER=ling-mtp: Ling-3.2-air's predictor, borrowed by
+      // install/prepare_sante_draft.py from four files of this checkpoint.
+      lingMtpDonor: {
+        repo: 'primitive-ai/Ling-3.2-air-NVFP4A16',
+        revision: '3a78e58506316b5b9b7d06037910c3f4abdd291f'
+      }
     }
   }
 };
@@ -56,7 +62,9 @@ export const PREPARE_TOOL_FILES = [
   'check_files.py',
   'checkpoint.json',
   'checkpoint-sante-air-vl.json',
-  'checkpoint-sante-nvfp4.json'
+  'checkpoint-sante-nvfp4.json',
+  'checkpoint-sante-draft.json',
+  'prepare_sante_draft.py'
 ];
 
 const REQUIRED_PINS = [
