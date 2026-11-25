@@ -1416,7 +1416,7 @@
     {
       "id": "linux-nvidia-dgx-spark-inkling2-mini-atlas",
       "path": "linux-nvidia-dgx-spark-inkling2-mini-atlas.json",
-      "currentVersion": 3,
+      "currentVersion": 4,
       "versions": [
         {
           "version": 1,
@@ -1432,6 +1432,12 @@
         },
         {
           "version": 3,
+          "path": "archive/linux-nvidia-dgx-spark-inkling2-mini-atlas/v3.json",
+          "status": "archived",
+          "notes": "SparkInkling 0.5.0 ce53a656768796a17db450237790b800edcaebbc (install tree 13920bc38fd6), engine Enntity/atlas inkling2/rc-0.5.0-20261124 1559aa4bcbcea7de56a0f85ab29e0535a1922d92, image ghcr.io/enntity/atlas-sparkinkling@sha256:d126b3712a1fc466261a8f2e7d781f9d6d926b7697452f6b6d3bf4a095aa322e. --weights strict was the default; version 4 makes spark the default and pins the republished 0.5.0 image, whose engine adds an opt-in LoopCD the recipe leaves off (greedy text identical with it off)."
+        },
+        {
+          "version": 4,
           "path": "linux-nvidia-dgx-spark-inkling2-mini-atlas.json",
           "status": "current"
         }
