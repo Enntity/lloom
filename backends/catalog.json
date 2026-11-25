@@ -1881,7 +1881,7 @@
       "id": "docker-atlas-sparkling",
       "name": "Docker Atlas SparkLing",
       "kind": "openai-compatible-server",
-      "description": "LLooM-managed Atlas SparkLing 0.1.0 for inclusionAI's Ling-3.2-air and LingSante-3.1-air-VL on one DGX Spark, from an immutable GHCR image addressed by digest. Spark serves an NVFP4 checkpoint with Ling-3.2-air's MTP drafter (LingSante borrows it); strict serves the original checkpoint. Text, image and video input. See backends/atlas-sparkling/README.md.",
+      "description": "LLooM-managed Atlas SparkLing 0.1.1 for inclusionAI's Ling-3.2-air and LingSante-3.1-air-VL on one DGX Spark, from an immutable GHCR image addressed by digest. Spark serves an NVFP4 checkpoint with Ling-3.2-air's MTP drafter (LingSante borrows it); strict serves the original checkpoint. Text, image and video input. See backends/atlas-sparkling/README.md.",
       "platforms": [
         "linux-arm64"
       ],
@@ -1927,7 +1927,7 @@
           "command": "node",
           "args": [
             "${repoRoot}/backends/atlas-sparkling/verify-pins.mjs",
-            "${repoRoot}/backends/atlas-sparkling/pins-0.1.0.json"
+            "${repoRoot}/backends/atlas-sparkling/pins-0.1.1.json"
           ]
         }
       ],

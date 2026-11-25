@@ -41,23 +41,23 @@ const writeJson = (name, value) => {
 const verifyCli = (manifest) =>
   spawnSync(process.execPath, [path.join(backendDir, 'verify-pins.mjs'), manifest], { encoding: 'utf8' });
 
-// ---- pins: the 0.1.0 release manifest is final ---------------------------------
-const pinsPath = path.join(backendDir, 'pins-0.1.0.json');
+// ---- pins: the 0.1.1 release manifest is final ---------------------------------
+const pinsPath = path.join(backendDir, 'pins-0.1.1.json');
 const pins = loadPins(pinsPath);
 assert.deepEqual(verifyPins(pins), []);
 assert.equal(pins.status, 'final');
-assert.equal(pins.source.revision, '46afd596505480a370392f2dc88ea36644e519b7', 'tag v0.1.0');
-assert.equal(pins.source.installTree, 'a66a1e6464f475f033d7bfc8b2b3a6ac75c65bf4');
+assert.equal(pins.source.revision, '1f6112f1350e8bce5188f4a4e6bfef490580ef16', 'tag v0.1.1');
+assert.equal(pins.source.installTree, '753fe2b286a6c53c3b7a6f0b09720a9e09497419');
 assert.deepEqual(pins.engine, {
   repo: 'Enntity/atlas',
   branch: 'ling/3.2-air',
-  commit: 'dc0035de58878ff8b339cb8e0692b48f45398d1f'
+  commit: '965128de1d2bf059a33e119e1824f1221f3281ba'
 });
 assert.equal(
   pins.image.reference,
-  'ghcr.io/enntity/atlas-sparkling@sha256:7f8c93512553d4fcf968a925e95cee0dfe6ed6c99a3d1be28b30a77dbbe95a5a'
+  'ghcr.io/enntity/atlas-sparkling@sha256:d86608d1258e2f38acd9b072ec6e7bad7e4b19a09da8920131a98dca61f3a495'
 );
-assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkling:a66a1e6464f4');
+assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkling:753fe2b286a6');
 assert.equal(imageTagFor(pins), pins.image.tag);
 assert.deepEqual(pins.checkpoints, CHECKPOINTS);
 assert.deepEqual(Object.keys(pins.prepareTool).sort(), [...PREPARE_TOOL_FILES].sort());
@@ -138,7 +138,7 @@ const LANES = [
     served: 'ling-3.2-air-atlas',
     runtime: 'ling32-air-atlas',
     container: 'lloom-atlas-sparkling-ling32-air',
-    windows: { saver: 8192, default: 131072, max: 262144 },
+    windows: { saver: 262144, default: 262144, max: 262144 },
     servedDir: { spark: 'primitive-ai--Ling-3.2-air-NVFP4A16', strict: 'inclusionAI--Ling-3.2-air' },
     env: {
       spark: {
@@ -161,7 +161,7 @@ const LANES = [
     served: 'lingsante-air-vl',
     runtime: 'lingsante-air-vl-atlas',
     container: 'lloom-atlas-sparkling-lingsante-air-vl',
-    windows: { saver: 8192, default: 131072, max: 131072 },
+    windows: { saver: 131072, default: 131072, max: 131072 },
     servedDir: {
       spark: 'Enntity--LingSante-3.1-air-VL-NVFP4-ling-mtp-3a78e5850631',
       strict: 'inclusionAI--LingSante-3.1-air-VL'
@@ -301,8 +301,8 @@ for (const lane of LANES) {
     // ---- modes materialize to the image's profiles ------------------------------
     const expected = {
       saver: ['saver', 92, 1, lane.windows.saver],
-      default: ['default', 104, 8, lane.windows.default],
-      max: ['max', 114, 16, lane.windows.max]
+      default: ['default', 115, 8, lane.windows.default],
+      max: ['max', 120, 16, lane.windows.max]
     };
     assert.deepEqual(
       resolved.modes.map((mode) => mode.id),
@@ -355,6 +355,8 @@ for (const lane of LANES) {
       });
       const args = runtime.bootstrap.createArgs;
       assert.equal(flagValue(args, '--memory'), '114g');
+      // The display carveout's lock is shared with every Spark* server on the host.
+      assert(args.join(' ').includes('--volume /run/lock/sparkglm:/run/lock/sparkglm'), 'carveout lock mounted');
       assert.equal(flagValue(args, '--gpus'), 'device=0');
       assert.equal(flagValue(args, '--network'), 'host');
       assert.equal(flagValue(args, '--ipc'), 'host');

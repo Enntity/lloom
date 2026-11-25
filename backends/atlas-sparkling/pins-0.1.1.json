@@ -1,22 +1,22 @@
 {
   "manifestVersion": 1,
   "status": "final",
-  "note": "Pin manifest for SparkLing 0.1.0, recipes linux-nvidia-dgx-spark-ling32-air-atlas and linux-nvidia-dgx-spark-lingsante-air-vl-atlas version 1: Ling-3.2-air or LingSante-3.1-air-VL on one DGX Spark. Image built from Enntity/SparkLing main at the pinned revision (tag v0.1.0); its build ran 8,827 engine tests with 0 failures, and its release measurement and functional checks are in that repository's results/2026-11-25. image.reference is the GHCR manifest digest (an arm64 image index, also tagged :0.1.0); the tag is the first 12 characters of the install/ tree.",
+  "note": "Pin manifest for SparkLing 0.1.1, recipes linux-nvidia-dgx-spark-ling32-air-atlas and linux-nvidia-dgx-spark-lingsante-air-vl-atlas version 1: Ling-3.2-air or LingSante-3.1-air-VL on one DGX Spark at its full context, eight requests from one shared latent KV pool. Image built from Enntity/SparkLing main at the pinned revision (tag v0.1.1); its build ran 8,827 engine tests with 0 failures, and its release measurement, quality checks and functional checks are in that repository's results/2026-11-25-0.1.1. image.reference is the GHCR manifest digest (an arm64 image index, also tagged :0.1.1); the tag is the first 12 characters of the install/ tree.",
   "source": {
     "repo": "Enntity/SparkLing",
-    "revision": "46afd596505480a370392f2dc88ea36644e519b7",
-    "installTree": "a66a1e6464f475f033d7bfc8b2b3a6ac75c65bf4",
+    "revision": "1f6112f1350e8bce5188f4a4e6bfef490580ef16",
+    "installTree": "753fe2b286a6c53c3b7a6f0b09720a9e09497419",
     "cloneUrl": "https://github.com/Enntity/SparkLing.git",
     "buildScript": "install/build.sh"
   },
   "engine": {
     "repo": "Enntity/atlas",
     "branch": "ling/3.2-air",
-    "commit": "dc0035de58878ff8b339cb8e0692b48f45398d1f"
+    "commit": "965128de1d2bf059a33e119e1824f1221f3281ba"
   },
   "image": {
-    "reference": "ghcr.io/enntity/atlas-sparkling@sha256:7f8c93512553d4fcf968a925e95cee0dfe6ed6c99a3d1be28b30a77dbbe95a5a",
-    "tag": "ghcr.io/enntity/atlas-sparkling:a66a1e6464f4",
+    "reference": "ghcr.io/enntity/atlas-sparkling@sha256:d86608d1258e2f38acd9b072ec6e7bad7e4b19a09da8920131a98dca61f3a495",
+    "tag": "ghcr.io/enntity/atlas-sparkling:753fe2b286a6",
     "label": "io.enntity.sparkling.install-tree",
     "entrypoint": "/opt/atlas/serve.py",
     "profilePath": "/opt/atlas/profiles/default.json",

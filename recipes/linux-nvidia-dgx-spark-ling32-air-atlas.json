@@ -3,7 +3,7 @@
   "schemaVersion": 1,
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-ling32-air-atlas",
-  "name": "DGX Spark Ling-3.2-air Atlas (SparkLing 0.1.0)",
+  "name": "DGX Spark Ling-3.2-air Atlas (SparkLing 0.1.1)",
   "version": 1,
   "options": {
     "weights": {
@@ -41,8 +41,8 @@
       }
     }
   },
-  "summary": "inclusionAI's Ling-3.2-air (124B MoE, 5.5B active) on one DGX Spark with SparkLing 0.1.0's Atlas build: text, image and video input, tools, reasoning, prefix caching, 131,072-token requests (262,144 in the max mode). --weights spark (default) serves Primitive AI's NVFP4A16 with NVFP4 prefill and decode and the checkpoint's MTP drafter; --weights strict serves the original FP8. Three modes: default (8 requests), saver (1 request of 8,192 tokens) and max (16 requests). Additive only: no default model, no aliases.",
-  "description": "This recipe installs SparkLing 0.1.0 at the immutable product revision recorded in backends/atlas-sparkling/pins-0.1.0.json. The Atlas engine image is built from Enntity/SparkLing by install/build.sh and published to GHCR; LLooM commits no engine source. Setup acquires the selected checkpoint at its pinned revision (primitive-ai/Ling-3.2-air-NVFP4A16 for spark, inclusionAI/Ling-3.2-air for strict), pulls the image by its manifest digest and verifies it, then runs SparkLing's own install/check_files.py with install/checkpoint.json, fetched at the pinned revision, digest-checked and run inside the image with no network, to check every inference file against its pinned size and hash. Nothing is assembled: the engine serves the checkpoint directory as downloaded. Setup remembers the weights it installed with.",
+  "summary": "inclusionAI's Ling-3.2-air (124B MoE, 5.5B active) on one DGX Spark with SparkLing 0.1.1's Atlas build: text, image and video input, tools, reasoning, prefix caching, its full 262,144-token window for eight requests at once. --weights spark (default) serves Primitive AI's NVFP4A16 with NVFP4 prefill and decode and the checkpoint's MTP drafter; --weights strict serves the original FP8. Three modes: default (8 requests), saver (1 request) and max (16 requests). Additive only: no default model, no aliases.",
+  "description": "This recipe installs SparkLing 0.1.1 at the immutable product revision recorded in backends/atlas-sparkling/pins-0.1.1.json. The Atlas engine image is built from Enntity/SparkLing by install/build.sh and published to GHCR; LLooM commits no engine source. Setup acquires the selected checkpoint at its pinned revision (primitive-ai/Ling-3.2-air-NVFP4A16 for spark, inclusionAI/Ling-3.2-air for strict), pulls the image by its manifest digest and verifies it, then runs SparkLing's own install/check_files.py with install/checkpoint.json, fetched at the pinned revision, digest-checked and run inside the image with no network, to check every inference file against its pinned size and hash. Nothing is assembled: the engine serves the checkpoint directory as downloaded. Setup remembers the weights it installed with.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata, launcher and orchestration"
@@ -50,16 +50,16 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "SparkLing 0.1.0: Enntity/SparkLing 46afd596505480a370392f2dc88ea36644e519b7 (tag v0.1.0, install tree a66a1e6464f475f033d7bfc8b2b3a6ac75c65bf4), engine Enntity/atlas ling/3.2-air @ dc0035de58878ff8b339cb8e0692b48f45398d1f (AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). Image ghcr.io/enntity/atlas-sparkling:a66a1e6464f4 (also :0.1.0), addressed by its GHCR manifest digest. Profiles default.json (0.80 GPU memory utilization, 8 sequences, 131072 tokens), saver.json (0.70, 1, 8192) and max.json (0.88, 16, 262144), all with BF16 KV, prefix caching and ffmpeg video decoding. Checkpoints primitive-ai/Ling-3.2-air-NVFP4A16 revision 3a78e58506316b5b9b7d06037910c3f4abdd291f (MIT) and inclusionAI/Ling-3.2-air revision ff099487f6f57165e6fa9386ad61fddfafc78b76 (MIT), each checked against SparkLing's install/checkpoint.json."
+    "source": "SparkLing 0.1.1: Enntity/SparkLing 1f6112f1350e8bce5188f4a4e6bfef490580ef16 (tag v0.1.1, install tree 753fe2b286a6c53c3b7a6f0b09720a9e09497419), engine Enntity/atlas ling/3.2-air @ 965128de1d2bf059a33e119e1824f1221f3281ba (AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). Image ghcr.io/enntity/atlas-sparkling:753fe2b286a6 (also :0.1.1), addressed by its GHCR manifest digest. Profiles default.json (0.89 GPU memory utilization, 8 sequences, 262144 tokens), saver.json (0.70, 1, 262144) and max.json (0.95, 16, 262144), all with a shared BF16 latent KV pool, prefix caching and ffmpeg video decoding. Checkpoints primitive-ai/Ling-3.2-air-NVFP4A16 revision 3a78e58506316b5b9b7d06037910c3f4abdd291f (MIT) and inclusionAI/Ling-3.2-air revision ff099487f6f57165e6fa9386ad61fddfafc78b76 (MIT), each checked against SparkLing's install/checkpoint.json."
   },
   "links": [
     {
       "rel": "upstream",
-      "href": "https://github.com/Enntity/SparkLing/tree/v0.1.0"
+      "href": "https://github.com/Enntity/SparkLing/tree/v0.1.1"
     },
     {
       "rel": "engine",
-      "href": "https://github.com/Enntity/atlas/tree/dc0035de58878ff8b339cb8e0692b48f45398d1f"
+      "href": "https://github.com/Enntity/atlas/tree/965128de1d2bf059a33e119e1824f1221f3281ba"
     },
     {
       "rel": "engine-upstream",
@@ -112,14 +112,14 @@
     "family": "NVIDIA DGX Spark / GB10",
     "testedMachine": "One DGX Spark with 128 GB unified memory",
     "notes": [
-      "This version pins the SparkLing 0.1.0 image ghcr.io/enntity/atlas-sparkling:a66a1e6464f4 (also :0.1.0; install tree a66a1e6464f4, Atlas dc0035de5), addressed by its digest. Its build ran 8,827 engine tests with 0 failures.",
-      "SparkLing 0.1.0 on one GB10, 2026-11-25, Spark weights, default profile (131,072 tokens) and default drafting, nothing else on the GPU (Enntity/SparkLing results/2026-11-25/README.md): single stream 55.2 tok/s (mean of eight greedy prompts, 256 tokens, thinking off), drafted text equal to plain decode on 8 of 8; aggregate 54.6 / 61.1 / 77.3 / 104.0 tok/s at 1 / 2 / 4 / 8 clients, median time to first token 1.03 s at 8; 29 of 30 arithmetic word problems with thinking on; 10 of 10 single-tool calls; a red-to-blue clip, a counting clip as GIF and MP4, a 90 s 720p clip, an invoice and a grid all read correctly.",
-      "In the same file, vLLM's MTP x3 serving the same NVFP4A16 checkpoint on the same Spark read 40.2 tok/s single-stream and 44.6 / 59.2 / 68.8 / 109.2 at 1 / 2 / 4 / 8 clients (SparkLing's comparison runs used an 8,192-token window, within 3% of the release image).",
+      "This version pins the SparkLing 0.1.1 image ghcr.io/enntity/atlas-sparkling:753fe2b286a6 (also :0.1.1; install tree 753fe2b286a6, Atlas 965128de1), addressed by its digest. Its build ran 8,827 engine tests with 0 failures.",
+      "SparkLing 0.1.1 on one GB10, 2026-11-25, Spark weights, default profile (262,144 tokens, eight requests) and default drafting, nothing else on the GPU (Enntity/SparkLing results/2026-11-25-0.1.1/README.md): single stream 54.8 tok/s (mean of eight greedy prompts, 256 tokens, thinking off), drafted text equal to plain decode on 8 of 8; aggregate 54.6 / 65.7 / 81.1 / 104.4 tok/s at 1 / 2 / 4 / 8 clients, median time to first token 1.04 s at 8; 30 of 30 arithmetic word problems with thinking on; 10 of 10 single-tool calls; a red-to-blue clip, a counting clip as GIF and MP4, a 90 s 720p clip, an invoice and a grid all read correctly.",
+      "In SparkLing's 0.1.0 comparison runs on the same Spark, vLLM's MTP x3 serving the same NVFP4A16 checkpoint read 40.2 tok/s single-stream and 44.6 / 59.2 / 68.8 / 109.2 at 1 / 2 / 4 / 8 clients, at an 8,192-token window.",
       "Spark drafts one token per step with the checkpoint's own MTP predictor (SPARKLING_DRAFTER=mtp) for one active request and decodes plainly from two (ATLAS_MTP_MAX_SEQS=1); Atlas verifies each draft with serial decode's arithmetic, so greedy text matches drafting off.",
-      "The max mode serves Ling's full 262,144-token window. There the BF16 KV pool (28.4 GiB) and the weights do not fit together, so Atlas reads some experts from the model files: one stream decoded 11.4 tok/s at 0.80 GPU memory utilization and 6.2 at 0.88, against 54.9 at 131,072 tokens with the same text.",
-      "Profiles (SparkLing install/profiles, all BF16 KV and prefix caching, 2,048-token prefill chunks or 8,192 with NVFP4 prefill, ffmpeg video decoding on): default 8 requests at 0.80 GPU memory utilization, saver 1 request of 8,192 tokens at 0.70, max 16 requests at 0.88. Requests the KV pool cannot hold yet wait rather than fail. Strict shares one KV pool between requests (ATLAS_KV_MAX_BLOCKS in each profile).",
-      "Strict serves the original checkpoint for reference. It does not fit in memory, so Atlas pages experts from the checkpoint on disk and it decodes far slower than Spark; Strict was not part of the 0.1.0 release measurement.",
-      "Peak host memory was not measured per mode. LLooM reserves an estimate: saver 92 GB, default 104 GB, max 114 GB. The container is capped at 114 GiB because a GB10 that runs out of shared memory hangs instead of killing a process. In the default and max modes little else should use this Spark's GPU memory.",
+      "Every mode serves Ling's full 262,144-token window from one latent KV pool (1.15 KB per token per layer). The default pool holds 2,200,304 tokens, 8.4 full windows; eight simultaneous 262,132-token prompts each recalled their key. Decode after 2K / 32K / 128K / 262K prompts: 44.4 / 40.6 / 34.9 / 27.9 tok/s. SparkLing 0.1.0's 131,072-token default held only 56,352 KV tokens in total.",
+      "Profiles (SparkLing install/profiles, all BF16 KV in a shared latent pool, prefix caching, 2,048-token prefill chunks or 8,192 with NVFP4 prefill, ffmpeg video decoding on): default 8 requests at 0.89 GPU memory utilization, saver 1 request at 0.70, max 16 requests at 0.95, each at the model's full window. Requests the KV pool cannot hold yet wait rather than fail. The engine borrows the GB10 display carveout for the KV cache when no other Spark* server holds the shared lock /run/lock/sparkglm (mounted here); the default pool's per-layer buffers are too large for it, smaller pools use it. SparkLing's disk prefix cache stays off here (LLooM sets no SPARKLING_PREFIX_CACHE_GB).",
+      "Strict serves the original checkpoint for reference. It does not fit in memory, so Atlas pages experts from the checkpoint on disk and decodes at about 2 tok/s; its KV pool stops at eight full windows so the rest of memory can cache those experts.",
+      "Peak host memory was not measured per mode. LLooM reserves an estimate: saver 92 GB, default 115 GB, max 120 GB (0.70 / 0.89 / 0.95 GPU memory utilization). The container is capped at 114 GiB because a GB10 that runs out of shared memory hangs instead of killing a process. In the default and max modes little else should use this Spark's GPU memory.",
       "The engine serves 127.0.0.1:8897 (fixed by the image) with host networking, so only one SparkLing model runs at a time; its memory reservation keeps LLooM from starting the other beside it. Text, image and video input: OpenAI image_url parts and video_url parts (animated GIF decoded in-process, MP4 and WebM through the image's ffmpeg).",
       "Licenses: the Atlas engine and SparkLing's install tools run from the image and are AGPL-3.0-only (not included in LLooM). inclusionAI/Ling-3.2-air and primitive-ai/Ling-3.2-air-NVFP4A16 are MIT."
     ]
@@ -128,7 +128,7 @@
     "platforms": [
       "linux-arm64"
     ],
-    "memoryGb": 114,
+    "memoryGb": 115,
     "diskGb": {
       "$option": "weights",
       "spark": 85,
@@ -170,7 +170,7 @@
         "command": "node",
         "args": [
           "${repoRoot}/backends/atlas-sparkling/verify-pins.mjs",
-          "${repoRoot}/backends/atlas-sparkling/pins-0.1.0.json"
+          "${repoRoot}/backends/atlas-sparkling/pins-0.1.1.json"
         ]
       },
       {
@@ -430,7 +430,7 @@
         "args": [
           "${repoRoot}/backends/atlas-sparkling/install.sh",
           "--manifest",
-          "${repoRoot}/backends/atlas-sparkling/pins-0.1.0.json"
+          "${repoRoot}/backends/atlas-sparkling/pins-0.1.1.json"
         ]
       },
       {
@@ -442,7 +442,7 @@
         "args": [
           "${repoRoot}/backends/atlas-sparkling/prepare.sh",
           "--manifest",
-          "${repoRoot}/backends/atlas-sparkling/pins-0.1.0.json",
+          "${repoRoot}/backends/atlas-sparkling/pins-0.1.1.json",
           "--model-root",
           "${modelRoot}",
           "--model",
@@ -467,34 +467,34 @@
   "modes": [
     {
       "id": "saver",
-      "summary": "Profile saver: 1 request at 8192 tokens, 0.70 GPU memory utilization, 92 GB reserved (an estimate); leaves room for sidecars.",
+      "summary": "Profile saver: 1 request at 262144 tokens, 0.70 GPU memory utilization, 92 GB reserved (an estimate); leaves room for sidecars.",
       "settings": {
         "sparklingProfile": "saver",
         "memoryGb": 92,
         "maxActiveRequests": 1,
         "maxQueuedRequests": 8,
-        "contextWindow": 8192,
+        "contextWindow": 262144,
         "maxOutputTokens": 4096
       }
     },
     {
       "id": "default",
       "default": true,
-      "summary": "Profile default: 8 requests at 131072 tokens, 0.80 GPU memory utilization, 104 GB reserved (an estimate).",
+      "summary": "Profile default: 8 requests at 262144 tokens, 0.89 GPU memory utilization, 115 GB reserved (an estimate); the shared latent KV pool holds 8.4 full windows with drafting on.",
       "settings": {
         "sparklingProfile": "default",
-        "memoryGb": 104,
+        "memoryGb": 115,
         "maxActiveRequests": 8,
         "maxQueuedRequests": 8,
-        "contextWindow": 131072
+        "contextWindow": 262144
       }
     },
     {
       "id": "max",
-      "summary": "Profile max: 16 requests at 262144 tokens, 0.88 GPU memory utilization, 114 GB reserved (an estimate); Ling's full window, where the KV pool and the weights do not fit together and experts page from disk (one stream 6.2 tok/s).",
+      "summary": "Profile max: 16 requests at 262144 tokens, 0.95 GPU memory utilization, 120 GB reserved (an estimate); the KV pool is shared, so requests it cannot hold yet wait.",
       "settings": {
         "sparklingProfile": "max",
-        "memoryGb": 114,
+        "memoryGb": 120,
         "maxActiveRequests": 16,
         "maxQueuedRequests": 16,
         "contextWindow": 262144
@@ -560,7 +560,7 @@
             }
           }
         },
-        "contextWindow": 131072,
+        "contextWindow": 262144,
         "maxOutputTokens": 32768,
         "maxActiveRequests": 8,
         "maxQueuedRequests": 8,
@@ -569,7 +569,7 @@
         "requestStartupWaitMs": 1000,
         "startupRetryAfterSeconds": 30,
         "healthTimeoutMs": 5000,
-        "memoryGb": 104,
+        "memoryGb": 115,
         "priority": 150,
         "keepWarm": false,
         "startupTimeoutMs": 1800000,
@@ -613,7 +613,7 @@
           },
           "bootstrap": {
             "adapter": "docker",
-            "image": "ghcr.io/enntity/atlas-sparkling@sha256:7f8c93512553d4fcf968a925e95cee0dfe6ed6c99a3d1be28b30a77dbbe95a5a",
+            "image": "ghcr.io/enntity/atlas-sparkling@sha256:d86608d1258e2f38acd9b072ec6e7bad7e4b19a09da8920131a98dca61f3a495",
             "pull": false,
             "pullTimeoutMs": 3600000,
             "createArgs": [
@@ -635,6 +635,8 @@
               "type=bind,src=${modelRoot}/${modelDir},dst=/model,readonly",
               "--mount",
               "type=bind,src=${installRoot}/atlas-sparkling-cuda-cache,dst=/atlas-cuda-cache",
+              "--volume",
+              "/run/lock/sparkglm:/run/lock/sparkglm",
               "-e",
               "MODEL_PATH=/model",
               "-e",

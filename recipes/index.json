@@ -1488,7 +1488,7 @@
           "status": "current"
         }
       ],
-      "name": "DGX Spark Ling-3.2-air Atlas (SparkLing 0.1.0)",
+      "name": "DGX Spark Ling-3.2-air Atlas (SparkLing 0.1.1)",
       "summary": "inclusionAI's Ling-3.2-air on one DGX Spark with SparkLing's Atlas build and the checkpoint's MTP drafter: spark (NVFP4A16) or strict (FP8) weights; default, saver and max modes.",
       "tags": [
         "linux",
@@ -1537,7 +1537,7 @@
           "status": "current"
         }
       ],
-      "name": "DGX Spark LingSante-3.1-air-VL Atlas (SparkLing 0.1.0)",
+      "name": "DGX Spark LingSante-3.1-air-VL Atlas (SparkLing 0.1.1)",
       "summary": "inclusionAI's medical LingSante-3.1-air-VL on one DGX Spark with SparkLing's Atlas build and Ling-3.2-air's borrowed MTP drafter: spark (Enntity NVFP4) or strict (BF16) weights; default, saver and max modes.",
       "tags": [
         "linux",
