@@ -146,8 +146,8 @@ export function createDashboardInstallation({ getConfig, reload, env = process.e
         await writeConfig(config.sourcePath, prepared.plan.config);
         result = { ok: true };
       }
-      // Even failed bootstrap can have written configuration. Surface reload
-      // failures, and make the installed/failed state visible in the dashboard.
+      // Setup writes configuration only after its bootstrap succeeds. Surface
+      // reload failures, and make the installed/failed state visible in the dashboard.
       await reload();
       return result;
     }
