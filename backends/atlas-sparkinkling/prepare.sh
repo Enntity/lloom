@@ -5,13 +5,15 @@
 # the model root:
 #
 #   <model root>/thinkingmachines--Inkling-2-Mini         checked against its pins
-#   <model root>/thinkingmachines--Inkling-2-Mini+dspark  the DSpark drafter
+#   <model root>/incoai--Inkling-2-Mini-DFlash2           checked against its pins
+#     (a 0.4.x manifest, without a dflash2 pin, assembles instead
+#      <model root>/thinkingmachines--Inkling-2-Mini+dspark, the DSpark drafter)
 #   and with --weights spark:
 #   <model root>/Enntity--Inkling-2-Mini-Spark-NVFP4      checked against its pins
 #   <model root>/thinkingmachines--Inkling-2-Mini+spark-nvfp4  the Spark model
 #
-# The tools are SparkInkling's own install/check_files.py, dspark_drafter.py and
-# spark_overlay.py with their pin file install/checkpoint.json (AGPL-3.0-only,
+# The tools are SparkInkling's own install/check_files.py and spark_overlay.py
+# (and, for 0.4.x, dspark_drafter.py) with their pin file install/checkpoint.json (AGPL-3.0-only,
 # standard library only). They are not copied into LLooM: this script fetches
 # them from Enntity/sparkinkling at the manifest's source.revision, refuses any
 # whose sha256 differs from prepareTool in the manifest, and runs them inside
@@ -61,7 +63,12 @@ fi
 
 tool="$(mktemp -d)"
 trap 'rm -rf "${tool}"' EXIT
-for name in checkpoint.json check_files.py dspark_drafter.py spark_overlay.py; do
+# 0.5.0 on pins the DFlash2 drafter (downloaded by the recipe, checked here);
+# the archived 0.4.x manifests assemble the DSpark drafter instead.
+DFLASH2_REPO="$(pin dflash2.repo)"
+tools=(checkpoint.json check_files.py spark_overlay.py)
+[[ -n "${DFLASH2_REPO}" ]] || tools+=(dspark_drafter.py)
+for name in "${tools[@]}"; do
   curl -fsSL --retry 3 -o "${tool}/${name}" \
     "https://raw.githubusercontent.com/${SOURCE_REPO}/${SOURCE_REVISION}/install/${name}" \
     || fail "could not fetch install/${name} from ${SOURCE_REPO}@${SOURCE_REVISION}"
@@ -81,7 +88,14 @@ run_tool() {
 
 note "checking ${checkpoint} against its pins"
 run_tool check_files.py "${checkpoint}"
-run_tool dspark_drafter.py "${checkpoint}" "${checkpoint}+dspark"
+if [[ -n "${DFLASH2_REPO}" ]]; then
+  drafter="${MODEL_ROOT}/${DFLASH2_REPO/\//--}"
+  [[ -d "${drafter}" ]] || fail "drafter ${drafter} is missing; the download step runs first"
+  note "checking ${drafter} against its pins"
+  run_tool check_files.py "${drafter}" dflash2
+else
+  run_tool dspark_drafter.py "${checkpoint}" "${checkpoint}+dspark"
+fi
 if [[ "${WEIGHTS}" == spark ]]; then
   note "checking ${overlay} against its pins"
   run_tool check_files.py "${overlay}" overlay

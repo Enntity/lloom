@@ -15,10 +15,13 @@ import {
   validateRecipe
 } from '../src/recipes.mjs';
 import {
+  DFLASH2_REPO,
+  DSPARK_TOOL_FILE,
   MODEL_REPO,
   OVERLAY_REPO,
   PREPARE_TOOL_FILES,
   imageTagFor,
+  prepareToolFiles,
   loadPins,
   verifyPins
 } from '../backends/atlas-sparkinkling/verify-pins.mjs';
@@ -31,6 +34,7 @@ const manifestPath = manifestArg.replace('${repoRoot}', root);
 const pins = loadPins(manifestPath);
 const checkpoint = 'thinkingmachines--Inkling-2-Mini';
 const overlayDir = 'Enntity--Inkling-2-Mini-Spark-NVFP4';
+const drafterDir = 'incoai--Inkling-2-Mini-DFlash2';
 const forWeights = (weights) => applyRecipeOptions(recipe, { weights });
 
 // ---- pins -------------------------------------------------------------------
@@ -55,10 +59,19 @@ rejects({ ...pins, overlay: { ...pins.overlay, revision: 'main' } }, 'overlay mu
 rejects({ ...pins, source: { ...pins.source, repo: 'someone/else' } }, 'source.repo');
 rejects({ ...pins, prepareTool: undefined }, 'prepareTool', 'the prepare tool digests are required');
 rejects({ ...pins, prepareTool: { ...pins.prepareTool, 'spark_overlay.py': 'TODO' } }, 'prepareTool.spark_overlay.py');
+rejects({ ...pins, dflash2: { ...pins.dflash2, revision: 'main' } }, 'dflash2 must');
 assert.deepEqual(Object.keys(pins.prepareTool).sort(), [...PREPARE_TOOL_FILES].sort());
+assert.deepEqual(prepareToolFiles(pins), PREPARE_TOOL_FILES, '0.5.0 runs no DSpark tool');
+// a 0.4.x manifest (no dflash2 pin) still needs the DSpark tool's digest
+rejects({ ...pins, dflash2: undefined }, `prepareTool.${DSPARK_TOOL_FILE}`);
+assert.deepEqual(
+  verifyPins(loadPins(path.join(backendDir, 'pins-0.4.2.json'))),
+  [],
+  'the archived version stays installable'
+);
 
 // ---- recipe -----------------------------------------------------------------
-assert.equal(recipe.version, 2);
+assert.equal(recipe.version, 3);
 assert.equal(recipe.backend.id, 'docker-atlas-sparkinkling');
 assert.equal(recipe.requirements.cluster, undefined, 'one Spark, no fabric');
 assert.equal(recipe.aliases, undefined, 'additive: no aliases');
@@ -75,6 +88,16 @@ for (const weights of ['strict', 'spark']) {
     resolved.setup.steps.filter((step) => step.action === 'download-model').map((step) => [step.model, step])
   );
   assert.equal(downloads[MODEL_REPO].revision, pins.model.revision);
+  const drafter = downloads[DFLASH2_REPO];
+  assert.equal(drafter.revision, pins.dflash2.revision, 'both weights download the DFlash2 drafter');
+  assert.deepEqual(
+    drafter.include,
+    drafter.integrity.files.map((file) => file.path)
+  );
+  assert.equal(
+    drafter.integrity.files.find((file) => file.path === 'model.safetensors').sha256,
+    '217980ab00d116693fa5946df7bbfd967caf5fac1f529afd541fbd470ddb54ee'
+  );
   if (weights === 'strict') {
     assert.equal(downloads[OVERLAY_REPO], undefined, 'strict downloads no overlay');
   } else {
@@ -112,6 +135,7 @@ for (const weights of ['strict', 'spark']) {
   const prepareAt = stepIds.indexOf('prepare-atlas-model');
   assert(prepareAt > stepIds.indexOf('pull-atlas-image'), 'the prepare tools run in the image');
   assert(prepareAt > stepIds.indexOf('download-atlas-model'));
+  assert(prepareAt > stepIds.indexOf('download-atlas-drafter'));
   if (weights === 'spark') assert(prepareAt > stepIds.indexOf('download-atlas-overlay'));
   else assert(!stepIds.includes('download-atlas-overlay'));
   assert.deepEqual(plan.steps.find((step) => step.id === 'prepare-atlas-model').command, [
@@ -139,9 +163,9 @@ const envOf = (runtime) => {
   );
 };
 const expected = {
-  saver: ['saver', 66, 8, 131072],
-  default: ['default', 104, 8, 131072],
-  max: ['max', 110, 32, 262144]
+  saver: ['saver', 66, 8, 786432],
+  default: ['default', 104, 8, 1048576],
+  max: ['max', 110, 32, 1048576]
 };
 assert.deepEqual(
   recipe.modes.map((mode) => mode.id),
@@ -179,8 +203,8 @@ for (const weights of ['strict', 'spark']) {
     const env = envOf(runtime);
     assert.equal(env.SPARKINKLING_PROFILE, profile);
     assert.equal(env.SPARKINKLING_MODE, weights);
-    assert.equal(env.SPARKINKLING_DRAFTER, 'dspark');
-    assert.equal(env.DRAFTER_PATH, `/models/${checkpoint}+dspark`);
+    assert.equal(env.SPARKINKLING_DRAFTER, 'dflash2');
+    assert.equal(env.DRAFTER_PATH, `/models/${drafterDir}`);
     assert.equal(env.MODEL_PATH, `/models/${checkpoint}${weights === 'spark' ? '+spark-nvfp4' : ''}`);
     assert.equal(env.SERVED_MODEL_NAME, 'inkling-2-mini-atlas');
     assert.equal(env.SPARKINKLING_TOOL_GUARD, 'stream');
@@ -190,7 +214,7 @@ for (const weights of ['strict', 'spark']) {
     assert.equal(env.HF_HUB_OFFLINE, '1');
     assert.equal(env.CUDA_CACHE_PATH, '/atlas-cuda-cache');
     const mounts = runtime.bootstrap.createArgs.filter((_, index, args) => args[index - 1] === '--mount');
-    const readOnly = [`/models/${checkpoint}`, `/models/${checkpoint}+dspark`];
+    const readOnly = [`/models/${checkpoint}`, `/models/${drafterDir}`];
     const sparkOnly = [`/models/${overlayDir}`, `/models/${checkpoint}+spark-nvfp4`];
     for (const dir of weights === 'spark' ? [...readOnly, ...sparkOnly] : readOnly) {
       assert(mounts.includes(`type=bind,src=${dir},dst=${dir},readonly`), `${dir} is mounted read-only`);
@@ -212,8 +236,8 @@ const src = path.join(tmp, 'src');
 const models = path.join(tmp, 'models');
 fs.mkdirSync(bin);
 fs.mkdirSync(src);
-for (const dir of [checkpoint, overlayDir]) fs.mkdirSync(path.join(models, dir), { recursive: true });
-for (const name of PREPARE_TOOL_FILES) fs.writeFileSync(path.join(src, name), `# ${name}\n`);
+for (const dir of [checkpoint, overlayDir, drafterDir]) fs.mkdirSync(path.join(models, dir), { recursive: true });
+for (const name of [...PREPARE_TOOL_FILES, DSPARK_TOOL_FILE]) fs.writeFileSync(path.join(src, name), `# ${name}\n`);
 const digest = (name) =>
   crypto
     .createHash('sha256')
@@ -261,6 +285,7 @@ const runPrepare = (weights, manifest = testPins) => {
 };
 const cp = path.join(models, checkpoint);
 const ov = path.join(models, overlayDir);
+const dr = path.join(models, drafterDir);
 const spark = runPrepare('spark');
 assert.equal(spark.status, 0, spark.stderr);
 assert.equal((spark.calls.match(/^curl /gm) ?? []).length, PREPARE_TOOL_FILES.length);
@@ -268,13 +293,23 @@ assert.match(spark.calls, /docker run --rm --network none --user \d+:\d+ --entry
 assert(spark.calls.includes(`type=bind,src=${models},dst=${models}`), 'the model root is mounted at its own path');
 assert.deepEqual(spark.tools, [
   `check_files.py ${cp}`,
-  `dspark_drafter.py ${cp} ${cp}+dspark`,
+  `check_files.py ${dr} dflash2`,
   `check_files.py ${ov} overlay`,
   `spark_overlay.py ${cp} ${ov} ${cp}+spark-nvfp4`
 ]);
 const strict = runPrepare('strict');
 assert.equal(strict.status, 0, strict.stderr);
-assert.deepEqual(strict.tools, [`check_files.py ${cp}`, `dspark_drafter.py ${cp} ${cp}+dspark`]);
+assert.deepEqual(strict.tools, [`check_files.py ${cp}`, `check_files.py ${dr} dflash2`]);
+// an archived 0.4.x manifest (no dflash2 pin) assembles the DSpark drafter as before
+const legacyPins = path.join(tmp, 'legacy.json');
+const { dflash2: _drop, ...legacy } = JSON.parse(fs.readFileSync(testPins, 'utf8'));
+fs.writeFileSync(
+  legacyPins,
+  JSON.stringify({ ...legacy, prepareTool: { ...legacy.prepareTool, [DSPARK_TOOL_FILE]: digest(DSPARK_TOOL_FILE) } })
+);
+const legacyRun = runPrepare('strict', legacyPins);
+assert.equal(legacyRun.status, 0, legacyRun.stderr);
+assert.deepEqual(legacyRun.tools, [`check_files.py ${cp}`, `dspark_drafter.py ${cp} ${cp}+dspark`]);
 const unknown = runPrepare('fast');
 assert.equal(unknown.status, 2);
 assert.doesNotMatch(unknown.calls, /docker/);
@@ -283,18 +318,22 @@ fs.writeFileSync(
   tampered,
   JSON.stringify({
     ...pins,
-    prepareTool: { ...JSON.parse(fs.readFileSync(testPins, 'utf8')).prepareTool, 'dspark_drafter.py': 'a'.repeat(64) }
+    prepareTool: { ...JSON.parse(fs.readFileSync(testPins, 'utf8')).prepareTool, 'check_files.py': 'a'.repeat(64) }
   })
 );
 const refused = runPrepare('spark', tampered);
 assert.equal(refused.status, 1);
-assert.match(refused.stderr, /install\/dspark_drafter\.py has sha256 [a-f0-9]{64}; the manifest pins a{64}/);
+assert.match(refused.stderr, /install\/check_files\.py has sha256 [a-f0-9]{64}; the manifest pins a{64}/);
 assert.doesNotMatch(refused.calls, /docker/, 'an unpinned tool never runs');
 fs.rmSync(ov, { recursive: true });
 const noOverlay = runPrepare('spark');
 assert.equal(noOverlay.status, 1);
 assert.match(noOverlay.stderr, /overlay .* is missing/);
 assert.doesNotMatch(noOverlay.calls, /docker/);
+fs.rmSync(dr, { recursive: true });
+const noDrafter = runPrepare('strict');
+assert.equal(noDrafter.status, 1);
+assert.match(noDrafter.stderr, /drafter .* is missing/);
 fs.rmSync(tmp, { recursive: true, force: true });
 
 console.log('atlas-sparkinkling recipe tests passed');

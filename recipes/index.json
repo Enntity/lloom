@@ -1416,7 +1416,7 @@
     {
       "id": "linux-nvidia-dgx-spark-inkling2-mini-atlas",
       "path": "linux-nvidia-dgx-spark-inkling2-mini-atlas.json",
-      "currentVersion": 2,
+      "currentVersion": 3,
       "versions": [
         {
           "version": 1,
@@ -1426,12 +1426,18 @@
         },
         {
           "version": 2,
+          "path": "archive/linux-nvidia-dgx-spark-inkling2-mini-atlas/v2.json",
+          "status": "archived",
+          "notes": "SparkInkling 0.4.2 27e42a6f893cb4c38491e440b82d253c90548e98 (install tree b1e18bf91437), engine Enntity/atlas inkling2/concurrent-spec-20261123 d3318e087850d59a05788bc89da749181e1bb289, image ghcr.io/enntity/atlas-sparkinkling@sha256:a9ae1e375e74d0ffa3422817d851bf4751f21c496fc7346d6801e2f1891c1812. The checkpoint's DSpark drafter and 131,072-token requests (262,144 in max); version 3 runs incoai's DFlash2 drafter with 1,048,576-token requests and decodes code 5-7% faster at one request."
+        },
+        {
+          "version": 3,
           "path": "linux-nvidia-dgx-spark-inkling2-mini-atlas.json",
           "status": "current"
         }
       ],
-      "name": "DGX Spark Inkling 2 Mini Atlas (SparkInkling 0.4.2)",
-      "summary": "Thinking Machines' Inkling 2 Mini on one DGX Spark with SparkInkling's Atlas build and DSpark drafter: strict or spark weights; default, saver and max modes.",
+      "name": "DGX Spark Inkling 2 Mini Atlas (SparkInkling 0.5.0)",
+      "summary": "Thinking Machines' Inkling 2 Mini on one DGX Spark with SparkInkling's Atlas build, incoai's DFlash2 drafter and 1M-token requests: strict or spark weights; default, saver and max modes.",
       "tags": [
         "linux",
         "nvidia",
@@ -1443,7 +1449,7 @@
         "nvfp4",
         "atlas",
         "sparkinkling",
-        "dspark",
+        "dflash2",
         "standalone"
       ],
       "recommendedFor": ["Fast Inkling 2 Mini serving on a single GB10"],
