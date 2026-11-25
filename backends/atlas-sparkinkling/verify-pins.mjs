@@ -15,7 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const MANIFEST_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'pins-0.4.2.json');
+export const MANIFEST_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'pins-0.5.0.json');
 export const REQUIRED_IMAGE_ARCHITECTURE = 'arm64';
 export const SOURCE_REPO = 'Enntity/sparkinkling';
 export const IMAGE_REPOSITORY = 'ghcr.io/enntity/atlas-sparkinkling';
@@ -25,9 +25,18 @@ export const MODEL_REPO = 'thinkingmachines/Inkling-2-Mini';
 export const MODEL_REVISION = 'ed40e7da625f594fc9c4990f5f66be24873c22d7';
 export const OVERLAY_REPO = 'Enntity/Inkling-2-Mini-Spark-NVFP4';
 export const OVERLAY_REVISION = 'e9df93dceea2fbf0927caf178104e868452a6292';
+export const DFLASH2_REPO = 'incoai/Inkling-2-Mini-DFlash2';
+export const DFLASH2_REVISION = '4f9088ea66c21f2b99ed657d1941c306b03e84d2';
 // The SparkInkling install files prepare.sh fetches at source.revision and runs
-// in the image; each must carry its sha256 in prepareTool.
-export const PREPARE_TOOL_FILES = ['checkpoint.json', 'check_files.py', 'dspark_drafter.py', 'spark_overlay.py'];
+// in the image; each must carry its sha256 in prepareTool. A manifest that pins
+// the DFlash2 drafter (0.5.0 on) checks its download; one without it (0.4.x,
+// the archived versions) also assembles the DSpark drafter.
+export const PREPARE_TOOL_FILES = ['checkpoint.json', 'check_files.py', 'spark_overlay.py'];
+export const DSPARK_TOOL_FILE = 'dspark_drafter.py';
+
+export function prepareToolFiles(manifest) {
+  return manifest.dflash2 ? PREPARE_TOOL_FILES : [...PREPARE_TOOL_FILES, DSPARK_TOOL_FILE];
+}
 
 const REQUIRED_PINS = [
   ['status', (m) => m.status],
@@ -100,8 +109,11 @@ export function verifyPins(manifest) {
   if (manifest.overlay?.repo !== OVERLAY_REPO || manifest.overlay?.revision !== OVERLAY_REVISION) {
     failures.push(`overlay must stay on ${OVERLAY_REPO}@${OVERLAY_REVISION}`);
   }
+  if (manifest.dflash2 && (manifest.dflash2.repo !== DFLASH2_REPO || manifest.dflash2.revision !== DFLASH2_REVISION)) {
+    failures.push(`dflash2 must stay on ${DFLASH2_REPO}@${DFLASH2_REVISION}`);
+  }
   const tool = manifest.prepareTool ?? {};
-  for (const name of PREPARE_TOOL_FILES) {
+  for (const name of prepareToolFiles(manifest)) {
     if (!/^[a-f0-9]{64}$/.test(String(tool[name] ?? ''))) {
       failures.push(`prepareTool.${name} must be a 64-character lowercase sha256`);
     }
