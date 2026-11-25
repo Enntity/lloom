@@ -1,0 +1,57 @@
+{
+  "manifestVersion": 1,
+  "status": "draft",
+  "note": "DRAFT pin manifest for SparkLing 0.1.0, recipes linux-nvidia-dgx-spark-ling32-air-atlas and linux-nvidia-dgx-spark-lingsante-air-vl-atlas version 1: Ling-3.2-air or LingSante-3.1-air-VL on one DGX Spark. The release is not built yet: the SparkLing revision and install tree, the engine branch and commit, the image digest and tag and the prepareTool digests are placeholders, so verify-pins.mjs refuses this manifest and setup stops at its first step. Replace every DRAFT-RELEASE value from the release build (image.reference is the GHCR manifest digest; the tag is the first 12 characters of the install/ tree), then set status to final.",
+  "source": {
+    "repo": "Enntity/SparkLing",
+    "revision": "DRAFT-RELEASE-REVISION",
+    "installTree": "DRAFT-RELEASE-INSTALL-TREE",
+    "cloneUrl": "https://github.com/Enntity/SparkLing.git",
+    "buildScript": "install/build.sh"
+  },
+  "engine": {
+    "repo": "Enntity/atlas",
+    "branch": "DRAFT-RELEASE-ENGINE-BRANCH",
+    "commit": "DRAFT-RELEASE-ENGINE-COMMIT"
+  },
+  "image": {
+    "reference": "ghcr.io/enntity/atlas-sparkling@sha256:DRAFT-RELEASE-IMAGE-DIGEST",
+    "tag": "ghcr.io/enntity/atlas-sparkling:DRAFT-RELEASE-TAG",
+    "label": "io.enntity.sparkling.install-tree",
+    "entrypoint": "/opt/atlas/serve.py",
+    "profilePath": "/opt/atlas/profiles/default.json",
+    "architecture": "arm64"
+  },
+  "checkpoints": {
+    "ling-3.2-air": {
+      "strict": {
+        "repo": "inclusionAI/Ling-3.2-air",
+        "revision": "ff099487f6f57165e6fa9386ad61fddfafc78b76",
+        "manifest": "checkpoint.json"
+      },
+      "spark": {
+        "repo": "primitive-ai/Ling-3.2-air-NVFP4A16",
+        "revision": "3a78e58506316b5b9b7d06037910c3f4abdd291f",
+        "manifest": "checkpoint.json"
+      }
+    },
+    "sante-air-vl": {
+      "strict": {
+        "repo": "inclusionAI/LingSante-3.1-air-VL",
+        "revision": "1f398c937d6069994a156689636832c47d8c09be",
+        "manifest": "checkpoint-sante-air-vl.json"
+      },
+      "spark": {
+        "repo": "Enntity/LingSante-3.1-air-VL-NVFP4",
+        "revision": "2702935791ac4f04b2b103c748a19de89f6df940",
+        "manifest": "checkpoint-sante-nvfp4.json"
+      }
+    }
+  },
+  "prepareTool": {
+    "check_files.py": "DRAFT-RELEASE-SHA256",
+    "checkpoint.json": "DRAFT-RELEASE-SHA256",
+    "checkpoint-sante-air-vl.json": "DRAFT-RELEASE-SHA256",
+    "checkpoint-sante-nvfp4.json": "DRAFT-RELEASE-SHA256"
+  }
+}

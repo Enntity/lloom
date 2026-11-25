@@ -1878,6 +1878,77 @@
       }
     },
     {
+      "id": "docker-atlas-sparkling",
+      "name": "Docker Atlas SparkLing",
+      "kind": "openai-compatible-server",
+      "description": "LLooM-managed Atlas SparkLing 0.1.0 (draft) for inclusionAI's Ling-3.2-air and LingSante-3.1-air-VL on one DGX Spark, from an immutable GHCR image addressed by digest. Spark serves an NVFP4 checkpoint (Ling with its MTP drafter); strict serves the original checkpoint. Text, image and video input. See backends/atlas-sparkling/README.md.",
+      "platforms": [
+        "linux-arm64"
+      ],
+      "features": [
+        "chat",
+        "responses",
+        "streaming",
+        "usage",
+        "tools",
+        "structured-output",
+        "reasoning",
+        "vision",
+        "video",
+        "speculative-decoding",
+        "moe",
+        "long-context",
+        "cuda",
+        "blackwell",
+        "dgx-spark",
+        "docker"
+      ],
+      "commands": [
+        "docker",
+        "bash",
+        "node",
+        "curl"
+      ],
+      "setup": [
+        {
+          "id": "check-docker",
+          "title": "Check Docker",
+          "action": "check-command",
+          "command": "docker",
+          "args": [
+            "version"
+          ]
+        },
+        {
+          "id": "check-atlas-pins",
+          "title": "Verify Atlas SparkLing pins are final",
+          "action": "command",
+          "alwaysRun": true,
+          "command": "node",
+          "args": [
+            "${repoRoot}/backends/atlas-sparkling/verify-pins.mjs",
+            "${repoRoot}/backends/atlas-sparkling/pins-0.1.0.json"
+          ]
+        }
+      ],
+      "server": {
+        "protocol": "openai",
+        "healthPath": "/health",
+        "chatPath": "/v1/chat/completions"
+      },
+      "cancellation": {
+        "trigger": "client-disconnect",
+        "computeReclamation": "unverified",
+        "modes": [
+          "streaming",
+          "buffered",
+          "queued",
+          "generation"
+        ],
+        "notes": "Reclamation is unverified for the Atlas engine; confirm abort behaviour on the prepared image before advertising it. The LLooM watchdog drains and evicts on repeated 5xx/timeout regardless."
+      }
+    },
+    {
       "id": "drama-tensorfold",
       "name": "Drama 3 (TensorFold)",
       "kind": "openai-compatible-server",

@@ -1478,6 +1478,103 @@
       }
     },
     {
+      "id": "linux-nvidia-dgx-spark-ling32-air-atlas",
+      "path": "linux-nvidia-dgx-spark-ling32-air-atlas.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-dgx-spark-ling32-air-atlas.json",
+          "status": "current"
+        }
+      ],
+      "name": "DGX Spark Ling-3.2-air Atlas (SparkLing 0.1.0)",
+      "summary": "inclusionAI's Ling-3.2-air on one DGX Spark with SparkLing's Atlas build and the checkpoint's MTP drafter: spark (NVFP4A16) or strict (FP8) weights; default, saver and max modes. Draft until the SparkLing 0.1.0 pins are final.",
+      "tags": [
+        "linux",
+        "nvidia",
+        "dgx-spark",
+        "gb10",
+        "ling-3.2-air",
+        "inclusionai",
+        "moe",
+        "nvfp4",
+        "atlas",
+        "sparkling",
+        "mtp",
+        "video",
+        "standalone"
+      ],
+      "recommendedFor": ["Ling-3.2-air with text, image and video input on a single GB10"],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "usage",
+        "tools",
+        "structured-output",
+        "reasoning",
+        "vision",
+        "video",
+        "speculative-decoding",
+        "batching",
+        "long-context"
+      ],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-dgx-spark-ling32-air-atlas.json"
+      }
+    },
+    {
+      "id": "linux-nvidia-dgx-spark-lingsante-air-vl-atlas",
+      "path": "linux-nvidia-dgx-spark-lingsante-air-vl-atlas.json",
+      "currentVersion": 1,
+      "versions": [
+        {
+          "version": 1,
+          "path": "linux-nvidia-dgx-spark-lingsante-air-vl-atlas.json",
+          "status": "current"
+        }
+      ],
+      "name": "DGX Spark LingSante-3.1-air-VL Atlas (SparkLing 0.1.0)",
+      "summary": "inclusionAI's medical LingSante-3.1-air-VL on one DGX Spark with SparkLing's Atlas build: spark (Enntity NVFP4) or strict (BF16) weights; default, saver and max modes. Draft until the SparkLing 0.1.0 pins are final.",
+      "tags": [
+        "linux",
+        "nvidia",
+        "dgx-spark",
+        "gb10",
+        "lingsante-3.1-air-vl",
+        "inclusionai",
+        "medical",
+        "moe",
+        "nvfp4",
+        "atlas",
+        "sparkling",
+        "video",
+        "standalone"
+      ],
+      "recommendedFor": ["Medical vision-language serving on a single GB10"],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "usage",
+        "tools",
+        "structured-output",
+        "reasoning",
+        "vision",
+        "video",
+        "batching",
+        "long-context"
+      ],
+      "source": {
+        "type": "local",
+        "url": "recipes/linux-nvidia-dgx-spark-lingsante-air-vl-atlas.json"
+      }
+    },
+    {
       "id": "linux-nvidia-ace-step-1-5-xl-diffusers",
       "path": "linux-nvidia-ace-step-1-5-xl-diffusers.json",
       "currentVersion": 1,
