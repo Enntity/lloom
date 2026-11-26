@@ -1,6 +1,6 @@
 # Atlas SparkLing under LLooM
 
-LLooM-managed SparkLing 0.1.1 lane: inclusionAI's
+LLooM-managed SparkLing 0.1.2 lane: inclusionAI's
 [Ling-3.2-air](https://huggingface.co/inclusionAI/Ling-3.2-air) (124B MoE,
 5.5B active, 262,144-token window) or
 [LingSante-3.1-air-VL](https://huggingface.co/inclusionAI/LingSante-3.1-air-VL)
@@ -9,9 +9,10 @@ Spark, served by the Atlas engine with MTP drafting, prefix caching, reasoning,
 tool calls and text, image and video input. This directory is **MIT
 orchestration only**: no Atlas engine source is committed here. The engine
 image is built from `Enntity/SparkLing` revision
-`1f6112f1350e8bce5188f4a4e6bfef490580ef16` (tag `v0.1.1`, install tree
-`753fe2b286a6`) by that repository's `install/build.sh` and published as
-`ghcr.io/enntity/atlas-sparkling:753fe2b286a6` (also `:0.1.1`; public).
+`4a2228682ebad83e98d60322ba5d4e91d4111d0c` (tag `v0.1.2`, install tree
+`2b64f3eb9763`) by that repository's `install/build.sh` and published as
+`ghcr.io/enntity/atlas-sparkling:2b64f3eb9763` (also `:0.1.2`; public).
+`pins-0.1.1.json` stays for the archived recipe versions.
 
 Two recipes share this directory, one per model:
 
@@ -26,9 +27,9 @@ Spark's memory, so LLooM does not start one beside the other.
 
 ## Layout
 
-- `pins-0.1.1.json`: the pin manifest. SparkLing source revision and its
+- `pins-0.1.2.json`: the pin manifest. SparkLing source revision and its
   `install/` git tree, the engine (`Enntity/atlas` `ling/3.2-air` at
-  `965128de1d2b`), the image by GHCR manifest digest with the tag kept as
+  `18dec2347249`), the image by GHCR manifest digest with the tag kept as
   metadata, the install-tree label, the four checkpoints with the SparkLing pin
   file that checks each (and LingSante Spark's drafter donor), and
   `prepareTool`: the sha256 of the six SparkLing install files `prepare.sh`
@@ -107,20 +108,23 @@ reservations are estimates: peak host memory per mode was not measured.
 
 ## Release measurement
 
-SparkLing 0.1.1 on one GB10, Spark weights, default profile and drafting
-(Enntity/SparkLing `results/2026-11-25-0.1.1/README.md`); the image build ran 8,827
+SparkLing 0.1.2 on one GB10, Spark weights, default profile and drafting
+(Enntity/SparkLing `results/2026-11-26-0.1.2/README.md`); the image build ran 8,827
 engine tests with 0 failures:
 
 |                                              | Ling-3.2-air                | LingSante-3.1-air-VL        |
 | -------------------------------------------- | --------------------------- | --------------------------- |
-| Single stream, mean of eight prompts, tok/s  | 54.8                        | 54.2                        |
+| Single stream, mean of eight prompts, tok/s  | 61.0                        | 57.5                        |
+| First drafts accepted, counting              | 100%                        | 100%                        |
 | Drafted text equal to plain decode           | 8 of 8                      | 8 of 8                      |
-| Aggregate, 1 / 2 / 4 / 8 clients, tok/s      | 54.6 / 65.7 / 81.1 / 104.4  | 51.2 / 61.6 / 79.4 / 104.0  |
+| Aggregate, 1 / 2 / 4 / 8 clients, tok/s      | 60.1 / 65.6 / 81.2 / 104.5  | 59.1 / 64.0 / 80.8 / 104.2  |
 | Video clips, invoice and grid                | all read correctly          | all read correctly          |
 
-Eight simultaneous 262,132-token Ling prompts each recalled their key. Ling
-decoded 44.4 / 40.6 / 34.9 / 27.9 tok/s after 2K / 32K / 128K / 262K-token
-prompts.
+0.1.1 fed Ling's predictor the raw residual stream instead of the
+final-normed hidden, so only about 70% of drafts were accepted (54.8 and
+54.2 tok/s single stream). On 0.1.1, eight simultaneous 262,132-token Ling
+prompts each recalled their key, and Ling decoded 44.4 / 40.6 / 34.9 / 27.9
+tok/s after 2K / 32K / 128K / 262K-token prompts.
 
 ## Installation
 

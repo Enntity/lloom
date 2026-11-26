@@ -24,7 +24,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MANIFEST="${SCRIPT_DIR}/pins-0.1.1.json"
+MANIFEST="${SCRIPT_DIR}/pins-0.1.2.json"
 CHECK_ONLY=0
 
 while [[ $# -gt 0 ]]; do

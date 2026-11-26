@@ -41,23 +41,23 @@ const writeJson = (name, value) => {
 const verifyCli = (manifest) =>
   spawnSync(process.execPath, [path.join(backendDir, 'verify-pins.mjs'), manifest], { encoding: 'utf8' });
 
-// ---- pins: the 0.1.1 release manifest is final ---------------------------------
-const pinsPath = path.join(backendDir, 'pins-0.1.1.json');
+// ---- pins: the 0.1.2 release manifest is final ---------------------------------
+const pinsPath = path.join(backendDir, 'pins-0.1.2.json');
 const pins = loadPins(pinsPath);
 assert.deepEqual(verifyPins(pins), []);
 assert.equal(pins.status, 'final');
-assert.equal(pins.source.revision, '1f6112f1350e8bce5188f4a4e6bfef490580ef16', 'tag v0.1.1');
-assert.equal(pins.source.installTree, '753fe2b286a6c53c3b7a6f0b09720a9e09497419');
+assert.equal(pins.source.revision, '4a2228682ebad83e98d60322ba5d4e91d4111d0c', 'tag v0.1.2');
+assert.equal(pins.source.installTree, '2b64f3eb97639fdf7e6db462487779146c8a08d2');
 assert.deepEqual(pins.engine, {
   repo: 'Enntity/atlas',
   branch: 'ling/3.2-air',
-  commit: '965128de1d2bf059a33e119e1824f1221f3281ba'
+  commit: '18dec2347249d413410d390597181e8e453b1e71'
 });
 assert.equal(
   pins.image.reference,
-  'ghcr.io/enntity/atlas-sparkling@sha256:d86608d1258e2f38acd9b072ec6e7bad7e4b19a09da8920131a98dca61f3a495'
+  'ghcr.io/enntity/atlas-sparkling@sha256:a86632ffc12369be26cd9b9250d09f9dd24c96dacdf00703374dc40a2294581f'
 );
-assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkling:753fe2b286a6');
+assert.equal(pins.image.tag, 'ghcr.io/enntity/atlas-sparkling:2b64f3eb9763');
 assert.equal(imageTagFor(pins), pins.image.tag);
 assert.deepEqual(pins.checkpoints, CHECKPOINTS);
 assert.deepEqual(Object.keys(pins.prepareTool).sort(), [...PREPARE_TOOL_FILES].sort());
@@ -136,7 +136,7 @@ const LANES = [
     id: 'linux-nvidia-dgx-spark-ling32-air-atlas',
     model: 'ling-3.2-air',
     served: 'ling-3.2-air-atlas',
-    version: 1,
+    version: 2,
     runtime: 'ling32-air-atlas',
     container: 'lloom-atlas-sparkling-ling32-air',
     windows: { saver: 262144, default: 262144, max: 262144 },
@@ -160,7 +160,7 @@ const LANES = [
     id: 'linux-nvidia-dgx-spark-lingsante-air-vl-atlas',
     model: 'sante-air-vl',
     served: 'lingsante-3.1-air-vl-atlas',
-    version: 2,
+    version: 3,
     runtime: 'lingsante-air-vl-atlas',
     container: 'lloom-atlas-sparkling-lingsante-air-vl',
     windows: { saver: 131072, default: 131072, max: 131072 },
@@ -199,7 +199,7 @@ for (const lane of LANES) {
   const recipe = await loadRecipeById(lane.id);
   const manifestArg = recipe.setup.steps.find((step) => step.id === 'verify-atlas-pins').args[1];
   const manifestPath = manifestArg.replace('${repoRoot}', root);
-  assert.equal(manifestPath, pinsPath, `${lane.id} checks the 0.1.1 pins`);
+  assert.equal(manifestPath, pinsPath, `${lane.id} checks the 0.1.2 pins`);
   assert.equal(recipe.version, lane.version);
   assert.match(recipe.models[0].gatewayModel, /-atlas$/, 'Atlas recipes serve <model>-atlas ids');
   const indexEntry = recipeIndex.recipes.find((entry) => entry.id === lane.id);
