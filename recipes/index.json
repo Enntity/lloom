@@ -1480,15 +1480,21 @@
     {
       "id": "linux-nvidia-dgx-spark-ling32-air-atlas",
       "path": "linux-nvidia-dgx-spark-ling32-air-atlas.json",
-      "currentVersion": 1,
+      "currentVersion": 2,
       "versions": [
         {
           "version": 1,
+          "path": "archive/linux-nvidia-dgx-spark-ling32-air-atlas/v1.json",
+          "status": "archived",
+          "notes": "SparkLing 0.1.1 (Atlas 965128de1): Ling's predictor got the raw residual stream instead of the final-normed hidden, so about 70% of drafts were accepted on every prompt; single stream 54.8 tok/s."
+        },
+        {
+          "version": 2,
           "path": "linux-nvidia-dgx-spark-ling32-air-atlas.json",
           "status": "current"
         }
       ],
-      "name": "DGX Spark Ling-3.2-air Atlas (SparkLing 0.1.1)",
+      "name": "DGX Spark Ling-3.2-air Atlas (SparkLing 0.1.2)",
       "summary": "inclusionAI's Ling-3.2-air on one DGX Spark with SparkLing's Atlas build and the checkpoint's MTP drafter: spark (NVFP4A16) or strict (FP8) weights; default, saver and max modes.",
       "tags": [
         "linux",
@@ -1529,7 +1535,7 @@
     {
       "id": "linux-nvidia-dgx-spark-lingsante-air-vl-atlas",
       "path": "linux-nvidia-dgx-spark-lingsante-air-vl-atlas.json",
-      "currentVersion": 2,
+      "currentVersion": 3,
       "versions": [
         {
           "version": 1,
@@ -1539,11 +1545,17 @@
         },
         {
           "version": 2,
+          "path": "archive/linux-nvidia-dgx-spark-lingsante-air-vl-atlas/v2.json",
+          "status": "archived",
+          "notes": "SparkLing 0.1.1 (Atlas 965128de1): the borrowed Ling predictor got the raw residual stream instead of the final-normed hidden; single stream 54.2 tok/s."
+        },
+        {
+          "version": 3,
           "path": "linux-nvidia-dgx-spark-lingsante-air-vl-atlas.json",
           "status": "current"
         }
       ],
-      "name": "DGX Spark LingSante-3.1-air-VL Atlas (SparkLing 0.1.1)",
+      "name": "DGX Spark LingSante-3.1-air-VL Atlas (SparkLing 0.1.2)",
       "summary": "inclusionAI's medical LingSante-3.1-air-VL on one DGX Spark with SparkLing's Atlas build and Ling-3.2-air's borrowed MTP drafter: spark (Enntity NVFP4) or strict (BF16) weights; default, saver and max modes.",
       "tags": [
         "linux",
