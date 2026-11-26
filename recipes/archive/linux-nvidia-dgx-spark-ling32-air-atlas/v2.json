@@ -1,0 +1,676 @@
+{
+  "$schema": "https://lloom.dev/schemas/recipe.v1.schema.json",
+  "schemaVersion": 1,
+  "profile": "https://lloom.dev/profiles/interchange/v1",
+  "id": "linux-nvidia-dgx-spark-ling32-air-atlas",
+  "name": "DGX Spark Ling-3.2-air Atlas (SparkLing 0.1.2)",
+  "version": 2,
+  "options": {
+    "weights": {
+      "description": "Which checkpoint the engine serves: spark is Primitive AI's NVFP4A16 with NVFP4 prefill and decode and the checkpoint's own MTP drafter; strict is inclusionAI's original dynamic FP8 as published, without drafting.",
+      "default": "spark",
+      "values": {
+        "spark": {
+          "description": "primitive-ai/Ling-3.2-air-NVFP4A16 (MIT, about 78 GB): NVFP4 routed experts with BF16 activations. SparkLing's Spark defaults: NVFP4 prefill (expert activations for large prompt batches) and NVFP4 decode (attention projections), the published BF16 vocabulary head, and the checkpoint's one-token MTP predictor as the drafter.",
+          "variables": {
+            "sparklingMode": "spark",
+            "modelRepo": "primitive-ai/Ling-3.2-air-NVFP4A16",
+            "modelRevision": "3a78e58506316b5b9b7d06037910c3f4abdd291f",
+            "modelDir": "primitive-ai--Ling-3.2-air-NVFP4A16",
+            "sparklingDrafter": "mtp",
+            "sparklingQuant": "publisher",
+            "prefillPrecision": "nvfp4",
+            "decodePrecision": "nvfp4",
+            "weightsTitle": "Spark NVFP4A16"
+          }
+        },
+        "strict": {
+          "description": "inclusionAI/Ling-3.2-air (MIT, about 129 GB): the original dynamic block-FP8 checkpoint with its BF16 and FP32 exceptions, checkpoint precision, the published sampling defaults and template, no drafting. Atlas pages experts from disk to fit one Spark.",
+          "variables": {
+            "sparklingMode": "strict",
+            "modelRepo": "inclusionAI/Ling-3.2-air",
+            "modelRevision": "ff099487f6f57165e6fa9386ad61fddfafc78b76",
+            "modelDir": "inclusionAI--Ling-3.2-air",
+            "sparklingDrafter": "none",
+            "sparklingQuant": "publisher",
+            "prefillPrecision": "checkpoint",
+            "decodePrecision": "checkpoint",
+            "weightsTitle": "Strict FP8"
+          }
+        }
+      }
+    }
+  },
+  "summary": "inclusionAI's Ling-3.2-air (124B MoE, 5.5B active) on one DGX Spark with SparkLing 0.1.2's Atlas build: text, image and video input, tools, reasoning, prefix caching, its full 262,144-token window for eight requests at once. --weights spark (default) serves Primitive AI's NVFP4A16 with NVFP4 prefill and decode and the checkpoint's MTP drafter; --weights strict serves the original FP8. Three modes: default (8 requests), saver (1 request) and max (16 requests). Additive only: no default model, no aliases.",
+  "description": "This recipe installs SparkLing 0.1.2 at the immutable product revision recorded in backends/atlas-sparkling/pins-0.1.2.json. The Atlas engine image is built from Enntity/SparkLing by install/build.sh and published to GHCR; LLooM commits no engine source. Setup acquires the selected checkpoint at its pinned revision (primitive-ai/Ling-3.2-air-NVFP4A16 for spark, inclusionAI/Ling-3.2-air for strict), pulls the image by its manifest digest and verifies it, then runs SparkLing's own install/check_files.py with install/checkpoint.json, fetched at the pinned revision, digest-checked and run inside the image with no network, to check every inference file against its pinned size and hash. Nothing is assembled: the engine serves the checkpoint directory as downloaded. Setup remembers the weights it installed with.",
+  "license": {
+    "id": "MIT",
+    "name": "Recipe metadata, launcher and orchestration"
+  },
+  "provenance": {
+    "createdBy": "lloom",
+    "generatedBy": "manual-curated",
+    "source": "SparkLing 0.1.2: Enntity/SparkLing 4a2228682ebad83e98d60322ba5d4e91d4111d0c (tag v0.1.2, install tree 2b64f3eb97639fdf7e6db462487779146c8a08d2), engine Enntity/atlas ling/3.2-air @ 18dec2347249d413410d390597181e8e453b1e71 (AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). Image ghcr.io/enntity/atlas-sparkling:2b64f3eb9763 (also :0.1.2), addressed by its GHCR manifest digest. Profiles default.json (0.89 GPU memory utilization, 8 sequences, 262144 tokens), saver.json (0.70, 1, 262144) and max.json (0.95, 16, 262144), all with a shared BF16 latent KV pool, prefix caching and ffmpeg video decoding. Checkpoints primitive-ai/Ling-3.2-air-NVFP4A16 revision 3a78e58506316b5b9b7d06037910c3f4abdd291f (MIT) and inclusionAI/Ling-3.2-air revision ff099487f6f57165e6fa9386ad61fddfafc78b76 (MIT), each checked against SparkLing's install/checkpoint.json."
+  },
+  "links": [
+    {
+      "rel": "upstream",
+      "href": "https://github.com/Enntity/SparkLing/tree/v0.1.2"
+    },
+    {
+      "rel": "engine",
+      "href": "https://github.com/Enntity/atlas/tree/18dec2347249d413410d390597181e8e453b1e71"
+    },
+    {
+      "rel": "engine-upstream",
+      "href": "https://github.com/Atlas-Inf/atlas/pull/411"
+    },
+    {
+      "rel": "model",
+      "href": "https://huggingface.co/inclusionAI/Ling-3.2-air/tree/ff099487f6f57165e6fa9386ad61fddfafc78b76"
+    },
+    {
+      "rel": "weights",
+      "href": "https://huggingface.co/primitive-ai/Ling-3.2-air-NVFP4A16/tree/3a78e58506316b5b9b7d06037910c3f4abdd291f"
+    }
+  ],
+  "keywords": [
+    "linux",
+    "nvidia",
+    "dgx-spark",
+    "gb10",
+    "ling-3.2-air",
+    "inclusionai",
+    "moe",
+    "nvfp4",
+    "atlas",
+    "sparkling",
+    "mtp",
+    "video",
+    "standalone"
+  ],
+  "capabilities": [
+    "chat",
+    "responses",
+    "anthropic-messages",
+    "streaming",
+    "usage",
+    "tools",
+    "structured-output",
+    "reasoning",
+    "vision",
+    "video",
+    {
+      "$option": "weights",
+      "spark": "speculative-decoding",
+      "strict": null
+    },
+    "batching",
+    "long-context"
+  ],
+  "hardware": {
+    "family": "NVIDIA DGX Spark / GB10",
+    "testedMachine": "One DGX Spark with 128 GB unified memory",
+    "notes": [
+      "This version pins the SparkLing 0.1.2 image ghcr.io/enntity/atlas-sparkling:2b64f3eb9763 (also :0.1.2; install tree 2b64f3eb9763, Atlas 18dec2347), addressed by its digest. Its build ran 8,827 engine tests with 0 failures.",
+      "SparkLing 0.1.2 on one GB10, 2026-11-26, Spark weights, default profile (262,144 tokens, eight requests) and default drafting, nothing else on the GPU (Enntity/SparkLing results/2026-11-26-0.1.2/README.md): single stream 61.0 tok/s (mean of eight greedy prompts, 256 tokens, thinking off; 44.8 plain), first drafts accepted on 100% of counting steps, drafted text equal to plain decode on 8 of 8; aggregate 60.1 / 65.6 / 81.2 / 104.5 tok/s at 1 / 2 / 4 / 8 clients, median time to first token 1.04 s at 8; 30 of 30 arithmetic word problems with thinking on; 10 of 10 single-tool calls; a red-to-blue clip, a counting clip as GIF and MP4, a 90 s 720p clip, an invoice and a grid all read correctly.",
+      "In SparkLing's 0.1.0 comparison runs on the same Spark, vLLM's MTP x3 serving the same NVFP4A16 checkpoint read 40.2 tok/s single-stream and 44.6 / 59.2 / 68.8 / 109.2 at 1 / 2 / 4 / 8 clients, at an 8,192-token window.",
+      "Spark drafts one token per step with the checkpoint's own MTP predictor (SPARKLING_DRAFTER=mtp) for one active request and decodes plainly from two (ATLAS_MTP_MAX_SEQS=1); Atlas verifies each draft with serial decode's arithmetic, so greedy text matches drafting off.",
+      "Every mode serves Ling's full 262,144-token window from one latent KV pool (1.15 KB per token per layer). The default pool holds 2,221,344 tokens, 8.5 full windows; eight simultaneous 262,132-token prompts each recalled their key. Decode after 2K / 32K / 128K / 262K prompts (measured on 0.1.1): 44.4 / 40.6 / 34.9 / 27.9 tok/s. SparkLing 0.1.0's 131,072-token default held only 56,352 KV tokens in total.",
+      "Profiles (SparkLing install/profiles, all BF16 KV in a shared latent pool, prefix caching, 2,048-token prefill chunks or 8,192 with NVFP4 prefill, ffmpeg video decoding on): default 8 requests at 0.89 GPU memory utilization, saver 1 request at 0.70, max 16 requests at 0.95, each at the model's full window. Requests the KV pool cannot hold yet wait rather than fail. The engine borrows the GB10 display carveout for the KV cache when no other Spark* server holds the shared lock /run/lock/sparkglm (mounted here); the default pool's per-layer buffers are too large for it, smaller pools use it. SparkLing's disk prefix cache stays off here (LLooM sets no SPARKLING_PREFIX_CACHE_GB).",
+      "Strict serves the original checkpoint for reference. It does not fit in memory, so Atlas pages experts from the checkpoint on disk and decodes at about 2 tok/s; its KV pool stops at eight full windows so the rest of memory can cache those experts.",
+      "Peak host memory was not measured per mode. LLooM reserves an estimate: saver 92 GB, default 115 GB, max 120 GB (0.70 / 0.89 / 0.95 GPU memory utilization). The container is capped at 114 GiB because a GB10 that runs out of shared memory hangs instead of killing a process. In the default and max modes little else should use this Spark's GPU memory.",
+      "The engine serves 127.0.0.1:8897 (fixed by the image) with host networking, so only one SparkLing model runs at a time; its memory reservation keeps LLooM from starting the other beside it. Text, image and video input: OpenAI image_url parts and video_url parts (animated GIF decoded in-process, MP4 and WebM through the image's ffmpeg).",
+      "Licenses: the Atlas engine and SparkLing's install tools run from the image and are AGPL-3.0-only (not included in LLooM). inclusionAI/Ling-3.2-air and primitive-ai/Ling-3.2-air-NVFP4A16 are MIT."
+    ]
+  },
+  "requirements": {
+    "platforms": [
+      "linux-arm64"
+    ],
+    "memoryGb": 115,
+    "diskGb": {
+      "$option": "weights",
+      "spark": 85,
+      "strict": 140
+    },
+    "commands": [
+      "docker",
+      "node",
+      "curl"
+    ],
+    "accelerators": [
+      "cuda",
+      "nvidia-gpu",
+      "blackwell",
+      "gb10"
+    ]
+  },
+  "backend": {
+    "id": "docker-atlas-sparkling",
+    "name": "Pinned Atlas SparkLing image",
+    "type": "openai-compatible-server"
+  },
+  "setup": {
+    "steps": [
+      {
+        "id": "check-docker",
+        "title": "Check Docker",
+        "action": "check-command",
+        "command": "docker",
+        "args": [
+          "version"
+        ]
+      },
+      {
+        "id": "verify-atlas-pins",
+        "title": "Verify the SparkLing pin manifest is final",
+        "action": "command",
+        "alwaysRun": true,
+        "command": "node",
+        "args": [
+          "${repoRoot}/backends/atlas-sparkling/verify-pins.mjs",
+          "${repoRoot}/backends/atlas-sparkling/pins-0.1.2.json"
+        ]
+      },
+      {
+        "id": "download-atlas-model",
+        "title": "Acquire the pinned Ling-3.2-air checkpoint (${weightsTitle})",
+        "action": "download-model",
+        "provider": "huggingface",
+        "model": "${modelRepo}",
+        "revision": "${modelRevision}",
+        "integrity": {
+          "$option": "weights",
+          "strict": null,
+          "spark": {
+            "files": [
+              {
+                "path": "bailingmm_utils.py",
+                "sizeBytes": 19139
+              },
+              {
+                "path": "bailingmm_utils_video.py",
+                "sizeBytes": 26851
+              },
+              {
+                "path": "chat_template.jinja",
+                "sizeBytes": 8582
+              },
+              {
+                "path": "config.json",
+                "sizeBytes": 4487
+              },
+              {
+                "path": "configuration_bailing_moe_v3_vl.py",
+                "sizeBytes": 8874
+              },
+              {
+                "path": "experts-layer02.safetensors",
+                "sizeBytes": 1699273344
+              },
+              {
+                "path": "experts-layer03.safetensors",
+                "sizeBytes": 1699273344
+              },
+              {
+                "path": "experts-layer04.safetensors",
+                "sizeBytes": 1699273344
+              },
+              {
+                "path": "experts-layer05.safetensors",
+                "sizeBytes": 1699273344
+              },
+              {
+                "path": "experts-layer06.safetensors",
+                "sizeBytes": 1699273344
+              },
+              {
+                "path": "experts-layer07.safetensors",
+                "sizeBytes": 1699273344
+              },
+              {
+                "path": "experts-layer08.safetensors",
+                "sizeBytes": 1699273344
+              },
+              {
+                "path": "experts-layer09.safetensors",
+                "sizeBytes": 1699273344
+              },
+              {
+                "path": "experts-layer10.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer11.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer12.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer13.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer14.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer15.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer16.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer17.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer18.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer19.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer20.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer21.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer22.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer23.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer24.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer25.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer26.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer27.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer28.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer29.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer30.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer31.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer32.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer33.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer34.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer35.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer36.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer37.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer38.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer39.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer40.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer41.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "experts-layer42.safetensors",
+                "sizeBytes": 1699277952
+              },
+              {
+                "path": "generation_config.json",
+                "sizeBytes": 178
+              },
+              {
+                "path": "image_processing_bailingmm2.py",
+                "sizeBytes": 33161
+              },
+              {
+                "path": "model.safetensors.index.json",
+                "sizeBytes": 17571912
+              },
+              {
+                "path": "modeling_bailing_moe_v3_vl.py",
+                "sizeBytes": 127341
+              },
+              {
+                "path": "preprocessor_config.json",
+                "sizeBytes": 696
+              },
+              {
+                "path": "processing_bailingmm2.py",
+                "sizeBytes": 29466
+              },
+              {
+                "path": "rest-000.safetensors",
+                "sizeBytes": 4308324160
+              },
+              {
+                "path": "rest-001.safetensors",
+                "sizeBytes": 3901738336
+              },
+              {
+                "path": "special_tokens_map.json",
+                "sizeBytes": 456
+              },
+              {
+                "path": "tokenization_bailing.py",
+                "sizeBytes": 43938
+              },
+              {
+                "path": "tokenizer.json",
+                "sizeBytes": 7668416
+              },
+              {
+                "path": "tokenizer_config.json",
+                "sizeBytes": 9539
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "pull-atlas-image",
+        "title": "Pull or verify the pinned SparkLing image",
+        "action": "command",
+        "alwaysRun": true,
+        "command": "bash",
+        "args": [
+          "${repoRoot}/backends/atlas-sparkling/install.sh",
+          "--manifest",
+          "${repoRoot}/backends/atlas-sparkling/pins-0.1.2.json"
+        ]
+      },
+      {
+        "id": "prepare-atlas-model",
+        "title": "Check the ${weightsTitle} checkpoint against SparkLing's pins",
+        "action": "command",
+        "alwaysRun": true,
+        "command": "bash",
+        "args": [
+          "${repoRoot}/backends/atlas-sparkling/prepare.sh",
+          "--manifest",
+          "${repoRoot}/backends/atlas-sparkling/pins-0.1.2.json",
+          "--model-root",
+          "${modelRoot}",
+          "--model",
+          "ling-3.2-air",
+          "--weights",
+          "${sparklingMode}"
+        ]
+      },
+      {
+        "id": "prepare-atlas-cuda-cache",
+        "title": "Create the persistent CUDA JIT cache directory",
+        "action": "command",
+        "alwaysRun": true,
+        "command": "mkdir",
+        "args": [
+          "-p",
+          "${installRoot}/atlas-sparkling-cuda-cache"
+        ]
+      }
+    ]
+  },
+  "modes": [
+    {
+      "id": "saver",
+      "summary": "Profile saver: 1 request at 262144 tokens, 0.70 GPU memory utilization, 92 GB reserved (an estimate); leaves room for sidecars.",
+      "settings": {
+        "sparklingProfile": "saver",
+        "memoryGb": 92,
+        "maxActiveRequests": 1,
+        "maxQueuedRequests": 8,
+        "contextWindow": 262144,
+        "maxOutputTokens": 4096
+      }
+    },
+    {
+      "id": "default",
+      "default": true,
+      "summary": "Profile default: 8 requests at 262144 tokens, 0.89 GPU memory utilization, 115 GB reserved (an estimate); the shared latent KV pool holds 8.4 full windows with drafting on.",
+      "settings": {
+        "sparklingProfile": "default",
+        "memoryGb": 115,
+        "maxActiveRequests": 8,
+        "maxQueuedRequests": 8,
+        "contextWindow": 262144
+      }
+    },
+    {
+      "id": "max",
+      "summary": "Profile max: 16 requests at 262144 tokens, 0.95 GPU memory utilization, 120 GB reserved (an estimate); the KV pool is shared, so requests it cannot hold yet wait.",
+      "settings": {
+        "sparklingProfile": "max",
+        "memoryGb": 120,
+        "maxActiveRequests": 16,
+        "maxQueuedRequests": 16,
+        "contextWindow": 262144
+      }
+    }
+  ],
+  "models": [
+    {
+      "role": "standalone-cognition",
+      "name": "Ling-3.2-air on Atlas SparkLing (${weightsTitle})",
+      "model": "${modelRepo}",
+      "gatewayModel": "ling-3.2-air-atlas",
+      "upstreamModel": "ling-3.2-air-atlas",
+      "runtime": "ling32-air-atlas",
+      "backendConfig": "ling32-air-atlas",
+      "setDefault": false,
+      "input": [
+        "text",
+        "image",
+        "video"
+      ],
+      "output": [
+        "text"
+      ],
+      "capabilities": [
+        "chat",
+        "responses",
+        "anthropic-messages",
+        "streaming",
+        "usage",
+        "tools",
+        "structured-output",
+        "reasoning",
+        "vision",
+        "video",
+        {
+          "$option": "weights",
+          "spark": "speculative-decoding",
+          "strict": null
+        },
+        "batching",
+        "long-context"
+      ],
+      "settings": {
+        "port": 8897,
+        "baseUrl": "http://127.0.0.1:8897/v1",
+        "healthUrl": "http://127.0.0.1:8897/health",
+        "warmup": {
+          "url": "http://127.0.0.1:8897/v1/chat/completions",
+          "method": "POST",
+          "body": {
+            "model": "ling-3.2-air-atlas",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Reply with OK."
+              }
+            ],
+            "max_tokens": 16,
+            "stream": false,
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          }
+        },
+        "contextWindow": 262144,
+        "maxOutputTokens": 32768,
+        "maxActiveRequests": 8,
+        "maxQueuedRequests": 8,
+        "queueTimeoutMs": 300000,
+        "queueRetryAfterSeconds": 5,
+        "requestStartupWaitMs": 1000,
+        "startupRetryAfterSeconds": 30,
+        "healthTimeoutMs": 5000,
+        "memoryGb": 115,
+        "priority": 150,
+        "keepWarm": false,
+        "startupTimeoutMs": 1800000,
+        "timeoutMs": 3600000,
+        "watchdog": {
+          "enabled": true,
+          "failureThreshold": 2,
+          "failureWindowMs": 900000,
+          "minNoProgressMs": 1800000,
+          "cooldownMs": 600000,
+          "drainTimeoutMs": 30000,
+          "failureStatuses": [
+            500,
+            502,
+            504
+          ]
+        },
+        "runtime": {
+          "adapter": "docker",
+          "management": "managed",
+          "containerName": "lloom-atlas-sparkling-ling32-air",
+          "healthUrl": "http://127.0.0.1:8897/health",
+          "healthTimeoutMs": 5000,
+          "warmup": {
+            "url": "http://127.0.0.1:8897/v1/chat/completions",
+            "method": "POST",
+            "body": {
+              "model": "ling-3.2-air-atlas",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "Reply with OK."
+                }
+              ],
+              "max_tokens": 16,
+              "stream": false,
+              "chat_template_kwargs": {
+                "enable_thinking": false
+              }
+            }
+          },
+          "bootstrap": {
+            "adapter": "docker",
+            "image": "ghcr.io/enntity/atlas-sparkling@sha256:a86632ffc12369be26cd9b9250d09f9dd24c96dacdf00703374dc40a2294581f",
+            "pull": false,
+            "pullTimeoutMs": 3600000,
+            "createArgs": [
+              "--restart",
+              "no",
+              "--network",
+              "host",
+              "--ipc",
+              "host",
+              "--memory",
+              "114g",
+              "--gpus",
+              "device=0",
+              "--security-opt",
+              "no-new-privileges=true",
+              "--stop-timeout",
+              "60",
+              "--mount",
+              "type=bind,src=${modelRoot}/${modelDir},dst=/model,readonly",
+              "--mount",
+              "type=bind,src=${installRoot}/atlas-sparkling-cuda-cache,dst=/atlas-cuda-cache",
+              "--volume",
+              "/run/lock/sparkglm:/run/lock/sparkglm",
+              "-e",
+              "MODEL_PATH=/model",
+              "-e",
+              "SERVED_MODEL_NAME=ling-3.2-air-atlas",
+              "-e",
+              "SPARKLING_MODEL=ling-3.2-air",
+              "-e",
+              "SPARKLING_DRAFTER=${sparklingDrafter}",
+              "-e",
+              "SPARKLING_QUANT=${sparklingQuant}",
+              "-e",
+              "SPARKLING_MODE=${sparklingMode}",
+              "-e",
+              "SPARKLING_PREFILL_PRECISION=${prefillPrecision}",
+              "-e",
+              "SPARKLING_DECODE_PRECISION=${decodePrecision}",
+              "-e",
+              "SPARKLING_PROFILE=${sparklingProfile}",
+              "-e",
+              "SPARKLING_TOOL_GUARD=stream",
+              "-e",
+              "SPARKLING_TOOL_GUARD_MAX_BYTES=1048576",
+              "-e",
+              "SPARKLING_TOOL_GUARD_ALLOW_HOSTS=",
+              "-e",
+              "SPARKLING_TOOL_GUARD_DENY_HOSTS=",
+              "-e",
+              "CUDA_CACHE_PATH=/atlas-cuda-cache",
+              "-e",
+              "CUDA_CACHE_MAXSIZE=4294967296"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
