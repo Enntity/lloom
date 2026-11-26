@@ -3,8 +3,8 @@
   "schemaVersion": 1,
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-lingsante-air-vl-atlas",
-  "name": "DGX Spark LingSante-3.1-air-VL Atlas (SparkLing 0.1.2)",
-  "version": 3,
+  "name": "DGX Spark LingSante-3.1-air-VL Atlas (SparkLing 0.1.3)",
+  "version": 4,
   "options": {
     "weights": {
       "description": "Which checkpoint the engine serves: spark is Enntity's NVFP4 quantization of the original BF16 with NVFP4 prefill and decode and Ling-3.2-air's MTP predictor borrowed as the drafter; strict is inclusionAI's original BF16 as published, at checkpoint precision without drafting.",
@@ -41,8 +41,8 @@
       }
     }
   },
-  "summary": "inclusionAI's LingSante-3.1-air-VL (the medical vision-language Ling) on one DGX Spark with SparkLing 0.1.2's Atlas build: text, image and video input, tools, reasoning, prefix caching and its native 131,072-token window. --weights spark (default) serves Enntity's NVFP4 quantization with NVFP4 prefill and decode and Ling-3.2-air's borrowed MTP drafter; --weights strict serves the original BF16. Three modes: default (8 requests), saver (1 request) and max (16 requests). Additive only: no default model, no aliases.",
-  "description": "This recipe installs SparkLing 0.1.2 at the immutable product revision recorded in backends/atlas-sparkling/pins-0.1.2.json. The Atlas engine image is built from Enntity/SparkLing by install/build.sh and published to GHCR; LLooM commits no engine source. Setup acquires the selected checkpoint at its pinned revision (Enntity/LingSante-3.1-air-VL-NVFP4 for spark, with four sha256-checked files of primitive-ai/Ling-3.2-air-NVFP4A16 that carry Ling-3.2-air's MTP predictor; inclusionAI/LingSante-3.1-air-VL for strict), pulls the image by its manifest digest and verifies it, then runs SparkLing's own install/check_files.py and, for spark, install/prepare_sante_draft.py, fetched at the pinned revision, digest-checked and run inside the image with no network. They check every inference file against its pinned size and hash and, for spark, build the view directory the engine serves: the checkpoint's files hard-linked, the predictor added, and the result checked against install/checkpoint-sante-draft.json. Setup remembers the weights it installed with.",
+  "summary": "inclusionAI's LingSante-3.1-air-VL (the medical vision-language Ling) on one DGX Spark with SparkLing 0.1.3's Atlas build: text, image and video input, tools, reasoning, prefix caching and its native 131,072-token window. --weights spark (default) serves Enntity's NVFP4 quantization with NVFP4 prefill and decode and Ling-3.2-air's borrowed MTP drafter; --weights strict serves the original BF16. Three modes: default (8 requests), saver (1 request) and max (16 requests). Additive only: no default model, no aliases.",
+  "description": "This recipe installs SparkLing 0.1.3 at the immutable product revision recorded in backends/atlas-sparkling/pins-0.1.3.json. The Atlas engine image is built from Enntity/SparkLing by install/build.sh and published to GHCR; LLooM commits no engine source. Setup acquires the selected checkpoint at its pinned revision (Enntity/LingSante-3.1-air-VL-NVFP4 for spark, with four sha256-checked files of primitive-ai/Ling-3.2-air-NVFP4A16 that carry Ling-3.2-air's MTP predictor; inclusionAI/LingSante-3.1-air-VL for strict), pulls the image by its manifest digest and verifies it, then runs SparkLing's own install/check_files.py and, for spark, install/prepare_sante_draft.py, fetched at the pinned revision, digest-checked and run inside the image with no network. They check every inference file against its pinned size and hash and, for spark, build the view directory the engine serves: the checkpoint's files hard-linked, the predictor added, and the result checked against install/checkpoint-sante-draft.json. Setup remembers the weights it installed with.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata, launcher and orchestration"
@@ -50,16 +50,16 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "SparkLing 0.1.2: Enntity/SparkLing 4a2228682ebad83e98d60322ba5d4e91d4111d0c (tag v0.1.2, install tree 2b64f3eb97639fdf7e6db462487779146c8a08d2), engine Enntity/atlas ling/3.2-air @ 18dec2347249d413410d390597181e8e453b1e71 (AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). Image ghcr.io/enntity/atlas-sparkling:2b64f3eb9763 (also :0.1.2), addressed by its GHCR manifest digest. Profiles default.json (0.89 GPU memory utilization, 8 sequences), saver.json (0.70, 1) and max.json (0.95, 16), all with a shared BF16 latent KV pool, prefix caching and ffmpeg video decoding; the engine caps LingSante at its native 131072 tokens. Checkpoints Enntity/LingSante-3.1-air-VL-NVFP4 revision 2702935791ac4f04b2b103c748a19de89f6df940 (MIT; quantized from source revision 1f398c937d6069994a156689636832c47d8c09be) and inclusionAI/LingSante-3.1-air-VL revision 1f398c937d6069994a156689636832c47d8c09be (MIT), checked against SparkLing's install/checkpoint-sante-nvfp4.json and install/checkpoint-sante-air-vl.json; borrowed drafter from primitive-ai/Ling-3.2-air-NVFP4A16 revision 3a78e58506316b5b9b7d06037910c3f4abdd291f (MIT; config.json, model.safetensors.index.json, experts-layer42.safetensors, rest-001.safetensors)."
+    "source": "SparkLing 0.1.3: Enntity/SparkLing f2876adf83770bc1c69d9eb74f752ffd47905860 (tag v0.1.3, install tree 7a1f9d22997da0a7538adbd422ad9e7321100ce5), engine Enntity/atlas ling/3.2-air @ 46ed1a1f3ebdc82a9a574ece9ac8f1d7c65570f4 (AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). Image ghcr.io/enntity/atlas-sparkling:7a1f9d22997d (also :0.1.3), addressed by its GHCR manifest digest. Profiles default.json (0.89 GPU memory utilization, 8 sequences), saver.json (0.70, 1) and max.json (0.95, 16), all with a shared BF16 latent KV pool, prefix caching and ffmpeg video decoding; the engine caps LingSante at its native 131072 tokens. Checkpoints Enntity/LingSante-3.1-air-VL-NVFP4 revision 2702935791ac4f04b2b103c748a19de89f6df940 (MIT; quantized from source revision 1f398c937d6069994a156689636832c47d8c09be) and inclusionAI/LingSante-3.1-air-VL revision 1f398c937d6069994a156689636832c47d8c09be (MIT), checked against SparkLing's install/checkpoint-sante-nvfp4.json and install/checkpoint-sante-air-vl.json; borrowed drafter from primitive-ai/Ling-3.2-air-NVFP4A16 revision 3a78e58506316b5b9b7d06037910c3f4abdd291f (MIT; config.json, model.safetensors.index.json, experts-layer42.safetensors, rest-001.safetensors)."
   },
   "links": [
     {
       "rel": "upstream",
-      "href": "https://github.com/Enntity/SparkLing/tree/v0.1.2"
+      "href": "https://github.com/Enntity/SparkLing/tree/v0.1.3"
     },
     {
       "rel": "engine",
-      "href": "https://github.com/Enntity/atlas/tree/18dec2347249d413410d390597181e8e453b1e71"
+      "href": "https://github.com/Enntity/atlas/tree/46ed1a1f3ebdc82a9a574ece9ac8f1d7c65570f4"
     },
     {
       "rel": "engine-upstream",
@@ -117,10 +117,10 @@
     "family": "NVIDIA DGX Spark / GB10",
     "testedMachine": "One DGX Spark with 128 GB unified memory",
     "notes": [
-      "This version pins the SparkLing 0.1.2 image ghcr.io/enntity/atlas-sparkling:2b64f3eb9763 (also :0.1.2; install tree 2b64f3eb9763, Atlas 18dec2347), addressed by its digest. Its build ran 8,827 engine tests with 0 failures.",
-      "SparkLing 0.1.2 on one GB10, 2026-11-26, Spark weights, default profile (131,072 tokens, eight requests) and default drafting, nothing else on the GPU (Enntity/SparkLing results/2026-11-26-0.1.2/README.md): single stream 57.5 tok/s (mean of eight greedy prompts, 256 tokens, thinking off; 44.3 plain), first drafts accepted on 100% of counting steps, drafted text equal to plain decode on 8 of 8; aggregate 59.1 / 64.0 / 80.8 / 104.2 tok/s at 1 / 2 / 4 / 8 clients, median time to first token 1.05 s at 8; 30 of 30 arithmetic word problems with thinking on; 10 of 10 single-tool calls; a red-to-blue clip, a counting clip as GIF and MP4, a 90 s 720p clip, an invoice and a grid all read correctly.",
-      "Spark drafts with Ling-3.2-air's MTP predictor, borrowed at setup (SPARKLING_DRAFTER=ling-mtp), one token per step for one active request, plainly from two; LingSante verifies each proposal with its own weights.",
-      "LingSante declares 131,072 tokens natively; the engine caps every profile there (its publisher's 256K configuration uses YaRN and is not served). The latent KV pool is shared across requests: 2,370,704 tokens in the default profile, 18 full windows.",
+      "This version pins the SparkLing 0.1.3 image ghcr.io/enntity/atlas-sparkling:7a1f9d22997d (also :0.1.3; install tree 7a1f9d22997d, Atlas 46ed1a1f3), addressed by its digest. Its build ran 8,830 engine tests with 0 failures.",
+      "SparkLing 0.1.3 on one GB10, 2026-11-26, Spark weights, default profile (131,072 tokens, eight requests) and default drafting, nothing else on the GPU (Enntity/SparkLing results/2026-11-26-0.1.3/README.md). RigMark 1.1.0, thinking off: code / prose / structured decode 62.4 / 49.8 / 63.4 tok/s; short code 56.0 / 86.0 / 117.8 / 139.6 tok/s at 1 / 2 / 4 / 8 requests (0.1.2: 56.5 / 66.5 / 96.6 / 136.2); short prose 47.0 / 91.1 / 115.5 at 1 / 4 / 8; cold prefill 2,576 tok/s at 32K and 3,405 at 8K; 6/6 basic output gates. Single stream 57.4 tok/s on eight greedy prompts (44.2 plain), text equal to plain decode and to 0.1.2 on 8 of 8; 30 of 30 arithmetic word problems with thinking on; 10 of 10 single-tool calls; a red-to-blue clip, a counting clip as GIF and MP4, a 90 s 720p clip, an invoice and a grid all read correctly.",
+      "Spark drafts with Ling-3.2-air's MTP predictor, borrowed at setup (SPARKLING_DRAFTER=ling-mtp), one token per step for up to four active requests, verified in one batched forward, plainly from five; LingSante verifies each proposal with its own weights.",
+      "LingSante declares 131,072 tokens natively; the engine caps every profile there (its publisher's 256K configuration uses YaRN and is not served). The latent KV pool is shared across requests: 2,374,592 tokens in the default profile, 18 full windows.",
       "A medical model: its answers are not medical advice and it is not a medical device.",
       "Profiles (SparkLing install/profiles, all BF16 KV in a shared latent pool, prefix caching, 2,048-token prefill chunks or 8,192 with NVFP4 prefill, ffmpeg video decoding on): default 8 requests at 0.89 GPU memory utilization, saver 1 request at 0.70, max 16 requests at 0.95, each at the model's full window. Requests the KV pool cannot hold yet wait rather than fail. The engine borrows the GB10 display carveout for the KV cache when no other Spark* server holds the shared lock /run/lock/sparkglm (mounted here); the default pool's per-layer buffers are too large for it, smaller pools use it. SparkLing's disk prefix cache stays off here (LLooM sets no SPARKLING_PREFIX_CACHE_GB).",
       "Strict serves the original checkpoint for reference. It does not fit in memory, so Atlas pages experts from the checkpoint on disk and decodes at about 2 tok/s; its KV pool stops at eight full windows so the rest of memory can cache those experts.",
@@ -175,7 +175,7 @@
         "command": "node",
         "args": [
           "${repoRoot}/backends/atlas-sparkling/verify-pins.mjs",
-          "${repoRoot}/backends/atlas-sparkling/pins-0.1.2.json"
+          "${repoRoot}/backends/atlas-sparkling/pins-0.1.3.json"
         ]
       },
       {
@@ -237,7 +237,7 @@
         "args": [
           "${repoRoot}/backends/atlas-sparkling/install.sh",
           "--manifest",
-          "${repoRoot}/backends/atlas-sparkling/pins-0.1.2.json"
+          "${repoRoot}/backends/atlas-sparkling/pins-0.1.3.json"
         ]
       },
       {
@@ -249,7 +249,7 @@
         "args": [
           "${repoRoot}/backends/atlas-sparkling/prepare.sh",
           "--manifest",
-          "${repoRoot}/backends/atlas-sparkling/pins-0.1.2.json",
+          "${repoRoot}/backends/atlas-sparkling/pins-0.1.3.json",
           "--model-root",
           "${modelRoot}",
           "--model",
@@ -420,7 +420,7 @@
           },
           "bootstrap": {
             "adapter": "docker",
-            "image": "ghcr.io/enntity/atlas-sparkling@sha256:a86632ffc12369be26cd9b9250d09f9dd24c96dacdf00703374dc40a2294581f",
+            "image": "ghcr.io/enntity/atlas-sparkling@sha256:a8565646d75c08d191a9dbd89546d5c68cdc8e22a19ad2c2dae2482fea71cfbd",
             "pull": false,
             "pullTimeoutMs": 3600000,
             "createArgs": [

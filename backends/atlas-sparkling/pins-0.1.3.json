@@ -1,0 +1,63 @@
+{
+  "manifestVersion": 1,
+  "status": "final",
+  "note": "Pin manifest for SparkLing 0.1.3, recipes linux-nvidia-dgx-spark-ling32-air-atlas version 3 and linux-nvidia-dgx-spark-lingsante-air-vl-atlas version 4: Ling-3.2-air or LingSante-3.1-air-VL on one DGX Spark at its full context, eight requests from one shared latent KV pool, with up to four requests drafting together through one batched verify (Atlas 46ed1a1f3). Image built from Enntity/SparkLing main at the pinned revision (tag v0.1.3); its build ran 8,830 engine tests with 0 failures, and its release measurement and functional checks are in that repository's results/2026-11-26-0.1.3. image.reference is the GHCR manifest digest (an arm64 image index, also tagged :0.1.3); the tag is the first 12 characters of the install/ tree.",
+  "source": {
+    "repo": "Enntity/SparkLing",
+    "revision": "f2876adf83770bc1c69d9eb74f752ffd47905860",
+    "installTree": "7a1f9d22997da0a7538adbd422ad9e7321100ce5",
+    "cloneUrl": "https://github.com/Enntity/SparkLing.git",
+    "buildScript": "install/build.sh"
+  },
+  "engine": {
+    "repo": "Enntity/atlas",
+    "branch": "ling/3.2-air",
+    "commit": "46ed1a1f3ebdc82a9a574ece9ac8f1d7c65570f4"
+  },
+  "image": {
+    "reference": "ghcr.io/enntity/atlas-sparkling@sha256:a8565646d75c08d191a9dbd89546d5c68cdc8e22a19ad2c2dae2482fea71cfbd",
+    "tag": "ghcr.io/enntity/atlas-sparkling:7a1f9d22997d",
+    "label": "io.enntity.sparkling.install-tree",
+    "entrypoint": "/opt/atlas/serve.py",
+    "profilePath": "/opt/atlas/profiles/default.json",
+    "architecture": "arm64"
+  },
+  "checkpoints": {
+    "ling-3.2-air": {
+      "strict": {
+        "repo": "inclusionAI/Ling-3.2-air",
+        "revision": "ff099487f6f57165e6fa9386ad61fddfafc78b76",
+        "manifest": "checkpoint.json"
+      },
+      "spark": {
+        "repo": "primitive-ai/Ling-3.2-air-NVFP4A16",
+        "revision": "3a78e58506316b5b9b7d06037910c3f4abdd291f",
+        "manifest": "checkpoint.json"
+      }
+    },
+    "sante-air-vl": {
+      "strict": {
+        "repo": "inclusionAI/LingSante-3.1-air-VL",
+        "revision": "1f398c937d6069994a156689636832c47d8c09be",
+        "manifest": "checkpoint-sante-air-vl.json"
+      },
+      "spark": {
+        "repo": "Enntity/LingSante-3.1-air-VL-NVFP4",
+        "revision": "2702935791ac4f04b2b103c748a19de89f6df940",
+        "manifest": "checkpoint-sante-nvfp4.json",
+        "lingMtpDonor": {
+          "repo": "primitive-ai/Ling-3.2-air-NVFP4A16",
+          "revision": "3a78e58506316b5b9b7d06037910c3f4abdd291f"
+        }
+      }
+    }
+  },
+  "prepareTool": {
+    "check_files.py": "44fbb2e3188fe99a58208c3a378368c2637314b6f818871246e94b25af277fef",
+    "checkpoint.json": "fc67b0dd88aab86c37bb1420a8d4816ba99c936c7f73b5c8e13eab44bd3c99b1",
+    "checkpoint-sante-air-vl.json": "92adfe2e0acff34dd8faf579fd270964ab713ed1b9b3683e83759a57dc60397b",
+    "checkpoint-sante-nvfp4.json": "b1a69c244a1d89d529caefe7c043f575ac4bcc05ca07629ac6c2b4d8358c90e1",
+    "checkpoint-sante-draft.json": "987c11c853af846486cbe7e129184db9d575b0a557208edbc2ac9b7b60024332",
+    "prepare_sante_draft.py": "ccca4c5d12470fb146b3ed01ec2bb10412e8af2a87826033be876983c5938a4d"
+  }
+}
