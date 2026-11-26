@@ -46,7 +46,7 @@ export function loadPins(manifestPath = MANIFEST_PATH) {
 // A release pins its drafters by name (drafters.v80, drafters.dflash2) for the
 // recipe's --drafter option; manifests from before that pin one as drafter.
 // The checkpoints of the recipe's --model option are pinned the same way
-// (models.sage-s21-flash) beside model, the default one.
+// (models.sage-s2.1-flash) beside model, the default one.
 function namedPins(manifest, group, kind) {
   if (manifest[group] && typeof manifest[group] === 'object') {
     return Object.entries(manifest[group]).map(([name, pin]) => [`${group}.${name}`, name, pin, kind]);
@@ -99,8 +99,8 @@ export function verifyPins(manifest) {
   const isDefault = ([, , pin]) => pin?.repo === manifest.model?.repo && pin?.revision === manifest.model?.revision;
   if (manifest.models && !models.some(isDefault)) failures.push('models must include the default model');
   for (const [field, name, pin, kind] of [...drafters, ...models]) {
-    if (name !== null && !/^[a-z0-9][a-z0-9-]*$/.test(name)) {
-      failures.push(`${kind} name ${name} must be lowercase letters, digits or -`);
+    if (name !== null && !/^[a-z0-9][a-z0-9.-]*$/.test(name)) {
+      failures.push(`${kind} name ${name} must be lowercase letters, digits, . or -`);
     }
     for (const key of ['repo', 'revision']) {
       const value = pin?.[key];

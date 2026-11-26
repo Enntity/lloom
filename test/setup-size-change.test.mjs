@@ -152,11 +152,11 @@ test('changing --model swaps the checkpoint in place: same runtimes, one gateway
     });
   const modelPath = (config) => config.runtimes[HEAD].bootstrap.createArgs.find((arg) => arg.startsWith('MODEL_PATH='));
 
-  const glm = withModel(pairHostConfig(), 'glm53-flash');
+  const glm = withModel(pairHostConfig(), 'glm-5.3-flash');
   assert.equal(modelPath(glm), 'MODEL_PATH=/models/nvidia--GLM-5.3-Flash-FP4-Local');
   glm.runtimes[GROUP].maintenance = structuredClone(MAINTENANCE);
 
-  const sage = withModel(glm, 'sage-s21-flash');
+  const sage = withModel(glm, 'sage-s2.1-flash');
   assert.equal(modelPath(sage), 'MODEL_PATH=/models/Enntity--Sage-S2.1-Flash-NVFP4');
   assert.deepEqual(recipeRuntimeIds(sage), [GROUP, HEAD, WORKER]);
   assert.deepEqual(
@@ -164,11 +164,11 @@ test('changing --model swaps the checkpoint in place: same runtimes, one gateway
     ['glm-5.3-flash-atlas'],
     'routes and aliases keep naming one model'
   );
-  assert.equal(sage.runtimes[GROUP].recipe.options.model, 'sage-s21-flash');
+  assert.equal(sage.runtimes[GROUP].recipe.options.model, 'sage-s2.1-flash');
   assert.deepEqual(sage.runtimes[GROUP].maintenance, MAINTENANCE, 'a suspension stands through the swap');
   await loads(t, sage);
 
-  const back = withModel(sage, 'glm53-flash');
+  const back = withModel(sage, 'glm-5.3-flash');
   assert.equal(modelPath(back), modelPath(glm));
   assert.deepEqual(back.runtimes[HEAD].bootstrap, glm.runtimes[HEAD].bootstrap);
 });
