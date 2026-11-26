@@ -170,6 +170,13 @@ function resolveOptionNodes(value, selected, variables, where) {
   return Object.fromEntries(entries);
 }
 
+// An option may keep earlier names for its values (aliases: { old: value }), so
+// commands and installs that used them still select the same value.
+function optionValue(option, value) {
+  const aliases = asObject(option?.aliases);
+  return Object.hasOwn(aliases, value) ? String(aliases[value]) : value;
+}
+
 function resolveRecipeOptions(source, requested = {}) {
   const selected = {};
   const variables = {};
@@ -178,7 +185,7 @@ function resolveRecipeOptions(source, requested = {}) {
     const fallback = isOptionNode(option?.default)
       ? optionBranch(option.default, selected, `recipe ${source.id} option ${name} default`)
       : option?.default;
-    const value = String(requested[name] ?? fallback);
+    const value = optionValue(option, String(requested[name] ?? fallback));
     if (!Object.hasOwn(values, value)) {
       throw new Error(
         `recipe ${source.id} option ${name} has no value ${value}; its values are ${Object.keys(values).join(', ')}`
@@ -236,9 +243,9 @@ export function installedRecipeOptions(config, recipeId) {
 // remembered value the recipe no longer offers falls back to its default.
 export function recipeWithInstalledOptions(recipe, config, requested = {}) {
   if (!recipe?.options) return recipe;
-  const remembered = Object.entries(installedRecipeOptions(config, recipe.id)).filter(([name, value]) =>
-    Object.hasOwn(recipe.options[name]?.values ?? {}, value)
-  );
+  const remembered = Object.entries(installedRecipeOptions(config, recipe.id))
+    .map(([name, value]) => [name, optionValue(recipe.options[name], String(value))])
+    .filter(([name, value]) => Object.hasOwn(recipe.options[name]?.values ?? {}, value));
   const wanted = { ...Object.fromEntries(remembered), ...requested };
   const unchanged = Object.entries(wanted).every(
     ([name, value]) => !Object.hasOwn(recipe.options, name) || recipe.selectedOptions?.[name] === String(value)
@@ -281,6 +288,12 @@ function validateRecipeOptions(recipe) {
     for (const value of defaults) {
       if (!Object.hasOwn(values, String(value)))
         errors.push(`${prefix} option ${name} default ${value} is not one of its values`);
+    }
+    for (const [alias, value] of Object.entries(asObject(option?.aliases))) {
+      if (Object.hasOwn(values, alias))
+        errors.push(`${prefix} option ${name} alias ${alias} is already one of its values`);
+      else if (!Object.hasOwn(values, String(value)))
+        errors.push(`${prefix} option ${name} alias ${alias} names ${value}, which is not one of its values`);
     }
     for (const [value, choice] of Object.entries(values)) {
       for (const [key, variable] of Object.entries(asObject(choice?.variables))) {

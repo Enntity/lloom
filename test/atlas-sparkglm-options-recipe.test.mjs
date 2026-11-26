@@ -15,6 +15,7 @@ import {
   loadRecipeById,
   loadRecipeVersion,
   recipeOptionCombinations,
+  recipeWithInstalledOptions,
   validateRecipe
 } from '../src/recipes.mjs';
 
@@ -446,6 +447,29 @@ test('--model serves another pinned checkpoint of the same architecture and chan
       );
     }
   }
+});
+
+test('the earlier --model names still select their checkpoints, typed or remembered', async () => {
+  const current = await loadRecipeById(recipeId);
+  for (const [old, now] of [
+    ['glm53-flash', 'glm-5.3-flash'],
+    ['sage-s21-flash', 'sage-s2.1-flash']
+  ]) {
+    const typed = applyRecipeOptions(current, { model: old, drafter: 'v81' });
+    assert.equal(typed.selectedOptions.model, now);
+    assert.deepEqual(installed(typed), installed(applyRecipeOptions(current, { model: now, drafter: 'v81' })));
+    // A host installed by version 8 before the rename remembers the old value.
+    const config = { runtimes: { group: { recipe: { id: recipeId, options: { model: old, drafter: 'v81' } } } } };
+    const remembered = recipeWithInstalledOptions(current, config, { drafter: 'v80' });
+    assert.deepEqual([remembered.selectedOptions.model, remembered.selectedOptions.drafter], [now, 'v80']);
+    assert.equal(recipeWithInstalledOptions(current, config).selectedOptions.model, now);
+  }
+  // An alias must name a value and must not be one.
+  const broken = structuredClone(await loadRecipeVersion(recipeId, 8));
+  broken.options.model.aliases = { 'glm-5.3-flash': 'sage-s2.1-flash', old: 'missing' };
+  const errors = validateRecipe(broken, {}, { checkLocalReferences: false }).join('\n');
+  assert.match(errors, /option model alias glm-5\.3-flash is already one of its values/);
+  assert.match(errors, /option model alias old names missing, which is not one of its values/);
 });
 
 test('the pin checker takes a map of named checkpoints beside the default one', () => {

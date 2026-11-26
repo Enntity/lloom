@@ -397,9 +397,9 @@ in place of the GLM checkpoint: a calibrated NVFP4 quantization of
 takes text, images and video; Sage's scientific-input projectors are not
 included. The option is in versions 7 and 8 only, because 0.3.6 is the first
 release that returns Sage's forced tool calls as tool calls. The values are
-SparkGLM's own `./start.sh --model` names; version 7 spelled them
-`glm53-flash` and `sage-s21-flash`. A host remembered with `glm53-flash` gets
-`glm-5.3-flash`, the same checkpoint, as the default.
+SparkGLM's own `./start.sh --model` names. Version 7 and version 8 before
+2026-11-25 spelled them `glm53-flash` and `sage-s21-flash`; those names still
+select the same checkpoints, typed or remembered from an earlier install.
 
 - **One gateway id.** Either checkpoint is served as `glm-5.3-flash-atlas`, so
   routes, aliases and `lloom suspend` or `resume` commands stay as they are.

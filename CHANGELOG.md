@@ -17,7 +17,7 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ### Changed
 
-- The SparkGLM recipe's `--model` values are the product's own `./start.sh --model` names: `glm-5.3-flash` (default) and `sage-s2.1-flash`, which were `glm53-flash` and `sage-s21-flash`. What each installs is unchanged. A host remembered with `glm53-flash` installs `glm-5.3-flash`, the default; `--model sage-s21-flash` is refused with the new values listed. Pin names may now contain `.`.
+- The SparkGLM recipe's `--model` values are the product's own `./start.sh --model` names: `glm-5.3-flash` (default) and `sage-s2.1-flash`, which were `glm53-flash` and `sage-s21-flash`. What each installs is unchanged. The earlier names still work, typed or remembered from an install, through a new recipe option field, `aliases` (`{ "old": "value" }`), which validation checks names a value and is not one. Pin names may now contain `.`.
 
 ### Fixed
 
