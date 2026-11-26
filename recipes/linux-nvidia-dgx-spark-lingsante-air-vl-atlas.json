@@ -4,7 +4,7 @@
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-lingsante-air-vl-atlas",
   "name": "DGX Spark LingSante-3.1-air-VL Atlas (SparkLing 0.1.1)",
-  "version": 1,
+  "version": 2,
   "options": {
     "weights": {
       "description": "Which checkpoint the engine serves: spark is Enntity's NVFP4 quantization of the original BF16 with NVFP4 prefill and decode and Ling-3.2-air's MTP predictor borrowed as the drafter; strict is inclusionAI's original BF16 as published, at checkpoint precision without drafting.",
@@ -313,8 +313,8 @@
       "role": "standalone-cognition",
       "name": "LingSante-3.1-air-VL on Atlas SparkLing (${weightsTitle})",
       "model": "${modelRepo}",
-      "gatewayModel": "lingsante-air-vl",
-      "upstreamModel": "lingsante-air-vl",
+      "gatewayModel": "lingsante-3.1-air-vl-atlas",
+      "upstreamModel": "lingsante-3.1-air-vl-atlas",
       "runtime": "lingsante-air-vl-atlas",
       "backendConfig": "lingsante-air-vl-atlas",
       "setDefault": false,
@@ -353,7 +353,7 @@
           "url": "http://127.0.0.1:8897/v1/chat/completions",
           "method": "POST",
           "body": {
-            "model": "lingsante-air-vl",
+            "model": "lingsante-3.1-air-vl-atlas",
             "messages": [
               {
                 "role": "user",
@@ -404,7 +404,7 @@
             "url": "http://127.0.0.1:8897/v1/chat/completions",
             "method": "POST",
             "body": {
-              "model": "lingsante-air-vl",
+              "model": "lingsante-3.1-air-vl-atlas",
               "messages": [
                 {
                   "role": "user",
@@ -447,7 +447,7 @@
               "-e",
               "MODEL_PATH=/model",
               "-e",
-              "SERVED_MODEL_NAME=lingsante-air-vl",
+              "SERVED_MODEL_NAME=lingsante-3.1-air-vl-atlas",
               "-e",
               "SPARKLING_MODEL=sante-air-vl",
               "-e",

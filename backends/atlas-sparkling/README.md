@@ -16,7 +16,7 @@ image is built from `Enntity/SparkLing` revision
 Two recipes share this directory, one per model:
 
 - `linux-nvidia-dgx-spark-ling32-air-atlas` serves `ling-3.2-air-atlas`.
-- `linux-nvidia-dgx-spark-lingsante-air-vl-atlas` serves `lingsante-air-vl`.
+- `linux-nvidia-dgx-spark-lingsante-air-vl-atlas` serves `lingsante-3.1-air-vl-atlas`.
 
 They are separate recipes, not one recipe with a model option, because the
 models have different gateway ids: an option that renamed the gateway model
@@ -150,7 +150,7 @@ CUDA cache (the image's profiles set `CUDA_CACHE_PATH=/atlas-cuda-cache`;
 `start.sh` leaves it inside the container). It does not add `start.sh`'s
 `io.enntity.owner=SparkLing` label: LLooM owns the container. Environment:
 `MODEL_PATH=/model`, `SERVED_MODEL_NAME` (`ling-3.2-air-atlas` or
-`lingsante-air-vl`), `SPARKLING_MODEL` (`ling-3.2-air` or `sante-air-vl`),
+`lingsante-3.1-air-vl-atlas`), `SPARKLING_MODEL` (`ling-3.2-air` or `sante-air-vl`),
 `SPARKLING_MODE` (`spark` or `strict`), `SPARKLING_QUANT`,
 `SPARKLING_DRAFTER`, `SPARKLING_PREFILL_PRECISION` and
 `SPARKLING_DECODE_PRECISION` (the values in the weights table),
