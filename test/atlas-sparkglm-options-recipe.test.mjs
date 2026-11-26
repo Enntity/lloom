@@ -15,6 +15,7 @@ import {
   loadRecipeById,
   loadRecipeVersion,
   recipeOptionCombinations,
+  recipeWithInstalledOptions,
   validateRecipe
 } from '../src/recipes.mjs';
 
@@ -351,7 +352,10 @@ test('version 8 is SparkGLM 0.3.6 as republished: version 7 with the pins, image
   assert.equal(v8.version, 8);
   assert.match(v8.name, /SparkGLM 0\.3\.6\)/);
   assert.deepEqual(validateRecipe(v8, {}, { checkLocalReferences: false }), []);
-  assert.deepEqual(recipeOptionCombinations(v8), recipeOptionCombinations(v7));
+  // Version 8 names its --model values as the products do (SparkGLM ./start.sh --model).
+  const renamed = { 'glm53-flash': 'glm-5.3-flash', 'sage-s21-flash': 'sage-s2.1-flash' };
+  const asV8 = (options) => ({ ...options, model: renamed[options.model] });
+  assert.deepEqual(recipeOptionCombinations(v8), recipeOptionCombinations(v7).map(asV8));
   const before = loadPins(path.join(root, 'backends/atlas-sparkglm/pins-0.3.6.json'));
   const next = loadPins(path.join(root, 'backends/atlas-sparkglm/pins-0.3.6-7880aee26de2.json'));
   assert.deepEqual(verifyPins(next), []);
@@ -362,15 +366,18 @@ test('version 8 is SparkGLM 0.3.6 as republished: version 7 with the pins, image
   // Same checkpoints, profiles and drafters: the republished image changes the launchers' default
   // mode, which this recipe sets explicitly, and adds a build-time engine test fix.
   assert.deepEqual(next.model, before.model);
-  assert.deepEqual(next.models, before.models);
+  assert.deepEqual(
+    next.models,
+    Object.fromEntries(Object.entries(before.models).map(([name, pin]) => [renamed[name], pin]))
+  );
   assert.deepEqual(profilePathsOf(next), profilePathsOf(before));
   assert.deepEqual(next.drafters, before.drafters);
   for (const options of recipeOptionCombinations(v7)) {
     const swapped = JSON.stringify(installed(applyRecipeOptions(v7, options)))
       .replaceAll('pins-0.3.6.json', 'pins-0.3.6-7880aee26de2.json')
       .replaceAll(before.image.reference, next.image.reference);
-    assert.deepEqual(installed(applyRecipeOptions(v8, options)), JSON.parse(swapped), JSON.stringify(options));
-    for (const member of members(applyRecipeOptions(v8, options))) {
+    assert.deepEqual(installed(applyRecipeOptions(v8, asV8(options))), JSON.parse(swapped), JSON.stringify(options));
+    for (const member of members(applyRecipeOptions(v8, asV8(options)))) {
       assert.equal(member.runtimeSettings.bootstrap.image, next.image.reference);
       assert.ok(member.runtimeSettings.bootstrap.createArgs.includes('SPARKGLM_MODE=spark'));
     }
@@ -396,9 +403,11 @@ test('--model serves another pinned checkpoint of the same architecture and chan
   const current = await loadRecipeById(recipeId);
   const manifest = loadPins(path.join(root, 'backends/atlas-sparkglm/pins-0.3.6-7880aee26de2.json'));
   assert.deepEqual(verifyPins(manifest), []);
-  assert.equal(current.selectedOptions.model, 'glm53-flash');
-  const glm = pinnedModel(manifest, 'glm53-flash');
-  const sage = pinnedModel(manifest, 'sage-s21-flash');
+  assert.equal(current.selectedOptions.model, 'glm-5.3-flash');
+  // The values are the products' own --model names (SparkGLM ./start.sh --model).
+  assert.deepEqual(Object.keys(current.options.model.values), ['glm-5.3-flash', 'sage-s2.1-flash']);
+  const glm = pinnedModel(manifest, 'glm-5.3-flash');
+  const sage = pinnedModel(manifest, 'sage-s2.1-flash');
   assert.deepEqual(glm, manifest.model);
   assert.deepEqual(sage, {
     repo: 'Enntity/Sage-S2.1-Flash-NVFP4',
@@ -408,7 +417,7 @@ test('--model serves another pinned checkpoint of the same architecture and chan
   for (const options of recipeOptionCombinations(current)) {
     const r = applyRecipeOptions(current, options);
     const pinned = pinnedModel(manifest, options.model);
-    const other = options.model === 'glm53-flash' ? sage : glm;
+    const other = options.model === 'glm-5.3-flash' ? sage : glm;
     const step = r.setup.steps.find((s) => s.id === 'download-atlas-model');
     assert.deepEqual([step.model, step.revision], [pinned.repo, pinned.revision], JSON.stringify(options));
     assert.equal(r.models[0].model, pinned.repo);
@@ -425,7 +434,7 @@ test('--model serves another pinned checkpoint of the same architecture and chan
       assert.ok(!args.some((arg) => arg.includes(directory(other))), 'no other checkpoint');
     }
     // Sage differs from GLM in the checkpoint it acquires, mounts and names, and in nothing else.
-    if (options.model === 'sage-s21-flash') {
+    if (options.model === 'sage-s2.1-flash') {
       const asGlm = JSON.stringify(installed(r))
         .replaceAll(sage.repo, glm.repo)
         .replaceAll(directory(sage), directory(glm))
@@ -433,11 +442,34 @@ test('--model serves another pinned checkpoint of the same architecture and chan
         .replaceAll('Sage S2.1 Flash NVFP4', 'GLM-5.3 Flash FP4-Local');
       assert.deepEqual(
         JSON.parse(asGlm),
-        installed(applyRecipeOptions(current, { ...options, model: 'glm53-flash' })),
+        installed(applyRecipeOptions(current, { ...options, model: 'glm-5.3-flash' })),
         JSON.stringify(options)
       );
     }
   }
+});
+
+test('the earlier --model names still select their checkpoints, typed or remembered', async () => {
+  const current = await loadRecipeById(recipeId);
+  for (const [old, now] of [
+    ['glm53-flash', 'glm-5.3-flash'],
+    ['sage-s21-flash', 'sage-s2.1-flash']
+  ]) {
+    const typed = applyRecipeOptions(current, { model: old, drafter: 'v81' });
+    assert.equal(typed.selectedOptions.model, now);
+    assert.deepEqual(installed(typed), installed(applyRecipeOptions(current, { model: now, drafter: 'v81' })));
+    // A host installed by version 8 before the rename remembers the old value.
+    const config = { runtimes: { group: { recipe: { id: recipeId, options: { model: old, drafter: 'v81' } } } } };
+    const remembered = recipeWithInstalledOptions(current, config, { drafter: 'v80' });
+    assert.deepEqual([remembered.selectedOptions.model, remembered.selectedOptions.drafter], [now, 'v80']);
+    assert.equal(recipeWithInstalledOptions(current, config).selectedOptions.model, now);
+  }
+  // An alias must name a value and must not be one.
+  const broken = structuredClone(await loadRecipeVersion(recipeId, 8));
+  broken.options.model.aliases = { 'glm-5.3-flash': 'sage-s2.1-flash', old: 'missing' };
+  const errors = validateRecipe(broken, {}, { checkLocalReferences: false }).join('\n');
+  assert.match(errors, /option model alias glm-5\.3-flash is already one of its values/);
+  assert.match(errors, /option model alias old names missing, which is not one of its values/);
 });
 
 test('the pin checker takes a map of named checkpoints beside the default one', () => {

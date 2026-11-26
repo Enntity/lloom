@@ -15,6 +15,10 @@ All notable changes to LLooM will be documented in this file. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The SparkGLM recipe's `--model` values are the product's own `./start.sh --model` names: `glm-5.3-flash` (default) and `sage-s2.1-flash`, which were `glm53-flash` and `sage-s21-flash`. What each installs is unchanged. The earlier names still work, typed or remembered from an install, through a new recipe option field, `aliases` (`{ "old": "value" }`), which validation checks names a value and is not one. Pin names may now contain `.`.
+
 ### Fixed
 
 - Setup and init keep every credential the config takes from the environment as its `${NAME}` reference (#154). Only `security` keys and backend and provider keys were kept; a cluster node's `apiKey` was written back as the secret it resolved to. The proxy backends that loading adds for federated peers, which carry the peer's resolved key, are no longer written to the file either.

@@ -31,11 +31,11 @@
     "revision": "76348ddb2be2e35e39ecfc00e75dc07703f4f3d5"
   },
   "models": {
-    "glm53-flash": {
+    "glm-5.3-flash": {
       "repo": "nvidia/GLM-5.3-Flash-FP4-Local",
       "revision": "76348ddb2be2e35e39ecfc00e75dc07703f4f3d5"
     },
-    "sage-s21-flash": {
+    "sage-s2.1-flash": {
       "repo": "Enntity/Sage-S2.1-Flash-NVFP4",
       "revision": "6967e49571a951ac0c71bb554eeeca365e838130"
     }

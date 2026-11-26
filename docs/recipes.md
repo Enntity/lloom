@@ -380,23 +380,26 @@ Three [options](#plan-contract) pick the deployment:
 | --- | --- | --- |
 | `--sparks` | `2`: a TP-2 pair over a direct cable (profile `4x1m`); `4`: TP-4 over a daisy chain (profile `4x1m-tp4`) | `2` |
 | `--drafter` | `v81` or `v80`: Enntity's drafters (private repository); `dflash2`: `incoai/GLM-5.3-Flash-DFlash2` | `dflash2` |
-| `--model` | `glm53-flash`: `nvidia/GLM-5.3-Flash-FP4-Local`; `sage-s21-flash`: `Enntity/Sage-S2.1-Flash-NVFP4` | `glm53-flash` |
+| `--model` | `glm-5.3-flash`: `nvidia/GLM-5.3-Flash-FP4-Local`; `sage-s2.1-flash`: `Enntity/Sage-S2.1-Flash-NVFP4` | `glm-5.3-flash` |
 
 ```sh
 lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --additive --apply --yes
 lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --drafter v81 --additive --apply --yes
 lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --sparks 4 --additive --apply --yes
-lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --model sage-s21-flash --additive --apply --yes
+lloom setup --recipe linux-nvidia-dgx-spark-glm53-atlas --model sage-s2.1-flash --additive --apply --yes
 lloom runtime-start glm53-flash-atlas-cluster
 ```
 
-`--model sage-s21-flash` serves
+`--model sage-s2.1-flash` serves
 [Enntity/Sage-S2.1-Flash-NVFP4](https://huggingface.co/Enntity/Sage-S2.1-Flash-NVFP4)
 in place of the GLM checkpoint: a calibrated NVFP4 quantization of
 `internlm/Sage-S2.1-Flash` (MIT), 179 GB, laid out as this engine loads it. It
 takes text, images and video; Sage's scientific-input projectors are not
 included. The option is in versions 7 and 8 only, because 0.3.6 is the first
-release that returns Sage's forced tool calls as tool calls.
+release that returns Sage's forced tool calls as tool calls. The values are
+SparkGLM's own `./start.sh --model` names. Version 7 and version 8 before
+2026-11-25 spelled them `glm53-flash` and `sage-s21-flash`; those names still
+select the same checkpoints, typed or remembered from an earlier install.
 
 - **One gateway id.** Either checkpoint is served as `glm-5.3-flash-atlas`, so
   routes, aliases and `lloom suspend` or `resume` commands stay as they are.
@@ -407,7 +410,7 @@ release that returns Sage's forced tool calls as tool calls.
 - **What was run.** Installed with this option on a pair on 2026-11-18, in
   Spark mode with dflash2, Sage passed 109/109 live checks and decoded 38.6 /
   67.9 / 90.0 tok/s (prose, code, structured) against GLM-5.3-Flash's 37.7 /
-  66.1 / 88.8 on the same pair and image. Switching back to `glm53-flash` gave
+  66.1 / 88.8 on the same pair and image. Switching back to `glm-5.3-flash` gave
   output identical to the 0.3.6 qualification run. Sage leaves a slightly
   smaller prompt cache: in consecutive starts on the same pair the pool read
   2.22M tokens with Sage and 2.38M with GLM-5.3-Flash, and it varies by a few
