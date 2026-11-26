@@ -136,6 +136,7 @@ const LANES = [
     id: 'linux-nvidia-dgx-spark-ling32-air-atlas',
     model: 'ling-3.2-air',
     served: 'ling-3.2-air-atlas',
+    version: 1,
     runtime: 'ling32-air-atlas',
     container: 'lloom-atlas-sparkling-ling32-air',
     windows: { saver: 262144, default: 262144, max: 262144 },
@@ -158,7 +159,8 @@ const LANES = [
   {
     id: 'linux-nvidia-dgx-spark-lingsante-air-vl-atlas',
     model: 'sante-air-vl',
-    served: 'lingsante-air-vl',
+    served: 'lingsante-3.1-air-vl-atlas',
+    version: 2,
     runtime: 'lingsante-air-vl-atlas',
     container: 'lloom-atlas-sparkling-lingsante-air-vl',
     windows: { saver: 131072, default: 131072, max: 131072 },
@@ -192,12 +194,19 @@ const envOf = (runtime) => {
 };
 const flagValue = (args, flag) => args[args.indexOf(flag) + 1];
 
+const recipeIndex = JSON.parse(fs.readFileSync(path.join(root, 'recipes', 'index.json'), 'utf8'));
 for (const lane of LANES) {
   const recipe = await loadRecipeById(lane.id);
   const manifestArg = recipe.setup.steps.find((step) => step.id === 'verify-atlas-pins').args[1];
   const manifestPath = manifestArg.replace('${repoRoot}', root);
-  assert.equal(manifestPath, pinsPath, `${lane.id} checks the 0.1.0 pins`);
-  assert.equal(recipe.version, 1);
+  assert.equal(manifestPath, pinsPath, `${lane.id} checks the 0.1.1 pins`);
+  assert.equal(recipe.version, lane.version);
+  assert.match(recipe.models[0].gatewayModel, /-atlas$/, 'Atlas recipes serve <model>-atlas ids');
+  const indexEntry = recipeIndex.recipes.find((entry) => entry.id === lane.id);
+  assert.equal(indexEntry.currentVersion, recipe.version);
+  for (const entry of indexEntry.versions.filter((v) => v.status === 'archived')) {
+    assert.ok(fs.existsSync(path.join(root, 'recipes', entry.path)), `${lane.id} v${entry.version} is archived`);
+  }
   assert.equal(recipe.backend.id, 'docker-atlas-sparkling');
   assert.equal(recipe.requirements.cluster, undefined, 'one Spark, no fabric');
   assert.equal(recipe.aliases, undefined, 'additive: no aliases');

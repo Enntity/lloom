@@ -1529,10 +1529,16 @@
     {
       "id": "linux-nvidia-dgx-spark-lingsante-air-vl-atlas",
       "path": "linux-nvidia-dgx-spark-lingsante-air-vl-atlas.json",
-      "currentVersion": 1,
+      "currentVersion": 2,
       "versions": [
         {
           "version": 1,
+          "path": "archive/linux-nvidia-dgx-spark-lingsante-air-vl-atlas/v1.json",
+          "status": "archived",
+          "notes": "Same SparkLing 0.1.1 pins; served the model as lingsante-air-vl, out of step with ling-3.2-air-atlas and the -atlas ids of every other Atlas recipe."
+        },
+        {
+          "version": 2,
           "path": "linux-nvidia-dgx-spark-lingsante-air-vl-atlas.json",
           "status": "current"
         }
