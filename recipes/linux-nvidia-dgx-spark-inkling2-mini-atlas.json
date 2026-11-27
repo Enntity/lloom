@@ -3,8 +3,8 @@
   "schemaVersion": 1,
   "profile": "https://lloom.dev/profiles/interchange/v1",
   "id": "linux-nvidia-dgx-spark-inkling2-mini-atlas",
-  "name": "DGX Spark Inkling 2 Mini Atlas (SparkInkling 0.5.0)",
-  "version": 4,
+  "name": "DGX Spark Inkling 2 Mini Atlas (SparkInkling 0.5.1)",
+  "version": 5,
   "options": {
     "weights": {
       "description": "Which weights the engine serves: spark (the default) adds SparkInkling's calibrated NVFP4 overlay for decode; strict is the checkpoint as shipped.",
@@ -29,8 +29,8 @@
       }
     }
   },
-  "summary": "Thinking Machines' Inkling 2 Mini on one DGX Spark with SparkInkling 0.5.0's Atlas build: incoai's DFlash2 drafter, window-bounded KV with requests of up to 1048576 tokens (786432 in the saver mode), prefix caching. --weights spark (default) adds a calibrated NVFP4 overlay; --weights strict serves the checkpoint as shipped. Three modes: default (8 requests), saver (8 requests at half the GPU memory) and max (32 requests). Additive only: no default model, no aliases.",
-  "description": "This recipe installs SparkInkling 0.5.0 at the immutable product revision recorded in backends/atlas-sparkinkling/pins-0.5.0-a9fac42abe15.json. The Atlas engine image is built from Enntity/sparkinkling by install/build.sh and published to GHCR; LLooM commits no engine source. Setup acquires thinkingmachines/Inkling-2-Mini, incoai/Inkling-2-Mini-DFlash2 (sha256-checked) and, with --weights spark, Enntity/Inkling-2-Mini-Spark-NVFP4 (sha256-checked) at pinned revisions, pulls the image by its manifest digest and verifies it, then runs SparkInkling's own install/check_files.py and spark_overlay.py, fetched at the pinned revision, digest-checked and run inside the image with no network: they check the checkpoint's, drafter's and overlay's weights against their pinned sha256 and, with --weights spark, assemble the Spark model directory beside the checkpoint. Setup remembers the weights it installed with.",
+  "summary": "Thinking Machines' Inkling 2 Mini on one DGX Spark with SparkInkling 0.5.1's Atlas build: incoai's DFlash2 drafter, window-bounded KV with requests of up to 1048576 tokens (786432 in the saver mode), prefix caching. --weights spark (default) adds a calibrated NVFP4 overlay; --weights strict serves the checkpoint as shipped. Three modes: default (8 requests), saver (8 requests at half the GPU memory) and max (32 requests). Additive only: no default model, no aliases.",
+  "description": "This recipe installs SparkInkling 0.5.1 at the immutable product revision recorded in backends/atlas-sparkinkling/pins-0.5.1.json. The Atlas engine image is built from Enntity/sparkinkling by install/build.sh and published to GHCR; LLooM commits no engine source. Setup acquires thinkingmachines/Inkling-2-Mini, incoai/Inkling-2-Mini-DFlash2 (sha256-checked) and, with --weights spark, Enntity/Inkling-2-Mini-Spark-NVFP4 (sha256-checked) at pinned revisions, pulls the image by its manifest digest and verifies it, then runs SparkInkling's own install/check_files.py and spark_overlay.py, fetched at the pinned revision, digest-checked and run inside the image with no network: they check the checkpoint's, drafter's and overlay's weights against their pinned sha256 and, with --weights spark, assemble the Spark model directory beside the checkpoint. Setup remembers the weights it installed with.",
   "license": {
     "id": "MIT",
     "name": "Recipe metadata, launcher and orchestration"
@@ -38,16 +38,16 @@
   "provenance": {
     "createdBy": "lloom",
     "generatedBy": "manual-curated",
-    "source": "SparkInkling 0.5.0: Enntity/sparkinkling a8497bd115f10cb072da358e3c2d5b84e8f0e2fe (main, republished 2026-11-25; install tree a9fac42abe157897d4999cbdcdc88d708cde1982), engine Enntity/atlas inkling2/loopcd-20261124 @ 6ab2e9c78d2c8ce0c55f732129e5b17949b34700 (AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). Image ghcr.io/enntity/atlas-sparkinkling:a9fac42abe15 (also :0.5.0), addressed by its GHCR manifest digest. Profiles default.json (0.80 GPU memory utilization, 8 sequences, 1048576 tokens), saver.json (0.50, 8, 786432) and max.json (0.85, 32, 1048576), all with BF16 KV (window-bounded), 4096-token prefill chunks and prefix caching. Model thinkingmachines/Inkling-2-Mini revision ed40e7da625f594fc9c4990f5f66be24873c22d7 (Apache-2.0); drafter incoai/Inkling-2-Mini-DFlash2 @ 4f9088ea66c21f2b99ed657d1941c306b03e84d2 (Apache-2.0); overlay Enntity/Inkling-2-Mini-Spark-NVFP4 @ e9df93dceea2fbf0927caf178104e868452a6292 (Apache-2.0)."
+    "source": "SparkInkling 0.5.1: Enntity/sparkinkling a05e7fa10d33f17bbcc45f1d8776299d732afcea (main, tag v0.5.1, released 2026-11-27; install tree a96a89ab0b293c597474f0c402caf8ed968d0034), engine Enntity/atlas inkling2/rc-0.5.1-20261126 @ a4dbba37810ff4e54ece0a072aae77af69bb836d (AGPL-3.0-only, recorded in the image's /opt/atlas/source-manifest.json). Image ghcr.io/enntity/atlas-sparkinkling:a96a89ab0b29 (also :0.5.1), addressed by its GHCR manifest digest. Profiles default.json (0.80 GPU memory utilization, 8 sequences, 1048576 tokens), saver.json (0.50, 8, 786432) and max.json (0.85, 32, 1048576), all with BF16 KV (window-bounded), 8192-token prefill chunks and prefix caching. Model thinkingmachines/Inkling-2-Mini revision ed40e7da625f594fc9c4990f5f66be24873c22d7 (Apache-2.0); drafter incoai/Inkling-2-Mini-DFlash2 @ 4f9088ea66c21f2b99ed657d1941c306b03e84d2 (Apache-2.0); overlay Enntity/Inkling-2-Mini-Spark-NVFP4 @ e9df93dceea2fbf0927caf178104e868452a6292 (Apache-2.0)."
   },
   "links": [
     {
       "rel": "upstream",
-      "href": "https://github.com/Enntity/sparkinkling/tree/v0.5.0"
+      "href": "https://github.com/Enntity/sparkinkling/tree/v0.5.1"
     },
     {
       "rel": "engine",
-      "href": "https://github.com/Enntity/atlas/tree/1559aa4bcbcea7de56a0f85ab29e0535a1922d92"
+      "href": "https://github.com/Enntity/atlas/tree/a4dbba37810ff4e54ece0a072aae77af69bb836d"
     },
     {
       "rel": "engine-upstream",
@@ -98,11 +98,10 @@
     "family": "NVIDIA DGX Spark / GB10",
     "testedMachine": "One DGX Spark with 128 GB unified memory",
     "notes": [
-      "This version pins the SparkInkling 0.5.0 image as republished 2026-11-25 (engine 6ab2e9c78): --weights spark is the default, and the engine carries an opt-in LoopCD (SPARKINKLING_LOOPCD) that this recipe leaves off; with it off greedy text matched version 3's image in both modes. Version 3 pinned the first 0.5.0 image (engine 1559aa4bc) with strict as the default. New in 0.5.0 since 0.4.2: incoai's DFlash2 drafter replaces the checkpoint's DSpark drafter (downloaded by setup, about 1 GB, Apache-2.0); window-bounded KV, so the 40 sliding-window layer visits keep only their last 1,024 tokens and requests run to 1,048,576 tokens (786,432 in saver); drafting retuned for DFlash2 (Strict drafts three each for two live requests and keeps drafting while a block accepts one token; Spark drafts for one); the prefix cache's disk tier is gone. Versions 3 (0.5.0, first image), 2 (0.4.2) and 1 (0.4.1) stay installable by number.",
-      "SparkInkling 0.5.0 on one GB10, 2026-11-25, RigMark protocol 1.1.0 (low reasoning effort, temperature 0), default profile and DFlash2 drafter, nothing else serving. Strict: code 70.0, prose 39.6, structured 103.2 tok/s, cold 32K prefill 3,268 tok/s, short code C1 / C2 / C4 / C8 46.5 / 62.6 / 85.7 / 122.7. Spark: code 81.4, prose 56.1, structured 117.4 tok/s, cold 32K prefill 3,282 tok/s, short code 58.8 / 77.8 / 103.5 / 135.2. Against 0.4.2: Strict code +7%, prose +12%, structured +11%, one short-code request +13%; Spark code +5%, structured +13%, one short-code request +9%; prefill and two to eight requests level. Six of six output gates in both modes. Receipts: Enntity/sparkinkling results/2026-11-25-release-0.5.0.",
-      "Against vLLM's own Inkling 2 Mini image on the same Spark and protocol (measured 2026-11-20): vLLM without speculation read code 35.1, prose 35.6, 32K prefill 2,722, short code 35.1 / 54.0 / 86.6 / 122.4; with its DSpark drafter code 69.8, prose 31.2, structured 104.3, short code 43.4 / 60.9 / 94.7 / 144.0. Spark leads vLLM with its drafter on code (1.17x), prose (1.80x), structured output (1.13x), prefill (1.21x) and one to four requests, and trails at eight (0.94x). Strict is level with it on code (1.00x) and structured output (0.99x), leads on prose (1.27x), prefill and one and two requests, and trails at four and eight.",
-      "The 0.5.0 image build ran the engine's CPU workspace suite (8,852 tests passed, the closure-attestation test included) and Clippy. On the image, in both modes: a task probe (30 arithmetic word problems, 10 single-tool calls) passed 30/30 and 10/10; tool calls came back as calls blocking and streamed, with thinking on and off and with a forced tool choice; a call to a blocked address finished content_filter, streamed when asked and with no arguments sent when not; an invoice image was transcribed exactly and a 3x3 labelled colour grid read 9/9; greedy text with the drafter on at one, two and four requests matched text with it off, 8/8. Smoke-level checks, not a qualification.",
-      "Profiles: default 8 requests of up to 1,048,576 tokens at 0.80 GPU memory utilization (KV pool 1,969,120 tokens Strict, 1,838,992 Spark); saver 8 x 786,432 at 0.50 (964,560 / 799,520); max 32 x 1,048,576 at 0.85 (1,908,256 / 1,746,976). Two full-length requests are not resident together; requests the pool cannot hold yet wait rather than fail. A code hidden a third of the way into a 1,032,929-token prompt was recalled in Spark mode (1,253 s for the request).",
+      "This version pins SparkInkling 0.5.1 (engine a4dbba378): the same model, drafter and overlay as 0.5.0 on a faster engine. Prefill attention's relative bias runs on the tensor cores with per-head flash prefill, the prefill norms, conv residuals and loop-message gates are fused, the experts' SwiGLU and its quantization run in the gate_up GEMM's epilogue, and the large projections use CUTLASS BF16 tiles; a prompt that arrives while others decode runs one prefill chunk a tick, and the profiles use 8,192-token chunks (was 4,096). Spark decode's projections run on row-invariant tensor-core kernels, and both weights now draft three each for two live requests. --weights spark is the default; the engine carries an opt-in LoopCD (SPARKINKLING_LOOPCD) that this recipe leaves off. Versions 4 (0.5.0 republished), 3 (0.5.0, first image), 2 (0.4.2) and 1 (0.4.1) stay installable by number.",
+      "SparkInkling 0.5.1 on one GB10, 2026-11-27, SparkModelBench 293a44f (RigMark protocol 1.3.0 and RigMark Quality v0.0.2, low reasoning effort, temperature 0), default profile and DFlash2 drafter, nothing else serving; medians. Spark: code 88.2, prose 57.0, structured 129.9 tok/s; cold prefill 5,174 / 5,024 / 4,540 / 3,781 / 2,824 tok/s at 8K / 32K / 64K / 128K / 256K; code aggregate at 1 / 2 / 4 / 8 requests 63.2 / 81.9 / 104.7 / 144.1. Strict: code 68.7, prose 40.2, structured 102.3; cold prefill 5,137 / 4,918 / 4,481 / 3,779 / 2,827; 48.1 / 65.6 / 85.6 / 126.4. Decode gates 15/15 and RigMark Quality 3/4 (go-transfer-ledger misses its acceptance check) in both modes. Cold 32K prefill is 1.53x 0.5.0's (Spark) and 1.50x (Strict); decode workloads differ from 0.5.0's RigMark 1.1.0 run, so decode is not compared. SparkModelBench's staggered four-request lane does not apply: it asks for thinking off, which Inkling 2 Mini does not have. vLLM was not measured with SparkModelBench; 0.5.0's comparison on RigMark 1.1.0 is in version 4's notes. Receipts: Enntity/sparkinkling results/2026-11-27-rc-0.5.1.",
+      "The 0.5.1 image build ran the engine's CPU workspace suite (8,861 tests passed) and Clippy. On the image, in both modes: a task probe (30 arithmetic word problems, 10 single-tool calls) passed 30/30 and 10/10; tool calls came back as calls blocking and streamed, with thinking on and off and with a forced tool choice; a call to a blocked address finished content_filter, streamed when asked and with no arguments sent when not; an invoice image was transcribed exactly and a 3x3 labelled colour grid read 9/9; greedy text with the drafter on at one, two and four requests matched text with it off, 8/8. Smoke-level checks, not a qualification.",
+      "Profiles: default 8 requests of up to 1,048,576 tokens at 0.80 GPU memory utilization (KV pool 1,909,536 tokens Strict, 1,790,944 Spark); saver 8 x 786,432 at 0.50 (882,992 / 741,520); max 32 x 1,048,576 at 0.85 (1,872,512 / 1,718,048). The 8,192-token prefill buffer costs 2-9% of the pool against 0.5.0. Two full-length requests are not resident together; requests the pool cannot hold yet wait rather than fail. On 0.5.0, whose KV layout this is, a code hidden a third of the way into a 1,032,929-token prompt was recalled in Spark mode (1,253 s for the request).",
       "Peak host memory was not measured per mode. LLooM reserves an estimate: saver 66 GB, default 104 GB, max 110 GB. The container is capped at 114 GiB because a GB10 that runs out of shared memory hangs instead of killing a process. In the default and max modes little else should use this Spark's GPU memory.",
       "The engine serves 127.0.0.1:8895 (fixed by the image) with host networking. Text and image input (OpenAI image_url parts with base64 data URIs; one image token per 40x40 pixel tile, no resize); no video.",
       "Licenses: the Atlas engine and SparkInkling's install tools run from the image and are AGPL-3.0-only (not included in LLooM). thinkingmachines/Inkling-2-Mini, incoai/Inkling-2-Mini-DFlash2 and Enntity/Inkling-2-Mini-Spark-NVFP4 are Apache-2.0; the drafter's and overlay's READMEs are kept beside their weights for attribution."
@@ -150,7 +149,7 @@
         "command": "node",
         "args": [
           "${repoRoot}/backends/atlas-sparkinkling/verify-pins.mjs",
-          "${repoRoot}/backends/atlas-sparkinkling/pins-0.5.0-a9fac42abe15.json"
+          "${repoRoot}/backends/atlas-sparkinkling/pins-0.5.1.json"
         ]
       },
       {
@@ -232,7 +231,7 @@
         "args": [
           "${repoRoot}/backends/atlas-sparkinkling/install.sh",
           "--manifest",
-          "${repoRoot}/backends/atlas-sparkinkling/pins-0.5.0-a9fac42abe15.json"
+          "${repoRoot}/backends/atlas-sparkinkling/pins-0.5.1.json"
         ]
       },
       {
@@ -244,7 +243,7 @@
         "args": [
           "${repoRoot}/backends/atlas-sparkinkling/prepare.sh",
           "--manifest",
-          "${repoRoot}/backends/atlas-sparkinkling/pins-0.5.0-a9fac42abe15.json",
+          "${repoRoot}/backends/atlas-sparkinkling/pins-0.5.1.json",
           "--model-root",
           "${modelRoot}",
           "--weights",
@@ -400,7 +399,7 @@
           },
           "bootstrap": {
             "adapter": "docker",
-            "image": "ghcr.io/enntity/atlas-sparkinkling@sha256:d03532628c7ae0970fd9494556032433b426d59232f97c3026de9da3b3f54d0b",
+            "image": "ghcr.io/enntity/atlas-sparkinkling@sha256:8f57001956cbb135dd9f5972f16938482400cfa56eb6d32f16225084c63697e2",
             "pull": false,
             "pullTimeoutMs": 3600000,
             "createArgs": [
