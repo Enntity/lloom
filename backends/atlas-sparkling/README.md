@@ -1,6 +1,6 @@
 # Atlas SparkLing under LLooM
 
-LLooM-managed SparkLing 0.1.3 lane: inclusionAI's
+LLooM-managed SparkLing 0.1.4 lane: inclusionAI's
 [Ling-3.2-air](https://huggingface.co/inclusionAI/Ling-3.2-air) (124B MoE,
 5.5B active, 262,144-token window) or
 [LingSante-3.1-air-VL](https://huggingface.co/inclusionAI/LingSante-3.1-air-VL)
@@ -9,10 +9,11 @@ Spark, served by the Atlas engine with MTP drafting, prefix caching, reasoning,
 tool calls and text, image and video input. This directory is **MIT
 orchestration only**: no Atlas engine source is committed here. The engine
 image is built from `Enntity/SparkLing` revision
-`f2876adf83770bc1c69d9eb74f752ffd47905860` (tag `v0.1.3`, install tree
-`7a1f9d22997d`) by that repository's `install/build.sh` and published as
-`ghcr.io/enntity/atlas-sparkling:7a1f9d22997d` (also `:0.1.3`; public).
-`pins-0.1.1.json` and `pins-0.1.2.json` stay for the archived recipe versions.
+`7016006cf57283324798c1790c28ec48f8f96804` (tag `v0.1.4`, install tree
+`c523fbc3852c`) by that repository's `install/build.sh` and published as
+`ghcr.io/enntity/atlas-sparkling:c523fbc3852c` (also `:0.1.4`; public).
+`pins-0.1.1.json`, `pins-0.1.2.json` and `pins-0.1.3.json` stay for the
+archived recipe versions.
 
 Two recipes share this directory, one per model:
 
@@ -27,9 +28,9 @@ Spark's memory, so LLooM does not start one beside the other.
 
 ## Layout
 
-- `pins-0.1.3.json`: the pin manifest. SparkLing source revision and its
+- `pins-0.1.4.json`: the pin manifest. SparkLing source revision and its
   `install/` git tree, the engine (`Enntity/atlas` `ling/3.2-air` at
-  `46ed1a1f3ebd`), the image by GHCR manifest digest with the tag kept as
+  `469d1649b14b`), the image by GHCR manifest digest with the tag kept as
   metadata, the install-tree label, the four checkpoints with the SparkLing pin
   file that checks each (and LingSante Spark's drafter donor), and
   `prepareTool`: the sha256 of the six SparkLing install files `prepare.sh`
@@ -108,26 +109,28 @@ reservations are estimates: peak host memory per mode was not measured.
 
 ## Release measurement
 
-SparkLing 0.1.3 on one GB10, Spark weights, default profile and drafting
-(Enntity/SparkLing `results/2026-11-26-0.1.3/README.md`); the image build ran 8,830
-engine tests with 0 failures. RigMark 1.1.0, thinking off, median tok/s:
+SparkLing 0.1.4 on one GB10, Spark weights, default profile and drafting
+(Enntity/SparkLing `results/2026-11-27-0.1.4/README.md` and
+`results/sparkmodelbench-v0.1.4`); the image build ran 8,830 engine tests with
+0 failures. SparkModelBench (RigMark 1.3.0, thinking on), median tok/s:
 
-|                                              | Ling-3.2-air                    | LingSante-3.1-air-VL            |
-| -------------------------------------------- | ------------------------------- | ------------------------------- |
-| Code / prose / structured decode             | 63.0 / 54.7 / 64.7              | 62.4 / 49.8 / 63.4              |
-| Short code, 1 / 2 / 4 / 8 requests           | 58.1 / 84.9 / 122.6 / 145.2     | 56.0 / 86.0 / 117.8 / 139.6     |
-| Short code on 0.1.2, 1 / 2 / 4 / 8 requests  | 58.3 / 66.1 / 98.8 / 142.3      | 56.5 / 66.5 / 96.6 / 136.2      |
-| Cold prefill, 32K / 8K tokens                | 2,577 / 3,404                   | 2,576 / 3,405                   |
-| Basic output gates                           | 6/6                             | 6/6                             |
-| Drafted text equal to plain decode and 0.1.2 | 8 of 8                          | 8 of 8                          |
-| Video clips, invoice and grid                | all read correctly              | all read correctly              |
+|                                                | Ling-3.2-air                    | LingSante-3.1-air-VL            |
+| ---------------------------------------------- | ------------------------------- | ------------------------------- |
+| First-request prefill, 8K / 32K / 64K / 128K   | 3,670 / 3,449 / 3,021 / 2,386   | 3,688 / 3,446 / 3,015 / –       |
+| Same on 0.1.3                                  | 3,404 / 2,581 / 1,893 / 1,225   | 3,411 / 2,582 / 1,890 / –       |
+| Code / prose / structured decode               | 49.8 / 49.0 / 54.3              | 45.9 / 44.6 / 53.2              |
+| Short code, 1 / 2 / 4 / 8 requests             | 41.9 / 64.7 / 97.1 / 140.6      | 41.2 / 61.6 / 86.9 / 122.8      |
+| Drafted text equal to plain decode and 0.1.3   | 8 of 8                          | 8 of 8                          |
+| Video clips, invoice and grid                  | all read correctly              | all read correctly              |
 
-0.1.3 drafts for up to four active requests and verifies their drafts in one
-batched forward (`ATLAS_MTP_MAX_SEQS=4`); 0.1.2 drafted only for one. From five
-requests it decodes plainly: with 512 routed experts, a verify of eight
-requests costs about what it gains. On 0.1.1, eight simultaneous 262,132-token
-Ling prompts each recalled their key, and Ling decoded 44.4 / 40.6 / 34.9 /
-27.9 tok/s after 2K / 32K / 128K / 262K-token prompts.
+0.1.4 prefills Ling's attention with a 128-row kernel and expands the cached
+latent once per 8,192-token chunk; vLLM with MTP x3 on the same Spark measured
+3,082 / 2,768 / 2,391 / 1,842 tok/s. Prompts up to one chunk prefill
+byte-identically to 0.1.3. Up to four active requests draft and are verified
+in one batched forward (`ATLAS_MTP_MAX_SEQS=4`); from five requests decoding is
+plain. On 0.1.1, eight simultaneous 262,132-token Ling prompts each recalled
+their key, and Ling decoded 44.4 / 40.6 / 34.9 / 27.9 tok/s after 2K / 32K /
+128K / 262K-token prompts.
 
 ## Installation
 
