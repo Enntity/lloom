@@ -1,6 +1,6 @@
 # Atlas SparkInkling under LLooM
 
-LLooM-managed SparkInkling 0.5.0 lane: Thinking Machines'
+LLooM-managed SparkInkling 0.5.1 lane: Thinking Machines'
 [Inkling 2 Mini](https://huggingface.co/thinkingmachines/Inkling-2-Mini) on one
 NVIDIA DGX Spark, served by the Atlas engine with incoai's DFlash2 drafter,
 1,048,576-token requests (window-bounded KV), prefix caching, reasoning, tool
@@ -8,20 +8,20 @@ calls and image input (no video).
 This directory is **MIT orchestration only**: no
 Atlas engine source is committed here. The engine image is built from
 `Enntity/sparkinkling` at the revision pinned in
-`pins-0.5.0-a9fac42abe15.json` (`main`, 0.5.0 as republished 2026-11-25) by
-that repository's `install/build.sh` and published as
-`ghcr.io/enntity/atlas-sparkinkling:<install tree>` (also `:0.5.0`). The
+`pins-0.5.1.json` (`main`, tag `v0.5.1`) by that repository's
+`install/build.sh` and published as
+`ghcr.io/enntity/atlas-sparkinkling:<install tree>` (also `:0.5.1`). The
 recipe's `--weights` option defaults to `spark`. The recipe is
 `linux-nvidia-dgx-spark-inkling2-mini-atlas`.
 
 ## Layout
 
-- `pins-0.5.0-a9fac42abe15.json`: the pin manifest (recipe version 4;
-  `pins-0.5.0.json`, `pins-0.4.2.json` and `pins-0.4.1.json` stay for the
-  archived versions 3, 2 and 1). SparkInkling source revision and its
-  `install/` git tree, the engine commit (`Enntity/atlas`
-  `inkling2/loopcd-20261124` at `6ab2e9c78d2c`, the 0.5.0 engine plus an
-  opt-in LoopCD the recipe leaves off), the image
+- `pins-0.5.1.json`: the pin manifest (recipe version 5;
+  `pins-0.5.0-a9fac42abe15.json`, `pins-0.5.0.json`, `pins-0.4.2.json` and
+  `pins-0.4.1.json` stay for the archived versions 4, 3, 2 and 1).
+  SparkInkling source revision and its `install/` git tree, the engine commit
+  (`Enntity/atlas` `inkling2/rc-0.5.1-20261126` at `a4dbba37810f`, which
+  carries an opt-in LoopCD the recipe leaves off), the image
   by GHCR manifest digest with the tag kept as metadata, the install-tree
   label, the checkpoint, overlay and DFlash2 drafter revisions, and
   `prepareTool`: the sha256 of the three SparkInkling install files
@@ -56,10 +56,10 @@ recipe's `--weights` option defaults to `spark`. The recipe is
 
 ## Weights
 
-| `--weights`        | Serves                                                                                                                                                     | Extra download                               |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| `strict` (default) | The checkpoint as shipped: NVFP4 experts in layers 0-19, MXFP8 in 20-23, BF16 attention, router and vocabulary head                                        | none                                         |
-| `spark`            | Strict plus calibrated NVFP4 attention projections, vocabulary head and layer 20-23 experts; next-token KL 0.0081 to Strict on 224 documents (97.0% top-1) | `Enntity/Inkling-2-Mini-Spark-NVFP4`, 2.9 GB |
+| `--weights`       | Serves                                                                                                                                                     | Extra download                               |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `strict`          | The checkpoint as shipped: NVFP4 experts in layers 0-19, MXFP8 in 20-23, BF16 attention, router and vocabulary head                                        | none                                         |
+| `spark` (default) | Strict plus calibrated NVFP4 attention projections, vocabulary head and layer 20-23 experts; next-token KL 0.0081 to Strict on 224 documents (97.0% top-1) | `Enntity/Inkling-2-Mini-Spark-NVFP4`, 2.9 GB |
 
 ## Modes
 
@@ -89,7 +89,7 @@ README kept for attribution), `pull-atlas-image` (`install.sh`),
 
 ## Container contract
 
-LLooM mirrors SparkInkling 0.5.0's `start.sh`: host network and IPC, 16 GiB
+LLooM mirrors SparkInkling 0.5.1's `start.sh`: host network and IPC, 16 GiB
 shm, `--memory 114g` (a GB10 that runs out of shared memory hangs instead of
 killing a process), all GPUs, `no-new-privileges`, a 60 s stop timeout, every
 model directory mounted read-only at its own path, and the CUDA cache.
@@ -101,7 +101,7 @@ Environment: `MODEL_PATH` (the checkpoint, or its `+spark-nvfp4` directory),
 `stream_tool_arguments: true` gets its calls' arguments as they are written
 and the guard checks each call when it ends; every other request's calls are
 held until they pass; `_MAX_BYTES=1048576`, empty allow and deny lists), offline Hugging Face and the CUDA cache settings. The engine serves
-`127.0.0.1:8895`, fixed by the image. SparkInkling 0.5.0 has no disk tier for evicted prefix-cache KV.
+`127.0.0.1:8895`, fixed by the image. SparkInkling 0.5.x has no disk tier for evicted prefix-cache KV.
 
 ## Credits and licenses
 

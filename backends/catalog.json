@@ -1812,7 +1812,7 @@
       "id": "docker-atlas-sparkinkling",
       "name": "Docker Atlas SparkInkling",
       "kind": "openai-compatible-server",
-      "description": "LLooM-managed Atlas SparkInkling 0.5.0 for Thinking Machines' Inkling 2 Mini on one DGX Spark, from an immutable GHCR image addressed by digest, with incoai's DFlash2 drafter and 1M-token requests. Strict serves the checkpoint as shipped; spark adds a calibrated NVFP4 overlay. Text and image input. See backends/atlas-sparkinkling/README.md.",
+      "description": "LLooM-managed Atlas SparkInkling 0.5.1 for Thinking Machines' Inkling 2 Mini on one DGX Spark, from an immutable GHCR image addressed by digest, with incoai's DFlash2 drafter and 1M-token requests. Strict serves the checkpoint as shipped; spark adds a calibrated NVFP4 overlay. Text and image input. See backends/atlas-sparkinkling/README.md.",
       "platforms": [
         "linux-arm64"
       ],
@@ -1856,7 +1856,7 @@
           "command": "node",
           "args": [
             "${repoRoot}/backends/atlas-sparkinkling/verify-pins.mjs",
-            "${repoRoot}/backends/atlas-sparkinkling/pins-0.5.0-a9fac42abe15.json"
+            "${repoRoot}/backends/atlas-sparkinkling/pins-0.5.1.json"
           ]
         }
       ],
